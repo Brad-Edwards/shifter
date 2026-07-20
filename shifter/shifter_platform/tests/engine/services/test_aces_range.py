@@ -17,8 +17,9 @@ import pytest
 from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 from django.contrib.auth import get_user_model
 
-from engine.models import Range
+from engine.models import AcesContentDeliveryBinding, Range
 from engine.services import AcesRangeRef, create_aces_range
+from shared.aces.content_delivery import DeliveryBinding
 from shared.aces.runtime_target import ACES_PROVISIONING_PLAN_KIND, serialize_provisioning_plan
 from shared.cloud.exceptions import CloudTaskError
 from shared.models import AcesOperationRecord
@@ -112,6 +113,82 @@ class TestCreateAcesRange:
 
         assert second.range_id == first.range_id
         assert Range.objects.count() == 1
+
+
+class TestCreateAcesRangeDeliveryBindings:
+    """Delivery-binding persistence beside the ACES range (#1564).
+
+    The engine slice: bindings are byte-free identity rows persisted in the
+    same transaction as the Range, keyed by (range, content_address).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _ecs_noop(self, settings):
+        settings.LOCAL_PROVISIONER = None
+        settings.ENGINE_TASK_CLUSTER = ""
+        settings.ENGINE_ECS_CLUSTER_ARN = ""
+
+    def make_binding(self, address="provision.node.attacker#file") -> DeliveryBinding:
+        return DeliveryBinding(
+            content_address=address,
+            sha256="a" * 64,
+            storage_key=f"aces-content/aa/{'a' * 64}",
+            byte_count=1024,
+        )
+
+    def test_persists_one_row_per_binding(self, user):
+        request_id = uuid4()
+        binding = self.make_binding()
+        create_aces_range(
+            request_id=request_id,
+            user_id=user.id,
+            compiled_plan=make_compiled_plan(),
+            delivery_bindings=(binding,),
+        )
+
+        range_obj = Range.objects.get(request__request_id=request_id)
+        rows = AcesContentDeliveryBinding.objects.filter(range=range_obj)
+        assert rows.count() == 1
+        row = rows.get()
+        assert row.content_address == binding.content_address
+        assert row.sha256 == binding.sha256
+        assert row.storage_key == binding.storage_key
+        assert row.byte_count == binding.byte_count
+        assert row.binding_version == binding.binding_version
+
+    def test_no_bindings_persists_none(self, user):
+        request_id = uuid4()
+        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
+
+        range_obj = Range.objects.get(request__request_id=request_id)
+        assert AcesContentDeliveryBinding.objects.filter(range=range_obj).count() == 0
+
+    def test_idempotent_on_request_id_does_not_duplicate(self, user):
+        request_id = uuid4()
+        plan = make_compiled_plan()
+        binding = self.make_binding()
+        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, delivery_bindings=(binding,))
+        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, delivery_bindings=(binding,))
+
+        range_obj = Range.objects.get(request__request_id=request_id)
+        assert AcesContentDeliveryBinding.objects.filter(range=range_obj).count() == 1
+
+    def test_multiple_bindings_persist_multiple_rows(self, user):
+        request_id = uuid4()
+        first = self.make_binding("provision.node.attacker#file")
+        second = self.make_binding("provision.node.victim#file")
+        create_aces_range(
+            request_id=request_id,
+            user_id=user.id,
+            compiled_plan=make_compiled_plan(),
+            delivery_bindings=(first, second),
+        )
+
+        range_obj = Range.objects.get(request__request_id=request_id)
+        addresses = set(
+            AcesContentDeliveryBinding.objects.filter(range=range_obj).values_list("content_address", flat=True)
+        )
+        assert addresses == {first.content_address, second.content_address}
 
 
 @pytest.mark.django_db

@@ -57,6 +57,19 @@ class CloudStorageError(CloudError):
     """Error during object storage operations."""
 
 
+class ObjectPreconditionError(CloudStorageError):
+    """Raised when a conditional storage read fails its precondition.
+
+    Signals that a download was refused because the source object no longer
+    matches the expected identity (ETag/generation) supplied by the caller.
+    This is a security signal — the validated object changed between the
+    ``head_object`` check and the ``download_object`` fetch (TOCTOU) — not a
+    transient error to retry silently. Subclasses ``CloudStorageError`` so
+    existing broad handlers still catch it, while callers that care can
+    distinguish the precondition failure.
+    """
+
+
 class CloudSecretsError(CloudError):
     """Error during secrets retrieval operations."""
 

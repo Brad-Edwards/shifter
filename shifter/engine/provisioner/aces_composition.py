@@ -22,15 +22,25 @@ _RESERVED_ACCOUNT_USERNAMES = frozenset({"aces"})
 class AcesPlanContent:
     """A content placement (file/dataset/directory) targeting one node.
 
-    ``text`` is inline file content (realized as a real file). Non-inline content
-    (a ``source`` package, or dataset ``items``) is supplied by the baked image /
-    guest repo at ``path``/``destination`` (ADR-032 baked-image delivery), so the
-    realizer creates the structural target but does not fetch bytes.
+    ``text`` is inline file content (realized as a real file by the bootstrap
+    composition script). A ``source``-backed ``file``/``directory`` is delivered
+    post-boot over an authenticated guest channel with a digest-verified byte-free
+    delivery binding (#1564, ``aces_content_delivery``) -- the bootstrap script
+    never fetches its bytes. A source-less directory (or any other non-inline,
+    non-source-backed shape) still only gets its structural target created by the
+    bootstrap composition script.
     """
 
     name: str
     content_type: str
     target_address: str
+    # The compiled plan's own resource address (the key it is stored under in the
+    # serialized plan's ``resources`` mapping) -- set post-construction by the
+    # ``aces_plan`` builder, mirroring ``AcesPlanAccount.address``. Source-backed
+    # delivery (#1564) joins a content item to its byte-free delivery binding by
+    # this stable address, never by ``target_address``/``path`` (a node can carry
+    # more than one content item, and paths are author-controlled).
+    address: str = ""
     path: str | None = None
     destination: str | None = None
     text: str | None = None

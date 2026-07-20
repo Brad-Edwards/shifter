@@ -319,6 +319,17 @@ class TestCompositionExtraction:
         assert content.content_type == "directory"
         assert content.destination == "/srv/data"
 
+    def test_content_address_is_the_compiled_resource_address(self):
+        # #1564: the provisioner joins a source-backed content item to its
+        # byte-free delivery binding by this address (the same address the CMS
+        # side reads off the serialized plan's `resources` mapping key) -- never
+        # by target_address or path, since a node may carry more than one
+        # content item and paths are author-controlled.
+        plan = parse_plan(
+            _serialized(self._content_resource(type="file", path="/srv/x.txt", text="hello"), self._target_node())
+        )
+        assert plan.content[0].address == "content.doc"
+
     def _serialized_directory(self) -> dict:
         return _serialized(self._content_resource(type="directory", destination="/srv/data"), self._target_node())
 

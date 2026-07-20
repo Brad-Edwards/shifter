@@ -1479,7 +1479,7 @@
     "title": "How Shifter realizes ACES scenarios",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter realizes ACES by riding the ACES contract end to end, not by shadowing it. The pinned aces-sdl runtime (inside shared.aces) compiles a scenario into an ACES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the ACES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference ACES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the artifact that crosses the boundary is the serialized ACES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions. A consumer may materialize a bounded, process-local realization projection after validating the envelope, producer compatibility, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute ACES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. ACES is a deliberate stack commitment: Shifter depends on the aces-sdl PyPI package pinned to a released version.",
+    "decision": "Shifter realizes ACES by riding the ACES contract end to end, not by shadowing it. The pinned aces-sdl runtime (inside shared.aces) compiles a scenario into an ACES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the ACES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference ACES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the authored provisioning-intent artifact that crosses the boundary is the serialized ACES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions. Source-backed content delivery may accompany dispatch only as a separately validated, immutable identity binding governed by ADR-032-R3; it is not authored intent or a second provisioning model. A consumer may materialize a bounded, process-local realization projection after validating the envelope, producer compatibility, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute ACES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. ACES is a deliberate stack commitment: Shifter depends on the aces-sdl PyPI package pinned to a released version.",
     "rules": [
       {
         "id": "ADR-032-R1",
@@ -1493,7 +1493,7 @@
       },
       {
         "id": "ADR-032-R3",
-        "description": "The artifact crossing the platform -> provisioner boundary is the serialized ACES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the public ACES/backend payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces ACES.",
+        "description": "The only authored provisioning-intent artifact crossing the platform -> provisioner boundary is the serialized ACES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the public ACES/backend payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). For source-backed content, dispatch may carry a versioned server-owned delivery binding beside -- never inside -- that plan, limited to the compiled content resource address, sha256 content digest, normalized content-addressed object key, and bounded byte count. The binding contains no payload bytes, bucket or URL, credential, guest path, command, generated configuration, or client-controlled locator; it is persisted separately from range_config and the launch-intent payload, revalidated and joined exactly to the plan before retrieval or mutation, and is not an authored contract, public DTO, or second provisioning model. A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces ACES.",
         "checks": []
       },
       {
@@ -1528,10 +1528,12 @@
       "https://github.com/Brad-Edwards/shifter/issues/1264",
       "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
+      "https://github.com/Brad-Edwards/shifter/issues/1564",
       "https://github.com/Brad-Edwards/shifter/issues/1606",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
+      "docs/architecture/aces-source-content-delivery-preflight-1564.md",
       "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-domain-topology-preflight-1606.md",
@@ -1603,7 +1605,12 @@
       },
       {
         "id": "ADR-034-R5",
-        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical ACES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and object-backed references remain non-launchable until their resolver provides equivalent identity guarantees.",
+        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical ACES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and an object-backed pack becomes launchable only after its resolver provides equivalent bounded extraction, containment, immutable-object identity, contract validation, and digest guarantees.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R6",
+        "description": "Source-backed ACES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
         "checks": []
       }
     ],
@@ -1614,6 +1621,7 @@
     "evidence": [
       "docs/architecture/uniform-content-ingestion-contract.md",
       "docs/architecture/uniform-content-ingestion-preflight-1578.md",
+      "docs/architecture/aces-source-content-delivery-preflight-1564.md",
       "docs/architecture/product-development-surfaces.md",
       "docs/ops/content-ingestion.md",
       "docs/adr/index.yaml"
