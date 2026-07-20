@@ -4,9 +4,12 @@ Depends on the ``_env`` leaf, the ``_gcp_backend`` leaf, and ``_range`` (for
 ``get_range_availability_zone``).
 """
 
+import hashlib
+import json
 import os
 import re
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
 
 from ._env import _get_bool_env, _get_int_env, _parse_csv_env
 from ._gcp_backend import is_gce_range_cell_backend
@@ -21,6 +24,12 @@ class GCERangeImageProfile:
     machine_type: str = "e2-medium"
     disk_size_gb: int = 30
     disk_type: str = "pd-balanced"
+
+
+def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
+    """Return a bounded non-secret profile identity for labels and reconciliation."""
+    canonical = json.dumps(asdict(profile), separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
 
 
 @dataclass(frozen=True)
@@ -54,6 +63,7 @@ class GCERangeCellConfig:
     kali: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     windows: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     dc: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    image_key_profiles: Mapping[str, Mapping[str, GCERangeImageProfile]] = field(default_factory=dict)
     portal_network_cidrs: tuple[str, ...] = ()
     # Dedicated participant/operator access-workload source ranges (portal + guacd
     # pods) that dial range guests for browser SSH and Guacamole SSH/RDP (issue
@@ -91,16 +101,40 @@ class GCERangeCellConfig:
         ("serial-port-enable", "false"),
     )
 
-    def get_profile(self, *, role: str, os_type: str, requested_type: str = "") -> GCERangeImageProfile:
-        """Return the image profile for a range guest, applying instance-type overrides."""
+    def get_profile(
+        self,
+        *,
+        role: str,
+        os_type: str,
+        requested_type: str = "",
+        ami_key: str = "",
+    ) -> GCERangeImageProfile:
+        """Return the exact platform-approved image profile for a range guest."""
         if role == "dc":
+            profile_class = "dc"
             profile = self.dc
         elif os_type == "kali" or role == "attacker":
+            profile_class = "kali"
             profile = self.kali if self.kali.source_image else self.linux
         elif os_type == "windows":
+            profile_class = "windows"
             profile = self.windows
         else:
+            profile_class = "linux"
             profile = self.linux
+
+        logical_key = ami_key.strip()
+        if logical_key:
+            if not _GCE_IMAGE_KEY_RE.fullmatch(logical_key):
+                raise RuntimeError("GCE ami_key must be a lowercase logical key using letters, digits, and hyphens")
+            mapped_profile = self.image_key_profiles.get(profile_class, {}).get(logical_key)
+            if mapped_profile is None:
+                raise RuntimeError(
+                    "There is no configured GCE image profile for "
+                    f"profile_class={profile_class!r} ami_key={logical_key!r}; "
+                    "set GCP_RANGE_IMAGE_KEY_PROFILES_JSON before launching this scenario."
+                )
+            profile = mapped_profile
 
         if not profile.source_image:
             raise RuntimeError(
@@ -121,6 +155,13 @@ class GCERangeCellConfig:
 # disk type only after the create call; validate at config load so the operator
 # sees a clear error before a range attempt (#1343 gap 7).
 _VALID_GCE_DISK_TYPES = frozenset({"pd-standard", "pd-balanced", "pd-ssd", "pd-extreme", "hyperdisk-balanced"})
+_GCE_PROFILE_CLASSES = frozenset({"linux", "kali", "windows", "dc"})
+_GCE_PROFILE_FIELDS = frozenset({"source_image", "machine_type", "disk_size_gb", "disk_type"})
+_GCE_PROFILE_MIN_DISK_SIZE_GB = {"linux": 10, "kali": 30, "windows": 100, "dc": 100}
+_GCE_IMAGE_KEY_PROFILES_MAX_BYTES = 32_768
+_GCE_IMAGE_KEY_PROFILES_MAX_ENTRIES = 64
+_GCE_IMAGE_KEY_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+_GCE_MACHINE_TYPE_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 # A Compute Engine resource name segment: lowercase, starts with a letter, and
 # is at most 63 chars (RFC1035, as GCE enforces for image/family names).
@@ -191,6 +232,104 @@ def _load_gce_range_profile(
     )
     _validate_gce_range_profile(prefix, profile, min_disk_size_gb=min_disk_size_gb)
     return profile
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Build one JSON object while refusing keys that would otherwise be overwritten."""
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key!r}")
+        value[key] = item
+    return value
+
+
+def _require_profile_string(entry: Mapping[str, object], field_name: str, *, location: str) -> str:
+    """Return one required non-empty string field from a keyed profile."""
+    value = entry[field_name]
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError(f"{location}.{field_name} must be a non-empty string")
+    return value.strip()
+
+
+def _parse_gce_image_key_profile(
+    profile_class: str,
+    logical_key: str,
+    entry: object,
+) -> GCERangeImageProfile:
+    """Parse and validate one complete logical-key GCE image profile."""
+    location = f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON[{profile_class!r}][{logical_key!r}]"
+    if not isinstance(entry, dict):
+        raise RuntimeError(f"{location} must be an object")
+    fields = set(entry)
+    unknown = sorted(fields - _GCE_PROFILE_FIELDS)
+    missing = sorted(_GCE_PROFILE_FIELDS - fields)
+    if unknown:
+        raise RuntimeError(f"{location} has unknown fields: {', '.join(unknown)}")
+    if missing:
+        raise RuntimeError(f"{location} is missing required fields: {', '.join(missing)}")
+
+    source_image = _require_profile_string(entry, "source_image", location=location)
+    machine_type = _require_profile_string(entry, "machine_type", location=location)
+    disk_type = _require_profile_string(entry, "disk_type", location=location)
+    disk_size_gb = entry["disk_size_gb"]
+    if isinstance(disk_size_gb, bool) or not isinstance(disk_size_gb, int) or disk_size_gb <= 0:
+        raise RuntimeError(f"{location}.disk_size_gb must be a positive integer")
+    if not _GCE_MACHINE_TYPE_RE.fullmatch(machine_type):
+        raise RuntimeError(f"{location}.machine_type is not a valid Compute Engine machine type")
+
+    profile = GCERangeImageProfile(
+        source_image=source_image,
+        machine_type=machine_type,
+        disk_size_gb=disk_size_gb,
+        disk_type=disk_type,
+    )
+    _validate_gce_range_profile(
+        location,
+        profile,
+        min_disk_size_gb=_GCE_PROFILE_MIN_DISK_SIZE_GB[profile_class],
+    )
+    return profile
+
+
+def _load_gce_image_key_profiles() -> dict[str, dict[str, GCERangeImageProfile]]:
+    """Load the bounded exact (profile class, logical key) GCE profile map."""
+    raw = os.environ.get("GCP_RANGE_IMAGE_KEY_PROFILES_JSON", "").strip()
+    if not raw:
+        return {}
+    if len(raw.encode("utf-8")) > _GCE_IMAGE_KEY_PROFILES_MAX_BYTES:
+        raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 32768-byte configuration limit")
+    try:
+        decoded = json.loads(raw, object_pairs_hook=_reject_duplicate_json_keys)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be a valid JSON object: {exc}") from exc
+    if not isinstance(decoded, dict):
+        raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be a valid JSON object")
+
+    unknown_classes = sorted(set(decoded) - _GCE_PROFILE_CLASSES)
+    if unknown_classes:
+        raise RuntimeError(
+            "GCP_RANGE_IMAGE_KEY_PROFILES_JSON has unknown profile classes: " + ", ".join(unknown_classes)
+        )
+
+    profiles: dict[str, dict[str, GCERangeImageProfile]] = {}
+    entry_count = 0
+    for profile_class, entries in decoded.items():
+        if not isinstance(entries, dict):
+            raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON[{profile_class!r}] must be an object")
+        resolved_entries: dict[str, GCERangeImageProfile] = {}
+        for logical_key, entry in entries.items():
+            if not _GCE_IMAGE_KEY_RE.fullmatch(logical_key):
+                raise RuntimeError(
+                    "GCP_RANGE_IMAGE_KEY_PROFILES_JSON logical keys must be lowercase and use only "
+                    "letters, digits, and hyphens"
+                )
+            entry_count += 1
+            if entry_count > _GCE_IMAGE_KEY_PROFILES_MAX_ENTRIES:
+                raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 64-entry limit")
+            resolved_entries[logical_key] = _parse_gce_image_key_profile(profile_class, logical_key, entry)
+        profiles[profile_class] = resolved_entries
+    return profiles
 
 
 def _resolve_gce_range_required_env() -> tuple[str, str, str, str]:
@@ -313,6 +452,7 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
             default_disk_size_gb=100,
             min_disk_size_gb=100,
         ),
+        image_key_profiles=_load_gce_image_key_profiles(),
         portal_network_cidrs=_parse_csv_env(
             os.environ.get("PORTAL_NETWORK_CIDRS", "") or os.environ.get("PORTAL_VPC_CIDR", "")
         ),
