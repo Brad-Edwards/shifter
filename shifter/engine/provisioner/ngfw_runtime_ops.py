@@ -11,7 +11,14 @@ import logging
 from typing import Any
 
 from config import resolve_ngfw_attachment_config
-from events import STATUS_FAILED, publish_ngfw_event
+from events import (
+    STATUS_FAILED,
+    STATUS_PAUSED,
+    STATUS_PAUSING,
+    STATUS_READY,
+    STATUS_RESUMING,
+    publish_ngfw_event,
+)
 from executors.aws_executor import AWSExecutor
 from ngfw_runtime import update_instance_state
 from orchestrators.ops_orchestrator import OpsOrchestrator
@@ -24,8 +31,8 @@ logger = logging.getLogger(__name__)
 def _validate_ngfw_operation(operation: str) -> tuple[str, str]:
     """Map an NGFW operation name to its (in-progress, success) status pair."""
     status_map = {
-        "start": ("resuming", "ready"),
-        "stop": ("pausing", "paused"),
+        "start": (STATUS_RESUMING, STATUS_READY),
+        "stop": (STATUS_PAUSING, STATUS_PAUSED),
     }
     if operation not in status_map:
         raise ValueError(f"Unknown operation: {operation}")
