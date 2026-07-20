@@ -8,7 +8,7 @@
 // `stopPortalTestTunnel` (dev bypass). `buildPoolConfig` keeps TLS
 // verification on (ADR-014-R7); see mcp/ops/SECURITY.md.
 
-import net from "net";
+import net from "node:net";
 import pg from "pg";
 import {
   LOCAL_PORTS,

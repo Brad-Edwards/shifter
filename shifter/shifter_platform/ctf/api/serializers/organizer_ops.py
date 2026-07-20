@@ -9,6 +9,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from ctf.api.serializers._common import _NamedRefSerializer
+from ctf.api.serializers.organizer import AwardSerializer
 
 # ---------------------------------------------------------------------------
 # Organizer serializers (participant management)
@@ -22,6 +23,8 @@ class ParticipantSummarySerializer(serializers.Serializer):
     name = serializers.CharField(read_only=True)
     email = serializers.CharField(read_only=True)
     status = serializers.CharField(read_only=True)
+    role = serializers.CharField(read_only=True)
+    hidden = serializers.BooleanField(read_only=True)
     team_name = serializers.CharField(read_only=True, allow_null=True)
     registered_at = serializers.DateTimeField(read_only=True, allow_null=True)
     total_score = serializers.IntegerField(read_only=True)
@@ -100,6 +103,11 @@ class ParticipantDetailSerializer(serializers.Serializer):
     name = serializers.CharField(read_only=True)
     email = serializers.CharField(read_only=True)
     status = serializers.CharField(read_only=True)
+    status_reason = serializers.CharField(read_only=True, allow_blank=True)
+    role = serializers.CharField(read_only=True)
+    hidden = serializers.BooleanField(read_only=True)
+    affiliation = serializers.CharField(read_only=True, allow_blank=True)
+    username = serializers.CharField(read_only=True, allow_null=True)
     team_name = serializers.CharField(read_only=True, allow_null=True)
     registered_at = serializers.DateTimeField(read_only=True, allow_null=True)
     invited_at = serializers.DateTimeField(read_only=True, allow_null=True)
@@ -110,6 +118,7 @@ class ParticipantDetailSerializer(serializers.Serializer):
     event_id = serializers.CharField(read_only=True)
     bracket_id = serializers.CharField(read_only=True, allow_null=True)
     bracket_name = serializers.CharField(read_only=True, allow_null=True)
+    awards = AwardSerializer(many=True, read_only=True)
 
 
 class ParticipantDeleteResultSerializer(serializers.Serializer):
@@ -401,3 +410,49 @@ class OrganizerScoreboardResponseSerializer(serializers.Serializer):
     rankings = serializers.ListField(child=serializers.DictField(), read_only=True)
     bracket_rankings = serializers.ListField(child=serializers.DictField(), read_only=True, allow_null=True)
     brackets = _NamedRefSerializer(many=True, read_only=True)
+
+
+class ParticipantModerationRequestSerializer(serializers.Serializer):
+    """Optional reason accompanying a ban or disqualification."""
+
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
+class ParticipantRoleRequestSerializer(serializers.Serializer):
+    """Target participation role for the role endpoint (CTF-604)."""
+
+    role = serializers.CharField(max_length=16)
+
+
+class ParticipantHiddenRequestSerializer(serializers.Serializer):
+    """Target scoreboard visibility for the hidden endpoint (CTF-606)."""
+
+    hidden = serializers.BooleanField()
+
+
+class ParticipantUsernameRequestSerializer(serializers.Serializer):
+    """New login handle for the username-rename endpoints (#1206/#1593)."""
+
+    username = serializers.CharField(max_length=49)
+
+
+class EventStaffMemberSerializer(serializers.Serializer):
+    """One delegated staff assignment on an event (CTF-607)."""
+
+    user_id = serializers.IntegerField(read_only=True)
+    email = serializers.CharField(read_only=True)
+    role = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+
+class EventStaffListResponseSerializer(serializers.Serializer):
+    """Envelope for the event staff listing."""
+
+    staff = EventStaffMemberSerializer(many=True, read_only=True)
+
+
+class EventStaffAssignRequestSerializer(serializers.Serializer):
+    """Assignment request: organizer-tier user email plus staff role."""
+
+    email = serializers.EmailField()
+    role = serializers.CharField(max_length=16)

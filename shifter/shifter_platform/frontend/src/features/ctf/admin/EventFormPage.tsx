@@ -1,203 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { Loader2 } from "lucide-react";
 
-import { useCreateCtfEvent, useCtfEvent, useCtfScenarios, useUpdateCtfEvent } from "@/api/ctfAdmin";
-import { ApiError } from "@/api/errors";
-import type { CtfEventDetail, CtfEventWrite } from "@/api/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { fromDateTimeLocalValue, toDateTimeLocalValue } from "../format";
 import { ctfAdminEventPath, ctfAdminEventsPath } from "../routes";
 import { CheckboxField, FieldError, TextAreaField, TextField } from "./form-fields";
-
-const NO_SCENARIO = "__none__";
-
-interface FormState {
-  name: string;
-  description: string;
-  event_start: string;
-  event_end: string;
-  registration_deadline: string;
-  scenario_id: string;
-  team_mode: boolean;
-  team_size_limit: string;
-  max_participants: string;
-  range_spinup_minutes: string;
-  submission_cooldown_seconds: string;
-  auto_cleanup: boolean;
-  cleanup_delay_hours: string;
-  scoreboard_visible: boolean;
-}
-
-const EMPTY: FormState = {
-  name: "",
-  description: "",
-  event_start: "",
-  event_end: "",
-  registration_deadline: "",
-  scenario_id: "",
-  team_mode: false,
-  team_size_limit: "",
-  max_participants: "",
-  range_spinup_minutes: "30",
-  submission_cooldown_seconds: "0",
-  auto_cleanup: true,
-  cleanup_delay_hours: "24",
-  scoreboard_visible: true,
-};
-
-function fromEvent(event: CtfEventDetail): FormState {
-  return {
-    name: event.name ?? "",
-    description: event.description ?? "",
-    event_start: toDateTimeLocalValue(event.event_start),
-    event_end: toDateTimeLocalValue(event.event_end),
-    registration_deadline: toDateTimeLocalValue(event.registration_deadline),
-    scenario_id: event.scenario_id ?? "",
-    team_mode: Boolean(event.team_mode),
-    team_size_limit: event.team_size_limit == null ? "" : String(event.team_size_limit),
-    max_participants: event.max_participants == null ? "" : String(event.max_participants),
-    range_spinup_minutes: String(event.range_spinup_minutes ?? 30),
-    submission_cooldown_seconds: String(event.submission_cooldown_seconds ?? 0),
-    auto_cleanup: Boolean(event.auto_cleanup),
-    cleanup_delay_hours: String(event.cleanup_delay_hours ?? 24),
-    scoreboard_visible: Boolean(event.scoreboard_visible),
-  };
-}
-
-function intOrNull(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === "") return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function intOr(value: string, fallback: number): number {
-  return intOrNull(value) ?? fallback;
-}
-
-function toPayload(state: FormState): CtfEventWrite {
-  return {
-    name: state.name,
-    description: state.description,
-    event_start: fromDateTimeLocalValue(state.event_start) ?? "",
-    event_end: fromDateTimeLocalValue(state.event_end) ?? "",
-    registration_deadline: fromDateTimeLocalValue(state.registration_deadline),
-    scenario_id: state.scenario_id,
-    team_mode: state.team_mode,
-    team_size_limit: intOrNull(state.team_size_limit),
-    max_participants: intOrNull(state.max_participants),
-    range_spinup_minutes: intOr(state.range_spinup_minutes, 30),
-    submission_cooldown_seconds: intOr(state.submission_cooldown_seconds, 0),
-    auto_cleanup: state.auto_cleanup,
-    cleanup_delay_hours: intOr(state.cleanup_delay_hours, 24),
-    scoreboard_visible: state.scoreboard_visible,
-  };
-}
-
-/** Render the edit-mode loading / not-found states, or null when the form itself should render. */
-function renderEditLoadState(
-  mode: "create" | "edit",
-  existing: ReturnType<typeof useCtfEvent>,
-): React.ReactNode {
-  if (mode !== "edit") return null;
-  if (existing.isLoading) {
-    return (
-      <div className="grid place-items-center py-24 text-muted-foreground">
-        <Loader2 className="size-6 animate-spin" aria-label="Loading event" />
-      </div>
-    );
-  }
-  if (existing.isError) {
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>Event not found</AlertTitle>
-        <AlertDescription>
-          This event may have been deleted.{" "}
-          <Link className="underline" to={ctfAdminEventsPath()}>
-            Back to events
-          </Link>
-          .
-        </AlertDescription>
-      </Alert>
-    );
-  }
-  return null;
-}
-
-function submitEventForm(
-  event: React.FormEvent,
-  opts: Readonly<{
-    state: FormState;
-    mode: "create" | "edit";
-    eventId: string;
-    create: ReturnType<typeof useCreateCtfEvent>;
-    update: ReturnType<typeof useUpdateCtfEvent>;
-    navigate: ReturnType<typeof useNavigate>;
-  }>,
-) {
-  event.preventDefault();
-  const payload = toPayload(opts.state);
-  if (opts.mode === "create") {
-    opts.create.mutate(payload, { onSuccess: (result) => opts.navigate(ctfAdminEventPath(result.id)) });
-  } else if (opts.eventId) {
-    opts.update.mutate(payload, { onSuccess: () => opts.navigate(ctfAdminEventPath(opts.eventId)) });
-  }
-}
+import { NO_SCENARIO, renderEditLoadState, useEventFormState } from "./eventFormState";
 
 export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
-  const navigate = useNavigate();
-  const params = useParams();
-  const eventId = mode === "edit" ? (params.eventId ?? "") : "";
-
-  const existing = useCtfEvent(eventId, mode === "edit");
-  const scenarios = useCtfScenarios();
-  const create = useCreateCtfEvent();
-  const update = useUpdateCtfEvent(eventId);
-  const mutation = mode === "create" ? create : update;
-
-  const [state, setState] = useState<FormState>(EMPTY);
-  const [initialized, setInitialized] = useState(mode === "create");
-  const formRef = useRef<HTMLFormElement>(null);
-
-  useEffect(() => {
-    if (mode === "edit" && existing.data && !initialized) {
-      setState(fromEvent(existing.data));
-      setInitialized(true);
-    }
-  }, [mode, existing.data, initialized]);
-
-  const fieldErrors = useMemo(
-    () => (mutation.error instanceof ApiError ? mutation.error.fieldErrors() : {}),
-    [mutation.error],
-  );
-
-  useEffect(() => {
-    if (Object.keys(fieldErrors).length > 0) {
-      formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-    }
-  }, [fieldErrors]);
-
-  const nonFieldError =
-    mutation.error instanceof ApiError && Object.keys(fieldErrors).length === 0 ? mutation.error.message : null;
-
-  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setState((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function firstError(field: string): string | undefined {
-    return fieldErrors[field]?.[0];
-  }
-
-  function onSubmit(event: React.FormEvent) {
-    submitEventForm(event, { state, mode, eventId, create, update, navigate });
-  }
+  const { eventId, existing, scenarios, mutation, state, formRef, nonFieldError, set, firstError, onSubmit, navigate } =
+    useEventFormState(mode);
 
   const editLoadState = renderEditLoadState(mode, existing);
   if (editLoadState) return <>{editLoadState}</>;
@@ -236,6 +53,14 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
               value={state.description}
               error={firstError("description")}
               onChange={(v) => set("description", v)}
+            />
+            <TextAreaField
+              id="e-rules"
+              label="Rules (markdown, shown to participants)"
+              rows={5}
+              value={state.rules}
+              error={firstError("rules")}
+              onChange={(v) => set("rules", v)}
             />
 
             <div className="grid gap-5 sm:grid-cols-2">
@@ -313,6 +138,45 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
             </div>
 
             <fieldset className="flex flex-col gap-3">
+              <legend className="mb-1 text-sm font-medium">Submission limits</legend>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <TextField
+                  id="e-subcooldown"
+                  label="Cooldown between submissions (seconds)"
+                  type="number"
+                  min={0}
+                  value={state.submission_cooldown_seconds}
+                  error={firstError("submission_cooldown_seconds")}
+                  onChange={(v) => set("submission_cooldown_seconds", v)}
+                />
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="e-attemptmode">When max attempts is reached</Label>
+                  <Select value={state.attempt_limit_mode} onValueChange={(v) => set("attempt_limit_mode", v)}>
+                    <SelectTrigger id="e-attemptmode" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lockout">Lock out permanently</SelectItem>
+                      <SelectItem value="timeout">Time out, then allow retries</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldError id="e-attemptmode-e" error={firstError("attempt_limit_mode")} />
+                </div>
+              </div>
+              {state.attempt_limit_mode === "timeout" ? (
+                <TextField
+                  id="e-attemptcooldown"
+                  label="Attempt-limit timeout (seconds)"
+                  type="number"
+                  min={1}
+                  value={state.attempt_limit_cooldown_seconds}
+                  error={firstError("attempt_limit_cooldown_seconds")}
+                  onChange={(v) => set("attempt_limit_cooldown_seconds", v)}
+                />
+              ) : null}
+            </fieldset>
+
+            <fieldset className="flex flex-col gap-3">
               <legend className="mb-1 text-sm font-medium">Options</legend>
               <CheckboxField id="e-team" label="Team mode" checked={state.team_mode} onChange={(c) => set("team_mode", c)} />
               {state.team_mode ? (
@@ -326,18 +190,75 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                   onChange={(v) => set("team_size_limit", v)}
                 />
               ) : null}
-              <CheckboxField
-                id="e-scoreboard"
-                label="Scoreboard visible to participants"
-                checked={state.scoreboard_visible}
-                onChange={(c) => set("scoreboard_visible", c)}
-              />
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="e-scoreboardvis">Scoreboard visibility</Label>
+                <Select value={state.scoreboard_visibility} onValueChange={(v) => set("scoreboard_visibility", v)}>
+                  <SelectTrigger id="e-scoreboardvis" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public (anyone with the link)</SelectItem>
+                    <SelectItem value="participants">Participants and organizers only</SelectItem>
+                    <SelectItem value="hidden">Hidden (organizers only)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldError id="e-scoreboardvis-e" error={firstError("scoreboard_visibility")} />
+              </div>
               <CheckboxField
                 id="e-cleanup"
                 label="Auto-clean up ranges after the event"
                 checked={state.auto_cleanup}
                 onChange={(c) => set("auto_cleanup", c)}
               />
+              <TextField
+                id="e-cleanupdelay"
+                label="Cleanup delay (hours after end)"
+                type="number"
+                value={state.cleanup_delay_hours}
+                error={firstError("cleanup_delay_hours")}
+                onChange={(v) => set("cleanup_delay_hours", v)}
+              />
+              <TextField
+                id="e-reminders"
+                label="Reminder hours before start (comma-separated)"
+                value={state.reminder_hours}
+                error={firstError("reminder_hours")}
+                onChange={(v) => set("reminder_hours", v)}
+              />
+              <TextField
+                id="e-timezone"
+                label="Event timezone (for emails)"
+                value={state.event_timezone}
+                error={firstError("event_timezone")}
+                onChange={(v) => set("event_timezone", v)}
+              />
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="e-scoringmode">Scoring mode</Label>
+                <Select value={state.scoring_mode} onValueChange={(v) => set("scoring_mode", v)}>
+                  <SelectTrigger id="e-scoringmode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard (fixed challenge values)</SelectItem>
+                    <SelectItem value="dynamic">Dynamic (values decay as solves accrue)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldError id="e-scoringmode-e" error={firstError("scoring_mode")} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="e-ratingvis">Challenge ratings</Label>
+                <Select value={state.rating_visibility} onValueChange={(v) => set("rating_visibility", v)}>
+                  <SelectTrigger id="e-ratingvis" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public (participants see averages)</SelectItem>
+                    <SelectItem value="organizer">Organizer-only</SelectItem>
+                    <SelectItem value="disabled">Disabled</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldError id="e-ratingvis-e" error={firstError("rating_visibility")} />
+              </div>
             </fieldset>
           </CardContent>
           <CardFooter className="justify-end gap-2">

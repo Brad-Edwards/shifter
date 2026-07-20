@@ -235,6 +235,7 @@ class TestCTFEventForm:
             "attempt_limit_cooldown_seconds": 300,
             "rating_visibility": "public",
             "scoring_mode": "standard",
+            "scoreboard_visibility": "public",
         }
         form = CTFEventForm(data=data)
         assert form.is_valid(), form.errors
@@ -259,6 +260,7 @@ class TestCTFEventForm:
             "attempt_limit_cooldown_seconds": 300,
             "rating_visibility": "public",
             "scoring_mode": "standard",
+            "scoreboard_visibility": "public",
         }
         form = CTFEventForm(data=data)
         assert form.is_valid(), form.errors
@@ -348,6 +350,7 @@ class TestCTFEventForm:
             "attempt_limit_cooldown_seconds": 600,
             "rating_visibility": "organizer",
             "scoring_mode": "standard",
+            "scoreboard_visibility": "public",
         }
         form = CTFEventForm(data=data)
         assert form.is_valid(), form.errors

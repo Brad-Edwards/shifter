@@ -24,6 +24,7 @@ const PARTICIPANT = {
   solved_count: 3,
   attempt_count: 7,
   event_id: "e1",
+  awards: [],
 };
 
 function routeApi(handlers: (path: string) => unknown) {

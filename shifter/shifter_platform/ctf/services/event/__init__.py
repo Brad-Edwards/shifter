@@ -32,6 +32,12 @@ from __future__ import annotations
 from django.db import transaction
 
 from ctf.models import CTFEvent
+from ctf.services.event.staff import (
+    actor_has_event_capability,
+    assign_event_staff,
+    list_event_staff,
+    revoke_event_staff,
+)
 
 from ._crud import (
     _EVENT_MUTABLE_FIELDS,
@@ -56,7 +62,7 @@ from ._lifecycle import (
     start_event,
 )
 from ._queries import get_event_stats, get_organizer_events
-from ._tasks import _cancel_event_tasks, _schedule_event_tasks
+from .scheduling import _cancel_event_tasks, _schedule_event_tasks
 
 __all__ = (
     "_EVENT_MUTABLE_FIELDS",
@@ -64,7 +70,9 @@ __all__ = (
     "_cancel_event_tasks",
     "_schedule_event_tasks",
     "activate_event",
+    "actor_has_event_capability",
     "archive_event",
+    "assign_event_staff",
     "cancel_event",
     "complete_event",
     "create_event",
@@ -75,10 +83,12 @@ __all__ = (
     "get_event",
     "get_event_stats",
     "get_organizer_events",
+    "list_event_staff",
     "list_events_for_organizer",
     "open_registration",
     "pause_event",
     "resume_event",
+    "revoke_event_staff",
     "schedule_event",
     "start_event",
     "transaction",

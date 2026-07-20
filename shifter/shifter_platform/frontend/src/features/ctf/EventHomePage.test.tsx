@@ -26,6 +26,8 @@ function currentEvent(participant: Record<string, unknown> = {}) {
       scoreboard_visible: true,
       event_start: null,
       event_end: null,
+      registration_deadline: null,
+      rules: "",
     },
     participant: {
       id: "p1",
@@ -43,7 +45,24 @@ function currentEvent(participant: Record<string, unknown> = {}) {
 
 beforeEach(() => mockApi.mockReset());
 
+function withSchedule() {
+  const base = currentEvent() as { event: Record<string, unknown>; participant: Record<string, unknown> };
+  const start = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const end = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
+  base.event = { ...base.event, event_start: start, event_end: end, rules: "Play **fair**." };
+  return base;
+}
+
 describe("EventHomePage", () => {
+  it("shows the countdown, schedule, and rules", async () => {
+    mockApi.mockResolvedValue(withSchedule());
+    renderRoute(<EventHomePage />);
+    expect(await screen.findByText("Starts in")).toBeInTheDocument();
+    expect(screen.getByText(/Ends /)).toBeInTheDocument();
+    expect(screen.getByText("Rules")).toBeInTheDocument();
+    expect(screen.getByText("fair")).toBeInTheDocument();
+  });
+
   it("renders the event and participant state", async () => {
     mockApi.mockResolvedValue(currentEvent());
     renderRoute(<EventHomePage />);

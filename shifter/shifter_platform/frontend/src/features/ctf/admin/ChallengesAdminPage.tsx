@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { Plus } from "lucide-react";
@@ -13,9 +14,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 
 import { titleCase } from "../format";
+import { LabelFilterRow, distinctLabels, filterByLabels } from "../label-filters";
 import { ctfAdminChallengeCreatePath, ctfAdminChallengePath, ctfAdminEventPath, ctfAdminEventsPath } from "../routes";
 
 function ChallengesBody({ query }: Readonly<{ query: ReturnType<typeof useCtfEventChallenges> }>) {
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeTopic, setActiveTopic] = useState<string | null>(null);
+  const allChallenges = useMemo(() => query.data?.challenges ?? [], [query.data]);
+  const filtered = useMemo(
+    () => filterByLabels(allChallenges, activeTag, activeTopic),
+    [allChallenges, activeTag, activeTopic],
+  );
+
   if (query.isLoading) {
     return (
       <div className="space-y-3 p-4">
@@ -37,8 +47,8 @@ function ChallengesBody({ query }: Readonly<{ query: ReturnType<typeof useCtfEve
     );
   }
 
-  const challenges = query.data?.challenges ?? [];
-  if (challenges.length === 0) {
+  const challenges = filtered;
+  if (challenges.length === 0 && allChallenges.length === 0) {
     return (
       <div className="grid place-items-center px-6 py-16 text-center">
         <p className="text-sm font-medium">No challenges yet</p>
@@ -48,7 +58,25 @@ function ChallengesBody({ query }: Readonly<{ query: ReturnType<typeof useCtfEve
   }
 
   return (
-    <Table>
+    <div>
+      <div className="flex flex-col gap-2 border-b border-border/60 p-4">
+        <LabelFilterRow
+          axis="tags"
+          labels={distinctLabels(allChallenges, "tags")}
+          active={activeTag}
+          onToggle={(value) => setActiveTag(activeTag === value ? null : value)}
+        />
+        <LabelFilterRow
+          axis="topics"
+          labels={distinctLabels(allChallenges, "topics")}
+          active={activeTopic}
+          onToggle={(value) => setActiveTopic(activeTopic === value ? null : value)}
+        />
+        {challenges.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No challenges match this filter.</p>
+        ) : null}
+      </div>
+      <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead className="w-[70px]">Order</TableHead>
@@ -77,7 +105,8 @@ function ChallengesBody({ query }: Readonly<{ query: ReturnType<typeof useCtfEve
           </TableRow>
         ))}
       </TableBody>
-    </Table>
+      </Table>
+    </div>
   );
 }
 

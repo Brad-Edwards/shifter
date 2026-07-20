@@ -198,54 +198,82 @@ def attach_isolated_account(participant: CTFParticipant) -> CTFParticipant:
     return participant
 
 
+def _locked_rename_target(participant_id: UUID) -> CTFParticipant:
+    """Load the rename target under a row lock, or raise not-found."""
+    try:
+        return (
+            CTFParticipant.objects.select_for_update(of=("self",))
+            .select_related("event", "user", "user__profile")
+            .get(pk=participant_id, deleted_at__isnull=True)
+        )
+    except CTFParticipant.DoesNotExist:
+        raise CTFNotFoundError("Participant not found", details={"participant_id": str(participant_id)}) from None
+
+
+def _apply_username_rename(participant: CTFParticipant, normalized: str, actor: User | AnonymousUser) -> None:
+    """Write and audit a username change on an isolated CTF account."""
+    if participant.user is None or not participant.user.profile.is_ctf_account:
+        raise CTFValidationError("Participant has no isolated CTF account", code="CTF_ACCOUNT_REQUIRED")
+    old_username = participant.user.username
+    participant.user.username = normalized
+    try:
+        participant.user.save(update_fields=["username"])
+    except IntegrityError as exc:
+        raise CTFValidationError("Username is already in use", code="CTF_DUPLICATE_USERNAME") from exc
+    from shared.audit import (
+        AuditAction,
+        AuditActorType,
+        AuditEntityType,
+        AuditEvent,
+        audit_log,
+    )
+
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.USER,
+            entity_id=participant.user.pk,
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor.pk,
+            previous_state={"username": old_username},
+            new_state={"username": normalized},
+            context="CTF participant username rename",
+        ),
+        strict=True,
+    )
+
+
 def rename_participant_username(
     participant_id: UUID,
     username: str,
     *,
     actor: User | AnonymousUser,
 ) -> CTFParticipant:
-    """Rename a marked participant account after organizer ownership checks."""
+    """Rename a marked participant account (organizer or delegated moderator)."""
+    from ctf.services.event import actor_has_event_capability
+
     normalized = normalize_participant_username(username)
     with transaction.atomic():
-        try:
-            participant = (
-                CTFParticipant.objects.select_for_update(of=("self",))
-                .select_related("event", "user", "user__profile")
-                .get(pk=participant_id, deleted_at__isnull=True)
-            )
-        except CTFParticipant.DoesNotExist:
-            raise CTFNotFoundError("Participant not found", details={"participant_id": str(participant_id)}) from None
-        if participant.event.created_by_id != actor.pk:
+        participant = _locked_rename_target(participant_id)
+        if not actor_has_event_capability(actor, participant.event, "participants"):
             raise CTFValidationError("Only the event organizer may rename this account", code="CTF_PERMISSION_DENIED")
-        if participant.user is None or not participant.user.profile.is_ctf_account:
-            raise CTFValidationError("Participant has no isolated CTF account", code="CTF_ACCOUNT_REQUIRED")
-        old_username = participant.user.username
-        participant.user.username = normalized
-        try:
-            participant.user.save(update_fields=["username"])
-        except IntegrityError as exc:
-            raise CTFValidationError("Username is already in use", code="CTF_DUPLICATE_USERNAME") from exc
-        from shared.audit import (
-            AuditAction,
-            AuditActorType,
-            AuditEntityType,
-            AuditEvent,
-            audit_log,
-        )
+        _apply_username_rename(participant, normalized, actor)
+    return participant
 
-        audit_log(
-            AuditEvent(
-                entity_type=AuditEntityType.USER,
-                entity_id=participant.user.pk,
-                action=AuditAction.UPDATE,
-                actor_type=AuditActorType.USER,
-                actor_id=actor.pk,
-                previous_state={"username": old_username},
-                new_state={"username": normalized},
-                context="CTF participant username rename",
-            ),
-            strict=True,
-        )
+
+def rename_own_participant_username(
+    participant_id: UUID,
+    username: str,
+    *,
+    actor: User | AnonymousUser,
+) -> CTFParticipant:
+    """Rename the actor's own participant account (#1593), audited like the organizer path."""
+    normalized = normalize_participant_username(username)
+    with transaction.atomic():
+        participant = _locked_rename_target(participant_id)
+        if participant.user_id != actor.pk:
+            raise CTFValidationError("You may only change your own username", code="CTF_PERMISSION_DENIED")
+        _apply_username_rename(participant, normalized, actor)
     return participant
 
 
@@ -405,6 +433,8 @@ def live_participant_for_user(user: User | AnonymousUser) -> CTFParticipant | No
             event__event_start__lte=now,
             event__event_end__gt=now,
         )
-        .exclude(status=ParticipantStatus.DISQUALIFIED.value)[:2]
+        # CTF-609: disqualified participants keep login (view-only access);
+        # CTF-605: banned participants lose event access entirely.
+        .exclude(status=ParticipantStatus.BANNED.value)[:2]
     )
     return matches[0] if len(matches) == 1 else None

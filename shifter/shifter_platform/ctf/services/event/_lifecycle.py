@@ -181,6 +181,17 @@ def complete_event(event: CTFEvent) -> bool:
 
     recompute_event_leaderboard(event.pk)
 
+    # CTF-703: when a delayed CLEANUP_RANGES task pends, the post-event review
+    # window applies and that task owns the destruction; cleaning here too
+    # destroyed ranges hours early and then ran the task a second time.
+    from ctf.services.event.scheduling import has_pending_cleanup_task
+
+    if event.auto_cleanup and not has_pending_cleanup_task(event.pk):
+        from ctf.services.range import cleanup_event_ranges
+
+        result = cleanup_event_ranges(event.pk)
+        logger.info("Auto-cleanup on event end %s: %s", event.id, result)
+
     logger.info("Ended CTF event %s", event.id)
     return True
 
@@ -212,6 +223,21 @@ def cancel_event(event: CTFEvent) -> bool:
             event.status,
         )
         return False
+
+    # CTF-706: registered participants learn the event is off before their
+    # ranges disappear; best-effort so a mail outage never blocks teardown.
+    try:
+        from ctf.services.notification import send_announcement
+
+        send_announcement(
+            event.pk,
+            f"{event.name} has been cancelled",
+            f"{event.name} has been cancelled by the organizer. "
+            "All event ranges are being shut down and no further submissions are possible.",
+            created_by=event.created_by,
+        )
+    except Exception:
+        logger.exception("Failed to send cancellation notice for event %s", event.id)
 
     # Always destroy ranges on cancel — orphaned VMs waste money
     from ctf.services.range import cleanup_event_ranges

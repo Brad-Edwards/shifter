@@ -250,31 +250,26 @@ class TestForceDeleteEvent:
         # Hard delete: gone even from all_objects (which still sees soft-deletes).
         assert not CTFEvent.all_objects.filter(pk=ctf_event.pk).exists()
 
-    def test_force_delete_wrong_confirmation_name(self, mock_user):
+    @pytest.mark.django_db
+    def test_force_delete_wrong_confirmation_name(self, ctf_event, organizer_user):
         """force_delete_event should raise CTFValidationError on name mismatch."""
         from ctf.exceptions import CTFValidationError
+        from ctf.models import CTFEvent
+        from ctf.services.event import force_delete_event
 
-        event = _make_mock_event(name="Real Name")
+        with pytest.raises(CTFValidationError, match="does not match"):
+            force_delete_event(ctf_event.pk, organizer_user, "Wrong Name")
+        assert CTFEvent.all_objects.filter(pk=ctf_event.pk).exists()
 
-        with patch("ctf.services.event.CTFEvent.all_objects") as mock_all:
-            mock_all.get.return_value = event
-            from ctf.services.event import force_delete_event
-
-            with pytest.raises(CTFValidationError, match="does not match"):
-                force_delete_event(event.pk, mock_user, "Wrong Name")
-
-    def test_force_delete_event_not_found(self, mock_user):
+    @pytest.mark.django_db
+    def test_force_delete_event_not_found(self, organizer_user):
         """force_delete_event should raise CTFNotFoundError for missing events."""
         from ctf.exceptions import CTFNotFoundError
-        from ctf.models import CTFEvent
+        from ctf.services.event import force_delete_event
 
-        with patch("ctf.services.event.CTFEvent.all_objects") as mock_all:
-            mock_all.get.side_effect = CTFEvent.DoesNotExist
-            from ctf.services.event import force_delete_event
-
-            uuid4_2 = uuid4()
-            with pytest.raises(CTFNotFoundError):
-                force_delete_event(uuid4_2, mock_user, "Whatever")
+        missing_id = uuid4()
+        with pytest.raises(CTFNotFoundError):
+            force_delete_event(missing_id, organizer_user, "Whatever")
 
     @pytest.mark.django_db
     def test_force_delete_range_cleanup_partial_failure(self, ctf_event, organizer_user, participant_user):

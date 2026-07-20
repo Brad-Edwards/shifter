@@ -27,7 +27,10 @@ from ctf.api.serializers import (
     ParticipantChallengeDetailSerializer,
     ParticipantChallengeListItemSerializer,
     ParticipantCurrentEventSerializer,
+    ParticipantProfileSerializer,
     ParticipantTeamSerializer,
+    ProfileUpdateRequestSerializer,
+    UsernameChangeRequestSerializer,
 )
 from shared.api.errors import api_error_response
 from shared.api_tokens import scopes
@@ -41,6 +44,7 @@ _NO_ACTIVE_EVENT = "No active CTF event for this participant."
 _FORBIDDEN = "Forbidden"
 _CHALLENGE_NOT_FOUND = "Challenge not found."
 _PLAY_READ = (scopes.CTF_PLAY_READ,)
+_PLAY_WRITE = (scopes.CTF_PLAY_WRITE,)
 
 
 def _resolve_active_participant(request: Request) -> CTFParticipant | None:
@@ -54,12 +58,14 @@ def _resolve_active_participant(request: Request) -> CTFParticipant | None:
     if actor is None:
         return None
     from ctf.bridges import get_user_role
-    from ctf.services.participant import get_participant_by_user
+    from ctf.services.participant import get_viewing_participant_by_user
 
     role = get_user_role(actor)
     if role.active_ctf_event is None:
         return None
-    return get_participant_by_user(actor, event_id=role.active_ctf_event.id)
+    # View-predicate resolution (CTF-609): disqualified participants read the
+    # me-surface; mutation services re-assert compete eligibility themselves.
+    return get_viewing_participant_by_user(actor, event_id=role.active_ctf_event.id)
 
 
 class ParticipantCurrentEventView(APIView):
@@ -176,3 +182,85 @@ class ParticipantChallengeDetailView(APIView):
             )
         except _CtfApiError as exc:
             return exc.to_response(request)
+
+
+class ParticipantProfileView(APIView):
+    """Read (GET) or partially update (PATCH) the participant's own profile (CTF-610)."""
+
+    permission_classes = CTF_PARTICIPANT_PERMISSIONS
+    required_read_scopes = _PLAY_READ
+    required_write_scopes = _PLAY_WRITE
+
+    @extend_schema(responses=ParticipantProfileSerializer)
+    def get(self, request: Request) -> Response:
+        """Return the event-scoped profile projection."""
+        participant = _resolve_active_participant(request)
+        if participant is None:
+            return _no_active_event_response(request)
+        return Response(ParticipantProfileSerializer(projections.participant_profile(participant)).data)
+
+    @extend_schema(request=ProfileUpdateRequestSerializer, responses=ParticipantProfileSerializer)
+    def patch(self, request: Request) -> Response:
+        """Update display name and/or affiliation; omitted fields stay put."""
+        from ctf.exceptions import CTFValidationError
+        from ctf.services.participant import update_own_profile
+
+        participant = _resolve_active_participant(request)
+        actor = ctf_actor_user(request)
+        if participant is None or actor is None:
+            return _no_active_event_response(request)
+        serializer = ProfileUpdateRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = update_own_profile(
+                participant.id,
+                actor=actor,
+                name=serializer.validated_data.get("name"),
+                affiliation=serializer.validated_data.get("affiliation"),
+            )
+        except CTFValidationError as exc:
+            return api_error_response(
+                code="invalid", message=str(exc), status_code=status.HTTP_400_BAD_REQUEST, request=request
+            )
+        return Response(ParticipantProfileSerializer(projections.participant_profile(updated)).data)
+
+
+class ParticipantUsernameSelfView(APIView):
+    """Change the participant's own login username (POST, #1593)."""
+
+    permission_classes = CTF_PARTICIPANT_PERMISSIONS
+    required_write_scopes = _PLAY_WRITE
+
+    @extend_schema(request=UsernameChangeRequestSerializer, responses=ParticipantProfileSerializer)
+    def post(self, request: Request) -> Response:
+        """Validate, apply, and audit the self-rename; return the fresh profile."""
+        from ctf.exceptions import CTFValidationError
+        from ctf.services.participant import rename_own_participant_username
+
+        participant = _resolve_active_participant(request)
+        actor = ctf_actor_user(request)
+        if participant is None or actor is None:
+            return _no_active_event_response(request)
+        serializer = UsernameChangeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = rename_own_participant_username(
+                participant.id,
+                serializer.validated_data["username"],
+                actor=actor,
+            )
+        except CTFValidationError as exc:
+            return api_error_response(
+                code="invalid", message=str(exc), status_code=status.HTTP_400_BAD_REQUEST, request=request
+            )
+        return Response(ParticipantProfileSerializer(projections.participant_profile(updated)).data)
+
+
+def _no_active_event_response(request: Request) -> Response:
+    """Shared 404 envelope for me-surface views without an active participant."""
+    return api_error_response(
+        code="not_found",
+        message=_NO_ACTIVE_EVENT,
+        status_code=status.HTTP_404_NOT_FOUND,
+        request=request,
+    )
