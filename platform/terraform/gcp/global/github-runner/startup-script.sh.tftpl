@@ -24,7 +24,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y --no-install-recommends git curl jq ca-certificates tar
+apt-get install -y --no-install-recommends git curl jq ca-certificates tar unzip
 
 mkdir -p "$${RUNNER_HOME}"
 cd "$${RUNNER_HOME}"
