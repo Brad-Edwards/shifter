@@ -356,13 +356,6 @@ exclusions:
       - LICENSE
       - '**/*.md'
 
-  - type: docs
-    reason: >-
-      Towncrier release-note fragments. Collated into CHANGELOG.md at release
-      time; not executable source.
-    paths:
-      - changelog.d/**
-
   - type: metadata
     reason: >-
       Repository and agent metadata / tooling configuration (editor, agent,
@@ -378,7 +371,6 @@ exclusions:
       - .github/copilot-instructions.md
       - .github/dependabot.yml
       - .github/pull_request_template.md
-      - .gitattributes
       - .gitignore
       - .gitguardian.yaml
       - .gitleaks.toml
@@ -390,12 +382,14 @@ exclusions:
   - type: config
     reason: >-
       Repository build / release / lint tool configuration governed by its own
-      tooling (mkdocs, towncrier, sonar, make, npm lockfile). Not product or
-      infrastructure source subject to the production three-owner rule.
+      tooling (mkdocs, release-please, sonar, make, npm lockfile). Not product
+      or infrastructure source subject to the production three-owner rule.
     paths:
       - Makefile
       - mkdocs.yml
-      - towncrier.toml
+      - release-please-config.json
+      - .release-please-manifest.json
+      - version.txt
       - sonar-project.properties
       - package-lock.json
 
