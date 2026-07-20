@@ -37,10 +37,10 @@ from shared.aces.presentation import build_range_aces_projection, build_range_pa
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api.schema import ApiErrorSerializer
 from shared.audit import AuditAction
-from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
+from shared.range_visibility import filter_visible_instances
 
 
 class CurrentRangeView(MissionControlReadAPIView):
@@ -63,11 +63,9 @@ class CurrentRangeView(MissionControlReadAPIView):
                     "vpn_profile_available": False,
                 }
             )
-        # CTF participants only see Kali (attacker) instances — mirrors the
-        # ``mission_control.context_processors.active_range`` filter so this
-        # canonical DRF read matches the legacy template-rendered behavior.
-        if is_ctf_participant_only(actor):
-            active_range.instances = [inst for inst in active_range.instances if inst.os_type == "kali"]
+        # Use the same domain-owned visibility policy as the legacy context
+        # processor so both Mission Control read paths expose identical instances.
+        active_range.instances = filter_visible_instances(actor, active_range.instances)
         projection = build_range_aces_projection(active_range.request_id)
         participant_runtime = build_range_participant_runtime_projection(
             active_range.request_id, active_range.instances
