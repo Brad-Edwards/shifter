@@ -402,9 +402,34 @@ class TestRegisterRunner:
 
         lines = _registration_script(_target(), "TOKINSCRIPT")
         config_line = next(line for line in lines if "config.sh" in line)
-        # The token is delivered via stdin redirection, not as a config.sh arg.
+        # config.sh is spawned under expect; the token is sent over the PTY at
+        # the prompt, never as a config.sh (or --unattended --token) argument.
         assert "TOKINSCRIPT" not in config_line
         assert "--token" not in config_line
+        assert "--unattended" not in config_line
+
+    def test_registration_drives_config_sh_under_expect_pty(self, mock_deploy):
+        from runner import _registration_script
+
+        script = "\n".join(_registration_script(_target(), "TOKINSCRIPT"))
+        # config.sh needs a console for its masked token prompt, so it runs under
+        # expect (spawn) driven by the expect script file — not over a redirected
+        # stdin (the old `< "$TOKFILE"` form fails on modern runner releases).
+        assert "spawn" in script and "config.sh" in script
+        assert 'expect "$EXPECTFILE" "$TOKFILE"' in script
+        assert '< "$TOKFILE"' not in script
+        # The token file is read inside expect (argv is the file path only) and
+        # both temp files are removed on any exit.
+        assert "[lindex $argv 0]" in script
+        assert "trap 'rm -f" in script
+
+    def test_expect_argv_is_the_token_file_path_not_the_token(self, mock_deploy):
+        from runner import _registration_script
+
+        lines = _registration_script(_target(), "TOKINSCRIPT")
+        expect_line = next(line for line in lines if line.startswith("expect "))
+        # The expect invocation passes file paths, never the token value.
+        assert "TOKINSCRIPT" not in expect_line
 
     def test_token_only_appears_inside_the_parameters_element(self, mock_deploy):
         from runner import register_runner
@@ -567,8 +592,9 @@ class TestMintErrors:
         from runner import mint_registration_token
 
         mock_deploy.run_cmd.return_value = MagicMock(stdout="\n")
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            mint_registration_token(_cfg())
+            mint_registration_token(cfg)
 
 
 class TestApplyRunnerTerraformErrors:
@@ -578,15 +604,17 @@ class TestApplyRunnerTerraformErrors:
         from runner import apply_runner_terraform
 
         monkeypatch.delenv("TF_INFRA_STATE_BUCKET", raising=False)
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            apply_runner_terraform(_cfg(), dry_run=False, bucket_name=None)
+            apply_runner_terraform(cfg, dry_run=False, bucket_name=None)
 
     def test_missing_tf_root_exits(self, mock_deploy, tmp_path):
         from runner import apply_runner_terraform
 
         mock_deploy.get_repo_root.return_value = tmp_path  # no platform/... tree created
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            apply_runner_terraform(_cfg(), dry_run=False, bucket_name="b")
+            apply_runner_terraform(cfg, dry_run=False, bucket_name="b")
 
 
 class TestProvisionIntegration:
@@ -626,8 +654,9 @@ class TestProvisionIntegration:
         mock_deploy.get_repo_root.return_value = tmp_path
         mock_deploy.run_cmd.side_effect = _fake_run_cmd(status="Failed")
 
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_runners(_cfg(), dry_run=False, bucket_name="b")
+            provision_and_register_runners(cfg, dry_run=False, bucket_name="b")
 
     def test_fails_closed_on_offline_runner(self, mock_deploy, tmp_path):
         from runner import provision_and_register_runners
@@ -639,8 +668,9 @@ class TestProvisionIntegration:
             runner_statuses={"shifter-github-runner-1": "offline", "shifter-github-runner-2": "online"},
         )
 
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_runners(_cfg(), dry_run=False, bucket_name="b")
+            provision_and_register_runners(cfg, dry_run=False, bucket_name="b")
 
     def test_use_existing_network_sets_create_false(self, mock_deploy, tmp_path):
         from runner import provision_and_register_runners
@@ -667,5 +697,6 @@ class TestProvisionIntegration:
             return MagicMock(stdout="")
 
         mock_deploy.run_cmd.side_effect = _no_targets
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_runners(_cfg(), dry_run=False, bucket_name="b")
+            provision_and_register_runners(cfg, dry_run=False, bucket_name="b")

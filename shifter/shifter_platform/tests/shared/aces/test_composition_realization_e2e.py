@@ -1,19 +1,26 @@
 """End-to-end: an authored ACES scenario with composition realizes real bootstrap.
 
 This is the cross-boundary proof that composition realization is genuine (ADR-032,
-issue #1477). It compiles a real ACES SDL (a file, an account, and a service
-feature) through the upstream compiler, serializes the plan exactly as the
-platform persists it, then parses and realizes it with the **provisioner-side**
-modules loaded standalone (in production the provisioner ships no aces_* and reads
-the serialized plan as plain data) -- asserting the scenario's file content,
-account, and service package genuinely appear in the guest bootstrap. If the
-compiler's payload convention shifts, or the provisioner reader/realizer drifts,
-this fails.
+issues #1477 and #1560). It compiles a real ACES SDL (a directory content placement
+and password/public-key accounts) through the upstream compiler, serializes the plan exactly as the platform
+persists it, then parses and realizes it with the **provisioner-side** modules
+loaded standalone (in production the provisioner ships no aces_* and reads the
+serialized plan as plain data) -- asserting the scenario's directory content,
+accounts, and credential intent survive into the realizer. If the compiler's payload
+convention shifts, or the provisioner reader/realizer drifts, this fails.
+
+It exercises ``directory`` content and account placements through the full
+compile -> serialize -> parse -> realize pipeline. ``file`` and ``directory`` are
+both declared manifest capabilities again as of #1564 (every admitted shape --
+inline text, empty directory, and genuinely-delivered source-backed file/directory
+-- has a real, digest-verified guest effect). Inline-file bootstrap rendering is
+covered by ``test_aces_gcp_composition.py``; genuine source-backed content
+delivery (materialize -> promote -> transport -> in-guest digest readback) is
+covered by the CMS delivery-prep tests and the provisioner delivery tests.
 """
 
 from __future__ import annotations
 
-import base64
 import importlib.util
 import sys
 from dataclasses import dataclass
@@ -41,15 +48,19 @@ nodes:
     source: base-linux
 content:
   seed:
-    type: file
+    type: directory
     target: web
-    path: /srv/seed.txt
-    text: hello-aces
+    destination: /srv/data
 accounts:
   alice:
     username: alice
     node: web
     groups: [ops]
+  bob:
+    username: bob
+    node: web
+    auth_method: publickey
+    password_strength: strong
 """
 
 
@@ -96,8 +107,13 @@ def test_authored_scenario_realizes_genuine_bootstrap(provisioner):
     web = next(node for node in parsed.nodes if node.address.rsplit(".", 1)[-1] == "web")
     script = composition.node_bootstrap_script(web, parsed)
 
-    # The scenario's file and account are genuinely realized in the guest bootstrap.
-    assert base64.b64encode(b"hello-aces").decode() in script  # inline file content
-    assert "/srv/seed.txt" in script
+    # The scenario's directory content and account are genuinely realized in the guest bootstrap.
+    assert "mkdir -p /srv/data" in script  # directory content (a retained, declared term)
     assert "useradd -m alice" in script  # account
     assert "usermod -aG ops alice" in script  # group membership
+    assert "useradd -m bob" in script
+    accounts = {account.username: account for account in parsed.accounts}
+    assert accounts["alice"].auth_method == "password"  # upstream default still gets a credential
+    assert accounts["alice"].password_strength == "medium"
+    assert accounts["bob"].auth_method == "publickey"
+    assert accounts["bob"].password_strength == "strong"

@@ -31,7 +31,11 @@ from events import (
     publish_status_update,
 )
 from log_redact import safe_log_value
-from provisioner_db import get_aces_image_candidates, get_aces_range_data_by_request_id
+from provisioner_db_aces import (
+    get_aces_content_delivery_bindings_by_request_id,
+    get_aces_image_candidates,
+    get_aces_range_data_by_request_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +64,9 @@ def run_aces_range_provision(request_id: str) -> None:
     sidecar operation_status + runtime_snapshot records are emitted additively
     (``publish_aces_operation``/``publish_aces_snapshot``) for the redacted MC ACES
     read seams (#1478). ``operation_id`` is ``str(request_id)`` to match #1444's receipt.
+    The byte-free #1564 content-delivery bindings for this range are read once
+    here and threaded through to ``apply_aces_range_cell``, which gates on and
+    realizes any source-backed content delivery.
     """
     data = get_aces_range_data_by_request_id(request_id)
     range_id = data["range_id"]
@@ -72,7 +79,10 @@ def run_aces_range_provision(request_id: str) -> None:
     )
     try:
         aces_plan = parse_plan(data["plan"])
-        apply_aces_range_cell(request_id, range_id, aces_plan, _registry_resolver())
+        delivery_bindings = get_aces_content_delivery_bindings_by_request_id(request_id)
+        apply_aces_range_cell(
+            request_id, range_id, aces_plan, _registry_resolver(), delivery_bindings=delivery_bindings
+        )
     except Exception as exc:
         error_msg = str(exc)[:1000]
         logger.exception("ACES range provision failed: %s", error_msg)

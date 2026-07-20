@@ -11,8 +11,9 @@ resolved against the tenant registry (``resolve_gce_image``), sizing from
 placed on their authored network; each ``count`` yields a distinct instance.
 
 Base range firewalls (intra-subnet allow, management, egress posture) are reused
-from ``gcp_range_cell_plan._firewall_plan``; authored node ACLs are realized as
-additional firewall rules by :mod:`aces_gcp_firewall` (layered on top).
+from ``gcp_range_cell_firewall.build_firewall_plan``; authored node ACLs are
+realized as additional firewall rules by :mod:`aces_gcp_firewall` (layered on
+top).
 """
 
 from __future__ import annotations
@@ -20,22 +21,30 @@ from __future__ import annotations
 import ipaddress
 from collections.abc import Callable
 
-from aces_gcp_firewall import acl_cidr_lookup, build_acl_firewalls, node_tag
+from aces_gcp_firewall import (
+    acl_cidr_lookup,
+    build_acl_firewalls,
+    build_service_firewalls,
+    node_tag,
+    service_base_priority,
+)
 from aces_plan import AcesPlan, AcesPlanNetwork, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
-from gcp_range_cell_plan import (
+from gcp_range_cell_firewall import build_firewall_plan
+from gcp_range_cell_naming import (
+    _network_name_from_id,
+    _network_self_link,
+    _network_tag,
+    _short_resource_name,
+    _subnet_tag,
+    _subnetwork_self_link,
+)
+from gcp_range_cell_plan import _range_labels
+from gcp_range_cell_types import (
     FirewallPlan,
     InstancePlan,
     RangeCellPlan,
     SubnetPlan,
-    _firewall_plan,
-    _network_name_from_id,
-    _network_self_link,
-    _network_tag,
-    _range_labels,
-    _short_resource_name,
-    _subnet_tag,
-    _subnetwork_self_link,
 )
 
 #: Default guest login user the provisioner injects (management reachability). The
@@ -106,13 +115,54 @@ def _all_firewalls(
     aces_plan: AcesPlan,
     config: GCERangeCellConfig,
 ) -> list[FirewallPlan]:
-    """Base range firewalls (reused, neutral) plus authored node ACL firewalls."""
-    firewalls = _firewall_plan(range_id, subnet_plans, config)
+    """Base range firewalls (reused, neutral) plus authored node ACL and service firewalls.
+
+    Authored ``services`` are realized as fail-closed, range-scoped per-node-tag ingress
+    (ADR-032-R8): admitted only from the concrete CIDRs of networks in *this* compiled
+    range, at a priority strictly above the node's ACL band so authored ACL denies win.
+    """
+    firewalls = build_firewall_plan(range_id, subnet_plans, config)
     cidr_lookup = acl_cidr_lookup(aces_plan.networks)
+    # Validate the range-scoped service source set once, up front, only when needed --
+    # so a universal or portal-overlapping CIDR fails the whole plan before mutation.
+    service_source_cidrs = (
+        _service_source_cidrs(subnet_plans, config) if any(node.services for node in aces_plan.nodes) else ()
+    )
     for node in aces_plan.nodes:
+        tag = node_tag(range_id, node.address)
         if node.acls:
-            firewalls.extend(build_acl_firewalls(range_id, node, node_tag(range_id, node.address), cidr_lookup))
+            firewalls.extend(build_acl_firewalls(range_id, node, tag, cidr_lookup))
+        if node.services:
+            firewalls.extend(
+                build_service_firewalls(
+                    range_id, node, tag, service_source_cidrs, base_priority=service_base_priority(node)
+                )
+            )
     return firewalls
+
+
+def _service_source_cidrs(subnet_plans: list[SubnetPlan], config: GCERangeCellConfig) -> tuple[str, ...]:
+    """Validated, range-scoped source CIDRs for service ingress (ADR-032-R8, fail-closed).
+
+    Sources are the range's own realized subnet CIDRs only -- every subnet plan carries a
+    concrete, IPv4-validated CIDR, so no declared network is silently dropped. Universal /
+    oversized CIDRs are already rejected at subnet realization (``_usable_host_ips``); this
+    additionally rejects a CIDR overlapping a management/portal source range before any
+    cloud mutation, so an authored network CIDR can never widen a service allow onto the
+    management plane.
+    """
+    portal_networks = [ipaddress.ip_network(cidr) for cidr in config.portal_network_cidrs]
+    sources: list[str] = []
+    for subnet in subnet_plans:
+        cidr = subnet["cidr"]
+        network = ipaddress.ip_network(cidr)
+        if any(network.overlaps(portal) for portal in portal_networks):
+            raise AcesGcePlanError(
+                f"service source CIDR {cidr} overlaps a management/portal source range; "
+                "refusing to widen service ingress"
+            )
+        sources.append(cidr)
+    return tuple(dict.fromkeys(sources))
 
 
 def _network_placement(config: GCERangeCellConfig, range_id: int) -> tuple[str, str, bool]:
@@ -148,11 +198,26 @@ def _reject_unplaceable_nodes(aces_plan: AcesPlan, networks_by_address: dict[str
             raise AcesGcePlanError(f"node {node.address!r} references undeclared network {primary!r}")
 
 
+#: A range subnet holds a handful of guests; refuse to enumerate host addresses for a
+#: network larger than /16. A universal (``/0``) or otherwise oversized authored CIDR
+#: would otherwise materialize billions of addresses here (a DoS) and can never be a
+#: legitimate range subnet or service source (fail-closed, ADR-032-R8).
+_MAX_SUBNET_ADDRESSES = 1 << 16
+
+
 def _usable_host_ips(cidr: str) -> list[str]:
-    """Return assignable IPv4 host addresses in ``cidr`` (GCP reserves 2 at each end)."""
+    """Return assignable IPv4 host addresses in ``cidr`` (GCP reserves 2 at each end).
+
+    Backstop for the IPv4-only network address family (issue #1568): the RuntimeTarget
+    admission path rejects non-IPv4 networks before dispatch, and this repeats the check
+    for persisted/replayed plans. The message must not echo the authored CIDR --
+    ``aces_range_ops`` forwards ``str(exc)`` into published failure events.
+    """
     network = ipaddress.ip_network(cidr)
     if not isinstance(network, ipaddress.IPv4Network):
-        raise AcesGcePlanError(f"GCE range cells require IPv4 subnets, got {cidr}")
+        raise AcesGcePlanError("GCE range cells require IPv4 subnets; got an unsupported network address family")
+    if network.num_addresses > _MAX_SUBNET_ADDRESSES:
+        raise AcesGcePlanError(f"GCE range subnet {cidr} is larger than /16; refusing to enumerate host addresses")
     return [str(host) for host in list(network.hosts())[2:-2]]
 
 
@@ -236,6 +301,10 @@ def _instance_plans_for_node(
                 "ssh_username": _DEFAULT_SSH_USERNAME,
                 "host_ssh_username": _DEFAULT_SSH_USERNAME,
                 "ssh_port": _DEFAULT_SSH_PORT,
+                # ACES account/access realization remains owned by its native
+                # plan and must not inherit legacy scenario access channels.
+                "participant_access_channels": [],
+                "attach_service_account": False,
             }
         )
     return plans

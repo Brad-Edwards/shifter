@@ -115,7 +115,10 @@ class TestRangeHistoryView:
 
     def test_returns_the_users_ranges(self, authenticated_client):
         client, user = authenticated_client(email="history-owner@example.com")
-        first = _seed_range(user, instances=[_instance("kali")], scenario_id="basic")
+        # Only one Mission Control range is active per user at a time (#307), so a
+        # realistic history is soft-deleted terminal rows plus the current active
+        # one. history reads through ``all_objects``, so both appear.
+        first = _seed_range(user, instances=[_instance("kali")], scenario_id="basic", status="destroyed")
         second = _seed_range(user, instances=[_instance("kali")], scenario_id="ad_attack_lab", status="provisioning")
 
         response = client.get(RANGES_URL)
@@ -127,9 +130,11 @@ class TestRangeHistoryView:
             str(first.request.request_id),
             str(second.request.request_id),
         }
-        assert {row["status"] for row in rows} == {"ready", "provisioning"}
+        assert {row["status"] for row in rows} == {"destroyed", "provisioning"}
         assert all(row["range_source"] == "mission_control" for row in rows)
-        assert all(row["deleted_at"] is None for row in rows)
+        by_scenario = {row["scenario_id"]: row for row in rows}
+        assert by_scenario["basic"]["deleted_at"] is not None  # terminal history row
+        assert by_scenario["ad_attack_lab"]["deleted_at"] is None  # the active range
 
     def test_does_not_return_another_users_ranges(self, authenticated_client):
         _owner_client, owner = authenticated_client(email="history-owner2@example.com")

@@ -57,16 +57,18 @@ class TestLinux:
         account = AcesPlanAccount(username="bob", target_address="node.web", disabled=True)
         assert "usermod -L bob" in node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
 
-    def test_account_mail_writes_alias(self):
+    def test_account_mail_is_not_approximated_by_alias_files(self):
         account = AcesPlanAccount(username="carol", target_address="node.web", mail="carol@example.com")
         script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
-        assert "/etc/aliases.d/aces-carol" in script and "carol@example.com" in script
-        assert "newaliases" in script
+        assert "/etc/aliases.d" not in script
+        assert "carol@example.com" not in script
+        assert "newaliases" not in script
 
-    def test_account_spn_writes_spn_file(self):
+    def test_account_spn_is_never_approximated_by_a_linux_marker_file(self):
         account = AcesPlanAccount(username="svc", target_address="node.web", spn="HTTP/host.example.com")
         script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
-        assert "/etc/aces/spn/svc" in script and "HTTP/host.example.com" in script
+        assert "/etc/aces/spn" not in script
+        assert "HTTP/host.example.com" not in script
 
     def test_inline_file_written_with_base64_and_mode(self):
         content = _content(content_type="file", path="/srv/x.txt", text="hello world")
@@ -83,12 +85,21 @@ class TestLinux:
         content = _content(content_type="directory", destination="/srv/data")
         assert "mkdir -p /srv/data" in node_bootstrap_script(_node(), _plan(_node(), content=(content,)))
 
-    def test_source_backed_file_is_baked_parent_dir_only(self):
-        # file with a source (no inline text) -> bytes baked into image; ensure parent.
-        content = _content(content_type="file", path="/opt/app/data.bin", source_name="pkg")
-        script = node_bootstrap_script(_node(), _plan(_node(), content=(content,)))
-        assert "mkdir -p /opt/app" in script
+    def test_source_backed_content_is_excluded_from_bootstrap(self):
+        # Source-backed content (file or directory) is delivered post-boot over an
+        # authenticated guest channel with digest verification (#1564), never baked
+        # into the startup script -- not even a structural mkdir stub, since the
+        # delivery realizer creates the target itself as part of atomic install.
+        file_content = _content(content_type="file", path="/opt/app/data.bin", source_name="pkg")
+        script = node_bootstrap_script(_node(), _plan(_node(), content=(file_content,)))
+        assert script == ""
+        assert "mkdir -p /opt/app" not in script
         assert "base64 -d" not in script  # no bytes fetched/written
+
+        dir_content = _content(content_type="directory", destination="/srv/data", source_name="pkg")
+        script = node_bootstrap_script(_node(), _plan(_node(), content=(dir_content,)))
+        assert script == ""
+        assert "mkdir -p /srv/data" not in script
 
     def test_service_feature_installs_and_enables(self):
         feature = AcesPlanFeature(name="app", feature_type="service", target_address="node.web", source_name="nginx")
@@ -122,11 +133,19 @@ class TestWindows:
         assert base64.b64encode(b"hi").decode() in script
         assert "WriteAllBytes" in script
 
-    def test_account_mail_writes_marker(self):
+    def test_account_mail_is_not_approximated_by_marker_file(self):
         node = _node(os_family="windows", address="node.dc")
         account = AcesPlanAccount(username="dave", target_address="node.dc", mail="dave@corp.local")
         script = node_bootstrap_script(node, _plan(node, accounts=(account,)))
-        assert "aces\\mail" in script and "dave@corp.local" in script
+        assert "aces\\mail" not in script
+        assert "dave@corp.local" not in script
+
+    def test_account_spn_is_never_approximated_by_a_windows_marker_file(self):
+        node = _node(os_family="windows", address="node.dc")
+        account = AcesPlanAccount(username="svc", target_address="node.dc", spn="HTTP/host.example.com")
+        script = node_bootstrap_script(node, _plan(node, accounts=(account,)))
+        assert "aces\\spn" not in script
+        assert "HTTP/host.example.com" not in script
 
     def test_service_feature_uses_choco(self):
         node = _node(os_family="windows", address="node.dc")
@@ -145,17 +164,22 @@ class TestSelectionAndSafety:
         content = _content(content_type="file", path="/srv/other", text="x", target_address="node.other")
         assert node_bootstrap_script(_node(), _plan(_node(), content=(content,))) == ""
 
-    def test_unsafe_username_fails_closed(self):
-        account = AcesPlanAccount(username="a; rm -rf /", target_address="node.web")
+    @pytest.mark.parametrize("username", ["a; rm -rf /", "-root", "a" * 33])
+    def test_unsafe_username_fails_closed(self, username: str):
+        account = AcesPlanAccount(username=username, target_address="node.web")
+        node_2 = _node()
+        plan = _plan(_node(), accounts=(account,))
         with pytest.raises(AcesGceCompositionError, match="unsafe username"):
-            node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
+            node_bootstrap_script(node_2, plan)
 
     def test_unsafe_package_fails_closed(self):
         feature = AcesPlanFeature(
             name="f", feature_type="service", target_address="node.web", source_name="pkg && evil"
         )
+        node_2 = _node()
+        plan = _plan(_node(), features=(feature,))
         with pytest.raises(AcesGceCompositionError, match="unsafe package"):
-            node_bootstrap_script(_node(), _plan(_node(), features=(feature,)))
+            node_bootstrap_script(node_2, plan)
 
     def test_path_with_shell_metacharacters_is_quoted(self):
         content = _content(content_type="file", path="/srv/a b;c.txt", text="x")

@@ -9,24 +9,38 @@ into GCE guest bootstrap.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+
+_PORTABLE_ACCOUNT_USERNAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._-]{0,31}$")
+_RESERVED_ACCOUNT_USERNAMES = frozenset({"aces"})
 
 
 @dataclass(frozen=True)
 class AcesPlanContent:
     """A content placement (file/dataset/directory) targeting one node.
 
-    ``text`` is inline file content (realized as a real file). Non-inline content
-    (a ``source`` package, or dataset ``items``) is supplied by the baked image /
-    guest repo at ``path``/``destination`` (ADR-032 baked-image delivery), so the
-    realizer creates the structural target but does not fetch bytes.
+    ``text`` is inline file content (realized as a real file by the bootstrap
+    composition script). A ``source``-backed ``file``/``directory`` is delivered
+    post-boot over an authenticated guest channel with a digest-verified byte-free
+    delivery binding (#1564, ``aces_content_delivery``) -- the bootstrap script
+    never fetches its bytes. A source-less directory (or any other non-inline,
+    non-source-backed shape) still only gets its structural target created by the
+    bootstrap composition script.
     """
 
     name: str
     content_type: str
     target_address: str
+    # The compiled plan's own resource address (the key it is stored under in the
+    # serialized plan's ``resources`` mapping) -- set post-construction by the
+    # ``aces_plan`` builder, mirroring ``AcesPlanAccount.address``. Source-backed
+    # delivery (#1564) joins a content item to its byte-free delivery binding by
+    # this stable address, never by ``target_address``/``path`` (a node can carry
+    # more than one content item, and paths are author-controlled).
+    address: str = ""
     path: str | None = None
     destination: str | None = None
     text: str | None = None
@@ -42,13 +56,19 @@ class AcesPlanAccount:
 
     username: str
     target_address: str
+    address: str = ""
     groups: tuple[str, ...] = ()
     login_shell: str | None = None
     home: str | None = None
     mail: str | None = None
     spn: str | None = None
-    auth_method: str | None = None
+    auth_method: str = "password"
+    # Policy label, not a credential.
+    password_strength: str = "medium"  # noqa: S105
     disabled: bool = False
+    domain_ref: str | None = None
+    domain_id: str | None = None
+    ordering_dependencies: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -75,6 +95,16 @@ def _mapping(value: object) -> Mapping[str, Any]:
 def _opt_str(value: object) -> str | None:
     """Return a stripped non-empty string, or None."""
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _credential_policy_string(spec: Mapping[str, Any], field: str, default: str) -> str:
+    """Preserve omission/default semantics while rejecting explicit malformed values."""
+    raw = spec.get(field, "")
+    if raw == "":
+        return default
+    if not isinstance(raw, str) or raw.strip() != raw:
+        raise ValueError(f"account {field} must be a canonical string")
+    return raw
 
 
 def _str_tuple(value: object) -> tuple[str, ...]:
@@ -130,6 +160,10 @@ def build_account(payload: Mapping[str, Any]) -> AcesPlanAccount | None:
     target = _opt_str(payload.get("target_address")) or _opt_str(payload.get("node_name"))
     if username is None or target is None:
         return None
+    if not _PORTABLE_ACCOUNT_USERNAME.fullmatch(username):
+        raise ValueError("account username is not portable across supported guest operating systems")
+    if username.casefold() in _RESERVED_ACCOUNT_USERNAMES:
+        raise ValueError("account username is reserved for provisioner management")
     return AcesPlanAccount(
         username=username,
         target_address=target,
@@ -138,8 +172,11 @@ def build_account(payload: Mapping[str, Any]) -> AcesPlanAccount | None:
         home=_opt_str(spec.get("home")),
         mail=_opt_str(spec.get("mail")),
         spn=_opt_str(spec.get("spn")),
-        auth_method=_opt_str(spec.get("auth_method")),
+        auth_method=_credential_policy_string(spec, "auth_method", "password"),
+        password_strength=_credential_policy_string(spec, "password_strength", "medium"),
         disabled=spec.get("disabled") is True,
+        domain_ref=_opt_str(spec.get("domain_ref")),
+        domain_id=_opt_str(_mapping(payload.get("domain_topology")).get("domain_id")),
     )
 
 

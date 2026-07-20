@@ -12,7 +12,7 @@ output "workload_service_accounts" {
 }
 
 output "range_host_service_account_email" {
-  description = "Email of the GCE range host service account (attached to range guests)."
+  description = "Email of the GCE range host service account, attached only to hosts that need cloud APIs."
   value       = google_service_account.range_host.email
 }
 

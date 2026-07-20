@@ -31,14 +31,26 @@ from cms.assets.services import delete_agent as assets_delete_agent
 from cms.exceptions import CMSError
 from cms.models import AgentConfig, RangeInstance
 from cms.signals import range_status_changed as range_status_changed
+from engine.services import EventCapacitySignal as EngineEventCapacitySignal
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
 from engine.services import create_range as engine_create_range
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
 from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_by_uuid
+from engine.services import get_openvpn_profile as engine_get_openvpn_profile
+from engine.services import has_openvpn_profile as engine_has_openvpn_profile
 from engine.services import pause_range as engine_pause_range
+from engine.services import (
+    range_owner_reassignment_available_by_request as engine_range_owner_reassignment_available,
+)
 from engine.services import reassign_range_owner_by_request as engine_reassign_range_owner
+from engine.services import (
+    record_capacity_declaration as engine_record_capacity_declaration,
+)
 from engine.services import resume_range as engine_resume_range
-from risk_register.services import AuditEvent, audit_log
+from shared.audit import (
+    AuditEvent,
+    audit_log,
+)
 
 from ._aces_range_create import create_aces_native_range, create_range_dispatch
 
@@ -50,6 +62,7 @@ from ._agents import (
     get_allowed_extensions,
     list_agents,
 )
+from ._content_ingestion import PackRegistrationRequest, RegisteredPack, register_pack
 from ._credentials import (
     create_credential,
     delete_credential,
@@ -75,6 +88,14 @@ from ._range_destroy import (
     destroy_range,
     destroy_range_by_request_id,
 )
+from ._range_lease import (
+    RangeLeaseConflict,
+    RangeLeaseNotFound,
+    expire_due_ranges,
+    extend_mission_control_range,
+    get_mission_control_range_lease,
+    reconcile_ctf_range_leases,
+)
 from ._range_pause import pause_range, pause_range_by_request_id
 from ._range_queries import (
     get_active_range,
@@ -84,8 +105,20 @@ from ._range_queries import (
     list_mission_control_range_history,
     list_ranges,
 )
-from ._range_reassign import reassign_range_owner
+from ._range_reassign import range_owner_reassignment_available, reassign_range_owner
 from ._range_resume import resume_range, resume_range_by_request_id
+from ._range_vpn import (
+    CtfOpenVpnProfileConflict,
+    CtfOpenVpnProfileNotFound,
+    CtfOpenVpnProfileUnavailable,
+    OpenVpnProfileConflict,
+    OpenVpnProfileNotFound,
+    OpenVpnProfileUnavailable,
+    get_ctf_openvpn_profile,
+    get_mission_control_openvpn_profile,
+    has_ctf_openvpn_profile,
+    has_mission_control_openvpn_profile,
+)
 from ._scenarios import (
     get_scenario,
     list_launchable_scenarios,
@@ -108,7 +141,18 @@ __all__ = (
     "AgentUploadSpec",
     "AuditEvent",
     "CMSError",
+    "CtfOpenVpnProfileConflict",
+    "CtfOpenVpnProfileNotFound",
+    "CtfOpenVpnProfileUnavailable",
+    "EngineEventCapacitySignal",
+    "OpenVpnProfileConflict",
+    "OpenVpnProfileNotFound",
+    "OpenVpnProfileUnavailable",
+    "PackRegistrationRequest",
     "RangeInstance",
+    "RangeLeaseConflict",
+    "RangeLeaseNotFound",
+    "RegisteredPack",
     "assets_create_agent",
     "assets_delete_agent",
     "audit_log",
@@ -131,14 +175,23 @@ __all__ = (
     "engine_create_range",
     "engine_destroy_range_by_request",
     "engine_get_instance_ips_by_uuid",
+    "engine_get_openvpn_profile",
+    "engine_has_openvpn_profile",
     "engine_pause_range",
+    "engine_range_owner_reassignment_available",
     "engine_reassign_range_owner",
+    "engine_record_capacity_declaration",
     "engine_resume_range",
+    "expire_due_ranges",
+    "extend_mission_control_range",
     "find_range_instance_id_by_request",
     "get_active_range",
     "get_agent",
     "get_allowed_extensions",
     "get_credential",
+    "get_ctf_openvpn_profile",
+    "get_mission_control_openvpn_profile",
+    "get_mission_control_range_lease",
     "get_ngfw",
     "get_range",
     "get_range_by_request_id",
@@ -147,6 +200,8 @@ __all__ = (
     "get_range_target_instances",
     "get_scenario",
     "get_storage_used",
+    "has_ctf_openvpn_profile",
+    "has_mission_control_openvpn_profile",
     "has_ready_active_range",
     "initiate_upload",
     "list_agents",
@@ -158,8 +213,11 @@ __all__ = (
     "list_scenarios",
     "pause_range",
     "pause_range_by_request_id",
+    "range_owner_reassignment_available",
     "range_status_changed",
     "reassign_range_owner",
+    "reconcile_ctf_range_leases",
+    "register_pack",
     "resume_range",
     "resume_range_by_request_id",
     "validate_scenario_requirements",

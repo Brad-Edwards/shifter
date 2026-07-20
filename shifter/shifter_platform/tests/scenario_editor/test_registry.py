@@ -4,6 +4,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from cms.models import AcesPackageSource, Scenario, ScenarioMetadata
+from cms.scenarios.legacy_ids import active_legacy_scenario_ids
 from cms.scenarios.registry import (
     ScenarioWorkflow,
     _aces_launchable,
@@ -321,6 +322,22 @@ class TestLaunchability:
         _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
         assert get_catalog_entry("polaris-pending")["launchable"] is False
 
+    def test_object_source_launchable_with_bucket_configured(self, staff_user, aces_launch_adapter, monkeypatch):
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "aces-pkgs")
+        _make_aces_source(staff_user, "obj-ok", conformance_status="passed", source_kind="object")
+        assert get_catalog_entry("obj-ok")["launchable"] is True
+
+    def test_object_source_not_launchable_without_bucket(self, staff_user, aces_launch_adapter, monkeypatch):
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "")
+        _make_aces_source(staff_user, "obj-nobucket", conformance_status="passed", source_kind="object")
+        # Registrable and visible, but non-launchable until a package bucket is
+        # configured (config readiness, not a network probe).
+        assert get_catalog_entry("obj-nobucket")["launchable"] is False
+
     def test_unsupported_profile_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
         # profile is a free single-line string at persistence, but only supported
         # profiles (with a wired adapter) are launchable.
@@ -494,3 +511,51 @@ class TestCheckScenarioAccess:
     def test_nonexistent_scenario_raises(self, regular_user):
         with pytest.raises(ValueError, match="not found"):
             check_scenario_access("nonexistent", regular_user)
+
+
+class TestActiveLegacyScenarioIds:
+    """The no-shadow set reused by the uniform ingestion path (#1578)."""
+
+    def test_includes_yaml_defaults(self, db):
+        assert "basic" in active_legacy_scenario_ids()
+
+    def test_includes_active_db_customs(self, custom_scenario):
+        assert "custom-test" in active_legacy_scenario_ids()
+
+    def test_excludes_soft_deleted_customs(self, custom_scenario):
+        from django.utils import timezone
+
+        Scenario.objects.filter(pk=custom_scenario.pk).update(deleted_at=timezone.now())
+        assert "custom-test" not in active_legacy_scenario_ids()
+
+    def test_matches_projection_ids(self, custom_scenario):
+        projection_legacy = {s["id"] for s in list_all_scenarios() if s.get("source_kind") != "aces"}
+        assert active_legacy_scenario_ids() == projection_legacy
+
+
+class TestObjectSourceNotLaunchable:
+    """Object-backed packs are never launchable until #1567 supplies a resolver.
+
+    The native launch loader resolves refs only under ACES_PACKAGE_ROOT, so an
+    object-storage-backed pack has no containment-checked, immutable-identity
+    resolution yet. It is fail-closed at the launchability axis even when the
+    adapter is wired, the flag is on, and conformance has passed.
+    """
+
+    def test_object_source_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+        _make_aces_source(
+            staff_user,
+            "polaris-object",
+            source_kind="object",
+            conformance_status="passed",
+        )
+        assert get_catalog_entry("polaris-object")["launchable"] is False
+
+    def test_repo_source_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+        _make_aces_source(
+            staff_user,
+            "polaris-repo",
+            source_kind="repo",
+            conformance_status="passed",
+        )
+        assert get_catalog_entry("polaris-repo")["launchable"] is True

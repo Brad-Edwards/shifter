@@ -19,10 +19,13 @@ from django.utils import timezone
 from ctf.enums import (
     EVENT_TERMINAL_STATUSES,
     AttemptLimitMode,
+    EventStaffRole,
     EventStatus,
     RatingVisibility,
+    ScoreboardVisibility,
     ScoringMode,
 )
+from shared.field_encryption import EncryptedStringField
 
 from ._base import CTFBaseModel
 
@@ -30,6 +33,13 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+def _scoring_mode_choices() -> list[tuple[str, str]]:
+    """Built-in scoring modes plus extension-registered ones (CTF-1401)."""
+    from ctf.extensions import registered_scoring_modes
+
+    return ScoringMode.choices() + [(mode, mode.title()) for mode in sorted(registered_scoring_modes())]
 
 
 class CTFEvent(CTFBaseModel):
@@ -59,6 +69,28 @@ class CTFEvent(CTFBaseModel):
     name = models.CharField(
         max_length=200,
         help_text="Event display name",
+    )
+    logo_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Event logo shown on the participant workspace (CTF-1402)",
+    )
+    theme_color = models.CharField(
+        max_length=7,
+        blank=True,
+        default="",
+        help_text="Accent color hex (like #22d3ee) for the participant workspace (CTF-1402)",
+    )
+    capacity_hints = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Organizer-authored shared-resource demand hints declared to the engine (CTF-908)",
+    )
+    rules = models.TextField(
+        blank=True,
+        default="",
+        help_text="Rules text shown to participants before and during the event (CTF-707, markdown)",
     )
     description = models.TextField(
         blank=True,
@@ -103,6 +135,11 @@ class CTFEvent(CTFBaseModel):
         default=24,
         validators=[MinValueValidator(1), MaxValueValidator(168)],
         help_text="Hours after event end before auto-cleanup (1-168)",
+    )
+    participant_password_override = EncryptedStringField(
+        blank=True,
+        default="",
+        help_text="Optional event-wide bootstrap password for temporary participant accounts",
     )
     max_participants = models.PositiveIntegerField(
         null=True,
@@ -154,16 +191,20 @@ class CTFEvent(CTFBaseModel):
     )
     scoring_mode = models.CharField(
         max_length=20,
-        choices=ScoringMode.choices(),
+        choices=_scoring_mode_choices,
         default=ScoringMode.STANDARD.value,
         help_text=(
             "Scoring strategy for this event. 'standard' awards each challenge's "
             "fixed point value (less hint penalties), independent of solve count."
         ),
     )
-    scoreboard_visible = models.BooleanField(
-        default=True,
-        help_text="Whether the scoreboard is visible to participants. When False, participants see a hidden message.",
+    scoreboard_visibility = models.CharField(
+        max_length=20,
+        choices=ScoreboardVisibility.choices(),
+        default=ScoreboardVisibility.PUBLIC.value,
+        help_text=(
+            "Who can view the scoreboard: public (anyone), participants (registered only), or hidden (organizers only)."
+        ),
     )
     scoreboard_freeze_at = models.DateTimeField(
         null=True,
@@ -251,6 +292,15 @@ class CTFEvent(CTFBaseModel):
         return self.status == EventStatus.PAUSED.value
 
     @property
+    def scoreboard_visible(self) -> bool:
+        """Compatibility bit for pre-CTF-404 callers: True unless hidden.
+
+        Participant-facing templates and projections keep working unchanged;
+        the three-mode policy itself is enforced at the API boundary.
+        """
+        return self.scoreboard_visibility != ScoreboardVisibility.HIDDEN.value
+
+    @property
     def is_scoreboard_frozen(self) -> bool:
         """Return True if scoreboard is currently frozen for participants.
 
@@ -300,6 +350,16 @@ class CTFEvent(CTFBaseModel):
         return delta.total_seconds() / 3600
 
     @property
+    def effective_registration_deadline(self) -> datetime:
+        """Deadline shown to prospective participants (CTF-705).
+
+        Defaults to ``event_start`` when no explicit deadline is set. This is
+        the display/self-registration boundary; organizer manual additions are
+        not gated by it.
+        """
+        return self.registration_deadline or self.event_start
+
+    @property
     def participant_count(self) -> int:
         """Return count of non-deleted participants."""
         return self.participants.count()
@@ -320,3 +380,96 @@ class CTFEvent(CTFBaseModel):
         from datetime import timedelta
 
         return self.event_start - timedelta(minutes=self.range_spinup_minutes)
+
+
+class CTFEventStaff(CTFBaseModel):
+    """A delegated staff assignment on one event (CTF-607).
+
+    Grants a second organizer-tier user a bounded slice of event
+    management: moderators handle participants and announcements, judges
+    handle submissions review and awards. The owning organizer
+    (``CTFEvent.created_by``) always retains every capability; staff rows
+    never widen access to event configuration, challenges, or scoring.
+    """
+
+    event = models.ForeignKey(
+        CTFEvent,
+        on_delete=models.CASCADE,
+        related_name="staff",
+        help_text="Event this staff assignment is scoped to",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ctf_staff_roles",
+        help_text="Platform user holding the staff role",
+    )
+    role = models.CharField(
+        max_length=16,
+        choices=EventStaffRole.choices(),
+        help_text="Delegated role: moderator (participants, announcements) or judge (submissions, awards)",
+    )
+
+    class Meta:
+        """Django model metadata."""
+
+        db_table = "ctf_event_staff"
+        ordering = ["created_at"]
+        verbose_name = "CTF Event Staff"
+        verbose_name_plural = "CTF Event Staff"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "user"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_ctf_event_staff_user",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return the assignment as user@event with role."""
+        return f"{self.user_id}@{self.event_id}: {self.role}"
+
+
+class CTFEventPage(CTFBaseModel):
+    """One organizer-authored informational page for an event (CTF-1303)."""
+
+    event = models.ForeignKey(
+        CTFEvent,
+        on_delete=models.CASCADE,
+        related_name="pages",
+        help_text="Event this page belongs to",
+    )
+    title = models.CharField(
+        max_length=120,
+        help_text="Page title shown in the participant navigation",
+    )
+    slug = models.SlugField(
+        max_length=140,
+        help_text="URL-safe identifier, unique per event",
+    )
+    body = models.TextField(
+        help_text="Markdown content",
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        help_text="Display order in the participant navigation",
+    )
+
+    class Meta:
+        """Django model metadata."""
+
+        db_table = "ctf_event_page"
+        ordering = ["order", "title"]
+        verbose_name = "CTF Event Page"
+        verbose_name_plural = "CTF Event Pages"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "slug"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_ctf_event_page_slug",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return the page title with its event."""
+        return f"{self.title} ({self.event_id})"
