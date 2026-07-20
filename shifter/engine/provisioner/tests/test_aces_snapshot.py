@@ -99,8 +99,9 @@ def test_adds_only_exactly_verified_composition_resources():
     ],
 )
 def test_rejects_missing_or_extra_composition_proof(verified):
+    plan = _composition_plan()
     with pytest.raises(ValueError, match="composition verification coverage"):
-        snapshot_resources(_composition_plan(), verified)
+        snapshot_resources(plan, verified)
 
 
 def test_rejects_complete_snapshot_that_exceeds_persistence_bound():
@@ -121,6 +122,7 @@ def test_rejects_complete_snapshot_that_exceeds_persistence_bound():
         networks=base.networks,
         content=content,
     )
+    verified = {item.address for item in content}
 
     with pytest.raises(ValueError, match="size bound"):
-        snapshot_resources(plan, {item.address for item in content})
+        snapshot_resources(plan, verified)

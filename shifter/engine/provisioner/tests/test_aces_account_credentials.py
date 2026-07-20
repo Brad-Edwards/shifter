@@ -218,6 +218,7 @@ def test_missing_credential_verification_result_fails_closed():
         execution_builder=lambda *_args, **_kwargs: execution,
         orchestrator_factory=MissingVerificationOrchestrator,
     )
+    accounts = (_account(),)
 
     with pytest.raises(AcesAccountCredentialError, match="failed to realize"):
         install_instance_account_credentials(
@@ -225,7 +226,7 @@ def test_missing_credential_verification_result_fails_closed():
             instance_key="node.web#0",
             platform="linux",
             instance_output={"private_ip": execution.target},
-            accounts=(_account(),),
+            accounts=accounts,
             secret_ops=ops,
         )
 
@@ -238,6 +239,7 @@ def test_unsupported_credential_strategy_fails_closed():
         execution_builder=lambda *_args, **_kwargs: execution,
         orchestrator_factory=_Orchestrator,
     )
+    accounts = (_account(auth_method="ntlm"),)
 
     with pytest.raises(AcesAccountCredentialError) as exc_info:
         install_instance_account_credentials(
@@ -245,7 +247,7 @@ def test_unsupported_credential_strategy_fails_closed():
             instance_key="node.web#0",
             platform="linux",
             instance_output={"private_ip": execution.target},
-            accounts=(_account(auth_method="ntlm"),),
+            accounts=accounts,
             secret_ops=ops,
         )
 

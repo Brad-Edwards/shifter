@@ -73,46 +73,49 @@ def test_valid_supported_operation_records_pass(record_kind, contract_version, p
 
 
 def test_unsupported_profile_rejected():
+    record = _record(contract_profile="orchestration")
     with pytest.raises(AcesOperationRecordError, match="contract_profile"):
-        validate_aces_operation_record(_record(contract_profile="orchestration"))
+        validate_aces_operation_record(record)
 
 
 def test_mismatched_record_kind_and_contract_version_rejected():
+    record = _record(record_kind="operation_status", contract_version="runtime-snapshot-v1")
     with pytest.raises(AcesOperationRecordError, match="contract_version"):
-        validate_aces_operation_record(_record(record_kind="operation_status", contract_version="runtime-snapshot-v1"))
+        validate_aces_operation_record(record)
 
 
 def test_payload_digest_must_match_canonical_payload():
+    record = _record(payload_digest="sha256:" + "f" * 64)
     with pytest.raises(AcesOperationRecordError, match="payload_digest"):
-        validate_aces_operation_record(_record(payload_digest="sha256:" + "f" * 64))
+        validate_aces_operation_record(record)
 
 
 def test_secret_bearing_payload_key_rejected():
+    record = _record(payload={"operation_id": "op-1", "access_token": "raw-token"})
     with pytest.raises(AcesOperationRecordError, match="secret-bearing"):
-        validate_aces_operation_record(_record(payload={"operation_id": "op-1", "access_token": "raw-token"}))
+        validate_aces_operation_record(record)
 
 
 def test_token_bearing_diagnostic_reference_rejected():
+    record = _record(diagnostic_refs={"log_ref": "https://example.invalid/log?X-Amz-Signature=abc"})
     with pytest.raises(AcesOperationRecordError, match="secret-bearing"):
-        validate_aces_operation_record(
-            _record(diagnostic_refs={"log_ref": "https://example.invalid/log?X-Amz-Signature=abc"})
-        )
+        validate_aces_operation_record(record)
 
 
 def test_unknown_diagnostic_reference_key_rejected():
+    record = _record(diagnostic_refs={"terraform_output": "s3://bucket/output"})
     with pytest.raises(AcesOperationRecordError, match="not an allowed"):
-        validate_aces_operation_record(_record(diagnostic_refs={"terraform_output": "s3://bucket/output"}))
+        validate_aces_operation_record(record)
 
 
 def test_execution_plan_reference_rejects_embedded_plan_body():
+    record = _record(
+        record_kind="execution_plan_ref",
+        contract_version="execution-plan-ref-v1",
+        payload={"execution_plan_ref": "aces/plans/op-1.json", "step_refs": ["aces/plans/op-1.step-1.json"]},
+    )
     with pytest.raises(AcesOperationRecordError, match="reference-only"):
-        validate_aces_operation_record(
-            _record(
-                record_kind="execution_plan_ref",
-                contract_version="execution-plan-ref-v1",
-                payload={"execution_plan_ref": "aces/plans/op-1.json", "step_refs": ["aces/plans/op-1.step-1.json"]},
-            )
-        )
+        validate_aces_operation_record(record)
 
 
 def _snapshot(resource: dict) -> AcesOperationRecordData:
@@ -141,13 +144,15 @@ def _snapshot(resource: dict) -> AcesOperationRecordData:
 def test_runtime_snapshot_rejects_secret_bearing_nested_field(forbidden_key):
     # A snapshot must not become a store for transcripts/prompts/commands/
     # scripts/flags/provider dumps/package bodies even nested inside `resources`.
+    record = _snapshot({"kind": "vm", forbidden_key: "should-not-persist"})
     with pytest.raises(AcesOperationRecordError, match="secret-bearing"):
-        validate_aces_operation_record(_snapshot({"kind": "vm", forbidden_key: "should-not-persist"}))
+        validate_aces_operation_record(record)
 
 
 def test_runtime_snapshot_rejects_multiline_embedded_content():
+    record = _snapshot({"kind": "vm", "detail": "line-1\nline-2"})
     with pytest.raises(AcesOperationRecordError, match="single-line"):
-        validate_aces_operation_record(_snapshot({"kind": "vm", "detail": "line-1\nline-2"}))
+        validate_aces_operation_record(record)
 
 
 def test_runtime_snapshot_rejects_private_key_material():
@@ -155,21 +160,22 @@ def test_runtime_snapshot_rejects_private_key_material():
     # secret scanners (detect-private-key/gitleaks); the resolved value still
     # matches the write-boundary secret-value gate.
     pem_header = "-----BEGIN " + "RSA PRIVATE KEY-----"
+    record = _snapshot({"kind": "vm", "note": pem_header})
     with pytest.raises(AcesOperationRecordError, match="secret-bearing"):
-        validate_aces_operation_record(_snapshot({"kind": "vm", "note": pem_header}))
+        validate_aces_operation_record(record)
 
 
 def test_runtime_snapshot_rejects_oversized_payload():
+    record = _snapshot({"kind": "vm", "note": "x" * 70000})
     with pytest.raises(AcesOperationRecordError, match="exceeds"):
-        validate_aces_operation_record(_snapshot({"kind": "vm", "note": "x" * 70000}))
+        validate_aces_operation_record(record)
 
 
 def test_runtime_snapshot_rejects_unknown_top_level_payload_key():
     payload = {"operation_id": "op-1", "resources": [{"kind": "vm"}], "captured_notes": "extra"}
+    record = _record(record_kind="runtime_snapshot", contract_version="runtime-snapshot-v1", payload=payload)
     with pytest.raises(AcesOperationRecordError, match="not allowed"):
-        validate_aces_operation_record(
-            _record(record_kind="runtime_snapshot", contract_version="runtime-snapshot-v1", payload=payload)
-        )
+        validate_aces_operation_record(record)
 
 
 @pytest.mark.parametrize(
@@ -188,14 +194,14 @@ def test_runtime_snapshot_rejects_unknown_top_level_payload_key():
     ],
 )
 def test_runtime_snapshot_rejects_malformed_resource_contract(resource):
+    record = _snapshot(resource)
     with pytest.raises(AcesOperationRecordError, match="runtime_snapshot resource"):
-        validate_aces_operation_record(_snapshot(resource))
+        validate_aces_operation_record(record)
 
 
 def test_runtime_snapshot_rejects_duplicate_resource_addresses():
     resource = {"address": "content.seed", "resource_type": "content-placement", "status": "verified"}
     payload = {"operation_id": "op-1", "resources": [resource, dict(resource)]}
+    record = _record(record_kind="runtime_snapshot", contract_version="runtime-snapshot-v1", payload=payload)
     with pytest.raises(AcesOperationRecordError, match="duplicate"):
-        validate_aces_operation_record(
-            _record(record_kind="runtime_snapshot", contract_version="runtime-snapshot-v1", payload=payload)
-        )
+        validate_aces_operation_record(record)

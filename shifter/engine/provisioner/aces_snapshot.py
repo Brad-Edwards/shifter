@@ -20,6 +20,7 @@ _PAYLOAD_METADATA_RESERVE_BYTES = 1024
 
 
 def _composition_resources(plan: AcesPlan) -> list[tuple[str, str]]:
+    """Return authored composition addresses paired with evidence types."""
     return [
         *((item.address, "content-placement") for item in plan.content),
         *((account.address, "account-placement") for account in plan.accounts),

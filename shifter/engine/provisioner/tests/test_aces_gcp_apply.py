@@ -436,15 +436,11 @@ class TestCompositionIntegration:
         clients = _clients()
         secret_ops, secret_mocks = _secret_ops()
         verifier = MagicMock(side_effect=AcesGceCompositionError("in-guest verification failed"))
+        plan = _plan_with_content(content)
+        options = _apply_options(_config(), clients, secret_ops, composition_verifier=verifier)
 
         with pytest.raises(AcesGceCompositionError, match="in-guest verification failed"):
-            apply_aces_range_cell(
-                "req-1",
-                7,
-                _plan_with_content(content),
-                _resolver,
-                _apply_options(_config(), clients, secret_ops, composition_verifier=verifier),
-            )
+            apply_aces_range_cell("req-1", 7, plan, _resolver, options)
 
         assert secret_mocks.delete_ssh.call_count == 1
 

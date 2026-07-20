@@ -72,6 +72,37 @@ def _assert_no_forbidden(projections: list[AcesOperationRecordProjection]) -> No
                 raise AcesEvidenceError(f"forbidden substring in projected ACES evidence: {substring}")
 
 
+def _composition_type(resource: object, seen: set[str]) -> str | None:
+    """Validate one projected resource and return its composition type, if any."""
+    if not isinstance(resource, dict):
+        raise AcesEvidenceError("runtime snapshot resource is invalid")
+    resource_type = resource.get("resource_type")
+    if resource_type not in _COMPOSITION_TYPES:
+        return None
+    if set(resource) != {"address", "resource_type", "status"}:
+        raise AcesEvidenceError("composition evidence has forbidden detail")
+    address = resource.get("address")
+    if not isinstance(address, str) or not address or address in seen:
+        raise AcesEvidenceError("composition evidence has an invalid or duplicate address")
+    if resource.get("status") != "verified":
+        raise AcesEvidenceError("composition evidence is not verified")
+    seen.add(address)
+    return resource_type
+
+
+def _snapshot_composition_summary(snapshot: AcesOperationRecordProjection) -> tuple[int, frozenset[str]]:
+    """Validate and summarize composition evidence in one runtime snapshot."""
+    resources = snapshot.payload.get("resources") or []
+    if not isinstance(resources, list):
+        raise AcesEvidenceError("runtime snapshot resources are invalid")
+    seen: set[str] = set()
+    composition_types = {
+        resource_type for resource in resources if (resource_type := _composition_type(resource, seen)) is not None
+    }
+    composition_count = len(seen)
+    return composition_count, frozenset(composition_types)
+
+
 def _composition_summary(
     snapshots: list[AcesOperationRecordProjection],
 ) -> tuple[int, frozenset[str]]:
@@ -79,31 +110,10 @@ def _composition_summary(
     best_count = 0
     best_types: frozenset[str] = frozenset()
     for snapshot in snapshots:
-        resources = snapshot.payload.get("resources") or []
-        if not isinstance(resources, list):
-            raise AcesEvidenceError("runtime snapshot resources are invalid")
-        seen: set[str] = set()
-        composition_types: set[str] = set()
-        composition_count = 0
-        for resource in resources:
-            if not isinstance(resource, dict):
-                raise AcesEvidenceError("runtime snapshot resource is invalid")
-            resource_type = resource.get("resource_type")
-            if resource_type not in _COMPOSITION_TYPES:
-                continue
-            if set(resource) != {"address", "resource_type", "status"}:
-                raise AcesEvidenceError("composition evidence has forbidden detail")
-            address = resource.get("address")
-            if not isinstance(address, str) or not address or address in seen:
-                raise AcesEvidenceError("composition evidence has an invalid or duplicate address")
-            if resource.get("status") != "verified":
-                raise AcesEvidenceError("composition evidence is not verified")
-            seen.add(address)
-            composition_types.add(resource_type)
-            composition_count += 1
+        composition_count, composition_types = _snapshot_composition_summary(snapshot)
         if composition_count > best_count:
             best_count = composition_count
-            best_types = frozenset(composition_types)
+            best_types = composition_types
     return best_count, best_types
 
 

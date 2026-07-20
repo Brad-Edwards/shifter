@@ -186,5 +186,6 @@ class TestListOperationRecords:
         assert list_operation_records(uuid4(), AcesOperationRecord.RecordKind.RUNTIME_SNAPSHOT) == []
 
     def test_unknown_record_kind_raises(self):
+        request_id = uuid4()
         with pytest.raises(ValueError, match="record_kind must be one of"):
-            list_operation_records(uuid4(), "execution_plan_ref")
+            list_operation_records(request_id, "execution_plan_ref")

@@ -103,6 +103,33 @@ class AcesOperationRecordError(AcesRecordError):
     """Raised when an ACES operation sidecar record violates the storage contract."""
 
 
+def _validated_runtime_resource(index: int, resource: object) -> tuple[str, object, object]:
+    """Validate one resource entry's exact shape and return its typed fields."""
+    if not isinstance(resource, dict) or set(resource) != _RUNTIME_RESOURCE_KEYS:
+        raise AcesOperationRecordError(
+            "runtime_snapshot resource must contain exactly address, resource_type, and status"
+        )
+    address = resource.get("address")
+    if not isinstance(address, str):
+        raise AcesOperationRecordError("runtime_snapshot resource address must be a string")
+    _require_single_line_ref(
+        f"payload.resources[{index}].address",
+        address,
+        required=True,
+        error_cls=AcesOperationRecordError,
+    )
+    return address, resource.get("resource_type"), resource.get("status")
+
+
+def _runtime_resource_state_is_valid(resource_type: object, status: object) -> bool:
+    """Return whether a resource type carries its one allowed evidence status."""
+    if not isinstance(resource_type, str) or not isinstance(status, str):
+        return False
+    return (resource_type in _TOPOLOGY_RESOURCE_TYPES and status == "provisioned") or (
+        resource_type in _COMPOSITION_RESOURCE_TYPES and status == "verified"
+    )
+
+
 def _validate_runtime_snapshot_resources(payload: JsonObject) -> None:
     """Require the bounded topology/composition evidence entry contract."""
     resources = payload.get("resources")
@@ -110,29 +137,12 @@ def _validate_runtime_snapshot_resources(payload: JsonObject) -> None:
         raise AcesOperationRecordError("runtime_snapshot resources must be a list")
     seen: set[str] = set()
     for index, resource in enumerate(resources):
-        if not isinstance(resource, dict) or set(resource) != _RUNTIME_RESOURCE_KEYS:
-            raise AcesOperationRecordError(
-                "runtime_snapshot resource must contain exactly address, resource_type, and status"
-            )
-        address = resource.get("address")
-        resource_type = resource.get("resource_type")
-        status = resource.get("status")
-        if not isinstance(address, str):
-            raise AcesOperationRecordError("runtime_snapshot resource address must be a string")
-        _require_single_line_ref(
-            f"payload.resources[{index}].address",
-            address,
-            required=True,
-            error_cls=AcesOperationRecordError,
-        )
+        address, resource_type, status = _validated_runtime_resource(index, resource)
         if address in seen:
             raise AcesOperationRecordError("runtime_snapshot contains a duplicate resource address")
         seen.add(address)
-        if resource_type in _TOPOLOGY_RESOURCE_TYPES and status == "provisioned":
-            continue
-        if resource_type in _COMPOSITION_RESOURCE_TYPES and status == "verified":
-            continue
-        raise AcesOperationRecordError("runtime_snapshot resource has an invalid resource_type/status pair")
+        if not _runtime_resource_state_is_valid(resource_type, status):
+            raise AcesOperationRecordError("runtime_snapshot resource has an invalid resource_type/status pair")
 
 
 @dataclass(frozen=True)

@@ -136,9 +136,10 @@ def test_collect_rejects_unverified_composition_entry(monkeypatch):
     ]
     projected = SimpleNamespace(payload={"operation_id": _OP, "resources": resources})
     monkeypatch.setattr("cms.aces.validation.list_operation_records", lambda *a, **k: [projected])
+    request_id = str(uuid4())
 
     with pytest.raises(AcesEvidenceError, match="composition evidence is not verified"):
-        collect_evidence(str(uuid4()))
+        collect_evidence(request_id)
 
 
 def test_collect_rejects_duplicate_composition_address(monkeypatch):
@@ -148,9 +149,10 @@ def test_collect_rejects_duplicate_composition_address(monkeypatch):
     ]
     projected = SimpleNamespace(payload={"operation_id": _OP, "resources": resources})
     monkeypatch.setattr("cms.aces.validation.list_operation_records", lambda *a, **k: [projected])
+    request_id = str(uuid4())
 
     with pytest.raises(AcesEvidenceError, match="invalid or duplicate address"):
-        collect_evidence(str(uuid4()))
+        collect_evidence(request_id)
 
 
 def test_collect_evidence_rejects_forbidden_substring(monkeypatch):

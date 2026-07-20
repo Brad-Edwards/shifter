@@ -185,27 +185,25 @@ def test_one_failed_fanout_instance_prevents_all_evidence() -> None:
         )
         return orchestrator
 
+    plan = _plan()
+    outputs = _outputs()
+    ops = AcesCompositionVerificationOps(
+        execution_builder=lambda *_args, **_kwargs: _Execution(),
+        orchestrator_factory=orchestrator_factory,
+    )
     with pytest.raises(AcesGceCompositionError, match="in-guest verification failed"):
-        verify_bootstrap_composition(
-            _plan(),
-            _outputs(),
-            AcesCompositionVerificationOps(
-                execution_builder=lambda *_args, **_kwargs: _Execution(),
-                orchestrator_factory=orchestrator_factory,
-            ),
-        )
+        verify_bootstrap_composition(plan, outputs, ops)
 
 
 def test_missing_instance_output_fails_with_value_free_error() -> None:
+    plan = _plan()
+    outputs = _outputs(count=1)
+    ops = AcesCompositionVerificationOps(
+        execution_builder=lambda *_args, **_kwargs: _Execution(),
+        orchestrator_factory=MagicMock(),
+    )
     with pytest.raises(AcesGceCompositionError) as exc_info:
-        verify_bootstrap_composition(
-            _plan(),
-            _outputs(count=1),
-            AcesCompositionVerificationOps(
-                execution_builder=lambda *_args, **_kwargs: _Execution(),
-                orchestrator_factory=MagicMock(),
-            ),
-        )
+        verify_bootstrap_composition(plan, outputs, ops)
     assert "node.web#1" not in str(exc_info.value)
 
 
@@ -217,19 +215,16 @@ def test_missing_instance_output_fails_with_value_free_error() -> None:
     ],
 )
 def test_duplicate_or_extra_instance_output_fails_exact_fanout_coverage(outputs) -> None:
+    plan = _plan()
+    orchestrator = MagicMock(
+        orchestrate=MagicMock(return_value=SimpleNamespace(verification_result=SimpleNamespace(success=True)))
+    )
+    ops = AcesCompositionVerificationOps(
+        execution_builder=lambda *_args, **_kwargs: _Execution(),
+        orchestrator_factory=lambda _executor: orchestrator,
+    )
     with pytest.raises(AcesGceCompositionError, match="instance output coverage is invalid"):
-        verify_bootstrap_composition(
-            _plan(),
-            outputs,
-            AcesCompositionVerificationOps(
-                execution_builder=lambda *_args, **_kwargs: _Execution(),
-                orchestrator_factory=lambda _executor: MagicMock(
-                    orchestrate=MagicMock(
-                        return_value=SimpleNamespace(verification_result=SimpleNamespace(success=True))
-                    )
-                ),
-            ),
-        )
+        verify_bootstrap_composition(plan, outputs, ops)
 
 
 def test_windows_shell_or_home_is_rejected_before_mutation() -> None:

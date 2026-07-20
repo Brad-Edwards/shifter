@@ -17,10 +17,12 @@ _SAFE_USERNAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._-]{0,31}$")
 
 
 def _fail_linux() -> str:
+    """Return the fixed value-free Linux failure helper."""
     return "fail() { echo ACES_COMPOSITION_VERIFY_FAILED >&2; exit 1; }"
 
 
 def _linux_content(item: AcesPlanContent) -> list[str]:
+    """Render exact Linux probes for one bootstrap content item."""
     if item.content_type == "file" and item.text is not None and item.path:
         path = shlex.quote(item.path)
         digest = hashlib.sha256(item.text.encode()).hexdigest()
@@ -42,6 +44,7 @@ def _linux_content(item: AcesPlanContent) -> list[str]:
 
 
 def _linux_account(account: AcesPlanAccount) -> list[str]:
+    """Render Linux identity and authentication-state probes for one account."""
     if not _SAFE_USERNAME.fullmatch(account.username):
         raise ValueError("invalid ACES account identity")
     user = shlex.quote(account.username)
@@ -186,6 +189,7 @@ def _windows_stdin(content: tuple[AcesPlanContent, ...], accounts: tuple[AcesPla
 
 
 def _linux_script(content: tuple[AcesPlanContent, ...], accounts: tuple[AcesPlanAccount, ...]) -> str:
+    """Render a fail-closed Linux composition verification script."""
     lines = ["#!/bin/bash", "set -euo pipefail", _fail_linux()]
     for item in content:
         lines.extend(_linux_content(item))
@@ -196,6 +200,7 @@ def _linux_script(content: tuple[AcesPlanContent, ...], accounts: tuple[AcesPlan
 
 
 def _windows_script(content: tuple[AcesPlanContent, ...], accounts: tuple[AcesPlanAccount, ...]) -> str:
+    """Return the fixed Windows verifier; its inputs travel over stdin."""
     del content, accounts
     return _WINDOWS_SCRIPT
 
@@ -235,5 +240,7 @@ class AcesCompositionVerificationPlan:
             stdin_input=_windows_stdin(self._content, self._accounts) if self._platform == "windows" else "",
         )
 
-    def get_context(self, _instance: object) -> dict[str, Any]:
+    @staticmethod
+    def get_context(_instance: object) -> dict[str, Any]:
+        """Return the empty setup context used by the verification-only plan."""
         return {}
