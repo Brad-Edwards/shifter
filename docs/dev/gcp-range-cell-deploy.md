@@ -247,9 +247,23 @@ The Polaris range host (`shifter-polaris-vm`) is a Debian Docker host that boots
 the **prebaked** Polaris docker-compose stack (~17 containers including the
 participant `a14-kali`). Genuine dynamic realization is separate future work; for
 now the stack is baked into the image so time-to-serve is a range launch, not a
-full container build. `host-setup.sh` fetches the stack tarball from GCS at bake
-time and `docker compose build`s it in; the range bootstrap then only rewrites
-the DC IP into `docker-compose.override.yml` and `docker compose up`.
+full container build. `host-setup.sh` and the sibling stack-verification
+provisioner fetch the stack tarball from GCS at bake time, verify the declared
+digest, build/pull the images, and start the full compose stack before image
+capture. The range bootstrap then only rewrites the DC IP and per-range keys in
+`docker-compose.override.yml` and force-recreates the range-specific services
+(`dns`, `a14-kali`, and `a9-splice`).
+
+All 17 compose services must exist in the captured image. Baking only the images
+is insufficient: `restart: unless-stopped` has no container to restart on first
+range boot, and the targeted runtime bootstrap will start only the three
+services whose environment changes per range.
+
+Any service pulled from a registry must be pinned by image digest in the Compose
+stack; local tags are accepted only for services built from the checksum-bound
+stack context. The bake refuses privileged/host-namespace services, dangerous
+capabilities, sensitive host binds, or a metadata-isolation rule that cannot be
+installed and verified before service entrypoints execute.
 
 The compose stack lives outside this repo (the AWS polaris-vm AMI is baked from
 the same external stack), so the GCE bake fetches it from GCS:
