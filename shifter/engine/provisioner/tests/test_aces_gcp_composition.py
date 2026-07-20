@@ -101,19 +101,17 @@ class TestLinux:
         assert script == ""
         assert "mkdir -p /srv/data" not in script
 
-    def test_service_feature_installs_and_enables(self):
+    def test_service_feature_is_excluded_for_verified_post_boot_realization(self):
         feature = AcesPlanFeature(name="app", feature_type="service", target_address="node.web", source_name="nginx")
         script = node_bootstrap_script(_node(), _plan(_node(), features=(feature,)))
-        assert "apt-get install -y nginx" in script
-        assert "systemctl enable --now nginx" in script
+        assert script == ""
 
-    def test_artifact_feature_creates_destination(self):
+    def test_artifact_feature_is_excluded_for_verified_post_boot_delivery(self):
         feature = AcesPlanFeature(
             name="edr", feature_type="artifact", target_address="node.web", source_name="edr", destination="/opt/edr"
         )
         script = node_bootstrap_script(_node(), _plan(_node(), features=(feature,)))
-        assert "mkdir -p /opt/edr" in script
-        assert "install -y edr" not in script
+        assert script == ""
 
 
 class TestWindows:
@@ -147,12 +145,11 @@ class TestWindows:
         assert "aces\\spn" not in script
         assert "HTTP/host.example.com" not in script
 
-    def test_service_feature_uses_choco(self):
+    def test_service_feature_is_not_run_in_windows_startup_metadata(self):
         node = _node(os_family="windows", address="node.dc")
         feature = AcesPlanFeature(name="svc", feature_type="service", target_address="node.dc", source_name="mysvc")
         script = node_bootstrap_script(node, _plan(node, features=(feature,)))
-        assert "choco install -y --no-progress mysvc" in script
-        assert "Start-Service -Name mysvc" in script
+        assert script == ""
 
 
 class TestSelectionAndSafety:
@@ -172,14 +169,13 @@ class TestSelectionAndSafety:
         with pytest.raises(AcesGceCompositionError, match="unsafe username"):
             node_bootstrap_script(node_2, plan)
 
-    def test_unsafe_package_fails_closed(self):
+    def test_unsafe_package_is_not_rendered_into_startup_metadata(self):
         feature = AcesPlanFeature(
             name="f", feature_type="service", target_address="node.web", source_name="pkg && evil"
         )
         node_2 = _node()
         plan = _plan(_node(), features=(feature,))
-        with pytest.raises(AcesGceCompositionError, match="unsafe package"):
-            node_bootstrap_script(node_2, plan)
+        assert node_bootstrap_script(node_2, plan) == ""
 
     def test_path_with_shell_metacharacters_is_quoted(self):
         content = _content(content_type="file", path="/srv/a b;c.txt", text="x")

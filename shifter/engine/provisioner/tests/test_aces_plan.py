@@ -756,15 +756,44 @@ class TestCompositionExtraction:
                 "role_name": "admin",
                 "spec": {
                     "binding": {"node": "web", "role": "admin"},
-                    "template": {"type": "service", "source": {"name": "nginx"}, "destination": ""},
+                    "template": {
+                        "type": "service",
+                        "source": {"name": "nginx", "version": "1.24.0"},
+                        "destination": "",
+                        "environment": {},
+                    },
                 },
             },
         )
+        feature_resource["ordering_dependencies"] = ["provision.node.web"]
         feature = parse_plan(_serialized(feature_resource, self._target_node())).features[0]
         assert feature.name == "web-app"
         assert feature.feature_type == "service"
         assert feature.source_name == "nginx"
+        assert feature.source_version == "1.24.0"
         assert feature.target_address == "provision.node.web"
+        assert feature.address == "feature.web-app"
+        assert feature.ordering_dependencies == ("provision.node.web",)
+        assert feature.has_environment is False
+
+    def test_preserves_feature_environment_presence_for_fail_closed_realization(self):
+        feature_resource = _resource(
+            "feature.web-app",
+            "feature-binding",
+            {
+                "feature_name": "web-app",
+                "node_address": "provision.node.web",
+                "spec": {
+                    "template": {
+                        "type": "service",
+                        "source": {"name": "nginx"},
+                        "environment": {"TOKEN": "secret"},
+                    }
+                },
+            },
+        )
+        feature = parse_plan(_serialized(feature_resource, self._target_node())).features[0]
+        assert feature.has_environment is True
 
     def test_malformed_composition_fails_closed(self):
         # ADR-032-R7: a content resource missing its type is a malformed payload

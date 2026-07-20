@@ -280,7 +280,7 @@ def _realize_content_delivery(
     runtime: _AcesGceApplyRuntime,
 ) -> None:
     """Deliver every source-backed content item when the plan carries one (#1564)."""
-    if any(item.source_name for item in aces_plan.content):
+    if any(item.source_name for item in aces_plan.content) or bool(aces_plan.features):
         runtime.content_delivery_realizer(
             aces_plan=aces_plan,
             instance_outputs=instance_outputs,
