@@ -299,10 +299,13 @@ bootstrap commands below so their confirmation prompts proceed without a termina
    to tracked placeholder tfvars. AWS deploy workflows use `runs-on: self-hosted`.
 3. Ensure `/shifter/ami/{kali,ubuntu,windows,dc}` exists in SSM Parameter
    Store before portal Terraform plans/applies. The Packer workflow updates
-   these parameters after AMI builds; in a moved account, verify the Packer
-   `dev.pkrvars.hcl` VPC/subnet values first. The Kali build also requires
+   these parameters after AMI builds; in a moved account, set the builder-network
+   repository variables `PACKER_BUILD_{VPC,SUBNET}_ID_<ENV>` (and the
+   `PACKER_VERIFY_*` fresh-boot gate variables) first, since the committed
+   `dev.pkrvars.hcl` ships only placeholders. The Kali build also requires
    the target account to accept the free AWS Marketplace terms for product
-   code `7lgvy7mt78lgoi4lant0znp5h`.
+   code `7lgvy7mt78lgoi4lant0znp5h`. See the
+   [AWS AMI seeding runbook](aws-ami-seeding-runbook.md).
 4. Review `TF_VARS_DEV_PORTAL` for account-specific values such as domain
    names, alarm email, SSH allowlists, and bucket names. Review
    `TF_VARS_DEV_RANGE` for range deployment values such as the agent S3 bucket

@@ -45,7 +45,9 @@ if [[ "${IMAGE_TYPE}" == "polaris-vm" ]]; then
   # The participant Kali container binds host :22, so the baked host sshd must
   # listen on the management port (host-setup.sh drop-in). Prove the drop-in
   # took effect on a fresh boot.
-  if ! ss -tlnH "sport = :${MGMT_SSH_PORT}" | grep -q ":${MGMT_SSH_PORT}"; then
+  # Capture ss once; piping into `grep -q` can SIGPIPE-fail ss under pipefail (#1782).
+  mgmt_listen="$(ss -tlnH "sport = :${MGMT_SSH_PORT}")"
+  if ! grep -q ":${MGMT_SSH_PORT}" <<<"${mgmt_listen}"; then
     fail "host sshd is not listening on management port ${MGMT_SSH_PORT}"
   fi
   log "host sshd listening on management port ${MGMT_SSH_PORT}"
