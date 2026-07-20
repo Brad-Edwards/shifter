@@ -522,8 +522,10 @@ class CheckTfVpnGatewayIdentityPolicyTest(unittest.TestCase):
         self.assertTrue(
             any("AmazonSSMManagedInstanceCore" in reason for reason in reasons), reasons
         )
-        self.assertTrue(
-            any("ec2.amazonaws.com" in reason for reason in reasons), reasons
+        self.assertIn(
+            "VPN gateway identity policy PassRole must target the exact role "
+            "namespace and require ec2.amazonaws.com",
+            reasons,
         )
 
     def test_create_role_rejects_exact_resource_plus_broad_resource(self) -> None:
@@ -606,8 +608,10 @@ class CheckTfVpnGatewayIdentityPolicyTest(unittest.TestCase):
 
         reasons = self._canonical_mutation(exact, broadened)
 
-        self.assertTrue(
-            any("require ec2.amazonaws.com" in reason for reason in reasons), reasons
+        self.assertIn(
+            "VPN gateway identity policy PassRole must target the exact role "
+            "namespace and require ec2.amazonaws.com",
+            reasons,
         )
 
     def test_identity_policy_must_not_mutate_permissions_boundary(self) -> None:
