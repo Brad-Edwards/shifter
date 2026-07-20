@@ -233,6 +233,13 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                 onChange={(v) => set("event_timezone", v)}
               />
               <TextField
+                id="e-visibleos"
+                label="Visible instance OS types (comma-separated; empty shows all)"
+                value={state.visible_os_types}
+                error={firstError("visible_os_types")}
+                onChange={(v) => set("visible_os_types", v)}
+              />
+              <TextField
                 id="e-logo"
                 label="Logo URL (branding)"
                 value={state.logo_url}
