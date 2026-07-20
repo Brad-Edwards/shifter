@@ -1,4 +1,4 @@
-"""Moderation, staff, transfer, and webhook serializers (python:S104 split).
+"""Moderation, staff, transfer, webhook, and page serializers (python:S104 split).
 
 Split from ``organizer_ops``; import through ``ctf.api.serializers`` as
 before.
@@ -100,3 +100,28 @@ class WebhookWriteSerializer(serializers.Serializer):
     url = serializers.URLField(max_length=500)
     secret = serializers.CharField(required=False, allow_blank=True, max_length=128)
     subscribed_events = serializers.ListField(child=serializers.CharField(), required=False, max_length=10)
+
+
+class EventPageSerializer(serializers.Serializer):
+    """One organizer-authored event page (CTF-1303)."""
+
+    id = serializers.CharField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    slug = serializers.CharField(read_only=True)
+    body = serializers.CharField(read_only=True)
+    order = serializers.IntegerField(read_only=True)
+
+
+class EventPagesResponseSerializer(serializers.Serializer):
+    """Envelope for the event page listing."""
+
+    pages = EventPageSerializer(many=True, read_only=True)
+
+
+class EventPageWriteSerializer(serializers.Serializer):
+    """Create/update body for a custom page."""
+
+    title = serializers.CharField(max_length=120)
+    slug = serializers.SlugField(required=False, allow_blank=True, max_length=140)
+    body = serializers.CharField()
+    order = serializers.IntegerField(required=False, min_value=0)

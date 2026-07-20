@@ -216,6 +216,24 @@ export type CtfChallengeImportResult = components["schemas"]["ChallengeImportRes
 export type CtfWebhook = components["schemas"]["Webhook"];
 export type CtfWebhookListResponse = components["schemas"]["WebhookListResponse"];
 export type CtfWebhookWrite = components["schemas"]["WebhookWrite"];
+export type CtfEventPage = components["schemas"]["EventPage"];
+
+/** Analytics dashboard payload (CTF-1302); the endpoint is schemaless JSON. */
+export interface CtfEventAnalytics {
+  event_id: string;
+  score_distribution: Array<{ from: number; to: number; count: number }>;
+  solve_timeline: Array<{ hour: string | null; solves: number }>;
+  challenges: Array<{ name: string; points: number; solves: number; attempts: number; solve_rate: number }>;
+  engagement: {
+    registered: number;
+    active: number;
+    with_submissions: number;
+    avg_challenges_attempted: number;
+    hints_used: number;
+  };
+}
+export type CtfEventPagesResponse = components["schemas"]["EventPagesResponse"];
+export type CtfEventPageWrite = components["schemas"]["EventPageWrite"];
 export type CtfAnnouncementListResponse = components["schemas"]["ParticipantAnnouncementList"];
 export type CtfNotificationListResponse = components["schemas"]["NotificationListResponse"];
 export type CtfNotificationAnnounceRequest = components["schemas"]["NotificationAnnounceRequest"];

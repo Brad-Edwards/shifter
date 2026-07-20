@@ -51,6 +51,8 @@ class ParticipantEventSerializer(serializers.Serializer):
     event_end = serializers.DateTimeField(read_only=True, allow_null=True)
     registration_deadline = serializers.DateTimeField(read_only=True, allow_null=True)
     rules = serializers.CharField(read_only=True, allow_blank=True)
+    logo_url = serializers.CharField(read_only=True, allow_blank=True)
+    theme_color = serializers.CharField(read_only=True, allow_blank=True)
 
 
 class ParticipantCurrentEventSerializer(serializers.Serializer):
