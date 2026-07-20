@@ -286,6 +286,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
                           "elasticloadbalancing:DescribeTargetGroupAttributes",
                           "elasticloadbalancing:DescribeTargetHealth",
                           "elasticloadbalancing:DescribeListeners",
+                          "elasticloadbalancing:DescribeListenerAttributes",
                           "elasticloadbalancing:DescribeTags"
                         ]
                         Resource = "*"
@@ -440,6 +441,68 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
             "iam.tf must contain aws_iam_policy.gwlb for this check to be meaningful",
         )
         self.assertEqual(check_file(path), [])
+
+    def test_current_policy_requires_listener_attributes_readback(self) -> None:
+        source = Path(
+            "platform/terraform/modules/engine-provisioner/iam.tf"
+        ).read_text()
+        required = '          "elasticloadbalancing:DescribeListenerAttributes",\n'
+        self.assertEqual(source.count(required), 1)
+        source = source.replace(required, "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), source)
+            reasons = [violation.reason for violation in check_file(tf)]
+
+        self.assertTrue(
+            any(
+                "ELBv2 describe policy contract is missing required actions" in reason
+                and "DescribeListenerAttributes" in reason
+                for reason in reasons
+            ),
+            reasons,
+        )
+
+    def test_describe_policy_rejects_wildcard_action(self) -> None:
+        source = Path(
+            "platform/terraform/modules/engine-provisioner/iam.tf"
+        ).read_text()
+        for action in (
+            "DescribeLoadBalancers",
+            "DescribeLoadBalancerAttributes",
+            "DescribeTargetGroups",
+            "DescribeTargetGroupAttributes",
+            "DescribeTargetHealth",
+            "DescribeListeners",
+            "DescribeListenerAttributes",
+            "DescribeTags",
+        ):
+            source = source.replace(
+                f'          "elasticloadbalancing:{action}",\n', ""
+            )
+            source = source.replace(
+                f'          "elasticloadbalancing:{action}"\n', ""
+            )
+        marker = "        Action = [\n        ]"
+        self.assertIn(marker, source)
+        source = source.replace(
+            marker,
+            '        Action = [\n          "elasticloadbalancing:Describe*"\n        ]',
+            1,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), source)
+            reasons = [violation.reason for violation in check_file(tf)]
+
+        self.assertTrue(
+            any(
+                "ELBv2 describe policy contract contains unapproved actions" in reason
+                and "Describe*" in reason
+                for reason in reasons
+            ),
+            reasons,
+        )
 
     def test_vpn_create_listener_must_authorize_parent_nlb_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
