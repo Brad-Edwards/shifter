@@ -33,6 +33,10 @@ interface FormState {
   rules: string;
   reminder_hours: string;
   event_timezone: string;
+  capacity_hints: string;
+  logo_url: string;
+  theme_color: string;
+  visible_os_types: string;
   scoreboard_visibility: string;
   rating_visibility: string;
   scoring_mode: string;
@@ -57,6 +61,10 @@ const EMPTY: FormState = {
   rules: "",
   reminder_hours: "24, 1",
   event_timezone: "UTC",
+  capacity_hints: "",
+  logo_url: "",
+  theme_color: "",
+  visible_os_types: "kali",
   scoreboard_visibility: "public",
   rating_visibility: "public",
   scoring_mode: "standard",
@@ -82,6 +90,12 @@ function fromEvent(event: CtfEventDetail): FormState {
     rules: event.rules ?? "",
     reminder_hours: (event.reminder_hours ?? [24, 1]).join(", "),
     event_timezone: event.event_timezone || "UTC",
+    capacity_hints: Object.keys(event.capacity_hints ?? {}).length
+      ? JSON.stringify(event.capacity_hints, null, 2)
+      : "",
+    logo_url: event.logo_url ?? "",
+    theme_color: event.theme_color ?? "",
+    visible_os_types: (event.visible_os_types ?? ["kali"]).join(", "),
     scoreboard_visibility: event.scoreboard_visibility || "public",
     rating_visibility: event.rating_visibility || "public",
     scoring_mode: event.scoring_mode || "standard",
@@ -107,6 +121,19 @@ function parseReminderHours(text: string): number[] {
     .filter((n) => Number.isFinite(n) && n > 0 && n <= 720);
 }
 
+/** Parse the organizer's capacity-hints JSON; invalid or empty input becomes {}. */
+function parseCapacityHints(text: string): Record<string, unknown> {
+  if (!text.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function toPayload(state: FormState): CtfEventWrite {
   return {
     name: state.name,
@@ -127,6 +154,13 @@ function toPayload(state: FormState): CtfEventWrite {
     rules: state.rules,
     reminder_hours: parseReminderHours(state.reminder_hours),
     event_timezone: state.event_timezone.trim() || "UTC",
+    capacity_hints: parseCapacityHints(state.capacity_hints),
+    logo_url: state.logo_url.trim(),
+    theme_color: state.theme_color.trim(),
+    visible_os_types: state.visible_os_types
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean),
     scoreboard_visibility: state.scoreboard_visibility,
     rating_visibility: state.rating_visibility,
     scoring_mode: state.scoring_mode,

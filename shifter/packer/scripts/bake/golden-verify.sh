@@ -113,8 +113,9 @@ set -uo pipefail
 bad=\$(docker ps -a --format '{{.Names}} {{.State}} {{.Status}}' | grep -Ei 'unhealthy|exited|dead' || true)
 if [[ -n "\$bad" ]]; then echo "HEALTH_FAIL unhealthy_or_exited"; echo "\$bad"; exit 3; fi
 miss=""
+names=\$(docker ps --format '{{.Names}}')
 for c in ${required_list}; do
-  docker ps --format '{{.Names}}' | grep -qx "\$c" || miss="\$miss \$c"
+  grep -qx "\$c" <<<"\$names" || miss="\$miss \$c"
 done
 if [[ -n "\$miss" ]]; then echo "HEALTH_FAIL missing:\$miss"; exit 4; fi
 starting=\$(docker ps --format '{{.Status}}' | grep -c 'health: starting' || true)

@@ -24,6 +24,7 @@ from rest_framework.views import APIView
 from ctf.api import projections
 from ctf.api._base import CTF_PARTICIPANT_PERMISSIONS, _CtfApiError, ctf_actor_user
 from ctf.api.serializers import (
+    EventPagesResponseSerializer,
     ParticipantAnnouncementListSerializer,
     ParticipantChallengeDetailSerializer,
     ParticipantChallengeListItemSerializer,
@@ -297,3 +298,27 @@ class ParticipantAnnouncementsView(APIView):
             for a in announcements
         ]
         return Response({"announcements": data})
+
+
+class ParticipantPagesView(APIView):
+    """List the event's custom informational pages (GET, CTF-1303)."""
+
+    permission_classes = CTF_PARTICIPANT_PERMISSIONS
+    required_read_scopes = _PLAY_READ
+
+    @extend_schema(responses=EventPagesResponseSerializer)
+    def get(self, request: Request) -> Response:
+        """Return the active event's pages in display order."""
+        from ctf.models import CTFEventPage
+
+        participant = _resolve_active_participant(request)
+        if participant is None:
+            return _no_active_event_response(request)
+        pages = CTFEventPage.objects.filter(event_id=participant.event_id, deleted_at__isnull=True)
+        return Response(
+            {
+                "pages": [
+                    {"id": str(p.id), "title": p.title, "slug": p.slug, "body": p.body, "order": p.order} for p in pages
+                ]
+            }
+        )

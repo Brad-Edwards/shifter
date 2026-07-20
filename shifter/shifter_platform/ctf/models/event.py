@@ -35,6 +35,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _default_visible_os_types() -> list[str]:
+    """Participants see attacker boxes only unless the organizer widens it (#483)."""
+    return ["kali"]
+
+
+def _scoring_mode_choices() -> list[tuple[str, str]]:
+    """Built-in scoring modes plus extension-registered ones (CTF-1401)."""
+    from ctf.extensions import registered_scoring_modes
+
+    return ScoringMode.choices() + [(mode, mode.title()) for mode in sorted(registered_scoring_modes())]
+
+
 class CTFEvent(CTFBaseModel):
     """CTF competition event.
 
@@ -62,6 +74,23 @@ class CTFEvent(CTFBaseModel):
     name = models.CharField(
         max_length=200,
         help_text="Event display name",
+    )
+    visible_os_types = models.JSONField(
+        default=_default_visible_os_types,
+        blank=True,
+        help_text="Instance OS types participants may see in the terminal (#483); empty list shows all",
+    )
+    logo_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Event logo shown on the participant workspace (CTF-1402)",
+    )
+    theme_color = models.CharField(
+        max_length=7,
+        blank=True,
+        default="",
+        help_text="Accent color hex (like #22d3ee) for the participant workspace (CTF-1402)",
     )
     capacity_hints = models.JSONField(
         default=dict,
@@ -172,7 +201,7 @@ class CTFEvent(CTFBaseModel):
     )
     scoring_mode = models.CharField(
         max_length=20,
-        choices=ScoringMode.choices(),
+        choices=_scoring_mode_choices,
         default=ScoringMode.STANDARD.value,
         help_text=(
             "Scoring strategy for this event. 'standard' awards each challenge's "
@@ -409,3 +438,48 @@ class CTFEventStaff(CTFBaseModel):
     def __str__(self) -> str:
         """Return the assignment as user@event with role."""
         return f"{self.user_id}@{self.event_id}: {self.role}"
+
+
+class CTFEventPage(CTFBaseModel):
+    """One organizer-authored informational page for an event (CTF-1303)."""
+
+    event = models.ForeignKey(
+        CTFEvent,
+        on_delete=models.CASCADE,
+        related_name="pages",
+        help_text="Event this page belongs to",
+    )
+    title = models.CharField(
+        max_length=120,
+        help_text="Page title shown in the participant navigation",
+    )
+    slug = models.SlugField(
+        max_length=140,
+        help_text="URL-safe identifier, unique per event",
+    )
+    body = models.TextField(
+        help_text="Markdown content",
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        help_text="Display order in the participant navigation",
+    )
+
+    class Meta:
+        """Django model metadata."""
+
+        db_table = "ctf_event_page"
+        ordering = ["order", "title"]
+        verbose_name = "CTF Event Page"
+        verbose_name_plural = "CTF Event Pages"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "slug"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_ctf_event_page_slug",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return the page title with its event."""
+        return f"{self.title} ({self.event_id})"

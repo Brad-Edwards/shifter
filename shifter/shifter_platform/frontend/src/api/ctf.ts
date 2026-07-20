@@ -13,6 +13,7 @@ import type {
   CtfChallengeDetail,
   CtfChallengeListItem,
   CtfCurrentEvent,
+  CtfEventPagesResponse,
   CtfOrganizerScoreboard,
   CtfParticipantProfile,
   CtfProfileUpdateRequest,
@@ -39,6 +40,9 @@ export const ctfKeys = {
   team: () => ["ctf", "team"] as const,
   profile: () => ["ctf", "profile"] as const,
   announcements: () => ["ctf", "announcements"] as const,
+  pages: () => ["ctf", "pages"] as const,
+  eventPages: (eventId: string) => ["ctf", "event-pages", eventId] as const,
+  analytics: (eventId: string) => ["ctf", "analytics", eventId] as const,
   submissions: () => ["ctf", "submissions"] as const,
   rangeStatus: () => ["ctf", "range-status"] as const,
   scoreboard: (eventId: string, bracketId?: string) => ["ctf", "scoreboard", eventId, bracketId ?? null] as const,
@@ -262,6 +266,13 @@ export function useCtfAnnouncements() {
   return useQuery({
     queryKey: ctfKeys.announcements(),
     queryFn: ({ signal }) => apiFetch<CtfAnnouncementListResponse>(`${BASE}/me/announcements/`, { signal }),
+  });
+}
+
+export function useCtfPages() {
+  return useQuery({
+    queryKey: ctfKeys.pages(),
+    queryFn: ({ signal }) => apiFetch<CtfEventPagesResponse>(`${BASE}/me/pages/`, { signal }),
   });
 }
 
