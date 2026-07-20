@@ -59,7 +59,8 @@ def _run_password_strategy(
     plan = SetLocalPasswordPlan(platform=platform)
     context = plan.get_context({"rdp_username": account.username, "rdp_password": password})
     result = orchestrator.orchestrate(execution.target, plan, context, execution.document_name)
-    if not result.success:
+    verification = result.verification_result
+    if not result.success or verification is None or not verification.success:
         raise RuntimeError("password setup plan did not complete")
 
 
@@ -77,7 +78,8 @@ def _run_public_key_strategy(
     plan = SetAuthorizedKeyPlan(platform=platform)
     context = plan.get_context({"account_username": account.username, "account_public_key": public_key})
     result = orchestrator.orchestrate(execution.target, plan, context, execution.document_name)
-    if not result.success:
+    verification = result.verification_result
+    if not result.success or verification is None or not verification.success:
         raise RuntimeError("public-key setup plan did not complete")
 
 
@@ -97,16 +99,12 @@ def install_instance_account_credentials(
     try:
         execution = secret_ops.execution_builder(instance_output, provider="gcp", os_type=platform, role="aces-node")
     except Exception:
-        raise AcesAccountCredentialError(
-            f"failed to establish credential setup channel for instance {instance_key!r}"
-        ) from None
+        raise AcesAccountCredentialError("failed to establish authored-account credential setup channel") from None
     try:
         try:
             execution.wait_for_ready(timeout_seconds=300)
         except Exception:
-            raise AcesAccountCredentialError(
-                f"failed to establish credential setup channel for instance {instance_key!r}"
-            ) from None
+            raise AcesAccountCredentialError("failed to establish authored-account credential setup channel") from None
         orchestrator = secret_ops.orchestrator_factory(execution.executor)
         for account in enabled_accounts:
             try:
@@ -122,10 +120,7 @@ def install_instance_account_credentials(
                 else:
                     raise ValueError("unsupported authored-account credential strategy")
             except Exception:
-                raise AcesAccountCredentialError(
-                    f"failed to realize {account.auth_method} credential for account "
-                    f"{account.username!r} on instance {instance_key!r}"
-                ) from None
+                raise AcesAccountCredentialError("failed to realize authored-account credential") from None
     finally:
         execution.close()
 

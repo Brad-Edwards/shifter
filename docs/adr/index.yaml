@@ -1515,7 +1515,7 @@
       },
       {
         "id": "ADR-032-R6",
-        "description": "ACES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content or account term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, or echoing authored intent is not realization. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical ACES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
+        "description": "ACES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content, account, or feature term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, echoing authored intent, submitting an asynchronous bootstrap, or observing command/VM success is not realization. Every admitted guest-local composition item must have its claimed state read back on every concrete target instance before apply returns, operation success/runtime-snapshot evidence is emitted, or the range becomes READY; directory-scoped accounts and SPNs instead require one readback from the declared authoritative directory under the domain realization contract and must not be duplicated per member VM. Sanitized snapshot evidence may identify a verified item only by compiled resource address, composition resource type, and a bounded verified status; it must not carry authored values, target instances, guest output, provider detail, or secrets, and plan-derived entries may be emitted only after exact guest-check coverage succeeds. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical ACES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
         "checks": []
       },
       {
@@ -1542,12 +1542,14 @@
       "https://github.com/Brad-Edwards/shifter/issues/1563",
       "https://github.com/Brad-Edwards/shifter/issues/1564",
       "https://github.com/Brad-Edwards/shifter/issues/1565",
+      "https://github.com/Brad-Edwards/shifter/issues/1569",
       "https://github.com/Brad-Edwards/shifter/issues/1606",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-source-content-delivery-preflight-1564.md",
       "docs/architecture/aces-feature-artifact-delivery-preflight-1565.md",
+      "docs/architecture/aces-composition-realization-verification-preflight-1569.md",
       "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-domain-topology-preflight-1606.md",

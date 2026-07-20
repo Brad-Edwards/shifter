@@ -19,10 +19,10 @@ Rendered as an **idempotent** bootstrap script appended to the instance startup
 script (Linux bash / Windows PowerShell), so it re-converges on every boot. All
 plan-controlled values are shell-quoted (file bytes go through base64) and
 identifiers (usernames, package names) are validated fail-closed, so authored
-content can never inject shell. In-guest step success is verified out-of-band by
-the live-validation readback (the guest bootstrap runs asynchronously after the VM
-is created; the provisioner cannot synchronously confirm it, exactly as the
-reference backend's cloud-init runs async).
+content can never inject shell. Because startup runs asynchronously,
+``aces_composition_verification`` reads the resulting file, directory, account,
+and credential state through the authenticated guest channel before apply can
+return success.
 """
 
 from __future__ import annotations
@@ -107,17 +107,25 @@ def _node_composition(
 def _linux_account(account: AcesPlanAccount) -> list[str]:
     """Render bash lines creating one guest user (idempotent)."""
     user = _safe_identifier(account.username, kind="username")
-    lines = [f"id -u {user} >/dev/null 2>&1 || useradd -m {user}"]
+    lines = [
+        f"if ! id -u {user} >/dev/null 2>&1; then",
+        f"  if command -v useradd >/dev/null 2>&1; then useradd -m {user};",
+        f"  elif command -v adduser >/dev/null 2>&1; then adduser -D {user};",
+        "  else exit 1; fi",
+        "fi",
+    ]
     if account.login_shell:
-        lines.append(f"usermod -s {shlex.quote(account.login_shell)} {user}")
+        lines.append(f"command -v usermod >/dev/null 2>&1 && usermod -s {shlex.quote(account.login_shell)} {user}")
     if account.home:
-        lines.append(f"usermod -d {shlex.quote(account.home)} {user}")
+        lines.append(f"command -v usermod >/dev/null 2>&1 && usermod -d {shlex.quote(account.home)} -m {user}")
     for group in account.groups:
         lines.append(
-            f"getent group {shlex.quote(group)} >/dev/null 2>&1 && usermod -aG {shlex.quote(group)} {user} || true"
+            f"if getent group {shlex.quote(group)} >/dev/null 2>&1; then "
+            f"if command -v usermod >/dev/null 2>&1; then usermod -aG {shlex.quote(group)} {user}; "
+            f"else addgroup {user} {shlex.quote(group)}; fi; fi"
         )
     if account.disabled:
-        lines.append(f"usermod -L {user} || true")
+        lines.append(f"if command -v usermod >/dev/null 2>&1; then usermod -L {user}; else passwd -l {user}; fi")
     return lines
 
 
@@ -132,6 +140,7 @@ def _linux_content(content: AcesPlanContent) -> list[str]:
             f"base64 -d > {shlex.quote(content.path)} <<'ACES_B64_EOF'",
             encoded,
             "ACES_B64_EOF",
+            f"chown root:root {shlex.quote(content.path)}",
             f"chmod {mode} {shlex.quote(content.path)}",
         ]
     # A directory (source-less; source-backed directories are excluded from
@@ -192,10 +201,27 @@ def _windows_content(content: AcesPlanContent) -> list[str]:
     if content.content_type == "file" and content.text is not None and content.path:
         encoded = base64.b64encode(content.text.encode()).decode("ascii")
         quoted = _ps_quote(content.path)
-        return [
+        lines = [
             f"New-Item -ItemType Directory -Force -Path (Split-Path -Parent {quoted}) | Out-Null",
             f"[IO.File]::WriteAllBytes({quoted}, [Convert]::FromBase64String('{encoded}'))",
         ]
+        if content.sensitive:
+            lines.extend(
+                [
+                    "$SensitiveAcl = [System.Security.AccessControl.FileSecurity]::new()",
+                    "$SensitiveAcl.SetAccessRuleProtection($true, $false)",
+                    "$SystemSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18')",
+                    "$AdministratorsSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')",
+                    "$SensitiveAcl.SetOwner($SystemSid)",
+                    "foreach ($Sid in @($SystemSid, $AdministratorsSid)) {",
+                    "  $SensitiveAcl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new(",
+                    "    $Sid, [System.Security.AccessControl.FileSystemRights]::FullControl,",
+                    "    [System.Security.AccessControl.AccessControlType]::Allow))",
+                    "}",
+                    f"Set-Acl -LiteralPath {quoted} -AclObject $SensitiveAcl",
+                ]
+            )
+        return lines
     target = content.destination or content.path
     return [f"New-Item -ItemType Directory -Force -Path {_ps_quote(target)} | Out-Null"] if target else []
 
