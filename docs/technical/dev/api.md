@@ -42,6 +42,7 @@ Active Mission Control scopes:
 | --- | --- |
 | `mission_control:range:read` | Current range, agents, and scenarios reads. |
 | `mission_control:range:write` | Range launch and lifecycle mutations. |
+| `mission_control:vpn-profile:read` | Download the current owned Mission Control range's private OpenVPN profile. |
 | `mission_control:upload:write` | Agent upload initiate, complete, and cancel. |
 | `mission_control:guacamole:read` | Guacamole RDP/SSH bootstrap, status, and opener endpoints. |
 | `mission_control:ngfw:read` | NGFW listing. |
@@ -94,6 +95,15 @@ recreate group-name logic in serializers or view classes. Token scopes stay in
 `shared.api_tokens.scopes`; add explicit new scopes there when a Mission Control
 subsurface needs a different token audience instead of hard-coding strings or
 overloading `mission_control:range:*`.
+
+The current-range response includes a safe server-owned lease projection for
+the SPA: the cleanup deadline, immutable maximum deadline, fixed extension
+increment, and whether extension is currently allowed. Range extension is a
+bodyless `POST` authorized by `mission_control:range:write`; callers cannot
+choose a deadline or increment. VPN profile delivery is a separate bodyless
+`POST` authorized by the exact `mission_control:vpn-profile:read` scope. It
+returns a bounded `application/x-openvpn-profile` attachment with private,
+no-store caching and never places profile bytes in JSON or browser query state.
 
 Reuse existing request/domain contracts. Serializer fields may wrap current
 `shared.schemas` Pydantic contracts such as credential and app specs, but should

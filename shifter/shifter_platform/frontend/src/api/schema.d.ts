@@ -2076,6 +2076,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mission-control/range/extend/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Extend only the server-owned lease; caller timestamps are forbidden. */
+        post: operations["mission_control_range_extend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mission-control/range/launch/": {
         parameters: {
             query?: never;
@@ -2121,6 +2138,23 @@ export interface paths {
         put?: never;
         /** @description Run the configured range lifecycle service method. */
         post: operations["api_v1_mission_control_range_resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/range/vpn-profile/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Deliver the current Mission Control range's generation-bound OpenVPN profile. */
+        post: operations["mission_control_range_vpn_profile_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2933,6 +2967,8 @@ export interface components {
             aces_participant_runtime: {
                 [key: string]: unknown;
             } | null;
+            lifecycle: components["schemas"]["RangeLease"] | null;
+            vpn_profile_available: boolean;
         };
         /** @description Domain-controller configuration, mirroring ``schema.DCConfig``. */
         DCConfig: {
@@ -3896,6 +3932,19 @@ export interface components {
         /** @description Response body for the range-history list endpoint. */
         RangeHistoryResponse: {
             ranges: components["schemas"]["RangeHistory"][];
+        };
+        /** @description Safe, server-owned lease projection for one Mission Control range. */
+        RangeLease: {
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            maximum_expires_at: string;
+            extension_days: number;
+            can_extend: boolean;
+        };
+        /** @description Response body for one bounded Mission Control lease extension. */
+        RangeLeaseResponse: {
+            lifecycle: components["schemas"]["RangeLease"];
         };
         /** @description Validate range cancel/destroy/pause/resume requests. */
         RangeLifecycle: {
@@ -10344,6 +10393,67 @@ export interface operations {
             };
         };
     };
+    mission_control_range_extend_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeLeaseResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_mission_control_range_launch: {
         parameters: {
             query?: never;
@@ -10473,6 +10583,83 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    mission_control_range_vpn_profile_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-openvpn-profile": string;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

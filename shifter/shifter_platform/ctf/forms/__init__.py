@@ -1,15 +1,25 @@
-"""CTF forms, grouped by bounded context.
+"""CTF forms - Form classes for CTF management.
 
-Split from the single ``ctf/forms.py`` module (#683). The public import
-surface is unchanged: every form class is re-exported here.
+This module provides Django forms for:
+- Event creation and editing
+- Challenge creation and editing
+- Participant management
+- Notification creation
+
+The implementation is split by domain across private submodules
+(``_common``, ``_event``, ``_challenge``, ``_participant``, ``_misc``) and
+re-exported here so callers continue to use ``from ctf.forms import X`` /
+``from ctf import forms``.
 """
 
-from ctf.forms._shared import CANCEL_EVENT_LABEL, DATETIME_LOCAL_FORMAT, DATETIME_SECONDS_FORMAT
-from ctf.forms.bracket import CTFBracketForm
-from ctf.forms.challenge import CTFChallengeForm
-from ctf.forms.event import CTFEventForm, EventStatusForm
-from ctf.forms.notification import CTFNotificationForm
-from ctf.forms.participant import (
+from __future__ import annotations
+
+import logging
+
+from ._challenge import CTFChallengeForm
+from ._event import CTFEventForm, EventStatusForm
+from ._misc import CTFBracketForm, CTFNotificationForm
+from ._participant import (
     CTFParticipantBatchForm,
     CTFParticipantEmailForm,
     CTFParticipantForm,
@@ -17,10 +27,9 @@ from ctf.forms.participant import (
     CTFParticipantRenameForm,
 )
 
-__all__ = [
-    "CANCEL_EVENT_LABEL",
-    "DATETIME_LOCAL_FORMAT",
-    "DATETIME_SECONDS_FORMAT",
+logger = logging.getLogger(__name__)
+
+__all__ = (
     "CTFBracketForm",
     "CTFChallengeForm",
     "CTFEventForm",
@@ -31,4 +40,5 @@ __all__ = [
     "CTFParticipantImportForm",
     "CTFParticipantRenameForm",
     "EventStatusForm",
-]
+    "logger",
+)

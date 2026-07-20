@@ -12,7 +12,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiFetch } from "./client";
+import { apiDownload, apiFetch } from "./client";
 import type {
   AgentListResponse,
   CredentialCreateResponse,
@@ -23,6 +23,7 @@ import type {
   NGFWDestroyResponse,
   NGFWListResponse,
   RangeHistoryResponse,
+  RangeLeaseResponse,
   RangeStatus,
   ScenarioListResponse,
   SuccessResponse,
@@ -148,6 +149,41 @@ export function usePauseRange() {
 
 export function useResumeRange() {
   return useRangeLifecycleMutation("/mission-control/range/resume/");
+}
+
+export function useExtendRange() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<RangeLeaseResponse>("/mission-control/range/extend/", {
+        method: "POST",
+      }),
+    onSuccess: () => invalidateRange(queryClient),
+  });
+}
+
+const VPN_PROFILE_MEDIA_TYPE = "application/x-openvpn-profile";
+const VPN_PROFILE_FILENAME = "shifter-range.ovpn";
+
+export function useDownloadRangeVpnProfile() {
+  return useMutation({
+    mutationFn: async () => {
+      const blob = await apiDownload("/mission-control/range/vpn-profile/", {
+        method: "POST",
+        expectedMediaType: VPN_PROFILE_MEDIA_TYPE,
+        maxBytes: 64 * 1024,
+      });
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = VPN_PROFILE_FILENAME;
+        anchor.click();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+  });
 }
 
 /** Body for `POST /mission-control/ngfw/` (`NGFWCreateSerializer`). */

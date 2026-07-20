@@ -1,5 +1,8 @@
 // EC2 instance tools plus Auto Scaling Group / ELB target-health
 // observability for the shifter-ops MCP server.
+//
+// Each tool descriptor is built by its own module-level factory so the
+// registrar stays a thin wiring function.
 
 import { z } from "zod";
 import { registerTool } from "../policy.js";
@@ -15,10 +18,8 @@ import {
   DESC_EC2_INSTANCE_ID,
 } from "../schemas.js";
 
-export function registerEc2Tools(ctx, deps) {
-  const { getProfile, aws } = deps;
-
-  registerTool(ctx, {
+function listEc2InstancesTool({ getProfile, aws }) {
+  return {
     name: "list_ec2_instances",
     klass: "observability",
     description: "List EC2 instances, optionally filtered by Name tag pattern",
@@ -49,9 +50,11 @@ export function registerEc2Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function startEc2InstanceTool({ getProfile, aws }) {
+  return {
     name: "start_ec2_instance",
     klass: "infra_mutation",
     description: "Start a stopped EC2 instance",
@@ -74,9 +77,11 @@ export function registerEc2Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function stopEc2InstanceTool({ getProfile, aws }) {
+  return {
     name: "stop_ec2_instance",
     klass: "infra_mutation",
     description: "Stop a running EC2 instance",
@@ -99,9 +104,11 @@ export function registerEc2Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function terminateEc2InstanceTool({ getProfile, aws }) {
+  return {
     name: "terminate_ec2_instance",
     klass: "infra_mutation",
     description: "Terminate an EC2 instance (irreversible)",
@@ -125,9 +132,11 @@ export function registerEc2Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function describeAsgTool({ getProfile, aws }) {
+  return {
     name: "describe_asg",
     klass: "observability",
     description: "Show Auto Scaling Group status and instance refreshes",
@@ -165,9 +174,11 @@ export function registerEc2Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function describeTargetHealthTool({ getProfile, aws }) {
+  return {
     name: "describe_target_health",
     klass: "observability",
     description: "Show health status of targets in a target group",
@@ -195,5 +206,14 @@ export function registerEc2Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
+
+export function registerEc2Tools(ctx, deps) {
+  registerTool(ctx, listEc2InstancesTool(deps));
+  registerTool(ctx, startEc2InstanceTool(deps));
+  registerTool(ctx, stopEc2InstanceTool(deps));
+  registerTool(ctx, terminateEc2InstanceTool(deps));
+  registerTool(ctx, describeAsgTool(deps));
+  registerTool(ctx, describeTargetHealthTool(deps));
 }

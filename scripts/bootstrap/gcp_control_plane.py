@@ -136,10 +136,11 @@ def render_gcp_platform_runtime_env(
     config: GDCBootstrapConfig,
     *,
     bootstrap_operator_email: str | None = None,
+    bootstrap_env_values: dict[str, str] | None = None,
 ) -> str:
     """Render the static, project-aware runtime env contract for the GKE control plane."""
     gdc_vm_image_secret = f"projects/{config.project_id}/secrets/{config.gdc_vm_image_gcs_secret_id}"
-    bootstrap_values = load_bootstrap_env_values()
+    bootstrap_values = load_bootstrap_env_values() if bootstrap_env_values is None else bootstrap_env_values
     bootstrap_staff_emails = _merge_csv_env_values(
         [bootstrap_values.get("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "")],
         [bootstrap_operator_email or ""],

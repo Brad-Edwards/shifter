@@ -62,6 +62,39 @@ class TestGetAcesRangeData:
         raise AssertionError("expected ValueError for missing range request")
 
 
+class TestGetAcesContentDeliveryBindings:
+    def test_maps_rows_to_binding_dicts(self, monkeypatch):
+        from provisioner_db_aces import get_aces_content_delivery_bindings_by_request_id
+
+        rows = [
+            ("provision.node.attacker#file", "a" * 64, f"aces-content/aa/{'a' * 64}", 1024, 1),
+            ("provision.node.victim#file", "b" * 64, f"aces-content/bb/{'b' * 64}", 2048, 1),
+        ]
+        conn, cursor = _mock_conn(fetchall=rows)
+        monkeypatch.setattr("provisioner_db_aces.get_db_connection", MagicMock(return_value=conn))
+
+        bindings = get_aces_content_delivery_bindings_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        assert bindings[0] == {
+            "content_address": "provision.node.attacker#file",
+            "sha256": "a" * 64,
+            "storage_key": f"aces-content/aa/{'a' * 64}",
+            "byte_count": 1024,
+            "binding_version": 1,
+        }
+        assert bindings[1]["content_address"] == "provision.node.victim#file"
+        sql = cursor.execute.call_args[0][0]
+        assert "engine_aces_content_delivery_binding" in sql
+        assert cursor.execute.call_args[0][1] == ("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",)
+
+    def test_returns_empty_list_when_no_bindings(self, monkeypatch):
+        from provisioner_db_aces import get_aces_content_delivery_bindings_by_request_id
+
+        conn, _cur = _mock_conn(fetchall=[])
+        monkeypatch.setattr("provisioner_db_aces.get_db_connection", MagicMock(return_value=conn))
+
+        assert get_aces_content_delivery_bindings_by_request_id("missing") == []
+
+
 class TestGetAcesImageCandidates:
     def test_maps_rows_to_candidate_dicts(self, monkeypatch):
         from provisioner_db_aces import get_aces_image_candidates

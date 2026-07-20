@@ -461,6 +461,20 @@ Examples:
     return parser
 
 
+def _build_gdc_bootstrap_config(args: argparse.Namespace) -> GDCBootstrapConfig:
+    """Build the GDCBootstrapConfig for the `gdc-bootstrap` subcommand from parsed args."""
+    return GDCBootstrapConfig(
+        project_id=args.project_id,
+        cluster_id=args.cluster_id,
+        region=args.region,
+        zone=args.zone,
+        google_account_email=args.google_account_email,
+        shifter_config_path=args.shifter_config,
+        range_backend=args.range_backend,
+        terraform_identity=args.terraform_identity,
+    )
+
+
 def _dispatch_runners(args: argparse.Namespace) -> None:
     """Dispatch the `runners` subcommand to the AWS or GCP provisioning path."""
     if args.cloud == Cloud.GCP.value:
@@ -548,15 +562,6 @@ def main() -> None:
 
     elif args.command == "gdc-bootstrap":
         gdc_bootstrap_cluster(
-            GDCBootstrapConfig(
-                project_id=args.project_id,
-                cluster_id=args.cluster_id,
-                region=args.region,
-                zone=args.zone,
-                google_account_email=args.google_account_email,
-                shifter_config_path=args.shifter_config,
-                range_backend=args.range_backend,
-                terraform_identity=args.terraform_identity,
-            ),
+            _build_gdc_bootstrap_config(args),
             dry_run=args.dry_run,
         )

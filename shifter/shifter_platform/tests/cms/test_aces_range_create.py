@@ -196,9 +196,10 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
     monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
     captured = {}
 
-    def fake_create_aces_range(*, request_id, user_id, compiled_plan, backend_admission=None):
+    def fake_create_aces_range(*, request_id, user_id, compiled_plan, backend_admission=None, delivery_bindings=()):
         captured["kind"] = compiled_plan.get("kind")
         captured["request_id"] = request_id
+        captured["delivery_bindings"] = delivery_bindings
         return AcesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
 
     monkeypatch.setattr("cms.aces.dispatch.create_aces_range", fake_create_aces_range)
@@ -298,7 +299,7 @@ class TestObjectPackageLaunch:
         _patch_object_stage(monkeypatch, root)
         captured = {}
 
-        def fake_create_aces_range(*, request_id, user_id, compiled_plan, backend_admission=None):
+        def fake_create_aces_range(*, request_id, user_id, compiled_plan, backend_admission=None, delivery_bindings=()):
             captured["kind"] = compiled_plan.get("kind")
             return AcesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
 

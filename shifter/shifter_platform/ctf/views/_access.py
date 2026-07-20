@@ -34,13 +34,9 @@ def _check_credential_delivery_rate_limit(user_id: int, limit: int = 50, window:
     Note: with the default LocMemCache, limits are per-process. For cross-worker
     enforcement, configure a shared CACHES backend (e.g. Redis, Memcached).
     """
-    from django.core.cache import caches
+    from shared.credential_delivery import credential_delivery_allowed
 
-    from shared.rate_limit import consume_fixed_window
-
-    cache = caches["launch_rate_limit"]
-    count = consume_fixed_window(cache, f"ctf-credential-delivery:{user_id}", window)
-    return count <= limit
+    return credential_delivery_allowed(user_id, limit=limit, window=window)
 
 
 def _get_user(request: HttpRequest) -> User:
