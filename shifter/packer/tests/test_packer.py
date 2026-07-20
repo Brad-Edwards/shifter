@@ -297,6 +297,21 @@ class TestCleanup:
         assert "ssh_host_" in cleanup_content
 
 
+class TestUbuntuVpnGatewayRuntime:
+    """The no-egress per-range gateway consumes the baked Ubuntu runtime."""
+
+    @pytest.fixture
+    def base_content(self):
+        return (SCRIPTS_DIR / "ubuntu" / "base.sh").read_text()
+
+    def test_gateway_dependencies_are_baked_together(self, base_content):
+        assert "apt-get install -y openvpn python3-boto3" in base_content
+
+    def test_ubuntu_template_runs_the_dependency_bake(self):
+        template = (PACKER_DIR / "ubuntu.pkr.hcl").read_text()
+        assert '"scripts/ubuntu/base.sh"' in template
+
+
 class TestUbuntuServices:
     """Test that Ubuntu services script includes required services."""
 
