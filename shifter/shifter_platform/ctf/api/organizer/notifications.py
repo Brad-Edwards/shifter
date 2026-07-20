@@ -23,7 +23,9 @@ from ctf.api.organizer._base import (
     _NOTIFICATION_NOT_FOUND,
     _actor,
     _actor_may_manage,
+    _pagination_window,
     _raise_bad_request,
+    _raise_conflict,
     _raise_forbidden,
     _raise_not_found,
     _raise_throttled,
@@ -42,7 +44,10 @@ from ctf.api.serializers import (
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
+    from datetime import datetime
     from uuid import UUID
+
+    from django.contrib.auth.models import User
 
     from ctf.models import CTFEmailTemplate, CTFEvent, CTFNotification
 
@@ -144,6 +149,10 @@ class NotificationListView(APIView):
             event = _resolve_owned_event(request, event_id, capability="notifications")
         except _CtfApiError as exc:
             return exc.to_response(request)
+        queryset = CTFNotification.objects.filter(event=event).order_by("-created_at")
+        total = queryset.count()
+        offset, limit = _pagination_window(request)
+        notifications = queryset[offset : offset + limit] if limit is not None else queryset
         data = [
             {
                 "id": str(n.id),
@@ -153,10 +162,11 @@ class NotificationListView(APIView):
                 "sent_count": n.sent_count,
                 "created_at": n.created_at.isoformat(),
                 "sent_at": n.sent_at.isoformat() if n.sent_at else None,
+                "scheduled_at": n.scheduled_at.isoformat() if n.scheduled_at else None,
             }
-            for n in CTFNotification.objects.filter(event=event).order_by("-created_at")
+            for n in notifications
         ]
-        return Response({"notifications": data})
+        return Response({"notifications": data, "total": total})
 
     @extend_schema(request=NotificationAnnounceRequestSerializer, responses={201: NotificationAnnounceResultSerializer})
     def post(self, request: Request, event_id: UUID) -> Response:
@@ -171,12 +181,16 @@ class NotificationListView(APIView):
             body = serializer.validated_data["body"].strip()
             if not subject or not body:
                 _raise_bad_request(_INVALID_NOTIFICATION)
-            notif = notification.send_announcement(
-                event_id=event.id,
-                subject=subject,
-                body=body,
-                created_by=_actor(request),
-            )
+            scheduled_at = serializer.validated_data.get("scheduled_at")
+            if scheduled_at is not None:
+                notif = self._schedule(event, subject, body, _actor(request), scheduled_at)
+            else:
+                notif = notification.send_announcement(
+                    event_id=event.id,
+                    subject=subject,
+                    body=body,
+                    created_by=_actor(request),
+                )
             return Response(
                 {
                     "id": str(notif.id),
@@ -186,6 +200,62 @@ class NotificationListView(APIView):
                 },
                 status=status.HTTP_201_CREATED,
             )
+        except _CtfApiError as exc:
+            return exc.to_response(request)
+
+    @staticmethod
+    def _schedule(
+        event: CTFEvent,
+        subject: str,
+        body: str,
+        actor: User,
+        scheduled_at: datetime,
+    ) -> CTFNotification:
+        """Create a draft announcement and schedule it for future delivery (CTF-804)."""
+        from django.utils import timezone as dj_timezone
+
+        from ctf.enums import NotificationStatus, NotificationType
+        from ctf.models import CTFNotification
+        from ctf.services.notification import schedule_notification
+
+        if scheduled_at <= dj_timezone.now():
+            _raise_bad_request("Scheduled time must be in the future")
+        notif = CTFNotification.objects.create(
+            event=event,
+            notification_type=NotificationType.ANNOUNCEMENT.value,
+            subject=subject,
+            body=body,
+            status=NotificationStatus.DRAFT.value,
+            recipient_filter="participants",
+            created_by=actor,
+        )
+        return schedule_notification(notif.pk, scheduled_at)
+
+
+class NotificationCancelScheduleView(APIView):
+    """Cancel a scheduled notification before delivery (POST, CTF-804)."""
+
+    permission_classes = CTF_ORGANIZER_PERMISSIONS
+    required_write_scopes = _EVENT_WRITE
+
+    @extend_schema(request=None, responses=NotificationSendResultSerializer)
+    def post(self, request: Request, notification_id: UUID) -> Response:
+        """Revert the notification to draft and cancel its scheduler task."""
+        from ctf.exceptions import CTFStateError
+        from ctf.models import CTFNotification
+        from ctf.services.notification import cancel_scheduled_notification
+
+        try:
+            notif = CTFNotification.objects.select_related("event").filter(pk=notification_id).first()
+            if not notif:
+                _raise_not_found(_NOTIFICATION_NOT_FOUND)
+            if not _actor_may_manage(request, notif.event, "notifications"):
+                _raise_forbidden()
+            try:
+                cancel_scheduled_notification(notification_id)
+            except CTFStateError as exc:
+                _raise_conflict(str(exc))
+            return Response({"notification_id": str(notification_id), "status": "cancelled"})
         except _CtfApiError as exc:
             return exc.to_response(request)
 

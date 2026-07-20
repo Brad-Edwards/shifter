@@ -160,6 +160,38 @@ def _record_submission_locked(
             recompute_participant_score(participant.id)
             recompute_team_score(participant.team_id)
 
+        if is_correct:
+            first_blood = CTFSubmission.objects.filter(challenge=challenge, is_correct=True).count() == 1
+        else:
+            first_blood = False
+
+    if is_correct:
+        # CTF-802/CTF-1203: post-commit fanout so a bus or receiver hiccup can
+        # never roll back the solve.
+        from ctf.services.webhook import emit_webhook
+
+        solve_data = {
+            "challenge_id": str(challenge.pk),
+            "challenge_name": challenge.name,
+            "participant_id": str(participant.pk),
+            "participant_name": participant.name,
+            "points": submission.points_awarded,
+        }
+        emit_webhook(challenge.event, "flag_solve", solve_data)
+        if first_blood:
+            from ctf.services.notification import publish_event_notification
+
+            publish_event_notification(
+                challenge.event,
+                "first_blood",
+                {
+                    "challenge_id": str(challenge.pk),
+                    "challenge_name": challenge.name,
+                    "participant_name": participant.name,
+                },
+            )
+            emit_webhook(challenge.event, "first_blood", solve_data)
+
     return submission
 
 

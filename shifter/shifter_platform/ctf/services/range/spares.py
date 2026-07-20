@@ -171,6 +171,9 @@ def provision_event_spares(event_id: UUID, target_count: int, *, operator: User 
     Raises:
         CTFNotFoundError: If the event does not exist.
     """
+    from ctf.services.range.capacity import declare_event_capacity
+
+    declare_event_capacity(event_id, source="spare_pool")
     event = _get_event(event_id)
     event.spare_range_count = target_count
     event.save(update_fields=["spare_range_count", "updated_at"])

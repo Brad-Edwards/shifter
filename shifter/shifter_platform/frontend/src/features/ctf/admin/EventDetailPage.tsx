@@ -28,6 +28,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 
 import { EventLifecycleCard } from "./EventLifecycleCard";
 import { EventStaffCard } from "./EventStaffCard";
+import { EventWebhooksCard } from "./EventWebhooksCard";
 import { formatDateTime, titleCase } from "../format";
 import {
   ctfAdminEventChallengesPath,
@@ -220,6 +221,7 @@ export function EventDetailPage() {
         <EventLifecycleCard event={event} />
         <EventOverview event={event} />
         <EventStaffCard eventId={event.id} />
+        <EventWebhooksCard eventId={event.id} />
         <EventLinks eventId={event.id} />
       </div>
 
