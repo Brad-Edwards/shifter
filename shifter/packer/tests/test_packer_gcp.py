@@ -310,7 +310,7 @@ class TestGcpTechVaultSupplyChain:
     def test_toolchain_uses_signed_distribution_packages(self, toolchain):
         assert "get.docker.com" not in toolchain
         assert "deb.nodesource.com" not in toolchain
-        assert "docker.io" in toolchain
+        assert re.search(r"(?<![A-Za-z0-9.+-])docker[.]io(?![A-Za-z0-9.+-])", toolchain)
         assert "docker-compose-v2" in toolchain
 
     def test_claude_code_tarball_is_digest_verified_and_installed_offline(self, toolchain):
