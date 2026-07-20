@@ -5,8 +5,9 @@ name: Packer GCE Image Promote to Prod
 #
 # Evidence-driven promotion (#1343 gaps 3/4): the operator supplies the EXACT
 # validated candidate image name (from packer-gcp-validate.yml). Promotion
-# verifies that image carries the `validated=passed` label, copies THAT exact
-# image into the prod family (derived from the image's own family attribute, so
+# verifies the image label, protected validation run, revision, and downloaded
+# evidence artifact all bind to that candidate, then copies THAT exact image
+# into the prod family (derived from the image's own family attribute, so
 # polaris-vm and purpose-scoped <purpose>-dc families work with no per-name
 # logic), verifies the new prod image is READY, and only THEN deprecates the
 # previous prod head. It never resolves "newest in the dev family" at promotion
@@ -30,11 +31,22 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     permissions:
+      actions: read
       contents: read
       id-token: write
     env:
       SRC_IMAGE: ${{ inputs.source_image }}
     steps:
+      - name: Reject non-protected dispatch refs
+        run: |
+          case "${GITHUB_REF}" in
+            refs/heads/dev|refs/heads/main) ;;
+            *)
+              echo "::error::packer-gcp-promote may only run from dev or main; got '${GITHUB_REF}'."
+              exit 1
+              ;;
+          esac
+
       # Run from the dispatched ref (github.sha), gated by workflow_dispatch
       # permission plus the `prod` environment approval. No free-form
       # `inputs.ref`: a cloud-credentialed promotion must not execute code from
@@ -91,6 +103,18 @@ jobs:
             echo "::error::Source image ${SRC_IMAGE} is not validated (labels.validated='${VALIDATED}'). Run packer-gcp-validate.yml first."
             exit 1
           fi
+          VALIDATED_RUN="$(gcloud compute images describe "${SRC_IMAGE}" \
+            --project="${DEV_PROJECT}" --format='value(labels.validated-run)')"
+          VALIDATED_REVISION="$(gcloud compute images describe "${SRC_IMAGE}" \
+            --project="${DEV_PROJECT}" --format='value(labels.validated-revision)')"
+          if ! printf '%s' "${VALIDATED_RUN}" | grep -qE '^[0-9]+$'; then
+            echo "::error::Source image ${SRC_IMAGE} has no valid labels.validated-run evidence binding."
+            exit 1
+          fi
+          if ! printf '%s' "${VALIDATED_REVISION}" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::Source image ${SRC_IMAGE} has no valid labels.validated-revision evidence binding."
+            exit 1
+          fi
           # Derive the deployment channel from the image's own family; the
           # image-type label rides along for prod-side provenance.
           FAMILY="$(gcloud compute images describe "${SRC_IMAGE}" \
@@ -105,7 +129,34 @@ jobs:
           {
             echo "IMAGE_FAMILY=${FAMILY}"
             echo "IMAGE_TYPE=${IMAGE_TYPE:-unknown}"
+            echo "VALIDATED_RUN=${VALIDATED_RUN}"
+            echo "VALIDATED_REVISION=${VALIDATED_REVISION}"
           } >> "$GITHUB_ENV"
+
+      - name: Verify protected validation run and evidence artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SRC_PROJECT: ${{ secrets.GCP_DEV_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "${IMAGE_TYPE}" | grep -qE '^[a-z0-9][a-z0-9-]*$'; then
+            echo "::error::Source image has an invalid image-type label."
+            exit 1
+          fi
+          RUN_FILE="${RUNNER_TEMP}/validation-run.json"
+          EVIDENCE_DIR="${RUNNER_TEMP}/validation-evidence"
+          mkdir -p "${EVIDENCE_DIR}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${VALIDATED_RUN}" > "${RUN_FILE}"
+          gh run download "${VALIDATED_RUN}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${IMAGE_TYPE}-gce-validation-evidence" \
+            --dir "${EVIDENCE_DIR}"
+          EVIDENCE_FILE="${EVIDENCE_DIR}/validation-evidence.json"
+          SRC_IMAGE="${SRC_IMAGE}" SRC_PROJECT="${SRC_PROJECT}" \
+            IMAGE_FAMILY="${IMAGE_FAMILY}" IMAGE_TYPE="${IMAGE_TYPE}" \
+            VALIDATED_RUN="${VALIDATED_RUN}" VALIDATED_REVISION="${VALIDATED_REVISION}" \
+            EVIDENCE_FILE="${EVIDENCE_FILE}" RUN_FILE="${RUN_FILE}" \
+            bash shifter/packer/gcp/scripts/validate/verify-promotion-evidence.sh
 
       - name: Promote the exact validated candidate to prod
         env:
