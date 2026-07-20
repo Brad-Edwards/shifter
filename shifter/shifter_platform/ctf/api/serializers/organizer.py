@@ -61,6 +61,8 @@ class EventDetailSerializer(serializers.Serializer):
     reminder_hours = serializers.ListField(child=serializers.IntegerField(), read_only=True)
     event_timezone = serializers.CharField(read_only=True, allow_blank=True)
     capacity_hints = serializers.DictField(read_only=True)
+    logo_url = serializers.CharField(read_only=True, allow_blank=True)
+    theme_color = serializers.CharField(read_only=True, allow_blank=True)
 
 
 class EventWriteSerializer(serializers.Serializer):
@@ -97,6 +99,8 @@ class EventWriteSerializer(serializers.Serializer):
     )
     event_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     capacity_hints = serializers.DictField(required=False)
+    logo_url = serializers.URLField(required=False, allow_blank=True, max_length=500)
+    theme_color = serializers.RegexField(r"^(#[0-9a-fA-F]{6})?$", required=False, allow_blank=True)
 
 
 class EventLifecycleRequestSerializer(serializers.Serializer):

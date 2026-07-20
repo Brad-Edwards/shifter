@@ -232,6 +232,28 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                 error={firstError("event_timezone")}
                 onChange={(v) => set("event_timezone", v)}
               />
+              <TextField
+                id="e-logo"
+                label="Logo URL (branding)"
+                value={state.logo_url}
+                error={firstError("logo_url")}
+                onChange={(v) => set("logo_url", v)}
+              />
+              <TextField
+                id="e-themecolor"
+                label="Accent color (hex, like #22d3ee)"
+                value={state.theme_color}
+                error={firstError("theme_color")}
+                onChange={(v) => set("theme_color", v)}
+              />
+              <TextAreaField
+                id="e-capacity"
+                label="Capacity hints (JSON, declared to the provisioning engine)"
+                rows={3}
+                value={state.capacity_hints}
+                error={firstError("capacity_hints")}
+                onChange={(v) => set("capacity_hints", v)}
+              />
               <div className="flex flex-col gap-2">
                 <Label htmlFor="e-scoringmode">Scoring mode</Label>
                 <Select value={state.scoring_mode} onValueChange={(v) => set("scoring_mode", v)}>

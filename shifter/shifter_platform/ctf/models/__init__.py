@@ -34,10 +34,10 @@ from django.utils import timezone
 
 from ._base import CTFBaseModel, SoftDeleteManager
 from .challenge import CTFChallenge
-from .event import CTFEvent, CTFEventStaff
+from .event import CTFEvent, CTFEventPage, CTFEventStaff
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
-from .notification import CTFEmailTemplate, CTFNotification, CTFScheduledTask
+from .notification import CTFEmailTemplate, CTFNotification, CTFScheduledTask, CTFWebhook
 from .rating import CTFChallengeRating
 from .recovery import CTFRangeRecovery
 from .spare_range import CTFSpareRange
@@ -61,6 +61,7 @@ __all__ = [
     "CTFChallengeTag",
     "CTFEmailTemplate",
     "CTFEvent",
+    "CTFEventPage",
     "CTFEventStaff",
     "CTFFlag",
     "CTFHint",
@@ -73,6 +74,7 @@ __all__ = [
     "CTFSubmission",
     "CTFTeam",
     "CTFTopic",
+    "CTFWebhook",
     "SoftDeleteManager",
     "timezone",
 ]

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { Flag, Server, Trophy, UserCog, Users } from "lucide-react";
 
-import { useCtfAnnouncements, useCtfCurrentEvent } from "@/api/ctf";
+import { useCtfAnnouncements, useCtfCurrentEvent, useCtfPages } from "@/api/ctf";
 import { ApiError } from "@/api/errors";
 import type { CtfCurrentEvent } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
@@ -117,10 +117,40 @@ function AnnouncementsCard() {
   );
 }
 
+/** Custom informational pages authored by the organizer (CTF-1303). */
+function PagesCard() {
+  const query = useCtfPages();
+  const pages = query.data?.pages ?? [];
+  if (!pages.length) return null;
+  return (
+    <Card className="mb-6">
+      <CardContent>
+        <h2 className="text-sm font-semibold">Event pages</h2>
+        <div className="mt-2 space-y-2">
+          {pages.map((page) => (
+            <details key={page.id} className="rounded border border-border/60 p-2">
+              <summary className="cursor-pointer text-sm font-medium">{page.title}</summary>
+              <div className="mt-2 text-sm">
+                <MarkdownContent text={page.body} />
+              </div>
+            </details>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
   const { event, participant } = data;
   return (
     <>
+      {event.theme_color ? (
+        <div className="mb-3 h-1 w-full rounded" style={{ backgroundColor: event.theme_color }} aria-hidden />
+      ) : null}
+      {event.logo_url ? (
+        <img src={event.logo_url} alt={`${event.name} logo`} className="mb-3 h-12 w-auto" />
+      ) : null}
       <PageHeader
         title={event.name}
         description={
@@ -135,6 +165,8 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
       <EventSchedule event={event} />
 
       <AnnouncementsCard />
+
+      <PagesCard />
 
       {event.description ? (
         <Card className="mb-6">

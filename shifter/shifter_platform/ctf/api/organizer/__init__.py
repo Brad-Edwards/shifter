@@ -39,6 +39,11 @@ from ctf.api.organizer.events import (
     ForceDeleteEventView,
     ScenarioListView,
 )
+from ctf.api.organizer.insights import (
+    EventAnalyticsView,
+    EventPageDetailView,
+    EventPagesView,
+)
 from ctf.api.organizer.lifecycle import (
     EventCleanupControlView,
     EventLifecycleView,
@@ -93,28 +98,42 @@ from ctf.api.organizer.scoreboard import (
     ScoreTimelineView,
 )
 from ctf.api.organizer.staff import EventStaffMemberView, EventStaffView
+from ctf.api.organizer.transfer import (
+    ChallengeExportView,
+    ChallengeImportView,
+    EventResultsExportView,
+    EventWebhooksView,
+    WebhookDetailView,
+)
 
 __all__ = [
     "AddFlagView",
     "AssignBracketView",
     "AwardRevokeView",
     "ChallengeDetailView",
+    "ChallengeExportView",
     "ChallengeFileDeleteView",
     "ChallengeFilesView",
     "ChallengeHintsView",
+    "ChallengeImportView",
     "ChallengeListView",
     "ChallengePrerequisitesView",
+    "EventAnalyticsView",
     "EventCleanupControlView",
     "EventDetailView",
     "EventEmailTemplateView",
     "EventLifecycleView",
     "EventListView",
+    "EventPageDetailView",
+    "EventPagesView",
     "EventRangeListView",
     "EventRangeProvisionView",
+    "EventResultsExportView",
     "EventSpareProvisionView",
     "EventStaffMemberView",
     "EventStaffView",
     "EventTasksView",
+    "EventWebhooksView",
     "FileDownloadView",
     "ForceDeleteEventView",
     "HintDeleteView",
@@ -153,4 +172,5 @@ __all__ = [
     "SubmitFlagView",
     "TaskRunNowView",
     "UseHintView",
+    "WebhookDetailView",
 ]

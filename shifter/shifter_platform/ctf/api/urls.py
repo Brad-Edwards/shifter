@@ -24,6 +24,7 @@ urlpatterns = [
     path("me/team/rename/", team_views.TeamRenameView.as_view(), name="api_team_rename"),
     path("me/team/regenerate-code/", team_views.TeamRegenerateCodeView.as_view(), name="api_team_regenerate_code"),
     path("me/announcements/", participant_views.ParticipantAnnouncementsView.as_view(), name="api_me_announcements"),
+    path("me/pages/", participant_views.ParticipantPagesView.as_view(), name="api_me_pages"),
     path("me/profile/", participant_views.ParticipantProfileView.as_view(), name="api_me_profile"),
     path("me/username/", participant_views.ParticipantUsernameSelfView.as_view(), name="api_me_username"),
     path(
@@ -129,6 +130,46 @@ urlpatterns = [
         "participants/<uuid:participant_id>/username/",
         organizer.ParticipantUsernameView.as_view(),
         name="api_participant_username",
+    ),
+    path(
+        "events/<uuid:event_id>/challenges/export/",
+        organizer.ChallengeExportView.as_view(),
+        name="api_challenge_export",
+    ),
+    path(
+        "events/<uuid:event_id>/challenges/import-pack/",
+        organizer.ChallengeImportView.as_view(),
+        name="api_challenge_import",
+    ),
+    path(
+        "events/<uuid:event_id>/results/export/",
+        organizer.EventResultsExportView.as_view(),
+        name="api_results_export",
+    ),
+    path(
+        "events/<uuid:event_id>/analytics/",
+        organizer.EventAnalyticsView.as_view(),
+        name="api_event_analytics",
+    ),
+    path(
+        "events/<uuid:event_id>/pages/",
+        organizer.EventPagesView.as_view(),
+        name="api_event_pages",
+    ),
+    path(
+        "pages/<uuid:page_id>/",
+        organizer.EventPageDetailView.as_view(),
+        name="api_event_page_detail",
+    ),
+    path(
+        "events/<uuid:event_id>/webhooks/",
+        organizer.EventWebhooksView.as_view(),
+        name="api_event_webhooks",
+    ),
+    path(
+        "webhooks/<uuid:webhook_id>/",
+        organizer.WebhookDetailView.as_view(),
+        name="api_webhook_detail",
     ),
     path(
         "events/<uuid:event_id>/lifecycle/",

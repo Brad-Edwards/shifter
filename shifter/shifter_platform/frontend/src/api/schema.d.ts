@@ -567,6 +567,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/analytics/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return score distribution, solve timeline, challenge and engagement stats. */
+        get: operations["ctf_events_analytics_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/challenges/": {
         parameters: {
             query?: never;
@@ -579,6 +596,40 @@ export interface paths {
         put?: never;
         /** @description Create a challenge under an owned event. */
         post: operations["ctf_events_challenges_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/challenges/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the export document; ``?fmt=ctfd`` selects CTFd shape. */
+        get: operations["ctf_events_challenges_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/challenges/import-pack/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Run a partial-success import of the posted document. */
+        post: operations["ctf_events_challenges_import_pack_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -707,6 +758,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/pages/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the event's pages in display order. */
+        get: operations["ctf_events_pages_retrieve"];
+        put?: never;
+        /** @description Create a page; slugs are unique per event. */
+        post: operations["ctf_events_pages_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/participants/": {
         parameters: {
             query?: never;
@@ -770,6 +839,23 @@ export interface paths {
         put?: never;
         /** @description Enqueue (or coalesce onto) a background spin-up task and return 202 immediately. */
         post: operations["ctf_events_ranges_provision_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/results/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return results as JSON, or CSV with ``?fmt=csv``. */
+        get: operations["ctf_events_results_export_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -873,6 +959,24 @@ export interface paths {
         put?: never;
         /** @description Reschedule the task to now; the scheduler executes it on its next poll. */
         post: operations["ctf_events_tasks_run_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/webhooks/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the event's webhooks. */
+        get: operations["ctf_events_webhooks_retrieve"];
+        put?: never;
+        /** @description Register a webhook endpoint. */
+        post: operations["ctf_events_webhooks_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1007,6 +1111,23 @@ export interface paths {
         };
         /** @description Return the current-event projection, or 404 when there is none. */
         get: operations["ctf_me_event_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/pages/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the active event's pages in display order. */
+        get: operations["ctf_me_pages_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1232,6 +1353,24 @@ export interface paths {
         /** @description Resolve the notification, enforce ownership, then send it. */
         post: operations["ctf_notifications_send_create"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/pages/{page_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Update the page's title, body, or order (the slug is stable). */
+        put: operations["ctf_pages_update"];
+        post?: never;
+        /** @description Soft-delete the page. */
+        delete: operations["ctf_pages_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1645,6 +1784,23 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/webhooks/{webhook_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Soft-delete the webhook after ownership checks. */
+        delete: operations["ctf_webhooks_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2728,6 +2884,23 @@ export interface components {
             readonly penalty: number;
             readonly order: number;
         };
+        /** @description One skipped import entry with its reason. */
+        ChallengeImportError: {
+            readonly index: number;
+            readonly name: string;
+            readonly error: string;
+        };
+        /** @description Challenge import request: the export document itself (CTF-1101/1104). */
+        ChallengeImportRequest: {
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Partial-success import outcome. */
+        ChallengeImportResult: {
+            readonly created: string[];
+            readonly errors: components["schemas"]["ChallengeImportError"][];
+        };
         /** @description Envelope returned by the event challenge list. */
         ChallengeListResponse: {
             readonly challenges: components["schemas"]["ChallengeSummary"][];
@@ -2982,6 +3155,8 @@ export interface components {
             readonly capacity_hints: {
                 [key: string]: unknown;
             };
+            readonly logo_url: string;
+            readonly theme_color: string;
         };
         /** @description One lifecycle transition to apply to an owned event (CTF-007). */
         EventLifecycleRequest: {
@@ -3006,6 +3181,25 @@ export interface components {
             readonly id: string;
             readonly name: string;
             readonly status: string;
+        };
+        /** @description One organizer-authored event page (CTF-1303). */
+        EventPage: {
+            readonly id: string;
+            readonly title: string;
+            readonly slug: string;
+            readonly body: string;
+            readonly order: number;
+        };
+        /** @description Create/update body for a custom page. */
+        EventPageWrite: {
+            title: string;
+            slug?: string;
+            body: string;
+            order?: number;
+        };
+        /** @description Envelope for the event page listing. */
+        EventPagesResponse: {
+            readonly pages: components["schemas"]["EventPage"][];
         };
         /** @description Assignment request: organizer-tier user email plus staff role. */
         EventStaffAssignRequest: {
@@ -3076,6 +3270,9 @@ export interface components {
             capacity_hints?: {
                 [key: string]: unknown;
             };
+            /** Format: uri */
+            logo_url?: string;
+            theme_color?: string;
         };
         /** @description Presigned download URL for a challenge attachment. */
         FileDownloadResponse: {
@@ -3573,6 +3770,8 @@ export interface components {
             /** Format: date-time */
             readonly registration_deadline: string | null;
             readonly rules: string;
+            readonly logo_url: string;
+            readonly theme_color: string;
         };
         /** @description Target scoreboard visibility for the hidden endpoint (CTF-606). */
         ParticipantHiddenRequest: {
@@ -4356,6 +4555,28 @@ export interface components {
         /** @description Self-service username change request (#1593). */
         UsernameChangeRequest: {
             username: string;
+        };
+        /** @description One registered webhook endpoint (CTF-1203); secrets never round-trip. */
+        Webhook: {
+            readonly id: string;
+            readonly url: string;
+            readonly subscribed_events: string[];
+            readonly active: boolean;
+            readonly has_secret: boolean;
+            readonly last_status: string;
+            /** Format: date-time */
+            readonly last_delivery_at: string | null;
+        };
+        /** @description Envelope for the event webhook listing. */
+        WebhookListResponse: {
+            readonly webhooks: components["schemas"]["Webhook"][];
+        };
+        /** @description Webhook registration request. */
+        WebhookWrite: {
+            /** Format: uri */
+            url: string;
+            secret?: string;
+            subscribed_events?: string[];
         };
         /** @description Validate a YAML-content request body. */
         YAMLContent: {
@@ -6147,6 +6368,47 @@ export interface operations {
             };
         };
     };
+    ctf_events_analytics_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_challenges_retrieve: {
         parameters: {
             query?: never;
@@ -6209,6 +6471,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChallengeMutationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_challenges_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_challenges_import_pack_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallengeImportRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChallengeImportRequest"];
+                "multipart/form-data": components["schemas"]["ChallengeImportRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeImportResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -6653,6 +7001,90 @@ export interface operations {
             };
         };
     };
+    ctf_events_pages_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventPagesResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_pages_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventPageWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventPageWrite"];
+                "multipart/form-data": components["schemas"]["EventPageWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_participants_retrieve: {
         parameters: {
             query?: never;
@@ -6838,6 +7270,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RangeProvisionQueued"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_results_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Authentication failed. */
@@ -7146,6 +7619,90 @@ export interface operations {
             };
         };
     };
+    ctf_events_webhooks_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_webhooks_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["WebhookWrite"];
+                "multipart/form-data": components["schemas"]["WebhookWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Webhook"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_files_delete_create: {
         parameters: {
             query?: never;
@@ -7429,6 +7986,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ParticipantCurrentEvent"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_pages_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventPagesResponse"];
                 };
             };
             /** @description Authentication failed. */
@@ -7992,6 +8586,89 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NotificationSendResult"];
                 };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_pages_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventPageWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventPageWrite"];
+                "multipart/form-data": components["schemas"]["EventPageWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_pages_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Authentication failed. */
             401: {
@@ -9083,6 +9760,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SubmissionListResponse"];
                 };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_webhooks_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Authentication failed. */
             401: {
