@@ -1520,6 +1520,11 @@
         "id": "ADR-032-R8",
         "description": "ACES Node.services entries are authored layer-4 transport exposure intent, not informational labels, guest service installation, participant authorization, or an override of authored ACLs. The GCE realization must validate the compiled spec.node.services payload again at the separate provisioner trust boundary and realize supported TCP/UDP ports as deterministic per-node-tag ingress policy sourced only from concrete CIDRs declared by networks in that same compiled range. It must never widen a service to 0.0.0.0/0, platform/portal/operator CIDRs, or another range by default. The existing management-plane allow remains higher precedence than authored ACLs; authored ACLs remain higher precedence than service-derived allows. Unsupported or malformed service shapes and any priority/source scope that cannot be represented without widening must fail before cloud mutation. The projection is process-local realization data only; it must not become a second SDL, persisted schema, API DTO, setting, or participant-access contract.",
         "checks": []
+      },
+      {
+        "id": "ADR-032-R9",
+        "description": "ACES feature bindings use an honest, shape-aware realization ledger. Package/baked services require package presence plus enabled/running in-guest verification before READY; source-backed artifact/configuration bytes reuse the immutable content-addressed delivery channel and independent in-guest digest readback. Unsupported feature types or values fail through the common validate/apply path before dispatch. A versioned server-owned delivery binding may identify a compiled content-placement or feature-binding by resource type plus resource address and bounded payload kind, but remains byte-free and separate from the serialized ACES plan. Feature types must not be modeled as content/account capabilities, features must not masquerade in a legacy content_address, and the backend must not execute pack-supplied commands or installer hooks.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1529,11 +1534,13 @@
       "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
       "https://github.com/Brad-Edwards/shifter/issues/1564",
+      "https://github.com/Brad-Edwards/shifter/issues/1565",
       "https://github.com/Brad-Edwards/shifter/issues/1606",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-source-content-delivery-preflight-1564.md",
+      "docs/architecture/aces-feature-artifact-delivery-preflight-1565.md",
       "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-domain-topology-preflight-1606.md",
@@ -1612,6 +1619,11 @@
         "id": "ADR-034-R6",
         "description": "Source-backed ACES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
         "checks": []
+      },
+      {
+        "id": "ADR-034-R7",
+        "description": "Source-backed ACES feature artifacts reuse the uniform pack trust and delivery machinery without becoming content placements. A versioned discriminated projection binds feature type plus source name/version to an inventory-covered deterministic payload and bounded data-only install policy; content and feature entries keep distinct match semantics while sharing containment, size, digest, content-addressed storage, authenticated guest transport, and readback. Filename/extension inference, ambiguous wildcard resolution, contributor-supplied executable installers/probes, and a parallel feature artifact store are prohibited.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1622,6 +1634,7 @@
       "docs/architecture/uniform-content-ingestion-contract.md",
       "docs/architecture/uniform-content-ingestion-preflight-1578.md",
       "docs/architecture/aces-source-content-delivery-preflight-1564.md",
+      "docs/architecture/aces-feature-artifact-delivery-preflight-1565.md",
       "docs/architecture/product-development-surfaces.md",
       "docs/ops/content-ingestion.md",
       "docs/adr/index.yaml"

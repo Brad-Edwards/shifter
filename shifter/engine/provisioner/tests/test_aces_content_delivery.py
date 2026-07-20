@@ -36,7 +36,7 @@ from aces_content_delivery import (
     realize_aces_content_delivery,
 )
 from aces_gcp_composition import AcesGceCompositionError
-from aces_plan import AcesPlan, AcesPlanContent, AcesPlanNode
+from aces_plan import AcesPlan, AcesPlanContent, AcesPlanFeature, AcesPlanNode
 from cloud.exceptions import CloudStorageError
 from config import AcesContentDeliveryConfig
 from executors.base import CommandResult
@@ -55,8 +55,28 @@ def _node(address: str = "node.web", os_family: str = "linux", count: int = 1) -
     )
 
 
-def _plan(*, content=(), nodes=None) -> AcesPlan:
-    return AcesPlan(aces_sdl_version="0.19.1", nodes=nodes or (_node(),), networks=(), content=content)
+def _feature(**kw) -> AcesPlanFeature:
+    base = {
+        "name": "agent",
+        "feature_type": "artifact",
+        "target_address": "node.web",
+        "address": "feature.agent",
+        "source_name": "agent-pkg",
+        "source_version": "1.0.0",
+        "destination": "/opt/aces/agent",
+    }
+    base.update(kw)
+    return AcesPlanFeature(**base)
+
+
+def _plan(*, content=(), features=(), nodes=None) -> AcesPlan:
+    return AcesPlan(
+        aces_sdl_version="0.19.1",
+        nodes=nodes or (_node(),),
+        networks=(),
+        content=content,
+        features=features,
+    )
 
 
 #: sha256("hello") -- matches _ops()'s default fake-object-storage payload
@@ -79,6 +99,22 @@ def _binding(**kw) -> dict[str, Any]:
         "storage_key": "aces/content-delivery/" + digest[:2] + "/" + digest,
         "byte_count": 5,
         "binding_version": 1,
+    }
+    base.update(kw)
+    return base
+
+
+def _feature_binding(**kw) -> dict[str, Any]:
+    digest = kw.get("sha256", _HELLO_SHA256)
+    base = {
+        "resource_type": "feature-binding",
+        "resource_address": "feature.agent",
+        "payload_kind": "file",
+        "install_policy": "executable",
+        "sha256": digest,
+        "storage_key": "aces/content-delivery/" + digest[:2] + "/" + digest,
+        "byte_count": 5,
+        "binding_version": 2,
     }
     base.update(kw)
     return base
@@ -116,13 +152,13 @@ class TestAssertContentDeliveryBindingsComplete:
     def test_extra_binding_with_no_matching_content_fails_closed(self):
         plan = _plan(content=())
         binding = _binding()
-        with pytest.raises(AcesGceCompositionError, match="does not match any source-backed content"):
+        with pytest.raises(AcesGceCompositionError, match="does not match any deliverable resource"):
             assert_content_delivery_bindings_complete(plan, [binding])
 
     def test_duplicate_content_address_fails_closed(self):
         plan = _plan(content=(_content(source_name="pkg", path="/opt/x.bin"),))
         bindings = [_binding(), _binding(byte_count=6)]
-        with pytest.raises(AcesGceCompositionError, match="duplicate content_address"):
+        with pytest.raises(AcesGceCompositionError, match="duplicate resource identity"):
             assert_content_delivery_bindings_complete(plan, bindings)
 
     def test_unsupported_content_type_fails_closed_even_without_bindings(self):
@@ -154,6 +190,24 @@ class TestAssertContentDeliveryBindingsComplete:
             plan,
             [_binding(content_address="content.a"), _binding(content_address="content.b")],
         )  # does not raise
+
+    def test_matching_source_backed_feature_binding_passes(self):
+        plan = _plan(features=(_feature(),))
+        assert_content_delivery_bindings_complete(plan, [_feature_binding()])
+
+    def test_source_backed_feature_requires_exact_v2_binding(self):
+        plan = _plan(features=(_feature(),))
+        with pytest.raises(AcesGceCompositionError, match="missing its delivery binding"):
+            assert_content_delivery_bindings_complete(plan, [])
+
+    def test_feature_binding_overclaim_fails_closed(self):
+        with pytest.raises(AcesGceCompositionError, match="does not match any deliverable resource"):
+            assert_content_delivery_bindings_complete(_plan(), [_feature_binding()])
+
+    def test_feature_environment_fails_before_cloud_realization(self):
+        plan = _plan(features=(_feature(has_environment=True),))
+        with pytest.raises(AcesGceCompositionError, match="no safe realization contract"):
+            assert_content_delivery_bindings_complete(plan, [_feature_binding()])
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +354,81 @@ class TestRealizeAcesContentDelivery:
         # (this test only has the executor boundary; argv/env are asserted at
         # the transport layer in test_aces_content_delivery_plan.py).
         assert "/opt/x.bin" in executors[0].calls[0]["script"]
+
+    def test_feature_artifact_is_installed_executable_and_verified(self):
+        plan = _plan(features=(_feature(),))
+        ops, storage, executors = _ops()
+        realize_aces_content_delivery(
+            aces_plan=plan,
+            instance_outputs=[_output("node.web#0")],
+            delivery_bindings=[_feature_binding()],
+            ops=ops,
+        )
+        assert len(storage.download_calls) == 1
+        assert "/opt/aces/agent" in executors[0].calls[0]["script"]
+        assert "file_mode=755" in executors[0].calls[0]["script"]
+        assert len(executors[0].calls) == 2
+
+    def test_service_feature_is_installed_and_verified_post_boot(self):
+        service = _feature(
+            feature_type="service",
+            source_name="nginx",
+            source_version="1.24.0",
+            destination=None,
+        )
+        plan = _plan(features=(service,))
+        ops, storage, executors = _ops()
+        realize_aces_content_delivery(
+            aces_plan=plan,
+            instance_outputs=[_output("node.web#0")],
+            delivery_bindings=[],
+            ops=ops,
+        )
+        assert storage.download_calls == []
+        assert len(executors[0].calls) == 2
+        assert "nginx" in executors[0].calls[0]["script"]
+        assert "1.24.0" in executors[0].calls[0]["script"]
+        assert "|| true" not in executors[0].calls[0]["script"]
+        assert "is-active" in executors[0].calls[1]["script"]
+
+    def test_feature_realization_preserves_cross_shape_dependency_order(self):
+        service = _feature(
+            name="nginx",
+            address="feature.nginx",
+            feature_type="service",
+            source_name="nginx",
+            source_version="1.24.0",
+            destination=None,
+        )
+        artifact = _feature(ordering_dependencies=("feature.nginx",))
+        plan = _plan(features=(artifact, service))
+        ops, _storage, executors = _ops()
+
+        realize_aces_content_delivery(
+            aces_plan=plan,
+            instance_outputs=[_output("node.web#0")],
+            delivery_bindings=[_feature_binding()],
+            ops=ops,
+        )
+
+        assert "nginx" in executors[0].calls[0]["script"]
+        assert "/opt/aces/agent" in executors[1].calls[0]["script"]
+
+    def test_feature_dependency_cycle_fails_before_guest_realization(self):
+        first = _feature(address="feature.first", ordering_dependencies=("feature.second",))
+        second = _feature(address="feature.second", ordering_dependencies=("feature.first",))
+        plan = _plan(features=(first, second))
+        ops, _storage, executors = _ops()
+
+        with pytest.raises(AcesContentDeliveryError, match="dependencies contain a cycle"):
+            realize_aces_content_delivery(
+                aces_plan=plan,
+                instance_outputs=[_output("node.web#0")],
+                delivery_bindings=[],
+                ops=ops,
+            )
+
+        assert executors == []
 
     def test_delivers_to_every_concrete_instance_of_a_counted_node(self):
         content = _content(source_name="pkg", path="/opt/x.bin")

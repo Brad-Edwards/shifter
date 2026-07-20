@@ -35,7 +35,8 @@ from typing import TypeGuard
 #: Rolling-deploy seam: persisted / transported bindings carry this version, and
 #: readers reject any version they do not explicitly support (ADR-032-R3).
 BINDING_VERSION = 1
-_PROJECTION_VERSION = 1
+FEATURE_BINDING_VERSION = 2
+_SUPPORTED_PROJECTION_VERSIONS = frozenset({1, 2})
 _HEX_SHA256_LEN = 64
 _HEX_DIGITS = frozenset("0123456789abcdef")
 
@@ -49,10 +50,23 @@ _FILE_FORMATS = frozenset({"", "raw", "file"})
 _DIRECTORY_FORMATS = frozenset({"", "tree", "directory"})
 _FILE_MODE = 0o644
 
-_BINDING_KEYS = frozenset({"content_address", "sha256", "storage_key", "byte_count", "binding_version"})
+_BINDING_V1_KEYS = frozenset({"content_address", "sha256", "storage_key", "byte_count", "binding_version"})
+_BINDING_V2_KEYS = frozenset(
+    {
+        "resource_type",
+        "resource_address",
+        "payload_kind",
+        "install_policy",
+        "sha256",
+        "storage_key",
+        "byte_count",
+        "binding_version",
+    }
+)
 
 __all__ = [
     "BINDING_VERSION",
+    "FEATURE_BINDING_VERSION",
     "SUPPORTED_DELIVERY_CONTENT_TYPES",
     "ContentDeliveryError",
     "DeliveryBinding",
@@ -124,21 +138,38 @@ def normalized_storage_key(prefix: str, digest: str) -> str:
 class DeliveryBinding:
     """Server-owned, byte-free delivery identity that rides beside the plan."""
 
-    content_address: str
+    content_address: str | None
     sha256: str
     storage_key: str
     byte_count: int
     binding_version: int = BINDING_VERSION
+    resource_type: str | None = None
+    resource_address: str | None = None
+    payload_kind: str | None = None
+    install_policy: str | None = None
 
     def to_transport(self) -> dict[str, object]:
         """Return the JSON-serialisable transport shape (identity only)."""
-        return {
-            "content_address": self.content_address,
-            "sha256": self.sha256,
-            "storage_key": self.storage_key,
-            "byte_count": self.byte_count,
-            "binding_version": self.binding_version,
-        }
+        if self.binding_version == BINDING_VERSION:
+            return {
+                "content_address": self.content_address,
+                "sha256": self.sha256,
+                "storage_key": self.storage_key,
+                "byte_count": self.byte_count,
+                "binding_version": self.binding_version,
+            }
+        if self.binding_version == FEATURE_BINDING_VERSION:
+            return {
+                "resource_type": self.resource_type,
+                "resource_address": self.resource_address,
+                "payload_kind": self.payload_kind,
+                "install_policy": self.install_policy,
+                "sha256": self.sha256,
+                "storage_key": self.storage_key,
+                "byte_count": self.byte_count,
+                "binding_version": self.binding_version,
+            }
+        raise ContentDeliveryError(f"unsupported delivery binding version {self.binding_version!r}")
 
     @classmethod
     def from_transport(cls, raw: Mapping[str, object]) -> DeliveryBinding:
@@ -148,18 +179,48 @@ class DeliveryBinding:
         ride along), an unsupported version, a non-sha256 digest, an empty
         address / key, or a negative byte count.
         """
-        _require(isinstance(raw, Mapping) and set(raw) == _BINDING_KEYS, "delivery binding transport shape is invalid")
-        _require(
-            raw["binding_version"] == BINDING_VERSION,
-            f"unsupported delivery binding version {raw['binding_version']!r}",
-        )
-        return cls(
-            content_address=_validated_str(raw["content_address"], "delivery binding content_address is invalid"),
-            storage_key=_validated_str(raw["storage_key"], "delivery binding storage_key is invalid"),
-            sha256=_validated_sha256(raw["sha256"], "delivery binding sha256 is invalid"),
-            byte_count=_validated_byte_count(raw["byte_count"], "delivery binding byte_count is invalid"),
-            binding_version=BINDING_VERSION,
-        )
+        _require(isinstance(raw, Mapping), "delivery binding transport shape is invalid")
+        version = raw.get("binding_version")
+        storage_key = _validated_str(raw.get("storage_key"), "delivery binding storage_key is invalid")
+        sha256 = _validated_sha256(raw.get("sha256"), "delivery binding sha256 is invalid")
+        byte_count = _validated_byte_count(raw.get("byte_count"), "delivery binding byte_count is invalid")
+        if version == BINDING_VERSION:
+            _require(set(raw) == _BINDING_V1_KEYS, "delivery binding transport shape is invalid")
+            return cls(
+                content_address=_validated_str(
+                    raw.get("content_address"), "delivery binding content_address is invalid"
+                ),
+                sha256=sha256,
+                storage_key=storage_key,
+                byte_count=byte_count,
+                binding_version=BINDING_VERSION,
+            )
+        if version == FEATURE_BINDING_VERSION:
+            _require(set(raw) == _BINDING_V2_KEYS, "delivery binding transport shape is invalid")
+            resource_type = _validated_str(raw.get("resource_type"), "delivery binding resource_type is invalid")
+            _require(resource_type == "feature-binding", "delivery binding resource_type is unsupported")
+            payload_kind = _validated_str(raw.get("payload_kind"), "delivery binding payload_kind is invalid")
+            install_policy = _validated_str(raw.get("install_policy"), "delivery binding install_policy is invalid")
+            _require(payload_kind in {"file", "directory"}, "delivery binding payload_kind is unsupported")
+            _require(
+                (payload_kind, install_policy)
+                in {("file", "executable"), ("file", "configuration"), ("directory", "configuration")},
+                "delivery binding install policy is unsupported",
+            )
+            return cls(
+                content_address=None,
+                binding_version=FEATURE_BINDING_VERSION,
+                resource_type=resource_type,
+                resource_address=_validated_str(
+                    raw.get("resource_address"), "delivery binding resource_address is invalid"
+                ),
+                payload_kind=payload_kind,
+                install_policy=install_policy,
+                sha256=sha256,
+                storage_key=storage_key,
+                byte_count=byte_count,
+            )
+        raise ContentDeliveryError(f"unsupported delivery binding version {version!r}")
 
 
 @dataclass(frozen=True)
@@ -177,6 +238,10 @@ class DeliveryProjectionEntry:
     content_type: str
     content_format: str
     input_path: str
+    resource_type: str = "content-placement"
+    feature_type: str = ""
+    payload_kind: str = ""
+    install_policy: str = ""
 
 
 @dataclass(frozen=True)
@@ -203,7 +268,8 @@ class DeliveryProjection:
         matches = [
             entry
             for entry in self.entries
-            if entry.source_name == source_name
+            if entry.resource_type == "content-placement"
+            and entry.source_name == source_name
             and entry.content_type == content_type
             and entry.content_format == content_format
             and (source_version == "*" or entry.source_version == "*" or entry.source_version == source_version)
@@ -212,6 +278,28 @@ class DeliveryProjection:
             raise ContentDeliveryError(f"no delivery projection entry for source '{source_name}' ({content_type})")
         if len(matches) > 1:
             raise ContentDeliveryError(f"ambiguous delivery projection for source '{source_name}' ({content_type})")
+        return matches[0]
+
+    def resolve_feature(
+        self,
+        *,
+        source_name: str,
+        source_version: str,
+        feature_type: str,
+    ) -> DeliveryProjectionEntry:
+        """Return the single feature projection matching an exact source shape."""
+        matches = [
+            entry
+            for entry in self.entries
+            if entry.resource_type == "feature-binding"
+            and entry.source_name == source_name
+            and entry.feature_type == feature_type
+            and entry.source_version == source_version
+        ]
+        if not matches:
+            raise ContentDeliveryError(f"no delivery projection entry for source '{source_name}' ({feature_type})")
+        if len(matches) > 1:
+            raise ContentDeliveryError(f"ambiguous delivery projection for source '{source_name}' ({feature_type})")
         return matches[0]
 
 
@@ -224,16 +312,24 @@ def parse_delivery_projection(raw: Mapping[str, object]) -> DeliveryProjection:
     """
     if not isinstance(raw, Mapping):
         raise ContentDeliveryError("delivery projection must be a mapping")
-    if raw.get("version") != _PROJECTION_VERSION:
+    version = raw.get("version")
+    if version not in _SUPPORTED_PROJECTION_VERSIONS:
         raise ContentDeliveryError("unsupported delivery projection version")
     entries_raw = raw.get("entries")
     if not isinstance(entries_raw, list):
         raise ContentDeliveryError("delivery projection 'entries' must be a list")
     entries: list[DeliveryProjectionEntry] = []
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str, str]] = set()
     for item in entries_raw:
-        entry = _parse_entry(item)
-        key = (entry.source_name, entry.source_version, entry.content_type, entry.content_format)
+        entry = _parse_entry(item, version=int(version))
+        key = (
+            entry.resource_type,
+            entry.source_name,
+            entry.source_version,
+            entry.content_type,
+            entry.content_format,
+            entry.feature_type,
+        )
         if key in seen:
             raise ContentDeliveryError("duplicate delivery projection entry")
         seen.add(key)
@@ -241,7 +337,7 @@ def parse_delivery_projection(raw: Mapping[str, object]) -> DeliveryProjection:
     return DeliveryProjection(entries=tuple(entries))
 
 
-def _parse_entry(item: object) -> DeliveryProjectionEntry:
+def _parse_entry(item: object, *, version: int) -> DeliveryProjectionEntry:
     """Validate one raw projection entry mapping into a typed entry."""
     if not isinstance(item, Mapping):
         raise ContentDeliveryError("delivery projection entry must be a mapping")
@@ -249,20 +345,46 @@ def _parse_entry(item: object) -> DeliveryProjectionEntry:
     if not isinstance(source, Mapping):
         raise ContentDeliveryError("delivery projection entry requires 'source'")
     name = _validated_str(source.get("name"), "delivery projection entry 'source.name' is invalid")
-    version = _validated_str(source.get("version", "*"), "delivery projection entry 'source.version' is invalid")
-    content_type = item.get("content_type")
-    if content_type not in SUPPORTED_DELIVERY_CONTENT_TYPES:
-        raise ContentDeliveryError(f"delivery projection entry has unsupported content_type {content_type!r}")
-    content_format = item.get("format", "")
-    _require(isinstance(content_format, str), "delivery projection entry 'format' must be a string")
+    source_version = _validated_str(source.get("version", "*"), "delivery projection entry 'source.version' is invalid")
     input_path = _validated_str(item.get("input_path"), "delivery projection entry requires 'input_path'")
     _reject_unsafe_input_path(input_path)
+    resource_type = (
+        _validated_str(item.get("resource_type", "content-placement"), "invalid projection resource_type")
+        if version == 2
+        else "content-placement"
+    )
+    if resource_type == "content-placement":
+        content_type = _validated_str(item.get("content_type"), "delivery projection entry content_type is invalid")
+        if content_type not in SUPPORTED_DELIVERY_CONTENT_TYPES:
+            raise ContentDeliveryError(f"delivery projection entry has unsupported content_type {content_type!r}")
+        content_format = item.get("format", "")
+        _require(isinstance(content_format, str), "delivery projection entry 'format' must be a string")
+        feature_type = payload_kind = install_policy = ""
+    elif resource_type == "feature-binding" and version == 2:
+        feature_type = _validated_str(item.get("feature_type"), "feature projection type is invalid")
+        payload_kind = _validated_str(item.get("payload_kind"), "feature projection payload kind is invalid")
+        install_policy = _validated_str(item.get("install_policy"), "feature projection install policy is invalid")
+        _require(feature_type in {"artifact", "configuration"}, "unsupported feature projection type")
+        _require(payload_kind in SUPPORTED_DELIVERY_CONTENT_TYPES, "unsupported feature projection payload kind")
+        _require(
+            (payload_kind, install_policy)
+            in {("file", "executable"), ("file", "configuration"), ("directory", "configuration")},
+            "unsupported feature projection install policy",
+        )
+        content_type = payload_kind
+        content_format = ""
+    else:
+        raise ContentDeliveryError("delivery projection entry has unsupported resource_type")
     return DeliveryProjectionEntry(
         source_name=name,
-        source_version=version,
+        source_version=source_version,
         content_type=content_type,
         content_format=content_format,
         input_path=input_path,
+        resource_type=resource_type,
+        feature_type=feature_type,
+        payload_kind=payload_kind,
+        install_policy=install_policy,
     )
 
 

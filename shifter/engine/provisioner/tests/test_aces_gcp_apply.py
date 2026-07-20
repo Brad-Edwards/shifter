@@ -34,6 +34,7 @@ from aces_plan import (
     AcesPlanAccount,
     AcesPlanContent,
     AcesPlanDomain,
+    AcesPlanFeature,
     AcesPlanImage,
     AcesPlanNetwork,
     AcesPlanNode,
@@ -460,7 +461,7 @@ class TestContentDeliveryIntegration:
         plan = _plan()
         options = _apply_options(_config(), clients, secret_ops)
         binding = _binding()
-        with pytest.raises(AcesGceCompositionError, match="does not match any source-backed content"):
+        with pytest.raises(AcesGceCompositionError, match="does not match any deliverable resource"):
             apply_aces_range_cell(
                 "req-1",
                 7,
@@ -533,6 +534,33 @@ class TestContentDeliveryIntegration:
         )
 
         realizer.assert_not_called()
+
+    def test_realizer_is_invoked_for_service_feature_before_ready(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        realizer = MagicMock()
+        base = _plan()
+        feature = AcesPlanFeature(
+            name="nginx",
+            feature_type="service",
+            target_address="node.web",
+            address="feature.nginx",
+            source_name="nginx",
+        )
+        plan = AcesPlan(
+            aces_sdl_version=base.aces_sdl_version,
+            nodes=base.nodes,
+            networks=base.networks,
+            features=(feature,),
+        )
+        apply_aces_range_cell(
+            "req-1",
+            7,
+            plan,
+            _resolver,
+            _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer),
+        )
+        realizer.assert_called_once()
 
     def test_realizer_failure_triggers_cleanup_and_reraises(self):
         content = _source_backed_content()

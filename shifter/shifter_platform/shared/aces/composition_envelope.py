@@ -24,7 +24,7 @@ from aces_backend_protocols.capabilities import ProvisionerCapabilities
 from aces_contracts.diagnostics import Diagnostic, Severity
 from aces_contracts.planning import ChangeAction, PlannedResource, PlanOperation
 
-from shared.aces.realization_ledger import REALIZED_ACCOUNT_FEATURES
+from shared.aces.realization_ledger import REALIZED_ACCOUNT_FEATURES, REALIZED_FEATURE_TYPES
 from shared.log_sanitize import safe_log_value
 
 _DOMAIN = "provisioning"
@@ -227,6 +227,78 @@ def _account_placement_diagnostics(
     return diagnostics
 
 
+def _feature_template(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """Return one feature-binding's authored template mapping."""
+    spec = payload.get("spec")
+    template = spec.get("template") if isinstance(spec, Mapping) else None
+    return template if isinstance(template, Mapping) else {}
+
+
+def _feature_source_present(template: Mapping[str, object]) -> bool:
+    """True when the template carries a canonical source identity."""
+    source = template.get("source")
+    if isinstance(source, str):
+        return bool(source.strip())
+    return isinstance(source, Mapping) and isinstance(source.get("name"), str) and bool(source["name"].strip())
+
+
+def _feature_shape_diagnostics(address: str, payload: Mapping[str, object]) -> list[Diagnostic]:
+    """Fail closed on feature shapes without genuine backend realization."""
+    template = _feature_template(payload)
+    raw_type = template.get("type")
+    feature_type = raw_type.lower() if isinstance(raw_type, str) else ""
+    diagnostics: list[Diagnostic] = []
+    if feature_type not in REALIZED_FEATURE_TYPES:
+        return [
+            _diagnostic(
+                "shifter-provisioner.unsupported-feature-type",
+                address,
+                "feature type is outside the backend realization ledger",
+            )
+        ]
+    environment = template.get("environment")
+    if environment not in (None, {}, []):
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.feature-environment-unsupported",
+                address,
+                "feature environment values have no safe realization contract",
+            )
+        )
+    if not _feature_source_present(template):
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.feature-source-required",
+                address,
+                "feature realization requires a canonical source identity",
+            )
+        )
+    destination = template.get("destination")
+    if feature_type in {"artifact", "configuration"} and not (
+        isinstance(destination, str) and bool(destination.strip())
+    ):
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.feature-destination-required",
+                address,
+                "delivered feature realization requires a destination",
+            )
+        )
+    return diagnostics
+
+
+def _feature_binding_diagnostics(
+    resource: PlannedResource,
+    payload: Mapping[str, object],
+    node_addresses: set[str],
+) -> list[Diagnostic]:
+    """Return realization-ledger and target diagnostics for a feature binding."""
+    return [
+        *_feature_shape_diagnostics(resource.address, payload),
+        *_unbound_placement_diagnostics(resource, _placement_target(payload), node_addresses),
+    ]
+
+
 def account_operation_diagnostics(
     operations: list[PlanOperation], capabilities: ProvisionerCapabilities
 ) -> list[Diagnostic]:
@@ -262,6 +334,21 @@ def account_operation_diagnostics(
     return diagnostics
 
 
+def feature_operation_diagnostics(operations: list[PlanOperation]) -> list[Diagnostic]:
+    """Gate feature shapes carried only by materializing operations (#1565)."""
+    diagnostics: list[Diagnostic] = []
+    for operation in operations:
+        if operation.resource_type != FEATURE_BINDING_RESOURCE_TYPE:
+            continue
+        if operation.action not in (ChangeAction.CREATE, ChangeAction.UPDATE):
+            continue
+        payload = operation.payload
+        diagnostics.extend(
+            _feature_shape_diagnostics(operation.address, payload if isinstance(payload, Mapping) else {})
+        )
+    return diagnostics
+
+
 def composition_diagnostics(
     resource: PlannedResource,
     payload: Mapping[str, object],
@@ -273,5 +360,4 @@ def composition_diagnostics(
         return _content_placement_diagnostics(resource, payload, capabilities, node_addresses)
     if resource.resource_type == ACCOUNT_PLACEMENT_RESOURCE_TYPE:
         return _account_placement_diagnostics(resource, payload, capabilities, node_addresses)
-    # feature-binding: no per-feature capability gate; only the target must resolve.
-    return _unbound_placement_diagnostics(resource, _placement_target(payload), node_addresses)
+    return _feature_binding_diagnostics(resource, payload, node_addresses)

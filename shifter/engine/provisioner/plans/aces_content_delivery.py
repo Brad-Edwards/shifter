@@ -87,7 +87,7 @@ from ._aces_content_delivery_scripts import (
 from .base import SetupStep
 
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_LINUX_FILE_MODES = frozenset({"600", "644"})
+_LINUX_FILE_MODES = frozenset({"600", "644", "755"})
 
 # ---------------------------------------------------------------------------
 # Linux (bash) -- every value is rendered directly into the static script text
@@ -271,6 +271,7 @@ class AcesContentDeliveryPlan:
         sha256: str,
         payload_b64: str,
         sensitive: bool = False,
+        file_mode: str | None = None,
         installed_tree_sha256: str | None = None,
     ) -> None:
         if content_type not in ("file", "directory"):
@@ -299,6 +300,7 @@ class AcesContentDeliveryPlan:
         self._sha256 = sha256
         self._payload_b64 = payload_b64
         self._sensitive = sensitive
+        self._file_mode = file_mode
         self._installed_tree_sha256 = installed_tree_sha256
 
     @property
@@ -363,7 +365,7 @@ class AcesContentDeliveryPlan:
         """
         if self._platform != "linux":
             return {}
-        mode_value = "600" if self._sensitive else "644"
+        mode_value = self._file_mode or ("600" if self._sensitive else "644")
         if self._content_type == "file" and mode_value not in _LINUX_FILE_MODES:
             raise ValueError(f"Unsupported ACES content delivery file mode: {mode_value!r}")
         return {

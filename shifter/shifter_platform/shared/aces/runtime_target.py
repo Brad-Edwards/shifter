@@ -43,6 +43,7 @@ from shared.aces.composition_envelope import (
     COMPOSITION_RESOURCE_TYPES,
     account_operation_diagnostics,
     composition_diagnostics,
+    feature_operation_diagnostics,
 )
 from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
@@ -362,6 +363,11 @@ def interpret_provisioning_plan(
     # a resource and its own CREATE operation produce an identical diagnostic.
     seen = {(diagnostic.code, diagnostic.address, diagnostic.message) for diagnostic in diagnostics}
     for diagnostic in account_operation_diagnostics(plan.operations, capabilities):
+        key = (diagnostic.code, diagnostic.address, diagnostic.message)
+        if key not in seen:
+            seen.add(key)
+            diagnostics.append(diagnostic)
+    for diagnostic in feature_operation_diagnostics(plan.operations):
         key = (diagnostic.code, diagnostic.address, diagnostic.message)
         if key not in seen:
             seen.add(key)

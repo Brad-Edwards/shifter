@@ -42,6 +42,7 @@ import hashlib
 import io
 import logging
 import os
+import re
 import tarfile
 import tempfile
 from collections.abc import Callable
@@ -51,7 +52,7 @@ from typing import Any
 from shared.aces.content_delivery import ContentDeliveryError, DeliveryBinding
 
 from aces_gcp_composition import AcesGceCompositionError
-from aces_plan import AcesPlan, AcesPlanContent, AcesPlanNode
+from aces_plan import AcesPlan, AcesPlanContent, AcesPlanFeature, AcesPlanNode
 from cloud import get_object_storage
 from cloud.exceptions import CloudError
 from cloud.types import ObjectStorage
@@ -61,6 +62,7 @@ from executors.factory import GuestExecutionContext, build_guest_execution_conte
 from log_redact import safe_log_value
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
 from plans.aces_content_delivery import AcesContentDeliveryPlan
+from plans.aces_feature_service import AcesFeatureServicePlan
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ _READ_CHUNK_BYTES = 1024 * 1024
 #: after instance + directory realization, so the guest is normally already
 #: reachable; this is defense against a slow-booting or just-joined guest).
 _GUEST_READY_TIMEOUT_SECONDS = 600
+_SAFE_SERVICE_IDENTITY = re.compile(r"^[A-Za-z0-9._+-]+$")
 
 
 class AcesContentDeliveryError(RuntimeError):
@@ -100,6 +103,43 @@ def default_content_delivery_ops() -> AcesContentDeliveryOps:
 def _source_backed_content(aces_plan: AcesPlan) -> list[AcesPlanContent]:
     """Return every content item whose bytes are delivered, not baked in."""
     return [item for item in aces_plan.content if item.source_name]
+
+
+def _source_backed_features(aces_plan: AcesPlan) -> list[AcesPlanFeature]:
+    """Return delivered artifact/configuration features (services are separate)."""
+    return [
+        item for item in aces_plan.features if item.source_name and item.feature_type in {"artifact", "configuration"}
+    ]
+
+
+def _ordered_features(aces_plan: AcesPlan) -> list[AcesPlanFeature]:
+    """Return features in stable dependency order, failing closed on a cycle.
+
+    Dependencies on non-feature resources are already satisfied by the earlier
+    composition/content phases. Feature-to-feature edges must remain ordered
+    across realization shapes, including service -> artifact/configuration and
+    artifact/configuration -> service edges.
+    """
+    features = list(aces_plan.features)
+    feature_addresses = {feature.address for feature in features}
+    remaining = {
+        feature.address: {dependency for dependency in feature.ordering_dependencies if dependency in feature_addresses}
+        for feature in features
+    }
+    ordered: list[AcesPlanFeature] = []
+    completed: set[str] = set()
+    while len(ordered) < len(features):
+        ready = [
+            feature
+            for feature in features
+            if feature.address not in completed and remaining[feature.address].issubset(completed)
+        ]
+        if not ready:
+            raise AcesContentDeliveryError("ACES feature realization dependencies contain a cycle")
+        for feature in ready:
+            ordered.append(feature)
+            completed.add(feature.address)
+    return ordered
 
 
 def _validated_binding(raw: dict[str, Any]) -> DeliveryBinding:
@@ -150,28 +190,53 @@ def assert_content_delivery_bindings_complete(
     reaches storage access or guest delivery.
     """
     source_backed = _source_backed_content(aces_plan)
+    source_backed_features = _source_backed_features(aces_plan)
+    for feature in aces_plan.features:
+        if feature.feature_type not in {"service", "artifact", "configuration"}:
+            raise AcesGceCompositionError("feature type has no provisioner realization")
+        if feature.has_environment:
+            raise AcesGceCompositionError("feature environment has no safe realization contract")
+        if not feature.source_name:
+            raise AcesGceCompositionError("feature source identity is missing")
+        if feature.feature_type in {"artifact", "configuration"} and not feature.destination:
+            raise AcesGceCompositionError("delivered feature destination is missing")
+        if feature.feature_type == "service" and (
+            not _SAFE_SERVICE_IDENTITY.fullmatch(feature.source_name)
+            or (feature.source_version is not None and not _SAFE_SERVICE_IDENTITY.fullmatch(feature.source_version))
+        ):
+            raise AcesGceCompositionError("service feature identity is invalid")
     for item in source_backed:
         if item.content_type not in _SUPPORTED_DELIVERY_CONTENT_TYPES:
             raise AcesGceCompositionError(f"source-backed content {item.content_type!r} has no delivery materializer")
     bindings = delivery_bindings or []
+    validated: list[DeliveryBinding] = []
     for raw_binding in bindings:
         try:
-            _validated_binding(raw_binding)
+            validated.append(_validated_binding(raw_binding))
         except ContentDeliveryError:
             raise AcesGceCompositionError("a delivery binding failed contract validation") from None
-    bound_addresses = {str(binding.get("content_address", "")) for binding in bindings}
-    source_addresses = {item.address for item in source_backed}
-    if len(bound_addresses) != len(bindings):
-        raise AcesGceCompositionError("ACES content delivery bindings carry a duplicate content_address")
-    missing = source_addresses - bound_addresses
+    bound_identities = {
+        (
+            binding.resource_type or "content-placement",
+            binding.resource_address or binding.content_address or "",
+        )
+        for binding in validated
+    }
+    source_identities = {
+        *(("content-placement", item.address) for item in source_backed),
+        *(("feature-binding", item.address) for item in source_backed_features),
+    }
+    if len(bound_identities) != len(bindings):
+        raise AcesGceCompositionError("ACES delivery bindings carry a duplicate resource identity")
+    missing = source_identities - bound_identities
     if missing:
-        raise AcesGceCompositionError("a source-backed content item is missing its delivery binding")
-    extra = bound_addresses - source_addresses
+        raise AcesGceCompositionError("a source-backed resource is missing its delivery binding")
+    extra = bound_identities - source_identities
     if extra:
-        raise AcesGceCompositionError("a delivery binding does not match any source-backed content item")
+        raise AcesGceCompositionError("a delivery binding does not match any deliverable resource")
 
 
-def _binding_for(bindings: list[dict[str, Any]], content_address: str) -> dict[str, Any]:
+def _binding_for(bindings: list[dict[str, Any]], resource_type: str, resource_address: str) -> dict[str, Any]:
     """Return the one binding for ``content_address``.
 
     The gate (``assert_content_delivery_bindings_complete``) already
@@ -179,7 +244,12 @@ def _binding_for(bindings: list[dict[str, Any]], content_address: str) -> dict[s
     is ever called; the raise below is unreachable in a correctly-gated apply.
     """
     for binding in bindings:
-        if str(binding.get("content_address", "")) == content_address:
+        if resource_type == "content-placement" and str(binding.get("content_address", "")) == resource_address:
+            return binding
+        if (
+            binding.get("resource_type") == resource_type
+            and str(binding.get("resource_address", "")) == resource_address
+        ):
             return binding
     # Unreachable in a correctly-gated apply; excluded from coverage via
     # pyproject.toml [tool.coverage.report].exclude_lines (Sonar S139 forbids
@@ -250,7 +320,7 @@ class _DownloadedPayload:
 def _download_and_verify(
     ops: AcesContentDeliveryOps,
     config: AcesContentDeliveryConfig,
-    item: AcesPlanContent,
+    content_type: str,
     raw_binding: dict[str, Any],
 ) -> _DownloadedPayload:
     """Download one binding's payload, verify it, and return it ready to deliver.
@@ -297,7 +367,7 @@ def _download_and_verify(
         raise AcesContentDeliveryError("ACES content delivery downloaded payload digest mismatch")
     if len(raw_bytes) != binding.byte_count:
         raise AcesContentDeliveryError("ACES content delivery downloaded payload size mismatch")
-    installed_tree_sha256 = _installed_tree_sha256(raw_bytes) if item.content_type == "directory" else None
+    installed_tree_sha256 = _installed_tree_sha256(raw_bytes) if content_type == "directory" else None
     payload_b64 = base64.b64encode(raw_bytes).decode("ascii")
     return _DownloadedPayload(
         sha256=binding.sha256, payload_b64=payload_b64, installed_tree_sha256=installed_tree_sha256
@@ -315,7 +385,10 @@ def _output(outputs: dict[str, dict[str, Any]], instance_key: str) -> dict[str, 
 def _deliver_to_instance(
     ops: AcesContentDeliveryOps,
     output: dict[str, Any],
-    item: AcesPlanContent,
+    content_type: str,
+    target: str,
+    sensitive: bool,
+    file_mode: str | None,
     platform: str,
     downloaded: _DownloadedPayload,
 ) -> None:
@@ -336,12 +409,13 @@ def _deliver_to_instance(
         if execution.wait_for_ready(timeout_seconds=_GUEST_READY_TIMEOUT_SECONDS) is False:
             raise AcesContentDeliveryError("ACES content delivery guest did not become ready")
         plan = AcesContentDeliveryPlan(
-            content_type=item.content_type,
+            content_type=content_type,
             platform=platform,
-            target=_target_path(item),
+            target=target,
             sha256=downloaded.sha256,
             payload_b64=downloaded.payload_b64,
-            sensitive=item.sensitive,
+            sensitive=sensitive,
+            file_mode=file_mode,
             installed_tree_sha256=downloaded.installed_tree_sha256,
         )
         try:
@@ -353,6 +427,39 @@ def _deliver_to_instance(
         verification = result.verification_result
         if verification is None or not verification.success:
             raise AcesContentDeliveryError("ACES content delivery in-guest digest verification failed")
+    finally:
+        execution.close()
+
+
+def _realize_service_on_instance(
+    ops: AcesContentDeliveryOps,
+    output: dict[str, Any],
+    feature: AcesPlanFeature,
+    platform: str,
+) -> None:
+    """Install/locate, enable, start, and independently verify one service."""
+    package = feature.source_name or ""
+    version = feature.source_version
+    if (
+        not _SAFE_SERVICE_IDENTITY.fullmatch(package)
+        or (version is not None and not _SAFE_SERVICE_IDENTITY.fullmatch(version))
+        or feature.has_environment
+    ):
+        raise AcesContentDeliveryError("ACES service feature contract is invalid")
+    execution = ops.execution_builder(output, os_type=platform, role="aces-node")
+    try:
+        if execution.wait_for_ready(timeout_seconds=_GUEST_READY_TIMEOUT_SECONDS) is False:
+            raise AcesContentDeliveryError("ACES feature service guest did not become ready")
+        plan = AcesFeatureServicePlan(platform=platform, package=package, version=version)
+        try:
+            result = ops.orchestrator_factory(execution.executor).orchestrate(
+                execution.target, plan, plan.get_context({}), execution.document_name
+            )
+        except SetupError:
+            raise AcesContentDeliveryError("ACES feature service setup plan failed") from None
+        verification = result.verification_result
+        if verification is None or not verification.success:
+            raise AcesContentDeliveryError("ACES feature service verification failed")
     finally:
         execution.close()
 
@@ -372,23 +479,69 @@ def realize_aces_content_delivery(
     rather than silently skipping, since that would mean the gate was bypassed.
     """
     source_backed = _source_backed_content(aces_plan)
-    if not source_backed:
+    ordered_features = _ordered_features(aces_plan)
+    source_backed_features = [
+        feature
+        for feature in ordered_features
+        if feature.source_name and feature.feature_type in {"artifact", "configuration"}
+    ]
+    if not source_backed and not ordered_features:
         return
     resolved_ops = ops or default_content_delivery_ops()
     bindings = delivery_bindings or []
     nodes_by_address = {node.address: node for node in aces_plan.nodes}
     outputs_by_key = {str(output.get("uuid", "")): output for output in instance_outputs}
-    config = resolved_ops.config_loader()
+    config = resolved_ops.config_loader() if source_backed or source_backed_features else None
 
     try:
         for item in source_backed:
-            raw_binding = _binding_for(bindings, item.address)
-            downloaded = _download_and_verify(resolved_ops, config, item, raw_binding)
+            raw_binding = _binding_for(bindings, "content-placement", item.address)
+            assert config is not None
+            downloaded = _download_and_verify(resolved_ops, config, item.content_type, raw_binding)
             node = nodes_by_address[item.target_address]
             platform = _platform_for(node)
             for index in range(node.count):
                 output = _output(outputs_by_key, f"{item.target_address}#{index}")
-                _deliver_to_instance(resolved_ops, output, item, platform, downloaded)
+                _deliver_to_instance(
+                    resolved_ops,
+                    output,
+                    item.content_type,
+                    _target_path(item),
+                    item.sensitive,
+                    None,
+                    platform,
+                    downloaded,
+                )
+        for feature in ordered_features:
+            node = nodes_by_address[feature.target_address]
+            platform = _platform_for(node)
+            if feature.feature_type == "service":
+                for index in range(node.count):
+                    output = _output(outputs_by_key, f"{feature.target_address}#{index}")
+                    _realize_service_on_instance(resolved_ops, output, feature, platform)
+                continue
+
+            raw_binding = _binding_for(bindings, "feature-binding", feature.address)
+            binding = _validated_binding(raw_binding)
+            content_type = binding.payload_kind or ""
+            if content_type not in _SUPPORTED_DELIVERY_CONTENT_TYPES or not feature.destination:
+                raise AcesContentDeliveryError("ACES feature delivery contract is invalid")
+            assert config is not None
+            downloaded = _download_and_verify(resolved_ops, config, content_type, raw_binding)
+            sensitive = binding.install_policy == "configuration"
+            file_mode = "755" if binding.install_policy == "executable" else None
+            for index in range(node.count):
+                output = _output(outputs_by_key, f"{feature.target_address}#{index}")
+                _deliver_to_instance(
+                    resolved_ops,
+                    output,
+                    content_type,
+                    feature.destination,
+                    sensitive,
+                    file_mode,
+                    platform,
+                    downloaded,
+                )
     except AcesContentDeliveryError:
         raise
     except Exception:

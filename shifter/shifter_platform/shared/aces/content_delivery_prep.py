@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlsplit
 
 from shared.aces.content_delivery import (
+    FEATURE_BINDING_VERSION,
     ContentDeliveryError,
     DeliveryBinding,
     DeliveryProjection,
@@ -46,6 +47,7 @@ logger = logging.getLogger(__name__)
 #: Pack-relative location of the author-declared delivery projection document.
 PROJECTION_RELPATH = "delivery/content-projection.json"
 _CONTENT_PLACEMENT_RESOURCE_TYPE = "content-placement"
+_FEATURE_BINDING_RESOURCE_TYPE = "feature-binding"
 _PACK_URI_SCHEME = "aces-scenario-pack"
 _OCTET_STREAM = "application/octet-stream"
 #: Streaming read chunk for size-gated digesting (never buffers a whole file).
@@ -86,6 +88,9 @@ class _ContentRef:
     source_version: str
     content_type: str
     content_format: str
+    resource_type: str = _CONTENT_PLACEMENT_RESOURCE_TYPE
+    feature_type: str = ""
+    install_policy: str = ""
 
 
 @dataclass(frozen=True)
@@ -151,17 +156,26 @@ def _prepare_one(
     target: DeliveryTarget,
 ) -> DeliveryBinding:
     """Resolve, verify, materialize, promote, and bind one content resource."""
-    entry = projection.resolve(
-        source_name=ref.source_name,
-        source_version=ref.source_version,
-        content_type=ref.content_type,
-        content_format=ref.content_format,
-    )
+    if ref.resource_type == _FEATURE_BINDING_RESOURCE_TYPE:
+        entry = projection.resolve_feature(
+            source_name=ref.source_name,
+            source_version=ref.source_version,
+            feature_type=ref.feature_type,
+        )
+    else:
+        entry = projection.resolve(
+            source_name=ref.source_name,
+            source_version=ref.source_version,
+            content_type=ref.content_type,
+            content_format=ref.content_format,
+        )
+    payload_kind = entry.payload_kind or ref.content_type
+    content_format = entry.content_format
     input_abs = _resolve_pack_input(pack_root, entry.input_path)
-    _verify_input_against_inventory(pack_root, input_abs, ref.content_type, inventory, target.max_payload_bytes)
+    _verify_input_against_inventory(pack_root, input_abs, payload_kind, inventory, target.max_payload_bytes)
     payload = materialize_payload(
-        content_type=ref.content_type,
-        content_format=ref.content_format,
+        content_type=payload_kind,
+        content_format=content_format,
         source_path=input_abs,
         max_bytes=target.max_payload_bytes,
     )
@@ -170,6 +184,18 @@ def _prepare_one(
     digest = sha256_hex(payload)
     key = normalized_storage_key(target.prefix, digest)
     _promote(target.storage, target.bucket, key, payload)
+    if ref.resource_type == _FEATURE_BINDING_RESOURCE_TYPE:
+        return DeliveryBinding(
+            content_address=None,
+            sha256=digest,
+            storage_key=key,
+            byte_count=len(payload),
+            binding_version=FEATURE_BINDING_VERSION,
+            resource_type=_FEATURE_BINDING_RESOURCE_TYPE,
+            resource_address=ref.address,
+            payload_kind=payload_kind,
+            install_policy=entry.install_policy,
+        )
     return DeliveryBinding(content_address=ref.address, sha256=digest, storage_key=key, byte_count=len(payload))
 
 
@@ -188,7 +214,41 @@ def _source_backed_content_refs(serialized_plan: Mapping[str, object]) -> list[_
         ref = _content_ref_from_resource(address, resource)
         if ref is not None:
             refs.append(ref)
+            continue
+        ref = _feature_ref_from_resource(address, resource)
+        if ref is not None:
+            refs.append(ref)
     return refs
+
+
+def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef | None:
+    """Return one source-backed artifact/configuration delivery reference."""
+    if not isinstance(resource, Mapping) or resource.get("resource_type") != _FEATURE_BINDING_RESOURCE_TYPE:
+        return None
+    payload = resource.get("payload")
+    spec = payload.get("spec") if isinstance(payload, Mapping) else None
+    template = spec.get("template") if isinstance(spec, Mapping) else None
+    if not isinstance(template, Mapping):
+        return None
+    feature_type = template.get("type")
+    feature_type = feature_type.lower() if isinstance(feature_type, str) else ""
+    if feature_type == "service":
+        return None
+    if feature_type not in {"artifact", "configuration"}:
+        raise ContentDeliveryError("feature binding has no delivery realization")
+    name, version = _parse_source(template.get("source"))
+    if not name:
+        raise ContentDeliveryError("source-backed feature has an unresolvable source name")
+    return _ContentRef(
+        address=str(resource.get("address") or address),
+        source_name=name,
+        source_version=version,
+        content_type="file",
+        content_format="",
+        resource_type=_FEATURE_BINDING_RESOURCE_TYPE,
+        feature_type=feature_type,
+        install_policy="",
+    )
 
 
 def _content_ref_from_resource(address: object, resource: object) -> _ContentRef | None:
