@@ -47,8 +47,12 @@ done < <(docker compose config --images)
 
 mapfile -t running < <(docker ps --filter name=aptl- --filter status=running --format '{{.Names}}')
 [[ "${#running[@]}" -ge 30 ]] || fail "only ${#running[@]} aptl containers are running; expected at least 30"
+# Match against a captured string, not `printf ... | grep -Fxq`: grep short-
+# circuits and printf takes SIGPIPE writing the rest, which pipefail turns into a
+# spurious "not running" for a container that IS present (#1782).
+running_names="$(printf '%s\n' "${running[@]}")"
 for required in aptl-wazuh-manager aptl-victim aptl-kali; do
-  printf '%s\n' "${running[@]}" | grep -Fxq "${required}" || fail "required container ${required} is not running"
+  grep -Fxq "${required}" <<<"${running_names}" || fail "required container ${required} is not running"
 done
 
 mapfile -t unhealthy < <(docker ps -a --filter name=aptl- --filter health=unhealthy --format '{{.Names}}')
