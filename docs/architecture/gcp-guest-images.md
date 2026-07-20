@@ -114,6 +114,14 @@ per-role **policy** minimum boot-disk size (not the actual source-image size)
 before any Compute Engine call so a malformed value fails fast instead of after
 a create attempt.
 
+Scenario-host families such as `shifter-polaris-vm` and
+`shifter-techvault` are native GCE artifacts consumed directly by this backend.
+They are not automatically GDC-exportable Linux roles: TechVault has no
+`GDC_TECHVAULT_IMAGE_URL` contract, so `packer-gcp.yml` excludes it from the
+generic qcow2 export step. Per-instance selection among Kali-role scenario
+hosts occurs at the GCE image-profile seam rather than by changing the global
+role default.
+
 An **immutable candidate image is the unit of validation and promotion**; a GCE
 image family is a mutable deployment channel, not evidence that a particular
 image was tested. The pipeline is three stages:
@@ -122,8 +130,8 @@ image was tested. The pipeline is three stages:
 packer-gcp.yml         build    → GCE image  shifter-<type>-<ts>   (family shifter-<type>)
 packer-gcp-validate.yml validate → boot the EXACT candidate in a disposable,
                                     isolated VM; label it validated=passed
-packer-gcp-promote.yml  promote  → copy the EXACT validated candidate to the prod
-                                    family; verify it, then deprecate the old head
+packer-gcp-promote.yml  promote  → bind candidate to protected run + evidence,
+                                    copy it to prod, verify it, deprecate old head
 ```
 
 1. **Validate** (`packer-gcp-validate.yml`) boots the concrete candidate in a
@@ -133,7 +141,9 @@ packer-gcp-promote.yml  promote  → copy the EXACT validated candidate to the p
    guest: for Linux/polaris-vm the runner SSH-executes the check script (guest
    agent, host sshd management port, Docker, baked compose config/images, and
    that every declared compose service has a **running** container) and gates on
-   its exit code; for a pre-promoted DC the runner probes AD over LDAP (an
+   its exit code; TechVault uses its own profile for the UID-1000 SSH/RDP seat,
+   30-container APTL stack, required services, and expected one-shot; for a
+   pre-promoted DC the runner probes AD over LDAP (an
    anonymous rootDSE query proving AD DS is serving the **expected forest**, with
    **no first-boot promotion**). The candidate boots with **no service account
    and no OAuth scopes**, so guest code cannot read a cloud token and mutate its
