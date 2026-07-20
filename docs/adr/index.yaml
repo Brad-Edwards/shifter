@@ -87,7 +87,7 @@
       },
       {
         "id": "ADR-003-R6",
-        "description": "After successful AWS dev portal deploy verification, _shifter-platform.yml may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes scripts/smoke-test.sh via scripts/portal_deploy/portal_deploy.py run-manage-on-portal. The job must remain dev-only (inputs.is_dev), continue-on-error so deploy success is not blocked, request issues: write only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. Long-running portal manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit aws ssm wait command-executed waiter.",
+        "description": "After successful AWS dev portal deploy verification, _shifter-platform.yml may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes scripts/smoke-test.sh via scripts/portal_deploy/portal_deploy.py run-manage-on-portal. The job must remain dev-only (inputs.is_dev), continue-on-error so deploy success is not blocked, request issues: write only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. Long-running portal manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit aws ssm wait command-executed waiter. The smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED.",
         "checks": ["deploy-verification-fail-loud", "deploy-workflow-runner-exposure"]
       },
       {
@@ -243,6 +243,11 @@
         "id": "ADR-004-R24",
         "description": "Production-path quality ownership is a single versioned, machine-readable contract at `.github/quality-path-filters.yaml` (schema parsed by `scripts/quality_ownership/contract.py`), enforced fail-closed. The always-run `paths` job in `.github/workflows/_quality.yml` invokes `scripts/quality_ownership/classify_paths.py`, which validates the contract and REJECTS any changed path that is neither a declared quality unit nor a typed exclusion BEFORE emitting any job-selection output, so an unowned path can no longer skip the checks designed to gate it. The `quality-path-ownership` adr_guard check (this rule) reconciles the contract against the whole repository and enforces three invariants: (1) estate completeness - every git-tracked path is a production owner or a narrow typed exclusion (closed enum: docs/test/generated/vendor/metadata/config; no catch-all, no unowned remainder); (2) ownership completeness - every production PATH is covered, across the union of its matching units, by a BLOCKING lint AND security AND test job (an advisory / `continue-on-error` / always-run / missing job never satisfies a responsibility), and unit `packages` reconcile both directions against the #1523 first-party classification in `scripts/check_layer_imports/layer_imports.yaml`; (3) routing reachability - a representative change to each unit makes its declared jobs (and matrix members) run in the real `_quality.yml` (proven by semantic `if:` evaluation, not substring match), while a docs-only change selects no production job. Genuine ownership gaps are recorded ONLY as time-bounded `docs/adr/exceptions.yaml` entries keyed to the `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor - there is no `not_applicable`, advisory, or permanent grandfather escape hatch in the contract schema. The contract and its classifier route their own guard tests and adr-conformance (self-bypass prevention). Anchored on GEN-002 (Executable Architecture Governance). Established by #1530; gap-closure tracked by #1698.",
         "checks": ["quality-path-ownership"]
+      },
+      {
+        "id": "ADR-004-R25",
+        "description": "Request-owned AWS OpenVPN gateways MUST preserve least-privilege IAM and ELBv2 delegation across both policy evaluators. The shared CI permissions boundary may exclude from `DenyIamEscalation` only the environment-scoped `role/shifter-${var.environment}-*-vpn-gateway` and `instance-profile/shifter-${var.environment}-*-vpn-gateway` namespaces, while a separate explicit deny prevents changing or deleting the gateway role's permissions boundary. The engine-provisioner identity policy remains the grant boundary: CreateRole requires the installation boundary, managed-policy attachment is limited to AmazonSSMManagedInstanceCore, and PassRole is limited to EC2. Its existing customer-managed ELB policy keeps GWLB and `shifter-vpn-*` NLB namespaces separate, authorizes CreateListener against the parent NLB ARN with both listener request tags and parent ownership resource tags, and permits AddTags only as a create-action dependency. The runtime `aws_lb_listener.vpn` sends `local.common_tags` in the create request. `scripts/check_tf_iam_role_naming` and `scripts/check_tf_iam_elb_scope` enforce these exact boundary, ARN, action, condition, and listener-tag shapes with focused negative tests; pre-commit and `_quality.yml` inspect both the policy and runtime Terraform inputs. Binding design note: `docs/architecture/proof-vpn-gateway-permissions-preflight-1755.md`. Established by #1755.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -260,6 +265,7 @@
       "scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py",
       "scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py",
       "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
+      "scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py",
       "scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py",
       "scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py",
       "scripts/check_tf_runner_network/check_tf_runner_network.py",
@@ -268,6 +274,7 @@
       "docs/adr/exceptions.yaml",
       "docs/architecture/credentialed-workflow-dispatch-trust-preflight-1690.md",
       "docs/architecture/checkov-soft-fail-preflight-757.md",
+      "docs/architecture/proof-vpn-gateway-permissions-preflight-1755.md",
       "docs/technical/dev/adr-enforcement.md",
       "docs/technical/dev/ci-cd.md"
     ]

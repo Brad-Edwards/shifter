@@ -134,6 +134,39 @@ def test_run_post_deploy_smoke_provision_timeout(
     smoke_command_mocks.cms.destroy_range_by_request_id.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    "terminal_status",
+    [ResourceStatus.FAILED, ResourceStatus.DESTROYED],
+)
+def test_run_post_deploy_smoke_terminal_status_fails_immediately_and_cleans_up(
+    terminal_status,
+    smoke_user,
+    monkeypatch,
+    fast_clock,
+    smoke_command_mocks,
+) -> None:
+    monkeypatch.setenv("SMOKE_TEST_USER_EMAIL", smoke_user.email)
+    request_id = uuid4()
+    sleeps: list[int] = []
+    monkeypatch.setattr(smoke_command.time, "sleep", sleeps.append)
+    smoke_command_mocks.cms.create_range.return_value = SimpleNamespace(request_id=str(request_id))
+    smoke_command_mocks.cms.find_range_instance_id_by_request.return_value = 1
+    smoke_command_mocks.cms.get_range_status_by_id.return_value = terminal_status.value
+
+    with pytest.raises(
+        CommandError,
+        match=rf"terminal status {terminal_status.value}.*request_id={request_id}",
+    ):
+        call_command("run_post_deploy_smoke", "--variant", "linux", "--poll-interval", "1")
+
+    assert sleeps == []
+    smoke_command_mocks.cms.get_range_status_by_id.assert_called_once_with(1)
+    smoke_command_mocks.cms.destroy_range_by_request_id.assert_called_once_with(
+        smoke_user,
+        str(request_id),
+    )
+
+
 def test_run_post_deploy_smoke_connectivity_failure(
     smoke_user,
     monkeypatch,

@@ -613,9 +613,7 @@ resource "aws_iam_policy" "gwlb" {
         ]
         Resource = [
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/gwy/*",
-          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/gwy/*/*/*",
-          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*"
         ]
         Condition = {
@@ -645,9 +643,7 @@ resource "aws_iam_policy" "gwlb" {
         ]
         Resource = [
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/gwy/*",
-          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/gwy/*/*/*",
-          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*"
         ]
         Condition = {
@@ -668,10 +664,103 @@ resource "aws_iam_policy" "gwlb" {
         ]
         Resource = [
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/gwy/*",
-          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/gwy/*/*/*",
-          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*"
+        ]
+        Condition = {
+          StringEquals = {
+            "elasticloadbalancing:CreateAction" = [
+              "CreateLoadBalancer",
+              "CreateTargetGroup",
+              "CreateListener"
+            ]
+            "aws:RequestTag/shifter:system"      = "shifter"
+            "aws:RequestTag/shifter:environment" = var.environment
+            "aws:RequestTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        Effect   = "Allow"
+        Action   = "elasticloadbalancing:CreateLoadBalancer"
+        Resource = "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/shifter:system"      = "shifter"
+            "aws:RequestTag/shifter:environment" = var.environment
+            "aws:RequestTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        # CreateListener is authorized against the parent NLB, not the future
+        # listener ARN. Require both the listener request tags and the parent
+        # NLB's ownership tags so a same-account NLB outside this Shifter
+        # environment cannot be used as the parent.
+        Effect   = "Allow"
+        Action   = "elasticloadbalancing:CreateListener"
+        Resource = "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/shifter:system"                        = "shifter"
+            "aws:RequestTag/shifter:environment"                   = var.environment
+            "aws:RequestTag/ManagedBy"                             = "terraform"
+            "elasticloadbalancing:ResourceTag/shifter:system"      = "shifter"
+            "elasticloadbalancing:ResourceTag/shifter:environment" = var.environment
+            "elasticloadbalancing:ResourceTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        Effect   = "Allow"
+        Action   = "elasticloadbalancing:CreateTargetGroup"
+        Resource = "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/shifter-vpn-*/*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/shifter:system"      = "shifter"
+            "aws:RequestTag/shifter:environment" = var.environment
+            "aws:RequestTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        # Existing request-owned VPN resources remain mutable only while their
+        # ownership tags identify this Shifter environment.
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:ModifyTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:SetSecurityGroups",
+          "elasticloadbalancing:RemoveTags"
+        ]
+        Resource = [
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/shifter-vpn-*/*"
+        ]
+        Condition = {
+          StringEquals = {
+            "elasticloadbalancing:ResourceTag/shifter:system"      = "shifter"
+            "elasticloadbalancing:ResourceTag/shifter:environment" = var.environment
+            "elasticloadbalancing:ResourceTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        # Terraform sends tags with each create request. AddTags is a dependent
+        # permission and cannot be used here outside those create APIs.
+        Effect = "Allow"
+        Action = "elasticloadbalancing:AddTags"
+        Resource = [
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/shifter-vpn-*/*"
         ]
         Condition = {
           StringEquals = {
