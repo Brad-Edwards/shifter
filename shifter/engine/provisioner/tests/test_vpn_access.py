@@ -227,6 +227,32 @@ def test_aws_gateway_stays_pending_until_service_and_policy_probe():
     assert 'self.request.sendall(b"ready\\n")' in bootstrap
 
 
+def test_engine_provisioner_and_gateway_allow_private_health_probe_path():
+    repo = Path(__file__).parents[4]
+    gateway_security = (
+        repo / "shifter" / "engine" / "provisioner" / "terraform" / "modules" / "range" / "vpn.tf"
+    ).read_text(encoding="utf-8")
+    provisioner_security = (
+        repo / "platform" / "terraform" / "modules" / "engine-provisioner" / "security.tf"
+    ).read_text(encoding="utf-8")
+
+    gateway_ingress = gateway_security.split('resource "aws_security_group_rule" "vpn_gateway_health_from_portal"', 1)[
+        1
+    ].split("\n}", 1)[0]
+    provisioner_egress = provisioner_security.split(
+        'resource "aws_security_group_rule" "ecs_openvpn_health_to_range"', 1
+    )[1].split("\n}", 1)[0]
+
+    assert "from_port         = 1195" in gateway_ingress
+    assert "to_port           = 1195" in gateway_ingress
+    assert "cidr_blocks       = [var.portal_vpc_cidr]" in gateway_ingress
+    assert 'type              = "egress"' in provisioner_egress
+    assert "from_port         = 1195" in provisioner_egress
+    assert "to_port           = 1195" in provisioner_egress
+    assert 'protocol          = "tcp"' in provisioner_egress
+    assert "cidr_blocks       = [var.range_vpc_cidr]" in provisioner_egress
+
+
 def test_aws_gateway_bootstrap_uses_the_baked_runtime_without_package_egress():
     module = Path(__file__).parents[1] / "terraform" / "modules" / "range"
     bootstrap = (module / "templates" / "openvpn_gateway_aws.py.tpl").read_text(encoding="utf-8")
