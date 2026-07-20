@@ -162,6 +162,13 @@ Current mechanisms:
   `bedrock:InferenceProfileArn` condition, and a trust policy whose
   Principal is not `var.range_instance_role_arn` or that is missing the
   `ec2:SourceInstanceARN` condition. Guards the #1377 narrow-scope role.
+- `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` and
+  `scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py`: ADR-004-R25
+  request-owned VPN gateway hardening. The checks pin the exact gateway role
+  and instance-profile permissions-boundary carve-outs and tamper deny, keep
+  GWLB and `shifter-vpn-*` NLB action/resource namespaces separate, require
+  parent-NLB authorization and ownership resource tags for `CreateListener`,
+  and require the runtime VPN listener to send `local.common_tags` at creation.
 - `scripts/adr_guard/adr_guard.py` `mcp-no-shell-exec` check:
   flags any file under `mcp/` (`.js`, `.mjs`, `.cjs`) that imports
   `child_process` (any shape: named, default, namespace, CommonJS
