@@ -65,6 +65,7 @@ CLI flags) so secrets cannot appear in a process list. See
 | `windows` | `windows-2022` (windows-cloud) | WinRM + GCESysprep |
 | `dc` | `windows-2022` (windows-cloud) | AD DS via `PACKER_ROLE=dc`, GCESysprep, first-boot promotion |
 | `polaris-vm` | `debian-12` (debian-cloud) | Docker host baking the polaris compose stack (fail-closed: requires the verified stack) |
+| `techvault` | `ubuntu-2404-lts-amd64` (ubuntu-os-cloud) | UID-1000 participant seat plus the pinned, running APTL TechVault stack |
 | `dc-prebaked` | `windows-2022` (windows-cloud) | Pre-promoted DC baked from a `dc-profiles/<profile>` var-file; **un-sysprepped** |
 
 ### Kali (debian-12 base, converted to Kali Rolling)
@@ -135,6 +136,13 @@ For a promotable image the stack is mandatory and verified against
 `POLARIS_STACK_SHA256` (optionally pinned to an immutable
 `POLARIS_STACK_GENERATION`): a missing stack, checksum mismatch, invalid compose
 config, failed build/pull, or missing image fails the build.
+The bake also runs the full stack and requires every Compose-declared service
+to be running before capture; candidate validation only observes that prebaked
+state on first boot and after reset.
+Pulled images must be digest-pinned. Before starting the stack, the bake rejects
+privileged/host-namespace workloads and sensitive host binds, then blocks GCE
+metadata access from host and Docker-forwarded traffic to protect the attached
+builder identity.
 
 > **Live validation.** `packer validate` and the `tests/test_packer_gcp.py`
 > suite protect template/workflow shape; they do not prove a booted guest. The
@@ -143,6 +151,25 @@ config, failed build/pull, or missing image fails the build.
 > Shielded VM), reboots it, verifies guest/stack/AD health, and labels the image
 > `validated=passed`. Run it against a real project after a build, then promote
 > the validated image.
+
+#### techvault: pinned running-stack capture
+
+The native GCE TechVault image reuses the same provider-neutral guest scripts
+as the AWS golden image. It installs APTL and every transitive Python dependency
+from the repository-reviewed hash lock, and installs Claude Code from an exact
+tarball only after verifying its repository-reviewed digest. These inputs are
+not dispatch overrides: updating either tool requires reviewing and updating
+the checked-in lock or digest. The build captures the full stack running as the
+`ubuntu` UID-1000 seat. Do not add the generic cleanup script: stopping the
+stack would break its clean-boot restart contract.
+
+`packer-gcp-validate.yml` uses the TechVault-specific runner-side profile on the
+exact candidate and again after reset. It requires the participant SSH/RDP seat,
+Docker/Compose, all baked images, at least 30 running `aptl-*` containers, the
+required services, a successful Cortex initializer, and no unexpected failed or
+unhealthy containers. TechVault is a native GCE range-cell image only; the build
+workflow deliberately does not export `techvault.qcow2` or introduce a
+`GDC_TECHVAULT_IMAGE_URL` contract.
 
 ## Guest specialization
 

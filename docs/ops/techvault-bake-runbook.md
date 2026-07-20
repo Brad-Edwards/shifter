@@ -23,7 +23,8 @@ with per-range work limited to injecting SSH/RDP creds and the Bedrock shard.
 ## Prerequisites
 
 - AWS creds for the target account (`us-east-2`).
-- The pinned wheel version. Bake is tied to a version. Current: **`aptl-labs==4.1.2`**.
+- The checked-in `aptl-requirements.lock`; it pins and hashes APTL 4.1.2 and
+  every transitive Python dependency. The version is not a dispatch override.
 - Base image: Canonical Ubuntu 24.04 (`/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id`).
 - For the **runtime agent** (not the bake): AWS Bedrock model access must be
   granted in the account for the `us.anthropic.claude-*` inference profiles the
@@ -52,18 +53,10 @@ Run everything through SSM against the bake host.
 
 ### 1. Toolchain
 
-```bash
-curl -fsSL https://get.docker.com | sh && systemctl enable --now docker
-# The stack is baked as the ubuntu user (uid 1000, see step 2), and aptl's
-# first docker operation (the Suricata named-volume seed) runs as ubuntu.
-# Installing docker as root does not add ubuntu to the docker group, so grant
-# it explicitly or `aptl lab start` fails at "Preparing Suricata runtime
-# volumes" with a docker.sock permission-denied (surfaced as BackendSeedError).
-usermod -aG docker ubuntu
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs
-npm install -g @anthropic-ai/claude-code
-apt-get install -y pipx jq
-```
+Use `shifter/packer/scripts/techvault/toolchain.sh`. It installs the Ubuntu
+archive toolchain, verifies the pinned Claude Code tarball against the
+repository-reviewed SHA-256, and installs it offline before granting the
+participant Docker access.
 
 ### 2. Stand up the full stack (as the `ubuntu` user, uid 1000)
 
@@ -73,8 +66,12 @@ apt-get install -y pipx jq
 > readable. Running the whole thing as root leaves the indexer unhealthy
 > (`Unable to read .../root-ca.pem`).
 
+Copy `shifter/packer/scripts/techvault/aptl-requirements.lock` to the host and
+run `stack.sh` with `APTL_REQUIREMENTS_LOCK` pointing to it. The script creates
+the participant venv and installs only the hash-locked wheels with dependency
+resolution disabled. The equivalent stack initialization is:
+
 ```bash
-sudo -u ubuntu env HOME=/home/ubuntu pipx install "aptl-labs==4.1.2"
 sudo -u ubuntu env HOME=/home/ubuntu bash -c '
   cd /home/ubuntu && ~/.local/bin/aptl lab init techvault && cd techvault
   # Gotcha: the default aptl.json disables enterprise/soc/mail/fileshare/dns.
@@ -191,6 +188,31 @@ The workflow must publish only an encrypted AMI. See
 boundary and guardrails.
 
 The operator supplies the isolated bake subnet, no-inbound security group, and
-SSM-enabled builder instance profile (plus the pinned `aptl_version`) as
-`workflow_dispatch` inputs. Run this workflow for a normal rebake; the manual
-steps above are the reference for what it does and for debugging.
+SSM-enabled builder instance profile as `workflow_dispatch` inputs. A normal
+rebake cannot override the reviewed APTL lock or Claude Code digest. Run this
+workflow for a normal rebake; the manual steps above are the reference for what
+it does and for debugging.
+
+## Native GCE image pipeline
+
+The GCE range-cell backend uses the provider-scoped
+`shifter/packer/gcp/techvault.pkr.hcl` target and image family
+`shifter-techvault`; it does not import the AWS AMI or publish an SSM pointer.
+Dispatch `packer-gcp.yml` from `dev` with `image_type=techvault`. The reviewed
+APTL version, wheel SHA-256, Claude Code version, and high-memory builder shape
+come from the `GCP_TECHVAULT_*` GitHub Environment variables documented in
+`docs/dev/deploy-secrets.md`.
+
+After the build, dispatch `packer-gcp-validate.yml` against the exact candidate.
+The trusted runner checks the UID-1000 Ubuntu seat, SSH/xrdp, Docker/Compose,
+baked images, at least 30 running APTL containers, required services, the
+successful Cortex initializer, and clean reboot behavior. Promotion accepts
+only that exact candidate when its protected validation run, revision, and
+downloaded evidence artifact all agree. TechVault is deliberately excluded
+from the GDC qcow2 export path.
+
+A full range launch additionally needs the per-instance GCE image resolver from
+#1761; until then, an isolated validation deployment may temporarily bind the
+global Kali image profile to `shifter-techvault`, but that binding is not the
+permanent product configuration. Vertex model credentials remain tracked by
+#1446.
