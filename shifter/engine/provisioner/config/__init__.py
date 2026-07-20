@@ -38,6 +38,7 @@ from ._crypto import (
 from ._gce import (
     GCERangeCellConfig,
     GCERangeImageProfile,
+    gce_image_profile_fingerprint,
     load_gce_range_cell_config,
 )
 from ._gcp_backend import (
@@ -89,6 +90,7 @@ __all__ = [
     "RangeNetworkConfig",
     "SubnetConfig",
     "decrypt_field",
+    "gce_image_profile_fingerprint",
     "generate_presigned_url",
     "get_gcp_range_backend",
     "get_range_availability_zone",

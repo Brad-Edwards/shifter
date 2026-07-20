@@ -190,6 +190,8 @@ def instance_resource(
             **plan["labels"],
             "subnet": _label_value(instance["subnet_name"]),
             "role": _label_value(instance["role"]),
+            "image-key": _label_value(instance["image_key"] or "default"),
+            "image-profile": instance["image_profile_fingerprint"],
         },
         "tags": {"items": instance["tags"]},
         # Install the provisioned key for the host OS login user the provisioner

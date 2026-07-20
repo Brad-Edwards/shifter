@@ -127,6 +127,29 @@ def _host_public_key_from_instance(existing: object) -> str:
     return ""
 
 
+def _existing_label(existing: object, key: str) -> str:
+    """Read one label from a dict-like Compute instance response."""
+    labels = getattr(existing, "labels", None)
+    getter = getattr(labels, "get", None)
+    if callable(getter):
+        return str(getter(key, "") or "")
+    return ""
+
+
+def _assert_instance_image_binding(existing: object, instance: InstancePlan) -> None:
+    """Reject a keyed deterministic VM whose recorded profile differs from the plan."""
+    expected_key = instance["image_key"]
+    if not expected_key:
+        return
+    actual_key = _existing_label(existing, "image-key")
+    actual_profile = _existing_label(existing, "image-profile")
+    if actual_key != expected_key or actual_profile != instance["image_profile_fingerprint"]:
+        raise RuntimeError(
+            "Existing GCE range instance has an image-profile binding that differs from the current plan; "
+            f"ami_key={expected_key!r}. Recreate the range instead of reusing the drifted instance."
+        )
+
+
 def _ensure_instance(
     plan: RangeCellPlan,
     clients: GCEClients,
@@ -149,6 +172,8 @@ def _ensure_instance(
         zone=plan["zone"],
         instance=name,
     )
+    if existing is not None:
+        _assert_instance_image_binding(existing, instance)
     host_secret_ref, host_management_public_key = secret_ops.ensure_ssh(plan["range_id"], instance["source"])
     access_channels = set(instance["participant_access_channels"])
     participant_ssh_secret_ref: str | None = None

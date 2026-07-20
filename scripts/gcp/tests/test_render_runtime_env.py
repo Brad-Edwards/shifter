@@ -70,6 +70,19 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_KALI_MACHINE_TYPE": "e2-standard-2",
         "GCP_RANGE_KALI_DISK_SIZE_GB": "40",
         "GCP_RANGE_KALI_DISK_TYPE": "pd-balanced",
+        "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(
+            {
+                "kali": {
+                    "polaris-vm": {
+                        "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                        "machine_type": "e2-standard-8",
+                        "disk_size_gb": 210,
+                        "disk_type": "pd-balanced",
+                    }
+                }
+            },
+            indent=2,
+        ),
         "GCP_RANGE_WINDOWS_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
         "GCP_RANGE_WINDOWS_MACHINE_TYPE": "e2-standard-4",
         "GCP_RANGE_WINDOWS_DISK_SIZE_GB": "80",
@@ -267,6 +280,20 @@ def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
     assert "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=range-host@example.iam.gserviceaccount.com\n" in rendered
     assert "GCP_RANGE_LINUX_IMAGE=projects/debian-cloud/global/images/family/debian-12\n" in rendered
     assert "GCP_RANGE_EGRESS_ALLOW_CIDRS=10.60.0.0/16\n" in rendered
+    mapping_line = next(line for line in rendered.splitlines() if line.startswith("GCP_RANGE_IMAGE_KEY_PROFILES_JSON="))
+    mapping = mapping_line.split("=", 1)[1]
+    assert mapping == json.dumps(json.loads(mapping), separators=(",", ":"), sort_keys=True)
+
+
+def test_render_env_rejects_duplicate_image_profile_keys(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv(
+        "GCP_RANGE_IMAGE_KEY_PROFILES_JSON",
+        '{"kali":{"polaris-vm":{},"polaris-vm":{}}}',
+    )
+
+    with pytest.raises(ValueError, match="duplicate JSON key"):
+        module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
 
 
 def test_render_env_still_supports_gdc_backend_override(monkeypatch):

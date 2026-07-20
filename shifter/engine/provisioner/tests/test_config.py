@@ -3,6 +3,7 @@
 Tests for config utilities: presigned URLs, DB loading, dataclasses, and decryption.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -669,6 +670,168 @@ class TestRangeNetworkEnv:
             disk_size_gb=linux.disk_size_gb,
             disk_type=linux.disk_type,
         )
+
+    def test_gce_range_cell_config_get_profile_honors_exact_ami_key_profile(self):
+        default_kali = GCERangeImageProfile(
+            source_image="projects/test/global/images/family/shifter-kali",
+            machine_type="e2-standard-4",
+            disk_size_gb=80,
+        )
+        polaris = GCERangeImageProfile(
+            source_image="projects/test/global/images/family/shifter-polaris-vm",
+            machine_type="e2-standard-8",
+            disk_size_gb=210,
+        )
+        config = GCERangeCellConfig(
+            project_id="test-project",
+            region="us-central1",
+            zone="us-central1-b",
+            network_mode="vpc-per-range",
+            kali=default_kali,
+            image_key_profiles={"kali": {"polaris-vm": polaris}},
+        )
+
+        assert config.get_profile(role="attacker", os_type="kali") == default_kali
+        assert config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm") == polaris
+        with pytest.raises(RuntimeError, match="lowercase logical key"):
+            config.get_profile(role="attacker", os_type="kali", ami_key="Polaris-VM")
+        with pytest.raises(RuntimeError, match="no configured GCE image profile"):
+            config.get_profile(role="attacker", os_type="kali", ami_key="techvault")
+        with pytest.raises(RuntimeError, match="no configured GCE image profile"):
+            config.get_profile(role="dc", os_type="windows", ami_key="polaris-vm")
+
+    def test_load_gce_range_cell_config_parses_complete_image_key_profiles(self, mocker):
+        mapping = {
+            "kali": {
+                "polaris-vm": {
+                    "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                    "machine_type": "e2-standard-8",
+                    "disk_size_gb": 210,
+                    "disk_type": "pd-balanced",
+                }
+            },
+            "dc": {
+                "polaris-dc": {
+                    "source_image": "projects/test/global/images/family/shifter-polaris-dc",
+                    "machine_type": "e2-standard-4",
+                    "disk_size_gb": 100,
+                    "disk_type": "pd-ssd",
+                }
+            },
+        }
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_KALI_IMAGE": "projects/test/global/images/family/shifter-kali",
+                "GCP_RANGE_DC_IMAGE": "projects/test/global/images/family/shifter-dc",
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(mapping),
+            },
+            clear=True,
+        )
+
+        config = load_gce_range_cell_config()
+
+        assert config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm").disk_size_gb == 210
+        assert config.get_profile(role="dc", os_type="windows", ami_key="polaris-dc").disk_type == "pd-ssd"
+
+    @pytest.mark.parametrize(
+        ("raw", "message"),
+        [
+            ("not-json", "valid JSON object"),
+            ("[]", "valid JSON object"),
+            ('{"kali":{"same":{},"same":{}}}', "duplicate JSON key"),
+            ('{"attacker":{}}', "unknown profile class"),
+            ('{"kali":{"Polaris":{}}}', "logical keys must be lowercase"),
+            (
+                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '"disk_size_gb":210,"disk_type":"pd-balanced","extra":true}}}',
+                "unknown fields",
+            ),
+            (
+                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '"disk_size_gb":20,"disk_type":"pd-balanced"}}}',
+                "smaller than",
+            ),
+            (
+                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"n2 standard",'
+                '"disk_size_gb":210,"disk_type":"pd-balanced"}}}',
+                "machine type",
+            ),
+            (
+                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '"disk_size_gb":true,"disk_type":"pd-balanced"}}}',
+                "positive integer",
+            ),
+            (
+                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '"disk_size_gb":210,"disk_type":"pd-bogus"}}}',
+                "supported Compute Engine disk type",
+            ),
+        ],
+    )
+    def test_load_gce_range_cell_config_rejects_invalid_image_key_profiles(self, mocker, raw, message):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_LINUX_IMAGE": "family/shifter-linux",
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": raw,
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match=message):
+            load_gce_range_cell_config()
+
+    def test_load_gce_range_cell_config_rejects_oversized_or_excessive_image_key_profiles(self, mocker):
+        base_env = {
+            "CLOUD_PROVIDER": "gcp",
+            "GCP_RANGE_BACKEND": "gce",
+            "GCP_PROJECT_ID": "test-project",
+            "GCP_REGION": "us-central1",
+            "RANGE_NETWORK_ZONE": "us-central1-b",
+            "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+            "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+            "GCP_RANGE_LINUX_IMAGE": "family/shifter-linux",
+        }
+        mocker.patch.dict(
+            os.environ,
+            {
+                **base_env,
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": '{"linux":{"' + "a" * 32_769 + '":{}}}',
+            },
+            clear=True,
+        )
+        with pytest.raises(RuntimeError, match="32768-byte"):
+            load_gce_range_cell_config()
+
+        entry = {
+            "source_image": "family/shifter-linux",
+            "machine_type": "e2-standard-2",
+            "disk_size_gb": 30,
+            "disk_type": "pd-balanced",
+        }
+        profiles = {"linux": {f"image-{index}": entry for index in range(65)}}
+        mocker.patch.dict(
+            os.environ,
+            {**base_env, "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(profiles)},
+            clear=True,
+        )
+        with pytest.raises(RuntimeError, match="64-entry"):
+            load_gce_range_cell_config()
 
     def test_gce_range_cell_config_get_profile_falls_back_for_kali_without_image(self):
         linux = GCERangeImageProfile(source_image="projects/debian-cloud/global/images/family/debian-12")
