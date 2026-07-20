@@ -16,29 +16,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from components.instance import sanitize_hostname
-from executors.base import ExecutorError
 from executors.factory import GuestExecutionContext, build_guest_execution_context, get_ssh_username
+from instance_password_setup import set_local_password_or_raise as _push_local_password_or_raise
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
 from plans.base import SetupPlan
 from plans.bootstrap import BootstrapPlan
 from plans.domain_join import DomainJoinPlan
 from plans.linux_bootstrap import LinuxBootstrapPlan
 from plans.linux_xdr_agent_install import LinuxXDRAgentInstallPlan
-from plans.set_local_password import SetLocalPasswordPlan
 from plans.xdr_agent_install import XDRAgentInstallPlan
-from state_helpers import _get_cloud_provider
 
 logger = logging.getLogger(__name__)
 
 _LINUX_VICTIM_OS_TYPES = ("kali", "ubuntu", "amazon-linux")
-
-_WINDOWS_SSH_HOST_KEY_SCRIPT = r"""
-$ErrorActionPreference = "Stop"
-$key = Get-Content "C:\ProgramData\ssh\ssh_host_ed25519_key.pub" -Raw
-Write-Output ("SHIFTER_SSH_HOST_KEY=" + $key.Trim())
-"""
-_LINUX_SSH_HOST_KEY_SCRIPT = "cat /etc/ssh/ssh_host_ed25519_key.pub | sed 's/^/SHIFTER_SSH_HOST_KEY=/'"
-_SSH_HOST_KEY_MARKER = "SHIFTER_SSH_HOST_KEY="
 
 
 @dataclass(frozen=True)
@@ -105,95 +95,6 @@ def _run_setup_plan(
         raise SetupError(f"{failure_prefix}: {result.error}")
 
 
-def _resolve_rdp_password_from_secret_ref(rdp_password_secret_arn: str | None) -> str | None:
-    """Fetch the per-instance RDP password value from the active cloud secret store.
-
-    Returns ``None`` when no secret reference is recorded (e.g., DC role,
-    or older state without the field). Callers that require the value
-    must check for ``None`` and either skip the push or raise.
-    """
-    if not rdp_password_secret_arn:
-        return None
-    from cloud import get_secrets_store
-
-    secrets = get_secrets_store()
-    return secrets.get_secret(rdp_password_secret_arn)
-
-
-def _read_aws_ssh_host_key_or_raise(
-    execution: GuestExecutionContext,
-    *,
-    platform: str,
-    failure_prefix: str,
-) -> str:
-    """Read the guest SSH host key over SSM before switching transports.
-
-    SSM is the trusted side channel used to pin the subsequent SSH connection;
-    this avoids trust-on-first-use while keeping the password out of Run Command.
-    """
-    script = _WINDOWS_SSH_HOST_KEY_SCRIPT if platform == "windows" else _LINUX_SSH_HOST_KEY_SCRIPT
-    try:
-        result = execution.executor.run_command(
-            execution.target,
-            script,
-            timeout_seconds=60,
-            document_name=execution.document_name,
-        )
-    except ExecutorError as exc:
-        raise SetupError(f"{failure_prefix}: could not read the SSH host key over SSM") from exc
-
-    for line in result.stdout.splitlines():
-        if not line.startswith(_SSH_HOST_KEY_MARKER):
-            continue
-        fields = line.removeprefix(_SSH_HOST_KEY_MARKER).strip().split()
-        if len(fields) >= 2 and fields[0] == "ssh-ed25519":
-            return " ".join(fields[:2])
-    raise SetupError(f"{failure_prefix}: guest did not return a valid ed25519 SSH host key")
-
-
-def _build_aws_password_execution_or_raise(
-    execution: GuestExecutionContext,
-    ctx: _InstanceSetupCtx,
-    instance_data: dict[str, Any],
-    *,
-    platform: str,
-    failure_prefix: str,
-) -> GuestExecutionContext:
-    """Build a host-key-pinned SSH context for the secret-bearing step."""
-    private_ip = str(instance_data.get("private_ip") or "")
-    ssh_key_ref = str(instance_data.get("ssh_key_secret_arn") or "")
-    if not private_ip or not ssh_key_ref:
-        raise SetupError(f"{failure_prefix}: instance {execution.target} is missing private_ip or ssh_key_secret_arn")
-
-    host_public_key = _read_aws_ssh_host_key_or_raise(
-        execution,
-        platform=platform,
-        failure_prefix=failure_prefix,
-    )
-    from cloud import get_secrets_store
-    from executors.guest_ssh_executor import GuestSSHExecutor
-
-    private_key = get_secrets_store().get_secret(ssh_key_ref)
-    ssh_executor = GuestSSHExecutor(
-        private_key=private_key,
-        username=ctx.ssh_user,
-        host_public_key=host_public_key,
-        known_hosts_host=private_ip,
-    )
-    password_execution = GuestExecutionContext(
-        executor=ssh_executor,
-        target=private_ip,
-        document_name=execution.document_name,
-        transport_name="pinned-ssh",
-    )
-    try:
-        password_execution.wait_for_ready(timeout_seconds=120)
-    except ExecutorError as exc:
-        password_execution.close()
-        raise SetupError(f"{failure_prefix}: pinned SSH transport did not become ready") from exc
-    return password_execution
-
-
 def _set_local_password_or_raise(
     orchestrator: SetupOrchestrator,
     execution: GuestExecutionContext,
@@ -203,59 +104,16 @@ def _set_local_password_or_raise(
     failure_prefix: str,
     target_container: str | None = None,
 ) -> None:
-    """Push the per-instance local guest password via pinned SSH (#762)."""
-    cloud_provider = _get_cloud_provider()
-    instance_id = execution.target
-    if cloud_provider == "aws":
-        secret_ref = instance_data.get("rdp_password_secret_arn")
-    else:
-        secret_ref = instance_data.get("gcp_bootstrap_rdp_password_secret_ref") or instance_data.get(
-            "rdp_password_secret_arn"
-        )
-    if not secret_ref:
-        raise SetupError(
-            f"{failure_prefix}: instance {instance_id} has no RDP secret reference in its provisioned state"
-        )
-
-    password_execution = execution
-    password_orchestrator = orchestrator
-    owns_password_execution = False
-    if cloud_provider == "aws":
-        password_execution = _build_aws_password_execution_or_raise(
-            execution,
-            ctx,
-            instance_data,
-            platform=platform,
-            failure_prefix=failure_prefix,
-        )
-        password_orchestrator = SetupOrchestrator(executor=password_execution.executor)
-        owns_password_execution = True
-
-    try:
-        fetched = _resolve_rdp_password_from_secret_ref(secret_ref)
-        if not fetched:
-            raise SetupError(f"{failure_prefix}: per-instance RDP password fetch returned empty for {instance_id}")
-        plan = SetLocalPasswordPlan(platform=platform, target_container=target_container)
-        context = plan.get_context({"rdp_username": ctx.ssh_user, "rdp_password": fetched})
-        _run_setup_plan(
-            password_orchestrator,
-            password_execution,
-            plan,
-            context,
-            password_execution.document_name,
-            failure_prefix=failure_prefix,
-        )
-    finally:
-        if owns_password_execution:
-            password_execution.close()
-    if target_container:
-        logger.info(
-            "Per-instance local credential set on %s (%s container target configured)",
-            instance_id,
-            platform,
-        )
-    else:
-        logger.info("Per-instance local credential set on %s (%s)", instance_id, platform)
+    """Adapt the instance context to the password-transport service."""
+    _push_local_password_or_raise(
+        orchestrator,
+        execution,
+        instance_data,
+        ssh_user=ctx.ssh_user,
+        platform=platform,
+        failure_prefix=failure_prefix,
+        target_container=target_container,
+    )
 
 
 def _setup_attacker_role(
