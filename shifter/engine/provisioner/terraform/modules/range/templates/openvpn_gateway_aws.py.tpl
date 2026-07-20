@@ -1,10 +1,4 @@
 #cloud-config
-package_update: true
-packages:
-  # The gateway may run on any supported Linux target AMI. Install its runtime
-  # dependencies explicitly instead of relying on scenario-image contents.
-  - openvpn
-  - python3-boto3
 write_files:
   - path: /usr/local/sbin/configure-shifter-openvpn.py
     owner: root:root
