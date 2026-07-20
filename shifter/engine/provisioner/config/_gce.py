@@ -292,6 +292,33 @@ def _parse_gce_image_key_profile(
     return profile
 
 
+def _load_gce_image_key_profile_class(
+    profile_class: str,
+    entries: object,
+    *,
+    entry_count: int,
+) -> tuple[dict[str, GCERangeImageProfile], int]:
+    """Parse one profile class's logical-key entries, enforcing the global entry cap.
+
+    ``entry_count`` is the running total across all classes; the updated total is
+    returned so the caller can keep the cap cumulative.
+    """
+    if not isinstance(entries, dict):
+        raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON[{profile_class!r}] must be an object")
+    resolved_entries: dict[str, GCERangeImageProfile] = {}
+    for logical_key, entry in entries.items():
+        if not _GCE_IMAGE_KEY_RE.fullmatch(logical_key):
+            raise RuntimeError(
+                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON logical keys must be lowercase and use only "
+                "letters, digits, and hyphens"
+            )
+        entry_count += 1
+        if entry_count > _GCE_IMAGE_KEY_PROFILES_MAX_ENTRIES:
+            raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 64-entry limit")
+        resolved_entries[logical_key] = _parse_gce_image_key_profile(profile_class, logical_key, entry)
+    return resolved_entries, entry_count
+
+
 def _load_gce_image_key_profiles() -> dict[str, dict[str, GCERangeImageProfile]]:
     """Load the bounded exact (profile class, logical key) GCE profile map."""
     raw = os.environ.get("GCP_RANGE_IMAGE_KEY_PROFILES_JSON", "").strip()
@@ -300,8 +327,10 @@ def _load_gce_image_key_profiles() -> dict[str, dict[str, GCERangeImageProfile]]
     if len(raw.encode("utf-8")) > _GCE_IMAGE_KEY_PROFILES_MAX_BYTES:
         raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 32768-byte configuration limit")
     try:
+        # json.JSONDecodeError is a ValueError subclass, so this also catches the
+        # duplicate-key ValueError raised by _reject_duplicate_json_keys.
         decoded = json.loads(raw, object_pairs_hook=_reject_duplicate_json_keys)
-    except (json.JSONDecodeError, ValueError) as exc:
+    except ValueError as exc:
         raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be a valid JSON object: {exc}") from exc
     if not isinstance(decoded, dict):
         raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be a valid JSON object")
@@ -315,20 +344,9 @@ def _load_gce_image_key_profiles() -> dict[str, dict[str, GCERangeImageProfile]]
     profiles: dict[str, dict[str, GCERangeImageProfile]] = {}
     entry_count = 0
     for profile_class, entries in decoded.items():
-        if not isinstance(entries, dict):
-            raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON[{profile_class!r}] must be an object")
-        resolved_entries: dict[str, GCERangeImageProfile] = {}
-        for logical_key, entry in entries.items():
-            if not _GCE_IMAGE_KEY_RE.fullmatch(logical_key):
-                raise RuntimeError(
-                    "GCP_RANGE_IMAGE_KEY_PROFILES_JSON logical keys must be lowercase and use only "
-                    "letters, digits, and hyphens"
-                )
-            entry_count += 1
-            if entry_count > _GCE_IMAGE_KEY_PROFILES_MAX_ENTRIES:
-                raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 64-entry limit")
-            resolved_entries[logical_key] = _parse_gce_image_key_profile(profile_class, logical_key, entry)
-        profiles[profile_class] = resolved_entries
+        profiles[profile_class], entry_count = _load_gce_image_key_profile_class(
+            profile_class, entries, entry_count=entry_count
+        )
     return profiles
 
 
