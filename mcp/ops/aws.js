@@ -9,7 +9,7 @@
 // process environment, mirroring the module-level behaviour index.js
 // had before the #690 modularization.
 
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import {
   REGION,
   getProfile as _getProfile,
@@ -32,9 +32,16 @@ export function getProfile(env) {
 // must stay open). Uses the same argv-array discipline as the
 // shared aws()/awsText() helpers so tunnel call sites cannot
 // accidentally re-introduce shell-string interpolation.
+//
+// The command name is the fixed literal "aws" (never user input) and
+// argv is an array (no shell), so there is no command-injection path.
+// Resolving "aws" from PATH is the same reviewed-safe disposition the
+// shared gh/git runners in lib.js already take (S4036): the runtime
+// PATH is operator-controlled, and pinning an absolute path would break
+// portability across deploy hosts. NOSONAR marks that review.
 export function spawnAws(profile, args, options = {}) {
   const argv = buildAwsArgv(args, profile, REGION);
-  return spawn("aws", argv, options);
+  return spawn("aws", argv, options); // NOSONAR
 }
 
 export function aws(profile, args) {

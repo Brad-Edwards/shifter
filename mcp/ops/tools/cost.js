@@ -1,14 +1,18 @@
 // Cost & billing tools for the shifter-ops MCP server.
+//
+// Each tool descriptor is built by its own module-level factory so the
+// registrar stays a thin wiring function (keeps every function well
+// under the length budget). The factories receive the shared `deps`
+// bundle and are pure builders — registration happens in
+// `registerCostTools`.
 
 import { z } from "zod";
 import { registerTool } from "../policy.js";
 import { ok, err } from "../respond.js";
 import { EnvSchema } from "../schemas.js";
 
-export function registerCostTools(ctx, deps) {
-  const { getProfile, aws } = deps;
-
-  registerTool(ctx, {
+function costSummaryTool({ getProfile, aws }) {
+  return {
     name: "cost_summary",
     klass: "observability",
     description:
@@ -68,9 +72,11 @@ export function registerCostTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function dailySpendTool({ getProfile, aws }) {
+  return {
     name: "daily_spend",
     klass: "observability",
     description: "Show daily AWS spend for the last N days. Useful for spotting spikes.",
@@ -127,5 +133,10 @@ export function registerCostTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
+
+export function registerCostTools(ctx, deps) {
+  registerTool(ctx, costSummaryTool(deps));
+  registerTool(ctx, dailySpendTool(deps));
 }

@@ -53,7 +53,7 @@ export const SecretIdSchema = z
   .regex(/^[\w/+=.@-]+$/, MSG_INVALID_CHARACTERS);
 export const ArnSchema = z
   .string()
-  .regex(/^arn:aws[\w:*\/.-]+$/, "Must be a valid ARN");
+  .regex(/^arn:aws[\w:*/.-]+$/, "Must be a valid ARN");
 
 // --- Risk Register ---
 
