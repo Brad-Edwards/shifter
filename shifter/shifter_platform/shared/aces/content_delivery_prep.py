@@ -213,15 +213,21 @@ def _content_ref_from_resource(address: object, resource: object) -> _ContentRef
     name, version = _parse_source(source)
     if not name:
         raise ContentDeliveryError("source-backed content has an unresolvable source name")
-    content_type = spec.get("type")
-    content_format = spec.get("format")
     return _ContentRef(
         address=str(resource.get("address") or address),
         source_name=name,
         source_version=version,
-        content_type=content_type.lower() if isinstance(content_type, str) else "",
-        content_format=content_format if isinstance(content_format, str) else "",
+        content_type=_spec_str(spec, "type", lower=True),
+        content_format=_spec_str(spec, "format"),
     )
+
+
+def _spec_str(spec: Mapping[str, object], key: str, *, lower: bool = False) -> str:
+    """Return ``spec[key]`` as a string (lowercased when ``lower``), else ``""``."""
+    value = spec.get(key)
+    if not isinstance(value, str):
+        return ""
+    return value.lower() if lower else value
 
 
 def _parse_source(source: object) -> tuple[str | None, str]:
