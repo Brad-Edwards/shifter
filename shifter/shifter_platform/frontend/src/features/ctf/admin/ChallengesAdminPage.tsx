@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import { titleCase } from "../format";
 import { LabelFilterRow, distinctLabels, filterByLabels } from "../label-filters";
+import { ChallengeTransferControls } from "./ChallengeTransferControls";
 import { ctfAdminChallengeCreatePath, ctfAdminChallengePath, ctfAdminEventPath, ctfAdminEventsPath } from "../routes";
 
 function ChallengesBody({ query }: Readonly<{ query: ReturnType<typeof useCtfEventChallenges> }>) {
@@ -136,10 +137,13 @@ export function ChallengesAdminPage() {
         title="Challenges"
         description={description}
         actions={
-          <Link to={ctfAdminChallengeCreatePath(eventId)} className={cn(buttonVariants({ size: "sm" }))}>
-            <Plus className="size-4" />
-            New challenge
-          </Link>
+          <div className="flex items-center gap-2">
+            <ChallengeTransferControls eventId={eventId} />
+            <Link to={ctfAdminChallengeCreatePath(eventId)} className={cn(buttonVariants({ size: "sm" }))}>
+              <Plus className="size-4" />
+              New challenge
+            </Link>
+          </div>
         }
       />
       <Card className="overflow-hidden py-0" aria-busy={query.isFetching}>
