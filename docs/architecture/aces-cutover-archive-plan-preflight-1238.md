@@ -184,7 +184,9 @@ inventory rows:
 - **#1310, execute controlled default cutover and rollback selector.** The
   Cutover Sequence "Controlled default cutover" phase: flip the explicit
   selector, reclaim the `polaris` id, and post the reviewed cutover record with
-  a reversible rollback selector and preserved legacy reference path.
+  a reversible rollback selector and preserved legacy reference path. The
+  issue-specific source-route, lifecycle, config, and evidence guardrails are
+  in `docs/architecture/aces-controlled-default-cutover-preflight-1310.md`.
 - **#1311, archive legacy scenario, CyberScript, and Polaris surfaces after
   cutover.** The archive/delete cleanup buckets: `cyberscript.shared-reexports`,
   the `cyberscript.schema-shims` compatibility wrappers, `scenario.yaml-defaults`
