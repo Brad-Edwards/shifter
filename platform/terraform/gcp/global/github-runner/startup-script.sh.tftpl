@@ -24,7 +24,12 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y --no-install-recommends git curl jq ca-certificates tar unzip
+apt-get install -y --no-install-recommends git curl jq ca-certificates docker.io tar unzip
+
+# The deployment workflow builds and pushes container images on this runner.
+# Add the runner user before the out-of-band registration service starts.
+systemctl enable --now docker
+usermod -aG docker "$${RUNNER_USER}"
 
 mkdir -p "$${RUNNER_HOME}"
 cd "$${RUNNER_HOME}"
