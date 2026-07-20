@@ -36,6 +36,7 @@ interface FormState {
   capacity_hints: string;
   logo_url: string;
   theme_color: string;
+  visible_os_types: string;
   scoreboard_visibility: string;
   rating_visibility: string;
   scoring_mode: string;
@@ -63,6 +64,7 @@ const EMPTY: FormState = {
   capacity_hints: "",
   logo_url: "",
   theme_color: "",
+  visible_os_types: "kali",
   scoreboard_visibility: "public",
   rating_visibility: "public",
   scoring_mode: "standard",
@@ -93,6 +95,7 @@ function fromEvent(event: CtfEventDetail): FormState {
       : "",
     logo_url: event.logo_url ?? "",
     theme_color: event.theme_color ?? "",
+    visible_os_types: (event.visible_os_types ?? ["kali"]).join(", "),
     scoreboard_visibility: event.scoreboard_visibility || "public",
     rating_visibility: event.rating_visibility || "public",
     scoring_mode: event.scoring_mode || "standard",
@@ -154,6 +157,10 @@ function toPayload(state: FormState): CtfEventWrite {
     capacity_hints: parseCapacityHints(state.capacity_hints),
     logo_url: state.logo_url.trim(),
     theme_color: state.theme_color.trim(),
+    visible_os_types: state.visible_os_types
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean),
     scoreboard_visibility: state.scoreboard_visibility,
     rating_visibility: state.rating_visibility,
     scoring_mode: state.scoring_mode,
