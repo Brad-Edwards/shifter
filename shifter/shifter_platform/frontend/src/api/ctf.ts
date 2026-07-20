@@ -62,6 +62,7 @@ export const ctfKeys = {
   scoreTimeline: (participantId: string) => ["ctf", "score-timeline", participantId] as const,
   eventStaff: (eventId: string) => ["ctf", "event-staff", eventId] as const,
   eventTasks: (eventId: string) => ["ctf", "event-tasks", eventId] as const,
+  webhooks: (eventId: string) => ["ctf", "webhooks", eventId] as const,
 };
 
 export function useCtfCurrentEvent() {

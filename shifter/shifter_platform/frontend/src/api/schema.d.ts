@@ -585,6 +585,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/challenges/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the export document; ``?fmt=ctfd`` selects CTFd shape. */
+        get: operations["ctf_events_challenges_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/challenges/import-pack/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Run a partial-success import of the posted document. */
+        post: operations["ctf_events_challenges_import_pack_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/cleanup/": {
         parameters: {
             query?: never;
@@ -776,6 +810,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/results/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return results as JSON, or CSV with ``?fmt=csv``. */
+        get: operations["ctf_events_results_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/scoreboard/": {
         parameters: {
             query?: never;
@@ -873,6 +924,24 @@ export interface paths {
         put?: never;
         /** @description Reschedule the task to now; the scheduler executes it on its next poll. */
         post: operations["ctf_events_tasks_run_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/webhooks/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the event's webhooks. */
+        get: operations["ctf_events_webhooks_retrieve"];
+        put?: never;
+        /** @description Register a webhook endpoint. */
+        post: operations["ctf_events_webhooks_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1645,6 +1714,23 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/webhooks/{webhook_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Soft-delete the webhook after ownership checks. */
+        delete: operations["ctf_webhooks_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2727,6 +2813,23 @@ export interface components {
             readonly text: string;
             readonly penalty: number;
             readonly order: number;
+        };
+        /** @description One skipped import entry with its reason. */
+        ChallengeImportError: {
+            readonly index: number;
+            readonly name: string;
+            readonly error: string;
+        };
+        /** @description Challenge import request: the export document itself (CTF-1101/1104). */
+        ChallengeImportRequest: {
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Partial-success import outcome. */
+        ChallengeImportResult: {
+            readonly created: string[];
+            readonly errors: components["schemas"]["ChallengeImportError"][];
         };
         /** @description Envelope returned by the event challenge list. */
         ChallengeListResponse: {
@@ -4356,6 +4459,28 @@ export interface components {
         /** @description Self-service username change request (#1593). */
         UsernameChangeRequest: {
             username: string;
+        };
+        /** @description One registered webhook endpoint (CTF-1203); secrets never round-trip. */
+        Webhook: {
+            readonly id: string;
+            readonly url: string;
+            readonly subscribed_events: string[];
+            readonly active: boolean;
+            readonly has_secret: boolean;
+            readonly last_status: string;
+            /** Format: date-time */
+            readonly last_delivery_at: string | null;
+        };
+        /** @description Envelope for the event webhook listing. */
+        WebhookListResponse: {
+            readonly webhooks: components["schemas"]["Webhook"][];
+        };
+        /** @description Webhook registration request. */
+        WebhookWrite: {
+            /** Format: uri */
+            url: string;
+            secret?: string;
+            subscribed_events?: string[];
         };
         /** @description Validate a YAML-content request body. */
         YAMLContent: {
@@ -6231,6 +6356,92 @@ export interface operations {
             };
         };
     };
+    ctf_events_challenges_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_challenges_import_pack_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallengeImportRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChallengeImportRequest"];
+                "multipart/form-data": components["schemas"]["ChallengeImportRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeImportResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_cleanup_create: {
         parameters: {
             query?: never;
@@ -6860,6 +7071,47 @@ export interface operations {
             };
         };
     };
+    ctf_events_results_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_scoreboard_retrieve: {
         parameters: {
             query?: never;
@@ -7124,6 +7376,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledTask"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_webhooks_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_webhooks_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["WebhookWrite"];
+                "multipart/form-data": components["schemas"]["WebhookWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Webhook"];
                 };
             };
             /** @description Authentication failed. */
@@ -9083,6 +9419,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SubmissionListResponse"];
                 };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_webhooks_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Authentication failed. */
             401: {

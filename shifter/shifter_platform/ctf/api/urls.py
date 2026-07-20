@@ -131,6 +131,31 @@ urlpatterns = [
         name="api_participant_username",
     ),
     path(
+        "events/<uuid:event_id>/challenges/export/",
+        organizer.ChallengeExportView.as_view(),
+        name="api_challenge_export",
+    ),
+    path(
+        "events/<uuid:event_id>/challenges/import-pack/",
+        organizer.ChallengeImportView.as_view(),
+        name="api_challenge_import",
+    ),
+    path(
+        "events/<uuid:event_id>/results/export/",
+        organizer.EventResultsExportView.as_view(),
+        name="api_results_export",
+    ),
+    path(
+        "events/<uuid:event_id>/webhooks/",
+        organizer.EventWebhooksView.as_view(),
+        name="api_event_webhooks",
+    ),
+    path(
+        "webhooks/<uuid:webhook_id>/",
+        organizer.WebhookDetailView.as_view(),
+        name="api_webhook_detail",
+    ),
+    path(
         "events/<uuid:event_id>/lifecycle/",
         organizer.EventLifecycleView.as_view(),
         name="api_event_lifecycle",
