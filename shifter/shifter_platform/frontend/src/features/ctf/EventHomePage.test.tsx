@@ -54,6 +54,24 @@ function withSchedule() {
 }
 
 describe("EventHomePage", () => {
+  it("lists past announcements", async () => {
+    mockApi.mockImplementation((...args: unknown[]) =>
+      Promise.resolve(
+        String(args[0] ?? "").includes("/me/announcements/")
+          ? {
+              announcements: [
+                { id: "a1", subject: "Bridge is open", body: "Go **fast**.", sent_at: "2026-08-01T10:00:00Z" },
+              ],
+            }
+          : currentEvent(),
+      ),
+    );
+    renderRoute(<EventHomePage />);
+    expect(await screen.findByText("Announcements")).toBeInTheDocument();
+    expect(screen.getByText("Bridge is open")).toBeInTheDocument();
+    expect(screen.getByText("fast")).toBeInTheDocument();
+  });
+
   it("shows the countdown, schedule, and rules", async () => {
     mockApi.mockResolvedValue(withSchedule());
     renderRoute(<EventHomePage />);

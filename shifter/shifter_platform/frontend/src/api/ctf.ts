@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiDownload, apiFetch } from "./client";
 import { ApiError } from "./errors";
 import type {
+  CtfAnnouncementListResponse,
   CtfChallengeDetail,
   CtfChallengeListItem,
   CtfCurrentEvent,
@@ -37,6 +38,7 @@ export const ctfKeys = {
   challenge: (id: string) => ["ctf", "challenge", id] as const,
   team: () => ["ctf", "team"] as const,
   profile: () => ["ctf", "profile"] as const,
+  announcements: () => ["ctf", "announcements"] as const,
   submissions: () => ["ctf", "submissions"] as const,
   rangeStatus: () => ["ctf", "range-status"] as const,
   scoreboard: (eventId: string, bracketId?: string) => ["ctf", "scoreboard", eventId, bracketId ?? null] as const,
@@ -60,6 +62,7 @@ export const ctfKeys = {
   scoreTimeline: (participantId: string) => ["ctf", "score-timeline", participantId] as const,
   eventStaff: (eventId: string) => ["ctf", "event-staff", eventId] as const,
   eventTasks: (eventId: string) => ["ctf", "event-tasks", eventId] as const,
+  webhooks: (eventId: string) => ["ctf", "webhooks", eventId] as const,
 };
 
 export function useCtfCurrentEvent() {
@@ -252,6 +255,13 @@ export function useChangeCtfUsername() {
     mutationFn: (body: { username: string }) =>
       apiFetch<CtfParticipantProfile>(`${BASE}/me/username/`, { method: "POST", body }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.profile() }),
+  });
+}
+
+export function useCtfAnnouncements() {
+  return useQuery({
+    queryKey: ctfKeys.announcements(),
+    queryFn: ({ signal }) => apiFetch<CtfAnnouncementListResponse>(`${BASE}/me/announcements/`, { signal }),
   });
 }
 

@@ -21,23 +21,15 @@ import type {
   CtfChallengeListResponse,
   CtfChallengeMutationResult,
   CtfChallengeWrite,
-  CtfCleanupControlRequest,
   CtfEventDetail,
-  CtfEventLifecycleAction,
   CtfEventListResponse,
   CtfEventMutationResult,
-  CtfEventStaffAssignRequest,
-  CtfEventStaffListResponse,
-  CtfEventStaffMember,
   CtfEventWrite,
   CtfFlagCreateResult,
   CtfFlagWrite,
   CtfForceDeleteEventResult,
   CtfHintListResponse,
   CtfHintWrite,
-  CtfNotificationAnnounceRequest,
-  CtfNotificationListResponse,
-  CtfNotificationSendResult,
   CtfOrganizerChallengeDetail,
   CtfOrganizerParticipantDetail,
   CtfParticipantImportResult,
@@ -49,8 +41,6 @@ import type {
   CtfRangeListResponse,
   CtfRangeProvisionQueued,
   CtfScenarioListResponse,
-  CtfScheduledTask,
-  CtfScheduledTaskListResponse,
   CtfScoreTimelineResponse,
 } from "./types";
 
@@ -427,75 +417,6 @@ export function useRenameCtfParticipant(participantId: string) {
   return useParticipantAction<{ username: string }>(participantId, "username");
 }
 
-// --- Event lifecycle + scheduler controls (CTF-007, #526, CTF-1003) -------
-
-export function useCtfEventLifecycle(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (action: CtfEventLifecycleAction) =>
-      apiFetch<CtfEventMutationResult>(`${BASE}/events/${eventId}/lifecycle/`, { method: "POST", body: { action } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
-      queryClient.invalidateQueries({ queryKey: ctfKeys.events() });
-      queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) });
-    },
-  });
-}
-
-export function useCtfEventTasks(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.eventTasks(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) => apiFetch<CtfScheduledTaskListResponse>(`${BASE}/events/${eventId}/tasks/`, { signal }),
-  });
-}
-
-export function useRunCtfTaskNow(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (taskId: string) =>
-      apiFetch<CtfScheduledTask>(`${BASE}/events/${eventId}/tasks/${taskId}/run/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) }),
-  });
-}
-
-export function useCtfCleanupControl(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfCleanupControlRequest) =>
-      apiFetch<CtfScheduledTaskListResponse>(`${BASE}/events/${eventId}/cleanup/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) }),
-  });
-}
-
-// --- Event staff (CTF-607) ------------------------------------------------
-
-export function useCtfEventStaff(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.eventStaff(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) => apiFetch<CtfEventStaffListResponse>(`${BASE}/events/${eventId}/staff/`, { signal }),
-  });
-}
-
-export function useAssignCtfEventStaff(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfEventStaffAssignRequest) =>
-      apiFetch<CtfEventStaffMember>(`${BASE}/events/${eventId}/staff/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventStaff(eventId) }),
-  });
-}
-
-export function useRevokeCtfEventStaff(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (userId: number) =>
-      apiFetch<unknown>(`${BASE}/events/${eventId}/staff/${userId}/`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventStaff(eventId) }),
-  });
-}
-
 // --- Ranges ---------------------------------------------------------------
 
 export function useCtfEventRanges(eventId: string, enabled = true) {
@@ -541,35 +462,6 @@ export function useCtfParticipantRangeAction(participantId: string, eventId?: st
   });
 }
 
-// --- Notifications --------------------------------------------------------
-
-export function useCtfNotifications(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.notifications(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfNotificationListResponse>(`${BASE}/events/${eventId}/notifications/`, { signal }),
-  });
-}
-
-export function useAnnounceCtfNotification(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfNotificationAnnounceRequest) =>
-      apiFetch<unknown>(`${BASE}/events/${eventId}/notifications/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
-  });
-}
-
-export function useSendCtfNotification(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (notificationId: string) =>
-      apiFetch<CtfNotificationSendResult>(`${BASE}/notifications/${notificationId}/send/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
-  });
-}
-
 // --- Score timeline (analytics) -------------------------------------------
 
 export function useCtfScoreTimeline(participantId: string, enabled = true) {
@@ -580,3 +472,5 @@ export function useCtfScoreTimeline(participantId: string, enabled = true) {
       apiFetch<CtfScoreTimelineResponse>(`${BASE}/participants/${participantId}/score-timeline/`, { signal }),
   });
 }
+
+export * from "./ctfAdminOps";

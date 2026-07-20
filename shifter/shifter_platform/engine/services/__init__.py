@@ -28,6 +28,11 @@ from ._aces_image import (
 )
 from ._aces_range import AcesRangeRef, create_aces_range
 from ._aces_status import project_aces_operation_status
+from ._capacity import (
+    EventCapacitySignal,
+    latest_capacity_declaration,
+    record_capacity_declaration,
+)
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
@@ -67,6 +72,7 @@ __all__ = (
     "AcesImageMappingView",
     "AcesRangeRef",
     "EngineError",
+    "EventCapacitySignal",
     "GuestProbeError",
     "GuestProbeRequest",
     "RangeMembership",
@@ -99,6 +105,7 @@ __all__ = (
     "get_ssh_key",
     "get_user_ready_range_instances",
     "has_openvpn_profile",
+    "latest_capacity_declaration",
     "list_aces_image_mappings",
     "pause_range",
     "project_aces_operation_status",
@@ -106,6 +113,7 @@ __all__ = (
     "reassign_range_owner_by_request",
     "record_aces_operation_status",
     "record_aces_runtime_snapshot",
+    "record_capacity_declaration",
     "resume_range",
     "run_guest_probe",
     "start_ngfw",
