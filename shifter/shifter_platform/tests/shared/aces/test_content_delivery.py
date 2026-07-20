@@ -63,6 +63,24 @@ def test_binding_transport_is_byte_free():
     assert set(payload) == {"content_address", "sha256", "storage_key", "byte_count", "binding_version"}
 
 
+def test_feature_binding_v2_uses_resource_identity_not_legacy_content_address():
+    binding = DeliveryBinding(
+        content_address=None,
+        sha256=_DIGEST,
+        storage_key="aces-content/aa/" + _DIGEST,
+        byte_count=12,
+        binding_version=2,
+        resource_type="feature-binding",
+        resource_address="provision.feature.agent",
+        payload_kind="file",
+        install_policy="executable",
+    )
+    payload = binding.to_transport()
+    assert "content_address" not in payload
+    assert payload["resource_address"] == "provision.feature.agent"
+    assert DeliveryBinding.from_transport(payload) == binding
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -143,6 +161,28 @@ def test_parse_projection_valid():
     entry = projection.resolve(source_name="flag-pkg", source_version="1.0.0", content_type="file", content_format="")
     assert isinstance(entry, DeliveryProjectionEntry)
     assert entry.input_path == "assets/flag.txt"
+
+
+def test_parse_v2_feature_projection_is_discriminated():
+    projection = parse_delivery_projection(
+        {
+            "version": 2,
+            "entries": [
+                {
+                    "resource_type": "feature-binding",
+                    "source": {"name": "agent", "version": "1.0.0"},
+                    "feature_type": "artifact",
+                    "payload_kind": "file",
+                    "install_policy": "executable",
+                    "input_path": "assets/agent.bin",
+                }
+            ],
+        }
+    )
+    entry = projection.resolve_feature(source_name="agent", source_version="1.0.0", feature_type="artifact")
+    assert entry.resource_type == "feature-binding"
+    assert entry.payload_kind == "file"
+    assert entry.install_policy == "executable"
 
 
 @pytest.mark.parametrize(

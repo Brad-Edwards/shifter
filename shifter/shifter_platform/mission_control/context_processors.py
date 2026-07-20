@@ -9,7 +9,6 @@ from django.http import HttpRequest
 
 from cms.services import get_active_range, get_scenario, has_ready_active_range
 from mission_control.utils import build_connection_urls
-from shared.auth import is_ctf_participant_only
 from shared.schemas import InstanceContext, RangeContext
 
 logger = logging.getLogger(__name__)
@@ -83,9 +82,11 @@ def _build_active_range_context(
         is_ready,
     )
 
-    # CTF participants only see Kali (attacker) instances
-    if is_ctf_participant_only(request.user):
-        range_context.instances = [inst for inst in range_context.instances if inst.os_type == "kali"]
+    # Instance visibility is a domain policy (#483): CTF registers a per-event
+    # filter through the shared seam; other users see everything.
+    from shared.range_visibility import filter_visible_instances
+
+    range_context.instances = filter_visible_instances(request.user, range_context.instances)
 
     scenario_name = None
     if range_context.scenario_id:

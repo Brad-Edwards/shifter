@@ -3156,6 +3156,7 @@ export interface components {
                 [key: string]: unknown;
             };
             readonly logo_url: string;
+            readonly visible_os_types: string[];
             readonly theme_color: string;
         };
         /** @description One lifecycle transition to apply to an owned event (CTF-007). */
@@ -3272,6 +3273,7 @@ export interface components {
             };
             /** Format: uri */
             logo_url?: string;
+            visible_os_types?: string[];
             theme_color?: string;
         };
         /** @description Presigned download URL for a challenge attachment. */
