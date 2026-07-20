@@ -12,13 +12,15 @@ from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
+from ctf.exceptions import CTFValidationError
 from ctf.services.participant.accounts import (
     create_participant_accounts,
     purge_expired_participant_accounts,
     rename_participant_username,
     reset_participant_credentials,
 )
-from ctf.services.participant.lifecycle import disqualify_participant, invite_participant
+from ctf.services.participant.lifecycle import invite_participant
+from ctf.services.participant.moderation import disqualify_participant
 from management.services import get_user_profile
 
 from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
@@ -224,13 +226,16 @@ def test_single_invite_accepts_no_email_and_creates_isolated_account(ctf_event, 
     assert participant.user.profile.is_ctf_account is True
 
 
-def test_delivery_email_is_not_unique_identity(ctf_event, monkeypatch):
+def test_delivery_email_unique_per_event_not_global(ctf_event, ctf_event_active, monkeypatch):
+    """CTF-601: one email per event; email still isn't a global identity key."""
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
 
     first = invite_participant(ctf_event.id, "shared@example.test", "First")
-    second = invite_participant(ctf_event.id, "shared@example.test", "Second")
+    with pytest.raises(CTFValidationError):
+        invite_participant(ctf_event.id, "shared@example.test", "Second")
+    other_event = invite_participant(ctf_event_active.id, "shared@example.test", "Elsewhere")
 
-    assert first.user_id != second.user_id
+    assert first.user_id != other_event.user_id
 
 
 def test_event_bootstrap_password_override_is_used(ctf_event, monkeypatch):
@@ -271,7 +276,8 @@ def test_credential_reset_restores_bootstrap_and_sends_two_messages(ctf_event, m
     assert TEST_CTF_BOOTSTRAP_PASSWORD in sent[1]["text_content"]
 
 
-def test_disqualification_anonymizes_temporary_account(ctf_event, monkeypatch):
+def test_disqualification_keeps_account_live_for_view_access(ctf_event, monkeypatch):
+    """CTF-609: disqualification records a reason and keeps login intact (view-only access)."""
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
     participant = create_participant_accounts(ctf_event.id, count=1, email="private@example.test")[0]
 
@@ -280,12 +286,11 @@ def test_disqualification_anonymizes_temporary_account(ctf_event, monkeypatch):
     participant.refresh_from_db()
     participant.user.refresh_from_db()
     profile = get_user_profile(participant.user)
-    assert participant.email == ""
-    assert participant.user.is_active is False
-    assert participant.user.has_usable_password() is False
-    assert participant.user.username.startswith("ctf-tombstone-")
-    assert profile.is_ctf_account is True
-    assert profile.anonymized_at is not None
+    assert participant.status == "disqualified"
+    assert participant.status_reason == "rules"
+    assert participant.user.is_active is True
+    assert participant.user.has_usable_password() is True
+    assert profile.anonymized_at is None
 
 
 def test_post_event_retention_purge_anonymizes_accounts(ctf_event_active, monkeypatch, settings):

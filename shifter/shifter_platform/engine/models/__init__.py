@@ -19,14 +19,14 @@ private submodules by domain:
   ``_request.Instantiation``).
 - ``_outbox``: OutboxStatus, RangeEventOutbox.
 - ``_launch``: ProvisionerLaunchStatus, ProvisionerLaunchIntent.
-- ``_aces``: AcesImageMapping.
+- ``_aces``: AcesImageMapping, AcesContentDeliveryBinding.
 
 All models are re-exported here so Django's app registry discovers them via
 ``engine.models`` and callers keep using ``from engine.models import X``
 exactly as before the split.
 """
 
-from ._aces import AcesImageMapping
+from ._aces import AcesContentDeliveryBinding, AcesImageMapping
 from ._launch import ProvisionerLaunchIntent, ProvisionerLaunchStatus
 from ._outbox import OutboxStatus, RangeEventOutbox
 from ._range import Range
@@ -34,6 +34,7 @@ from ._request import App, Instance, Instantiation, Request
 from ._subnet import Subnet, SubnetAllocation
 
 __all__ = [
+    "AcesContentDeliveryBinding",
     "AcesImageMapping",
     "App",
     "Instance",

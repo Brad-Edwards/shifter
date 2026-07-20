@@ -8,7 +8,9 @@ import { describeMutationError } from "@/api/errors";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+
+import { ParticipantImportDialog } from "./ParticipantImportDialog";
 import { Card } from "@/components/ui/card";
 import {
   Dialog,
@@ -22,10 +24,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 
 import { titleCase } from "../format";
-import { ctfAdminEventParticipantsPath, ctfAdminEventPath, ctfAdminEventsPath, ctfAdminParticipantPath } from "../routes";
+import { ctfAdminEventPath, ctfAdminEventsPath, ctfAdminParticipantPath } from "../routes";
 
 function InviteDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: string; open: boolean; onOpenChange: (open: boolean) => void }>) {
   const invite = useInviteCtfParticipant(eventId);
@@ -179,7 +180,6 @@ export function ParticipantsPage() {
   const totalNoun = total === 1 ? "participant" : "participants";
   const description = query.data ? `${total} ${totalNoun}` : "Event participants";
   // Import owns a Django POST form and stays server-rendered; link out to it.
-  const importHref = `${ctfAdminEventParticipantsPath(eventId)}import/`;
 
   return (
     <>
@@ -200,9 +200,7 @@ export function ParticipantsPage() {
         description={description}
         actions={
           <div className="flex items-center gap-2">
-            <a href={importHref} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-              Import
-            </a>
+            <ParticipantImportDialog eventId={eventId} />
             <Button size="sm" onClick={() => setInviting(true)}>
               <UserPlus className="size-4" />
               Invite

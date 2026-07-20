@@ -25,6 +25,7 @@ function detail(overrides: Record<string, unknown> = {}) {
     max_attempts: 0,
     attempt_limit_mode: "unlimited",
     solved: false,
+    locked: false,
     attempt_count: 0,
     attempts_remaining: null,
     timeout_retry_after: null,
@@ -94,5 +95,36 @@ describe("ChallengeDetailPage", () => {
     await screen.findByRole("heading", { name: "SQL Injection" });
     const results = await axe(container);
     expect(results.violations).toEqual([]);
+  });
+
+  it("shows a locked notice instead of the submit form for a locked challenge", async () => {
+    mockApi.mockResolvedValue(detail({ locked: true }));
+    renderRoute(<ChallengeDetailPage />, ROUTE);
+    expect(await screen.findByText("Locked")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Submit flag")).not.toBeInTheDocument();
+  });
+
+  it("shows the rating control after a solve and records a rating", async () => {
+    mockApi
+      .mockResolvedValueOnce(
+        detail({ solved: true, rating: { average: 4.5, count: 2, own_rating: null, public: true } }),
+      )
+      .mockResolvedValueOnce({ value: 5, challenge_id: "c1" })
+      .mockResolvedValue(
+        detail({ solved: true, rating: { average: 4.7, count: 3, own_rating: 5, public: true } }),
+      );
+    renderRoute(<ChallengeDetailPage />, ROUTE);
+    expect(await screen.findByRole("group", { name: /Rate this challenge/ })).toBeInTheDocument();
+    expect(screen.getByText(/Average 4.5 from 2 ratings/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
+    expect(await screen.findByText(/Average 4.7 from 3 ratings/)).toBeInTheDocument();
+  });
+
+  it("hides the rating control when ratings are disabled or unsolved", async () => {
+    mockApi.mockResolvedValue(detail({ solved: false, rating: { average: null, count: 0, own_rating: null, public: true } }));
+    renderRoute(<ChallengeDetailPage />, ROUTE);
+    await screen.findByRole("heading", { name: "SQL Injection" });
+    expect(screen.queryByRole("group", { name: /Rate this challenge/ })).not.toBeInTheDocument();
   });
 });

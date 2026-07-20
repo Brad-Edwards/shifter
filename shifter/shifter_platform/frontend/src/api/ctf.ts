@@ -7,12 +7,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiDownload, apiFetch } from "./client";
+import { ApiError } from "./errors";
 import type {
   CtfChallengeDetail,
   CtfChallengeListItem,
   CtfCurrentEvent,
   CtfOrganizerScoreboard,
+  CtfParticipantProfile,
+  CtfProfileUpdateRequest,
+  CtfRangeAccess,
   CtfRangeStatus,
+  CtfRateChallengeResult,
   CtfScoreboard,
   CtfSubmissionList,
   CtfSubmitFlagResult,
@@ -31,6 +36,7 @@ export const ctfKeys = {
   challenges: () => ["ctf", "challenges"] as const,
   challenge: (id: string) => ["ctf", "challenge", id] as const,
   team: () => ["ctf", "team"] as const,
+  profile: () => ["ctf", "profile"] as const,
   submissions: () => ["ctf", "submissions"] as const,
   rangeStatus: () => ["ctf", "range-status"] as const,
   scoreboard: (eventId: string, bracketId?: string) => ["ctf", "scoreboard", eventId, bracketId ?? null] as const,
@@ -48,9 +54,12 @@ export const ctfKeys = {
   prerequisites: (challengeId: string) => ["ctf", "prerequisites", challengeId] as const,
   participants: (eventId: string) => ["ctf", "participants", eventId] as const,
   participant: (id: string) => ["ctf", "participant", id] as const,
+  awards: (participantId: string) => ["ctf", "awards", participantId] as const,
   ranges: (eventId: string) => ["ctf", "ranges", eventId] as const,
   notifications: (eventId: string) => ["ctf", "notifications", eventId] as const,
   scoreTimeline: (participantId: string) => ["ctf", "score-timeline", participantId] as const,
+  eventStaff: (eventId: string) => ["ctf", "event-staff", eventId] as const,
+  eventTasks: (eventId: string) => ["ctf", "event-tasks", eventId] as const,
 };
 
 export function useCtfCurrentEvent() {
@@ -78,7 +87,16 @@ export function useCtfChallenge(challengeId: string, enabled = true) {
 export function useCtfTeam() {
   return useQuery({
     queryKey: ctfKeys.team(),
-    queryFn: ({ signal }) => apiFetch<CtfTeam>(`${BASE}/me/team/`, { signal }),
+    // A 404 is the server's ordinary "not on a team" answer (solo events /
+    // unassigned), so it resolves to null rather than an error state.
+    queryFn: async ({ signal }): Promise<CtfTeam | null> => {
+      try {
+        return await apiFetch<CtfTeam>(`${BASE}/me/team/`, { signal });
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
   });
 }
 
@@ -163,6 +181,97 @@ export function useUseHint(challengeId: string) {
         body: hintId ? { hint_id: hintId } : {},
       }),
     onSuccess: () => invalidatePlay(queryClient, challengeId),
+  });
+}
+
+function useTeamMutation<TBody>(path: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TBody) => apiFetch<CtfTeam>(`${BASE}/me/team/${path}/`, { method: "POST", body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.team() });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.currentEvent() });
+    },
+  });
+}
+
+export function useCreateTeam() {
+  return useTeamMutation<{ name: string }>("create");
+}
+
+export function useJoinTeam() {
+  return useTeamMutation<{ invite_code: string }>("join");
+}
+
+export function useRenameTeam() {
+  return useTeamMutation<{ name: string }>("rename");
+}
+
+export function useRegenerateTeamCode() {
+  return useTeamMutation<Record<string, never>>("regenerate-code");
+}
+
+export function useTransferCaptaincy() {
+  return useTeamMutation<{ participant_id: string }>("transfer-captaincy");
+}
+
+export function useRemoveTeamMember() {
+  return useTeamMutation<{ participant_id: string }>("remove-member");
+}
+
+export function useLeaveTeam() {
+  return useTeamMutation<Record<string, never>>("leave");
+}
+
+export function useDisbandTeam() {
+  return useTeamMutation<Record<string, never>>("disband");
+}
+
+export function useCtfProfile() {
+  return useQuery({
+    queryKey: ctfKeys.profile(),
+    queryFn: ({ signal }) => apiFetch<CtfParticipantProfile>(`${BASE}/me/profile/`, { signal }),
+  });
+}
+
+export function useUpdateCtfProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CtfProfileUpdateRequest) =>
+      apiFetch<CtfParticipantProfile>(`${BASE}/me/profile/`, { method: "PATCH", body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.profile() });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.currentEvent() });
+    },
+  });
+}
+
+export function useChangeCtfUsername() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { username: string }) =>
+      apiFetch<CtfParticipantProfile>(`${BASE}/me/username/`, { method: "POST", body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.profile() }),
+  });
+}
+
+export function useRateChallenge(challengeId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (value: number) =>
+      apiFetch<CtfRateChallengeResult>(`${BASE}/challenges/${challengeId}/rate/`, {
+        method: "POST",
+        body: { value },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.challenge(challengeId) }),
+  });
+}
+
+export function useRangeAccess() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<CtfRangeAccess>(`${BASE}/range/access/`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.rangeStatus() }),
   });
 }
 

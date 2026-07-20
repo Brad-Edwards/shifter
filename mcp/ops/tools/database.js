@@ -3,16 +3,17 @@
 // These handlers build their MCP `content` responses inline (rather
 // than via ok/err) to preserve the exact custom error envelopes for
 // the read-only-guard and query/execute error paths.
+//
+// Each tool descriptor is built by its own module-level factory so the
+// registrar stays a thin wiring function.
 
 import { z } from "zod";
 import { registerTool } from "../policy.js";
 import { getServiceLayer, FORBIDDEN_PATTERN } from "../lib.js";
 import { EnvSchema } from "../schemas.js";
 
-export function registerDatabaseTools(ctx, deps) {
-  const { withClient } = deps;
-
-  registerTool(ctx, {
+function listTablesTool({ withClient }) {
+  return {
     name: "list_tables",
     klass: "db_arbitrary",
     description:
@@ -45,9 +46,11 @@ export function registerDatabaseTools(ctx, deps) {
         };
       });
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function describeTableTool({ withClient }) {
+  return {
     name: "describe_table",
     klass: "db_arbitrary",
     description: "Show columns, types, nullability, and constraints for a table",
@@ -115,9 +118,11 @@ export function registerDatabaseTools(ctx, deps) {
         };
       });
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function queryTool({ withClient }) {
+  return {
     name: "query",
     klass: "db_arbitrary",
     untrusted_inputs: ["sql"],
@@ -159,9 +164,11 @@ export function registerDatabaseTools(ctx, deps) {
         };
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function executeTool({ withClient }) {
+  return {
     name: "execute",
     klass: "db_arbitrary",
     untrusted_inputs: ["sql"],
@@ -196,5 +203,12 @@ export function registerDatabaseTools(ctx, deps) {
         };
       }
     },
-  });
+  };
+}
+
+export function registerDatabaseTools(ctx, deps) {
+  registerTool(ctx, listTablesTool(deps));
+  registerTool(ctx, describeTableTool(deps));
+  registerTool(ctx, queryTool(deps));
+  registerTool(ctx, executeTool(deps));
 }

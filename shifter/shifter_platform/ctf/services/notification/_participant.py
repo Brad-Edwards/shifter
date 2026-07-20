@@ -43,7 +43,7 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    logger.info("Sending invitations for event %s", event_id)
+    logger.info("Sending invitations for event %s", safe_log_value(event_id))
 
     from ctf.services import notification as _n
 
@@ -110,7 +110,7 @@ def send_credentials(event_id: UUID) -> dict[str, Any]:
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    logger.info("Sending credentials for event %s", event_id)
+    logger.info("Sending credentials for event %s", safe_log_value(event_id))
 
     from ctf.services import notification as _n
 
@@ -137,7 +137,7 @@ def send_credentials(event_id: UUID) -> dict[str, Any]:
             from django.conf import settings
             from django.urls import reverse
 
-            range_page_url = reverse("ctf:ctf_range")
+            range_page_url = reverse("ctf:participant_range")
             base = (getattr(settings, "SITE_URL", "") or "").rstrip("/")
             access_url = f"{base}{range_page_url}"
 
@@ -194,7 +194,7 @@ def send_reminder(event_id: UUID, hours_before: int = 24) -> dict[str, Any]:
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    logger.info("Sending %d-hour reminder for event %s", hours_before, event_id)
+    logger.info("Sending %d-hour reminder for event %s", hours_before, safe_log_value(event_id))
 
     from ctf.services import notification as _n
 
@@ -300,7 +300,7 @@ def send_announcement(
     """
     # Do not log the user-controlled announcement subject (SonarCloud S5145 /
     # log-injection): the event id is sufficient to trace the operation.
-    logger.info("Sending announcement for event %s", event_id)
+    logger.info("Sending announcement for event %s", safe_log_value(event_id))
 
     from ctf.services import notification as _n
 

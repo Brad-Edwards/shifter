@@ -251,6 +251,12 @@ from config._terminal_settings import *  # noqa: E402  # NOSONAR
 # multi-node portal. See docs/architecture/ctf-scheduler-concurrency-preflight-942.md.
 CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 120)
 
+# CTF-1003: automated range cleanup destroys ranges in batches with a pause
+# between batches so a large event cannot drive the cloud APIs into
+# throttling. Non-secret integers.
+CTF_RANGE_CLEANUP_BATCH_SIZE = _env_int("CTF_RANGE_CLEANUP_BATCH_SIZE", 10)
+CTF_RANGE_CLEANUP_BATCH_PAUSE_SECONDS = _env_int("CTF_RANGE_CLEANUP_BATCH_PAUSE_SECONDS", 5)
+
 # ACES operation-record retention/cleanup knobs (issue #1277): snapshot TTL days
 # plus the dedicated prune service cadence/batch size. Non-secret integers.
 from config._aces_settings import *  # noqa: E402  # NOSONAR

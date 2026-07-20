@@ -295,7 +295,8 @@ class TestExecuteTaskInterruption:
 
         task.mark_completed.assert_called_once()
 
-    def test_marks_failed_on_exception(self, monkeypatch):
+    def test_retries_or_fails_on_exception(self, monkeypatch):
+        """A crashing handler goes through the #526 retry path, not straight to failed."""
         from ctf.management.commands import run_ctf_scheduler as cmd
 
         task = self._make_task()
@@ -306,6 +307,6 @@ class TestExecuteTaskInterruption:
         monkeypatch.setitem(cmd.TASK_HANDLERS, "spin_up_ranges", handler)
         cmd.Command()._execute_task(task)
 
-        task.mark_failed.assert_called_once()
+        task.retry_or_fail.assert_called_once()
         task.mark_completed.assert_not_called()
         task.requeue_for_resume.assert_not_called()

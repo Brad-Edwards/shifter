@@ -42,13 +42,13 @@ from ctf.views.admin_people import (
     admin_participant_add,
     admin_participant_detail,
     admin_participant_email,
-    admin_participant_import,
     admin_participant_list,
     admin_participant_rename,
     admin_range_list,
     admin_scoreboard,
     admin_team_list,
 )
+from ctf.views.admin_people_import import admin_participant_import
 from ctf.views.api.challenges import (
     api_challenge_detail,
     api_challenge_list,

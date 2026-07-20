@@ -43,8 +43,11 @@ def participant_current_event(participant: CTFParticipant) -> dict[str, Any]:
             "rating_visibility": event.rating_visibility,
             "attempt_limit_mode": event.attempt_limit_mode,
             "scoreboard_visible": event.scoreboard_visible,
+            "scoreboard_visibility": event.scoreboard_visibility,
             "event_start": event.event_start,
             "event_end": event.event_end,
+            "registration_deadline": event.effective_registration_deadline,
+            "rules": event.rules,
         },
         "participant": _participant_self(participant),
     }
@@ -58,6 +61,8 @@ def _participant_self(participant: CTFParticipant) -> dict[str, Any]:
         "id": str(participant.id),
         "name": participant.name,
         "status": participant.status,
+        "role": participant.role,
+        "affiliation": participant.affiliation,
         "range_status": participant.range_status,
         "cached_score": participant.cached_score,
         "cached_solve_count": participant.cached_solve_count,
@@ -74,7 +79,9 @@ def participant_challenge_list(participant: CTFParticipant) -> list[dict[str, An
     participant) and overlays this participant's own solve state. Flag hashes,
     flag formats, solutions, and validator config are never included.
     """
-    challenges = get_available_challenges(participant.event_id, participant_id=participant.id)
+    challenges = get_available_challenges(participant.event_id, participant_id=participant.id).prefetch_related(
+        "tags", "topics"
+    )
     solved_ids = set(
         get_participant_submissions(participant.id).filter(is_correct=True).values_list("challenge_id", flat=True)
     )
@@ -87,6 +94,8 @@ def participant_challenge_list(participant: CTFParticipant) -> list[dict[str, An
             "difficulty": challenge.difficulty,
             "order": challenge.order,
             "solved": challenge.id in solved_ids,
+            "tags": [tag.name for tag in challenge.tags.all()],
+            "topics": [topic.name for topic in challenge.topics.all()],
         }
         for challenge in challenges
     ]
@@ -103,10 +112,22 @@ def participant_team(participant: CTFParticipant) -> dict[str, Any] | None:
     if team is None:
         return None
     members = team.members.filter(deleted_at__isnull=True).order_by("name")
+    is_captain = team.captain_id == participant.pk
     return {
         "id": str(team.id),
         "name": team.name,
-        "members": [{"id": str(member.id), "name": member.name} for member in members],
+        "members": [
+            {
+                "id": str(member.id),
+                "name": member.name,
+                "is_captain": member.id == team.captain_id,
+            }
+            for member in members
+        ],
+        "is_captain": is_captain,
+        "team_size_limit": team.event.team_size_limit,
+        # The invite code is the joining secret; only the captain sees it.
+        "invite_code": team.invite_code if is_captain else None,
     }
 
 
@@ -151,6 +172,8 @@ def participant_challenge_detail(participant: CTFParticipant, challenge: CTFChal
         "name": challenge.name,
         "description": challenge.description,
         "category": challenge.category,
+        "tags": [tag.name for tag in challenge.tags.all()],
+        "topics": [topic.name for topic in challenge.topics.all()],
         "points": challenge.points,
         "difficulty": challenge.difficulty,
         "max_attempts": challenge.max_attempts,
@@ -186,6 +209,9 @@ def participant_challenge_detail(participant: CTFParticipant, challenge: CTFChal
         "prerequisites_met": prereqs_met,
         "unmet_prerequisites": [{"id": str(required.id), "name": required.name} for required in unmet],
         "connection_info": resolve_target_connection_info(challenge, participant),
+        # CTF-110: a LOCKED challenge is readable but not submittable; the SPA
+        # uses this to replace the submit form with a locked notice.
+        "locked": challenge.is_visibility_locked,
         "show_solution": show_solution,
         "solution": challenge.solution if show_solution else None,
         "rating": _participant_rating(event, participant, challenge),
@@ -212,4 +238,26 @@ def _participant_rating(event: CTFEvent, participant: CTFParticipant, challenge:
         "count": aggregate["count"],
         "own_rating": own.value if own is not None else None,
         "public": public,
+    }
+
+
+def participant_profile(participant: CTFParticipant) -> dict[str, Any]:
+    """Event-scoped profile for the me-surface (CTF-610).
+
+    Platform identity (username) appears only for isolated CTF accounts; the
+    solve history itself lives on the submissions endpoint.
+    """
+    from ctf.api.organizer._base import _participant_username
+
+    return {
+        "id": str(participant.id),
+        "name": participant.name,
+        "affiliation": participant.affiliation,
+        "email": participant.email,
+        "username": _participant_username(participant),
+        "role": participant.role,
+        "status": participant.status,
+        "event": {"id": str(participant.event.id), "name": participant.event.name},
+        "score": participant.cached_score,
+        "solve_count": participant.cached_solve_count,
     }

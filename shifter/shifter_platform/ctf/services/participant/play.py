@@ -97,7 +97,7 @@ def compute_attempt_state(
     """
     timeout_retry_after = None
     if participant.event.attempt_limit_mode == "timeout" and challenge.max_attempts > 0:
-        from ctf.services.submission import _count_attempts_in_current_window
+        from ctf.services.submission_gates import _count_attempts_in_current_window
 
         attempt_cooldown = participant.event.attempt_limit_cooldown_seconds
         attempt_count = _count_attempts_in_current_window(submissions, attempt_cooldown)

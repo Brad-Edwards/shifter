@@ -14,14 +14,21 @@ import { apiFetch } from "./client";
 import { ctfKeys } from "./ctf";
 import type {
   CtfAssignBracketResult,
+  CtfAward,
+  CtfAwardListResponse,
   CtfChallengeFileListResponse,
   CtfChallengeFileUploadResult,
   CtfChallengeListResponse,
   CtfChallengeMutationResult,
   CtfChallengeWrite,
+  CtfCleanupControlRequest,
   CtfEventDetail,
+  CtfEventLifecycleAction,
   CtfEventListResponse,
   CtfEventMutationResult,
+  CtfEventStaffAssignRequest,
+  CtfEventStaffListResponse,
+  CtfEventStaffMember,
   CtfEventWrite,
   CtfFlagCreateResult,
   CtfFlagWrite,
@@ -42,6 +49,8 @@ import type {
   CtfRangeListResponse,
   CtfRangeProvisionQueued,
   CtfScenarioListResponse,
+  CtfScheduledTask,
+  CtfScheduledTaskListResponse,
   CtfScoreTimelineResponse,
 } from "./types";
 
@@ -323,6 +332,38 @@ export function useImportCtfParticipants(eventId: string) {
   });
 }
 
+export function useCtfParticipantAwards(participantId: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.awards(participantId),
+    enabled: enabled && Boolean(participantId),
+    queryFn: ({ signal }) =>
+      apiFetch<CtfAwardListResponse>(`${BASE}/participants/${participantId}/awards/`, { signal }),
+  });
+}
+
+export function useGrantCtfAward(participantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { points: number; reason: string }) =>
+      apiFetch<CtfAward>(`${BASE}/participants/${participantId}/awards/`, { method: "POST", body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.awards(participantId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) });
+    },
+  });
+}
+
+export function useRevokeCtfAward(participantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (awardId: string) => apiFetch<void>(`${BASE}/awards/${awardId}/delete/`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.awards(participantId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) });
+    },
+  });
+}
+
 export function useResendCtfInvite(participantId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -340,6 +381,118 @@ export function useAssignCtfBracket(participantId: string) {
         body: { bracket_id: bracketId },
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) }),
+  });
+}
+
+function useParticipantAction<TBody = Record<string, never>>(participantId: string, path: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TBody) =>
+      apiFetch<CtfOrganizerParticipantDetail>(`${BASE}/participants/${participantId}/${path}/`, {
+        method: "POST",
+        body,
+      }),
+    onSuccess: (detail) => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participants(detail.event_id) });
+    },
+  });
+}
+
+export function useBanCtfParticipant(participantId: string) {
+  return useParticipantAction<{ reason?: string }>(participantId, "ban");
+}
+
+export function useUnbanCtfParticipant(participantId: string) {
+  return useParticipantAction(participantId, "unban");
+}
+
+export function useDisqualifyCtfParticipant(participantId: string) {
+  return useParticipantAction<{ reason?: string }>(participantId, "disqualify");
+}
+
+export function useRequalifyCtfParticipant(participantId: string) {
+  return useParticipantAction(participantId, "requalify");
+}
+
+export function useSetCtfParticipantRole(participantId: string) {
+  return useParticipantAction<{ role: string }>(participantId, "role");
+}
+
+export function useSetCtfParticipantHidden(participantId: string) {
+  return useParticipantAction<{ hidden: boolean }>(participantId, "hidden");
+}
+
+export function useRenameCtfParticipant(participantId: string) {
+  return useParticipantAction<{ username: string }>(participantId, "username");
+}
+
+// --- Event lifecycle + scheduler controls (CTF-007, #526, CTF-1003) -------
+
+export function useCtfEventLifecycle(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: CtfEventLifecycleAction) =>
+      apiFetch<CtfEventMutationResult>(`${BASE}/events/${eventId}/lifecycle/`, { method: "POST", body: { action } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.events() });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) });
+    },
+  });
+}
+
+export function useCtfEventTasks(eventId: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.eventTasks(eventId),
+    enabled: enabled && Boolean(eventId),
+    queryFn: ({ signal }) => apiFetch<CtfScheduledTaskListResponse>(`${BASE}/events/${eventId}/tasks/`, { signal }),
+  });
+}
+
+export function useRunCtfTaskNow(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) =>
+      apiFetch<CtfScheduledTask>(`${BASE}/events/${eventId}/tasks/${taskId}/run/`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) }),
+  });
+}
+
+export function useCtfCleanupControl(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CtfCleanupControlRequest) =>
+      apiFetch<CtfScheduledTaskListResponse>(`${BASE}/events/${eventId}/cleanup/`, { method: "POST", body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) }),
+  });
+}
+
+// --- Event staff (CTF-607) ------------------------------------------------
+
+export function useCtfEventStaff(eventId: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.eventStaff(eventId),
+    enabled: enabled && Boolean(eventId),
+    queryFn: ({ signal }) => apiFetch<CtfEventStaffListResponse>(`${BASE}/events/${eventId}/staff/`, { signal }),
+  });
+}
+
+export function useAssignCtfEventStaff(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CtfEventStaffAssignRequest) =>
+      apiFetch<CtfEventStaffMember>(`${BASE}/events/${eventId}/staff/`, { method: "POST", body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventStaff(eventId) }),
+  });
+}
+
+export function useRevokeCtfEventStaff(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) =>
+      apiFetch<unknown>(`${BASE}/events/${eventId}/staff/${userId}/`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventStaff(eventId) }),
   });
 }
 

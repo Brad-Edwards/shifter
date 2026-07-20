@@ -59,7 +59,7 @@ class ParticipantListView(APIView):
         from ctf.services import list_participants_for_event
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability="participants")
         except _CtfApiError as exc:
             return exc.to_response(request)
         participants = list_participants_for_event(event_id)
@@ -72,6 +72,8 @@ class ParticipantListView(APIView):
                 "name": p.name,
                 "email": p.email,
                 "status": p.status,
+                "role": p.role,
+                "hidden": p.hidden,
                 "team_name": p.team.name if p.team else None,
                 "registered_at": p.registered_at.isoformat() if p.registered_at else None,
                 "total_score": p.total_score,
@@ -87,7 +89,7 @@ class ParticipantListView(APIView):
         from ctf.services import invite_participant
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability="participants")
             serializer = ParticipantInviteSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             name = serializer.validated_data["name"]
@@ -120,7 +122,7 @@ class ParticipantImportView(APIView):
     def post(self, request: Request, event_id: UUID) -> Response:
         """Validate the import body and invite each row, collecting per-row errors."""
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability="participants")
         except _CtfApiError as exc:
             return exc.to_response(request)
         serializer = ParticipantImportSerializer(data=request.data)
@@ -173,7 +175,9 @@ class ParticipantDetailView(APIView):
     def get(self, request: Request, participant_id: UUID) -> Response:
         """Return the full organizer participant detail projection."""
         try:
-            participant = _resolve_owned_participant(request, participant_id)
+            participant = _resolve_owned_participant(
+                request, participant_id, capability=("participants", "submissions")
+            )
         except _CtfApiError as exc:
             return exc.to_response(request)
         return Response(_participant_detail_payload(participant))
@@ -185,7 +189,7 @@ class ParticipantDetailView(APIView):
         from ctf.services import delete_participant
 
         try:
-            _resolve_owned_participant(request, participant_id)
+            _resolve_owned_participant(request, participant_id, capability="participants")
             try:
                 delete_participant(participant_id)
             except CTFNotFoundError:
@@ -211,7 +215,7 @@ class ParticipantResendInviteView(APIView):
         try:
             if not _check_credential_delivery_rate_limit(_actor(request).pk):
                 _raise_throttled("Too many invitations. Try again later.")
-            _resolve_owned_participant(request, participant_id)
+            _resolve_owned_participant(request, participant_id, capability="participants")
             try:
                 updated = resend_invite(participant_id)
             except (CTFStateError, CTFValidationError):
@@ -234,7 +238,7 @@ class AssignBracketView(APIView):
     def post(self, request: Request, participant_id: UUID) -> Response:
         """Enforce ownership, then assign (bracket_id given) or remove (null) the bracket."""
         try:
-            _resolve_owned_participant(request, participant_id)
+            _resolve_owned_participant(request, participant_id, capability="participants")
             serializer = AssignBracketRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             return self._set_bracket(participant_id, serializer.validated_data.get("bracket_id"))

@@ -23,6 +23,7 @@ import { EventHomePage } from "@/features/ctf/EventHomePage";
 import { HelpPage } from "@/features/ctf/HelpPage";
 import { RangePage } from "@/features/ctf/RangePage";
 import { ScoreboardPage } from "@/features/ctf/ScoreboardPage";
+import { AccountPage } from "@/features/ctf/AccountPage";
 import { TeamPage } from "@/features/ctf/TeamPage";
 import { HomePage } from "@/features/home/HomePage";
 import { AgentsPage } from "@/features/mission-control/AgentsPage";
@@ -147,6 +148,7 @@ export const router = createBrowserRouter(
             { path: "range", element: <RangePage /> },
             { path: "scoreboard", element: <ScoreboardPage /> },
             { path: "team", element: <TeamPage /> },
+            { path: "account", element: <AccountPage /> },
             { path: "help", element: <HelpPage /> },
           ],
         },

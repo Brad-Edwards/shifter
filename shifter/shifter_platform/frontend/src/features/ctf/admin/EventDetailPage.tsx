@@ -25,6 +25,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+
+import { EventLifecycleCard } from "./EventLifecycleCard";
+import { EventStaffCard } from "./EventStaffCard";
 import { formatDateTime, titleCase } from "../format";
 import {
   ctfAdminEventChallengesPath,
@@ -214,7 +217,9 @@ export function EventDetailPage() {
       />
 
       <div className="space-y-6">
+        <EventLifecycleCard event={event} />
         <EventOverview event={event} />
+        <EventStaffCard eventId={event.id} />
         <EventLinks eventId={event.id} />
       </div>
 

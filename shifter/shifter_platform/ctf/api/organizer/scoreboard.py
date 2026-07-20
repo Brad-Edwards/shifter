@@ -15,6 +15,7 @@ from ctf.api.organizer._base import (
     _EVENT_READ,
     _PARTICIPANT_NOT_FOUND,
     _actor,
+    _actor_may_manage,
     _raise_forbidden,
     _raise_not_found,
     _resolve_owned_event,
@@ -71,7 +72,7 @@ class ScoreTimelineView(APIView):
         actor = _actor(request)
         role = get_user_role(actor)
         if role.is_ctf_organizer:
-            if participant.event.created_by_id != actor.pk:
+            if not _actor_may_manage(request, participant.event, "submissions"):
                 _raise_forbidden()
             return
         if participant.user_id != actor.pk:

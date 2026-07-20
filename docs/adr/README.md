@@ -34,6 +34,10 @@ Current mechanisms:
   `cms/experiments/orchestrator.py` into a package (#886) moved its test
   suites onto real-model / cloud-boundary assertions and dropped the
   associated `cms.experiments.orchestrator.*` baseline allowances.
+  Likewise, the CTF god-module decomposition (#683) converted the
+  notification and event lifecycle suites to behavioral coverage (real ORM
+  plus SMTP/template boundary patches only) and dropped their
+  `ctf.services.notification.*` / `ctf.services.event.*` allowances.
 - `.pre-commit-config.yaml`: local fast checks
   - The `Deploy` workflow's always-present `Pre-commit` job runs the
     file-hygiene and secret-scan subset (`trailing-whitespace`,

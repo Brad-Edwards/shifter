@@ -204,6 +204,7 @@ def _launch_pack(
         user_id=user.id,
         request_id=str(request_id),
         backend_admission=backend_admission,
+        pack_root=pack_root,
     )
     try:
         result = launch_aces_package(scenario_path=scenario_path, port=port)

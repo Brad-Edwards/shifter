@@ -1,13 +1,14 @@
 // ECS task/service tools for the shifter-ops MCP server.
+//
+// Each tool descriptor is built by its own module-level factory so the
+// registrar stays a thin wiring function.
 
 import { registerTool } from "../policy.js";
 import { ok, err } from "../respond.js";
 import { EnvSchema, SafeName, DESC_ECS_CLUSTER } from "../schemas.js";
 
-export function registerEcsTools(ctx, deps) {
-  const { getProfile, aws } = deps;
-
-  registerTool(ctx, {
+function listEcsTasksTool({ getProfile, aws }) {
+  return {
     name: "list_ecs_tasks",
     klass: "observability",
     description: "List running ECS tasks in a cluster",
@@ -47,9 +48,11 @@ export function registerEcsTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function describeEcsServiceTool({ getProfile, aws }) {
+  return {
     name: "describe_ecs_service",
     klass: "observability",
     description:
@@ -101,9 +104,11 @@ export function registerEcsTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function restartEcsServiceTool({ getProfile, aws }) {
+  return {
     name: "restart_ecs_service",
     klass: "infra_mutation",
     description: "Force a new deployment of an ECS service (rolls all tasks).",
@@ -144,5 +149,11 @@ export function registerEcsTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
+
+export function registerEcsTools(ctx, deps) {
+  registerTool(ctx, listEcsTasksTool(deps));
+  registerTool(ctx, describeEcsServiceTool(deps));
+  registerTool(ctx, restartEcsServiceTool(deps));
 }

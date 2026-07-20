@@ -21,6 +21,8 @@ class ParticipantSelfSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     status = serializers.CharField(read_only=True)
+    role = serializers.CharField(read_only=True)
+    affiliation = serializers.CharField(read_only=True, allow_blank=True)
     range_status = serializers.CharField(read_only=True, allow_blank=True)
     cached_score = serializers.IntegerField(read_only=True)
     cached_solve_count = serializers.IntegerField(read_only=True)
@@ -44,8 +46,11 @@ class ParticipantEventSerializer(serializers.Serializer):
     rating_visibility = serializers.CharField(read_only=True)
     attempt_limit_mode = serializers.CharField(read_only=True)
     scoreboard_visible = serializers.BooleanField(read_only=True)
+    scoreboard_visibility = serializers.CharField(read_only=True)
     event_start = serializers.DateTimeField(read_only=True, allow_null=True)
     event_end = serializers.DateTimeField(read_only=True, allow_null=True)
+    registration_deadline = serializers.DateTimeField(read_only=True, allow_null=True)
+    rules = serializers.CharField(read_only=True, allow_blank=True)
 
 
 class ParticipantCurrentEventSerializer(serializers.Serializer):
@@ -69,6 +74,8 @@ class ParticipantChallengeListItemSerializer(serializers.Serializer):
     difficulty = serializers.CharField(read_only=True, allow_blank=True)
     order = serializers.IntegerField(read_only=True)
     solved = serializers.BooleanField(read_only=True)
+    tags = serializers.ListField(child=serializers.CharField(), read_only=True)
+    topics = serializers.ListField(child=serializers.CharField(), read_only=True)
 
 
 class ParticipantTeamMemberSerializer(serializers.Serializer):
@@ -76,6 +83,7 @@ class ParticipantTeamMemberSerializer(serializers.Serializer):
 
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
+    is_captain = serializers.BooleanField(read_only=True)
 
 
 class ParticipantTeamSerializer(serializers.Serializer):
@@ -84,6 +92,27 @@ class ParticipantTeamSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     members = ParticipantTeamMemberSerializer(many=True, read_only=True)
+    is_captain = serializers.BooleanField(read_only=True)
+    team_size_limit = serializers.IntegerField(read_only=True, allow_null=True)
+    invite_code = serializers.CharField(read_only=True, allow_null=True)
+
+
+class TeamCreateRequestSerializer(serializers.Serializer):
+    """Request body for creating a team."""
+
+    name = serializers.CharField(max_length=100)
+
+
+class TeamJoinRequestSerializer(serializers.Serializer):
+    """Request body for joining a team by invite code."""
+
+    invite_code = serializers.CharField(max_length=64)
+
+
+class TeamMemberRequestSerializer(serializers.Serializer):
+    """Request body naming a teammate (transfer captaincy, remove member)."""
+
+    participant_id = serializers.UUIDField()
 
 
 class ParticipantHintSerializer(serializers.Serializer):
@@ -135,6 +164,8 @@ class ParticipantChallengeDetailSerializer(serializers.Serializer):
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True, allow_blank=True)
     category = serializers.CharField(read_only=True, allow_blank=True)
+    tags = serializers.ListField(child=serializers.CharField(), read_only=True)
+    topics = serializers.ListField(child=serializers.CharField(), read_only=True)
     points = serializers.IntegerField(read_only=True)
     difficulty = serializers.CharField(read_only=True, allow_blank=True)
     max_attempts = serializers.IntegerField(read_only=True)
@@ -152,6 +183,7 @@ class ParticipantChallengeDetailSerializer(serializers.Serializer):
     prerequisites_met = serializers.BooleanField(read_only=True)
     unmet_prerequisites = _NamedRefSerializer(many=True, read_only=True)
     connection_info = ChallengeConnectionInfoSerializer(read_only=True, allow_null=True)
+    locked = serializers.BooleanField(read_only=True)
     show_solution = serializers.BooleanField(read_only=True)
     solution = serializers.CharField(read_only=True, allow_null=True)
     rating = ChallengeRatingSerializer(read_only=True, allow_null=True)
@@ -234,3 +266,38 @@ class SubmissionListResponseSerializer(serializers.Serializer):
 
     submissions = SubmissionListItemSerializer(many=True, read_only=True)
     total = serializers.IntegerField(read_only=True)
+
+
+class _ProfileEventRefSerializer(serializers.Serializer):
+    """Minimal event reference on the profile payload."""
+
+    id = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+
+
+class ParticipantProfileSerializer(serializers.Serializer):
+    """Event-scoped self profile (CTF-610)."""
+
+    id = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    affiliation = serializers.CharField(read_only=True, allow_blank=True)
+    email = serializers.CharField(read_only=True, allow_blank=True)
+    username = serializers.CharField(read_only=True, allow_null=True)
+    role = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    event = _ProfileEventRefSerializer(read_only=True)
+    score = serializers.IntegerField(read_only=True)
+    solve_count = serializers.IntegerField(read_only=True)
+
+
+class ProfileUpdateRequestSerializer(serializers.Serializer):
+    """Partial self-profile update: any omitted field is left unchanged."""
+
+    name = serializers.CharField(required=False, max_length=100)
+    affiliation = serializers.CharField(required=False, allow_blank=True, max_length=120)
+
+
+class UsernameChangeRequestSerializer(serializers.Serializer):
+    """Self-service username change request (#1593)."""
+
+    username = serializers.CharField(max_length=49)
