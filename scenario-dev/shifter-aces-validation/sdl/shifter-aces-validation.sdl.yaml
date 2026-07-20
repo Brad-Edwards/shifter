@@ -13,6 +13,10 @@ nodes:
     os_version: Alpine 3.19
     source: {name: "alpine", version: "3.19"}
     resources: {ram: 512 mib, cpu: 1}
+    features:
+      validation-config: operator
+    roles:
+      operator: {username: aces-validator}
     services:
       - {port: 80, name: http}
 
@@ -25,3 +29,21 @@ infrastructure:
     links: [lan]
     properties:
       - lan: 10.60.0.10
+
+features:
+  validation-config:
+    type: configuration
+    source: validation-config
+    destination: /etc/aces-validation/feature.conf
+
+accounts:
+  validation-user:
+    username: aces-validator
+    node: web
+    auth_method: publickey
+
+content:
+  validation-directory:
+    type: directory
+    target: web
+    destination: /opt/aces-validation/content

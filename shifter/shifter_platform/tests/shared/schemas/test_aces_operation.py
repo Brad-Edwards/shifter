@@ -41,7 +41,21 @@ def _record(**overrides):
     [
         ("operation_receipt", "operation-receipt-v1", {"operation_id": "op-1", "accepted": True}),
         ("operation_status", "operation-status-v1", {"operation_id": "op-1", "status": "running"}),
-        ("runtime_snapshot", "runtime-snapshot-v1", {"operation_id": "op-1", "resources": [{"kind": "vm"}]}),
+        (
+            "runtime_snapshot",
+            "runtime-snapshot-v1",
+            {
+                "operation_id": "op-1",
+                "resources": [
+                    {"address": "node.web", "resource_type": "node", "status": "provisioned"},
+                    {
+                        "address": "content.seed",
+                        "resource_type": "content-placement",
+                        "status": "verified",
+                    },
+                ],
+            },
+        ),
         (
             "execution_plan_ref",
             "execution-plan-ref-v1",
@@ -153,6 +167,35 @@ def test_runtime_snapshot_rejects_oversized_payload():
 def test_runtime_snapshot_rejects_unknown_top_level_payload_key():
     payload = {"operation_id": "op-1", "resources": [{"kind": "vm"}], "captured_notes": "extra"}
     with pytest.raises(AcesOperationRecordError, match="not allowed"):
+        validate_aces_operation_record(
+            _record(record_kind="runtime_snapshot", contract_version="runtime-snapshot-v1", payload=payload)
+        )
+
+
+@pytest.mark.parametrize(
+    "resource",
+    [
+        {"address": "content.seed", "resource_type": "content-placement", "status": "provisioned"},
+        {"address": "node.web", "resource_type": "node", "status": "verified"},
+        {
+            "address": "account.operator",
+            "resource_type": "account-placement",
+            "status": "verified",
+            "username": "operator",
+        },
+        {"address": "feature.config", "resource_type": "unknown", "status": "verified"},
+        {"address": 7, "resource_type": "node", "status": "provisioned"},
+    ],
+)
+def test_runtime_snapshot_rejects_malformed_resource_contract(resource):
+    with pytest.raises(AcesOperationRecordError, match="runtime_snapshot resource"):
+        validate_aces_operation_record(_snapshot(resource))
+
+
+def test_runtime_snapshot_rejects_duplicate_resource_addresses():
+    resource = {"address": "content.seed", "resource_type": "content-placement", "status": "verified"}
+    payload = {"operation_id": "op-1", "resources": [resource, dict(resource)]}
+    with pytest.raises(AcesOperationRecordError, match="duplicate"):
         validate_aces_operation_record(
             _record(record_kind="runtime_snapshot", contract_version="runtime-snapshot-v1", payload=payload)
         )

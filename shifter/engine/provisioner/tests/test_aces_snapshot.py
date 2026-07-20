@@ -5,7 +5,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from aces_plan import AcesPlan, AcesPlanNetwork, AcesPlanNode
+import pytest
+
+from aces_plan import (
+    AcesPlan,
+    AcesPlanAccount,
+    AcesPlanContent,
+    AcesPlanFeature,
+    AcesPlanNetwork,
+    AcesPlanNode,
+)
 from aces_snapshot import snapshot_resources
 
 
@@ -33,3 +42,85 @@ def test_carries_no_infrastructure_detail():
 
 def test_empty_plan_yields_no_resources():
     assert snapshot_resources(AcesPlan(aces_sdl_version="0.19.1", nodes=(), networks=())) == []
+
+
+def _composition_plan() -> AcesPlan:
+    base = _plan()
+    return AcesPlan(
+        aces_sdl_version=base.aces_sdl_version,
+        nodes=base.nodes,
+        networks=base.networks,
+        content=(
+            AcesPlanContent(
+                address="content.seed",
+                name="seed",
+                content_type="directory",
+                target_address="provision.node.web",
+                destination="/srv/seed",
+            ),
+        ),
+        accounts=(
+            AcesPlanAccount(
+                address="account.operator",
+                username="operator",
+                target_address="provision.node.web",
+            ),
+        ),
+        features=(
+            AcesPlanFeature(
+                address="feature.config",
+                name="config",
+                feature_type="configuration",
+                target_address="provision.node.web",
+                source_name="config",
+                destination="/etc/config",
+            ),
+        ),
+    )
+
+
+def test_adds_only_exactly_verified_composition_resources():
+    resources = snapshot_resources(
+        _composition_plan(),
+        {"content.seed", "account.operator", "feature.config"},
+    )
+    assert resources[-3:] == [
+        {"address": "content.seed", "resource_type": "content-placement", "status": "verified"},
+        {"address": "account.operator", "resource_type": "account-placement", "status": "verified"},
+        {"address": "feature.config", "resource_type": "feature-binding", "status": "verified"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "verified",
+    [
+        {"content.seed", "account.operator"},
+        {"content.seed", "account.operator", "feature.config", "content.extra"},
+    ],
+)
+def test_rejects_missing_or_extra_composition_proof(verified):
+    with pytest.raises(ValueError, match="composition verification coverage"):
+        snapshot_resources(_composition_plan(), verified)
+
+
+def test_rejects_complete_snapshot_that_exceeds_persistence_bound():
+    base = _plan()
+    content = tuple(
+        AcesPlanContent(
+            address=f"content.{index}." + "x" * 80,
+            name=f"content-{index}",
+            content_type="directory",
+            target_address="provision.node.web",
+            destination=f"/srv/{index}",
+        )
+        for index in range(700)
+    )
+    plan = AcesPlan(
+        aces_sdl_version=base.aces_sdl_version,
+        nodes=base.nodes,
+        networks=base.networks,
+        content=content,
+    )
+
+    with pytest.raises(ValueError, match="size bound"):
+        snapshot_resources(plan, {item.address for item in content})

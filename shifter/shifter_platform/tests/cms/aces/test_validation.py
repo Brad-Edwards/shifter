@@ -71,14 +71,26 @@ def test_collect_and_validate_full_evidence_passes():
     rid = str(uuid4())
     _seed_receipt(rid)
     _seed_status(rid, "succeeded")
-    _seed_snapshot(rid, [{"address": "provision.node.web", "resource_type": "node", "status": "provisioned"}])
+    _seed_snapshot(
+        rid,
+        [
+            {"address": "provision.node.web", "resource_type": "node", "status": "provisioned"},
+            {"address": "content.seed", "resource_type": "content-placement", "status": "verified"},
+            {"address": "account.operator", "resource_type": "account-placement", "status": "verified"},
+            {"address": "feature.config", "resource_type": "feature-binding", "status": "verified"},
+        ],
+    )
 
     summary = collect_evidence(rid)
     assert summary.receipt_count == 1
     assert summary.status_count == 1
     assert summary.snapshot_count == 1
     assert summary.has_succeeded_status is True
-    assert summary.snapshot_resource_count == 1
+    assert summary.snapshot_resource_count == 4
+    assert summary.composition_resource_count == 3
+    assert summary.verified_composition_types == frozenset(
+        {"content-placement", "account-placement", "feature-binding"}
+    )
     assert validate_evidence(summary) == []
 
 
@@ -100,6 +112,45 @@ def test_no_evidence_flags_everything():
     assert any("operation_receipt" in p for p in problems)
     assert any("operation_status" in p for p in problems)
     assert any("runtime_snapshot" in p for p in problems)
+
+
+@pytest.mark.django_db
+def test_topology_only_snapshot_fails_composition_realization_gate():
+    rid = str(uuid4())
+    _seed_receipt(rid)
+    _seed_status(rid, "succeeded")
+    _seed_snapshot(
+        rid,
+        [{"address": "provision.node.web", "resource_type": "node", "status": "provisioned"}],
+    )
+
+    problems = validate_evidence(collect_evidence(rid))
+    assert any("content-placement" in problem for problem in problems)
+    assert any("account-placement" in problem for problem in problems)
+    assert any("feature-binding" in problem for problem in problems)
+
+
+def test_collect_rejects_unverified_composition_entry(monkeypatch):
+    resources = [
+        {"address": "content.unverified", "resource_type": "content-placement", "status": "provisioned"},
+    ]
+    projected = SimpleNamespace(payload={"operation_id": _OP, "resources": resources})
+    monkeypatch.setattr("cms.aces.validation.list_operation_records", lambda *a, **k: [projected])
+
+    with pytest.raises(AcesEvidenceError, match="composition evidence is not verified"):
+        collect_evidence(str(uuid4()))
+
+
+def test_collect_rejects_duplicate_composition_address(monkeypatch):
+    resources = [
+        {"address": "content.seed", "resource_type": "content-placement", "status": "verified"},
+        {"address": "content.seed", "resource_type": "content-placement", "status": "verified"},
+    ]
+    projected = SimpleNamespace(payload={"operation_id": _OP, "resources": resources})
+    monkeypatch.setattr("cms.aces.validation.list_operation_records", lambda *a, **k: [projected])
+
+    with pytest.raises(AcesEvidenceError, match="invalid or duplicate address"):
+        collect_evidence(str(uuid4()))
 
 
 def test_collect_evidence_rejects_forbidden_substring(monkeypatch):

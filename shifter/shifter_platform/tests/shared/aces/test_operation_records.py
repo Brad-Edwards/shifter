@@ -99,7 +99,16 @@ def test_persist_operation_record_records_explicit_discriminators_and_projection
         range_id=range_id,
         record_kind=AcesOperationRecord.RecordKind.RUNTIME_SNAPSHOT,
         contract_version="runtime-snapshot-v1",
-        payload={"operation_id": "op-12345678", "resources": [{"kind": "vm"}]},
+        payload={
+            "operation_id": "op-12345678",
+            "resources": [
+                {
+                    "address": "node.web",
+                    "resource_type": "node",
+                    "status": "provisioned",
+                }
+            ],
+        },
         diagnostic_refs={"fingerprint": "diag-fingerprint-1"},
         retention_expires_at=SOURCE_TS + timedelta(days=7),
     )

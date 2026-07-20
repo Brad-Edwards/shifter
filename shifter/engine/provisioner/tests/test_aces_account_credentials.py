@@ -64,7 +64,10 @@ class _Orchestrator:
 
     def orchestrate(self, target, plan, context, document_name):
         self.calls.append((plan, context))
-        return SimpleNamespace(success=True)
+        return SimpleNamespace(
+            success=True,
+            verification_result=SimpleNamespace(success=True),
+        )
 
 
 def test_password_strategy_generates_by_strength_and_reuses_password_plan():
@@ -170,7 +173,8 @@ def test_failure_is_coarse_and_execution_is_closed():
 
     assert "SECRET-PASSWORD" not in str(exc_info.value)
     assert exc_info.value.__suppress_context__ is True
-    assert "alice" in str(exc_info.value)
+    assert str(exc_info.value) == "failed to realize authored-account credential"
+    assert "alice" not in str(exc_info.value)
     execution.close.assert_called_once()
 
 
@@ -195,8 +199,60 @@ def test_management_channel_failure_is_coarse_and_execution_is_closed():
             secret_ops=ops,
         )
 
-    assert str(exc_info.value) == "failed to establish credential setup channel for instance 'node.web#0'"
+    assert str(exc_info.value) == "failed to establish authored-account credential setup channel"
+    assert "node.web#0" not in str(exc_info.value)
     assert exc_info.value.__suppress_context__ is True
+    execution.close.assert_called_once()
+
+
+def test_missing_credential_verification_result_fails_closed():
+    ops, _calls = _ops()
+    execution = _Execution()
+
+    class MissingVerificationOrchestrator(_Orchestrator):
+        def orchestrate(self, target, plan, context, document_name):
+            return SimpleNamespace(success=True, verification_result=None)
+
+    ops = replace(
+        ops,
+        execution_builder=lambda *_args, **_kwargs: execution,
+        orchestrator_factory=MissingVerificationOrchestrator,
+    )
+
+    with pytest.raises(AcesAccountCredentialError, match="failed to realize"):
+        install_instance_account_credentials(
+            range_id=7,
+            instance_key="node.web#0",
+            platform="linux",
+            instance_output={"private_ip": execution.target},
+            accounts=(_account(),),
+            secret_ops=ops,
+        )
+
+
+def test_unsupported_credential_strategy_fails_closed():
+    ops, calls = _ops()
+    execution = _Execution()
+    ops = replace(
+        ops,
+        execution_builder=lambda *_args, **_kwargs: execution,
+        orchestrator_factory=_Orchestrator,
+    )
+
+    with pytest.raises(AcesAccountCredentialError) as exc_info:
+        install_instance_account_credentials(
+            range_id=7,
+            instance_key="node.web#0",
+            platform="linux",
+            instance_output={"private_ip": execution.target},
+            accounts=(_account(auth_method="ntlm"),),
+            secret_ops=ops,
+        )
+
+    assert str(exc_info.value) == "failed to realize authored-account credential"
+    assert exc_info.value.__suppress_context__ is True
+    calls.ensure_password.assert_not_called()
+    calls.ensure_public_key.assert_not_called()
     execution.close.assert_called_once()
 
 
