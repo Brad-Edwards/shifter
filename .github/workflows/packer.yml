@@ -63,11 +63,6 @@ on:
         description: '[scenario] SSM parameter to publish (must be /shifter/ami/<key>); default derived from ami_type'
         required: false
         type: string
-      aptl_version:
-        description: '[techvault] aptl-labs wheel version to bake (bake is pinned to a version)'
-        required: false
-        type: string
-        default: '4.1.2'
       s3_tarball_uri:
         description: '[polaris-vm] s3://bucket/key of the operator-uploaded Polaris build tarball'
         required: false
@@ -388,7 +383,6 @@ jobs:
       INSTANCE_PROFILE: ${{ inputs.instance_profile }}
       INSTANCE_TYPE: ${{ inputs.instance_type }}
       SSM_PARAM_INPUT: ${{ inputs.ssm_param }}
-      APTL_VERSION: ${{ inputs.aptl_version }}
       S3_TARBALL_URI: ${{ inputs.s3_tarball_uri }}
 
     steps:
@@ -443,7 +437,6 @@ jobs:
 
           case "$AMI_TYPE" in
             techvault)
-              match aptl_version "$APTL_VERSION" '^[0-9][0-9A-Za-z._-]*$'
               {
                 echo "SCENARIO=techvault"
                 echo "MIN_CONTAINERS=30"
@@ -555,7 +548,6 @@ jobs:
           PKR_VAR_builder_instance_profile: ${{ inputs.instance_profile }}
           PKR_VAR_root_volume_size: "100"
           PKR_VAR_kms_key_id: ""
-          PKR_VAR_aptl_version: ${{ inputs.aptl_version }}
           PKR_VAR_polaris_tarball_s3_uri: ${{ env.POLARIS_TARBALL_S3_URI }}
         run: |
           set -euo pipefail
