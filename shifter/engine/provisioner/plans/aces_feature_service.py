@@ -80,6 +80,7 @@ Write-Output 'ACES_FEATURE_SERVICE_VERIFIED'
 
 
 def _ps_quote(value: str) -> str:
+    """Return one PowerShell single-quoted string literal."""
     return "'" + value.replace("'", "''") + "'"
 
 

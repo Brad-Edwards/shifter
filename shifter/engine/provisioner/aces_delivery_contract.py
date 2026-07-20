@@ -63,6 +63,7 @@ def validated_binding(raw: dict[str, Any]) -> DeliveryBinding:
 
 
 def _validate_feature(feature: AcesPlanFeature) -> None:
+    """Reject features without a safe provisioner realization contract."""
     if feature.feature_type not in {"service", "artifact", "configuration"}:
         raise AcesGceCompositionError("feature type has no provisioner realization")
     if feature.has_environment:
@@ -80,6 +81,7 @@ def _validate_feature(feature: AcesPlanFeature) -> None:
 
 
 def _validated_bindings(delivery_bindings: list[dict[str, Any]] | None) -> list[DeliveryBinding]:
+    """Validate every raw binding and translate contract failures."""
     validated: list[DeliveryBinding] = []
     for raw_binding in delivery_bindings or []:
         try:
@@ -87,6 +89,36 @@ def _validated_bindings(delivery_bindings: list[dict[str, Any]] | None) -> list[
         except ContentDeliveryError:
             raise AcesGceCompositionError("a delivery binding failed contract validation") from None
     return validated
+
+
+def _validate_source_content(source_content: list[AcesPlanContent]) -> None:
+    """Reject source-backed content without a delivery materializer."""
+    for item in source_content:
+        if item.content_type not in SUPPORTED_DELIVERY_CONTENT_TYPES:
+            raise AcesGceCompositionError(f"source-backed content {item.content_type!r} has no delivery materializer")
+
+
+def _assert_identity_sets_match(
+    source_content: list[AcesPlanContent],
+    source_features: list[AcesPlanFeature],
+    validated: list[DeliveryBinding],
+    binding_count: int,
+) -> None:
+    """Require a one-to-one match between deliverables and binding identities."""
+    bound_identities = {
+        (binding.resource_type or "content-placement", binding.resource_address or binding.content_address or "")
+        for binding in validated
+    }
+    source_identities = {
+        *(("content-placement", item.address) for item in source_content),
+        *(("feature-binding", item.address) for item in source_features),
+    }
+    if len(bound_identities) != binding_count:
+        raise AcesGceCompositionError("ACES delivery bindings carry a duplicate resource identity")
+    if source_identities - bound_identities:
+        raise AcesGceCompositionError("a source-backed resource is missing its delivery binding")
+    if bound_identities - source_identities:
+        raise AcesGceCompositionError("a delivery binding does not match any deliverable resource")
 
 
 def assert_content_delivery_bindings_complete(
@@ -98,22 +130,6 @@ def assert_content_delivery_bindings_complete(
     source_features = source_backed_features(aces_plan)
     for feature in aces_plan.features:
         _validate_feature(feature)
-    for item in source_content:
-        if item.content_type not in SUPPORTED_DELIVERY_CONTENT_TYPES:
-            raise AcesGceCompositionError(f"source-backed content {item.content_type!r} has no delivery materializer")
-
+    _validate_source_content(source_content)
     validated = _validated_bindings(delivery_bindings)
-    bound_identities = {
-        (binding.resource_type or "content-placement", binding.resource_address or binding.content_address or "")
-        for binding in validated
-    }
-    source_identities = {
-        *(("content-placement", item.address) for item in source_content),
-        *(("feature-binding", item.address) for item in source_features),
-    }
-    if len(bound_identities) != len(delivery_bindings or []):
-        raise AcesGceCompositionError("ACES delivery bindings carry a duplicate resource identity")
-    if source_identities - bound_identities:
-        raise AcesGceCompositionError("a source-backed resource is missing its delivery binding")
-    if bound_identities - source_identities:
-        raise AcesGceCompositionError("a delivery binding does not match any deliverable resource")
+    _assert_identity_sets_match(source_content, source_features, validated, len(delivery_bindings or []))

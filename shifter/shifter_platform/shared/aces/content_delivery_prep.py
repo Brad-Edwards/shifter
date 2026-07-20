@@ -221,8 +221,8 @@ def _source_backed_content_refs(serialized_plan: Mapping[str, object]) -> list[_
     return refs
 
 
-def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef | None:
-    """Return one source-backed artifact/configuration delivery reference."""
+def _feature_template_from_resource(address: object, resource: object) -> tuple[Mapping[str, object], str] | None:
+    """Return a feature template and canonical address for a valid resource."""
     if not isinstance(resource, Mapping) or resource.get("resource_type") != _FEATURE_BINDING_RESOURCE_TYPE:
         return None
     payload = resource.get("payload")
@@ -230,17 +230,26 @@ def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef
     template = spec.get("template") if isinstance(spec, Mapping) else None
     if not isinstance(template, Mapping):
         return None
+    return template, str(resource.get("address") or address)
+
+
+def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef | None:
+    """Return one source-backed artifact/configuration delivery reference."""
+    resolved = _feature_template_from_resource(address, resource)
+    if resolved is None:
+        return None
+    template, resource_address = resolved
     feature_type = template.get("type")
     feature_type = feature_type.lower() if isinstance(feature_type, str) else ""
+    if feature_type == "service":
+        return None
     if feature_type not in {"artifact", "configuration"}:
-        if feature_type == "service":
-            return None
         raise ContentDeliveryError("feature binding has no delivery realization")
     name, version = _parse_source(template.get("source"))
     if not name:
         raise ContentDeliveryError("source-backed feature has an unresolvable source name")
     return _ContentRef(
-        address=str(resource.get("address") or address),
+        address=resource_address,
         source_name=name,
         source_version=version,
         content_type="file",

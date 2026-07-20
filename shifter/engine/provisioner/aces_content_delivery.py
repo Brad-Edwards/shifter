@@ -408,6 +408,57 @@ def _realize_feature(
     _deliver_to_node(ops, outputs_by_key, node, delivery)
 
 
+def _realize_source_content(
+    ops: AcesContentDeliveryOps,
+    config: AcesContentDeliveryConfig | None,
+    bindings: list[dict[str, Any]],
+    nodes_by_address: dict[str, AcesPlanNode],
+    outputs_by_key: dict[str, dict[str, Any]],
+    source_content: list[AcesPlanContent],
+) -> None:
+    """Realize all source-backed content with one required delivery config."""
+    if not source_content:
+        return
+    if config is None:
+        raise AcesContentDeliveryError("ACES content delivery config is unavailable")
+    for item in source_content:
+        _realize_content_item(ops, config, bindings, nodes_by_address, outputs_by_key, item)
+
+
+def _realize_ordered_features(
+    ops: AcesContentDeliveryOps,
+    config: AcesContentDeliveryConfig | None,
+    bindings: list[dict[str, Any]],
+    nodes_by_address: dict[str, AcesPlanNode],
+    outputs_by_key: dict[str, dict[str, Any]],
+    features: list[AcesPlanFeature],
+) -> None:
+    """Realize features in their already-validated dependency order."""
+    for feature in features:
+        _realize_feature(ops, config, bindings, nodes_by_address, outputs_by_key, feature)
+
+
+def _realize_delivery_plan(
+    aces_plan: AcesPlan,
+    instance_outputs: list[dict[str, Any]],
+    delivery_bindings: list[dict[str, Any]] | None,
+    ops: AcesContentDeliveryOps | None,
+) -> None:
+    """Resolve shared delivery state and realize every content and feature item."""
+    source_content = source_backed_content(aces_plan)
+    features = ordered_features(aces_plan)
+    if not source_content and not features:
+        return
+    resolved_ops = ops or default_content_delivery_ops()
+    bindings = delivery_bindings or []
+    nodes_by_address = {node.address: node for node in aces_plan.nodes}
+    outputs_by_key = {str(output.get("uuid", "")): output for output in instance_outputs}
+    needs_payload = bool(source_content) or any(feature.feature_type != "service" for feature in features)
+    config = resolved_ops.config_loader() if needs_payload else None
+    _realize_source_content(resolved_ops, config, bindings, nodes_by_address, outputs_by_key, source_content)
+    _realize_ordered_features(resolved_ops, config, bindings, nodes_by_address, outputs_by_key, features)
+
+
 def realize_aces_content_delivery(
     *,
     aces_plan: AcesPlan,
@@ -423,24 +474,7 @@ def realize_aces_content_delivery(
     rather than silently skipping, since that would mean the gate was bypassed.
     """
     try:
-        source_content = source_backed_content(aces_plan)
-        features = ordered_features(aces_plan)
-        if not source_content and not features:
-            return
-        resolved_ops = ops or default_content_delivery_ops()
-        bindings = delivery_bindings or []
-        nodes_by_address = {node.address: node for node in aces_plan.nodes}
-        outputs_by_key = {str(output.get("uuid", "")): output for output in instance_outputs}
-        needs_payload = bool(source_content) or any(feature.feature_type != "service" for feature in features)
-        config = resolved_ops.config_loader() if needs_payload else None
-
-        if source_content:
-            if config is None:
-                raise AcesContentDeliveryError("ACES content delivery config is unavailable")
-            for item in source_content:
-                _realize_content_item(resolved_ops, config, bindings, nodes_by_address, outputs_by_key, item)
-        for feature in features:
-            _realize_feature(resolved_ops, config, bindings, nodes_by_address, outputs_by_key, feature)
+        _realize_delivery_plan(aces_plan, instance_outputs, delivery_bindings, ops)
     except FeatureDependencyCycleError as exc:
         raise AcesContentDeliveryError(str(exc)) from None
     except AcesContentDeliveryError:
