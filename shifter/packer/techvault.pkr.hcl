@@ -28,7 +28,7 @@
 
 source "amazon-ebs" "techvault" {
   ami_name        = "${var.ami_prefix}-techvault-{{timestamp}}"
-  ami_description = "TechVault techvault-operational stack + VS Code seat, repository-locked aptl-labs (baked running) — encrypted root"
+  ami_description = "TechVault techvault-operational stack + VS Code seat, repository-locked aptl-labs (baked running) - encrypted root"
   instance_type   = var.scenario_instance_type
   region          = var.aws_region
 
