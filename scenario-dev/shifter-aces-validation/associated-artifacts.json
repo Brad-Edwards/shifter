@@ -19,9 +19,9 @@
       "uri": "aces-scenario-pack:/docs/concepts.md",
       "checksum": {
         "algorithm": "sha256",
-        "value": "4246f6548a998a98090026d872b179dfb57a9d8aa3f99da02b931b71c73dd6d6"
+        "value": "c5b57be77e124e9023b1d96c16964d4348d4aa5082bf306761d6ea83e5aeb651"
       },
-      "size_bytes": 237,
+      "size_bytes": 433,
       "created_at": "2026-07-13T00:00:00Z",
       "source": "Brad-Edwards/shifter",
       "satisfies_refs": [],
@@ -67,9 +67,41 @@
       "uri": "aces-scenario-pack:/sdl/shifter-aces-validation.sdl.yaml",
       "checksum": {
         "algorithm": "sha256",
-        "value": "0f4923759fc7adaaaeca4b7d84d9b3ba6749522bbea7be086fce9b831cd33476"
+        "value": "95f74caf40ff3357c58a4f3cdf6e06527b135eda678a69de7e63f05afde4c12a"
       },
-      "size_bytes": 632,
+      "size_bytes": 1087,
+      "created_at": "2026-07-13T00:00:00Z",
+      "source": "Brad-Edwards/shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    },
+    "artifact-4": {
+      "artifact_id": "artifact-4",
+      "role": "configuration",
+      "media_type": "application/json",
+      "uri": "aces-scenario-pack:/delivery/content-projection.json",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "0eefe0d89ba12ff122645d618ee2db3d68db5c32f5fa36122550767765c37721"
+      },
+      "size_bytes": 311,
+      "created_at": "2026-07-13T00:00:00Z",
+      "source": "Brad-Edwards/shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    },
+    "artifact-5": {
+      "artifact_id": "artifact-5",
+      "role": "configuration",
+      "media_type": "text/plain",
+      "uri": "aces-scenario-pack:/assets/validation.conf",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "68a20f5c26473feebc9891582d5cf68cda45ffa814e6701c7dd682eda71cfa83"
+      },
+      "size_bytes": 31,
       "created_at": "2026-07-13T00:00:00Z",
       "source": "Brad-Edwards/shifter",
       "satisfies_refs": [],
@@ -77,5 +109,5 @@
       "description": null
     }
   },
-  "set_digest": "sha256:28cd643d5084f3054dd09c6bb3217290caa7fcc65f6ca2b754e7de43b41d843a"
+  "set_digest": "sha256:6e57536773faf627b3ef6910b9e249bd0715cabcfbeef603b7dd60741897ab84"
 }

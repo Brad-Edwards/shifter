@@ -39,7 +39,9 @@ def _valid_summary(request_id):
         status_count=2,
         snapshot_count=1,
         has_succeeded_status=True,
-        snapshot_resource_count=2,
+        snapshot_resource_count=5,
+        composition_resource_count=3,
+        verified_composition_types=frozenset({"content-placement", "account-placement", "feature-binding"}),
     )
 
 

@@ -59,7 +59,7 @@ _DELIVERY_BINDINGS = [
 @pytest.fixture
 def patched(monkeypatch):
     calls = SimpleNamespace(
-        apply=MagicMock(),
+        apply=MagicMock(return_value={"composition_verified_addresses": []}),
         destroy=MagicMock(),
         status=MagicMock(),
         ready=MagicMock(),
@@ -128,6 +128,16 @@ class TestProvision:
         # ACES operation ends 'failed'; no snapshot on failure.
         assert patched.aces_operation.call_args_list[-1].kwargs["status"] == "failed"
         assert not patched.aces_snapshot.called
+
+    def test_malformed_composition_proof_fails_before_snapshot_or_ready(self, patched):
+        patched.apply.return_value = {"composition_verified_addresses": "content.inline"}
+
+        with pytest.raises(ValueError, match="verification proof is invalid"):
+            aces_range_ops.run_aces_range_provision("req-1")
+
+        assert patched.failed.called
+        assert not patched.aces_snapshot.called
+        assert not patched.ready.called
 
 
 class TestDestroy:
