@@ -190,6 +190,33 @@ class TestCreateAcesRangeDeliveryBindings:
         )
         assert addresses == {first.content_address, second.content_address}
 
+    def test_persists_feature_binding_without_legacy_content_address(self, user):
+        request_id = uuid4()
+        binding = DeliveryBinding(
+            content_address=None,
+            sha256="b" * 64,
+            storage_key=f"aces-content/bb/{'b' * 64}",
+            byte_count=2048,
+            binding_version=2,
+            resource_type="feature-binding",
+            resource_address="provision.feature.agent",
+            payload_kind="file",
+            install_policy="executable",
+        )
+        create_aces_range(
+            request_id=request_id,
+            user_id=user.id,
+            compiled_plan=make_compiled_plan(),
+            delivery_bindings=(binding,),
+        )
+
+        row = AcesContentDeliveryBinding.objects.get(range__request__request_id=request_id)
+        assert row.content_address == ""
+        assert row.resource_type == "feature-binding"
+        assert row.resource_address == "provision.feature.agent"
+        assert row.payload_kind == "file"
+        assert row.install_policy == "executable"
+
 
 @pytest.mark.django_db
 class TestCreateAcesRangeDispatchFailure:

@@ -77,6 +77,7 @@ _GCE_RANGE_ENV_KEYS = (
     "GCP_RANGE_KALI_MACHINE_TYPE",
     "GCP_RANGE_KALI_DISK_SIZE_GB",
     "GCP_RANGE_KALI_DISK_TYPE",
+    "GCP_RANGE_IMAGE_KEY_PROFILES_JSON",
     "GCP_RANGE_WINDOWS_IMAGE",
     "GCP_RANGE_WINDOWS_MACHINE_TYPE",
     "GCP_RANGE_WINDOWS_DISK_SIZE_GB",
@@ -153,8 +154,34 @@ def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
     return email_values
 
 
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Build one JSON object without silently overwriting duplicate keys."""
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key!r}")
+        value[key] = item
+    return value
+
+
+def _canonical_image_key_profiles(raw: str) -> str:
+    """Return compact one-line JSON while preserving semantic validation for the provisioner."""
+    if len(raw.encode("utf-8")) > 32_768:
+        raise ValueError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 32768-byte configuration limit")
+    try:
+        decoded = json.loads(raw, object_pairs_hook=_reject_duplicate_json_keys)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be valid JSON: {exc}") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be a JSON object")
+    return json.dumps(decoded, separators=(",", ":"), sort_keys=True)
+
+
 def _optional_gce_range_values() -> dict[str, str]:
-    return {key: value for key in _GCE_RANGE_ENV_KEYS if (value := os.environ.get(key, "").strip())}
+    values = {key: value for key in _GCE_RANGE_ENV_KEYS if (value := os.environ.get(key, "").strip())}
+    if raw_profiles := values.get("GCP_RANGE_IMAGE_KEY_PROFILES_JSON"):
+        values["GCP_RANGE_IMAGE_KEY_PROFILES_JSON"] = _canonical_image_key_profiles(raw_profiles)
+    return values
 
 
 def _project_from_self_link(self_link: object) -> str:

@@ -29,7 +29,12 @@ from aces_gcp_firewall import (
     service_base_priority,
 )
 from aces_plan import AcesPlan, AcesPlanNetwork, AcesPlanNode
-from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
+from config import (
+    GCERangeCellConfig,
+    GCERangeImageProfile,
+    gce_image_profile_fingerprint,
+    load_gce_range_cell_config,
+)
 from gcp_range_cell_firewall import build_firewall_plan
 from gcp_range_cell_naming import (
     _network_name_from_id,
@@ -297,6 +302,8 @@ def _instance_plans_for_node(
                 "asset_type": "gce_vm",
                 "tags": [_network_tag(range_id), subnet["tag"], node_tag(range_id, node.address)],
                 "profile": profile,
+                "image_key": "",
+                "image_profile_fingerprint": gce_image_profile_fingerprint(profile),
                 "source": {},
                 "ssh_username": _DEFAULT_SSH_USERNAME,
                 "host_ssh_username": _DEFAULT_SSH_USERNAME,

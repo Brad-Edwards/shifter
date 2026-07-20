@@ -32,15 +32,19 @@ Build the images with the GCP Packer workflow
   2022 with the AD DS role and OpenSSH. The `boreas.local` domain is promoted
   per range by the provisioner, not baked into the image.
 
-Point the range profiles at the built image families:
+Keep the generic `GCP_RANGE_KALI_*` and `GCP_RANGE_DC_*` defaults available for
+unkeyed scenarios. In `GCP_RANGE_IMAGE_KEY_PROFILES_JSON`, configure a complete
+`kali.polaris-vm` profile pointing at the promoted `shifter-polaris-vm` family
+and a complete `dc.polaris-dc` profile pointing at the promoted Polaris DC
+family. Include the GCE machine type, disk size, and disk type in each entry;
+the Polaris host disk must be at least 210 GB.
 
-- `GCP_RANGE_KALI_IMAGE` at the `polaris-vm` family.
-- `GCP_RANGE_DC_IMAGE` at the `dc` family.
-
-The scenario keeps its `ami_key: polaris-vm` and `ami_key: polaris-dc` values.
-The GCE plan translates those to the profiles above and ignores the AWS
-`instance_type`; machine size comes from `GCP_RANGE_KALI_MACHINE_TYPE` and
-`GCP_RANGE_DC_MACHINE_TYPE`.
+The scenario keeps its logical `ami_key: polaris-vm` and
+`ami_key: polaris-dc` values. The GCE plan performs an exact class/key lookup and
+ignores the AWS `instance_type`. A missing or misspelled entry fails before
+cloud mutation instead of booting the generic Kali or DC image. See
+[GCP range-cell deploy](gcp-range-cell-deploy.md#legacy-rangespec-image-mapping)
+for the closed JSON shape and rollout sequence.
 
 ## Kali agent credentials (Vertex AI)
 

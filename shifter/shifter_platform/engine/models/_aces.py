@@ -94,8 +94,14 @@ class AcesContentDeliveryBinding(models.Model):
     )
     content_address = models.CharField(
         max_length=500,
+        blank=True,
+        default="",
         help_text="Compiled ACES content resource address this binding identifies.",
     )
+    resource_type = models.CharField(max_length=64, blank=True, default="")
+    resource_address = models.CharField(max_length=500, blank=True, default="")
+    payload_kind = models.CharField(max_length=32, blank=True, default="")
+    install_policy = models.CharField(max_length=32, blank=True, default="")
     sha256 = models.CharField(max_length=64, help_text="Lowercase hex sha256 of the delivered payload.")
     storage_key = models.CharField(
         max_length=500, help_text="Normalized content-addressed object key for the delivered payload."
@@ -111,9 +117,30 @@ class AcesContentDeliveryBinding(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["range", "content_address"],
+                condition=~models.Q(content_address=""),
                 name="unique_aces_content_delivery_binding",
+            ),
+            models.UniqueConstraint(
+                fields=["range", "resource_type", "resource_address"],
+                condition=models.Q(resource_type="feature-binding"),
+                name="unique_aces_resource_delivery_binding",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(binding_version=1) & ~models.Q(content_address="")
+                    | models.Q(
+                        binding_version=2,
+                        content_address="",
+                        resource_type="feature-binding",
+                    )
+                    & ~models.Q(resource_address="")
+                    & ~models.Q(payload_kind="")
+                    & ~models.Q(install_policy="")
+                ),
+                name="valid_aces_delivery_binding_identity",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"AcesContentDeliveryBinding({self.range_id}, {self.content_address})"
+        identity = self.content_address or f"{self.resource_type}:{self.resource_address}"
+        return f"AcesContentDeliveryBinding({self.range_id}, {identity})"

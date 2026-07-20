@@ -71,6 +71,8 @@ class InstancePlan(TypedDict):
     asset_type: str
     tags: list[str]
     profile: GCERangeImageProfile
+    image_key: str
+    image_profile_fingerprint: str
     source: ScenarioInstance
     ssh_username: str
     host_ssh_username: str

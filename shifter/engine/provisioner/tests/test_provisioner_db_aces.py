@@ -67,8 +67,28 @@ class TestGetAcesContentDeliveryBindings:
         from provisioner_db_aces import get_aces_content_delivery_bindings_by_request_id
 
         rows = [
-            ("provision.node.attacker#file", "a" * 64, f"aces-content/aa/{'a' * 64}", 1024, 1),
-            ("provision.node.victim#file", "b" * 64, f"aces-content/bb/{'b' * 64}", 2048, 1),
+            (
+                "provision.node.attacker#file",
+                "",
+                "",
+                "",
+                "",
+                "a" * 64,
+                f"aces-content/aa/{'a' * 64}",
+                1024,
+                1,
+            ),
+            (
+                "",
+                "feature-binding",
+                "provision.feature.agent",
+                "file",
+                "executable",
+                "b" * 64,
+                f"aces-content/bb/{'b' * 64}",
+                2048,
+                2,
+            ),
         ]
         conn, cursor = _mock_conn(fetchall=rows)
         monkeypatch.setattr("provisioner_db_aces.get_db_connection", MagicMock(return_value=conn))
@@ -81,7 +101,16 @@ class TestGetAcesContentDeliveryBindings:
             "byte_count": 1024,
             "binding_version": 1,
         }
-        assert bindings[1]["content_address"] == "provision.node.victim#file"
+        assert bindings[1] == {
+            "resource_type": "feature-binding",
+            "resource_address": "provision.feature.agent",
+            "payload_kind": "file",
+            "install_policy": "executable",
+            "sha256": "b" * 64,
+            "storage_key": f"aces-content/bb/{'b' * 64}",
+            "byte_count": 2048,
+            "binding_version": 2,
+        }
         sql = cursor.execute.call_args[0][0]
         assert "engine_aces_content_delivery_binding" in sql
         assert cursor.execute.call_args[0][1] == ("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",)
