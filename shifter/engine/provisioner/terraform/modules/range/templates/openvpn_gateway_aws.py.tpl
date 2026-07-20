@@ -12,7 +12,9 @@ write_files:
       import boto3
 
       secret_id = "shifter/${environment}/range/${range_id}/vpn-${request_uuid}-server"
-      payload = boto3.client("secretsmanager").get_secret_value(SecretId=secret_id)["SecretString"]
+      payload = boto3.client("secretsmanager", region_name="${region}").get_secret_value(SecretId=secret_id)[
+          "SecretString"
+      ]
       material = json.loads(payload)
       expected = {"ca", "certificate", "private_key", "tls_crypt"}
       if set(material) != expected:
