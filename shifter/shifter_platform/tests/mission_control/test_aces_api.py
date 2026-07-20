@@ -230,13 +230,24 @@ class TestReceiptsAndSnapshotsRead:
         _seed_record(
             request_id,
             record_kind=AcesOperationRecord.RecordKind.RUNTIME_SNAPSHOT,
-            payload={"operation_id": "op-1", "resources": [{"kind": "vm", "id": "i-1"}]},
+            payload={
+                "operation_id": "op-1",
+                "resources": [
+                    {
+                        "address": "node.web",
+                        "resource_type": "node",
+                        "status": "provisioned",
+                    }
+                ],
+            },
         )
         client.force_authenticate(user=user)
         response = client.get(_snapshots_url(request_id))
         assert response.status_code == 200
         assert response.json()["record_kind"] == "runtime_snapshot"
-        assert response.json()["results"][0]["payload"]["resources"] == [{"kind": "vm", "id": "i-1"}]
+        assert response.json()["results"][0]["payload"]["resources"] == [
+            {"address": "node.web", "resource_type": "node", "status": "provisioned"}
+        ]
 
     def test_snapshots_do_not_leak_other_users_range(self, client, user, other_user):
         request_id = _owned_range(other_user)

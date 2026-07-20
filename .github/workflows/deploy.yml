@@ -216,7 +216,6 @@ jobs:
               - '.github/pull_request_template.md'
               - '.github/copilot-instructions.md'
               - '.gc/plan-rules.md'
-              - 'changelog.d/README.md'
               - 'docs/adr/**'
               - 'docs/technical/dev/adr-enforcement.md'
 

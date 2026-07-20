@@ -1,10 +1,4 @@
 #cloud-config
-package_update: true
-packages:
-  # The gateway may run on any supported Linux target AMI. Install its runtime
-  # dependencies explicitly instead of relying on scenario-image contents.
-  - openvpn
-  - python3-boto3
 write_files:
   - path: /usr/local/sbin/configure-shifter-openvpn.py
     owner: root:root
@@ -18,7 +12,9 @@ write_files:
       import boto3
 
       secret_id = "shifter/${environment}/range/${range_id}/vpn-${request_uuid}-server"
-      payload = boto3.client("secretsmanager").get_secret_value(SecretId=secret_id)["SecretString"]
+      payload = boto3.client("secretsmanager", region_name="${region}").get_secret_value(SecretId=secret_id)[
+          "SecretString"
+      ]
       material = json.loads(payload)
       expected = {"ca", "certificate", "private_key", "tls_crypt"}
       if set(material) != expected:
@@ -45,6 +41,7 @@ write_files:
       ca /etc/openvpn/server/ca.crt
       cert /etc/openvpn/server/server.crt
       key /etc/openvpn/server/server.key
+      dh none
       tls-crypt /etc/openvpn/server/tls-crypt.key
       verify-client-cert require
       remote-cert-eku "TLS Web Client Authentication"

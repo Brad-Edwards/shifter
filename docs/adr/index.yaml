@@ -241,7 +241,7 @@
       },
       {
         "id": "ADR-004-R24",
-        "description": "Production-path quality ownership is a single versioned, machine-readable contract at `.github/quality-path-filters.yaml` (schema parsed by `scripts/quality_ownership/contract.py`), enforced fail-closed. The always-run `paths` job in `.github/workflows/_quality.yml` invokes `scripts/quality_ownership/classify_paths.py`, which validates the contract and REJECTS any changed path that is neither a declared quality unit nor a typed exclusion BEFORE emitting any job-selection output, so an unowned path can no longer skip the checks designed to gate it. The `quality-path-ownership` adr_guard check (this rule) reconciles the contract against the whole repository and enforces three invariants: (1) estate completeness - every git-tracked path is a production owner or a narrow typed exclusion (closed enum: docs/test/generated/vendor/metadata/config; no catch-all, no unowned remainder); (2) ownership completeness - every production PATH is covered, across the union of its matching units, by a BLOCKING lint AND security AND test job (an advisory / `continue-on-error` / always-run / missing job never satisfies a responsibility), and unit `packages` reconcile both directions against the #1523 first-party classification in `scripts/check_layer_imports/layer_imports.yaml`; (3) routing reachability - a representative change to each unit makes its declared jobs (and matrix members) run in the real `_quality.yml` (proven by semantic `if:` evaluation, not substring match), while a docs-only change selects no production job. Genuine ownership gaps are recorded ONLY as time-bounded `docs/adr/exceptions.yaml` entries keyed to the `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor - there is no `not_applicable`, advisory, or permanent grandfather escape hatch in the contract schema. The contract and its classifier route their own guard tests and adr-conformance (self-bypass prevention). Anchored on GEN-002 (Executable Architecture Governance). Established by #1530; gap-closure tracked by #1698.",
+        "description": "Production-path quality ownership is a single versioned, machine-readable contract at `.github/quality-path-filters.yaml` (schema parsed by `scripts/quality_ownership/contract.py`), enforced fail-closed. The always-run `paths` job in `.github/workflows/_quality.yml` invokes `scripts/quality_ownership/classify_paths.py`, which validates the contract and REJECTS any changed path that is neither a declared quality unit nor a typed exclusion BEFORE emitting any job-selection output, so an unowned path can no longer skip the checks designed to gate it. Deleted paths are excluded from classification (git `--diff-filter=d`): a removed file exists at neither HEAD nor the tracked estate, owns no quality job, and MUST NOT require a classifier entry that the estate-staleness invariant below would then reject (#1776). The `quality-path-ownership` adr_guard check (this rule) reconciles the contract against the whole repository and enforces three invariants: (1) estate completeness - every git-tracked path is a production owner or a narrow typed exclusion (closed enum: docs/test/generated/vendor/metadata/config; no catch-all, no unowned remainder); (2) ownership completeness - every production PATH is covered, across the union of its matching units, by a BLOCKING lint AND security AND test job (an advisory / `continue-on-error` / always-run / missing job never satisfies a responsibility), and unit `packages` reconcile both directions against the #1523 first-party classification in `scripts/check_layer_imports/layer_imports.yaml`; (3) routing reachability - a representative change to each unit makes its declared jobs (and matrix members) run in the real `_quality.yml` (proven by semantic `if:` evaluation, not substring match), while a docs-only change selects no production job. Genuine ownership gaps are recorded ONLY as time-bounded `docs/adr/exceptions.yaml` entries keyed to the `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor - there is no `not_applicable`, advisory, or permanent grandfather escape hatch in the contract schema. The contract and its classifier route their own guard tests and adr-conformance (self-bypass prevention). Anchored on GEN-002 (Executable Architecture Governance). Established by #1530; gap-closure tracked by #1698.",
         "checks": ["quality-path-ownership"]
       },
       {
@@ -1515,7 +1515,7 @@
       },
       {
         "id": "ADR-032-R6",
-        "description": "ACES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content or account term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, or echoing authored intent is not realization. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical ACES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
+        "description": "ACES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content, account, or feature term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, echoing authored intent, submitting an asynchronous bootstrap, or observing command/VM success is not realization. Every admitted guest-local composition item must have its claimed state read back on every concrete target instance before apply returns, operation success/runtime-snapshot evidence is emitted, or the range becomes READY; directory-scoped accounts and SPNs instead require one readback from the declared authoritative directory under the domain realization contract and must not be duplicated per member VM. Sanitized snapshot evidence may identify a verified item only by compiled resource address, composition resource type, and a bounded verified status; it must not carry authored values, target instances, guest output, provider detail, or secrets, and plan-derived entries may be emitted only after exact guest-check coverage succeeds. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical ACES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
         "checks": []
       },
       {
@@ -1542,12 +1542,14 @@
       "https://github.com/Brad-Edwards/shifter/issues/1563",
       "https://github.com/Brad-Edwards/shifter/issues/1564",
       "https://github.com/Brad-Edwards/shifter/issues/1565",
+      "https://github.com/Brad-Edwards/shifter/issues/1569",
       "https://github.com/Brad-Edwards/shifter/issues/1606",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-source-content-delivery-preflight-1564.md",
       "docs/architecture/aces-feature-artifact-delivery-preflight-1565.md",
+      "docs/architecture/aces-composition-realization-verification-preflight-1569.md",
       "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-domain-topology-preflight-1606.md",
@@ -2016,6 +2018,64 @@
       ".github/quality-path-filters.yaml",
       ".github/workflows/_quality.yml",
       "docs/architecture/aces-migration-parity-inventory.yaml"
+    ]
+  },
+  {
+    "id": "ADR-042",
+    "title": "Repository releases use one Release Please umbrella lineage",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Shifter has one umbrella SemVer release line coordinated by Release Please on protected main. A release is a vX.Y.Z source tag plus GitHub Release created by the Release Please action on merge of its release PR (mirroring the sibling ACES repos), not a deployment or independently published component set. Release Please is the sole CHANGELOG.md writer after a lossless final Towncrier transition; Conventional Commit signals must survive the feature-to-dev and dev-to-main merge topology. Component package/chart versions and OCI digest-based deployment identity remain separate contracts.",
+    "rules": [
+      {
+        "id": "ADR-042-R1",
+        "description": "Release Please MUST configure exactly one root package for the Shifter umbrella release. The root manifest records last released state and the simple releaser's root version.txt is its committed mirror; Python, Node, Helm, Terraform, schema, protocol, and migration versions MUST NOT be swept into the umbrella bump unless a later ADR establishes an independently published lifecycle.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R2",
+        "description": "A Shifter release is a vX.Y.Z tag and GitHub Release bound to one protected-main source commit, created by the Release Please action via the ephemeral GITHUB_TOKEN (mirroring the sibling ACES repos); a CI-managed release tag is not required to carry a GPG/OIDC signature. Release creation MUST NOT deploy, publish packages or images, mint cloud credentials, or replace ADR-037's exact OCI digest and source-revision deployment identity. Existing tags are immutable and a mismatched same-version tag fails closed.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R3",
+        "description": "Release Please is the sole CHANGELOG.md writer after cutover. Every pending Towncrier fragment MUST first be consumed into a correctly rendered final transition release with a matching tag/Release, after which towncrier.toml, changelog.d, its template, merge driver, fragment gates, and fragment guidance are retired together; a hybrid or silent fragment deletion is prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R4",
+        "description": "The release signal is the Conventional Commit subject preserved on main: feat is minor, fix/perf is patch, and an explicit breaking marker is major; non-release maintenance and the retained Keep-a-Changelog types (security/added/changed/deprecated/removed/fixed) do not bump. Feature PRs to dev MUST be title-validated and squash-merged with that title as the commit subject, while dev-to-main promotion preserves those commits. The prior blanket exemption for PRs targeting dev is removed (pr-title-lint runs on PRs to dev); only dev-to-main promotion PRs, whose title never becomes a release commit, are left unlinted.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R5",
+        "description": "Release automation runs from protected main on a GitHub-hosted runner, serializes writes, uses full-SHA-pinned actions and job-scoped least privilege, and prefers ephemeral GITHUB_TOKEN plus OIDC signing over a PAT or static key. Untrusted titles/API data are parsed as data; tokens and signing material never enter argv, URLs, generated files, release notes, artifacts, summaries, or logs.",
+        "checks": ["workflow-action-sha-pinning"]
+      },
+      {
+        "id": "ADR-042-R6",
+        "description": "The main-only release commit returns to dev through one narrowly identified, human-merged back-merge PR. Automation may update its dedicated branch idempotently but MUST NOT force-update main/dev, auto-merge through required checks, or create a release loop from dev synchronization.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R7",
+        "description": "Ground Control release-please mode is selected by the canonical root release-please-config.json signal. Shifter removes its fragment plan rule but MUST NOT add a duplicate changelog_mode schema key or retain a separate fragment validator/rendering path.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1776",
+      "docs/architecture/release-please-preflight-1776.md",
+      "docs/DEVELOPMENT_WORKFLOW.md",
+      "release-please-config.json",
+      ".release-please-manifest.json",
+      ".github/workflows/release-please.yml",
+      "CHANGELOG.md",
+      ".gc/plan-rules.md",
+      ".github/workflows/pr-title-lint.yml",
+      "docs/architecture/rev1-build-deployment-provenance.md"
     ]
   }
 ]

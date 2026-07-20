@@ -4,9 +4,9 @@ The live-validation capstone launches an ACES package through the native path
 and then reads back its operational evidence through the same redacted read seam
 Mission Control uses (``shared.aces.projections``), asserting the backend really
 provisioned: an operation receipt, a succeeded operation status, and a runtime
-snapshot with at least one realized resource ("no vacuous pass"). It also
-re-asserts the redaction contract (ADR-031-R4) as defense in depth, even though
-the read seam already redacts.
+snapshot with topology plus verified content, account, and feature composition
+("no vacuous pass"). It also re-asserts the redaction contract (ADR-031-R4) as
+defense in depth, even though the read seam already redacts.
 
 Read-only and import-clean: this consumes only ``shared.aces`` (no ``aces_*``,
 no cyberscript), so it can run in the portal Django context.
@@ -27,6 +27,7 @@ from shared.aces.projections import (
 )
 
 _SUCCEEDED = "succeeded"
+_COMPOSITION_TYPES = frozenset({"content-placement", "account-placement", "feature-binding"})
 
 #: Backend realization detail that must never appear in host-exposed evidence
 #: (ADR-031-R4). The read seam already redacts; this is a defense-in-depth check.
@@ -58,6 +59,8 @@ class AcesEvidenceSummary:
     snapshot_count: int
     has_succeeded_status: bool
     snapshot_resource_count: int
+    composition_resource_count: int
+    verified_composition_types: frozenset[str]
 
 
 def _assert_no_forbidden(projections: list[AcesOperationRecordProjection]) -> None:
@@ -67,6 +70,51 @@ def _assert_no_forbidden(projections: list[AcesOperationRecordProjection]) -> No
         for substring in _FORBIDDEN_SUBSTRINGS:
             if substring in blob:
                 raise AcesEvidenceError(f"forbidden substring in projected ACES evidence: {substring}")
+
+
+def _composition_type(resource: object, seen: set[str]) -> str | None:
+    """Validate one projected resource and return its composition type, if any."""
+    if not isinstance(resource, dict):
+        raise AcesEvidenceError("runtime snapshot resource is invalid")
+    resource_type = resource.get("resource_type")
+    if resource_type not in _COMPOSITION_TYPES:
+        return None
+    if set(resource) != {"address", "resource_type", "status"}:
+        raise AcesEvidenceError("composition evidence has forbidden detail")
+    address = resource.get("address")
+    if not isinstance(address, str) or not address or address in seen:
+        raise AcesEvidenceError("composition evidence has an invalid or duplicate address")
+    if resource.get("status") != "verified":
+        raise AcesEvidenceError("composition evidence is not verified")
+    seen.add(address)
+    return resource_type
+
+
+def _snapshot_composition_summary(snapshot: AcesOperationRecordProjection) -> tuple[int, frozenset[str]]:
+    """Validate and summarize composition evidence in one runtime snapshot."""
+    resources = snapshot.payload.get("resources") or []
+    if not isinstance(resources, list):
+        raise AcesEvidenceError("runtime snapshot resources are invalid")
+    seen: set[str] = set()
+    composition_types = {
+        resource_type for resource in resources if (resource_type := _composition_type(resource, seen)) is not None
+    }
+    composition_count = len(seen)
+    return composition_count, frozenset(composition_types)
+
+
+def _composition_summary(
+    snapshots: list[AcesOperationRecordProjection],
+) -> tuple[int, frozenset[str]]:
+    """Validate projected composition entries and return the strongest snapshot."""
+    best_count = 0
+    best_types: frozenset[str] = frozenset()
+    for snapshot in snapshots:
+        composition_count, composition_types = _snapshot_composition_summary(snapshot)
+        if composition_count > best_count:
+            best_count = composition_count
+            best_types = composition_types
+    return best_count, best_types
 
 
 def collect_evidence(request_id: UUID | str, *, limit: int = 50) -> AcesEvidenceSummary:
@@ -85,6 +133,7 @@ def collect_evidence(request_id: UUID | str, *, limit: int = 50) -> AcesEvidence
         (len(projection.payload.get("resources") or []) for projection in snapshots),
         default=0,
     )
+    composition_count, composition_types = _composition_summary(snapshots)
     return AcesEvidenceSummary(
         request_id=str(request_id),
         receipt_count=len(receipts),
@@ -92,6 +141,8 @@ def collect_evidence(request_id: UUID | str, *, limit: int = 50) -> AcesEvidence
         snapshot_count=len(snapshots),
         has_succeeded_status=has_succeeded,
         snapshot_resource_count=resource_count,
+        composition_resource_count=composition_count,
+        verified_composition_types=composition_types,
     )
 
 
@@ -108,4 +159,6 @@ def validate_evidence(summary: AcesEvidenceSummary) -> list[str]:
         problems.append("no runtime_snapshot evidence")
     elif summary.snapshot_resource_count < 1:
         problems.append("runtime_snapshot recorded no realized resources (vacuous)")
+    for resource_type in sorted(_COMPOSITION_TYPES - summary.verified_composition_types):
+        problems.append(f"runtime_snapshot recorded no verified {resource_type} composition evidence")
     return problems

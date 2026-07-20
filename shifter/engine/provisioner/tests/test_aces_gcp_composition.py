@@ -49,8 +49,9 @@ class TestLinux:
         )
         script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
         assert "id -u alice" in script and "useradd -m alice" in script
+        assert "adduser -D alice" in script
         assert "usermod -s /bin/bash alice" in script
-        assert "usermod -d /home/alice alice" in script
+        assert "usermod -d /home/alice -m alice" in script
         assert "usermod -aG ops alice" in script and "usermod -aG sudo alice" in script
 
     def test_disabled_account_is_locked(self):
@@ -79,7 +80,18 @@ class TestLinux:
 
     def test_sensitive_file_is_mode_600(self):
         content = _content(content_type="file", path="/etc/secret", text="s", sensitive=True)
-        assert "chmod 600 /etc/secret" in node_bootstrap_script(_node(), _plan(_node(), content=(content,)))
+        script = node_bootstrap_script(_node(), _plan(_node(), content=(content,)))
+        assert "chown root:root /etc/secret" in script
+        assert "chmod 600 /etc/secret" in script
+
+    def test_custom_home_is_moved_and_created(self):
+        account = AcesPlanAccount(
+            username="alice",
+            target_address="node.web",
+            home="/srv/home/alice",
+        )
+        script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
+        assert "usermod -d /srv/home/alice -m alice" in script
 
     def test_directory_content_creates_dir(self):
         content = _content(content_type="directory", destination="/srv/data")
@@ -130,6 +142,22 @@ class TestWindows:
         script = node_bootstrap_script(node, _plan(node, content=(content,)))
         assert base64.b64encode(b"hi").decode() in script
         assert "WriteAllBytes" in script
+
+    def test_sensitive_inline_file_disables_acl_inheritance(self):
+        node = _node(os_family="windows", address="node.dc")
+        content = AcesPlanContent(
+            name="c",
+            content_type="file",
+            target_address="node.dc",
+            path="C:\\app\\secret.txt",
+            text="hi",
+            sensitive=True,
+        )
+        script = node_bootstrap_script(node, _plan(node, content=(content,)))
+        assert "SetAccessRuleProtection($true, $false)" in script
+        assert "S-1-5-18" in script
+        assert "S-1-5-32-544" in script
+        assert "$SensitiveAcl.SetOwner($SystemSid)" in script
 
     def test_account_mail_is_not_approximated_by_marker_file(self):
         node = _node(os_family="windows", address="node.dc")
