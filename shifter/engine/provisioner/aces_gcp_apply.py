@@ -40,6 +40,10 @@ from aces_active_directory import (
     default_directory_secret_ops,
     realize_aces_active_directory,
 )
+from aces_composition_verification import (
+    assert_composition_is_verifiable,
+    verify_bootstrap_composition,
+)
 from aces_content_delivery import (
     assert_content_delivery_bindings_complete,
     realize_aces_content_delivery,
@@ -49,6 +53,7 @@ from aces_gcp_destroy import AcesGceDestroyOptions, destroy_aces_range_cell
 from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
 from aces_gcp_secret_ops import AcesGceSecretOps, _default_secret_ops
 from aces_plan import AcesPlan, AcesPlanAccount, AcesPlanNode
+from aces_snapshot import snapshot_resources
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
@@ -79,6 +84,7 @@ class AcesGceApplyOptions:
     directory_secret_ops: AcesDirectorySecretOps | None = None
     directory_realizer: Callable[..., None] = realize_aces_active_directory
     content_delivery_realizer: Callable[..., None] = realize_aces_content_delivery
+    composition_verifier: Callable[..., frozenset[str]] = verify_bootstrap_composition
 
 
 @dataclass(frozen=True)
@@ -93,6 +99,7 @@ class _AcesGceApplyRuntime:
     directory_secret_ops: AcesDirectorySecretOps
     directory_realizer: Callable[..., None]
     content_delivery_realizer: Callable[..., None]
+    composition_verifier: Callable[..., frozenset[str]]
 
 
 def _apply_runtime(options: AcesGceApplyOptions) -> _AcesGceApplyRuntime:
@@ -106,6 +113,7 @@ def _apply_runtime(options: AcesGceApplyOptions) -> _AcesGceApplyRuntime:
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
         directory_realizer=options.directory_realizer,
         content_delivery_realizer=options.content_delivery_realizer,
+        composition_verifier=options.composition_verifier,
     )
 
 
@@ -262,7 +270,7 @@ def _realize_directory(
     aces_plan: AcesPlan,
     instance_outputs: list[ResourceDict],
     runtime: _AcesGceApplyRuntime,
-) -> None:
+) -> frozenset[str]:
     """Realize admitted directory topology when the plan carries a domain."""
     if aces_plan.domains:
         runtime.directory_realizer(
@@ -271,6 +279,12 @@ def _realize_directory(
             instance_outputs=instance_outputs,
             secret_ops=runtime.directory_secret_ops,
         )
+        return frozenset(
+            account.address
+            for account in aces_plan.accounts
+            if account.domain_ref is not None or account.domain_id is not None
+        )
+    return frozenset()
 
 
 def _realize_content_delivery(
@@ -278,7 +292,7 @@ def _realize_content_delivery(
     instance_outputs: list[ResourceDict],
     delivery_bindings: list[dict[str, Any]] | None,
     runtime: _AcesGceApplyRuntime,
-) -> None:
+) -> frozenset[str]:
     """Deliver every source-backed content item when the plan carries one (#1564)."""
     if any(item.source_name for item in aces_plan.content) or bool(aces_plan.features):
         runtime.content_delivery_realizer(
@@ -286,6 +300,11 @@ def _realize_content_delivery(
             instance_outputs=instance_outputs,
             delivery_bindings=delivery_bindings,
         )
+        return frozenset(
+            [item.address for item in aces_plan.content if item.source_name]
+            + [feature.address for feature in aces_plan.features]
+        )
+    return frozenset()
 
 
 def _cleanup_failed_apply(
@@ -326,6 +345,14 @@ def apply_aces_range_cell(
     runtime = _apply_runtime(options or AcesGceApplyOptions())
     _assert_composition_targets_resolve(aces_plan)
     _assert_content_delivery_bindings_complete(aces_plan, delivery_bindings)
+    assert_composition_is_verifiable(aces_plan)
+    expected_composition = {
+        *[item.address for item in aces_plan.content],
+        *[account.address for account in aces_plan.accounts],
+        *[feature.address for feature in aces_plan.features],
+    }
+    # Build and size-check the complete sanitized evidence shape before cloud mutation.
+    snapshot_resources(aces_plan, expected_composition)
     plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, resolve_image, runtime.config)
     try:
         instance_outputs = _provision_aces_resources(
@@ -334,10 +361,16 @@ def apply_aces_range_cell(
             _bootstrap_by_node(aces_plan),
             _accounts_by_node(aces_plan),
         )
-        _realize_directory(plan, aces_plan, instance_outputs, runtime)
-        _realize_content_delivery(aces_plan, instance_outputs, delivery_bindings, runtime)
+        verified = set(_realize_directory(plan, aces_plan, instance_outputs, runtime))
+        verified.update(_realize_content_delivery(aces_plan, instance_outputs, delivery_bindings, runtime))
+        verified.update(runtime.composition_verifier(aces_plan, instance_outputs))
+        snapshot_resources(aces_plan, verified)
     except Exception:
         logger.exception("ACES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         _cleanup_failed_apply(request_uuid, range_id, aces_plan, runtime)
         raise
-    return {"subnets": subnet_outputs(plan), "instances": instance_outputs}
+    return {
+        "subnets": subnet_outputs(plan),
+        "instances": instance_outputs,
+        "composition_verified_addresses": sorted(verified),
+    }

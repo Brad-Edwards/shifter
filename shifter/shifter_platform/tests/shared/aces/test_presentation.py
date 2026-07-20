@@ -92,7 +92,23 @@ class TestBuildRangeAcesProjection:
             source_timestamp=now,
             payload={
                 "operation_id": "op-1",
-                "resources": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+                "resources": [
+                    {
+                        "address": "network.range",
+                        "resource_type": "network",
+                        "status": "provisioned",
+                    },
+                    {
+                        "address": "node.web",
+                        "resource_type": "node",
+                        "status": "provisioned",
+                    },
+                    {
+                        "address": "content.banner@node.web",
+                        "resource_type": "content-placement",
+                        "status": "verified",
+                    },
+                ],
                 "snapshot_ref": "snap-ref-1",
             },
         )
@@ -135,7 +151,13 @@ class TestBuildRangeAcesProjection:
             source_timestamp=now,
             payload={
                 "operation_id": "op-1",
-                "resources": [{"id": "res-a", "detail": "verbose-nested-detail"}],
+                "resources": [
+                    {
+                        "address": "node.web",
+                        "resource_type": "node",
+                        "status": "provisioned",
+                    }
+                ],
                 "snapshot_ref": "snap-ref-1",
             },
         )

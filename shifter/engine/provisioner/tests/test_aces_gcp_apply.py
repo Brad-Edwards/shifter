@@ -124,6 +124,14 @@ def _apply_options(
     **overrides,
 ) -> AcesGceApplyOptions:
     """Build injectable ACES apply options for fake-GCP tests."""
+    overrides.setdefault(
+        "composition_verifier",
+        lambda plan, _outputs: frozenset(
+            [item.address for item in plan.content]
+            + [account.address for account in plan.accounts]
+            + [feature.address for feature in plan.features]
+        ),
+    )
     return AcesGceApplyOptions(
         config=config,
         clients=clients,
@@ -392,6 +400,49 @@ class TestCompositionIntegration:
 
         assert base64.b64encode(b"hello").decode() in startup
         assert "chmod 644 /srv/x.txt" in startup
+
+    def test_verified_composition_addresses_are_returned_only_after_probe(self):
+        content = AcesPlanContent(
+            address="content.doc",
+            name="doc",
+            content_type="file",
+            target_address="node.web",
+            path="/srv/x.txt",
+            text="hello",
+        )
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        verifier = MagicMock(return_value=frozenset({"content.doc"}))
+
+        output = apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan_with_content(content),
+            _resolver,
+            _apply_options(_config(), clients, secret_ops, composition_verifier=verifier),
+        )
+
+        verifier.assert_called_once()
+        assert output["composition_verified_addresses"] == ["content.doc"]
+
+    def test_probe_failure_triggers_cleanup_and_returns_no_proof(self):
+        content = AcesPlanContent(
+            address="content.doc",
+            name="doc",
+            content_type="directory",
+            target_address="node.web",
+            destination="/srv/data",
+        )
+        clients = _clients()
+        secret_ops, secret_mocks = _secret_ops()
+        verifier = MagicMock(side_effect=AcesGceCompositionError("in-guest verification failed"))
+        plan = _plan_with_content(content)
+        options = _apply_options(_config(), clients, secret_ops, composition_verifier=verifier)
+
+        with pytest.raises(AcesGceCompositionError, match="in-guest verification failed"):
+            apply_aces_range_cell("req-1", 7, plan, _resolver, options)
+
+        assert secret_mocks.delete_ssh.call_count == 1
 
     def test_orphan_composition_target_fails_closed(self):
         content = AcesPlanContent(name="doc", content_type="file", target_address="node.ghost", path="/srv/x", text="h")
