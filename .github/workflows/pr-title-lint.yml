@@ -2,13 +2,22 @@ name: PR title lint
 
 on:
   pull_request:
-    # `pull_request` (not `pull_request_target`) — public-fork inputs run
-    # with read-only checkout behavior per repo policy.
+    # Scoped to PRs targeting `dev` (feature PRs). Squash-merging a feature PR
+    # makes the validated title the commit release-please reads on `main`, so the
+    # conventional-title check is enforced there (ADR-042-R4). `dev` -> `main`
+    # promotion PRs are not squashed and their title never becomes a release
+    # commit, so linting them is noise (#1776). The automated `main` -> `dev`
+    # back-merge PR targets `dev` and passes with its `chore:` title.
+    #
+    # `pull_request` (not `pull_request_target`) - public-fork inputs run with
+    # read-only checkout behavior per repo policy.
     types:
       - opened
       - edited
       - synchronize
       - reopened
+    branches:
+      - dev
 
 permissions:
   contents: read
@@ -19,22 +28,18 @@ jobs:
     name: Lint PR title
     runs-on: ubuntu-latest
     steps:
-      - name: Skip conventional title on dev PRs
-        if: github.base_ref == 'dev' || github.head_ref == 'dev'
-        run: |
-          echo "PRs to or from dev are exempt from conventional title lint."
-
       - name: Validate conventional-commit title
-        if: github.base_ref != 'dev' && github.head_ref != 'dev'
         # amannn/action-semantic-pull-request v5.5.3
         uses: amannn/action-semantic-pull-request@0723387faaf9b38adef4775cd42cfd5155ed6017
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Allowed conventional-commit types: the towncrier fragment types
-          # (security, added, changed, deprecated, removed, fixed) plus the
-          # broader conventional-commit common types so refactors,
-          # docs, and chores are first-class. See CONTRIBUTING.md.
+          # Allowed conventional-commit types. release-please bumps the version
+          # only on `feat` (minor), `fix`/`perf` (patch), and a breaking marker
+          # (major); the remaining common types plus the legacy Keep-a-Changelog
+          # types (security, added, changed, deprecated, removed, fixed),
+          # retained for continuity, are valid non-bumping titles. See
+          # CONTRIBUTING.md.
           types: |
             security
             added
@@ -54,12 +59,10 @@ jobs:
             revert
           # Scopes are optional; if present, must be lowercase kebab-case.
           requireScope: false
-          # Subject must start with a lowercase letter — matches what
-          # CONTRIBUTING.md documents and what the towncrier fragment
-          # convention expects.
+          # Subject must start with a lowercase letter.
           subjectPattern: ^[a-z].*$
           subjectPatternError: |
             The subject "{subject}" found in the pull request title "{title}"
             must start with a lowercase letter. Examples:
-              security: harden mcp/ngfw secret handling
-              fix(provisioner): retry transient API errors
+              feat(provisioner): add per-instance image resolution
+              fix(gcp): retry transient API errors
