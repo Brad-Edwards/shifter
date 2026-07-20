@@ -255,7 +255,22 @@ def _account_placement(address: str, *, target: str, **spec: object) -> PlannedR
     )
 
 
-def _feature_binding(address: str, *, target: str, source: str = "nginx") -> PlannedResource:
+def _feature_binding(
+    address: str,
+    *,
+    target: str,
+    source: str | None = "nginx",
+    feature_type: str = "service",
+    destination: str | None = None,
+    environment: dict[str, str] | None = None,
+) -> PlannedResource:
+    template: dict[str, object] = {"type": feature_type}
+    if source is not None:
+        template["source"] = {"name": source}
+    if destination is not None:
+        template["destination"] = destination
+    if environment is not None:
+        template["environment"] = environment
     return PlannedResource(
         address=address,
         domain=RuntimeDomain.PROVISIONING,
@@ -264,7 +279,7 @@ def _feature_binding(address: str, *, target: str, source: str = "nginx") -> Pla
             "name": address.rsplit(".", 1)[-1],
             "feature_name": address.rsplit(".", 1)[-1],
             "node_address": target,
-            "spec": {"template": {"type": "service", "source": {"name": source}}},
+            "spec": {"template": template},
         },
     )
 

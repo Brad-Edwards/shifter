@@ -342,6 +342,15 @@ def _build_composition_value[CompositionValue: (AcesPlanContent, AcesPlanAccount
         # the CMS side keys by this same serialized-plan resource address) join
         # by a stable identity rather than by target_address/path.
         value = cast(CompositionValue, replace(cast(AcesPlanContent, value), address=address))
+    elif isinstance(value, AcesPlanFeature):
+        value = cast(
+            CompositionValue,
+            replace(
+                cast(AcesPlanFeature, value),
+                address=address,
+                ordering_dependencies=ordering_dependencies.get(address, ()),
+            ),
+        )
     if value.target_address not in node_lookup:
         raise AcesPlanError(f"{resource_type} resource at {address} targets unknown node {value.target_address!r}")
     return value

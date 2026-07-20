@@ -76,6 +76,7 @@ from __future__ import annotations
 import base64
 import re
 import shlex
+from dataclasses import dataclass
 from typing import Any
 
 from ._aces_content_delivery_scripts import (
@@ -87,7 +88,7 @@ from ._aces_content_delivery_scripts import (
 from .base import SetupStep
 
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_LINUX_FILE_MODES = frozenset({"600", "644"})
+_LINUX_FILE_MODES = frozenset({"600", "644", "755"})
 
 # ---------------------------------------------------------------------------
 # Linux (bash) -- every value is rendered directly into the static script text
@@ -244,6 +245,36 @@ def _b64(value: str) -> str:
     return base64.b64encode(value.encode("utf-8")).decode("ascii")
 
 
+@dataclass(frozen=True)
+class AcesContentInstallOptions:
+    """Guest-side permissions applied while publishing delivered content."""
+
+    sensitive: bool = False
+    file_mode: str | None = None
+
+
+def _validate_delivery_identity(content_type: str, platform: str, target: str, sha256: str) -> None:
+    """Validate the common delivery shape independent of payload kind."""
+    if content_type not in ("file", "directory"):
+        raise ValueError(f"Unsupported ACES content delivery content_type: {content_type!r}")
+    if platform not in ("linux", "windows"):
+        raise ValueError(f"Unknown platform for AcesContentDeliveryPlan: {platform!r}")
+    if not target:
+        raise ValueError("AcesContentDeliveryPlan requires a non-empty target")
+    if not _HEX_SHA256.fullmatch(sha256 or ""):
+        raise ValueError("AcesContentDeliveryPlan requires a lowercase hex sha256")
+
+
+def _validate_directory_payload(content_type: str, payload_b64: str, installed_tree_sha256: str | None) -> None:
+    """Validate directory-only payload and installed-tree invariants."""
+    if content_type != "directory":
+        return
+    if not payload_b64:
+        raise ValueError("AcesContentDeliveryPlan requires a non-empty payload for directory content")
+    if not _HEX_SHA256.fullmatch(installed_tree_sha256 or ""):
+        raise ValueError("AcesContentDeliveryPlan requires a lowercase hex installed_tree_sha256 for directory content")
+
+
 class AcesContentDeliveryPlan:
     """Deliver one source-backed content item's bytes to its guest.
 
@@ -254,9 +285,9 @@ class AcesContentDeliveryPlan:
     ``payload_b64`` is the already base64-encoded payload (one text line, no
     embedded newlines -- the caller, never this plan, holds the decoded
     bytes; empty is a valid encoding of a legitimate zero-byte ``file``).
-    ``sensitive`` requests least-permissive guest-side permissions for either
-    content type. ``installed_tree_sha256`` is required for ``directory``
-    only: the expected digest of the *installed tree*
+    ``install_options`` requests guest-side permissions, including the
+    least-permissive sensitive mode. ``installed_tree_sha256`` is required for
+    ``directory`` only: the expected digest of the *installed tree*
     (``aces_content_delivery._installed_tree_sha256``) that ``verify_step``
     independently reproduces from a fresh readback of the destination --
     distinct from ``sha256``, which only covers the transient tar transport.
@@ -270,35 +301,20 @@ class AcesContentDeliveryPlan:
         target: str,
         sha256: str,
         payload_b64: str,
-        sensitive: bool = False,
         installed_tree_sha256: str | None = None,
+        install_options: AcesContentInstallOptions | None = None,
     ) -> None:
-        if content_type not in ("file", "directory"):
-            raise ValueError(f"Unsupported ACES content delivery content_type: {content_type!r}")
-        if platform not in ("linux", "windows"):
-            raise ValueError(f"Unknown platform for AcesContentDeliveryPlan: {platform!r}")
-        if not target:
-            raise ValueError("AcesContentDeliveryPlan requires a non-empty target")
-        if not _HEX_SHA256.fullmatch(sha256 or ""):
-            raise ValueError("AcesContentDeliveryPlan requires a lowercase hex sha256")
-        if content_type == "directory":
-            # A directory's tar payload is never legitimately empty (even a
-            # zero-entry tar carries non-zero trailer bytes) -- unlike `file`,
-            # where an empty string is the correct base64 encoding of a
-            # genuine zero-byte source file.
-            if not payload_b64:
-                raise ValueError("AcesContentDeliveryPlan requires a non-empty payload for directory content")
-            if not _HEX_SHA256.fullmatch(installed_tree_sha256 or ""):
-                raise ValueError(
-                    "AcesContentDeliveryPlan requires a lowercase hex installed_tree_sha256 for directory content"
-                )
+        _validate_delivery_identity(content_type, platform, target, sha256)
+        _validate_directory_payload(content_type, payload_b64, installed_tree_sha256)
         self._content_type = content_type
         self._platform = platform
         self._scripts = _SCRIPTS[(platform, content_type)]
         self._target = target
         self._sha256 = sha256
         self._payload_b64 = payload_b64
-        self._sensitive = sensitive
+        options = install_options or AcesContentInstallOptions()
+        self._sensitive = options.sensitive
+        self._file_mode = options.file_mode
         self._installed_tree_sha256 = installed_tree_sha256
 
     @property
@@ -363,7 +379,7 @@ class AcesContentDeliveryPlan:
         """
         if self._platform != "linux":
             return {}
-        mode_value = "600" if self._sensitive else "644"
+        mode_value = self._file_mode or ("600" if self._sensitive else "644")
         if self._content_type == "file" and mode_value not in _LINUX_FILE_MODES:
             raise ValueError(f"Unsupported ACES content delivery file mode: {mode_value!r}")
         return {

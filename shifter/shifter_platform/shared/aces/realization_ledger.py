@@ -1,4 +1,4 @@
-"""Independent apply-time realization evidence for ACES account features (#1563).
+"""Independent apply-time realization evidence for ACES composition features.
 
 This module is the *evidence* half of the realizability ledger, deliberately kept
 separate from the *declaration* half (``shared.aces.manifest``'s
@@ -34,4 +34,9 @@ from __future__ import annotations
 #: evidence, never auto-derived from the manifest declaration.
 REALIZED_ACCOUNT_FEATURES: frozenset[str] = frozenset({"groups", "shell", "home", "disabled", "auth_method", "spn"})
 
-__all__ = ["REALIZED_ACCOUNT_FEATURES"]
+#: Feature-binding shapes with an implemented, independently verified guest
+#: effect (#1565). This is intentionally not derived from the public manifest:
+#: the common validate/apply path must continue to reject a manifest over-claim.
+REALIZED_FEATURE_TYPES: frozenset[str] = frozenset({"service", "artifact", "configuration"})
+
+__all__ = ["REALIZED_ACCOUNT_FEATURES", "REALIZED_FEATURE_TYPES"]

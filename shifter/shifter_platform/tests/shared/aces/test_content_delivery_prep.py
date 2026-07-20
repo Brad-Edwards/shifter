@@ -64,6 +64,31 @@ def _content_resource(address: str, *, ctype: str, source: object, text: str | N
     }
 
 
+def _feature_resource(
+    address: str,
+    *,
+    feature_type: str,
+    source: object,
+    destination: str,
+) -> dict:
+    return {
+        "address": address,
+        "domain": "provisioning",
+        "resource_type": "feature-binding",
+        "payload": {
+            "feature_name": address,
+            "node_address": "node.web",
+            "spec": {
+                "template": {
+                    "type": feature_type,
+                    "source": source,
+                    "destination": destination,
+                }
+            },
+        },
+    }
+
+
 def _plan(*resources: dict) -> dict:
     return {
         "kind": "aces.provisioning-plan",
@@ -134,6 +159,43 @@ def test_source_backed_file_and_directory_produce_bindings(tmp_path: Path):
     # directory payload is a nonzero deterministic tar
     assert by_addr["cf.seed"].byte_count > 0
     assert len(storage.uploads) == 2
+
+
+def test_source_backed_feature_artifact_produces_discriminated_v2_binding(tmp_path: Path):
+    pack, inventory, projection = _pack(tmp_path)
+    projection = DeliveryProjection(
+        entries=(
+            *projection.entries,
+            DeliveryProjectionEntry(
+                "flag-pkg",
+                "1.0.0",
+                "file",
+                "",
+                "assets/flag.txt",
+                resource_type="feature-binding",
+                feature_type="artifact",
+                payload_kind="file",
+                install_policy="executable",
+            ),
+        )
+    )
+    plan = _plan(
+        _feature_resource(
+            "provision.feature.agent",
+            feature_type="artifact",
+            source={"name": "flag-pkg", "version": "1.0.0"},
+            destination="/opt/aces/agent",
+        )
+    )
+    bindings = _prepare(pack, inventory, projection, plan, _FakeStorage())
+    assert len(bindings) == 1
+    binding = bindings[0]
+    assert binding.binding_version == 2
+    assert binding.content_address is None
+    assert binding.resource_type == "feature-binding"
+    assert binding.resource_address == "provision.feature.agent"
+    assert binding.payload_kind == "file"
+    assert binding.install_policy == "executable"
 
 
 def test_promotion_is_idempotent(tmp_path: Path):
