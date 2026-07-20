@@ -6,6 +6,7 @@ set -euo pipefail
 readonly CLAUDE_CODE_VERSION="2.1.215"
 readonly CLAUDE_CODE_TARBALL_SHA256="1a5cf8e491689154264c0b2f28371bf645cdee2903b45c497915868308502d7b"
 readonly CLAUDE_CODE_LINUX_X64_TARBALL_SHA256="d160d3ae2c90cb54a7ebc9a1d5c280e6da37ee6cd2624e5701dc5e4dabfbd289"
+readonly CURL_PROTO_HTTPS_ONLY="=https"
 
 export DEBIAN_FRONTEND=noninteractive
 cloud-init status --wait || true
@@ -33,10 +34,10 @@ cleanup() {
   rm -f "${claude_tgz}" "${claude_native_tgz}"
 }
 trap cleanup EXIT
-curl -fsSL --proto '=https' --proto-redir '=https' \
+curl -fsSL --proto "${CURL_PROTO_HTTPS_ONLY}" --proto-redir "${CURL_PROTO_HTTPS_ONLY}" \
   -o "${claude_tgz}" \
   "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${CLAUDE_CODE_VERSION}.tgz"
-curl -fsSL --proto '=https' --proto-redir '=https' \
+curl -fsSL --proto "${CURL_PROTO_HTTPS_ONLY}" --proto-redir "${CURL_PROTO_HTTPS_ONLY}" \
   -o "${claude_native_tgz}" \
   "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-${CLAUDE_CODE_VERSION}.tgz"
 printf '%s  %s\n' "${CLAUDE_CODE_TARBALL_SHA256}" "${claude_tgz}" | sha256sum --check --status

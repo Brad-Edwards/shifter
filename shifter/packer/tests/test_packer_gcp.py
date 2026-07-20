@@ -315,6 +315,8 @@ class TestGcpTechVaultSupplyChain:
 
     def test_claude_code_tarball_is_digest_verified_and_installed_offline(self, toolchain):
         assert 'CLAUDE_CODE_VERSION="2.1.215"' in toolchain
+        assert 'readonly CURL_PROTO_HTTPS_ONLY="=https"' in toolchain
+        assert toolchain.count('"${CURL_PROTO_HTTPS_ONLY}"') == 4
         assert "CLAUDE_CODE_TARBALL_SHA256" in toolchain
         assert "CLAUDE_CODE_LINUX_X64_TARBALL_SHA256" in toolchain
         assert "sha256sum --check" in toolchain
@@ -335,6 +337,15 @@ class TestGcpTechVaultValidationBehavior:
     """The live candidate profile fails closed on an incomplete TechVault stack."""
 
     VALIDATOR = GCP_SCRIPTS_DIR / "validate" / "techvault.sh"
+
+    def test_fail_helper_returns_explicitly_under_errexit(self):
+        validator = self.VALIDATOR.read_text()
+
+        assert "set -euo pipefail" in validator
+        assert re.search(
+            r"fail\(\) \{\n  echo \"shifter-validate: FAIL techvault \$\*\" >&2\n  return 1\n\}",
+            validator,
+        )
 
     def _run(
         self,

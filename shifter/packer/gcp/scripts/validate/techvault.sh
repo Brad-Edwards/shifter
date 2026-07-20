@@ -2,11 +2,11 @@
 # Runner-executed TechVault candidate checks. This script runs inside the
 # disposable no-SA validation VM over IAP and fails closed on any incomplete
 # participant-seat or running-stack invariant.
-set -uo pipefail
+set -euo pipefail
 
 fail() {
   echo "shifter-validate: FAIL techvault $*" >&2
-  exit 1
+  return 1
 }
 
 TECHVAULT_USER="${TECHVAULT_USER:-ubuntu}"
