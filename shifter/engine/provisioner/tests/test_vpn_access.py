@@ -247,6 +247,14 @@ def test_aws_gateway_secrets_client_uses_the_module_region():
     assert "region       = substr(var.availability_zone, 0, length(var.availability_zone) - 1)" in resources
 
 
+def test_aws_gateway_server_uses_ecdh_without_a_static_dh_file():
+    module = Path(__file__).parents[1] / "terraform" / "modules" / "range"
+    bootstrap = (module / "templates" / "openvpn_gateway_aws.py.tpl").read_text(encoding="utf-8")
+
+    assert "\n      dh none\n" in bootstrap
+    assert "dh /etc/openvpn" not in bootstrap
+
+
 def test_server_payload_excludes_client_and_ca_signing_keys():
 
     generation = uuid4()

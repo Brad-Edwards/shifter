@@ -41,6 +41,7 @@ write_files:
       ca /etc/openvpn/server/ca.crt
       cert /etc/openvpn/server/server.crt
       key /etc/openvpn/server/server.key
+      dh none
       tls-crypt /etc/openvpn/server/tls-crypt.key
       verify-client-cert require
       remote-cert-eku "TLS Web Client Authentication"
