@@ -11,7 +11,10 @@ out of the generated OpenAPI schema / SPA TypeScript types.
 from __future__ import annotations
 
 from mission_control.api.serializers import (
+    CurrentRangeResponseSerializer,
     InstancePresentationSerializer,
+    RangeLeaseResponseSerializer,
+    RangeLeaseSerializer,
     RangePresentationSerializer,
 )
 from shared.schemas import InstanceContext, RangeContext
@@ -29,3 +32,12 @@ class TestInstancePresentationSerializerDriftGuard:
         expected = set(InstanceContext.model_fields) | set(InstanceContext.model_computed_fields)
         actual = set(InstancePresentationSerializer().get_fields())
         assert actual == expected
+
+
+class TestRangeLeaseSerializerContract:
+    def test_lifecycle_projection_is_explicit_in_both_responses(self):
+        expected = {"expires_at", "maximum_expires_at", "extension_days", "can_extend"}
+
+        assert set(RangeLeaseSerializer().get_fields()) == expected
+        assert isinstance(CurrentRangeResponseSerializer().fields["lifecycle"], RangeLeaseSerializer)
+        assert isinstance(RangeLeaseResponseSerializer().fields["lifecycle"], RangeLeaseSerializer)

@@ -93,17 +93,25 @@ def _log_violation(request: HttpRequest, body: dict[str, object]) -> None:
     disposition = _field(body.get("disposition"), _MAX_DISPOSITION_LEN)
     blocked = _origin_and_path(body.get("blocked-uri") or body.get("blockedURL"))
     document = _origin_and_path(body.get("document-uri") or body.get("documentURL"))
+    # Sanitize once and reuse for both the formatted message and the structured
+    # ``extra`` fields: every value is attacker-controlled, and the ``extra``
+    # sink reaches log output through the ECS pipeline just as the message does
+    # (CodeQL ``py/log-injection``).
+    safe_directive = safe_log_value(directive, _MAX_DIRECTIVE_LEN)
+    safe_disposition = safe_log_value(disposition, _MAX_DISPOSITION_LEN)
+    safe_blocked = safe_log_value(blocked, _MAX_FIELD_LEN)
+    safe_document = safe_log_value(document, _MAX_FIELD_LEN)
     logger.info(
         "csp.violation directive=%s disposition=%s blocked=%s document=%s",
-        safe_log_value(directive, _MAX_DIRECTIVE_LEN),
-        safe_log_value(disposition, _MAX_DISPOSITION_LEN),
-        safe_log_value(blocked, _MAX_FIELD_LEN),
-        safe_log_value(document, _MAX_FIELD_LEN),
+        safe_directive,
+        safe_disposition,
+        safe_blocked,
+        safe_document,
         extra={
-            "csp_directive": directive,
-            "csp_disposition": disposition,
-            "csp_blocked_origin": blocked,
-            "csp_document_origin": document,
+            "csp_directive": safe_directive,
+            "csp_disposition": safe_disposition,
+            "csp_blocked_origin": safe_blocked,
+            "csp_document_origin": safe_document,
             "request": request,
         },
     )

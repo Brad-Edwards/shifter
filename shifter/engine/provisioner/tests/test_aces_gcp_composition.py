@@ -85,12 +85,21 @@ class TestLinux:
         content = _content(content_type="directory", destination="/srv/data")
         assert "mkdir -p /srv/data" in node_bootstrap_script(_node(), _plan(_node(), content=(content,)))
 
-    def test_source_backed_file_is_baked_parent_dir_only(self):
-        # file with a source (no inline text) -> bytes baked into image; ensure parent.
-        content = _content(content_type="file", path="/opt/app/data.bin", source_name="pkg")
-        script = node_bootstrap_script(_node(), _plan(_node(), content=(content,)))
-        assert "mkdir -p /opt/app" in script
+    def test_source_backed_content_is_excluded_from_bootstrap(self):
+        # Source-backed content (file or directory) is delivered post-boot over an
+        # authenticated guest channel with digest verification (#1564), never baked
+        # into the startup script -- not even a structural mkdir stub, since the
+        # delivery realizer creates the target itself as part of atomic install.
+        file_content = _content(content_type="file", path="/opt/app/data.bin", source_name="pkg")
+        script = node_bootstrap_script(_node(), _plan(_node(), content=(file_content,)))
+        assert script == ""
+        assert "mkdir -p /opt/app" not in script
         assert "base64 -d" not in script  # no bytes fetched/written
+
+        dir_content = _content(content_type="directory", destination="/srv/data", source_name="pkg")
+        script = node_bootstrap_script(_node(), _plan(_node(), content=(dir_content,)))
+        assert script == ""
+        assert "mkdir -p /srv/data" not in script
 
     def test_service_feature_installs_and_enables(self):
         feature = AcesPlanFeature(name="app", feature_type="service", target_address="node.web", source_name="nginx")

@@ -44,6 +44,13 @@ const CURRENT_RANGE: CurrentRangeResponse = {
   connection_urls: [],
   aces_projection: null,
   aces_participant_runtime: null,
+  lifecycle: {
+    expires_at: "2026-08-18T12:00:00Z",
+    maximum_expires_at: "2027-07-19T12:00:00Z",
+    extension_days: 30,
+    can_extend: true,
+  },
+  vpn_profile_available: true,
 };
 
 const EMPTY_CURRENT_RANGE: CurrentRangeResponse = {
@@ -52,6 +59,8 @@ const EMPTY_CURRENT_RANGE: CurrentRangeResponse = {
   connection_urls: [],
   aces_projection: null,
   aces_participant_runtime: null,
+  lifecycle: null,
+  vpn_profile_available: false,
 };
 
 function historyEntry(overrides: Partial<RangeHistory> = {}): RangeHistory {

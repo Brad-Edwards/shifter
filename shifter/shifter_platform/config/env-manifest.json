@@ -518,6 +518,16 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "'268435456'",
+      "name": "SHIFTER_ACES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "'aces/content-delivery'",
+      "name": "SHIFTER_ACES_CONTENT_DELIVERY_PREFIX",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
       "default": "'False'",
       "name": "SHIFTER_ACES_NATIVE_PROVISIONING",
       "source_file": "config/_aces_settings.py"

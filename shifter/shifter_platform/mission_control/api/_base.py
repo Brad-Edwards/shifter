@@ -62,6 +62,11 @@ def _credentials_write_permission() -> PermissionClass:
     return _scope_permission(scopes.MISSION_CONTROL_CREDENTIALS_WRITE)
 
 
+def _vpn_profile_read_permission() -> PermissionClass:
+    """Build the narrow Mission Control private-key delivery permission."""
+    return _scope_permission(scopes.MISSION_CONTROL_VPN_PROFILE_READ)
+
+
 class MissionControlAPIView(APIView):
     """Base class for authenticated Mission Control DRF endpoints."""
 

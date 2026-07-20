@@ -337,7 +337,21 @@ jobs:
       # branches (ADR-003-R2, #760). Unit-test jobs honor skip_tests inside
       # _quality.yml, but lint, architecture, and security jobs do not.
       skip_tests: false
-      run_full_matrix: ${{ github.event_name == 'workflow_dispatch' }}
+      # Force the full test matrix on workflow_dispatch (deliberate full
+      # validation) AND on direct pushes to the long-lived integration
+      # branches dev/main. Those branches' SonarCloud analyses measure
+      # new_coverage over the *accumulated* new-code period (dev-vs-main),
+      # which spans every package, but a push only regenerates the coverage.xml
+      # of packages the last-merged change touched. Any package whose report is
+      # absent then reads as 0% covered, sinking the branch new_coverage gate
+      # and failing the dev->main promotion PR even though those packages are
+      # well tested. Forcing the full matrix regenerates every coverage.xml so
+      # the branch coverage is accurate. PR analyses stay path-gated (per-PR
+      # new code is only the PR's own diff).
+      run_full_matrix: >-
+        ${{ github.event_name == 'workflow_dispatch'
+        || github.ref == 'refs/heads/dev'
+        || github.ref == 'refs/heads/main' }}
       # Build + boot the production portal image when the image's own inputs
       # change (portal_image), the portal platform Terraform changes
       # (shifter_platform), or the smoke's own implementation changes
