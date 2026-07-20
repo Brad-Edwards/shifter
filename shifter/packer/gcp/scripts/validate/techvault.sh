@@ -22,8 +22,13 @@ printf ',%s,' "${docker_members}" | grep -Fq ",${TECHVAULT_USER}," || fail "${TE
 for service in docker ssh xrdp; do
   systemctl is-active --quiet "${service}" || fail "${service} is not active"
 done
-ss -tlnH | grep -q ':22' || fail "participant SSH is not listening on port 22"
-ss -tlnH | grep -q ':3389' || fail "xrdp is not listening on port 3389"
+# Capture ss once and match with a here-string. Piping ss into `grep -q` lets
+# grep close the pipe on its first match, so ss takes SIGPIPE writing the next
+# line and, under `set -o pipefail`, the check spuriously fails even though the
+# port is listening (#1782).
+listening="$(ss -tlnH)"
+grep -q ':22' <<<"${listening}" || fail "participant SSH is not listening on port 22"
+grep -q ':3389' <<<"${listening}" || fail "xrdp is not listening on port 3389"
 code --version >/dev/null 2>&1 || fail "VS Code is unavailable"
 claude --version >/dev/null 2>&1 || fail "Claude Code is unavailable"
 
