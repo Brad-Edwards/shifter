@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from range_ops import NGFW_START_MAX_RETRIES, ensure_ngfw_running
+from range_ops import NGFW_START_MAX_RETRIES, ensure_ngfw_running, pause_ngfw_for_range
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -161,3 +161,41 @@ class TestEnsureNgfwRunningRetries:
 
         # Start plan should not have been attempted
         mocks["orch"].orchestrate.assert_not_called()
+
+
+def test_pause_ngfw_for_range_happy_path():
+    """pause_ngfw_for_range drives the full pause flow and persists enum-derived statuses.
+
+    Covers should_pause_ngfw's no-other-ranges branch plus the pausing/paused
+    write+publish path, asserting the ResourceStatus-derived values that issue
+    #424 wires through the events.py STATUS_* aliases.
+    """
+    ready_ngfw = dict(SAMPLE_NGFW_INFO, status="ready")
+
+    # should_pause_ngfw runs for real; no other ranges use the NGFW -> pause proceeds.
+    empty_cursor = MagicMock()
+    empty_cursor.fetchall.return_value = []
+    empty_conn = MagicMock()
+    empty_conn.cursor.return_value.__enter__.return_value = empty_cursor
+    empty_conn.cursor.return_value.__exit__.return_value = False
+
+    with (
+        patch("range_ops.get_range_ngfw_info", return_value=ready_ngfw),
+        patch("range_ops.get_db_connection") as mock_get_db,
+        patch("range_ops._update_ngfw_status") as mock_update,
+        patch("range_ops.publish_ngfw_event") as mock_publish,
+        patch("range_ops.AWSExecutor"),
+        patch("range_ops.OpsOrchestrator") as mock_orch_cls,
+        patch("range_ops._ngfw.NGFWStopPlan"),
+    ):
+        mock_get_db.return_value.__enter__.return_value = empty_conn
+        mock_get_db.return_value.__exit__.return_value = False
+        mock_orch_cls.return_value.orchestrate.return_value = MagicMock(success=True)
+
+        pause_ngfw_for_range("req-uuid-123")
+
+    # Enum-derived status is persisted and published: pausing first, then paused.
+    mock_update.assert_any_call(1, "pausing")
+    mock_update.assert_any_call(1, "paused")
+    published = [call.kwargs["status"] for call in mock_publish.call_args_list]
+    assert published == ["pausing", "paused"]
