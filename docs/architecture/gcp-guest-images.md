@@ -106,7 +106,7 @@ base image and no `GCP_KALI_SOURCE_IMAGE` secret are required.
 ## GCE range-cell images (build → validate → promote)
 
 The GCE range-cell backend (the default GCP range path) consumes the
-`googlecompute` images **directly** as GCE images — it does not use the qcow2
+`googlecompute` images **directly** as GCE images—it does not use the qcow2
 export above (that is GDC-only). The provisioner resolves each logical guest role
 through `GCP_RANGE_{LINUX,KALI,WINDOWS,DC}_IMAGE` (a family URL or exact image),
 and `load_gce_range_cell_config` validates the reference shape, disk type, and a
@@ -172,13 +172,26 @@ stack is **mandatory** and verified: the build fails on a missing stack, a
 `POLARIS_STACK_SHA256` checksum mismatch, an invalid compose config, a failed
 build/pull, or a missing image. Set `GCP_POLARIS_STACK_SHA256` (and, optionally,
 `GCP_POLARIS_STACK_GENERATION` to pin the immutable object version).
+Registry-backed services must use `image@sha256:<digest>`; mutable registry tags
+are rejected. Before the stack starts, the bake rejects privileged/host-namespace
+services and sensitive host binds, then blocks GCE metadata from both host and
+Docker-forwarded traffic so workload entrypoints cannot use the builder identity.
+
+The bake must also start the full compose stack before image capture. A
+`polaris-vm` image that contains all 17 service images but no created containers
+does not satisfy the range contract: the runtime bootstrap only rewrites the
+per-range override and recreates `dns`, `a14-kali`, and `a9-splice`; the other
+target containers depend on the prebaked compose state and
+`restart: unless-stopped`. Candidate validation only observes the already-created
+containers on first boot and after reset; it must not run `docker compose up`
+and make an incomplete candidate appear valid.
 
 ### Pre-promoted DC (`dc-prebaked`) vs. generic Windows/DC
 
 The `windows` and `dc` images are **sysprepped** (GCESysprep), so their
 build-time WinRM credential is discarded by sysprep. The pre-promoted
-`dc-prebaked` image is captured **un-sysprepped** on purpose — GCESysprep cannot
-generalize a promoted domain controller — so it needs deliberate credential
+`dc-prebaked` image is captured **un-sysprepped** on purpose—GCESysprep cannot
+generalize a promoted domain controller—so it needs deliberate credential
 hygiene rather than relying on sysprep:
 
 - The identical `BOREAS.LOCAL` machine/domain identity across ranges is
