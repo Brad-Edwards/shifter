@@ -2,7 +2,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [("engine", "0031_aces_content_delivery_binding")]
+    dependencies = [("engine", "0032_capacity_signaling")]
 
     operations = [
         migrations.AlterField(
