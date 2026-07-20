@@ -24,7 +24,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y --no-install-recommends git curl jq ca-certificates nodejs tar unzip
+apt-get install -y --no-install-recommends git curl jq ca-certificates tar unzip
 
 mkdir -p "$${RUNNER_HOME}"
 cd "$${RUNNER_HOME}"
@@ -38,6 +38,11 @@ echo "$${RUNNER_CHECKSUM}  $${TARBALL}" | sha256sum -c -
 tar xzf "$${TARBALL}"
 rm -f "$${TARBALL}"
 chown -R "$${RUNNER_USER}:$${RUNNER_USER}" "$${RUNNER_HOME}"
+
+# setup-terraform's wrapper uses /usr/bin/env node from the host PATH, not the
+# runner's private externals path. Expose the pinned runner-bundled Node runtime
+# without introducing a second independently versioned Node installation.
+install -m 0755 "$${RUNNER_HOME}/externals/node24/bin/node" /usr/local/bin/node
 
 # Runner-bundled dependency installer (libicu, etc.).
 ./bin/installdependencies.sh
