@@ -540,11 +540,12 @@ fall back to the code defaults in `config.py`. See
 | `GCP_RANGE_BACKEND` | no | `gce` (default) or `gdc`. Set `gdc` to roll back to GDC VM Runtime. |
 | `GCP_RANGE_CELL_PROJECT_ID` | no | Project the range cells provision into. Defaults to the project parsed from the range VPC self-link (`range_network_id`), so it is correct even while the control-plane `GCP_PROJECT_ID` is a deploy-overlay placeholder. |
 | `RANGE_NETWORK_ZONE` | yes | Compute Engine zone for range guests, for example `us-central1-a`. |
-| `GCP_RANGE_LINUX_IMAGE` | yes | Full image or family URL for the Linux/host profile. For a Polaris deployment this is the `shifter-polaris-vm` family (the Docker host). |
-| `GCP_RANGE_DC_IMAGE` | yes | Windows domain-controller image, pre-promoted at bake time. Baked per-domain from `dc-prebaked.pkr.hcl` into family `shifter-<purpose>-dc` (see "Baking a new pre-promoted DC image" in `docs/dev/gcp-range-cell-deploy.md`). For Polaris this is `shifter-polaris-dc` (BOREAS.LOCAL). |
+| `GCP_RANGE_LINUX_IMAGE` | yes | Full image or family URL for the default unkeyed Linux/host profile. |
+| `GCP_RANGE_DC_IMAGE` | yes | Default unkeyed Windows domain-controller image, pre-promoted at bake time. Baked per-domain from `dc-prebaked.pkr.hcl` into family `shifter-<purpose>-dc` (see "Baking a new pre-promoted DC image" in `docs/dev/gcp-range-cell-deploy.md`). |
 | `DC_DOMAIN_PASSWORD` | DC scenarios | **Sensitive.** Domain Administrator password the provisioner sets on the pre-promoted DC (`set_admin_password`). Must match the password baked into the DC image by `a2_setup.ps1` at bake time (its `-AdminPassword` default). Provide via the GCP deploy config secret so it is rendered into the runtime env and forwarded to the provisioner job (`_GCP_PROVISIONER_ENV_KEYS`); if unset, DC setup fails setting the admin password. |
-| `GCP_RANGE_KALI_IMAGE` | scenario | Kali image for non-Polaris scenarios (Polaris runs Kali as a container inside the host). |
+| `GCP_RANGE_KALI_IMAGE` | scenario | Default unkeyed Kali image. Keyed Polaris and TechVault hosts use the structured map below. |
 | `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image for non-Polaris scenarios. |
+| `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` | keyed scenarios | Optional non-secret compact JSON map from exact `(linux|kali|windows|dc, ami_key)` to a complete GCE profile (`source_image`, `machine_type`, `disk_size_gb`, `disk_type`). Maximum 32,768 bytes and 64 entries. Unknown keys fail before cloud mutation. See `docs/dev/gcp-range-cell-deploy.md`. |
 | `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | yes | Service account attached to range guests. Minimal scope: logging and monitoring write. |
 | `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL` | Polaris | Service account whose per-range key the a14-kali agent uses for Vertex AI. Leave empty to disable per-range Vertex credentials. |
 | `GCP_RANGE_VERTEX_PROJECT_ID` | no | Vertex project. Defaults to `GCP_RANGE_CELL_PROJECT_ID`, then the control-plane project. |

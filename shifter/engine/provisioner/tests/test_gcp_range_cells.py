@@ -25,6 +25,7 @@ from gcp_range_cells import (
     GCEGuestSecretOps,
     GCEVertexCredentialOps,
     _build_clients,
+    _ensure_instance,
     _ensure_openvpn_gateway,
     apply_range_cell,
     destroy_range_cell,
@@ -64,6 +65,27 @@ def _sample_config() -> GCERangeCellConfig:
             machine_type="e2-standard-4",
             disk_size_gb=100,
         ),
+        image_key_profiles={
+            "kali": {
+                "polaris-vm": GCERangeImageProfile(
+                    source_image="projects/shifter/global/images/polaris-vm",
+                    machine_type="n2-standard-8",
+                    disk_size_gb=200,
+                ),
+                "techvault": GCERangeImageProfile(
+                    source_image="projects/shifter/global/images/techvault",
+                    machine_type="n2-standard-8",
+                    disk_size_gb=150,
+                ),
+            },
+            "dc": {
+                "polaris-dc": GCERangeImageProfile(
+                    source_image="projects/shifter/global/images/polaris-dc",
+                    machine_type="e2-standard-4",
+                    disk_size_gb=100,
+                )
+            },
+        },
         portal_network_cidrs=("10.40.0.0/20",),
     )
 
@@ -196,6 +218,7 @@ def _vertex_config() -> GCERangeCellConfig:
         linux=base.linux,
         kali=base.kali,
         dc=base.dc,
+        image_key_profiles=base.image_key_profiles,
         portal_network_cidrs=base.portal_network_cidrs,
         vertex_service_account_email="range-vertex@test-project.iam.gserviceaccount.com",
     )
@@ -213,6 +236,7 @@ def _shared_vpc_config() -> GCERangeCellConfig:
         linux=base.linux,
         kali=base.kali,
         dc=base.dc,
+        image_key_profiles=base.image_key_profiles,
         portal_network_cidrs=base.portal_network_cidrs,
     )
 
@@ -649,6 +673,15 @@ def test_render_plan_translates_polaris_vm_to_docker_host_access():
             machine_type="e2-standard-4",
             disk_size_gb=100,
         ),
+        image_key_profiles={
+            "kali": {
+                "polaris-vm": GCERangeImageProfile(
+                    source_image="projects/shifter/global/images/polaris-vm",
+                    machine_type="n2-standard-8",
+                    disk_size_gb=200,
+                )
+            }
+        },
         host_mgmt_ssh_port=2222,
     )
 
@@ -662,6 +695,67 @@ def test_render_plan_translates_polaris_vm_to_docker_host_access():
     assert host["ssh_port"] == 2222
     # AWS instance_type is ignored; machine size comes from the GCE profile.
     assert host["profile"].machine_type == "n2-standard-8"
+    assert host["image_key"] == "polaris-vm"
+    assert len(host["image_profile_fingerprint"]) == 24
+
+
+def test_existing_keyed_instance_rejects_profile_drift_before_secret_mutation(mocker):
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "polaris-vm"
+    config = _sample_config()
+    plan = render_range_cell_plan("req-123", _variables(payload=payload), config)
+    instance = plan["instances"][0]
+    clients = _mock_clients(exists=False)
+    clients.instances.get.side_effect = None
+    clients.instances.get.return_value = SimpleNamespace(
+        labels={"image-key": "polaris-vm", "image-profile": "wrong-profile"}
+    )
+    secret_ops, secret_mocks = _mock_secret_ops(mocker)
+
+    with pytest.raises(RuntimeError, match="image-profile binding"):
+        _ensure_instance(plan, clients, config, instance, secret_ops)
+
+    secret_mocks.ensure_ssh.assert_not_called()
+
+
+def test_render_plan_resolves_distinct_images_for_same_role_by_ami_key():
+    payload = _scenario_payload()
+    polaris = payload["subnets"][0]["instances"][0]
+    polaris["ami_key"] = "polaris-vm"
+    techvault = deepcopy(polaris)
+    techvault.update(
+        {
+            "uuid": "33333333-3333-4333-8333-333333333333",
+            "name": "techvault",
+            "ami_key": "techvault",
+        }
+    )
+    payload["subnets"][0]["instances"].append(techvault)
+    config = dataclasses.replace(
+        _sample_config(),
+        image_key_profiles={
+            "kali": {
+                "polaris-vm": GCERangeImageProfile(
+                    source_image="projects/test/global/images/family/shifter-polaris-vm",
+                    machine_type="e2-standard-8",
+                    disk_size_gb=210,
+                ),
+                "techvault": GCERangeImageProfile(
+                    source_image="projects/test/global/images/family/shifter-techvault",
+                    machine_type="n2-standard-8",
+                    disk_size_gb=150,
+                ),
+            }
+        },
+    )
+
+    plan = render_range_cell_plan("req-123", _variables(payload=payload), config)
+    by_name = {instance["name"]: instance for instance in plan["instances"]}
+
+    assert by_name["kali"]["profile"].source_image.endswith("shifter-polaris-vm")
+    assert by_name["kali"]["profile"].disk_size_gb == 210
+    assert by_name["techvault"]["profile"].source_image.endswith("shifter-techvault")
+    assert by_name["techvault"]["profile"].disk_size_gb == 150
 
 
 def test_mgmt_firewall_opens_host_management_ssh_port():
@@ -703,6 +797,8 @@ def test_instance_resource_installs_key_for_host_login_user():
     ssh_keys = next(item for item in body["metadata"]["items"] if item["key"] == "ssh-keys")
 
     assert ssh_keys["value"] == "ubuntu:ssh-ed25519 AAAA"
+    assert body["labels"]["image-key"] == "polaris-vm"
+    assert body["labels"]["image-profile"] == host["image_profile_fingerprint"]
 
 
 def test_windows_dc_instance_gets_boot_firewall_script():
@@ -1011,6 +1107,7 @@ def test_render_plan_keeps_native_guest_on_default_ssh_port():
 def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
     clients = _mock_clients(exists=True)
     secret_ops, _mocks = _mock_secret_ops(mocker)
+    expected_plan = render_range_cell_plan("req-123", _variables(), _sample_config())
 
     output = apply_range_cell(
         "req-123",
@@ -1068,6 +1165,9 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "gcp_instance_name": "shifter-r-42-polaris-kali",
                 "gcp_address_name": "shifter-r-42-polaris-kali-ip",
                 "gcp_network_tags": ["shifter-range-42", "shifter-range-42-polaris", "shifter-role-attacker"],
+                "gcp_image_key": "default",
+                "gcp_image_profile_fingerprint": expected_plan["instances"][0]["image_profile_fingerprint"],
+                "gcp_source_image": "projects/kali/global/images/kali",
                 "gcp_service_account_email": "",
                 "rdp_password_secret_arn": "projects/test/secrets/rdp",
                 "gcp_bootstrap_rdp_password_secret_ref": "projects/test/secrets/rdp",
@@ -1099,6 +1199,9 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "gcp_instance_name": "shifter-r-42-polaris-dc01",
                 "gcp_address_name": "shifter-r-42-polaris-dc01-ip",
                 "gcp_network_tags": ["shifter-range-42", "shifter-range-42-polaris", "shifter-role-dc"],
+                "gcp_image_key": "default",
+                "gcp_image_profile_fingerprint": expected_plan["instances"][1]["image_profile_fingerprint"],
+                "gcp_source_image": "projects/windows-cloud/global/images/family/windows-2022",
                 "gcp_service_account_email": "",
             },
         ],
@@ -1278,3 +1381,6 @@ def test_gce_output_preserves_provider_metadata_for_db_state(mocker):
         "shifter-range-42-polaris",
         "shifter-role-attacker",
     ]
+    assert state["provider_metadata"]["gcp"]["image_key"] == "default"
+    assert len(state["provider_metadata"]["gcp"]["image_profile_fingerprint"]) == 24
+    assert state["provider_metadata"]["gcp"]["source_image"] == "projects/kali/global/images/kali"
