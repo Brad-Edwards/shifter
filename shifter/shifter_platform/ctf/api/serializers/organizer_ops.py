@@ -293,6 +293,7 @@ class NotificationListItemSerializer(serializers.Serializer):
     sent_count = serializers.IntegerField(read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     sent_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    scheduled_at = serializers.DateTimeField(read_only=True, allow_null=True)
 
 
 class NotificationListResponseSerializer(serializers.Serializer):
@@ -311,6 +312,7 @@ class NotificationAnnounceRequestSerializer(serializers.Serializer):
 
     subject = serializers.CharField(required=False, allow_blank=True, default="")
     body = serializers.CharField(required=False, allow_blank=True, default="")
+    scheduled_at = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class NotificationAnnounceResultSerializer(serializers.Serializer):
@@ -410,49 +412,3 @@ class OrganizerScoreboardResponseSerializer(serializers.Serializer):
     rankings = serializers.ListField(child=serializers.DictField(), read_only=True)
     bracket_rankings = serializers.ListField(child=serializers.DictField(), read_only=True, allow_null=True)
     brackets = _NamedRefSerializer(many=True, read_only=True)
-
-
-class ParticipantModerationRequestSerializer(serializers.Serializer):
-    """Optional reason accompanying a ban or disqualification."""
-
-    reason = serializers.CharField(required=False, allow_blank=True, max_length=2000)
-
-
-class ParticipantRoleRequestSerializer(serializers.Serializer):
-    """Target participation role for the role endpoint (CTF-604)."""
-
-    role = serializers.CharField(max_length=16)
-
-
-class ParticipantHiddenRequestSerializer(serializers.Serializer):
-    """Target scoreboard visibility for the hidden endpoint (CTF-606)."""
-
-    hidden = serializers.BooleanField()
-
-
-class ParticipantUsernameRequestSerializer(serializers.Serializer):
-    """New login handle for the username-rename endpoints (#1206/#1593)."""
-
-    username = serializers.CharField(max_length=49)
-
-
-class EventStaffMemberSerializer(serializers.Serializer):
-    """One delegated staff assignment on an event (CTF-607)."""
-
-    user_id = serializers.IntegerField(read_only=True)
-    email = serializers.CharField(read_only=True)
-    role = serializers.CharField(read_only=True)
-    created_at = serializers.DateTimeField(read_only=True, allow_null=True)
-
-
-class EventStaffListResponseSerializer(serializers.Serializer):
-    """Envelope for the event staff listing."""
-
-    staff = EventStaffMemberSerializer(many=True, read_only=True)
-
-
-class EventStaffAssignRequestSerializer(serializers.Serializer):
-    """Assignment request: organizer-tier user email plus staff role."""
-
-    email = serializers.EmailField()
-    role = serializers.CharField(max_length=16)

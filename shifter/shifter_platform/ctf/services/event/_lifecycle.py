@@ -192,6 +192,15 @@ def complete_event(event: CTFEvent) -> bool:
         result = cleanup_event_ranges(event.pk)
         logger.info("Auto-cleanup on event end %s: %s", event.id, result)
 
+    # CTF-801: final-results email to participants; best-effort so a mail
+    # outage never blocks the end transition.
+    try:
+        from ctf.services.notification import send_event_results
+
+        send_event_results(event.pk)
+    except Exception:
+        logger.exception("Failed to send results for event %s", event.id)
+
     logger.info("Ended CTF event %s", event.id)
     return True
 

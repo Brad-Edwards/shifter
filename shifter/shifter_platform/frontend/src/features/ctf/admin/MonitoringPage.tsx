@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { useCtfOrganizerScoreboard } from "@/api/ctf";
-import { useAnnounceCtfNotification, useCtfEventRanges, useCtfNotifications, useCtfParticipants, useCtfScoreTimeline, useProvisionCtfEventRanges, useProvisionCtfEventSpares, useSendCtfNotification } from "@/api/ctfAdmin";
+import { useAnnounceCtfNotification,
+  useCancelCtfScheduledNotification, useCtfEventRanges, useCtfNotifications, useCtfParticipants, useCtfScoreTimeline, useProvisionCtfEventRanges, useProvisionCtfEventSpares, useSendCtfNotification } from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import type { CtfOrganizerScoreboard } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
@@ -28,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { formatDateTime, rankingKey, rankingNumber, rankingString, titleCase } from "../format";
 import { EventTasksCard } from "./EventTasksCard";
+import { ResultsExportButton } from "./ResultsExportButton";
 import { ctfAdminEventPath, ctfAdminEventsPath } from "../routes";
 
 export type MonitoringTab = "scoreboard" | "ranges" | "notifications" | "analytics";
@@ -184,12 +186,14 @@ function AnnounceDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: str
   const announce = useAnnounceCtfNotification(eventId);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
   const error = describeMutationError(announce.error, "Could not create the announcement.");
 
   function reset() {
     announce.reset();
     setSubject("");
     setBody("");
+    setScheduledAt("");
   }
 
   return (
@@ -211,7 +215,11 @@ function AnnounceDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: str
             event.preventDefault();
             if (!subject.trim() || !body.trim()) return;
             announce.mutate(
-              { subject: subject.trim(), body: body.trim() },
+              {
+                subject: subject.trim(),
+                body: body.trim(),
+                ...(scheduledAt ? { scheduled_at: new Date(scheduledAt).toISOString() } : {}),
+              },
               {
                 onSuccess: () => {
                   reset();
@@ -229,6 +237,15 @@ function AnnounceDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: str
             <Label htmlFor="ann-body">Body</Label>
             <Textarea id="ann-body" rows={4} value={body} onChange={(e) => setBody(e.target.value)} />
           </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="ann-schedule">Schedule for later (optional)</Label>
+            <Input
+              id="ann-schedule"
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
+            />
+          </div>
           {error ? (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
@@ -239,7 +256,7 @@ function AnnounceDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: str
               Cancel
             </Button>
             <Button type="submit" disabled={announce.isPending || !subject.trim() || !body.trim()}>
-              Create
+              {scheduledAt ? "Schedule" : "Send now"}
             </Button>
           </DialogFooter>
         </form>
@@ -250,7 +267,20 @@ function AnnounceDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: str
 
 function SendButton({ eventId, notificationId, status }: Readonly<{ eventId: string; notificationId: string; status: string }>) {
   const send = useSendCtfNotification(eventId);
+  const cancelSchedule = useCancelCtfScheduledNotification(eventId);
   if (status === "sent") return <span className="text-xs text-muted-foreground">Sent</span>;
+  if (status === "scheduled") {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={cancelSchedule.isPending}
+        onClick={() => cancelSchedule.mutate(notificationId)}
+      >
+        Cancel schedule
+      </Button>
+    );
+  }
   return (
     <Button variant="outline" size="sm" disabled={send.isPending} onClick={() => send.mutate(notificationId)}>
       {send.isSuccess ? "Queued" : "Send"}
@@ -447,6 +477,9 @@ export function MonitoringPage({ defaultTab = "scoreboard" }: Readonly<{ default
           <NotificationsTab eventId={eventId} />
         </TabsContent>
         <TabsContent value="analytics" className="mt-4">
+          <div className="mb-3 flex justify-end">
+            <ResultsExportButton eventId={eventId} />
+          </div>
           <AnalyticsTab eventId={eventId} />
         </TabsContent>
         <TabsContent value="tasks" className="mt-4">

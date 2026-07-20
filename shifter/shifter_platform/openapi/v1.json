@@ -3028,6 +3028,147 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/challenges/export/": {
+      "get": {
+        "operationId": "ctf_events_challenges_export_retrieve",
+        "description": "Return the export document; ``?fmt=ctfd`` selects CTFd shape.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/challenges/import-pack/": {
+      "post": {
+        "operationId": "ctf_events_challenges_import_pack_create",
+        "description": "Run a partial-success import of the posted document.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeImportRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeImportRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeImportResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/cleanup/": {
       "post": {
         "operationId": "ctf_events_cleanup_create",
@@ -4074,6 +4215,67 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/results/export/": {
+      "get": {
+        "operationId": "ctf_events_results_export_retrieve",
+        "description": "Return results as JSON, or CSV with ``?fmt=csv``.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/scoreboard/": {
       "get": {
         "operationId": "ctf_events_scoreboard_retrieve",
@@ -4543,6 +4745,144 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/webhooks/": {
+      "get": {
+        "operationId": "ctf_events_webhooks_retrieve",
+        "description": "Return the event's webhooks.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "ctf_events_webhooks_create",
+        "description": "Register a webhook endpoint.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookWrite"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookWrite"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/files/{file_id}/delete/": {
       "post": {
         "operationId": "ctf_files_delete_create",
@@ -4752,6 +5092,55 @@
         "responses": {
           "204": {
             "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/announcements/": {
+      "get": {
+        "operationId": "ctf_me_announcements_retrieve",
+        "description": "Return sent announcements, newest first.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantAnnouncementList"
+                }
+              }
+            },
+            "description": ""
           },
           "401": {
             "content": {
@@ -5620,6 +6009,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ParticipantProfile"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/notifications/{notification_id}/cancel-schedule/": {
+      "post": {
+        "operationId": "ctf_notifications_cancel_schedule_create",
+        "description": "Revert the notification to draft and cancel its scheduler task.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSendResult"
                 }
               }
             },
@@ -7387,6 +7836,59 @@
               }
             },
             "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/webhooks/{webhook_id}/": {
+      "delete": {
+        "operationId": "ctf_webhooks_destroy",
+        "description": "Soft-delete the webhook after ownership checks.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
           },
           "401": {
             "content": {
@@ -11633,6 +12135,66 @@
           "text"
         ]
       },
+      "ChallengeImportError": {
+        "type": "object",
+        "description": "One skipped import entry with its reason.",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "error": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "error",
+          "index",
+          "name"
+        ]
+      },
+      "ChallengeImportRequest": {
+        "type": "object",
+        "description": "Challenge import request: the export document itself (CTF-1101/1104).",
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "ChallengeImportResult": {
+        "type": "object",
+        "description": "Partial-success import outcome.",
+        "properties": {
+          "created": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChallengeImportError"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created",
+          "errors"
+        ]
+      },
       "ChallengeListResponse": {
         "type": "object",
         "description": "Envelope returned by the event challenge list.",
@@ -12395,12 +12957,18 @@
           "event_timezone": {
             "type": "string",
             "readOnly": true
+          },
+          "capacity_hints": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
           }
         },
         "required": [
           "attempt_limit_cooldown_seconds",
           "attempt_limit_mode",
           "auto_cleanup",
+          "capacity_hints",
           "cleanup_delay_hours",
           "description",
           "event_end",
@@ -12683,6 +13251,10 @@
           "event_timezone": {
             "type": "string",
             "maxLength": 64
+          },
+          "capacity_hints": {
+            "type": "object",
+            "additionalProperties": {}
           }
         },
         "required": [
@@ -13144,6 +13716,11 @@
           "body": {
             "type": "string",
             "default": ""
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -13209,12 +13786,19 @@
             "format": "date-time",
             "readOnly": true,
             "nullable": true
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
           }
         },
         "required": [
           "created_at",
           "id",
           "notification_type",
+          "scheduled_at",
           "sent_at",
           "sent_count",
           "status",
@@ -13648,6 +14232,52 @@
             }
           }
         }
+      },
+      "ParticipantAnnouncement": {
+        "type": "object",
+        "description": "One sent announcement on the participant surface (CTF-803).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "subject": {
+            "type": "string",
+            "readOnly": true
+          },
+          "body": {
+            "type": "string",
+            "readOnly": true
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "sent_at",
+          "subject"
+        ]
+      },
+      "ParticipantAnnouncementList": {
+        "type": "object",
+        "description": "Envelope for the participant announcement feed.",
+        "properties": {
+          "announcements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParticipantAnnouncement"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "announcements"
+        ]
       },
       "ParticipantChallengeDetail": {
         "type": "object",
@@ -16481,6 +17111,95 @@
         },
         "required": [
           "username"
+        ]
+      },
+      "Webhook": {
+        "type": "object",
+        "description": "One registered webhook endpoint (CTF-1203); secrets never round-trip.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "url": {
+            "type": "string",
+            "readOnly": true
+          },
+          "subscribed_events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "active": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "has_secret": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "last_status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "last_delivery_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "active",
+          "has_secret",
+          "id",
+          "last_delivery_at",
+          "last_status",
+          "subscribed_events",
+          "url"
+        ]
+      },
+      "WebhookListResponse": {
+        "type": "object",
+        "description": "Envelope for the event webhook listing.",
+        "properties": {
+          "webhooks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Webhook"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "webhooks"
+        ]
+      },
+      "WebhookWrite": {
+        "type": "object",
+        "description": "Webhook registration request.",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 500
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "subscribed_events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "url"
         ]
       },
       "YAMLContent": {

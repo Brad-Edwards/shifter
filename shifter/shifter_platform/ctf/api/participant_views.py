@@ -24,6 +24,7 @@ from rest_framework.views import APIView
 from ctf.api import projections
 from ctf.api._base import CTF_PARTICIPANT_PERMISSIONS, _CtfApiError, ctf_actor_user
 from ctf.api.serializers import (
+    ParticipantAnnouncementListSerializer,
     ParticipantChallengeDetailSerializer,
     ParticipantChallengeListItemSerializer,
     ParticipantCurrentEventSerializer,
@@ -264,3 +265,35 @@ def _no_active_event_response(request: Request) -> Response:
         status_code=status.HTTP_404_NOT_FOUND,
         request=request,
     )
+
+
+class ParticipantAnnouncementsView(APIView):
+    """List sent announcements for the participant's active event (GET, CTF-803)."""
+
+    permission_classes = CTF_PARTICIPANT_PERMISSIONS
+    required_read_scopes = _PLAY_READ
+
+    @extend_schema(responses=ParticipantAnnouncementListSerializer)
+    def get(self, request: Request) -> Response:
+        """Return sent announcements, newest first."""
+        from ctf.enums import NotificationStatus, NotificationType
+        from ctf.models import CTFNotification
+
+        participant = _resolve_active_participant(request)
+        if participant is None:
+            return _no_active_event_response(request)
+        announcements = CTFNotification.objects.filter(
+            event_id=participant.event_id,
+            notification_type=NotificationType.ANNOUNCEMENT.value,
+            status=NotificationStatus.SENT.value,
+        ).order_by("-sent_at")[:50]
+        data = [
+            {
+                "id": str(a.id),
+                "subject": a.subject,
+                "body": a.body,
+                "sent_at": a.sent_at,
+            }
+            for a in announcements
+        ]
+        return Response({"announcements": data})

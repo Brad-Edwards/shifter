@@ -24,6 +24,7 @@ import { HelpPage } from "@/features/ctf/HelpPage";
 import { RangePage } from "@/features/ctf/RangePage";
 import { ScoreboardPage } from "@/features/ctf/ScoreboardPage";
 import { AccountPage } from "@/features/ctf/AccountPage";
+import { CtfWorkspaceLayout } from "@/features/ctf/CtfWorkspaceLayout";
 import { TeamPage } from "@/features/ctf/TeamPage";
 import { HomePage } from "@/features/home/HomePage";
 import { AgentsPage } from "@/features/mission-control/AgentsPage";
@@ -140,6 +141,7 @@ export const router = createBrowserRouter(
           // slice and stay Django-served.
           path: "ctf",
           handle: ctfHandle,
+          element: <CtfWorkspaceLayout />,
           children: [
             { index: true, element: <EventHomePage /> },
             { path: "event", element: <EventHomePage /> },

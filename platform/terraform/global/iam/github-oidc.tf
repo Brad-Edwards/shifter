@@ -311,15 +311,17 @@ resource "aws_iam_policy" "ci_role_permissions_boundary" {
         Sid    = "DenyIamEscalation"
         Effect = "Deny"
         Action = "iam:*"
-        # Carve the per-range polaris agent role namespace (#1377) OUT of this
-        # blanket IAM deny so the provisioner can create those roles at provision
-        # time. Safe: the provisioner identity policy allows iam:CreateRole here
-        # ONLY with this permissions boundary attached (iam:PermissionsBoundary
-        # condition) and grants no boundary-strip action, so every agent role it
-        # creates stays capped by this same boundary (AWS permissions-boundary
-        # delegation pattern). DenyPolarisAgentBoundaryTamper below re-denies
-        # boundary removal on that namespace as defense-in-depth.
-        NotResource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-polaris-agent"
+        # Carve the exact runtime-managed role/profile namespaces OUT of this
+        # blanket IAM deny so the provisioner can create them at range provision
+        # time. Each CreateRole grant requires THIS boundary and neither runtime
+        # path can strip it. The explicit tamper denies below keep that cap in
+        # place as defense-in-depth. These are namespace exceptions to a deny,
+        # not grants; the provisioner identity policy remains the allow boundary.
+        NotResource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-polaris-agent",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-vpn-gateway",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/shifter-${var.environment}-*-vpn-gateway"
+        ]
         Condition = {
           StringNotEquals = {
             "iam:PassedToService" = [
@@ -351,6 +353,18 @@ resource "aws_iam_policy" "ci_role_permissions_boundary" {
           "iam:DeleteRolePermissionsBoundary"
         ]
         Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-polaris-agent"
+      },
+      {
+        # The VPN role and instance-profile namespaces are excluded from the
+        # blanket IAM deny only so the provisioner can manage request-owned
+        # gateways. Keep the role's mandatory boundary immutable after create.
+        Sid    = "DenyVpnGatewayBoundaryTamper"
+        Effect = "Deny"
+        Action = [
+          "iam:PutRolePermissionsBoundary",
+          "iam:DeleteRolePermissionsBoundary"
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
       }
     ]
   })
