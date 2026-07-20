@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _email_verified_is_true(value: Any) -> bool:
+def _email_verified_is_true(value: object) -> bool:
     """Return True only for a verified email, tolerant of provider encoding.
 
     AWS Cognito's UserInfo endpoint returns ``email_verified`` as the string

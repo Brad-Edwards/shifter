@@ -1,6 +1,7 @@
 """Command-line wiring for the bootstrap deployment CLI."""
 
 import argparse
+import os
 import shutil
 import sys
 
@@ -318,6 +319,62 @@ def _add_runners_subparser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None:
+    """Wire the `gdc-bootstrap` subcommand (ADR-008 GCP standup entrypoint).
+
+    --range-backend selects the range plane (#1716) and --terraform-identity
+    selects the identity the control-plane Terraform runs as (#1718); both
+    default to the back-compat path but can be overridden for hardened orgs.
+    """
+    gdc_parser = subparsers.add_parser(
+        "gdc-bootstrap",
+        help="Bootstrap a repeatable Google Distributed Cloud VM Runtime evaluation cluster",
+    )
+    gdc_parser.add_argument(
+        "--project-id",
+        default=get_default_gdc_project_id(),
+        help="GCP project ID (defaults to PANW_GCP_DEV or repo-root .env)",
+    )
+    gdc_parser.add_argument("--cluster-id", default="cluster1", help="Cluster name / prefix")
+    gdc_parser.add_argument("--region", default="us-central1", help="Cluster region")
+    gdc_parser.add_argument("--zone", default="us-central1-a", help="Compute Engine zone")
+    gdc_parser.add_argument("--google-account-email", help="Optional Google identity to grant cluster-admin")
+    gdc_parser.add_argument(
+        "--shifter-config",
+        help=(
+            "Path to the deployment's shifter.yaml; its settings.range_egress is rendered into "
+            "range_egress.auto.tfvars before the control-plane apply (#1015). Defaults to "
+            "$SHIFTER_CONFIG or ./shifter.yaml; a missing config fails the deploy."
+        ),
+    )
+    gdc_parser.add_argument(
+        "--range-backend",
+        choices=["gce", "gdc"],
+        default=(os.environ.get("GCP_RANGE_BACKEND", "gce").strip() or "gce"),
+        help=(
+            "GCP range plane backend (#1716; default from GCP_RANGE_BACKEND, else gce). "
+            "'gce' provisions plain GCE range instances and skips the ABM/GDC VM Runtime "
+            "substrate (no service-account JSON key required). 'gdc' builds the substrate "
+            "for the KubeVirt VM Runtime range plane."
+        ),
+    )
+    gdc_parser.add_argument(
+        "--terraform-identity",
+        choices=["bootstrap-sa", "operator-adc"],
+        default=(os.environ.get("SHIFTER_GCP_TERRAFORM_IDENTITY", "operator-adc").strip() or "operator-adc"),
+        help=(
+            "Identity the control-plane Terraform runs as (#1718; default from "
+            "SHIFTER_GCP_TERRAFORM_IDENTITY, else operator-adc). 'operator-adc' (default) runs "
+            "terraform under the caller's Application Default Credentials, minting no service "
+            "account or key (secure-by-default; the only path on orgs that forbid owner-on-SA or "
+            "SA-key creation). 'bootstrap-sa' impersonates a dedicated tf-bootstrap service account "
+            "granted roles/owner (ADR-008), for operators who cannot run terraform under their own ADC."
+        ),
+    )
+    gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    gdc_parser.add_argument("--yes", action="store_true", help=HELP_YES)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the bootstrap CLI argument parser and its subcommands."""
     parser = argparse.ArgumentParser(
@@ -399,31 +456,23 @@ Examples:
     recovery_parser.add_argument("--yes", action="store_true", help=HELP_YES)
 
     _add_runners_subparser(subparsers)
-
-    gdc_parser = subparsers.add_parser(
-        "gdc-bootstrap",
-        help="Bootstrap a repeatable Google Distributed Cloud VM Runtime evaluation cluster",
-    )
-    gdc_parser.add_argument(
-        "--project-id",
-        default=get_default_gdc_project_id(),
-        help="GCP project ID (defaults to PANW_GCP_DEV or repo-root .env)",
-    )
-    gdc_parser.add_argument("--cluster-id", default="cluster1", help="Cluster name / prefix")
-    gdc_parser.add_argument("--region", default="us-central1", help="Cluster region")
-    gdc_parser.add_argument("--zone", default="us-central1-a", help="Compute Engine zone")
-    gdc_parser.add_argument("--google-account-email", help="Optional Google identity to grant cluster-admin")
-    gdc_parser.add_argument(
-        "--shifter-config",
-        help=(
-            "Path to the deployment's shifter.yaml; its settings.range_egress is rendered into "
-            "range_egress.auto.tfvars before the control-plane apply (#1015). Defaults to "
-            "$SHIFTER_CONFIG or ./shifter.yaml; a missing config fails the deploy."
-        ),
-    )
-    gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    _add_gdc_bootstrap_subparser(subparsers)
 
     return parser
+
+
+def _build_gdc_bootstrap_config(args: argparse.Namespace) -> GDCBootstrapConfig:
+    """Build the GDCBootstrapConfig for the `gdc-bootstrap` subcommand from parsed args."""
+    return GDCBootstrapConfig(
+        project_id=args.project_id,
+        cluster_id=args.cluster_id,
+        region=args.region,
+        zone=args.zone,
+        google_account_email=args.google_account_email,
+        shifter_config_path=args.shifter_config,
+        range_backend=args.range_backend,
+        terraform_identity=args.terraform_identity,
+    )
 
 
 def _dispatch_runners(args: argparse.Namespace) -> None:
@@ -513,13 +562,6 @@ def main() -> None:
 
     elif args.command == "gdc-bootstrap":
         gdc_bootstrap_cluster(
-            GDCBootstrapConfig(
-                project_id=args.project_id,
-                cluster_id=args.cluster_id,
-                region=args.region,
-                zone=args.zone,
-                google_account_email=args.google_account_email,
-                shifter_config_path=args.shifter_config,
-            ),
+            _build_gdc_bootstrap_config(args),
             dry_run=args.dry_run,
         )

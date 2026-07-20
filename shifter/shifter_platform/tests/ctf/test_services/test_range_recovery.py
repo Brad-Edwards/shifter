@@ -349,6 +349,33 @@ class TestReassignSpareRecovery:
         assert recovery.replacement_request_id is None
 
     @pytest.mark.django_db
+    def test_vpn_bound_spare_is_rejected_before_old_range_teardown(
+        self, event_with_scenario, rich_participant, organizer_user
+    ):
+        participant, old_range = rich_participant
+        spare_user = create_managed_spare_user()
+        spare, spare_range = _make_pooled_spare(event_with_scenario, owner=spare_user)
+        spare_engine_range = EngineRange.objects.get(pk=spare_range.engine_range.pk)
+        spare_engine_range.vpn_access_binding = {"generation": str(spare_range.request.request_id)}
+        spare_engine_range.save(update_fields=["vpn_access_binding"])
+
+        with pytest.raises(CTFRangeError, match="No compatible spare"):
+            recover_participant_range(
+                participant.pk,
+                strategy=RecoveryStrategy.REASSIGN_SPARE.value,
+                operator=organizer_user,
+                spare_range_instance_id=spare_range.pk,
+            )
+
+        old_range.refresh_from_db()
+        spare.refresh_from_db()
+        assert old_range.deleted_at is None
+        assert old_range.status == ResourceStatus.READY.value
+        assert EngineRange.resolve_active_for_instance(participant.user, old_range.instance_uuid) is not None
+        assert spare.status == SpareRangeStatus.READY.value
+        assert spare.consumed_by_id is None
+
+    @pytest.mark.django_db
     def test_reassign_spare_uses_live_status_when_local_status_stale(
         self, event_with_scenario, rich_participant, second_participant_user, organizer_user
     ):
@@ -450,7 +477,7 @@ class TestReassignSpareRecovery:
         re-claims cleanly rather than orphaning the first spare."""
         from django.db import transaction
 
-        from ctf.services.range.recovery import _claim_spare
+        from ctf.services.range.recovery_steps import _claim_spare
 
         participant = CTFParticipant.objects.create(
             event=event_with_scenario,
@@ -468,11 +495,16 @@ class TestReassignSpareRecovery:
 
         # _claim_spare must run inside the caller's transaction; _ensure_spare_reserved
         # wraps the claim + pointer write together, so a crash in that window rolls
-        # the claim back. Simulate the crash right after the claim.
-        with pytest.raises(_SimulatedCrash), transaction.atomic():
+        # the claim back. Simulate the crash right after the claim. The claim and the
+        # crash live in a nested helper so the raises-block holds a single invocation
+        # (Sonar S5778) while both still run inside transaction.atomic().
+        def _claim_then_crash():
             claimed = _claim_spare(participant, spare.range_instance_id)
             assert claimed is not None
             raise _SimulatedCrash()
+
+        with pytest.raises(_SimulatedCrash), transaction.atomic():
+            _claim_then_crash()
 
         spare.refresh_from_db()
         assert spare.consumed_by_id is None
@@ -630,9 +662,10 @@ class TestIdempotentRetry:
 class TestValidationAndFailures:
     @pytest.mark.django_db
     def test_participant_not_found(self, organizer_user):
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
             recover_participant_range(
-                uuid4(),
+                uuid4_2,
                 strategy=RecoveryStrategy.REBUILD.value,
                 operator=organizer_user,
             )

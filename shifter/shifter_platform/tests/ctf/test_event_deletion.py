@@ -250,30 +250,26 @@ class TestForceDeleteEvent:
         # Hard delete: gone even from all_objects (which still sees soft-deletes).
         assert not CTFEvent.all_objects.filter(pk=ctf_event.pk).exists()
 
-    def test_force_delete_wrong_confirmation_name(self, mock_user):
+    @pytest.mark.django_db
+    def test_force_delete_wrong_confirmation_name(self, ctf_event, organizer_user):
         """force_delete_event should raise CTFValidationError on name mismatch."""
         from ctf.exceptions import CTFValidationError
+        from ctf.models import CTFEvent
+        from ctf.services.event import force_delete_event
 
-        event = _make_mock_event(name="Real Name")
+        with pytest.raises(CTFValidationError, match="does not match"):
+            force_delete_event(ctf_event.pk, organizer_user, "Wrong Name")
+        assert CTFEvent.all_objects.filter(pk=ctf_event.pk).exists()
 
-        with patch("ctf.services.event.CTFEvent.all_objects") as mock_all:
-            mock_all.get.return_value = event
-            from ctf.services.event import force_delete_event
-
-            with pytest.raises(CTFValidationError, match="does not match"):
-                force_delete_event(event.pk, mock_user, "Wrong Name")
-
-    def test_force_delete_event_not_found(self, mock_user):
+    @pytest.mark.django_db
+    def test_force_delete_event_not_found(self, organizer_user):
         """force_delete_event should raise CTFNotFoundError for missing events."""
         from ctf.exceptions import CTFNotFoundError
-        from ctf.models import CTFEvent
+        from ctf.services.event import force_delete_event
 
-        with patch("ctf.services.event.CTFEvent.all_objects") as mock_all:
-            mock_all.get.side_effect = CTFEvent.DoesNotExist
-            from ctf.services.event import force_delete_event
-
-            with pytest.raises(CTFNotFoundError):
-                force_delete_event(uuid4(), mock_user, "Whatever")
+        missing_id = uuid4()
+        with pytest.raises(CTFNotFoundError):
+            force_delete_event(missing_id, organizer_user, "Whatever")
 
     @pytest.mark.django_db
     def test_force_delete_range_cleanup_partial_failure(self, ctf_event, organizer_user, participant_user):
@@ -361,7 +357,7 @@ class TestApiForceDeleteEvent:
 
     def test_api_force_delete_success(self, organizer_client, mock_event):
         """POST with valid confirmation should return 200 and summary."""
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
 
         with (
             patch("ctf.models.CTFEvent.all_objects") as mock_all,
@@ -389,7 +385,7 @@ class TestApiForceDeleteEvent:
         """POST with wrong confirmation name should return 400."""
         from ctf.exceptions import CTFValidationError
 
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
 
         with (
             patch("ctf.models.CTFEvent.all_objects") as mock_all,
@@ -408,7 +404,7 @@ class TestApiForceDeleteEvent:
 
     def test_api_force_delete_missing_confirmation(self, organizer_client, mock_event):
         """POST without confirmation_name should return 400."""
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
 
         with patch("ctf.models.CTFEvent.all_objects") as mock_all:
             mock_all.get.return_value = mock_event
@@ -420,12 +416,12 @@ class TestApiForceDeleteEvent:
             )
 
         assert resp.status_code == 400
-        assert "confirmation_name" in resp.json()["error"]
+        assert "confirmation_name" in resp.json()["error"]["message"]
 
     def test_api_force_delete_non_owner(self, organizer_client, mock_event):
         """Non-owner should get 403."""
         mock_event.created_by_id = 999  # Not the authenticated user (pk=1)
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
 
         with patch("ctf.models.CTFEvent.all_objects") as mock_all:
             mock_all.get.return_value = mock_event
@@ -442,7 +438,7 @@ class TestApiForceDeleteEvent:
         """Force-deleting a non-existent event should return 404."""
         from ctf.models import CTFEvent
 
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": uuid4()})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": uuid4()})
 
         with patch("ctf.models.CTFEvent.all_objects") as mock_all:
             mock_all.get.side_effect = CTFEvent.DoesNotExist

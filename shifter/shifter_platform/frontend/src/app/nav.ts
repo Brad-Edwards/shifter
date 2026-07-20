@@ -58,7 +58,8 @@ export type NavIconKey =
   | "settings"
   | "file-code"
   | "shield-alert"
-  | "user-cog";
+  | "user-cog"
+  | "circle-dollar-sign";
 
 export interface NavEntry {
   /** Canonical surface name (UX-003 taxonomy). */
@@ -164,7 +165,18 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   makeGroup(
     "Participate",
     "participant",
-    { audience: "participant", permissionPolicy: "ctf_participant", ownerApp: "ctf", external: true },
+    // In-SPA once CTF_WORKSPACE_SPA_ENABLED is on (#1372); every participant
+    // entry is internal (client-routed to features/ctf) and feature-flag gated so
+    // the entries stay hidden until the flag flips, matching the Scenario Editor
+    // rollout pattern. The organizer "CTF Events" entry lives in the Operate group
+    // and stays external until the organizer SPA slice lands.
+    {
+      audience: "participant",
+      permissionPolicy: "ctf_participant",
+      ownerApp: "ctf",
+      external: false,
+      featureFlag: "ctf_workspace_spa",
+    },
     [
       { surface: "Event Home", routeName: "ctf:dashboard", purpose: "Event entry point with current participant state.", routePath: "/ctf/", iconKey: "home", activeContext: "event" },
       { surface: "Challenges", routeName: "ctf:challenges", purpose: "Browse available challenges and progression.", routePath: "/ctf/challenges/", iconKey: "flag" },
@@ -181,7 +193,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     [
       { surface: "Overview", routeName: "home", ownerApp: "config", purpose: "Role-aware operational dashboard.", routePath: "/", iconKey: "layout-dashboard", external: false },
       { surface: "Ranges", routeName: "mission_control:dashboard", purpose: "Launch and monitor ranges.", routePath: "/mission-control/", iconKey: "server", activeContext: "range", external: false },
-      { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_organizer", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event" },
+      // In-SPA once CTF_WORKSPACE_SPA_ENABLED is on (#1372); the organizer
+      // workspace is client-routed (features/ctf/admin) and feature-flag gated so
+      // the entry stays hidden until the flag flips, matching the participant and
+      // Scenario Editor rollout pattern.
+      { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_organizer", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event", external: false, featureFlag: "ctf_workspace_spa" },
       {
         surface: "Assets",
         routeName: "mission_control:agents",
@@ -240,9 +256,48 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   makeGroup(
     "Administer",
     "operator",
-    { audience: "organizer", permissionPolicy: "staff", ownerApp: "management", external: true },
+    { audience: "organizer", permissionPolicy: "staff", ownerApp: "management" },
     [
-      { surface: "Users", routeName: "admin:index", purpose: "Manage users, groups, and access.", routePath: "/admin/", iconKey: "user-cog" },
+      // In-SPA Administer workspace (#1373), gated by administer_spa. Hidden until
+      // the flag flips; the Django admin escape hatch below stays available in
+      // every rollout state so /admin/ is never lost from the nav.
+      {
+        surface: "Users",
+        routeName: "administer:users",
+        purpose: "Manage users and access.",
+        routePath: "/administer",
+        iconKey: "user-cog",
+        external: false,
+        featureFlag: "administer_spa",
+      },
+      {
+        surface: "Cost",
+        routeName: "administer:cost",
+        purpose: "Cost reporting.",
+        routePath: "/administer/cost",
+        iconKey: "circle-dollar-sign",
+        external: false,
+        featureFlag: "administer_spa",
+      },
+      {
+        surface: "Platform Settings",
+        routeName: "administer:settings",
+        purpose: "Read-only platform configuration.",
+        routePath: "/administer/settings",
+        iconKey: "settings",
+        external: false,
+        featureFlag: "administer_spa",
+      },
+      // Django admin escape hatch: always available, linked as a full-page legacy
+      // handoff and never wrapped or described as a SPA-native workflow.
+      {
+        surface: "Django Admin",
+        routeName: "admin:index",
+        purpose: "Full Django administration.",
+        routePath: "/admin/",
+        iconKey: "shield",
+        external: true,
+      },
     ],
   ),
 ];

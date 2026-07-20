@@ -39,8 +39,12 @@ from pathlib import Path
 
 import pytest
 from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
+from aces_processor.compiler import compile_runtime_model
+from aces_processor.planner import plan as compile_plan
+from aces_sdl.parser import parse_sdl
 
 from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION
+from shared.aces.manifest import create_shifter_backend_manifest
 from shared.aces.runtime_target import serialize_provisioning_plan
 
 _PROVISIONER_READER = Path(__file__).resolve().parents[4] / "engine" / "provisioner" / "aces_plan.py"
@@ -104,6 +108,54 @@ def _plan() -> ProvisioningPlan:
     return ProvisioningPlan(resources={node.address: node, network.address: network})
 
 
+def _domain_plan() -> ProvisioningPlan:
+    scenario = parse_sdl(
+        """
+        name: domain-parity-probe
+        nodes:
+          lan: {type: switch}
+          dc: {type: vm, os: windows}
+          member: {type: vm, os: windows}
+        accounts:
+          domain-admin: {username: Administrator, node: dc}
+          local-operator: {username: local-operator, node: member}
+          web-service:
+            username: svc-web
+            node: member
+            auth_method: password
+            spn: HTTP/member.corp.example
+            domain_ref: corp
+        identity_domains:
+          corp:
+            profile: active_directory
+            dns_name: corp.example
+            netbios_name: CORP
+            authority_account_ref: domain-admin
+        relationships:
+          controller:
+            type: domain_controller_for
+            source: dc
+            target: corp
+            domain_controller: {}
+          member-join:
+            type: joins_domain
+            source: member
+            target: corp
+            domain_join: {controller_refs: [dc]}
+        infrastructure:
+          lan:
+            count: 1
+            properties: {cidr: 10.70.0.0/24, gateway: 10.70.0.1}
+          dc: {count: 1, links: [lan]}
+          member: {count: 1, links: [lan]}
+        """
+    )
+    return compile_plan(
+        compile_runtime_model(scenario),
+        create_shifter_backend_manifest(),
+    ).provisioning
+
+
 class TestProvisionerReaderContract:
     def test_kind_constant_matches_serializer(self, reader):
         from shared.aces.runtime_target import ACES_PROVISIONING_PLAN_KIND
@@ -128,6 +180,8 @@ class TestProvisionerReaderContract:
     def test_supported_aces_sdl_range_agrees_with_pin_and_lock(self, reader):
         # AC5 / ADR-032-R4+R7: the installed producer equals the exact metadata
         # pin and sits inside the consumer's rolling-compatibility window.
+        assert reader.MINIMUM_ACES_SDL_VERSION == "0.19.1"
+        assert reader.MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE == "0.24.0"
         low = reader._release_tuple(reader.MINIMUM_ACES_SDL_VERSION)
         high = reader._release_tuple(reader.MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE)
         installed = reader._release_tuple(importlib.metadata.version("aces-sdl"))
@@ -138,7 +192,7 @@ class TestProvisionerReaderContract:
         assert importlib.metadata.version("aces-scenario-packs") == _exact_dependency_pin("aces-scenario-packs")
         requirements = importlib.metadata.requires("aces-scenario-packs") or []
         normalized = {requirement.replace(" ", "").lower() for requirement in requirements}
-        assert "aces-sdl==0.20.0" in normalized
+        assert "aces-sdl==0.23.0" in normalized
 
     def test_extraction_matches_expected_shifter_fixture(self, reader):
         parsed = reader.parse_plan(serialize_provisioning_plan(_plan()))
@@ -155,6 +209,36 @@ class TestProvisionerReaderContract:
 
         network = next(n for n in parsed.networks if n.address == "provision.network.lan")
         assert network.cidr == "10.9.0.0/24"
+
+    def test_public_domain_topology_round_trips_to_the_separate_consumer(self, reader):
+        parsed = reader.parse_plan(serialize_provisioning_plan(_domain_plan()))
+
+        assert parsed.domains == (
+            reader.AcesPlanDomain(
+                domain_id="corp",
+                profile="active_directory",
+                dns_name="corp.example",
+                netbios_name="CORP",
+                authority_account_address="provision.account.domain-admin",
+                controller_addresses=("provision.node.dc",),
+                member_addresses=("provision.node.member",),
+            ),
+        )
+        member = next(node for node in parsed.nodes if node.address == "provision.node.member")
+        assert member.domain_id == "corp"
+        assert member.domain_role == "member"
+        assert member.controller_addresses == ("provision.node.dc",)
+        assert "provision.node.dc" in member.ordering_dependencies
+
+        service_account = next(account for account in parsed.accounts if account.username == "svc-web")
+        assert service_account.address == "provision.account.web-service"
+        assert service_account.domain_ref == "corp"
+        assert service_account.domain_id == "corp"
+        assert service_account.spn == "HTTP/member.corp.example"
+
+        local_account = next(account for account in parsed.accounts if account.username == "local-operator")
+        assert local_account.domain_id is None
+        assert local_account.domain_ref is None
 
     def test_acl_extraction_normalizes_to_expected(self, reader):
         raw_acls = [

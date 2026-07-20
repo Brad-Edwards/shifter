@@ -68,11 +68,29 @@ jobs:
       DC_PROFILE: ${{ inputs.dc_profile }}
       SOURCE_IMAGE_INPUT: ${{ inputs.source_image }}
     steps:
-      # Validate from the dispatched ref (github.sha), gated by workflow_dispatch
-      # permission plus the environment approval. No free-form inputs.ref: a
-      # cloud-credentialed job must not run code from an arbitrary branch.
+      # Reject dispatches from non-protected refs BEFORE any checkout or cloud
+      # auth. The WIF attribute_condition enforces the same allowlist at the GCP
+      # level (ADR-037-R7), so this step is defense-in-depth: it makes the
+      # policy visible and catches cases where only the script — not the workflow
+      # file — has been tampered with. Runs before cloud credentials are issued.
+      - name: Reject non-protected dispatch refs
+        run: |
+          case "${GITHUB_REF}" in
+            refs/heads/dev|refs/heads/main) ;;
+            *)
+              echo "::error::packer-gcp-validate must run from a protected integration branch (refs/heads/dev or refs/heads/main), not '${GITHUB_REF}'. The GCP WIF provider enforces the same allowlist; a token issued from this ref would be rejected. See ADR-037-R7."
+              exit 1
+              ;;
+          esac
+
+      # Checkout the dispatched ref. By this point the ref guard above has
+      # already confirmed the ref is a protected branch, so the checked-out
+      # validator scripts come from reviewed, merged code — not from a
+      # collaborator's feature branch.
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Ensure GCP auth is configured
         env:

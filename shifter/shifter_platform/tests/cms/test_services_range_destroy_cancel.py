@@ -208,8 +208,9 @@ class TestCancelRangeByRequestId:
     def test_reverts_and_skips_audit_when_engine_rejects(self, user, provision_range):
         ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.READY)
 
+        request_id_of = _request_id_of(ri)
         with pytest.raises(CMSError, match="cannot be cancelled"):
-            services.cancel_range_by_request_id(user, _request_id_of(ri))
+            services.cancel_range_by_request_id(user, request_id_of)
 
         assert _reload(42).status == ResourceStatus.PROVISIONING.value
         assert not AuditLog.objects.filter(
@@ -221,8 +222,9 @@ class TestCancelRangeByRequestId:
     def test_raises_cms_error_when_range_not_found(self, user):
         from uuid import uuid4
 
+        str_ = str(uuid4())
         with pytest.raises(CMSError):
-            services.cancel_range_by_request_id(user, str(uuid4()))
+            services.cancel_range_by_request_id(user, str_)
 
 
 class TestDestroyRangeByRequestId:
@@ -231,8 +233,9 @@ class TestDestroyRangeByRequestId:
         ri.status = ResourceStatus.READY.value
         ri.save(update_fields=["status"])
 
+        request_id = _request_id_of(ri)
         with patch("boto3.client", return_value=_configure_failing_ecs(settings)), pytest.raises(CloudTaskError):
-            services.destroy_range_by_request_id(user, _request_id_of(ri))
+            services.destroy_range_by_request_id(user, request_id)
 
         reloaded = RangeInstance.objects.get(pk=ri.pk)
         assert reloaded.status == ResourceStatus.READY.value

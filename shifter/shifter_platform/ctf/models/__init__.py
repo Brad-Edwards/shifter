@@ -9,7 +9,7 @@ test surface used by test_scoring.py.
 Submodule layout:
 
 * ``_base``        — ``SoftDeleteManager``, ``CTFBaseModel`` (abstract).
-* ``event``        — ``CTFEvent``.
+* ``event``        — ``CTFEvent``, ``CTFEventStaff``.
 * ``challenge``    — ``CTFChallenge``.
 * ``taxonomy``     — ``CTFTopic``, ``CTFChallengeTag``, ``CTFChallengeFile``,
   ``CTFChallengePrerequisite``.
@@ -34,7 +34,7 @@ from django.utils import timezone
 
 from ._base import CTFBaseModel, SoftDeleteManager
 from .challenge import CTFChallenge
-from .event import CTFEvent
+from .event import CTFEvent, CTFEventStaff
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
 from .notification import CTFEmailTemplate, CTFNotification, CTFScheduledTask
@@ -61,6 +61,7 @@ __all__ = [
     "CTFChallengeTag",
     "CTFEmailTemplate",
     "CTFEvent",
+    "CTFEventStaff",
     "CTFFlag",
     "CTFHint",
     "CTFHintUsage",

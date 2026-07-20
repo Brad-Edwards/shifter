@@ -62,26 +62,6 @@ def api_range_status(request: HttpRequest) -> JsonResponse:
 
 
 @login_required
-@ctf_participant_required
-@require_POST
-def api_range_access(request: HttpRequest) -> JsonResponse:
-    """API: Get range access URL.
-
-    Delegates to mission_control's Guacamole RDP endpoint.
-    CTF participants are standard users with ranges — the platform's
-    existing RDP access flow works for them directly.
-    """
-    from django.urls import reverse
-
-    return JsonResponse(
-        {
-            "redirect": reverse("mission_control:guacamole_rdp_url"),
-            "message": "Use the mission_control RDP endpoint directly.",
-        }
-    )
-
-
-@login_required
 @ctf_organizer_required
 @require_GET
 def api_range_list(request: HttpRequest, event_id: UUID) -> JsonResponse:

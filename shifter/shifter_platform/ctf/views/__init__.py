@@ -42,13 +42,13 @@ from ctf.views.admin_people import (
     admin_participant_add,
     admin_participant_detail,
     admin_participant_email,
-    admin_participant_import,
     admin_participant_list,
     admin_participant_rename,
     admin_range_list,
     admin_scoreboard,
     admin_team_list,
 )
+from ctf.views.admin_people_import import admin_participant_import
 from ctf.views.api.challenges import (
     api_challenge_detail,
     api_challenge_list,
@@ -98,7 +98,6 @@ from ctf.views.api.ranges import (
     api_provision_event_spares,
     api_provision_participant_range,
     api_provision_ranges,
-    api_range_access,
     api_range_list,
     api_range_status,
     api_recover_participant_range,
@@ -182,7 +181,6 @@ __all__ = [
     "api_provision_event_spares",
     "api_provision_participant_range",
     "api_provision_ranges",
-    "api_range_access",
     "api_range_list",
     "api_range_status",
     "api_rate_challenge",

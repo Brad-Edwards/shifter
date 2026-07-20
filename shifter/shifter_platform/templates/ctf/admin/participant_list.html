@@ -235,7 +235,7 @@
 function sendAllInvites() {
     if (!confirm('Reset and send credentials to all participants with email?')) return;
 
-    fetch(`{% url 'ctf:api_send_invitations' event_id=event.pk %}`, {
+    fetch(`{% url 'v1:ctf:api_send_invitations' event_id=event.pk %}`, {
         method: 'POST',
         headers: {
             'X-CSRFToken': '{{ csrf_token }}',
@@ -259,7 +259,7 @@ function sendAllInvites() {
 function resendInvite(participantId) {
     if (!confirm('Reset this participant password and send credentials?')) return;
 
-    fetch(`/ctf/api/participants/${participantId}/resend-invite/`, {
+    fetch(`/api/v1/ctf/participants/${participantId}/resend-invite/`, {
         method: 'POST',
         headers: {
             'X-CSRFToken': '{{ csrf_token }}',

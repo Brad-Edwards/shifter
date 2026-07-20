@@ -1,9 +1,8 @@
-schema_version: 1
+schema_version: scenario-pack-provenance/v2
 pack:
   name: shifter-aces-validation
 sources:
   - source_id: original-design
-    kind: original
     name: Shifter ACES validation design
     license: proprietary
     usage: reused

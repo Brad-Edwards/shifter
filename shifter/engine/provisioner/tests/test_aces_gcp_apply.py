@@ -18,18 +18,22 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from aces_account_credentials import AcesAccountCredentialOps, install_instance_account_credentials
+from aces_active_directory import AcesDirectorySecretOps
 from aces_gcp_apply import (
     AcesGceApplyOptions,
+    AcesGceDestroyOptions,
     AcesGceSecretOps,
     apply_aces_range_cell,
     destroy_aces_range_cell,
 )
+from aces_gcp_composition import AcesGceCompositionError
 from aces_gcp_firewall import node_tag
 from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
 from aces_plan import (
     AcesPlan,
     AcesPlanAccount,
     AcesPlanContent,
+    AcesPlanDomain,
     AcesPlanImage,
     AcesPlanNetwork,
     AcesPlanNode,
@@ -143,6 +147,90 @@ def _account_secret_ops() -> tuple[AcesAccountCredentialOps, SimpleNamespace]:
     )
 
 
+def _directory_secret_ops() -> tuple[AcesDirectorySecretOps, SimpleNamespace]:
+    mocks = SimpleNamespace(
+        ensure_dsrm=MagicMock(return_value=("secret/dsrm", "DSRM")),
+        ensure_authority=MagicMock(return_value=("secret/authority", "AUTHORITY")),
+        ensure_account=MagicMock(return_value=("secret/account", "ACCOUNT")),
+        delete_dsrm=MagicMock(),
+        delete_authority=MagicMock(),
+        delete_account=MagicMock(),
+    )
+    return (
+        AcesDirectorySecretOps(
+            ensure_dsrm=mocks.ensure_dsrm,
+            ensure_authority=mocks.ensure_authority,
+            ensure_account=mocks.ensure_account,
+            delete_dsrm=mocks.delete_dsrm,
+            delete_authority=mocks.delete_authority,
+            delete_account=mocks.delete_account,
+        ),
+        mocks,
+    )
+
+
+def _plan_with_domain(*, include_local: bool = False) -> AcesPlan:
+    controller = AcesPlanNode(
+        address="node.dc",
+        name="dc",
+        os_family="windows",
+        count=1,
+        network_addresses=("net.lan",),
+        domain_id="corp",
+        domain_role="controller",
+        controller_addresses=("node.dc",),
+    )
+    member = AcesPlanNode(
+        address="node.member",
+        name="member",
+        os_family="windows",
+        count=1,
+        network_addresses=("net.lan",),
+        ordering_dependencies=("node.dc",),
+        domain_id="corp",
+        domain_role="member",
+        controller_addresses=("node.dc",),
+    )
+    authority = AcesPlanAccount(
+        address="account.admin",
+        username="Administrator",
+        target_address="node.dc",
+        password_strength="strong",
+        domain_id="corp",
+    )
+    service = AcesPlanAccount(
+        address="account.service",
+        username="svc-web",
+        target_address="node.member",
+        password_strength="strong",
+        spn="HTTP/member.corp.example",
+        domain_ref="corp",
+        domain_id="corp",
+    )
+    local_operator = AcesPlanAccount(
+        address="account.local-operator",
+        username="local-operator",
+        target_address="node.member",
+        password_strength="strong",
+    )
+    domain = AcesPlanDomain(
+        domain_id="corp",
+        profile="active_directory",
+        dns_name="corp.example",
+        netbios_name="CORP",
+        authority_account_address=authority.address,
+        controller_addresses=(controller.address,),
+        member_addresses=(member.address,),
+    )
+    return AcesPlan(
+        aces_sdl_version="0.23.0",
+        nodes=(controller, member),
+        networks=(AcesPlanNetwork(address="net.lan", name="lan", cidr="10.9.0.0/24"),),
+        accounts=(authority, service, *((local_operator,) if include_local else ())),
+        domains=(domain,),
+    )
+
+
 class TestApply:
     def test_provisions_network_subnet_firewall_and_instances(self):
         clients = _clients()
@@ -187,8 +275,10 @@ class TestApply:
     def test_apply_failure_triggers_cleanup_and_reraises(self):
         clients = _clients(instance_insert_error=RuntimeError("boom"))
         secret_ops, secret_mocks = _secret_ops()
+        plan_2 = _plan()
+        apply_options = _apply_options(_config(), clients, secret_ops)
         with pytest.raises(RuntimeError, match="boom"):
-            apply_aces_range_cell("req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops))
+            apply_aces_range_cell("req-1", 7, plan_2, _resolver, apply_options)
         # Cleanup ran: the reconstructive destroy sweeps EVERY instance's SSH secret
         # unconditionally. The plan has count=2, so a regression that swept only one
         # instance (early return/break, swallowed exception, off-by-one) would leave
@@ -197,6 +287,71 @@ class TestApply:
         # nothing exists yet to GCE-delete).
         assert secret_mocks.delete_ssh.call_count == 2
         assert clients.instances.get.called
+
+    def test_domain_realization_gates_success_and_domain_accounts_bypass_local_credentials(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        account_secret_ops, _ = _account_secret_ops()
+        directory_secret_ops, _ = _directory_secret_ops()
+        credential_installer = MagicMock()
+        directory_realizer = MagicMock()
+
+        output = apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan_with_domain(include_local=True),
+            _resolver,
+            _apply_options(
+                _config(),
+                clients,
+                secret_ops,
+                account_secret_ops=account_secret_ops,
+                credential_installer=credential_installer,
+                directory_secret_ops=directory_secret_ops,
+                directory_realizer=directory_realizer,
+            ),
+        )
+
+        credential_installer.assert_called_once()
+        assert tuple(account.username for account in credential_installer.call_args.kwargs["accounts"]) == (
+            "local-operator",
+        )
+        directory_realizer.assert_called_once()
+        assert len(directory_realizer.call_args.kwargs["instance_outputs"]) == 2
+        assert len(output["instances"]) == 2
+        startup_scripts = [
+            next(
+                item["value"]
+                for item in call.kwargs["instance_resource"]["metadata"]["items"]
+                if item["key"] == "windows-startup-script-ps1"
+            )
+            for call in clients.instances.insert.call_args_list
+        ]
+        assert sum("New-LocalUser" in script for script in startup_scripts) == 1
+        assert any("local-operator" in script for script in startup_scripts)
+        assert all("New-LocalUser -Name 'Administrator'" not in script for script in startup_scripts)
+        assert all("svc-web" not in script for script in startup_scripts)
+
+    def test_directory_failure_runs_reconstructive_secret_cleanup_and_never_returns_success(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        directory_secret_ops, directory_mocks = _directory_secret_ops()
+        directory_realizer = MagicMock(side_effect=RuntimeError("directory failed"))
+        plan = _plan_with_domain()
+        options = _apply_options(
+            _config(),
+            clients,
+            secret_ops,
+            directory_secret_ops=directory_secret_ops,
+            directory_realizer=directory_realizer,
+        )
+
+        with pytest.raises(RuntimeError, match="directory failed"):
+            apply_aces_range_cell("req-1", 7, plan, _resolver, options)
+
+        directory_mocks.delete_account.assert_called_once_with(7, "corp", "account.service")
+        directory_mocks.delete_authority.assert_called_once_with(7, "corp")
+        directory_mocks.delete_dsrm.assert_called_once_with(7, "corp")
 
 
 def _plan_with_content(*content: AcesPlanContent) -> AcesPlan:
@@ -241,14 +396,166 @@ class TestCompositionIntegration:
         content = AcesPlanContent(name="doc", content_type="file", target_address="node.ghost", path="/srv/x", text="h")
         clients = _clients()
         secret_ops, _ = _secret_ops()
+        plan_with_content = _plan_with_content(content)
+        apply_options = _apply_options(_config(), clients, secret_ops)
         with pytest.raises(AcesGcePlanError, match="not present in this plan"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_content(content),
+                plan_with_content,
                 _resolver,
-                _apply_options(_config(), clients, secret_ops),
+                apply_options,
             )
+
+
+def _binding(**kw) -> dict:
+    base = {
+        "content_address": "content.c",
+        "sha256": "a" * 64,
+        "storage_key": "aces/content-delivery/aa/" + "a" * 64,
+        "byte_count": 5,
+        "binding_version": 1,
+    }
+    base.update(kw)
+    return base
+
+
+def _source_backed_content(**kw) -> AcesPlanContent:
+    base = {
+        "name": "c",
+        "content_type": "file",
+        "target_address": "node.web",
+        "path": "/opt/x.bin",
+        "source_name": "pkg",
+        "address": "content.c",
+    }
+    base.update(kw)
+    return AcesPlanContent(**base)
+
+
+class TestContentDeliveryIntegration:
+    """Wiring tests for #1564: the gate and realizer are reached from apply_aces_range_cell."""
+
+    def test_missing_binding_fails_closed_before_any_cloud_resource_is_created(self):
+        content = _source_backed_content()
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        plan = _plan_with_content(content)
+        options = _apply_options(_config(), clients, secret_ops)
+        with pytest.raises(AcesGceCompositionError, match="missing its delivery binding"):
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                plan,
+                _resolver,
+                options,
+                delivery_bindings=[],
+            )
+        assert not clients.instances.insert.called
+        assert not clients.networks.insert.called
+
+    def test_extra_binding_with_no_source_backed_content_fails_closed(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        plan = _plan()
+        options = _apply_options(_config(), clients, secret_ops)
+        binding = _binding()
+        with pytest.raises(AcesGceCompositionError, match="does not match any source-backed content"):
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                plan,
+                _resolver,
+                options,
+                delivery_bindings=[binding],
+            )
+        assert not clients.instances.insert.called
+
+    def test_unsupported_source_backed_content_type_fails_closed(self):
+        content = AcesPlanContent(
+            name="c",
+            content_type="dataset",
+            target_address="node.web",
+            source_name="pkg",
+            items=("a",),
+            address="content.c",
+        )
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        plan = _plan_with_content(content)
+        options = _apply_options(_config(), clients, secret_ops)
+        with pytest.raises(AcesGceCompositionError, match="no delivery materializer"):
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                plan,
+                _resolver,
+                options,
+                delivery_bindings=[],
+            )
+        assert not clients.instances.insert.called
+
+    def test_realizer_is_invoked_with_plan_outputs_and_bindings_when_content_is_source_backed(self):
+        content = _source_backed_content()
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        realizer = MagicMock()
+        binding = _binding()
+
+        apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan_with_content(content),
+            _resolver,
+            _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer),
+            delivery_bindings=[binding],
+        )
+
+        realizer.assert_called_once()
+        assert realizer.call_args.kwargs["delivery_bindings"] == [binding]
+        assert len(realizer.call_args.kwargs["instance_outputs"]) == 1
+        assert realizer.call_args.kwargs["aces_plan"].content[0].source_name == "pkg"
+
+    def test_realizer_is_not_invoked_when_no_content_is_source_backed(self):
+        content = AcesPlanContent(
+            name="c", content_type="file", target_address="node.web", path="/srv/x.txt", text="hi"
+        )
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        realizer = MagicMock()
+
+        apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan_with_content(content),
+            _resolver,
+            _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer),
+        )
+
+        realizer.assert_not_called()
+
+    def test_realizer_failure_triggers_cleanup_and_reraises(self):
+        content = _source_backed_content()
+        clients = _clients()
+        secret_ops, secret_mocks = _secret_ops()
+        realizer = MagicMock(side_effect=RuntimeError("delivery failed"))
+        plan = _plan_with_content(content)
+        options = _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer)
+        binding = _binding()
+
+        with pytest.raises(RuntimeError, match="delivery failed"):
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                plan,
+                _resolver,
+                options,
+                delivery_bindings=[binding],
+            )
+
+        # Reconstructive cleanup ran (same as a directory-realization failure).
+        assert secret_mocks.delete_ssh.call_count == 1
+        assert clients.instances.get.called
 
 
 def _plan_with_accounts(*accounts: AcesPlanAccount, os_family: str = "linux", count: int = 2) -> AcesPlan:
@@ -380,19 +687,21 @@ class TestAccountCredentialIntegration:
         account_ops, _ = _account_secret_ops()
         installer = MagicMock()
 
+        plan_with_accounts = _plan_with_accounts(account)
+        apply_options = _apply_options(
+            _config(),
+            clients,
+            ssh_ops,
+            account_secret_ops=account_ops,
+            credential_installer=installer,
+        )
         with pytest.raises(AcesGcePlanError, match="not present in this plan"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_accounts(account),
+                plan_with_accounts,
                 _resolver,
-                _apply_options(
-                    _config(),
-                    clients,
-                    ssh_ops,
-                    account_secret_ops=account_ops,
-                    credential_installer=installer,
-                ),
+                apply_options,
             )
 
         installer.assert_not_called()
@@ -428,19 +737,21 @@ class TestAccountCredentialIntegration:
         account_ops, account_mocks = _account_secret_ops()
         installer = MagicMock(side_effect=RuntimeError("credential setup failed"))
 
+        plan_with_accounts = _plan_with_accounts(account)
+        apply_options = _apply_options(
+            _config(),
+            clients,
+            ssh_ops,
+            account_secret_ops=account_ops,
+            credential_installer=installer,
+        )
         with pytest.raises(RuntimeError, match="credential setup failed"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_accounts(account),
+                plan_with_accounts,
                 _resolver,
-                _apply_options(
-                    _config(),
-                    clients,
-                    ssh_ops,
-                    account_secret_ops=account_ops,
-                    credential_installer=installer,
-                ),
+                apply_options,
             )
 
         assert ssh_mocks.delete_ssh.call_count == 2
@@ -520,8 +831,25 @@ class TestDestroy:
             _config(),
             clients,
             ssh_ops,
-            account_secret_ops=account_ops,
+            AcesGceDestroyOptions(account_secret_ops=account_ops),
         )
 
         assert account_mocks.delete.call_count == 2
         assert [call.args[1] for call in account_mocks.delete.call_args_list] == ["node.web#1", "node.web#0"]
+
+    def test_destroys_a_stale_plan_carrying_source_backed_content_without_bindings(self):
+        # #1564: content delivery has no destroy-side ownership -- destroy takes
+        # no delivery_bindings parameter at all, and a plan whose source-backed
+        # content item was never realized (or the range is being torn down
+        # before delivery bindings even existed) must still parse and destroy
+        # every owned GCE resource cleanly.
+        content = AcesPlanContent(
+            name="pkg", content_type="file", target_address="node.web", path="/opt/app/data.bin", source_name="pkg"
+        )
+        clients = _clients(exists=True)
+        secret_ops, secret_mocks = _secret_ops()
+
+        destroy_aces_range_cell("req-1", 7, _plan_with_content(content), _config(), clients, secret_ops)
+
+        assert clients.instances.delete.call_count == 1
+        assert secret_mocks.delete_ssh.call_count == 1

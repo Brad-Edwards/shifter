@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
+import ipaddress
 import sys
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, call
 
@@ -15,6 +17,7 @@ from shared.range_cells import (
     build_scenario_artifact,
     validate_gcp_vm_range_cell_result,
 )
+from shared.remote_access import build_openvpn_capability
 
 from config import GCERangeCellConfig, GCERangeImageProfile
 from gcp_range_cell_outputs import InstanceCredentials, instance_output
@@ -22,10 +25,12 @@ from gcp_range_cells import (
     GCEGuestSecretOps,
     GCEVertexCredentialOps,
     _build_clients,
+    _ensure_openvpn_gateway,
     apply_range_cell,
     destroy_range_cell,
     render_range_cell_plan,
 )
+from gcp_vpn_identity import gcp_vpn_gateway_service_account_email
 from state_helpers import _build_instance_state
 
 
@@ -34,6 +39,7 @@ class NotFound(Exception):
 
 
 _POLARIS_SUBNETWORK_SELF_LINK = "projects/test-project/regions/us-central1/subnetworks/shifter-r-42-polaris"
+_LINUX_UUID = "11111111-1111-4111-8111-111111111111"
 
 
 def _sample_config() -> GCERangeCellConfig:
@@ -72,7 +78,7 @@ def _scenario_payload() -> dict:
                 "uuid": "subnet-uuid",
                 "instances": [
                     {
-                        "uuid": "linux-uuid",
+                        "uuid": _LINUX_UUID,
                         "name": "kali",
                         "role": "attacker",
                         "os_type": "kali",
@@ -87,13 +93,18 @@ def _scenario_payload() -> dict:
             }
         ],
         "participant_access": [
-            {"target_ref": "linux-uuid", "channel": "ssh"},
-            {"target_ref": "linux-uuid", "channel": "rdp"},
+            {"target_ref": _LINUX_UUID, "channel": "ssh"},
+            {"target_ref": _LINUX_UUID, "channel": "rdp"},
         ],
     }
 
 
-def _variables(*, payload: dict | None = None, bindings: list[dict] | None = None) -> dict:
+def _variables(
+    *,
+    payload: dict | None = None,
+    bindings: list[dict] | None = None,
+    remote_access: bool = False,
+) -> dict:
     scenario_payload = deepcopy(payload if payload is not None else _scenario_payload())
     if bindings is None:
         bindings = [
@@ -111,6 +122,9 @@ def _variables(*, payload: dict | None = None, bindings: list[dict] | None = Non
         ),
         network_bindings=bindings,
         access_declarations=scenario_payload.get("participant_access", []),
+        remote_access=(
+            build_openvpn_capability(_LINUX_UUID, datetime.now(UTC) + timedelta(days=5)) if remote_access else None
+        ),
     )
 
 
@@ -232,6 +246,58 @@ def test_render_range_cell_plan_private_google_access_adds_egress_hole():
     assert "shifter-r-42-egress-googleapis" in firewall_names
 
 
+def test_render_range_cell_plan_private_google_access_adds_target_only_vpn_gateway():
+    config = dataclasses.replace(_shared_vpc_config(), private_google_access=True)
+
+    plan = render_range_cell_plan("req-123", _variables(remote_access=True), config)
+
+    gateway = plan["vpn_gateway"]
+    assert gateway["target_ref"] == _LINUX_UUID
+    assert gateway["target_ip"] == "10.50.2.3"
+    assert gateway["service_account_email"] == gcp_vpn_gateway_service_account_email("test-project", 42, "req-123")
+    assert gateway["private_ip"] not in plan["subnets"][0]["ip_assignments"].values()
+    firewalls = {rule["name"]: rule for rule in plan["firewalls"]}
+    vpn_sources = [ipaddress.ip_network(cidr) for cidr in firewalls["shifter-r-42-vpn-in"]["source_ranges"]]
+    assert any(ipaddress.ip_address("8.8.8.8") in cidr for cidr in vpn_sources)
+    assert all(not cidr.overlaps(ipaddress.ip_network("10.0.0.0/8")) for cidr in vpn_sources)
+    assert firewalls["shifter-r-42-vpn-in"]["allowed"] == [{"IPProtocol": "udp", "ports": ["1194"]}]
+    assert firewalls["shifter-r-42-vpn-health"]["source_ranges"] == ["10.40.0.0/20"]
+    assert firewalls["shifter-r-42-vpn-health"]["allowed"] == [{"IPProtocol": "tcp", "ports": ["1195"]}]
+    assert firewalls["shifter-r-42-vpn-target"]["destination_ranges"] == ["10.50.2.3/32"]
+    assert firewalls["shifter-r-42-vpn-deny"]["denied"] == [{"IPProtocol": "all"}]
+
+
+def test_topology_without_capability_does_not_create_a_vpn_gateway():
+    config = dataclasses.replace(_shared_vpc_config(), private_google_access=True)
+
+    plan = render_range_cell_plan("req-123", _variables(), config)
+
+    assert "vpn_gateway" not in plan
+
+
+def test_gcp_gateway_result_stays_pending_until_external_service_probe():
+    config = dataclasses.replace(_shared_vpc_config(), private_google_access=True)
+    plan = render_range_cell_plan("req-123", _variables(remote_access=True), config)
+    clients = _mock_clients(exists=True)
+    clients.addresses.get.side_effect = None
+    clients.addresses.get.return_value = object()
+    clients.instances.get.side_effect = None
+    clients.instances.get.return_value = SimpleNamespace(
+        network_interfaces=[SimpleNamespace(access_configs=[SimpleNamespace(nat_i_p="203.0.113.10")])]
+    )
+
+    gateway = _ensure_openvpn_gateway(plan, clients, config)
+
+    assert gateway == {
+        "endpoint": "203.0.113.10",
+        "port": 1194,
+        "health_endpoint": plan["vpn_gateway"]["private_ip"],
+        "health_port": 1195,
+        "target_ref": _LINUX_UUID,
+        "ready": False,
+    }
+
+
 def test_render_range_cell_plan_rejects_subnet_without_uuid():
     payload = _scenario_payload()
     del payload["subnets"][0]["uuid"]
@@ -348,7 +414,7 @@ def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
     assert plan["network"]["name"] == "shifter-range-42"
     assert plan["subnets"][0]["resource_name"] == "shifter-r-42-polaris"
     assert plan["subnets"][0]["ip_assignments"] == {
-        "linux-uuid": "10.50.2.3",
+        _LINUX_UUID: "10.50.2.3",
         "dc-uuid": "10.50.2.4",
     }
     assert [instance["private_ip"] for instance in plan["instances"]] == ["10.50.2.3", "10.50.2.4"]
@@ -358,6 +424,41 @@ def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
         "shifter-r-42-egress-internal",
         "shifter-r-42-egress-deny",
     }
+
+
+def _firewall_by_name(plan: dict, suffix: str) -> dict:
+    return next(fw for fw in plan["firewalls"] if fw["name"] == f"shifter-r-42-{suffix}")
+
+
+def test_dedicated_access_cidrs_split_participant_ingress_from_management():
+    # Issue #1349: with a dedicated access-workload source, participant ingress
+    # (SSH/RDP) is its own rule sourced only from the access ranges, and range
+    # management ingress is a separate rule on portal_network_cidrs -- participant
+    # access is never a management wildcard.
+    config = dataclasses.replace(
+        _sample_config(),
+        portal_network_cidrs=("10.40.0.0/20",),
+        access_network_cidrs=("10.41.0.0/24",),
+    )
+    plan = render_range_cell_plan("req-123", _variables(), config)
+
+    access = _firewall_by_name(plan, "access")
+    assert access["source_ranges"] == ["10.41.0.0/24"]
+    assert access["allowed"] == [{"IPProtocol": "tcp", "ports": ["22", "3389"]}]
+
+    mgmt = _firewall_by_name(plan, "mgmt")
+    assert mgmt["source_ranges"] == ["10.40.0.0/20"]
+    # Management ingress carries host SSH + the Docker-host mgmt port, never RDP.
+    assert "3389" not in mgmt["allowed"][0]["ports"]
+    assert "22" in mgmt["allowed"][0]["ports"]
+    assert str(config.host_mgmt_ssh_port) in mgmt["allowed"][0]["ports"]
+
+    # Participant RDP is not reachable from the broad management source range.
+    assert all(
+        "10.40.0.0/20" not in fw["source_ranges"]
+        for fw in plan["firewalls"]
+        if "3389" in fw.get("allowed", [{}])[0].get("ports", [])
+    )
 
 
 def test_range_cell_firewalls_do_not_allow_cross_range_private_traffic():
@@ -389,7 +490,7 @@ def test_range_cell_firewalls_are_deterministic_from_cell_identity():
     assert all(rule["target_tags"][0].startswith("shifter-range-42") for rule in first["firewalls"])
 
 
-@pytest.mark.parametrize("field", ["portal_network_cidrs", "egress_allow_cidrs"])
+@pytest.mark.parametrize("field", ["portal_network_cidrs", "access_network_cidrs", "egress_allow_cidrs"])
 def test_range_cell_firewalls_reject_universal_allow_cidrs(field):
     config = dataclasses.replace(_sample_config(), **{field: ("0.0.0.0/0",)})
     variables = _variables()
@@ -402,6 +503,7 @@ def test_range_cell_firewalls_reject_universal_allow_cidrs(field):
     ("field", "cidr", "message"),
     [
         ("portal_network_cidrs", "10.40.0.1/20", "invalid network"),
+        ("access_network_cidrs", "10.40.0.1/20", "invalid network"),
         ("egress_allow_cidrs", "2001:db8::/64", "only IPv4"),
     ],
 )
@@ -705,10 +807,10 @@ def test_apply_emits_closed_lifecycle_membership_and_access_result(mocker):
         "lifecycle_state": "ready",
         "subnet_refs": ["subnet-uuid"],
     }
-    assert {member["authored_ref"] for member in result["members"]} == {"linux-uuid", "dc-uuid"}
+    assert {member["authored_ref"] for member in result["members"]} == {_LINUX_UUID, "dc-uuid"}
     assert {(record["target_ref"], record["channel"]) for record in result["access"]} == {
-        ("linux-uuid", "ssh"),
-        ("linux-uuid", "rdp"),
+        (_LINUX_UUID, "ssh"),
+        (_LINUX_UUID, "rdp"),
     }
     assert result["access"][0]["credential_ref"] == "projects/test/secrets/participant-ssh"
     assert "host-ssh" not in repr(result)
@@ -933,14 +1035,14 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "gcp_region": "us-central1",
                 "gcp_gateway_reserved": True,
                 "gcp_instance_ip_assignments": {
-                    "linux-uuid": "10.50.2.3",
+                    _LINUX_UUID: "10.50.2.3",
                     "dc-uuid": "10.50.2.4",
                 },
             }
         },
         "instances": [
             {
-                "uuid": "linux-uuid",
+                "uuid": _LINUX_UUID,
                 "name": "kali",
                 "asset_type": "gce_vm",
                 "role": "attacker",
@@ -948,6 +1050,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "subnet_name": "polaris",
                 "instance_id": "shifter-r-42-polaris-kali",
                 "private_ip": "10.50.2.3",
+                "participant_access_channels": ["ssh", "rdp"],
                 "ssh_key_secret_arn": "projects/test/secrets/participant-ssh",
                 "ssh_username": "kali",
                 "public_key": "ssh-ed25519 HOST\nssh-ed25519 PARTICIPANT",
@@ -978,6 +1081,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "subnet_name": "polaris",
                 "instance_id": "shifter-r-42-polaris-dc01",
                 "private_ip": "10.50.2.4",
+                "participant_access_channels": [],
                 "ssh_key_secret_arn": "",
                 "ssh_username": "Administrator",
                 "public_key": "ssh-ed25519 HOST",

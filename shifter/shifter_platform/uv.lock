@@ -25,20 +25,20 @@ constraints = [
 
 [[package]]
 name = "aces-scenario-packs"
-version = "1.2.0"
+version = "2.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aces-sdl" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/9a/5bd094b50ef2b8613563c1b8de8a8bfa12db6241887b08c5477abb281b67/aces_scenario_packs-1.2.0.tar.gz", hash = "sha256:85748c004ae2e61cd5b067b59c1105c97c48b857273b60a1394a756e36f63120", size = 143089, upload-time = "2026-07-13T19:09:21.266Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/8d/c5d9f8187c1d17c7b42454fab07cfce9db8e5c74592954fb6596b2ac32d6/aces_scenario_packs-2.0.1.tar.gz", hash = "sha256:b96981643db06b487334cea3c9b8bfbc7c9fcb078ad6451da3634d03b3aa53ec", size = 153469, upload-time = "2026-07-17T02:02:16.556Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/4f/399c766c4347d26ba88e0cf4643cf745708c12686b63c15cbb17135f0d3c/aces_scenario_packs-1.2.0-py3-none-any.whl", hash = "sha256:72f5430dacad9042379044950b04bda1286d3fe631fffa0e48d527c834bb84b5", size = 103337, upload-time = "2026-07-13T19:09:20.011Z" },
+    { url = "https://files.pythonhosted.org/packages/da/13/6812991eb3011406dba4ba20db786f8ee67a90b4dc05e5d6865728c7a50f/aces_scenario_packs-2.0.1-py3-none-any.whl", hash = "sha256:4f56aa3b937c447a30548676a23fa8c161427c1c4be859e85928404d6d68f298", size = 95698, upload-time = "2026-07-17T02:02:14.918Z" },
 ]
 
 [[package]]
 name = "aces-sdl"
-version = "0.20.0"
+version = "0.23.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncssh" },
@@ -56,9 +56,9 @@ dependencies = [
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/aa/99/b7a686060d9e4b5d3df8592f1cd34c0f71aeb805685c69172ffc2d4dd0a1/aces_sdl-0.20.0.tar.gz", hash = "sha256:f816b824c76e6388b5a15971237b499bc8c04576ba62b10f7dfa597f8895dbcf", size = 1561396, upload-time = "2026-07-13T02:50:47.396Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/35/0ce9dd1a49009c6b29ed3ab81965bd321664a313aba85882fb38efb60541/aces_sdl-0.23.0.tar.gz", hash = "sha256:ad70c7c970cb2228834ae12495bf9f0b0b77e67a8dfdfea98a3521ba528e6dbd", size = 1669233, upload-time = "2026-07-17T01:43:24.93Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/a5/d1f9bc0227648627b6f9b715dbbd0e9df08e9120ac05e41913adef13b8b3/aces_sdl-0.20.0-py3-none-any.whl", hash = "sha256:2fd9956166326910a3ad439073589fb68c59eb9465d77e06a6890482428e9426", size = 1359387, upload-time = "2026-07-13T02:50:45.393Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/6c/2817c77aaad592f02a313ee8b889fa8d307b5ce7c0b61974d40e53866ccf/aces_sdl-0.23.0-py3-none-any.whl", hash = "sha256:3c90abce50d7180717bf8c87e71bcd4727778d7edf207cda424e09b31f77fd00", size = 1462625, upload-time = "2026-07-17T01:43:23.14Z" },
 ]
 
 [[package]]
@@ -2857,8 +2857,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aces-scenario-packs", specifier = "==1.2.0" },
-    { name = "aces-sdl", specifier = "==0.20.0" },
+    { name = "aces-scenario-packs", specifier = "==2.0.1" },
+    { name = "aces-sdl", specifier = "==0.23.0" },
     { name = "asyncssh", specifier = ">=2.23.0" },
     { name = "bleach", specifier = ">=6.4.0" },
     { name = "boto3" },

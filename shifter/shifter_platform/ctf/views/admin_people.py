@@ -18,8 +18,6 @@ from shared.log_sanitize import safe_log_value
 if TYPE_CHECKING:
     from django.http import HttpRequest
 
-    from ctf.exceptions import CTFValidationError
-
 
 from ctf.views import _parsing
 from ctf.views._access import (
@@ -93,84 +91,6 @@ def admin_participant_list(request: HttpRequest, event_id: UUID) -> HttpResponse
     }
 
     return render(request, "ctf/admin/participant_list.html", context)
-
-
-def _participant_import_error_messages(exc: CTFValidationError) -> list[str]:
-    """Map a CSV participant-import validation error to display messages.
-
-    Preserves the original precedence (existing > duplicates > generic), kept
-    out of ``admin_participant_import`` to hold its cognitive complexity below
-    the SonarCloud threshold (python:S3776).
-    """
-    details = exc.details
-    errors = details.get("errors") or details.get("existing") or [str(exc)]
-    if details.get("duplicates"):
-        errors = [f"Duplicate emails: {', '.join(details['duplicates'])}"]
-    if details.get("existing"):
-        errors = [f"Already exists: {', '.join(details['existing'])}"]
-    return errors
-
-
-@login_required
-@ctf_organizer_required
-@require_http_methods(["GET", "POST"])
-def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpResponse:
-    """Import participants from CSV.
-
-    GET: Show import form.
-    POST: Process CSV file and create participants.
-
-    Args:
-        event_id: UUID of the event.
-    """
-    from django.contrib import messages
-    from django.http import Http404
-
-    from ctf.exceptions import CTFNotFoundError, CTFValidationError
-    from ctf.forms import CTFParticipantImportForm
-    from ctf.services import bulk_import_participants, get_event
-
-    try:
-        event = get_event(event_id)
-    except CTFNotFoundError:
-        raise Http404(_EVENT_NOT_FOUND_MSG) from None
-
-    # Check permission
-    if event.created_by_id != request.user.pk:
-        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
-
-    errors = None
-    imported_count = 0
-
-    if request.method == "POST":
-        form = CTFParticipantImportForm(request.POST, request.FILES)
-        if form.is_valid():
-            csv_file = request.FILES["csv_file"]
-            try:
-                csv_content = csv_file.read().decode("utf-8")  # type: ignore[union-attr]
-                participants = bulk_import_participants(event_id, csv_content)
-                imported_count = len(participants)
-                logger.info(
-                    "User %s imported %d participants to event %s",
-                    request.user.email,
-                    imported_count,
-                    safe_log_value(event_id),
-                )
-                messages.success(request, f"Successfully imported {imported_count} participants.")
-                return redirect(_PARTICIPANT_LIST_ROUTE, event_id=event_id)
-            except CTFValidationError as e:
-                errors = _participant_import_error_messages(e)
-    else:
-        form = CTFParticipantImportForm()
-
-    context = {
-        "event": event,
-        "form": form,
-        "errors": errors,
-        "imported_count": imported_count,
-    }
-
-    return render(request, "ctf/admin/participant_import.html", context)
 
 
 @login_required
@@ -248,7 +168,7 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     """
     from django.http import Http404
 
-    from ctf.exceptions import CTFNotFoundError
+    from ctf.exceptions import CTFNotFoundError, CTFValidationError
     from ctf.models import CTFSubmission
     from ctf.services import get_participant
     from ctf.services.participant.accounts import effective_bootstrap_password
@@ -271,7 +191,12 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     total_score = participant.total_score
     solved_count = submissions.filter(is_correct=True).count()
     total_attempts = submissions.count()
-    bootstrap_password = effective_bootstrap_password(participant.event)
+    # Fail closed (issue #1665): when no secure bootstrap credential is
+    # configured, disable the reveal action rather than 500 the organizer page.
+    try:
+        bootstrap_password = effective_bootstrap_password(participant.event)
+    except CTFValidationError:
+        bootstrap_password = None
 
     context = {
         "participant": participant,

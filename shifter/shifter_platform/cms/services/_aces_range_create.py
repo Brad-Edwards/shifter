@@ -19,6 +19,7 @@ body is never modified (ADR-031-R2); this module only adds parallel functions.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -28,6 +29,7 @@ from django.conf import settings
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from cms.services._range_create import (
+    _assert_live_fire_backend_admitted,
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
@@ -49,6 +51,7 @@ if TYPE_CHECKING:
 
     from cms.models import AcesPackageSource, Request
     from shared.enums import RangeSource
+    from shared.range_instantiation_policy import BackendAdmission
     from shared.schemas.range import RangeContext
 
 logger = logging.getLogger(__name__)
@@ -74,21 +77,33 @@ def _load_aces_source_or_raise(scenario: str) -> AcesPackageSource:
         raise CMSError(f"No ACES package registered for scenario '{scenario}'") from None
 
 
-def _dispatch_aces_package(request_id: UUID, user: User, source: AcesPackageSource) -> None:
+def _dispatch_aces_package(
+    request_id: UUID,
+    user: User,
+    source: AcesPackageSource,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
     """Resolve, verify, load, plan, and dispatch one registered ACES pack.
 
     Routes on ``source.source_kind``: a ``repo`` pack resolves under
     ``ACES_PACKAGE_ROOT``; an ``object`` pack resolves through the object-storage
     launch resolver (#1567). Both paths end in the same digest-verified,
-    canonical-launch tail (:func:`_launch_pack`).
+    canonical-launch tail (:func:`_launch_pack`). ``backend_admission`` (the
+    trusted #1348 result) is threaded to the dispatch port so the Engine binds
+    the #1666 ownership fields at create.
     """
     if source.source_kind == _OBJECT_SOURCE_KIND:
-        _dispatch_object_aces_package(request_id, user, source)
+        _dispatch_object_aces_package(request_id, user, source, backend_admission)
     else:
-        _dispatch_repo_aces_package(request_id, user, source)
+        _dispatch_repo_aces_package(request_id, user, source, backend_admission)
 
 
-def _dispatch_repo_aces_package(request_id: UUID, user: User, source: AcesPackageSource) -> None:
+def _dispatch_repo_aces_package(
+    request_id: UUID,
+    user: User,
+    source: AcesPackageSource,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
     """Resolve a repo pack under ``ACES_PACKAGE_ROOT``, verify its digest, launch."""
     from cms.scenarios.pack_validation import PackDigestError, verify_pack_digest
     from shared.aces.package_loader import AcesPackageError, resolve_pack_root
@@ -103,10 +118,15 @@ def _dispatch_repo_aces_package(request_id: UUID, user: User, source: AcesPackag
         raise CMSError("ACES pack content identity could not be verified") from exc
     if not digest_matches:
         raise CMSError("ACES pack content digest no longer matches registration")
-    _launch_pack(request_id, user, pack_root)
+    _launch_pack(request_id, user, pack_root, backend_admission)
 
 
-def _dispatch_object_aces_package(request_id: UUID, user: User, source: AcesPackageSource) -> None:
+def _dispatch_object_aces_package(
+    request_id: UUID,
+    user: User,
+    source: AcesPackageSource,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
     """Stage an object-backed pack, bind its identity + digest, then launch.
 
     Object rows are registered without content validation or digest binding
@@ -153,7 +173,7 @@ def _dispatch_object_aces_package(request_id: UUID, user: User, source: AcesPack
                 raise CMSError("ACES pack content identity could not be verified") from exc
             if not digest_matches:
                 raise CMSError("ACES pack content digest no longer matches registration")
-            _launch_pack(request_id, user, pack_root)
+            _launch_pack(request_id, user, pack_root, backend_admission)
     except AcesPackageError as exc:
         raise CMSError(f"ACES object package could not be resolved: {exc}") from exc
 
@@ -165,7 +185,12 @@ def _object_package_key(package_ref: str) -> str:
     return f"{prefix}/{ref}" if prefix else ref
 
 
-def _launch_pack(request_id: UUID, user: User, pack_root: Path) -> None:
+def _launch_pack(
+    request_id: UUID,
+    user: User,
+    pack_root: Path,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
     """Select the single SDL entry, dispatch through the port, assert acceptance."""
     from cms.aces.dispatch import CmsAcesDispatchPort
     from shared.aces.package_loader import AcesPackageError, launch_aces_package, resolve_pack_scenario_path
@@ -175,7 +200,12 @@ def _launch_pack(request_id: UUID, user: User, pack_root: Path) -> None:
     except AcesPackageError as exc:
         raise CMSError(f"ACES package could not be resolved: {exc}") from exc
 
-    port = CmsAcesDispatchPort(user_id=user.id, request_id=str(request_id))
+    port = CmsAcesDispatchPort(
+        user_id=user.id,
+        request_id=str(request_id),
+        backend_admission=backend_admission,
+        pack_root=pack_root,
+    )
     try:
         result = launch_aces_package(scenario_path=scenario_path, port=port)
     except AcesPackageError as exc:
@@ -236,7 +266,11 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     _validate_create_range_scenario(user, scenario)
     if range_source is None:
         range_source = RangeSource.MISSION_CONTROL
+    from cms.services._range_lease import build_range_lease
 
+    lease = build_range_lease(range_source)
+
+    backend_admission = _assert_live_fire_backend_admitted()
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
     source = _load_aces_source_or_raise(scenario)
@@ -249,12 +283,14 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
             user_id=user.id,
             range_source=range_source.value,
             range_spec=None,
+            expires_at=lease.expires_at,
+            maximum_expires_at=lease.maximum_expires_at,
         )
 
     request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
 
     try:
-        _dispatch_aces_package(request_id, user, source)
+        _dispatch_aces_package(request_id, user, source, backend_admission)
     except Exception:
         _set_range_instance_status(range_instance, ResourceStatus.FAILED)
         raise
@@ -269,6 +305,7 @@ def create_range_dispatch(
     agents_by_os: dict[str, int],
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,
+    remote_access_teardown_at: datetime | None = None,
 ) -> RangeContext:
     """Route a launch to the ACES-native or cyberscript path.
 
@@ -279,6 +316,8 @@ def create_range_dispatch(
     on the cyberscript path.
     """
     if settings.ACES_NATIVE_PROVISIONING_ENABLED and _is_aces_scenario(scenario):
+        if remote_access_teardown_at is not None:
+            raise CMSError("The ACES-native range adapter does not support CTF OpenVPN access")
         return create_aces_native_range(user, scenario, range_source=range_source)
     return create_range(
         user,
@@ -286,4 +325,5 @@ def create_range_dispatch(
         agents_by_os,
         ngfw_enabled=ngfw_enabled,
         range_source=range_source,
+        remote_access_teardown_at=remote_access_teardown_at,
     )

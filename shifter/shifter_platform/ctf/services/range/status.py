@@ -39,6 +39,7 @@ def get_range_status(participant_id: UUID) -> dict[str, Any]:
             "participant_id": str(participant_id),
             "status": "not_assigned",
             "range_instance_id": None,
+            "vpn_profile_available": False,
         }
 
     # Query CMS for fresh status via bridge
@@ -51,10 +52,27 @@ def get_range_status(participant_id: UUID) -> dict[str, Any]:
         participant.range_status = fresh_status
         participant.save(update_fields=["range_status", "updated_at"])
 
+    vpn_profile_available = False
+    # Expose the participant-safe target boxes only once the range is ready so the
+    # SPA workspace can render per-box access (#1740). The bridge projects to the
+    # {uuid, name, private_ip, os_type} allowlist; outside the ready state we
+    # return an empty list rather than leaking stale targets.
+    target_instances: list[dict[str, str]] = []
+    if participant.user_id:
+        from ctf.bridges import cms_get_range_target_instances, cms_has_openvpn_profile
+
+        user = participant.user
+        if user is not None:
+            vpn_profile_available = cms_has_openvpn_profile(user, participant.range_instance_id)
+            if participant.range_status == "ready":
+                target_instances = cms_get_range_target_instances(user)
+
     return {
         "participant_id": str(participant_id),
         "status": participant.range_status,
         "range_instance_id": participant.range_instance_id,
+        "vpn_profile_available": vpn_profile_available,
+        "target_instances": target_instances,
     }
 
 

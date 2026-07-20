@@ -34,10 +34,55 @@ _MAX_GENERATED_ACCOUNTS = 100
 _HANDLE_ATTEMPTS = 8
 
 
+@sensitive_variables()
+def _validate_bootstrap_credential(candidate: str) -> None:
+    """Fail closed when a configured bootstrap source violates password policy.
+
+    The organizer form already validates ``participant_password_override``, but
+    settings, scripts, direct model writes, and pre-existing rows all bypass that
+    form, so the service resolver re-applies the canonical validators. A
+    non-conforming source raises a controlled CTF error instead of surfacing a
+    Django ``ValidationError`` as a 500.
+    """
+    from django.contrib.auth.password_validation import validate_password
+
+    try:
+        validate_password(candidate)
+    except ValidationError as exc:
+        raise CTFValidationError(
+            "Configured CTF participant bootstrap credential does not meet the password policy.",
+            code="CTF_BOOTSTRAP_CREDENTIAL_INVALID",
+        ) from exc
+
+
+@sensitive_variables()
 def effective_bootstrap_password(event: CTFEvent) -> str:
-    """Return the event override or platform bootstrap password."""
-    override = getattr(event, "participant_password_override", "")
-    return override or getattr(settings, "CTF_DEFAULT_PARTICIPANT_PASSWORD", "ShifterAcesRanges")
+    """Resolve the event or platform bootstrap credential, failing closed.
+
+    Accepted sources, in order: the event's encrypted
+    ``participant_password_override`` and an explicitly configured
+    ``CTF_DEFAULT_PARTICIPANT_PASSWORD``. Each non-blank source is validated
+    against the canonical password policy before use. No repository literal,
+    settings constant, or implicit default may ever authenticate an account:
+    when neither source is configured this raises ``CTFValidationError`` so
+    account creation, attachment, reset, reveal, and the bootstrap-reuse check
+    all refuse rather than fall back to a shared, guessable credential.
+    """
+    override = getattr(event, "participant_password_override", "") or ""
+    # Presence is decided on the stripped value so a whitespace-only source is
+    # treated as unconfigured (blank means unavailable, not a valid password);
+    # the original candidate is preserved for validation and use.
+    if override.strip():
+        _validate_bootstrap_credential(override)
+        return override
+    platform_default = getattr(settings, "CTF_DEFAULT_PARTICIPANT_PASSWORD", "") or ""
+    if platform_default.strip():
+        _validate_bootstrap_credential(platform_default)
+        return platform_default
+    raise CTFValidationError(
+        "No secure CTF participant bootstrap credential is configured for this event.",
+        code="CTF_BOOTSTRAP_CREDENTIAL_UNAVAILABLE",
+    )
 
 
 def generate_participant_username() -> str:
@@ -153,54 +198,82 @@ def attach_isolated_account(participant: CTFParticipant) -> CTFParticipant:
     return participant
 
 
+def _locked_rename_target(participant_id: UUID) -> CTFParticipant:
+    """Load the rename target under a row lock, or raise not-found."""
+    try:
+        return (
+            CTFParticipant.objects.select_for_update(of=("self",))
+            .select_related("event", "user", "user__profile")
+            .get(pk=participant_id, deleted_at__isnull=True)
+        )
+    except CTFParticipant.DoesNotExist:
+        raise CTFNotFoundError("Participant not found", details={"participant_id": str(participant_id)}) from None
+
+
+def _apply_username_rename(participant: CTFParticipant, normalized: str, actor: User | AnonymousUser) -> None:
+    """Write and audit a username change on an isolated CTF account."""
+    if participant.user is None or not participant.user.profile.is_ctf_account:
+        raise CTFValidationError("Participant has no isolated CTF account", code="CTF_ACCOUNT_REQUIRED")
+    old_username = participant.user.username
+    participant.user.username = normalized
+    try:
+        participant.user.save(update_fields=["username"])
+    except IntegrityError as exc:
+        raise CTFValidationError("Username is already in use", code="CTF_DUPLICATE_USERNAME") from exc
+    from shared.audit import (
+        AuditAction,
+        AuditActorType,
+        AuditEntityType,
+        AuditEvent,
+        audit_log,
+    )
+
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.USER,
+            entity_id=participant.user.pk,
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor.pk,
+            previous_state={"username": old_username},
+            new_state={"username": normalized},
+            context="CTF participant username rename",
+        ),
+        strict=True,
+    )
+
+
 def rename_participant_username(
     participant_id: UUID,
     username: str,
     *,
     actor: User | AnonymousUser,
 ) -> CTFParticipant:
-    """Rename a marked participant account after organizer ownership checks."""
+    """Rename a marked participant account (organizer or delegated moderator)."""
+    from ctf.services.event import actor_has_event_capability
+
     normalized = normalize_participant_username(username)
     with transaction.atomic():
-        try:
-            participant = (
-                CTFParticipant.objects.select_for_update(of=("self",))
-                .select_related("event", "user", "user__profile")
-                .get(pk=participant_id, deleted_at__isnull=True)
-            )
-        except CTFParticipant.DoesNotExist:
-            raise CTFNotFoundError("Participant not found", details={"participant_id": str(participant_id)}) from None
-        if participant.event.created_by_id != actor.pk:
+        participant = _locked_rename_target(participant_id)
+        if not actor_has_event_capability(actor, participant.event, "participants"):
             raise CTFValidationError("Only the event organizer may rename this account", code="CTF_PERMISSION_DENIED")
-        if participant.user is None or not participant.user.profile.is_ctf_account:
-            raise CTFValidationError("Participant has no isolated CTF account", code="CTF_ACCOUNT_REQUIRED")
-        old_username = participant.user.username
-        participant.user.username = normalized
-        try:
-            participant.user.save(update_fields=["username"])
-        except IntegrityError as exc:
-            raise CTFValidationError("Username is already in use", code="CTF_DUPLICATE_USERNAME") from exc
-        from shared.audit import (
-            AuditAction,
-            AuditActorType,
-            AuditEntityType,
-            AuditEvent,
-            audit_log,
-        )
+        _apply_username_rename(participant, normalized, actor)
+    return participant
 
-        audit_log(
-            AuditEvent(
-                entity_type=AuditEntityType.USER,
-                entity_id=participant.user.pk,
-                action=AuditAction.UPDATE,
-                actor_type=AuditActorType.USER,
-                actor_id=actor.pk,
-                previous_state={"username": old_username},
-                new_state={"username": normalized},
-                context="CTF participant username rename",
-            ),
-            strict=True,
-        )
+
+def rename_own_participant_username(
+    participant_id: UUID,
+    username: str,
+    *,
+    actor: User | AnonymousUser,
+) -> CTFParticipant:
+    """Rename the actor's own participant account (#1593), audited like the organizer path."""
+    normalized = normalize_participant_username(username)
+    with transaction.atomic():
+        participant = _locked_rename_target(participant_id)
+        if participant.user_id != actor.pk:
+            raise CTFValidationError("You may only change your own username", code="CTF_PERMISSION_DENIED")
+        _apply_username_rename(participant, normalized, actor)
     return participant
 
 
@@ -243,7 +316,9 @@ def reset_participant_credentials(participant_id: UUID) -> CTFParticipant:
         _send_email(
             recipient=participant.email,
             subject=f"CTF password for {participant.event.name}",
-            html_content=f"<p>Password: {password}</p>",
+            # The credential is operator-controlled (event override or configured
+            # platform value, issue #1665), so escape it before HTML interpolation.
+            html_content=f"<p>Password: {escape(password)}</p>",
             text_content=f"Password: {password}",
         )
     return participant
@@ -358,6 +433,8 @@ def live_participant_for_user(user: User | AnonymousUser) -> CTFParticipant | No
             event__event_start__lte=now,
             event__event_end__gt=now,
         )
-        .exclude(status=ParticipantStatus.DISQUALIFIED.value)[:2]
+        # CTF-609: disqualified participants keep login (view-only access);
+        # CTF-605: banned participants lose event access entirely.
+        .exclude(status=ParticipantStatus.BANNED.value)[:2]
     )
     return matches[0] if len(matches) == 1 else None

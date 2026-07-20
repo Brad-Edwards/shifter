@@ -2,8 +2,9 @@
 
 Part of the Shifter deploy and operations docs; start at the [documentation home](../index.md).
 
-The GCP range backend defaults to the GCE range-cell path. This runbook covers
-enabling it in a real environment, mapping images, and rolling back to GDC.
+The GCP range backend defaults to the GCE range-cell path, the approved GCP
+live-fire backend (ADR-030). This runbook covers enabling it in a real
+environment and mapping images.
 
 For the backend design see
 `docs/architecture/gcp-range-cell-backend-preflight-1341.md`; for the Polaris
@@ -14,14 +15,29 @@ port see `docs/dev/polaris-gcp-range-cell.md`. For the image build see
 
 `GCP_RANGE_BACKEND` selects the GCP range backend:
 
-- `gce` (default): provision each range as an isolated GCE range cell.
-- `gdc`: the retained GDC VM Runtime path.
+- `gce` (default): provision each range as an isolated GCE range cell. This is
+  the only approved GCP **live-fire** backend (ADR-030).
+- `gdc`: the retained GDC VM Runtime path (**development/validation only**). It is
+  **not** a live-fire rollback: normal Mission Control and CTF range provisioning
+  fails closed on `gdc` (the CMS service gate rejects the launch and the
+  provisioner independently denies a live-fire GDC apply; issue #1348). Do not set
+  `GCP_RANGE_BACKEND=gdc` to "roll back" a live-fire environment when GCE is
+  unhealthy. A GCE availability problem must be fixed on the GCE path, never by
+  downgrading containment.
 
 The default lives in `config.py` (`get_gcp_range_backend`) and the generated
-runtime config (`scripts/gcp/render_runtime_env.py`). To roll back an
-environment, set the `GCP_RANGE_BACKEND=gdc` repository/environment variable and
-redeploy. The GDC configuration block is retained in the rendered contract and
-is inert while the backend is `gce`.
+runtime config (`scripts/gcp/render_runtime_env.py`). The GDC configuration block
+is retained in the rendered contract and is inert while the backend is `gce`.
+
+### Switching the selector on an environment with existing GDC ranges
+
+Range destroy currently routes from the deploy-wide `GCP_RANGE_BACKEND` selector,
+so **tear down any existing GDC ranges before flipping `GCP_RANGE_BACKEND` from
+`gdc` to `gce`**. Flipping while GDC ranges are still live would route their
+teardown down the GCE path and strand the GDC namespaces, VMs, disks, secrets,
+L2 Networks, and subnet allocations (recover those with the manual GDC cleanup
+runbook). Binding the backend to per-range state so this ordering is no longer
+required is tracked by #1666.
 
 The environment setting is an operator/backend-policy input, not scenario
 metadata. Issue #1354 owns the policy that decides which requests may use each

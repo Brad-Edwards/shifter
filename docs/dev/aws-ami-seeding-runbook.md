@@ -45,6 +45,49 @@ public subnet with outbound internet egress.
   pkrvars to an existing VPC and a public subnet with internet egress. Do not
   commit live IDs into a shared pkrvars; keep them in an operator override.
 - **Runners** if you build through CI (the Packer workflow is `self-hosted`).
+- **The base-image build IAM role and its secret** for the CI build path, one
+  time per account (see the next section).
+
+## Base-image build IAM role (one-time cutover)
+
+Since issue #1656 the base `build` job in `packer.yml` assumes a dedicated
+least-privilege image-pipeline role (`github_actions_image` in
+`platform/terraform/global/iam`) instead of the broad deploy role. That role
+trusts only the `dev`/`main` protected-branch OIDC subjects and can pass only the
+exact `shifter-<env>-range-range-instance` role to EC2, so a base-image
+verification instance can receive only the range role. The `check_tf_iam_role_naming`
+guardrail (ADR-004-R22) pins those invariants.
+
+The implementation PR ships the Terraform, workflow wiring, and guardrail but does
+not apply IAM or set secrets. Complete the cutover once per AWS account (`dev`,
+`proof`, and `prod` for promotions):
+
+1. Apply the global-IAM stack so the role and its output exist:
+
+   ```bash
+   cd platform/terraform/global/iam
+   terraform apply -var-file=<env>.tfvars
+   ```
+
+2. Set the `AWS_IMAGE_ROLE_ARN_<ENV>` GitHub secret from the output (prod is the
+   unsuffixed `AWS_IMAGE_ROLE_ARN`; base builds target `dev`/`proof`):
+
+   ```bash
+   ROLE_ARN=$(terraform -chdir=platform/terraform/global/iam output -raw github_actions_image_role_arn)
+   gh secret set AWS_IMAGE_ROLE_ARN_DEV --repo Brad-Edwards/shifter --body "$ROLE_ARN"
+   ```
+
+3. Confirm the repository still uses the default OIDC subject format so the pinned
+   trust matches (a non-default subject would need the Terraform trust updated):
+
+   ```bash
+   gh api repos/Brad-Edwards/shifter/actions/oidc/customization/sub
+   # expect use_default: true, use_immutable_subject: false
+   ```
+
+Until the secret is set the base `build` job fails closed with
+`Required secret AWS_IMAGE_ROLE_ARN_<ENV> is not set`. The `bake-scenario` job
+keeps its own deploy-role secret and is unaffected.
 
 ## Build path A: the Packer workflow (recommended)
 
@@ -54,7 +97,9 @@ extracts the AMI id from the build manifest, and writes
 `/shifter/ami/<type>` with `aws ssm put-parameter --overwrite`. The build runs
 only from a protected ref (`dev` or `main`); a dispatch from a feature branch is
 rejected before AWS authentication, because the job executes checked-out code and
-publishes SSM pointers with the deploy role.
+publishes SSM pointers. Since issue #1656 the base `build` job assumes a
+dedicated least-privilege image-pipeline role, not the broad deploy role (see
+[Base-image build IAM role](#base-image-build-iam-role-one-time-cutover)).
 
 For `kali`, `ubuntu`, and `windows` the workflow first runs a fresh-boot
 validation gate (issue #1633) before it seeds SSM. The gate boots the exact
@@ -97,9 +142,9 @@ gh workflow run "Packer AMI Build" -f ami_type=dc -f environment=dev -f ref=dev
 
 `environment` accepts `dev` or `proof`. There is no `prod` build option: prod
 AMIs are produced by promoting a validated dev AMI with `packer-promote.yml`, not
-by building directly in prod. The workflow also builds the CTF scenario images
-(`ctf-*`, `brokenbk`) on demand; the base types above are the ones the portal
-plan requires.
+by building directly in prod. The workflow also builds the scenario AMI types
+(`brokenbk`, `polaris-dc`, `techvault`, `polaris-vm`) on demand; the base types
+above are the ones the portal plan requires.
 
 ## Build path B: local Packer
 
@@ -134,7 +179,12 @@ aws ssm put-parameter --name /shifter/ami/dc --type String \
 Domain Controller (domain `internal.shifter`, NetBIOS `INTSHIFTER`). The AMI ids
 live in `shifter/packer/dc-amis.json`; no Packer source rebuilds them. Both the
 build workflow (`ami_type=dc`) and `packer-promote.yml` publish the checked-in id
-rather than a fresh build.
+rather than a fresh build. Each reads `dc-amis.json` from a dedicated checkout of
+the protected `dev` ref and resolves it through the shared validator
+`shifter/packer/scripts/bake/resolve-dc-ami.sh`, which fails closed unless the id
+exists, is AMI-shaped, and names an image EC2 reports as `available` and owned by
+the target account; the prod promote job additionally runs only from a protected
+ref (`dev`/`main`). See issue #1656.
 
 When you re-bake the pre-promoted DC (see
 [AMI management](../technical/platform_infrastructure/ami-management.md)), set the

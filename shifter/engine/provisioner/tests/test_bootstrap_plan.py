@@ -104,8 +104,10 @@ class TestPolarisRangeBootstrapPlan:
         monkeypatch.delenv("AGENT_STORAGE_BUCKET", raising=False)
         monkeypatch.delenv("AGENT_S3_BUCKET", raising=False)
 
+        polaris_range_bootstrap_plan = PolarisRangeBootstrapPlan()
+        mock_polaris_instance = MockPolarisInstance()
         with pytest.raises(ValueError, match="POLARIS_TESTS_BUCKET"):
-            PolarisRangeBootstrapPlan().get_context(MockPolarisInstance())
+            polaris_range_bootstrap_plan.get_context(mock_polaris_instance)
 
     def test_aws_provider_selects_s3_fetch_firewall_and_bedrock_shard(self):
         """AWS gets an extra durable-firewall-install step GCP does not (#1377).
@@ -188,8 +190,10 @@ class TestPolarisRangeBootstrapPlan:
         monkeypatch.delenv("AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN", raising=False)
         monkeypatch.setenv("AGENT_S3_BUCKET", "b")
 
+        polaris_range_bootstrap_plan = PolarisRangeBootstrapPlan(provider="aws")
+        mock_polaris_instance = MockPolarisInstance()
         with pytest.raises(ValueError, match="AWS Polaris agent"):
-            PolarisRangeBootstrapPlan(provider="aws").get_context(MockPolarisInstance())
+            polaris_range_bootstrap_plan.get_context(mock_polaris_instance)
 
     def test_aws_context_requires_agent_role_arn(self, monkeypatch, aws_polaris_agent_env):
         """Config present but no per-range role ARN threaded in -> fail closed (#1377)."""
@@ -197,8 +201,10 @@ class TestPolarisRangeBootstrapPlan:
 
         monkeypatch.setenv("AGENT_S3_BUCKET", "b")
 
+        polaris_range_bootstrap_plan = PolarisRangeBootstrapPlan(provider="aws")
+        mock_polaris_instance = MockPolarisInstance(agent_role_arn="")
         with pytest.raises(ValueError, match="agent_role_arn"):
-            PolarisRangeBootstrapPlan(provider="aws").get_context(MockPolarisInstance(agent_role_arn=""))
+            polaris_range_bootstrap_plan.get_context(mock_polaris_instance)
 
     def test_gcp_context_carries_vertex_project_region_models(self):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
@@ -226,8 +232,10 @@ class TestPolarisRangeBootstrapPlan:
         monkeypatch.delenv("GCP_RANGE_VERTEX_PROJECT_ID", raising=False)
         monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
 
+        polaris_range_bootstrap_plan = PolarisRangeBootstrapPlan(provider="gcp")
+        mock_polaris_instance = MockPolarisInstance()
         with pytest.raises(ValueError, match="Vertex project"):
-            PolarisRangeBootstrapPlan(provider="gcp").get_context(MockPolarisInstance())
+            polaris_range_bootstrap_plan.get_context(mock_polaris_instance)
 
 
 # --- Slice 5 (#1377): host STS refresh, durable IMDS firewall, a14-kali ----
@@ -485,14 +493,19 @@ class TestPolarisAwsAgentSecurity:
         assert "/run/shifter-agent/claude-bedrock.sh:/etc/profile.d/claude-bedrock.sh:ro" in bootstrap
         assert "extra_hosts:" in bootstrap
         assert "${SHIFTER_BEDROCK_IP}" in bootstrap
+        # STS is pinned the same way so the in-container agent-role verify
+        # (aws sts get-caller-identity) can resolve the regional STS endpoint.
+        assert "${SHIFTER_STS_IP}" in bootstrap
 
         # (b) The host materializes the reader / aws-config / profile.d shim and
-        # publishes the Bedrock VPC-endpoint IP to the compose .env, all before
-        # the container starts (so a bind mount + compose substitution work).
+        # publishes the Bedrock + STS VPC-endpoint IPs to the compose .env (via
+        # _pin_endpoint_ip), all before the container starts (so a bind mount +
+        # compose substitution work).
         assert "cat > /run/shifter-agent/credential-process.sh" in bootstrap
         assert "cat > /run/shifter-agent/aws-config" in bootstrap
         assert "cat > /run/shifter-agent/claude-bedrock.sh" in bootstrap
-        assert "SHIFTER_BEDROCK_IP=" in bootstrap
+        assert '_pin_endpoint_ip "bedrock-runtime' in bootstrap
+        assert '_pin_endpoint_ip "sts.' in bootstrap
         assert "/opt/polaris/scenario-dev/polaris/build/.env" in bootstrap
 
         # (c) The shard must NOT write provider config into the container layer

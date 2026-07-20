@@ -161,9 +161,15 @@ resource "aws_iam_role_policy" "engine_state" {
 # Task Role Policy - EC2 Provisioning
 # ------------------------------------------------------------------------------
 
-resource "aws_iam_role_policy" "ec2_provisioning" {
-  name = "ec2-provisioning"
-  role = aws_iam_role.ecs_task.id
+# Moved off an inline role policy to a customer-managed policy (issue #1749):
+# the task role's aggregate inline-policy size exceeded AWS's 10,240-byte
+# ceiling once the GWLB and OpenVPN-gateway policies were added, failing the
+# portal Terraform apply. Managed policies attached to the role do not count
+# toward the inline aggregate. Permissions are unchanged from the prior inline
+# policy.
+resource "aws_iam_policy" "ec2_provisioning" {
+  name        = "${var.name_prefix}-pulumi-ec2-provisioning-managed"
+  description = "Shifter provisioner EC2 lifecycle and networking permissions (moved off inline to stay under the role inline-policy size limit)."
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -361,6 +367,13 @@ resource "aws_iam_role_policy" "ec2_provisioning" {
       }
     ]
   })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_provisioning" {
+  role       = aws_iam_role.ecs_task.name
+  policy_arn = aws_iam_policy.ec2_provisioning.arn
 }
 
 # Keep EC2 launch authorization in a customer-managed policy rather than an
@@ -504,6 +517,7 @@ resource "aws_iam_role_policy" "secrets_manager" {
       ]
       Resource = [
         "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:shifter/${var.environment}/range/*",
+        "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:shifter/${var.environment}/vpn-issuer/*",
         "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:shifter/${var.environment}/ngfw/*"
       ]
     }]
@@ -560,9 +574,12 @@ resource "aws_iam_role_policy" "s3_agent" {
 # - Target groups with GENEVE protocol
 # - Listeners
 
-resource "aws_iam_role_policy" "gwlb" {
-  name = "gwlb-provisioning"
-  role = aws_iam_role.ecs_task.id
+# Moved off an inline role policy to a customer-managed policy (issue #1749) for
+# the same aggregate inline-policy-size reason as ec2_provisioning above.
+# Permissions are unchanged from the prior inline policy.
+resource "aws_iam_policy" "gwlb" {
+  name        = "${var.name_prefix}-pulumi-gwlb-provisioning-managed"
+  description = "Shifter provisioner Gateway Load Balancer permissions (moved off inline to stay under the role inline-policy size limit)."
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -621,6 +638,7 @@ resource "aws_iam_role_policy" "gwlb" {
           "elasticloadbalancing:ModifyLoadBalancerAttributes",
           "elasticloadbalancing:ModifyTargetGroup",
           "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:SetSecurityGroups",
           "elasticloadbalancing:RemoveTags"
         ]
         Resource = [
@@ -661,9 +679,111 @@ resource "aws_iam_role_policy" "gwlb" {
             "aws:RequestTag/ManagedBy"           = "terraform"
           }
         }
+      },
+      {
+        Effect   = "Allow"
+        Action   = "elasticloadbalancing:CreateLoadBalancer"
+        Resource = "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/shifter:system"      = "shifter"
+            "aws:RequestTag/shifter:environment" = var.environment
+            "aws:RequestTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        # CreateListener is authorized against the parent NLB, not the future
+        # listener ARN. Require both the listener request tags and the parent
+        # NLB's ownership tags so a same-account NLB outside this Shifter
+        # environment cannot be used as the parent.
+        Effect   = "Allow"
+        Action   = "elasticloadbalancing:CreateListener"
+        Resource = "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/shifter:system"                        = "shifter"
+            "aws:RequestTag/shifter:environment"                   = var.environment
+            "aws:RequestTag/ManagedBy"                             = "terraform"
+            "elasticloadbalancing:ResourceTag/shifter:system"      = "shifter"
+            "elasticloadbalancing:ResourceTag/shifter:environment" = var.environment
+            "elasticloadbalancing:ResourceTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        Effect   = "Allow"
+        Action   = "elasticloadbalancing:CreateTargetGroup"
+        Resource = "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/shifter-vpn-*/*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/shifter:system"      = "shifter"
+            "aws:RequestTag/shifter:environment" = var.environment
+            "aws:RequestTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        # Existing request-owned VPN resources remain mutable only while their
+        # ownership tags identify this Shifter environment.
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:ModifyTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:SetSecurityGroups",
+          "elasticloadbalancing:RemoveTags"
+        ]
+        Resource = [
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/shifter-vpn-*/*"
+        ]
+        Condition = {
+          StringEquals = {
+            "elasticloadbalancing:ResourceTag/shifter:system"      = "shifter"
+            "elasticloadbalancing:ResourceTag/shifter:environment" = var.environment
+            "elasticloadbalancing:ResourceTag/ManagedBy"           = "terraform"
+          }
+        }
+      },
+      {
+        # Terraform sends tags with each create request. AddTags is a dependent
+        # permission and cannot be used here outside those create APIs.
+        Effect = "Allow"
+        Action = "elasticloadbalancing:AddTags"
+        Resource = [
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/shifter-vpn-*/*"
+        ]
+        Condition = {
+          StringEquals = {
+            "elasticloadbalancing:CreateAction" = [
+              "CreateLoadBalancer",
+              "CreateTargetGroup",
+              "CreateListener"
+            ]
+            "aws:RequestTag/shifter:system"      = "shifter"
+            "aws:RequestTag/shifter:environment" = var.environment
+            "aws:RequestTag/ManagedBy"           = "terraform"
+          }
+        }
       }
     ]
   })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "gwlb" {
+  role       = aws_iam_role.ecs_task.name
+  policy_arn = aws_iam_policy.gwlb.arn
 }
 
 # ------------------------------------------------------------------------------
@@ -1021,9 +1141,96 @@ resource "aws_iam_role_policy" "polaris_agent_role_management" {
           "iam:GetRole",
           "iam:GetRolePolicy",
           "iam:ListRolePolicies",
+          # The AWS provider's read-after-create and read-before-destroy of
+          # aws_iam_role always call ListAttachedRolePolicies and
+          # ListInstanceProfilesForRole (even though the agent role uses only an
+          # inline policy and no instance profile), so terraform apply/destroy
+          # fails without them. Read-only; scoped to the agent role namespace.
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
           "iam:ListRoleTags"
         ]
         Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
+      }
+    ]
+  })
+}
+
+# Request-owned OpenVPN gateway roles are separate from participant hosts and
+# can read exactly one generation-specific server identity. The provisioner may
+# create them only with the installation permissions boundary and may pass them
+# only to EC2.
+resource "aws_iam_role_policy" "vpn_gateway_role_management" {
+  name = "vpn-gateway-role-management"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "CreateVpnGatewayRoleWithBoundary"
+        Effect   = "Allow"
+        Action   = "iam:CreateRole"
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
+        Condition = {
+          StringEquals = {
+            "iam:PermissionsBoundary" = var.permissions_boundary_arn
+          }
+        }
+      },
+      {
+        Sid    = "ManageVpnGatewayRole"
+        Effect = "Allow"
+        Action = [
+          "iam:DeleteRole",
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:ListRoleTags"
+        ]
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
+      },
+      {
+        Sid      = "UseOnlySsmCorePolicy"
+        Effect   = "Allow"
+        Action   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
+        Condition = {
+          ArnEquals = {
+            "iam:PolicyARN" = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+          }
+        }
+      },
+      {
+        Sid    = "ManageVpnGatewayInstanceProfile"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:GetInstanceProfile",
+          "iam:TagInstanceProfile",
+          "iam:UntagInstanceProfile"
+        ]
+        Resource = "arn:aws:iam::${local.account_id}:instance-profile/shifter-${var.environment}-*-vpn-gateway"
+      },
+      {
+        Sid      = "PassVpnGatewayRoleOnlyToEc2"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "ec2.amazonaws.com"
+          }
+        }
       }
     ]
   })

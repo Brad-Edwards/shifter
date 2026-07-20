@@ -48,22 +48,26 @@ class TestVerifiedIdentityValidConstruction:
 class TestVerifiedIdentityRejectsBlankFields:
     @pytest.mark.parametrize("value", [None, "", "   "], ids=["none", "empty", "whitespace"])
     def test_rejects_blank_issuer(self, value):
+        kwargs = _kwargs(issuer=value)
         with pytest.raises(VerifiedIdentityError):
-            VerifiedIdentity(**_kwargs(issuer=value))
+            VerifiedIdentity(**kwargs)
 
     @pytest.mark.parametrize("value", [None, "", "   "], ids=["none", "empty", "whitespace"])
     def test_rejects_blank_subject(self, value):
+        kwargs = _kwargs(subject=value)
         with pytest.raises(VerifiedIdentityError):
-            VerifiedIdentity(**_kwargs(subject=value))
+            VerifiedIdentity(**kwargs)
 
     @pytest.mark.parametrize("value", [None, "", "   "], ids=["none", "empty", "whitespace"])
     def test_rejects_blank_email(self, value):
+        kwargs = _kwargs(email=value)
         with pytest.raises(VerifiedIdentityError):
-            VerifiedIdentity(**_kwargs(email=value))
+            VerifiedIdentity(**kwargs)
 
     def test_rejects_non_string_issuer(self):
+        kwargs = _kwargs(issuer=123)
         with pytest.raises(VerifiedIdentityError):
-            VerifiedIdentity(**_kwargs(issuer=123))
+            VerifiedIdentity(**kwargs)
 
 
 class TestVerifiedIdentityRejectsNonLiteralTrueEmailVerified:
@@ -75,8 +79,9 @@ class TestVerifiedIdentityRejectsNonLiteralTrueEmailVerified:
         ids=["none", "false", "str-false", "str-true", "str-True", "int-0", "int-1"],
     )
     def test_rejects_non_literal_true(self, value):
+        kwargs = _kwargs(email_verified=value)
         with pytest.raises(VerifiedIdentityError):
-            VerifiedIdentity(**_kwargs(email_verified=value))
+            VerifiedIdentity(**kwargs)
 
     def test_verified_identity_error_is_a_value_error(self):
         assert issubclass(VerifiedIdentityError, ValueError)

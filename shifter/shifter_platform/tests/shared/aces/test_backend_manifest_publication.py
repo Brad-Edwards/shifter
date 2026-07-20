@@ -151,14 +151,23 @@ def test_provisioner_capabilities_are_the_narrowed_ledger():
     """#1563: the manifest declares only genuinely-realized provisioning terms."""
     provisioner = create_shifter_backend_manifest().provisioner
 
-    assert provisioner.supported_account_features == frozenset({"groups", "shell", "home", "disabled", "auth_method"})
-    assert provisioner.supported_content_types == frozenset({"directory"})
+    assert provisioner.supported_account_features == frozenset(
+        {"groups", "shell", "home", "disabled", "auth_method", "spn"}
+    )
+    assert provisioner.supported_content_types == frozenset({"file", "directory"})
+    assert provisioner.supported_domain_profiles == frozenset({"active_directory"})
     # Removed over-claims stay out until their sibling issue lands genuine realization
-    # (auth_method -> #1560, spn -> #1561, source-backed file/dataset -> #1564).
-    for dropped in ("spn", "mail"):
+    # (auth_method -> #1560, spn -> #1561). #1564 re-declares file + directory now
+    # that every admitted shape (inline text, empty dir, source-backed file/dir) has a
+    # genuine, digest-verified guest effect; dataset stays out (no deterministic
+    # materializer + readback for its item-only / generator shapes).
+    for dropped in ("mail",):
         assert dropped not in provisioner.supported_account_features
-    for dropped in ("file", "dataset"):
+    for dropped in ("dataset",):
         assert dropped not in provisioner.supported_content_types
+
+    checked_in = json.loads(PUBLISHED_MANIFEST_PATH.read_text())
+    assert checked_in["capabilities"]["provisioner"]["supported_domain_profiles"] == ["active_directory"]
 
 
 def test_provisioner_declares_ipv4_only_network_address_family(tmp_path):
@@ -189,12 +198,12 @@ def test_profile_inference_does_not_catch_a_term_level_overclaim():
     honest = create_shifter_backend_manifest()
     overclaimed_provisioner = replace(
         honest.provisioner,
-        supported_account_features=honest.provisioner.supported_account_features | {"spn"},
+        supported_account_features=honest.provisioner.supported_account_features | {"mail"},
     )
     overclaimed = replace(honest, capabilities=BackendCapabilitySet(provisioner=overclaimed_provisioner))
 
-    # Re-declaring spn does not change the inferred profile ...
+    # Re-declaring a still-unrealized account term does not change the profile ...
     assert profile_for_manifest(overclaimed) == BackendCapabilityProfile.PROVISIONING_ONLY
     assert profile_for_manifest(overclaimed) == profile_for_manifest(honest)
     # ... so a generic provisioning-only conformance pass is not realizability evidence.
-    assert "spn" not in honest.provisioner.supported_account_features
+    assert "mail" not in honest.provisioner.supported_account_features

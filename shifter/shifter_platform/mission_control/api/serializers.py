@@ -205,6 +205,15 @@ class ConnectionUrlSerializer(serializers.Serializer):
     terminal_url = serializers.CharField()
 
 
+class RangeLeaseSerializer(serializers.Serializer):
+    """Safe, server-owned lease projection for one Mission Control range."""
+
+    expires_at = serializers.DateTimeField()
+    maximum_expires_at = serializers.DateTimeField()
+    extension_days = serializers.IntegerField(min_value=1)
+    can_extend = serializers.BooleanField()
+
+
 class CurrentRangeResponseSerializer(serializers.Serializer):
     """Response body for ``CurrentRangeView.get``."""
 
@@ -213,6 +222,14 @@ class CurrentRangeResponseSerializer(serializers.Serializer):
     connection_urls = ConnectionUrlSerializer(many=True)
     aces_projection = serializers.DictField(allow_null=True)
     aces_participant_runtime = serializers.DictField(allow_null=True)
+    lifecycle = RangeLeaseSerializer(allow_null=True)
+    vpn_profile_available = serializers.BooleanField()
+
+
+class RangeLeaseResponseSerializer(serializers.Serializer):
+    """Response body for one bounded Mission Control lease extension."""
+
+    lifecycle = RangeLeaseSerializer()
 
 
 class LaunchRangeResponseSerializer(serializers.Serializer):

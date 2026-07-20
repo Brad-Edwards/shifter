@@ -30,15 +30,15 @@ def test_writer_persists_event_to_auditlog_row():
 @pytest.mark.django_db
 def test_writer_raises_on_unserializable_state():
     """The adapter surfaces persistence faults; it never swallows them."""
+    django_audit_log_writer = DjangoAuditLogWriter()
+    audit_event = AuditEvent(
+        entity_type=AuditEntityType.RANGE,
+        entity_id=1,
+        action=AuditAction.CREATE,
+        new_state={"bad": {1, 2, 3}},
+    )
     with pytest.raises(TypeError):
-        DjangoAuditLogWriter().write(
-            AuditEvent(
-                entity_type=AuditEntityType.RANGE,
-                entity_id=1,
-                action=AuditAction.CREATE,
-                new_state={"bad": {1, 2, 3}},
-            )
-        )
+        django_audit_log_writer.write(audit_event)
 
 
 def test_module_singleton_is_a_writer():

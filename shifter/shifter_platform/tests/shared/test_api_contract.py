@@ -41,22 +41,42 @@ class _Callback:
 
 
 class TestExclusionHook:
-    def test_drops_unpublished_app_keeps_published(self) -> None:
-        ctf = ("/api/v1/ctf/events/", "^ctf$", "GET", _Callback("ctf.api._base"))
+    def test_drops_unpublished_app_keeps_published(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The hook filters by whatever prefixes are configured. CTF is now
+        # published (its SPA consumer #1372 landed, so the live tuple is empty);
+        # pin a synthetic prefix here to exercise the drop-vs-keep mechanism
+        # independently of the current config.
+        monkeypatch.setattr("shared.api.schema.UNPUBLISHED_VIEW_MODULE_PREFIXES", ("some_unpublished_app.",))
+        unpublished = (
+            "/api/v1/some-unpublished-app/",
+            "^u$",
+            "GET",
+            _Callback("some_unpublished_app.api.views"),
+        )
         mission_control = (
             "/api/v1/mission-control/range/",
             "^mc$",
             "GET",
             _Callback("mission_control.api.ranges"),
         )
-        result = exclude_unpublished_endpoints([ctf, mission_control])
-        assert ctf not in result
+        result = exclude_unpublished_endpoints([unpublished, mission_control])
+        assert unpublished not in result
         assert mission_control in result
+
+    def test_empty_prefix_tuple_keeps_everything(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The live configuration: no app is excluded, so the hook is a no-op.
+        monkeypatch.setattr("shared.api.schema.UNPUBLISHED_VIEW_MODULE_PREFIXES", ())
+        ctf = ("/api/v1/ctf/events/", "^ctf$", "GET", _Callback("ctf.api.organizer_views"))
+        assert exclude_unpublished_endpoints([ctf]) == [ctf]
 
 
 class TestPublishedContract:
-    def test_ctf_surface_excluded(self, openapi_document: dict[str, Any]) -> None:
-        assert not any(path.startswith("/api/v1/ctf/") for path in openapi_document["paths"])
+    def test_ctf_surface_published(self, openapi_document: dict[str, Any]) -> None:
+        # CTF joined the published contract when its SPA consumer (#1372) landed.
+        paths = openapi_document["paths"]
+        assert any(path.startswith("/api/v1/ctf/") for path in paths)
+        assert "/api/v1/ctf/events/" in paths
+        assert "/api/v1/ctf/me/challenges/" in paths
 
     def test_mission_control_post_has_request_body(self, openapi_document: dict[str, Any]) -> None:
         launch = openapi_document["paths"]["/api/v1/mission-control/range/launch/"]["post"]
