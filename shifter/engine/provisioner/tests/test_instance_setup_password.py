@@ -143,11 +143,13 @@ def test_closes_aws_password_execution_when_ssh_never_becomes_ready(monkeypatch)
     ssh_executor = MagicMock()
     ssh_executor.wait_for_ready.side_effect = ExecutorError("offline")
     _patch_aws_password_execution_dependencies(monkeypatch, ssh_executor)
+    execution = _execution()
+    instance_data = {"private_ip": "10.20.30.40", "ssh_key_secret_arn": "arn:ssh-key"}
 
     with pytest.raises(SetupError, match="pinned SSH transport did not become ready"):
         password_setup._build_aws_password_execution_or_raise(
-            _execution(),
-            {"private_ip": "10.20.30.40", "ssh_key_secret_arn": "arn:ssh-key"},
+            execution,
+            instance_data,
             ssh_user="Administrator",
             platform="windows",
             failure_prefix="password push failed",
@@ -258,11 +260,13 @@ def test_password_push_closes_owned_execution_when_secret_is_empty(monkeypatch):
     )
     monkeypatch.setattr(password_setup, "_resolve_rdp_password_from_secret_ref", lambda _ref: "")
     instance_data = {"rdp_password_secret_arn": "arn:guest-password"}
+    orchestrator = MagicMock()
+    execution = _execution()
 
     with pytest.raises(SetupError, match="password fetch returned empty"):
         password_setup.set_local_password_or_raise(
-            MagicMock(),
-            _execution(),
+            orchestrator,
+            execution,
             instance_data,
             ssh_user="Administrator",
             platform="windows",

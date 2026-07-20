@@ -110,6 +110,7 @@ def _run_password_plan(
     context: dict[str, Any],
     failure_prefix: str,
 ) -> None:
+    """Run the local-password plan and translate orchestration failure."""
     result = orchestrator.orchestrate(
         execution.target,
         plan,
