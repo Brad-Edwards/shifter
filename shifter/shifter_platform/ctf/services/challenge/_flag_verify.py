@@ -187,12 +187,14 @@ def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
 
     custom = get_flag_validator(flag_obj.flag_type)
     if custom is not None:
-        return bool(custom(flag_obj, submitted_flag))
-    if flag_obj.flag_type == "regex":
-        return _verify_regex_flag(flag_obj, submitted_flag)
-    if flag_obj.flag_type in ("programmable", "http"):
-        return _verify_programmable_or_http_flag(flag_obj, submitted_flag)
-    return _verify_static_flag(flag_obj, submitted_flag)
+        is_valid = bool(custom(flag_obj, submitted_flag))
+    elif flag_obj.flag_type == "regex":
+        is_valid = _verify_regex_flag(flag_obj, submitted_flag)
+    elif flag_obj.flag_type in ("programmable", "http"):
+        is_valid = _verify_programmable_or_http_flag(flag_obj, submitted_flag)
+    else:
+        is_valid = _verify_static_flag(flag_obj, submitted_flag)
+    return is_valid
 
 
 def verify_flag(challenge: CTFChallenge, submitted_flag: str) -> bool:
