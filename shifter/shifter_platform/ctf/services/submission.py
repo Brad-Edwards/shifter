@@ -160,6 +160,26 @@ def _record_submission_locked(
             recompute_participant_score(participant.id)
             recompute_team_score(participant.team_id)
 
+        if is_correct:
+            first_blood = CTFSubmission.objects.filter(challenge=challenge, is_correct=True).count() == 1
+        else:
+            first_blood = False
+
+    if first_blood:
+        # CTF-802: announce first blood after the transaction commits so a bus
+        # hiccup can never roll back the solve.
+        from ctf.services.notification import publish_event_notification
+
+        publish_event_notification(
+            challenge.event,
+            "first_blood",
+            {
+                "challenge_id": str(challenge.pk),
+                "challenge_name": challenge.name,
+                "participant_name": participant.name,
+            },
+        )
+
     return submission
 
 

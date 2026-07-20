@@ -293,6 +293,7 @@ class NotificationListItemSerializer(serializers.Serializer):
     sent_count = serializers.IntegerField(read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     sent_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    scheduled_at = serializers.DateTimeField(read_only=True, allow_null=True)
 
 
 class NotificationListResponseSerializer(serializers.Serializer):
@@ -311,6 +312,7 @@ class NotificationAnnounceRequestSerializer(serializers.Serializer):
 
     subject = serializers.CharField(required=False, allow_blank=True, default="")
     body = serializers.CharField(required=False, allow_blank=True, default="")
+    scheduled_at = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class NotificationAnnounceResultSerializer(serializers.Serializer):

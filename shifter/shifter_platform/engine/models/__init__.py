@@ -27,6 +27,7 @@ exactly as before the split.
 """
 
 from ._aces import AcesContentDeliveryBinding, AcesImageMapping
+from ._capacity import CapacityDeclaration
 from ._launch import ProvisionerLaunchIntent, ProvisionerLaunchStatus
 from ._outbox import OutboxStatus, RangeEventOutbox
 from ._range import Range
@@ -37,6 +38,7 @@ __all__ = [
     "AcesContentDeliveryBinding",
     "AcesImageMapping",
     "App",
+    "CapacityDeclaration",
     "Instance",
     "Instantiation",
     "OutboxStatus",

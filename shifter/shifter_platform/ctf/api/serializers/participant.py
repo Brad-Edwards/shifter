@@ -301,3 +301,18 @@ class UsernameChangeRequestSerializer(serializers.Serializer):
     """Self-service username change request (#1593)."""
 
     username = serializers.CharField(max_length=49)
+
+
+class ParticipantAnnouncementSerializer(serializers.Serializer):
+    """One sent announcement on the participant surface (CTF-803)."""
+
+    id = serializers.CharField(read_only=True)
+    subject = serializers.CharField(read_only=True)
+    body = serializers.CharField(read_only=True, allow_blank=True)
+    sent_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+
+class ParticipantAnnouncementListSerializer(serializers.Serializer):
+    """Envelope for the participant announcement feed."""
+
+    announcements = ParticipantAnnouncementSerializer(many=True, read_only=True)

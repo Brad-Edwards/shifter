@@ -570,6 +570,15 @@ export function useSendCtfNotification(eventId: string) {
   });
 }
 
+export function useCancelCtfScheduledNotification(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (notificationId: string) =>
+      apiFetch<unknown>(`${BASE}/notifications/${notificationId}/cancel-schedule/`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
+  });
+}
+
 // --- Score timeline (analytics) -------------------------------------------
 
 export function useCtfScoreTimeline(participantId: string, enabled = true) {

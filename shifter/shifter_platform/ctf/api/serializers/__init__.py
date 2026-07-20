@@ -94,6 +94,8 @@ from ctf.api.serializers.organizer_ops import (
 from ctf.api.serializers.participant import (
     ChallengeConnectionInfoSerializer,
     ChallengeRatingSerializer,
+    ParticipantAnnouncementListSerializer,
+    ParticipantAnnouncementSerializer,
     ParticipantChallengeDetailSerializer,
     ParticipantChallengeFileSerializer,
     ParticipantChallengeListItemSerializer,
@@ -166,6 +168,8 @@ __all__ = [
     "NotificationSendResultSerializer",
     "OrganizerChallengeDetailSerializer",
     "OrganizerScoreboardResponseSerializer",
+    "ParticipantAnnouncementListSerializer",
+    "ParticipantAnnouncementSerializer",
     "ParticipantChallengeDetailSerializer",
     "ParticipantChallengeFileSerializer",
     "ParticipantChallengeListItemSerializer",
