@@ -224,10 +224,10 @@ repos:
         files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
 
       - id: check-tf-iam-elb-scope
-        name: AWS ELBv2 (GWLB) IAM scoping (engine provisioner)
+        name: AWS ELBv2 (GWLB/VPN NLB) IAM scoping (engine provisioner)
         entry: python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py
         language: system
-        files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
+        files: ^(platform/terraform/modules/engine-provisioner/iam|shifter/engine/provisioner/terraform/modules/range/vpn)\.tf$
 
       - id: check-tf-iam-ssm-scope
         name: AWS SSM Run Command IAM scoping (engine provisioner)

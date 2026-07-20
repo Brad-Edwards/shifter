@@ -87,7 +87,7 @@
       },
       {
         "id": "ADR-003-R6",
-        "description": "After successful AWS dev portal deploy verification, _shifter-platform.yml may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes scripts/smoke-test.sh via scripts/portal_deploy/portal_deploy.py run-manage-on-portal. The job must remain dev-only (inputs.is_dev), continue-on-error so deploy success is not blocked, request issues: write only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. Long-running portal manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit aws ssm wait command-executed waiter.",
+        "description": "After successful AWS dev portal deploy verification, _shifter-platform.yml may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes scripts/smoke-test.sh via scripts/portal_deploy/portal_deploy.py run-manage-on-portal. The job must remain dev-only (inputs.is_dev), continue-on-error so deploy success is not blocked, request issues: write only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. Long-running portal manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit aws ssm wait command-executed waiter. The smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED.",
         "checks": ["deploy-verification-fail-loud", "deploy-workflow-runner-exposure"]
       },
       {
@@ -243,6 +243,11 @@
         "id": "ADR-004-R24",
         "description": "Production-path quality ownership is a single versioned, machine-readable contract at `.github/quality-path-filters.yaml` (schema parsed by `scripts/quality_ownership/contract.py`), enforced fail-closed. The always-run `paths` job in `.github/workflows/_quality.yml` invokes `scripts/quality_ownership/classify_paths.py`, which validates the contract and REJECTS any changed path that is neither a declared quality unit nor a typed exclusion BEFORE emitting any job-selection output, so an unowned path can no longer skip the checks designed to gate it. The `quality-path-ownership` adr_guard check (this rule) reconciles the contract against the whole repository and enforces three invariants: (1) estate completeness - every git-tracked path is a production owner or a narrow typed exclusion (closed enum: docs/test/generated/vendor/metadata/config; no catch-all, no unowned remainder); (2) ownership completeness - every production PATH is covered, across the union of its matching units, by a BLOCKING lint AND security AND test job (an advisory / `continue-on-error` / always-run / missing job never satisfies a responsibility), and unit `packages` reconcile both directions against the #1523 first-party classification in `scripts/check_layer_imports/layer_imports.yaml`; (3) routing reachability - a representative change to each unit makes its declared jobs (and matrix members) run in the real `_quality.yml` (proven by semantic `if:` evaluation, not substring match), while a docs-only change selects no production job. Genuine ownership gaps are recorded ONLY as time-bounded `docs/adr/exceptions.yaml` entries keyed to the `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor - there is no `not_applicable`, advisory, or permanent grandfather escape hatch in the contract schema. The contract and its classifier route their own guard tests and adr-conformance (self-bypass prevention). Anchored on GEN-002 (Executable Architecture Governance). Established by #1530; gap-closure tracked by #1698.",
         "checks": ["quality-path-ownership"]
+      },
+      {
+        "id": "ADR-004-R25",
+        "description": "Request-owned AWS OpenVPN gateways MUST preserve least-privilege IAM and ELBv2 delegation across both policy evaluators. The shared CI permissions boundary may exclude from `DenyIamEscalation` only the environment-scoped `role/shifter-${var.environment}-*-vpn-gateway` and `instance-profile/shifter-${var.environment}-*-vpn-gateway` namespaces, while a separate explicit deny prevents changing or deleting the gateway role's permissions boundary. The engine-provisioner identity policy remains the grant boundary: CreateRole requires the installation boundary, managed-policy attachment is limited to AmazonSSMManagedInstanceCore, and PassRole is limited to EC2. Its existing customer-managed ELB policy keeps GWLB and `shifter-vpn-*` NLB namespaces separate, authorizes CreateListener against the parent NLB ARN with both listener request tags and parent ownership resource tags, and permits AddTags only as a create-action dependency. The runtime `aws_lb_listener.vpn` sends `local.common_tags` in the create request. `scripts/check_tf_iam_role_naming` and `scripts/check_tf_iam_elb_scope` enforce these exact boundary, ARN, action, condition, and listener-tag shapes with focused negative tests; pre-commit and `_quality.yml` inspect both the policy and runtime Terraform inputs. Binding design note: `docs/architecture/proof-vpn-gateway-permissions-preflight-1755.md`. Established by #1755.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -260,6 +265,7 @@
       "scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py",
       "scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py",
       "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
+      "scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py",
       "scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py",
       "scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py",
       "scripts/check_tf_runner_network/check_tf_runner_network.py",
@@ -268,6 +274,7 @@
       "docs/adr/exceptions.yaml",
       "docs/architecture/credentialed-workflow-dispatch-trust-preflight-1690.md",
       "docs/architecture/checkov-soft-fail-preflight-757.md",
+      "docs/architecture/proof-vpn-gateway-permissions-preflight-1755.md",
       "docs/technical/dev/adr-enforcement.md",
       "docs/technical/dev/ci-cd.md"
     ]
@@ -1479,7 +1486,7 @@
     "title": "How Shifter realizes ACES scenarios",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter realizes ACES by riding the ACES contract end to end, not by shadowing it. The pinned aces-sdl runtime (inside shared.aces) compiles a scenario into an ACES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the ACES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference ACES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the artifact that crosses the boundary is the serialized ACES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions. A consumer may materialize a bounded, process-local realization projection after validating the envelope, producer compatibility, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute ACES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. ACES is a deliberate stack commitment: Shifter depends on the aces-sdl PyPI package pinned to a released version.",
+    "decision": "Shifter realizes ACES by riding the ACES contract end to end, not by shadowing it. The pinned aces-sdl runtime (inside shared.aces) compiles a scenario into an ACES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the ACES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference ACES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the authored provisioning-intent artifact that crosses the boundary is the serialized ACES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions. Source-backed content delivery may accompany dispatch only as a separately validated, immutable identity binding governed by ADR-032-R3; it is not authored intent or a second provisioning model. A consumer may materialize a bounded, process-local realization projection after validating the envelope, producer compatibility, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute ACES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. ACES is a deliberate stack commitment: Shifter depends on the aces-sdl PyPI package pinned to a released version.",
     "rules": [
       {
         "id": "ADR-032-R1",
@@ -1493,7 +1500,7 @@
       },
       {
         "id": "ADR-032-R3",
-        "description": "The artifact crossing the platform -> provisioner boundary is the serialized ACES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the public ACES/backend payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces ACES.",
+        "description": "The only authored provisioning-intent artifact crossing the platform -> provisioner boundary is the serialized ACES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the public ACES/backend payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). For source-backed content, dispatch may carry a versioned server-owned delivery binding beside -- never inside -- that plan, limited to the compiled content resource address, sha256 content digest, normalized content-addressed object key, and bounded byte count. The binding contains no payload bytes, bucket or URL, credential, guest path, command, generated configuration, or client-controlled locator; it is persisted separately from range_config and the launch-intent payload, revalidated and joined exactly to the plan before retrieval or mutation, and is not an authored contract, public DTO, or second provisioning model. A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces ACES.",
         "checks": []
       },
       {
@@ -1528,10 +1535,12 @@
       "https://github.com/Brad-Edwards/shifter/issues/1264",
       "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
+      "https://github.com/Brad-Edwards/shifter/issues/1564",
       "https://github.com/Brad-Edwards/shifter/issues/1606",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
+      "docs/architecture/aces-source-content-delivery-preflight-1564.md",
       "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-domain-topology-preflight-1606.md",
@@ -1603,7 +1612,12 @@
       },
       {
         "id": "ADR-034-R5",
-        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical ACES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and object-backed references remain non-launchable until their resolver provides equivalent identity guarantees.",
+        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical ACES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and an object-backed pack becomes launchable only after its resolver provides equivalent bounded extraction, containment, immutable-object identity, contract validation, and digest guarantees.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R6",
+        "description": "Source-backed ACES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
         "checks": []
       }
     ],
@@ -1614,6 +1628,7 @@
     "evidence": [
       "docs/architecture/uniform-content-ingestion-contract.md",
       "docs/architecture/uniform-content-ingestion-preflight-1578.md",
+      "docs/architecture/aces-source-content-delivery-preflight-1564.md",
       "docs/architecture/product-development-surfaces.md",
       "docs/ops/content-ingestion.md",
       "docs/adr/index.yaml"
@@ -1853,7 +1868,7 @@
       },
       {
         "id": "ADR-039-R10",
-        "description": "Participant client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only the trusted CTF launch path may mint the closed capability beside scenario intent; it binds one participant-access target and the event teardown deadline, and topology alone must never activate a VPN. A CTF-required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the participant target), creates one participant/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former participant, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. Certificate `notAfter` is derived from the trusted teardown deadline; stale or greater-than-397-day windows fail before provider mutation. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every CTF-eligible live-fire adapter must pass the same real-client handshake, isolation, lifecycle, and secret-deletion conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
+        "description": "User-held client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only a trusted product launch path may mint the closed capability beside scenario intent; product provenance and ownership stay at the product/CMS boundary, while the capability binds one authoritative participant-access target and an enforced server-owned access deadline. CMS persists one lease for every new CTF and Mission Control range: the current deadline is the sole automatic-cleanup authority and the immutable generation ceiling bounds certificate `notAfter`. CTF derives both from event cleanup. Mission Control starts at 30 days, extends only through server-selected 30-day increments, and cannot exceed 365 days from creation; HTTP callers cannot select a deadline or increment. The DB-authoritative reconciler locks due rows and reuses canonical system-attributed destroy and existing product projections rather than a CTF- or Mission-Control-specific cleanup workflow. Any future product must supply the same enforced lease semantics or introduce an explicitly versioned renewal/revocation lifecycle; caller-supplied, silently expiring, and unbounded deadlines are prohibited, and topology alone never activates a VPN. A required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the user-controlled target), creates one owner/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former owner, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every live-fire adapter eligible for an enabled product profile must pass the same real-client handshake, isolation, lifecycle, secret-deletion, and capacity conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
         "checks": []
       }
     ],
@@ -1862,8 +1877,10 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1322",
       "https://github.com/Brad-Edwards/shifter/issues/1695",
+      "https://github.com/Brad-Edwards/shifter/issues/1696",
       "docs/architecture/provider-neutral-range-substrate.md",
       "docs/architecture/ctf-openvpn-participant-access-preflight-1695.md",
+      "docs/architecture/non-ctf-openvpn-range-access-preflight-1696.md",
       "docs/architecture/branch-routing-provider-coupling-inventory.md",
       "docs/architecture/root-configured-backend-bundles.md",
       "docs/architecture/range-isolation-model.md",

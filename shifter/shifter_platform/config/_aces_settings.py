@@ -25,6 +25,8 @@ import os
 from pathlib import Path
 
 __all__ = [
+    "ACES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES",
+    "ACES_CONTENT_DELIVERY_PREFIX",
     "ACES_NATIVE_PROVISIONING_ENABLED",
     "ACES_OPERATION_RECORD_PRUNE_BATCH_SIZE",
     "ACES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS",
@@ -83,6 +85,20 @@ ACES_PACKAGE_PREFIX = os.environ.get("SHIFTER_ACES_PACKAGE_PREFIX", "")
 ACES_PACKAGE_MAX_ARCHIVE_BYTES = int(os.environ.get("SHIFTER_ACES_PACKAGE_MAX_ARCHIVE_BYTES", "268435456"))
 ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES = int(os.environ.get("SHIFTER_ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES", "1073741824"))
 ACES_PACKAGE_MAX_ENTRIES = int(os.environ.get("SHIFTER_ACES_PACKAGE_MAX_ENTRIES", "20000"))
+
+# Object-storage delivery of source-backed ACES content (#1564, ADR-032-R3,
+# ADR-034-R6). While a registered, digest-verified pack is live, materialized
+# source-backed content payloads (file bytes / a deterministic directory tar) are
+# promoted content-addressed under the existing STORAGE_BUCKET_NAME assets bucket
+# with this key prefix; the provisioner reads them by the normalized key carried
+# in the byte-free delivery binding (never a bucket/URL in the binding). The byte
+# cap is defense-in-depth against an oversized materialized payload. Non-secret;
+# override per environment. Read via the literal os.environ.get form so
+# config/env-manifest.json picks them up. Default 256 MiB payload cap.
+ACES_CONTENT_DELIVERY_PREFIX = os.environ.get("SHIFTER_ACES_CONTENT_DELIVERY_PREFIX", "aces/content-delivery")
+ACES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES = int(
+    os.environ.get("SHIFTER_ACES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES", "268435456")
+)
 
 # Days a runtime snapshot / operation-record row is retained before it becomes
 # eligible for pruning. Measured from the row's source_timestamp so idempotent

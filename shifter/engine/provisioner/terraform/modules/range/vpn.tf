@@ -318,6 +318,8 @@ resource "aws_lb_listener" "vpn" {
   port              = 1194
   protocol          = "UDP"
 
+  tags = local.common_tags
+
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.vpn[0].arn

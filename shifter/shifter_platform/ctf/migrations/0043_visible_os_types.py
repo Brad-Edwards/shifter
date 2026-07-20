@@ -5,15 +5,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('ctf', '0042_pages_theming'),
+        ("ctf", "0042_pages_theming"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='ctfevent',
-            name='visible_os_types',
-            field=models.JSONField(blank=True, default=ctf.models.event._default_visible_os_types, help_text='Instance OS types participants may see in the terminal (#483); empty list shows all'),
+            model_name="ctfevent",
+            name="visible_os_types",
+            field=models.JSONField(
+                blank=True,
+                default=ctf.models.event._default_visible_os_types,
+                help_text="Instance OS types participants may see in the terminal (#483); empty list shows all",
+            ),
         ),
     ]

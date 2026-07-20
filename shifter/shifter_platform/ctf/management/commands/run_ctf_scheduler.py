@@ -267,11 +267,11 @@ def _handle_cleanup_ranges(
     shutdown_check: ShutdownCheck | None = None,
     heartbeat: Heartbeat | None = None,
 ) -> None:
-    """Destroy all provisioned ranges for the event."""
-    from ctf.services.range import cleanup_event_ranges
+    """Route a legacy queued cleanup task through the shared lease reconciler."""
+    from cms.services import expire_due_ranges
 
-    result = cleanup_event_ranges(task.event_id)
-    logger.info("CLEANUP_RANGES result for event %s: %s", task.event_id, result)
+    result = expire_due_ranges()
+    logger.info("Legacy CLEANUP_RANGES lease result for event %s: %s", task.event_id, result)
 
 
 def _handle_event_start(
@@ -293,7 +293,7 @@ def _handle_event_end(
     shutdown_check: ShutdownCheck | None = None,
     heartbeat: Heartbeat | None = None,
 ) -> None:
-    """Complete the event, notify the organizer, and auto-clean ranges if enabled."""
+    """Complete the event and notify the organizer."""
     from ctf.models import CTFEvent
     from ctf.services.event import complete_event
 

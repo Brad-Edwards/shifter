@@ -6,6 +6,9 @@
 // are covered by the scoped ADR-004-R14 exception in
 // docs/adr/exceptions.yaml (paths: mcp/ops/tools/s3.js). Moving that
 // map to runtime config is a separate change, out of scope for #690.
+//
+// Each tool descriptor is built by its own module-level factory so the
+// registrar stays a thin wiring function.
 
 import { z } from "zod";
 import { registerTool } from "../policy.js";
@@ -13,10 +16,8 @@ import { ok, err } from "../respond.js";
 import { MAX_S3_READ_SIZE, isBinaryContentType } from "../lib.js";
 import { EnvSchema } from "../schemas.js";
 
-export function registerS3Tools(ctx, deps) {
-  const { getProfile, aws, awsText } = deps;
-
-  registerTool(ctx, {
+function listS3BucketsTool({ getProfile, aws }) {
+  return {
     name: "list_s3_buckets",
     klass: "observability",
     description:
@@ -46,9 +47,11 @@ export function registerS3Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function listS3ObjectsTool({ getProfile, aws }) {
+  return {
     name: "list_s3_objects",
     klass: "observability",
     // Codex review #1201 cycle 2: an authenticated principal with
@@ -94,9 +97,11 @@ export function registerS3Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function getS3ObjectTool({ getProfile, aws, awsText }) {
+  return {
     name: "get_s3_object",
     klass: "observability",
     untrusted_source: "s3",
@@ -164,9 +169,11 @@ export function registerS3Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function terraformStateTool({ getProfile, awsText }) {
+  return {
     name: "terraform_state",
     klass: "observability",
     // Codex review #1201 cycle 2: tfstate is read from caller-selected
@@ -234,5 +241,12 @@ export function registerS3Tools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
+
+export function registerS3Tools(ctx, deps) {
+  registerTool(ctx, listS3BucketsTool(deps));
+  registerTool(ctx, listS3ObjectsTool(deps));
+  registerTool(ctx, getS3ObjectTool(deps));
+  registerTool(ctx, terraformStateTool(deps));
 }

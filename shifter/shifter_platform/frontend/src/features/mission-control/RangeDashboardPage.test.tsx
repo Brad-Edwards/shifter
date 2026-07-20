@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "vitest-axe";
 
@@ -8,13 +8,14 @@ import type { CurrentRangeResponse, RangePresentation } from "@/api/types";
 import { FakeWebSocket, installFakeWebSocket, latestSocket } from "@/test/fake-websocket";
 import { renderRoute } from "@/test/utils";
 
-vi.mock("@/api/client", () => ({ apiFetch: vi.fn() }));
+vi.mock("@/api/client", () => ({ apiDownload: vi.fn(), apiFetch: vi.fn() }));
 
-import { apiFetch } from "@/api/client";
+import { apiDownload, apiFetch } from "@/api/client";
 
 import { RangeDashboardPage } from "./RangeDashboardPage";
 
 const mockApi = vi.mocked(apiFetch);
+const mockDownload = vi.mocked(apiDownload);
 
 let restoreWebSocket: () => void;
 
@@ -49,7 +50,13 @@ function currentRange(overrides: Partial<RangePresentation> = {}): CurrentRangeR
     connection_urls: [],
     aces_projection: null,
     aces_participant_runtime: null,
-    vpn_profile_available: false,
+    lifecycle: {
+      expires_at: "2026-08-18T12:00:00Z",
+      maximum_expires_at: "2027-07-19T12:00:00Z",
+      extension_days: 30,
+      can_extend: true,
+    },
+    vpn_profile_available: true,
   };
 }
 
@@ -59,16 +66,20 @@ const EMPTY_RANGE: CurrentRangeResponse = {
   connection_urls: [],
   aces_projection: null,
   aces_participant_runtime: null,
+  lifecycle: null,
   vpn_profile_available: false,
 };
 
 beforeEach(() => {
   mockApi.mockReset();
+  mockDownload.mockReset();
   restoreWebSocket = installFakeWebSocket();
 });
 
 afterEach(() => {
   restoreWebSocket();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("RangeDashboardPage", () => {
@@ -94,6 +105,7 @@ describe("RangeDashboardPage", () => {
   });
 
   it("renders a populated range with status, instances, and lifecycle actions", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-07-19T12:00:00Z").valueOf());
     mockApi.mockResolvedValue(currentRange());
     renderRoute(<RangeDashboardPage />);
 
@@ -103,6 +115,63 @@ describe("RangeDashboardPage", () => {
     expect(screen.getByText("10.0.0.5")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Destroy" })).toBeInTheDocument();
+    expect(screen.getByText("Expires in 30 days")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Extend by up to 30 days" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download VPN profile" })).toBeInTheDocument();
+  });
+
+  it("confirms a server-bounded extension without sending a caller deadline", async () => {
+    mockApi.mockImplementation((path: string) => {
+      if (path === "/mission-control/range/") return Promise.resolve(currentRange());
+      if (path === "/mission-control/range/extend/") {
+        return Promise.resolve({ lifecycle: currentRange().lifecycle });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+    const user = userEvent.setup();
+    renderRoute(<RangeDashboardPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Extend by up to 30 days" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Extend range" }));
+
+    expect(mockApi).toHaveBeenCalledWith("/mission-control/range/extend/", { method: "POST" });
+  });
+
+  it("downloads the VPN profile through bounded binary delivery and revokes the object URL", async () => {
+    mockApi.mockResolvedValue(currentRange());
+    mockDownload.mockResolvedValue(new Blob(["client\n"], { type: "application/x-openvpn-profile" }));
+    const createObjectURL = vi.fn().mockReturnValue("blob:mission-control-profile");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    renderRoute(<RangeDashboardPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download VPN profile" }));
+
+    await waitFor(() => expect(mockDownload).toHaveBeenCalledTimes(1));
+    expect(mockDownload).toHaveBeenCalledWith("/mission-control/range/vpn-profile/", {
+      method: "POST",
+      expectedMediaType: "application/x-openvpn-profile",
+      maxBytes: 64 * 1024,
+    });
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mission-control-profile");
+    click.mockRestore();
+  });
+
+  it("hides extension and VPN actions when the server says they are unavailable", async () => {
+    const response = currentRange();
+    response.lifecycle = response.lifecycle ? { ...response.lifecycle, can_extend: false } : null;
+    response.vpn_profile_available = false;
+    mockApi.mockResolvedValue(response);
+
+    renderRoute(<RangeDashboardPage />);
+
+    await screen.findByText("Ready");
+    expect(screen.queryByRole("button", { name: /Extend by/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download VPN profile" })).not.toBeInTheDocument();
   });
 
   it("renders per-instance terminal/Guacamole actions for a console-capable instance", async () => {

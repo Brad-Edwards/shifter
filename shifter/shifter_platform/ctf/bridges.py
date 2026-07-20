@@ -210,6 +210,20 @@ def cms_has_openvpn_profile(user: User, range_instance_id: int) -> bool:
     return cms_services.has_ctf_openvpn_profile(user, range_instance_id)
 
 
+def cms_reconcile_ctf_range_leases(range_instance_ids: list[int], enforced_deadline: datetime) -> int:
+    """Reconcile event-derived cleanup leases through the CMS boundary."""
+    import cms.services as cms_services
+    from ctf.exceptions import CTFValidationError
+
+    try:
+        return cms_services.reconcile_ctf_range_leases(range_instance_ids, enforced_deadline)
+    except cms_services.RangeLeaseConflict as exc:
+        raise CTFValidationError(
+            "The requested cleanup time exceeds an existing range generation lifetime",
+            code="CTF_RANGE_LEASE_CEILING",
+        ) from exc
+
+
 def cms_reassign_range_owner(range_instance_id: int, new_user: User) -> None:
     """Reassign an existing range's ownership via CMS (#1018 spare recovery)."""
     import cms.services as cms_services

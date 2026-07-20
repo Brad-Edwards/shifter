@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Shared error message for "Range not found" so we don't duplicate the literal (python:S1192).
 _RANGE_NOT_FOUND_MSG = "Range not found"
+_MISSING_REQUEST_MSG = "Range has no associated request"
 
 
 def _engine_destroy_range_by_request_call(request_id: UUID) -> bool:
@@ -84,9 +85,11 @@ def _transition_then_dispatch(
     *,
     instance: RangeInstance,
     request_id: UUID,
-    user: User,
+    user: User | None,
     audit_entity_id: int,
     transition: _TransitionSpec,
+    audit_actor_type: AuditActorType = AuditActorType.USER,
+    audit_context: str | None = None,
 ) -> None:
     """Apply a CMS lifecycle transition, dispatch engine cleanup, and revert on rejection."""
     target_status, engine_call, audit_action, failure_message, label, soft_delete = transition
@@ -118,14 +121,15 @@ def _transition_then_dispatch(
             entity_type=AuditEntityType.RANGE,
             entity_id=audit_entity_id,
             action=audit_action,
-            actor_type=AuditActorType.USER,
-            actor_id=user.id,
+            actor_type=audit_actor_type,
+            actor_id=user.id if user is not None and audit_actor_type == AuditActorType.USER else None,
             previous_state={
                 "status": previous_status,
                 "scenario": instance.scenario_id,
             },
             new_state={"status": target_status},
             request_id=str(request_id),
+            context=audit_context or "",
         )
 
 
@@ -141,27 +145,10 @@ def _restore_range_instance_status(
 
 
 def destroy_range(user: User, range_instance_pk: int) -> None:
-    """Tear down range.
+    """Tear down an owned range by its ``RangeInstance`` primary key.
 
-    Fetches RangeInstance, verifies ownership, updates CMS status to DESTROYING,
-    then delegates to engine.services.destroy_range with RangeContext.
-
-    The PK is the identifier callers hold (``find_range_instance_id_by_request``
-    and ``get_range_status_by_id`` are PK-keyed); lookups must use the PK, not
-    the legacy nullable ``RangeInstance.range_id`` engine field (issue #1139).
-
-    Args:
-        user: User requesting destruction
-        range_instance_pk: PK of the RangeInstance to destroy
-
-    Returns:
-        None
-
-    Raises:
-        TypeError: If user is None, invalid type, or range_instance_pk is invalid type
-        ValueError: If user has no ID (unsaved) or range_instance_pk is invalid
-        CMSError: If range not found or not owned by user
-        EngineError: If engine fails to destroy range
+    The primary key is the stable identifier held by callers; the legacy
+    nullable ``range_id`` engine field is not used for lookup (issue #1139).
     """
     _validate_caller_user(user, "destroy_range")
 
@@ -246,6 +233,22 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
             range_instance_pk,
         )
         raise
+
+
+def destroy_expired_range(instance: RangeInstance) -> None:
+    """Destroy a server-expired range through the canonical Engine lifecycle."""
+    request_id = instance.request.request_id if instance.request else None
+    if request_id is None:
+        raise CMSError(_MISSING_REQUEST_MSG)
+    _transition_then_dispatch(
+        instance=instance,
+        request_id=request_id,
+        user=None,
+        audit_entity_id=instance.pk,
+        transition=_DESTROY_TRANSITION,
+        audit_actor_type=AuditActorType.SYSTEM,
+        audit_context="range_lease_expired",
+    )
 
 
 def cancel_range(user: User, range_id: int) -> None:
@@ -384,7 +387,7 @@ def destroy_range_by_request_id(user: User, request_id: str) -> None:
         raise CMSError(_RANGE_NOT_FOUND_MSG)
 
     if instance.request is None:
-        raise CMSError("Range has no associated request")
+        raise CMSError(_MISSING_REQUEST_MSG)
 
     try:
         _transition_then_dispatch(
@@ -464,7 +467,7 @@ def cancel_range_by_request_id(user: User, request_id: str) -> None:
         raise CMSError(_RANGE_NOT_FOUND_MSG)
 
     if instance.request is None:
-        raise CMSError("Range has no associated request")
+        raise CMSError(_MISSING_REQUEST_MSG)
 
     try:
         _transition_then_dispatch(

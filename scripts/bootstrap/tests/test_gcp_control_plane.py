@@ -2058,11 +2058,11 @@ class TestGcpBootstrapIdentityPlatform:
         """The generated runtime env should elevate the first operator without hardcoding an email in the repo."""
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
 
-        with patch("deploy.load_bootstrap_env_values", return_value={}):
-            rendered = deploy.render_gcp_platform_runtime_env(
-                config,
-                bootstrap_operator_email="admin@example.com",
-            )
+        rendered = deploy.render_gcp_platform_runtime_env(
+            config,
+            bootstrap_operator_email="admin@example.com",
+            bootstrap_env_values={},
+        )
 
         assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
         assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered
@@ -2079,11 +2079,11 @@ class TestGcpBootstrapIdentityPlatform:
         """The generated env contract must not embed sample guest passwords in source-controlled output."""
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
 
-        with patch("deploy.load_bootstrap_env_values", return_value={}):
-            rendered = deploy.render_gcp_platform_runtime_env(
-                config,
-                bootstrap_operator_email="admin@example.com",
-            )
+        rendered = deploy.render_gcp_platform_runtime_env(
+            config,
+            bootstrap_operator_email="admin@example.com",
+            bootstrap_env_values={},
+        )
 
         # Issue #762: per-instance guest passwords replace shared env
         # entries. The bootstrap-rendered platform-runtime env file must
@@ -2099,8 +2099,7 @@ class TestGcpBootstrapIdentityPlatform:
         """Guest boot images resolve to the packer-gcp export bucket per environment."""
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", environment="gcp-dev")
 
-        with patch("deploy.load_bootstrap_env_values", return_value={}):
-            rendered = deploy.render_gcp_platform_runtime_env(config)
+        rendered = deploy.render_gcp_platform_runtime_env(config, bootstrap_env_values={})
 
         bucket = "shifter-gcp-dev-gdc-vm-images"
         assert f"GDC_UBUNTU_IMAGE_URL=gs://{bucket}/ubuntu.qcow2\n" in rendered
@@ -2121,8 +2120,7 @@ class TestGcpBootstrapIdentityPlatform:
             project_id="prod-rwctxzl6shxk", cluster_id="cluster1", environment="gcp-dev", region="us-central1"
         )
 
-        with patch("deploy.load_bootstrap_env_values", return_value={}):
-            rendered = deploy.render_gcp_platform_runtime_env(config)
+        rendered = deploy.render_gcp_platform_runtime_env(config, bootstrap_env_values={})
 
         assert "AWS_REGION=us-central1\n" in rendered
         assert "CLOUD_REGION=us-central1\n" in rendered

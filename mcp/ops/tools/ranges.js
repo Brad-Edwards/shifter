@@ -1,13 +1,18 @@
 // Range reconciliation and range/subnet query tools for the
 // shifter-ops MCP server. Orphan classification lives in reconcile.js
 // (injected via deps) so it can be unit-tested with a fake client.
+//
+// Each tool descriptor is built by its own module-level factory so the
+// registrar stays a thin wiring function. reconcile_ranges keeps its
+// handler as a separate top-level function so neither the factory nor
+// the handler exceeds the per-function length budget.
 
 import { z } from "zod";
 import { registerTool } from "../policy.js";
 import { ok, err } from "../respond.js";
 import { EnvSchema, CMD_DESCRIBE_INSTANCES } from "../schemas.js";
 
-export function registerRangesTools(ctx, deps) {
+async function reconcileRangesHandler(deps, { env, execute: shouldExecute }) {
   const {
     getProfile,
     aws,
@@ -16,8 +21,87 @@ export function registerRangesTools(ctx, deps) {
     terminateOrphans,
     markOrphansDestroyedInDb,
   } = deps;
+  try {
+    const profile = getProfile(env);
 
-  registerTool(ctx, {
+    // 1. Get all running range instances from EC2 (filtered by shifter:range_id tag).
+    // The shifter:range_id tag is set by Terraform common_tags on all range resources
+    // and is absent from NGFW/portal instances, so it naturally scopes to ranges only.
+    const filters = [
+      { Name: "tag:shifter:range_id", Values: ["*"] },
+      { Name: "instance-state-name", Values: ["running"] },
+    ];
+    const ec2Result = aws(profile, [
+      "ec2",
+      CMD_DESCRIBE_INSTANCES,
+      "--filters",
+      JSON.stringify(filters),
+      "--query",
+      "Reservations[].Instances[].{InstanceId:InstanceId,State:State.Name,Name:Tags[?Key==`Name`].Value|[0],RangeId:Tags[?Key==`shifter:range_id`].Value|[0]}",
+    ]);
+
+    const runningEc2s = ec2Result.filter(
+      (i) => i.State === "running" && i.RangeId
+    );
+
+    if (runningEc2s.length === 0) {
+      return ok("No running shifter range instances found in EC2.");
+    }
+
+    // 2. Query DB for engine_instances that map to these EC2 IDs
+    const ec2Ids = runningEc2s.map((i) => i.InstanceId);
+
+    const orphans = await withClient(env, { readOnly: true }, (client) =>
+      findOrphanedInstances(client, runningEc2s, ec2Ids)
+    );
+
+    if (orphans.length === 0) {
+      return ok(
+        `Checked ${runningEc2s.length} running EC2 instances. No orphans found.`
+      );
+    }
+
+    if (!shouldExecute) {
+      const report = {
+        mode: "DRY RUN",
+        orphaned_instances: orphans.length,
+        details: orphans,
+      };
+      return ok(JSON.stringify(report, null, 2));
+    }
+
+    // 3. Execute: terminate EC2s and update DB
+    const terminated = terminateOrphans(profile, orphans);
+
+    await withClient(env, { readOnly: false }, (client) =>
+      markOrphansDestroyedInDb(client, orphans)
+    );
+
+    const allEngineIds = [];
+    for (const o of orphans) {
+      if (o.engine_instance_id) allEngineIds.push(o.engine_instance_id);
+      if (o.engine_instance_ids) allEngineIds.push(...o.engine_instance_ids);
+    }
+
+    const report = {
+      mode: "EXECUTED",
+      terminated: terminated.length,
+      details: terminated,
+      db_updates: {
+        engine_instances: new Set(allEngineIds).size,
+        ranges: new Set(
+          orphans.filter((o) => o.range_id).map((o) => o.range_id)
+        ).size,
+      },
+    };
+    return ok(JSON.stringify(report, null, 2));
+  } catch (e) {
+    return err(e);
+  }
+}
+
+function reconcileRangesTool(deps) {
+  return {
     name: "reconcile_ranges",
     klass: "infra_mutation",
     description:
@@ -31,90 +115,12 @@ export function registerRangesTools(ctx, deps) {
           "Set to true to actually terminate instances and update DB. Default is dry-run."
         ),
     },
-    handler: async ({ env, execute: shouldExecute }) => {
-      try {
-        const profile = getProfile(env);
+    handler: (args) => reconcileRangesHandler(deps, args),
+  };
+}
 
-        // 1. Get all running range instances from EC2 (filtered by shifter:range_id tag).
-        // The shifter:range_id tag is set by Terraform common_tags on all range resources
-        // and is absent from NGFW/portal instances, so it naturally scopes to ranges only.
-        const filters = [
-          { Name: "tag:shifter:range_id", Values: ["*"] },
-          { Name: "instance-state-name", Values: ["running"] },
-        ];
-        const ec2Result = aws(profile, [
-          "ec2",
-          CMD_DESCRIBE_INSTANCES,
-          "--filters",
-          JSON.stringify(filters),
-          "--query",
-          "Reservations[].Instances[].{InstanceId:InstanceId,State:State.Name,Name:Tags[?Key==`Name`].Value|[0],RangeId:Tags[?Key==`shifter:range_id`].Value|[0]}",
-        ]);
-
-        const runningEc2s = ec2Result.filter(
-          (i) => i.State === "running" && i.RangeId
-        );
-
-        if (runningEc2s.length === 0) {
-          return ok("No running shifter range instances found in EC2.");
-        }
-
-        // 2. Query DB for engine_instances that map to these EC2 IDs
-        const ec2Ids = runningEc2s.map((i) => i.InstanceId);
-
-        const orphans = await withClient(env, { readOnly: true }, (client) =>
-          findOrphanedInstances(client, runningEc2s, ec2Ids)
-        );
-
-        if (orphans.length === 0) {
-          return ok(
-            `Checked ${runningEc2s.length} running EC2 instances. No orphans found.`
-          );
-        }
-
-        if (!shouldExecute) {
-          const report = {
-            mode: "DRY RUN",
-            orphaned_instances: orphans.length,
-            details: orphans,
-          };
-          return ok(JSON.stringify(report, null, 2));
-        }
-
-        // 3. Execute: terminate EC2s and update DB
-        const terminated = terminateOrphans(profile, orphans);
-
-        await withClient(env, { readOnly: false }, (client) =>
-          markOrphansDestroyedInDb(client, orphans)
-        );
-
-        const allEngineIds = [];
-        for (const o of orphans) {
-          if (o.engine_instance_id) allEngineIds.push(o.engine_instance_id);
-          if (o.engine_instance_ids) allEngineIds.push(...o.engine_instance_ids);
-        }
-
-        const report = {
-          mode: "EXECUTED",
-          terminated: terminated.length,
-          details: terminated,
-          db_updates: {
-            engine_instances: new Set(allEngineIds).size,
-            ranges: [
-              ...new Set(
-                orphans.filter((o) => o.range_id).map((o) => o.range_id)
-              ),
-            ].length,
-          },
-        };
-        return ok(JSON.stringify(report, null, 2));
-      } catch (e) {
-        return err(e);
-      }
-    },
-  });
-
-  registerTool(ctx, {
+function listRangesTool({ withClient }) {
+  return {
     name: "list_ranges",
     klass: "named_db_read",
     description:
@@ -185,9 +191,11 @@ export function registerRangesTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function getRangeTool({ withClient }) {
+  return {
     name: "get_range",
     klass: "named_db_read",
     description:
@@ -258,9 +266,11 @@ export function registerRangesTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function listSubnetAllocationsTool({ withClient }) {
+  return {
     name: "list_subnet_allocations",
     klass: "named_db_read",
     description:
@@ -309,5 +319,12 @@ export function registerRangesTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
+
+export function registerRangesTools(ctx, deps) {
+  registerTool(ctx, reconcileRangesTool(deps));
+  registerTool(ctx, listRangesTool(deps));
+  registerTool(ctx, getRangeTool(deps));
+  registerTool(ctx, listSubnetAllocationsTool(deps));
 }

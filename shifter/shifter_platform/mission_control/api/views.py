@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mission_control.api._vpn import MissionControlVpnProfileView
 from mission_control.api.aces import (
     AcesOperationReceiptListView,
     AcesOperationStatusListView,
@@ -23,10 +24,10 @@ from mission_control.api.ranges import (
     CancelRangeView,
     CurrentRangeView,
     DestroyRangeView,
+    ExtendRangeLeaseView,
     LaunchRangeView,
     PauseRangeView,
     RangeHistoryView,
-    RangeVpnProfileView,
     ResumeRangeView,
     ScenarioListView,
 )
@@ -79,18 +80,19 @@ __all__ = (
     "CredentialDeleteView",
     "CurrentRangeView",
     "DestroyRangeView",
+    "ExtendRangeLeaseView",
     "GuacamoleBootstrapOpenView",
     "GuacamoleBootstrapStatusView",
     "GuacamoleNGFWSSHURLView",
     "GuacamoleRDPURLView",
     "GuacamoleRangeSSHURLView",
     "LaunchRangeView",
+    "MissionControlVpnProfileView",
     "NGFWCreateView",
     "NGFWDestroyView",
     "NGFWListView",
     "PauseRangeView",
     "RangeHistoryView",
-    "RangeVpnProfileView",
     "ResumeRangeView",
     "ScenarioListView",
     "UploadCancelView",

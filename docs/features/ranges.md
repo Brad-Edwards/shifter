@@ -47,7 +47,20 @@ Once Ready:
 2. Select an instance
 3. Use SSH or RDP to connect
 
+When the active range advertises VPN access, Mission Control also offers a
+**Download VPN profile** action. Treat the `.ovpn` file as a private credential.
+
 See [Terminal](terminal) for details.
+
+## Range Lifetime
+
+Mission Control ranges start with a 30-day lifetime. The SPA shows both the time
+remaining and the scheduled cleanup time on the active range page. Use
+**Extend by up to 30 days** to extend the deadline, up to the range's fixed
+365-day maximum lifetime. Expired ranges are automatically destroyed.
+
+CTF participant and spare ranges use the CTF event cleanup time as their
+deadline and are removed automatically through the same range cleanup process.
 
 ## Cancel a Range
 
@@ -68,3 +81,4 @@ This is irreversible. All range data is deleted.
 ## Limits
 
 - One active range at a time per user
+- Mission Control ranges cannot be extended past 365 days from creation

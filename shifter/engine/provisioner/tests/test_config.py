@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
+    AcesContentDeliveryConfig,
     AWSPolarisAgentConfig,
     GCERangeCellConfig,
     GCERangeImageProfile,
@@ -30,6 +31,7 @@ from config import (
     get_range_availability_zone,
     get_range_from_db,
     is_gce_range_cell_backend,
+    load_aces_content_delivery_config,
     load_aws_polaris_agent_config,
     load_gce_range_cell_config,
     load_gdc_network_access_config,
@@ -1152,6 +1154,41 @@ class TestLoadAwsPolarisAgentConfig:
 
         with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS"):
             load_aws_polaris_agent_config()
+
+
+class TestLoadAcesContentDeliveryConfig:
+    """Tests for the #1564 post-boot content-delivery object-storage config."""
+
+    def test_empty_bucket_when_unconfigured(self, mocker):
+        """No bucket configured is legitimate -- most ranges have no source-backed
+        content; the bucket is validated fail-closed only where delivery actually
+        needs it, not eagerly at load time."""
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        config = load_aces_content_delivery_config()
+
+        assert config == AcesContentDeliveryConfig(bucket="", max_bytes=268435456)
+
+    def test_prefers_dedicated_bucket_env_var(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {"ACES_CONTENT_DELIVERY_BUCKET": "aces-delivery", "STORAGE_BUCKET_NAME": "platform-assets"},
+            clear=True,
+        )
+
+        assert load_aces_content_delivery_config().bucket == "aces-delivery"
+
+    def test_falls_back_to_shared_storage_bucket_name(self, mocker):
+        """Same env var name the Django CMS side reads for the assets bucket, so a
+        single shared value can configure both deployables."""
+        mocker.patch.dict(os.environ, {"STORAGE_BUCKET_NAME": "platform-assets"}, clear=True)
+
+        assert load_aces_content_delivery_config().bucket == "platform-assets"
+
+    def test_reads_max_bytes_override(self, mocker):
+        mocker.patch.dict(os.environ, {"ACES_CONTENT_DELIVERY_MAX_BYTES": "1024"}, clear=True)
+
+        assert load_aces_content_delivery_config().max_bytes == 1024
 
 
 class TestDecryptField:

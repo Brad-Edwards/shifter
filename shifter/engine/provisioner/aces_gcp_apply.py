@@ -28,26 +28,30 @@ import base64
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from aces_account_credentials import (
     AcesAccountCredentialOps,
     default_account_credential_ops,
-    delete_instance_account_credentials,
     install_instance_account_credentials,
 )
 from aces_active_directory import (
     AcesDirectorySecretOps,
     default_directory_secret_ops,
-    delete_aces_directory_secrets,
     realize_aces_active_directory,
 )
+from aces_content_delivery import (
+    assert_content_delivery_bindings_complete,
+    realize_aces_content_delivery,
+)
 from aces_gcp_composition import node_bootstrap_script
+from aces_gcp_destroy import AcesGceDestroyOptions, destroy_aces_range_cell
 from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
+from aces_gcp_secret_ops import AcesGceSecretOps, _default_secret_ops
 from aces_plan import AcesPlan, AcesPlanAccount, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
-from gcp_guest_secrets import delete_aces_ssh_secret, ensure_aces_ssh_secret
 from gcp_range_cell_clients import GCEClients, _build_clients
-from gcp_range_cell_ops import _delete_resource, _get_or_none, _wait_for_operation
+from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
 from gcp_range_cell_types import InstancePlan, RangeCellPlan, ResourceDict
@@ -64,19 +68,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class AcesGceSecretOps:
-    """Provisioner-managed SSH secret operations for the ACES range-cell backend.
-
-    Keyed on ``(range_id, instance_key)`` -- the ACES instance key (node address +
-    count index), never a cyberscript ``ScenarioInstance``. Injectable so tests
-    exercise the orchestration without touching Secret Manager.
-    """
-
-    ensure_ssh: Callable[[int, str], tuple[str, str]]
-    delete_ssh: Callable[[int, str], None]
-
-
-@dataclass(frozen=True)
 class AcesGceApplyOptions:
     """Optional infrastructure and credential bindings for an ACES apply."""
 
@@ -87,14 +78,7 @@ class AcesGceApplyOptions:
     credential_installer: Callable[..., None] = install_instance_account_credentials
     directory_secret_ops: AcesDirectorySecretOps | None = None
     directory_realizer: Callable[..., None] = realize_aces_active_directory
-
-
-@dataclass(frozen=True)
-class AcesGceDestroyOptions:
-    """Optional account and directory cleanup bindings for ACES teardown."""
-
-    account_secret_ops: AcesAccountCredentialOps | None = None
-    directory_secret_ops: AcesDirectorySecretOps | None = None
+    content_delivery_realizer: Callable[..., None] = realize_aces_content_delivery
 
 
 @dataclass(frozen=True)
@@ -108,27 +92,7 @@ class _AcesGceApplyRuntime:
     credential_installer: Callable[..., None]
     directory_secret_ops: AcesDirectorySecretOps
     directory_realizer: Callable[..., None]
-
-
-@dataclass(frozen=True)
-class _AcesGceDestroyRuntime:
-    """Resolved non-optional bindings shared by ACES resource teardown."""
-
-    config: GCERangeCellConfig
-    clients: GCEClients
-    secret_ops: AcesGceSecretOps
-    account_secret_ops: AcesAccountCredentialOps
-    directory_secret_ops: AcesDirectorySecretOps
-
-
-def _default_secret_ops() -> AcesGceSecretOps:
-    """Return the production ACES SSH-secret operation bindings."""
-    return AcesGceSecretOps(ensure_ssh=ensure_aces_ssh_secret, delete_ssh=delete_aces_ssh_secret)
-
-
-def _default_destroy_profile(_node: AcesPlanNode) -> GCERangeImageProfile:
-    """Image resolver used for destroy: teardown deletes by name, so no image."""
-    return GCERangeImageProfile()
+    content_delivery_realizer: Callable[..., None]
 
 
 def _apply_runtime(options: AcesGceApplyOptions) -> _AcesGceApplyRuntime:
@@ -141,22 +105,7 @@ def _apply_runtime(options: AcesGceApplyOptions) -> _AcesGceApplyRuntime:
         credential_installer=options.credential_installer,
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
         directory_realizer=options.directory_realizer,
-    )
-
-
-def _destroy_runtime(
-    config: GCERangeCellConfig | None,
-    clients: GCEClients | None,
-    secret_ops: AcesGceSecretOps | None,
-    options: AcesGceDestroyOptions,
-) -> _AcesGceDestroyRuntime:
-    """Resolve optional teardown bindings exactly once."""
-    return _AcesGceDestroyRuntime(
-        config=config or load_gce_range_cell_config(),
-        clients=clients or _build_clients(),
-        secret_ops=secret_ops or _default_secret_ops(),
-        account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
-        directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
+        content_delivery_realizer=options.content_delivery_realizer,
     )
 
 
@@ -171,6 +120,20 @@ def _assert_composition_targets_resolve(aces_plan: AcesPlan) -> None:
     for target, kind, name in placements:
         if target not in node_addresses:
             raise AcesGcePlanError(f"{kind} placement {name!r} targets node {target!r} not present in this plan")
+
+
+def _assert_content_delivery_bindings_complete(
+    aces_plan: AcesPlan, delivery_bindings: list[dict[str, Any]] | None
+) -> None:
+    """Fail closed unless every source-backed content item has exactly one binding.
+
+    Delegates to ``aces_content_delivery.assert_content_delivery_bindings_complete``
+    (#1564): a missing binding, an over-claiming extra binding, or an
+    unsupported source-backed content_type all raise ``AcesGceCompositionError``
+    before any cloud resource is planned or created -- the same early,
+    no-cleanup-needed position as the sibling ``_assert_composition_targets_resolve``.
+    """
+    assert_content_delivery_bindings_complete(aces_plan, delivery_bindings)
 
 
 def _node_address_of(instance: InstancePlan) -> str:
@@ -310,6 +273,21 @@ def _realize_directory(
         )
 
 
+def _realize_content_delivery(
+    aces_plan: AcesPlan,
+    instance_outputs: list[ResourceDict],
+    delivery_bindings: list[dict[str, Any]] | None,
+    runtime: _AcesGceApplyRuntime,
+) -> None:
+    """Deliver every source-backed content item when the plan carries one (#1564)."""
+    if any(item.source_name for item in aces_plan.content):
+        runtime.content_delivery_realizer(
+            aces_plan=aces_plan,
+            instance_outputs=instance_outputs,
+            delivery_bindings=delivery_bindings,
+        )
+
+
 def _cleanup_failed_apply(
     request_uuid: str,
     range_id: int,
@@ -337,10 +315,17 @@ def apply_aces_range_cell(
     aces_plan: AcesPlan,
     resolve_image: Callable[[AcesPlanNode], GCERangeImageProfile],
     options: AcesGceApplyOptions | None = None,
+    delivery_bindings: list[dict[str, Any]] | None = None,
 ) -> ResourceDict:
-    """Provision an ACES GCE range cell and return provisioner outputs."""
+    """Provision an ACES GCE range cell and return provisioner outputs.
+
+    ``delivery_bindings`` are the byte-free #1564 delivery bindings for the
+    range (``provisioner_db_aces.get_aces_content_delivery_bindings_by_request_id``);
+    ``None``/empty is the common case of a plan with no source-backed content.
+    """
     runtime = _apply_runtime(options or AcesGceApplyOptions())
     _assert_composition_targets_resolve(aces_plan)
+    _assert_content_delivery_bindings_complete(aces_plan, delivery_bindings)
     plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, resolve_image, runtime.config)
     try:
         instance_outputs = _provision_aces_resources(
@@ -350,110 +335,9 @@ def apply_aces_range_cell(
             _accounts_by_node(aces_plan),
         )
         _realize_directory(plan, aces_plan, instance_outputs, runtime)
+        _realize_content_delivery(aces_plan, instance_outputs, delivery_bindings, runtime)
     except Exception:
         logger.exception("ACES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         _cleanup_failed_apply(request_uuid, range_id, aces_plan, runtime)
         raise
     return {"subnets": subnet_outputs(plan), "instances": instance_outputs}
-
-
-def destroy_aces_range_cell(
-    request_uuid: str,
-    range_id: int,
-    aces_plan: AcesPlan,
-    config: GCERangeCellConfig | None = None,
-    clients: GCEClients | None = None,
-    secret_ops: AcesGceSecretOps | None = None,
-    options: AcesGceDestroyOptions | None = None,
-) -> None:
-    """Destroy every GCE resource owned by one ACES range cell."""
-    runtime = _destroy_runtime(config, clients, secret_ops, options or AcesGceDestroyOptions())
-    plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, _default_destroy_profile, runtime.config)
-    _destroy_instances(plan, aces_plan, runtime)
-    delete_aces_directory_secrets(plan["range_id"], aces_plan, runtime.directory_secret_ops)
-    _destroy_network_resources(plan, runtime.clients)
-
-
-def _destroy_instances(
-    plan: RangeCellPlan,
-    aces_plan: AcesPlan,
-    runtime: _AcesGceDestroyRuntime,
-) -> None:
-    """Delete instances, addresses, and their deterministic guest secrets."""
-    for instance in reversed(plan["instances"]):
-        _delete_resource(
-            plan,
-            runtime.clients,
-            runtime.clients.instances.get,
-            runtime.clients.instances.delete,
-            "zone",
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=instance["resource_name"],
-        )
-        _delete_resource(
-            plan,
-            runtime.clients,
-            runtime.clients.addresses.get,
-            runtime.clients.addresses.delete,
-            "region",
-            project=plan["project_id"],
-            region=plan["region"],
-            address=instance["address_name"],
-        )
-        runtime.secret_ops.delete_ssh(plan["range_id"], instance["uuid"])
-        delete_instance_account_credentials(
-            plan["range_id"],
-            instance["uuid"],
-            _instance_accounts(aces_plan, instance),
-            runtime.account_secret_ops,
-        )
-
-
-def _instance_accounts(aces_plan: AcesPlan, instance: InstancePlan) -> tuple[AcesPlanAccount, ...]:
-    """Return local-only account placements belonging to one instance's node."""
-    node_address = _node_address_of(instance)
-    return tuple(
-        account
-        for account in aces_plan.accounts
-        if account.target_address == node_address and account.domain_ref is None and account.domain_id is None
-    )
-
-
-def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None:
-    """Delete firewalls, subnets, and an owned per-range network in dependency order."""
-    for firewall in reversed(plan["firewalls"]):
-        _delete_resource(
-            plan,
-            clients,
-            clients.firewalls.get,
-            clients.firewalls.delete,
-            "global",
-            project=plan["project_id"],
-            firewall=firewall["name"],
-        )
-
-    for subnet in reversed(plan["subnets"]):
-        _delete_resource(
-            plan,
-            clients,
-            clients.subnetworks.get,
-            clients.subnetworks.delete,
-            "region",
-            project=plan["project_id"],
-            region=plan["region"],
-            subnetwork=subnet["resource_name"],
-        )
-
-    # In shared-vpc mode the range VPC is the pre-existing, platform-peered network
-    # and must never be deleted; only per-range subnets/firewalls are torn down.
-    if plan["manage_network"]:
-        _delete_resource(
-            plan,
-            clients,
-            clients.networks.get,
-            clients.networks.delete,
-            "global",
-            project=plan["project_id"],
-            network=plan["network"]["name"],
-        )

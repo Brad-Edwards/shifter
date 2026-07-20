@@ -9714,6 +9714,88 @@
         ]
       }
     },
+    "/api/v1/mission-control/range/extend/": {
+      "post": {
+        "operationId": "mission_control_range_extend_create",
+        "description": "Extend only the server-owned lease; caller timestamps are forbidden.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeLeaseResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:write"
+        ]
+      }
+    },
     "/api/v1/mission-control/range/launch/": {
       "post": {
         "operationId": "api_v1_mission_control_range_launch",
@@ -9940,7 +10022,7 @@
     "/api/v1/mission-control/range/vpn-profile/": {
       "post": {
         "operationId": "mission_control_range_vpn_profile_create",
-        "description": "Return the profile, mapping CMS gate errors onto API statuses.",
+        "description": "Deliver the current Mission Control range's generation-bound OpenVPN profile.",
         "tags": [
           "mission-control"
         ],
@@ -9959,6 +10041,56 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             },
@@ -9984,7 +10116,10 @@
             },
             "description": "Permission denied."
           }
-        }
+        },
+        "x-required-scopes": [
+          "mission_control:vpn-profile:read"
+        ]
       }
     },
     "/api/v1/mission-control/ranges/": {
@@ -12882,10 +13017,16 @@
             "additionalProperties": {},
             "nullable": true
           },
+          "lifecycle": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RangeLease"
+              }
+            ],
+            "nullable": true
+          },
           "vpn_profile_available": {
-            "type": "boolean",
-            "readOnly": true,
-            "default": false
+            "type": "boolean"
           }
         },
         "required": [
@@ -12893,6 +13034,7 @@
           "aces_projection",
           "connection_urls",
           "has_range",
+          "lifecycle",
           "range",
           "vpn_profile_available"
         ]
@@ -15985,6 +16127,45 @@
         },
         "required": [
           "ranges"
+        ]
+      },
+      "RangeLease": {
+        "type": "object",
+        "description": "Safe, server-owned lease projection for one Mission Control range.",
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maximum_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "extension_days": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "can_extend": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_extend",
+          "expires_at",
+          "extension_days",
+          "maximum_expires_at"
+        ]
+      },
+      "RangeLeaseResponse": {
+        "type": "object",
+        "description": "Response body for one bounded Mission Control lease extension.",
+        "properties": {
+          "lifecycle": {
+            "$ref": "#/components/schemas/RangeLease"
+          }
+        },
+        "required": [
+          "lifecycle"
         ]
       },
       "RangeLifecycle": {
