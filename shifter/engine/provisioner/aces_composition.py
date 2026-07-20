@@ -83,8 +83,12 @@ class AcesPlanFeature:
     name: str
     feature_type: str
     target_address: str
+    address: str = ""
     source_name: str | None = None
+    source_version: str | None = None
     destination: str | None = None
+    has_environment: bool = False
+    ordering_dependencies: tuple[str, ...] = ()
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -122,6 +126,12 @@ def _source_name(spec: Mapping[str, Any]) -> str | None:
     if isinstance(source, Mapping):
         return _opt_str(source.get("name"))
     return None
+
+
+def _source_version(spec: Mapping[str, Any]) -> str | None:
+    """Return an exact authored source version, when present."""
+    source = spec.get("source")
+    return _opt_str(source.get("version")) if isinstance(source, Mapping) else None
 
 
 def _content_item_names(raw: object) -> tuple[str, ...]:
@@ -193,5 +203,7 @@ def build_feature(payload: Mapping[str, Any]) -> AcesPlanFeature | None:
         feature_type=feature_type.lower(),
         target_address=target,
         source_name=_source_name(template),
+        source_version=_source_version(template),
         destination=_opt_str(template.get("destination")),
+        has_environment=template.get("environment") not in (None, {}, []),
     )

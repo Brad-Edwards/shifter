@@ -12,6 +12,14 @@ This note fixes the architecture boundary for native Compute Engine range-cell
 images. It is not an implementation plan. The issue is requirement-free; its
 title, body, deliverables, and acceptance criteria are the shipping contract.
 
+> **Later clarification (#1761, 2026-07-20):**
+> [gce-per-instance-image-resolution-preflight-1761.md](./gce-per-instance-image-resolution-preflight-1761.md)
+> supersedes only this note's original single-profile selection constraint for
+> legacy instances with a non-empty `ami_key`. Unkeyed instances retain the four
+> defaults below; keyed instances select a complete, platform-mapped GCE profile.
+> The authored key remains a logical selector and is never passed to Compute
+> Engine or interpreted as a provider image reference.
+
 ## Decision Boundary
 
 Extend the existing GCE Packer and range-profile paths. Do not introduce a
@@ -54,10 +62,12 @@ image source of truth, or changes the live guest credential boundary.
   Packer VM images are not OCI images and must not be represented as OCI
   provenance. Reuse the immutable Packer-manifest/SBOM direction in ADR-037.
 - Consumer configuration continues to use the four existing logical role
-  profiles: Linux host, Kali/attacker, Windows, and DC. Native GCE family URLs
-  flow through `GCP_RANGE_{LINUX,KALI,WINDOWS,DC}_IMAGE`; no Packer manifest,
-  AWS SSM parameter, GDC `gs://` disk URL, scenario YAML field, or local
-  hard-coded value becomes a second runtime lookup path.
+  profiles: Linux host, Kali/attacker, Windows, and DC. The
+  `GCP_RANGE_{LINUX,KALI,WINDOWS,DC}_*` variables remain the unkeyed defaults;
+  #1761 adds one backend-owned map from a legacy logical image key to a complete
+  profile within those classes. No Packer manifest, AWS SSM parameter, GDC
+  `gs://` disk URL, scenario-supplied provider reference, or local hard-coded
+  value becomes a second runtime lookup path.
 - A promoted family URL is the stable configured channel. The provisioner must
   validate its shape before cloud mutation and retain the actual concrete image
   used by a created VM in existing GCP provider metadata for audit/debugging.
@@ -286,9 +296,10 @@ from a filename, domain string, or mutable family head.
 - Do not conflate a Packer manifest, GCE image family, concrete GCE image,
   exported GDC qcow2, AWS AMI/SSM parameter, and provisioner image profile.
   They have different identities and consumers.
-- Do not put image selection in scenario YAML or infer it from `ami_key` beyond
-  the existing logical role/profile routing. Do not add a Polaris-only runtime
-  config object.
+- Do not put provider image references in scenario YAML or infer a GCE family
+  name from `ami_key`. Per #1761, an existing logical `ami_key` may select only
+  an exact platform-configured profile within the existing role/profile routing.
+  Do not add a Polaris-only runtime config object.
 - Do not duplicate AD seed logic, DC readiness checks, Compose bootstrap logic,
   runtime env allowlists, secret adapters, logging sanitizers, exception types,
   or workflow promotion logic.
