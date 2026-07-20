@@ -13346,6 +13346,13 @@
             "type": "string",
             "readOnly": true
           },
+          "visible_os_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
           "theme_color": {
             "type": "string",
             "readOnly": true
@@ -13380,7 +13387,8 @@
           "submission_cooldown_seconds",
           "team_mode",
           "team_size_limit",
-          "theme_color"
+          "theme_color",
+          "visible_os_types"
         ]
       },
       "EventLifecycleRequest": {
@@ -13724,6 +13732,14 @@
             "type": "string",
             "format": "uri",
             "maxLength": 500
+          },
+          "visible_os_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "maxItems": 16
           },
           "theme_color": {
             "type": "string",

@@ -16,3 +16,6 @@ class CtfConfig(AppConfig):
         from ctf.services.notification.realtime import register_ctf_notifications
 
         register_ctf_notifications()
+        from ctf.services.range.visibility import register_ctf_visibility_policy
+
+        register_ctf_visibility_policy()
