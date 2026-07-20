@@ -10,9 +10,22 @@
 # groups; enable them all for the full stack.
 set -euo pipefail
 
-: "${APTL_VERSION:?APTL_VERSION must be set}"
+: "${APTL_REQUIREMENTS_LOCK:?APTL_REQUIREMENTS_LOCK must be set}"
+if [[ ! -f "${APTL_REQUIREMENTS_LOCK}" ]]; then
+  echo "APTL requirements lock is missing: ${APTL_REQUIREMENTS_LOCK}" >&2
+  exit 1
+fi
 
-sudo -u ubuntu env HOME=/home/ubuntu pipx install "aptl-labs==${APTL_VERSION}"
+# Install the complete reviewed dependency graph. --require-hashes authenticates
+# every selected wheel, --only-binary prevents source execution, and --no-deps
+# prevents pip from resolving anything not explicitly present in the lock.
+install -d -o ubuntu -g ubuntu /home/ubuntu/.local/bin /home/ubuntu/.local/share
+sudo -u ubuntu env HOME=/home/ubuntu python3 -m venv /home/ubuntu/.local/share/aptl-venv
+sudo -u ubuntu env HOME=/home/ubuntu \
+  /home/ubuntu/.local/share/aptl-venv/bin/python -m pip install \
+  --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps \
+  -r "${APTL_REQUIREMENTS_LOCK}"
+sudo -u ubuntu ln -s /home/ubuntu/.local/share/aptl-venv/bin/aptl /home/ubuntu/.local/bin/aptl
 sudo -u ubuntu env HOME=/home/ubuntu bash -c '
   set -euo pipefail
   cd /home/ubuntu

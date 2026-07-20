@@ -3,8 +3,9 @@
 #
 # Split out of host-setup.sh so the fail-closed contract can be exercised by a
 # behavioral test (#1343 test-quality review): a missing stack, a checksum
-# mismatch, an invalid compose config, a failed build/pull, or a missing image
-# must FAIL the build (non-zero exit) when the stack is required, so a
+# mismatch, an invalid compose config, a failed build/pull, a missing image, or
+# failure to create/start every declared service must FAIL the build (non-zero
+# exit) when the stack is required, so a
 # non-promotable polaris-vm image can never be captured. Runs as a packer
 # provisioner AFTER host-setup.sh has installed Docker + the Cloud SDK.
 #
@@ -15,6 +16,7 @@
 #   POLARIS_STACK_SHA256      required tarball digest (when the stack is required)
 #   POLARIS_REQUIRE_STACK     1 (default) = fail-closed; 0 = warn + succeed
 #   HOST_MGMT_SSH_PORT        for the completion message only
+#   POLARIS_STACK_START_TIMEOUT_SECONDS  bounded service-start wait (default 300)
 set -euo pipefail
 
 HOST_MGMT_SSH_PORT="${HOST_MGMT_SSH_PORT:-2222}"
@@ -23,8 +25,14 @@ POLARIS_STACK_KEY="${POLARIS_STACK_KEY:-polaris/stack/polaris-stack.tar.gz}"
 POLARIS_STACK_GENERATION="${POLARIS_STACK_GENERATION:-}"
 POLARIS_STACK_SHA256="${POLARIS_STACK_SHA256:-}"
 POLARIS_REQUIRE_STACK="${POLARIS_REQUIRE_STACK:-1}"
+POLARIS_STACK_START_TIMEOUT_SECONDS="${POLARIS_STACK_START_TIMEOUT_SECONDS:-300}"
 POLARIS_ROOT="${POLARIS_ROOT:-/opt/polaris/scenario-dev/polaris}"
 COMPOSE_DIR="${COMPOSE_DIR:-${POLARIS_ROOT}/build}"
+
+if [[ ! "${POLARIS_STACK_START_TIMEOUT_SECONDS}" =~ ^[0-9]+$ ]]; then
+  echo "polaris verify-stack: ERROR POLARIS_STACK_START_TIMEOUT_SECONDS must be a non-negative integer." >&2
+  exit 1
+fi
 
 # fail_stack: emit an error and exit non-zero when the stack is required, or warn
 # and succeed when it is not (POLARIS_REQUIRE_STACK=0).
@@ -77,6 +85,30 @@ cd "${COMPOSE_DIR}"
 # a promotable image (no `|| true`). --ignore-buildable skips images this stack
 # builds locally, so a pull failure is a real registry/auth error.
 docker compose config >/dev/null
+compose_json="$(docker compose config --format json)"
+if ! jq -e '
+  (.services | type == "object") and
+  ([.services | to_entries[] | select(
+    (.value.privileged // false) or
+    ((.value.network_mode // "") == "host") or
+    ((.value.pid // "") == "host") or
+    ((.value.ipc // "") == "host") or
+    ([.value.cap_add[]?] | any(. == "ALL" or . == "NET_ADMIN" or . == "SYS_ADMIN")) or
+    ([.value.volumes[]? | select(type == "object" and .type == "bind") | .source] |
+      any(. == "/" or . == "/run" or . == "/var/run" or startswith("/etc/") or
+          startswith("/proc/") or startswith("/sys/") or startswith("/root/") or
+          startswith("/home/packer/") or startswith("/var/lib/docker/")))
+  )] | length == 0)
+' <<<"${compose_json}" >/dev/null; then
+  fail_stack "compose stack requests a privileged/host namespace, dangerous capability, or sensitive host bind."
+fi
+if ! jq -e '
+  all(.services | to_entries[];
+    (.value.build != null) or
+    ((.value.image // "") | test("@sha256:[0-9a-f]{64}$")))
+' <<<"${compose_json}" >/dev/null; then
+  fail_stack "every pulled compose image must use an immutable sha256 digest."
+fi
 docker compose build
 docker compose pull --ignore-buildable
 
@@ -94,4 +126,40 @@ if [[ -n "${missing_images}" ]]; then
   exit 1
 fi
 
-echo "polaris verify-stack: complete (mgmt sshd port ${HOST_MGMT_SSH_PORT}, stack baked and verified)"
+# The builder service account is still attached while Packer provisions the VM.
+# Block both host/host-network OUTPUT and Docker-forwarded traffic to the GCE
+# metadata IP before any external workload entrypoint executes. Privileged and
+# host-namespace services were rejected above so a compromised image cannot
+# remove or bypass these rules (#1763 security review).
+METADATA_IP="169.254.169.254/32"
+iptables -I OUTPUT 1 -d "${METADATA_IP}" -j DROP
+iptables -I DOCKER-USER 1 -d "${METADATA_IP}" -j DROP
+iptables -C OUTPUT -d "${METADATA_IP}" -j DROP >/dev/null 2>&1 \
+  || fail_stack "host metadata isolation rule was not installed."
+iptables -C DOCKER-USER -d "${METADATA_IP}" -j DROP >/dev/null 2>&1 \
+  || fail_stack "container metadata isolation rule was not installed."
+
+# Create and start every declared container before Packer captures the disk.
+# `restart: unless-stopped` can only restore containers that already exist;
+# baking images alone leaves a range VM with no target environment (#1763).
+echo "polaris verify-stack: creating full compose stack before image capture"
+docker compose up -d
+mapfile -t services < <(docker compose config --services)
+[[ "${#services[@]}" -gt 0 ]] || fail_stack "compose declares no services."
+deadline=$(( SECONDS + POLARIS_STACK_START_TIMEOUT_SECONDS ))
+while :; do
+  notready=""
+  for svc in "${services[@]}"; do
+    state="$(docker compose ps -a --format '{{.Service}} {{.State}}' \
+      | awk -v s="${svc}" '$1==s {print $2; f=1} END{if(!f) print "absent"}')"
+    [[ "${state}" == "running" ]] || notready="${notready} ${svc}(${state})"
+  done
+  [[ -z "${notready}" ]] && break
+  if (( SECONDS >= deadline )); then
+    fail_stack "compose services not running before image capture:${notready}"
+  fi
+  echo "polaris verify-stack: waiting for services to reach running:${notready}"
+  sleep 15
+done
+
+echo "polaris verify-stack: complete (mgmt sshd port ${HOST_MGMT_SSH_PORT}, ${#services[@]} services created and running)"

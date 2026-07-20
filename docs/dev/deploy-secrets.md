@@ -185,6 +185,8 @@ above, plus the following:
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
 | `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
+| `GCP_TECHVAULT_PACKER_MACHINE_TYPE` | variable | techvault | High-memory TechVault builder shape. Defaults to `n2-highmem-8`; independent from runtime sizing. |
+| `GCP_TECHVAULT_VALIDATE_MACHINE_TYPE` | variable | techvault | High-memory disposable validation shape. Defaults to `n2-highmem-8`. |
 | `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
 | `GCP_POLARIS_STACK_BUCKET` | variable | polaris-vm | GCS bucket holding the Polaris compose-stack tarball (`<bucket>/polaris/stack/polaris-stack.tar.gz`). The `polaris-vm` build's `host-setup.sh` fetches it and `docker compose build`s the stack into the image. **Required for a promotable `polaris-vm`:** the build fails if the stack is absent. The packer builder SA needs `roles/storage.objectViewer` on the bucket. See "Baking the polaris-vm host image" in `docs/dev/gcp-range-cell-deploy.md`. |
 | `GCP_POLARIS_STACK_SHA256` | variable | polaris-vm | Required sha256 digest of the compose-stack tarball; the `polaris-vm` build verifies the fetched tarball and fails on mismatch, so a mutable GCS key cannot change what is baked. |
@@ -199,6 +201,12 @@ prod. For Windows/DC, the workflow generates a throwaway `winrm_bootstrap_passwo
 per run and injects it via `PKR_VAR_*`; the pre-promoted `dc-prebaked` build also
 generates a per-run DSRM password (`PKR_VAR_dc_dsrm_password`). Nothing is
 committed.
+
+The `techvault` target publishes family `shifter-techvault` for the native GCE
+range-cell backend and is explicitly excluded from the GDC qcow2 export step.
+Promotion downloads the validation run's evidence artifact and binds it to the
+candidate, protected run, revision, source project, family, and image type
+before copying to prod.
 
 ## AWS portal (`dev` / `prod`)
 
@@ -291,10 +299,13 @@ bootstrap commands below so their confirmation prompts proceed without a termina
    to tracked placeholder tfvars. AWS deploy workflows use `runs-on: self-hosted`.
 3. Ensure `/shifter/ami/{kali,ubuntu,windows,dc}` exists in SSM Parameter
    Store before portal Terraform plans/applies. The Packer workflow updates
-   these parameters after AMI builds; in a moved account, verify the Packer
-   `dev.pkrvars.hcl` VPC/subnet values first. The Kali build also requires
+   these parameters after AMI builds; in a moved account, set the builder-network
+   repository variables `PACKER_BUILD_{VPC,SUBNET}_ID_<ENV>` (and the
+   `PACKER_VERIFY_*` fresh-boot gate variables) first, since the committed
+   `dev.pkrvars.hcl` ships only placeholders. The Kali build also requires
    the target account to accept the free AWS Marketplace terms for product
-   code `7lgvy7mt78lgoi4lant0znp5h`.
+   code `7lgvy7mt78lgoi4lant0znp5h`. See the
+   [AWS AMI seeding runbook](aws-ami-seeding-runbook.md).
 4. Review `TF_VARS_DEV_PORTAL` for account-specific values such as domain
    names, alarm email, SSH allowlists, and bucket names. Review
    `TF_VARS_DEV_RANGE` for range deployment values such as the agent S3 bucket

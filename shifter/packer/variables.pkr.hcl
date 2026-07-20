@@ -60,12 +60,6 @@ variable "kms_key_id" {
   default     = ""
 }
 
-variable "aptl_version" {
-  type        = string
-  description = "aptl-labs wheel version to bake into the TechVault AMI (bake is pinned to a version)."
-  default     = "4.1.2"
-}
-
 variable "polaris_tarball_s3_uri" {
   type        = string
   description = "s3://bucket/key of the operator-uploaded Polaris build tarball (private scenario content, staged out of band). Required for the polaris-vm bake; empty otherwise."
