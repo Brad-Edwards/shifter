@@ -94,7 +94,10 @@ def _node_composition(
         for account in plan.accounts
         if account.target_address == node.address and account.domain_ref is None and account.domain_id is None
     ]
-    features = [feature for feature in plan.features if feature.target_address == node.address]
+    # Features are realized synchronously after boot through the authenticated
+    # guest channel, where install/activation and digest/service readback can
+    # gate READY (#1565). Startup metadata must never approximate success.
+    features: list[AcesPlanFeature] = []
     return content, accounts, features
 
 

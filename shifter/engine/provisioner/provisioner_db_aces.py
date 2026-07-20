@@ -67,6 +67,10 @@ def get_aces_content_delivery_bindings_by_request_id(request_id: str) -> list[di
             """
             SELECT
                 b.content_address,
+                b.resource_type,
+                b.resource_address,
+                b.payload_kind,
+                b.install_policy,
                 b.sha256,
                 b.storage_key,
                 b.byte_count,
@@ -80,16 +84,27 @@ def get_aces_content_delivery_bindings_by_request_id(request_id: str) -> list[di
         )
         rows = cur.fetchall()
 
-    return [
-        {
-            "content_address": row[0],
-            "sha256": row[1],
-            "storage_key": row[2],
-            "byte_count": row[3],
-            "binding_version": row[4],
+    bindings: list[dict[str, Any]] = []
+    for row in rows:
+        common = {
+            "sha256": row[5],
+            "storage_key": row[6],
+            "byte_count": row[7],
+            "binding_version": row[8],
         }
-        for row in rows
-    ]
+        if row[8] == 1:
+            bindings.append({"content_address": row[0], **common})
+        else:
+            bindings.append(
+                {
+                    "resource_type": row[1],
+                    "resource_address": row[2],
+                    "payload_kind": row[3],
+                    "install_policy": row[4],
+                    **common,
+                }
+            )
+    return bindings
 
 
 def get_aces_image_candidates(provider: str, source_name: str) -> list[dict[str, Any]]:

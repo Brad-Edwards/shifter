@@ -127,22 +127,52 @@ of four approved image profiles by role and OS (`GCERangeCellConfig.get_profile`
 | Windows guest | windows | `GCP_RANGE_WINDOWS_IMAGE` |
 | Everything else (Linux host) | linux | `GCP_RANGE_LINUX_IMAGE` |
 
-The Polaris Docker host is provisioned as the attacker (`os_type=kali` /
-`role=attacker`), so it resolves to the **kali** profile, falling back to the
-linux profile only when `GCP_RANGE_KALI_IMAGE` is unset. Set
-`GCP_RANGE_KALI_IMAGE` to the `shifter-polaris-vm` family and
-`GCP_RANGE_DC_IMAGE` to `shifter-polaris-dc`. Do **not** leave
-`GCP_RANGE_KALI_IMAGE` pointing at a plain Kali desktop image in a Polaris
-deployment: it wins over the linux fallback and the Polaris host will boot the
-wrong image (host sshd never appears on the `2222` management port and setup
-times out). Because there is one image per profile per deployment, a single
-environment serves either Polaris hosts or generic Kali attackers, not both;
-run generic scenarios in a separate deployment or environment.
+Instances without an `ami_key` continue to use those four defaults. An instance
+with an `ami_key` requires an exact entry in
+`GCP_RANGE_IMAGE_KEY_PROFILES_JSON` under its derived profile class. Each entry
+is complete: image, machine type, disk size, and disk type. Unknown keys and
+keys placed under the wrong class fail before any Compute or secret client is
+created; they never fall back to the default role image.
 
-The `shifter-polaris-vm` image is a 200 GB disk, and a boot disk cannot be
-smaller than its source image, so set `GCP_RANGE_KALI_DISK_SIZE_GB` to at least
-the image size (the kali-profile default is 80 GB); otherwise instance creation
-fails with `disk size cannot be smaller than the image size`.
+The value is a non-secret JSON object, limited to 32,768 bytes and 64 total
+entries. Profile classes and fields are closed. Logical keys must be lowercase
+letters, digits, and hyphens. For example:
+
+```json
+{
+  "kali": {
+    "polaris-vm": {
+      "source_image": "projects/PROJECT/global/images/family/shifter-polaris-vm",
+      "machine_type": "e2-standard-8",
+      "disk_size_gb": 210,
+      "disk_type": "pd-balanced"
+    },
+    "techvault": {
+      "source_image": "projects/PROJECT/global/images/family/shifter-techvault",
+      "machine_type": "n2-standard-8",
+      "disk_size_gb": 150,
+      "disk_type": "pd-balanced"
+    }
+  },
+  "dc": {
+    "polaris-dc": {
+      "source_image": "projects/PROJECT/global/images/family/shifter-polaris-dc",
+      "machine_type": "e2-standard-4",
+      "disk_size_gb": 100,
+      "disk_type": "pd-balanced"
+    }
+  }
+}
+```
+
+The provisioner records a bounded key/profile fingerprint on each new VM and
+in existing provider metadata. Reconciliation rejects a keyed same-name VM if
+that binding differs from the current plan. Destroy remains independent of the
+mapping. Configure the keyed map and validate both keyed and unkeyed launches
+before returning the default Kali/DC variables from a temporary single-scenario
+workaround to their generic families. Cross-project image families require the
+narrow image-project grant for the provisioner GSA; do not broaden portal or
+launcher identities.
 
 The Polaris host's `polaris_range_bootstrap` step fetches a smoketests tarball
 from `gs://$POLARIS_TESTS_BUCKET/$POLARIS_TESTS_KEY` (default
@@ -247,9 +277,23 @@ The Polaris range host (`shifter-polaris-vm`) is a Debian Docker host that boots
 the **prebaked** Polaris docker-compose stack (~17 containers including the
 participant `a14-kali`). Genuine dynamic realization is separate future work; for
 now the stack is baked into the image so time-to-serve is a range launch, not a
-full container build. `host-setup.sh` fetches the stack tarball from GCS at bake
-time and `docker compose build`s it in; the range bootstrap then only rewrites
-the DC IP into `docker-compose.override.yml` and `docker compose up`.
+full container build. `host-setup.sh` and the sibling stack-verification
+provisioner fetch the stack tarball from GCS at bake time, verify the declared
+digest, build/pull the images, and start the full compose stack before image
+capture. The range bootstrap then only rewrites the DC IP and per-range keys in
+`docker-compose.override.yml` and force-recreates the range-specific services
+(`dns`, `a14-kali`, and `a9-splice`).
+
+All 17 compose services must exist in the captured image. Baking only the images
+is insufficient: `restart: unless-stopped` has no container to restart on first
+range boot, and the targeted runtime bootstrap will start only the three
+services whose environment changes per range.
+
+Any service pulled from a registry must be pinned by image digest in the Compose
+stack; local tags are accepted only for services built from the checksum-bound
+stack context. The bake refuses privileged/host-namespace services, dangerous
+capabilities, sensitive host binds, or a metadata-isolation rule that cannot be
+installed and verified before service entrypoints execute.
 
 The compose stack lives outside this repo (the AWS polaris-vm AMI is baked from
 the same external stack), so the GCE bake fetches it from GCS:

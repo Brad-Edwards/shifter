@@ -35,7 +35,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orchestrators.setup_orchestrator import SetupOrchestrator
-from plans.aces_content_delivery import AcesContentDeliveryPlan
+from plans.aces_content_delivery import AcesContentDeliveryPlan, AcesContentInstallOptions
 
 
 def _b64(value: bytes | str) -> str:
@@ -130,7 +130,7 @@ class TestLinuxStepShape:
             target="/srv/needs quoting.bin",
             sha256="a" * 64,
             payload_b64="aGVsbG8=",
-            sensitive=True,
+            install_options=AcesContentInstallOptions(sensitive=True),
         )
         context = plan.get_context({})
         # shlex.quote only adds quotes when the value needs them (a space here);
@@ -200,7 +200,7 @@ class TestWindowsStepShape:
             target="C:\\x.bin",
             sha256="a" * 64,
             payload_b64="aGVsbG8=",
-            sensitive=True,
+            install_options=AcesContentInstallOptions(sensitive=True),
         )
         lines = plan.steps[0].stdin_input.splitlines()
         assert lines == [_b64("C:\\x.bin"), _b64("a" * 64), _b64("1"), "aGVsbG8="]
@@ -222,7 +222,7 @@ class TestWindowsStepShape:
             target="C:\\data",
             sha256="c" * 64,
             payload_b64="aGk=",
-            sensitive=True,
+            install_options=AcesContentInstallOptions(sensitive=True),
             installed_tree_sha256="d" * 64,
         )
         lines = plan.steps[0].stdin_input.splitlines()
@@ -318,7 +318,7 @@ class TestLinuxFileExecution:
             target=str(target),
             sha256=digest,
             payload_b64=_b64(payload),
-            sensitive=True,
+            install_options=AcesContentInstallOptions(sensitive=True),
         )
         deliver = _run_bash(plan, step=plan.steps[0])
         assert deliver.returncode == 0, deliver.stderr.decode()
@@ -341,7 +341,6 @@ class TestLinuxFileExecution:
             target=str(target),
             sha256=hashlib.sha256(payload).hexdigest(),
             payload_b64=_b64(payload),
-            sensitive=False,
         )
         deliver = _run_bash(plan, step=plan.steps[0])
         assert deliver.returncode == 0, deliver.stderr.decode()

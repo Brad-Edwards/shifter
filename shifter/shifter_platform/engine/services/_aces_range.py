@@ -106,7 +106,11 @@ def create_aces_range(
         AcesContentDeliveryBinding.objects.bulk_create(
             AcesContentDeliveryBinding(
                 range=range_obj,
-                content_address=binding.content_address,
+                content_address=binding.content_address or "",
+                resource_type=binding.resource_type or "",
+                resource_address=binding.resource_address or "",
+                payload_kind=binding.payload_kind or "",
+                install_policy=binding.install_policy or "",
                 sha256=binding.sha256,
                 storage_key=binding.storage_key,
                 byte_count=binding.byte_count,

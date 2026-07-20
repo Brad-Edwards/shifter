@@ -28,7 +28,7 @@
 
 source "amazon-ebs" "techvault" {
   ami_name        = "${var.ami_prefix}-techvault-{{timestamp}}"
-  ami_description = "TechVault techvault-operational stack + VS Code seat, aptl-labs ${var.aptl_version} (baked running) — encrypted root"
+  ami_description = "TechVault techvault-operational stack + VS Code seat, repository-locked aptl-labs (baked running) — encrypted root"
   instance_type   = var.scenario_instance_type
   region          = var.aws_region
 
@@ -97,7 +97,7 @@ source "amazon-ebs" "techvault" {
     Name         = "${var.ami_prefix}-techvault"
     Project      = "techvault-bake"
     Scenario     = "techvault"
-    aptl_version = var.aptl_version
+    aptl_version = "4.1.2"
     ManagedBy    = "packer"
     BuildDate    = "{{timestamp}}"
   }
@@ -111,6 +111,11 @@ source "amazon-ebs" "techvault" {
 build {
   sources = ["source.amazon-ebs.techvault"]
 
+  provisioner "file" {
+    source      = "scripts/techvault/aptl-requirements.lock"
+    destination = "/tmp/aptl-requirements.lock"
+  }
+
   // Faithful port of the retired workflow's SSM bake phases (see the runbook):
   //   1. toolchain — docker, node, claude-code, pipx (root)
   //   2. stack     — aptl lab as the ubuntu user (uid 1000), all container groups
@@ -123,7 +128,7 @@ build {
       "scripts/techvault/seat.sh",
       "scripts/techvault/wait-stack.sh",
     ]
-    environment_vars = ["APTL_VERSION=${var.aptl_version}"]
+    environment_vars = ["APTL_REQUIREMENTS_LOCK=/tmp/aptl-requirements.lock"]
     execute_command  = "sudo -S bash -c '{{ .Vars }} {{ .Path }}'"
   }
 

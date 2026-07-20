@@ -59,6 +59,9 @@ _EVENT_MUTABLE_FIELDS = frozenset(
         "reminder_hours",
         "event_timezone",
         "capacity_hints",
+        "logo_url",
+        "visible_os_types",
+        "theme_color",
     }
 )
 
@@ -71,8 +74,11 @@ def _validate_scoring_mode(event_data: dict[str, Any]) -> None:
     than persisting an invalid value that would later fall back to standard.
     """
     from ctf.enums import ScoringMode
+    from ctf.extensions import registered_scoring_modes
 
     if "scoring_mode" not in event_data:
+        return
+    if event_data["scoring_mode"] in registered_scoring_modes():
         return
     try:
         ScoringMode(event_data["scoring_mode"])

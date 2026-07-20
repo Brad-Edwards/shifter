@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import { formatDateTime, rankingKey, rankingNumber, rankingString, titleCase } from "../format";
+import { EventAnalyticsCard } from "./EventAnalyticsCard";
 import { EventTasksCard } from "./EventTasksCard";
 import { ResultsExportButton } from "./ResultsExportButton";
 import { ctfAdminEventPath, ctfAdminEventsPath } from "../routes";
@@ -479,6 +480,9 @@ export function MonitoringPage({ defaultTab = "scoreboard" }: Readonly<{ default
         <TabsContent value="analytics" className="mt-4">
           <div className="mb-3 flex justify-end">
             <ResultsExportButton eventId={eventId} />
+          </div>
+          <div className="mb-4">
+            <EventAnalyticsCard eventId={eventId} />
           </div>
           <AnalyticsTab eventId={eventId} />
         </TabsContent>
