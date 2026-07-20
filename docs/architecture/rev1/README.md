@@ -93,6 +93,7 @@ this review.
 - [Security](security.md)
 - [Implementation and tests](quality-and-testing.md)
 - [Milestones and issue map](roadmap.md)
+- [REV1.3 release-evidence index](../rev1-release-evidence-index-1540.md)
 
 ## Verification performed
 
