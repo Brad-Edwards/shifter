@@ -33,17 +33,14 @@ architectural defaults, and Kubernetes-specific validators previously in
   owner and expiry.
 - Plans MUST keep cross-layer access going through service boundaries;
   shared contracts live under `shared/`.
-- Plans with a user-visible change MUST add a fragment under
-  `changelog.d/<issue>.<type>.md` (where `<type>` is one of `security`,
-  `added`, `changed`, `deprecated`, `removed`, `fixed`) instead of editing
-  `CHANGELOG.md` directly; `CHANGELOG.md` is collated from fragments at
-  release time by `uvx towncrier build`. Fragments cannot conflict between
-  PRs, eliminating the rebase / re-run-CI churn that hand-edits caused. See
-  `changelog.d/README.md`. Changes to CI/CD and deploy pipelines
-  (`.github/workflows/**`, `.github/actions/**`, and other build/deploy/test
-  automation) MUST add a `changed` or `fixed` fragment so pipeline behaviour
-  changes leave a release-note trail. Pure refactors and docs-only changes may
-  legitimately ship without a fragment.
+- Plans MUST NOT hand-edit `CHANGELOG.md` or add `changelog.d/` fragments.
+  [release-please](https://github.com/googleapis/release-please) owns the
+  product version and `CHANGELOG.md`, deriving both mechanically from the
+  Conventional Commit history on `main` via its release PR (ADR-042). The
+  plan's only changelog obligation is that the eventual PR title is a valid
+  Conventional Commit type and subject (enforced by `pr-title-lint.yml` on
+  feature PRs to `dev`); release-bearing changes use `feat`, `fix`, or `perf`,
+  or a breaking marker. See `docs/DEVELOPMENT_WORKFLOW.md`.
 - Plans that add a major platform feature MUST add it to the documentation
   coverage manifest (`docs/adr/documentation-coverage.yaml`) with at least one
   user doc and one technical doc; the `documentation-coverage` adr_guard check
@@ -55,5 +52,5 @@ architectural defaults, and Kubernetes-specific validators previously in
   `.ground-control.yaml`, `.gc/plan-rules.md`, `.shifter.yaml`,
   `AGENTS.md`, `.importlinter`, `.tflint.hcl`, `.gitleaks.toml`,
   `.kube-linter.yaml`, `.claude/settings.json`, `.claude/hooks/**`,
-  `scripts/adr_guard/**`, `docs/adr/**`) MUST stay documented in the ADR
-  enforcement docs or registry.
+  `scripts/adr_guard/**`, `release-please-config.json`, `docs/adr/**`) MUST
+  stay documented in the ADR enforcement docs or registry.

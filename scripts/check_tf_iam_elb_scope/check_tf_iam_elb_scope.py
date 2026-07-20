@@ -56,6 +56,16 @@ TAG_ON_CREATE_ELB_ACTIONS: set[str] = {
 ALL_MUTABLE_ELB_ACTIONS: set[str] = (
     MUTABLE_EXISTING_ELB_ACTIONS | CREATE_ELB_ACTIONS | TAG_ON_CREATE_ELB_ACTIONS
 )
+REQUIRED_DESCRIBE_ELB_ACTIONS: set[str] = {
+    "elasticloadbalancing:DescribeLoadBalancers",
+    "elasticloadbalancing:DescribeLoadBalancerAttributes",
+    "elasticloadbalancing:DescribeTargetGroups",
+    "elasticloadbalancing:DescribeTargetGroupAttributes",
+    "elasticloadbalancing:DescribeTargetHealth",
+    "elasticloadbalancing:DescribeListeners",
+    "elasticloadbalancing:DescribeListenerAttributes",
+    "elasticloadbalancing:DescribeTags",
+}
 
 REQUIRED_RESOURCE_SNIPPETS: tuple[str, ...] = (
     "loadbalancer/gwy/",
@@ -557,6 +567,59 @@ def _vpn_contract_violations(
     ]
 
 
+def _describe_contract_violations(
+    path: Path, policy_start_line: int, policy_lines: list[str]
+) -> list[Violation]:
+    """Require the exact provider read-back APIs in one wildcard statement."""
+    candidates: list[tuple[int, str, set[str]]] = []
+    for relative_line, block in _extract_statement_blocks(policy_lines):
+        actions = _actions(block)
+        if any(action.startswith("elasticloadbalancing:Describe") for action in actions):
+            candidates.append((relative_line, block, actions))
+
+    if len(candidates) != 1:
+        return [
+            Violation(
+                path,
+                policy_start_line,
+                "ELBv2 describe policy contract requires exactly one explicit read-only statement",
+            )
+        ]
+
+    relative_line, block, actions = candidates[0]
+    line = policy_start_line + relative_line - 1
+    violations: list[Violation] = []
+    missing = sorted(REQUIRED_DESCRIBE_ELB_ACTIONS - actions)
+    if missing:
+        violations.append(
+            Violation(
+                path,
+                line,
+                "ELBv2 describe policy contract is missing required actions: "
+                + ", ".join(missing),
+            )
+        )
+    unexpected = sorted(actions - REQUIRED_DESCRIBE_ELB_ACTIONS)
+    if unexpected:
+        violations.append(
+            Violation(
+                path,
+                line,
+                "ELBv2 describe policy contract contains unapproved actions: "
+                + ", ".join(unexpected),
+            )
+        )
+    if _assignment_values(block, "Resource") != {"*"}:
+        violations.append(
+            Violation(
+                path,
+                line,
+                "ELBv2 describe policy contract must use Resource=*",
+            )
+        )
+    return violations
+
+
 def _check_vpn_listener_tags(path: Path, lines: list[str]) -> list[Violation]:
     for idx, line in enumerate(lines):
         if not _VPN_LISTENER_RE.match(line):
@@ -594,6 +657,9 @@ def check_file(path: Path, resource_name: str = "gwlb") -> list[Violation]:
     for relative_line, block in _extract_statement_blocks(policy_lines):
         line = policy_start_line + relative_line - 1
         violations.extend(_check_statement(path, line, block))
+    violations.extend(
+        _describe_contract_violations(path, policy_start_line, policy_lines)
+    )
     violations.extend(_vpn_contract_violations(path, policy_start_line, policy_lines))
     return violations
 

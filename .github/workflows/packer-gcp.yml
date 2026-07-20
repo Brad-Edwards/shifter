@@ -24,6 +24,7 @@ on:
           - windows
           - dc
           - polaris-vm
+          - techvault
           - dc-prebaked
       environment:
         description: 'GCP environment to build in'
@@ -57,6 +58,17 @@ jobs:
       IMAGE_TYPE: ${{ inputs.image_type }}
       DC_PROFILE: ${{ inputs.dc_profile }}
     steps:
+      - name: Reject non-protected dispatch refs
+        working-directory: ${{ github.workspace }}
+        run: |
+          case "${GITHUB_REF}" in
+            refs/heads/dev|refs/heads/main) ;;
+            *)
+              echo "::error::packer-gcp builds may only run from dev or main; got '${GITHUB_REF}'."
+              exit 1
+              ;;
+          esac
+
       # Build from the dispatched ref (github.sha), which GitHub already gates
       # by workflow_dispatch permission. No free-form `inputs.ref` is accepted:
       # a privileged, cloud-credentialed build must not run code from an
@@ -109,6 +121,7 @@ jobs:
           GCP_PACKER_SUBNETWORK: ${{ vars.GCP_PACKER_SUBNETWORK || 'default' }}
           GCP_PACKER_SERVICE_ACCOUNT: ${{ vars.GCP_PACKER_SERVICE_ACCOUNT }}
           GCP_PACKER_MACHINE_TYPE: ${{ vars.GCP_PACKER_MACHINE_TYPE || 'e2-standard-2' }}
+          GCP_TECHVAULT_PACKER_MACHINE_TYPE: ${{ vars.GCP_TECHVAULT_PACKER_MACHINE_TYPE || 'n2-highmem-8' }}
           GCP_PACKER_USE_INTERNAL_IP: ${{ vars.GCP_PACKER_USE_INTERNAL_IP || 'false' }}
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
           # GCS bucket holding the polaris compose-stack tarball (polaris-vm build
@@ -130,6 +143,10 @@ jobs:
           # The builder VM runs as the Packer service account if configured,
           # otherwise the WIF-impersonated deploy service account.
           BUILDER_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+          MACHINE_TYPE="${GCP_PACKER_MACHINE_TYPE}"
+          if [ "${IMAGE_TYPE}" = "techvault" ]; then
+            MACHINE_TYPE="${GCP_TECHVAULT_PACKER_MACHINE_TYPE}"
+          fi
           # Export as PKR_VAR_* so Packer reads them from the environment — never
           # as -var CLI flags (which would expose values in the process list).
           {
@@ -139,7 +156,7 @@ jobs:
             echo "PKR_VAR_subnetwork=${GCP_PACKER_SUBNETWORK}"
             echo "PKR_VAR_service_account_email=${BUILDER_SA}"
             echo "PKR_VAR_image_prefix=shifter"
-            echo "PKR_VAR_machine_type=${GCP_PACKER_MACHINE_TYPE}"
+            echo "PKR_VAR_machine_type=${MACHINE_TYPE}"
             echo "PKR_VAR_use_internal_ip=${GCP_PACKER_USE_INTERNAL_IP}"
             echo "PKR_VAR_polaris_stack_bucket=${GCP_POLARIS_STACK_BUCKET}"
             echo "PKR_VAR_polaris_stack_sha256=${GCP_POLARIS_STACK_SHA256}"
@@ -220,7 +237,7 @@ jobs:
       # do not boot on GDC (firmware/drivers), and their GDC images come from the
       # native gdc-vm-images build, so skip the export for the Windows family.
       - name: Export image to GCS for the GDC VM Runtime
-        if: inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked'
+        if: inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked' && inputs.image_type != 'techvault'
         working-directory: shifter/packer/gcp
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}

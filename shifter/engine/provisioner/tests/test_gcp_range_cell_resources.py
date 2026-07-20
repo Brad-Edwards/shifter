@@ -8,7 +8,7 @@ config they return a dict, with no cloud calls.
 
 from __future__ import annotations
 
-from config import GCERangeCellConfig, GCERangeImageProfile
+from config import GCERangeCellConfig, GCERangeImageProfile, gce_image_profile_fingerprint
 from gcp_range_cell_resources import (
     HOST_PUBLIC_KEY_METADATA_KEY,
     address_resource,
@@ -35,6 +35,12 @@ def _plan() -> dict:
 
 
 def _instance(*, os_type: str = "kali", attach_service_account: bool = True) -> dict:
+    profile = GCERangeImageProfile(
+        source_image="projects/kali/global/images/kali",
+        machine_type="e2-standard-4",
+        disk_size_gb=80,
+        disk_type="pd-ssd",
+    )
     return {
         "resource_name": "shifter-r-42-kali",
         "address_name": "shifter-r-42-kali-ip",
@@ -45,12 +51,9 @@ def _instance(*, os_type: str = "kali", attach_service_account: bool = True) -> 
         "os_type": os_type,
         "tags": ["shifter-range-42", "shifter-range-42-polaris"],
         "host_ssh_username": "ubuntu",
-        "profile": GCERangeImageProfile(
-            source_image="projects/kali/global/images/kali",
-            machine_type="e2-standard-4",
-            disk_size_gb=80,
-            disk_type="pd-ssd",
-        ),
+        "profile": profile,
+        "image_key": "",
+        "image_profile_fingerprint": gce_image_profile_fingerprint(profile),
         "attach_service_account": attach_service_account,
     }
 

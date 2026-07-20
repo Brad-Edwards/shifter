@@ -12,7 +12,7 @@ from typing import Any
 
 from shared.range_cells import RangeCellContractError, validate_gcp_vm_range_cell_request
 
-from config import GCERangeCellConfig, GCERangeImageProfile
+from config import GCERangeCellConfig, GCERangeImageProfile, gce_image_profile_fingerprint
 from executors.factory import get_ssh_username
 from gcp_range_cell_naming import _network_tag, _short_resource_name
 
@@ -144,6 +144,7 @@ def _profile_for_instance(
     return config.get_profile(
         role=str(instance.get("role", "victim")),
         os_type=str(instance.get("os_type", instance.get("os", "ubuntu"))),
+        ami_key=str(instance.get("ami_key") or ""),
     )
 
 
@@ -189,6 +190,8 @@ def build_instance_plans(
             role = str(instance.get("role", "victim"))
             os_type = str(instance.get("os_type", instance.get("os", "ubuntu")))
             ssh_username, host_ssh_username, ssh_port = _host_access(config, instance, os_type, role)
+            profile = _profile_for_instance(config, instance, require_images=require_images)
+            image_key = str(instance.get("ami_key") or "").strip()
             resource_name = _short_resource_name(
                 "shifter-r",
                 range_id,
@@ -209,7 +212,9 @@ def build_instance_plans(
                     "os_type": os_type,
                     "asset_type": "gce_vm",
                     "tags": [_network_tag(range_id), subnet_plan["tag"], _short_resource_name("shifter-role", role)],
-                    "profile": _profile_for_instance(config, instance, require_images=require_images),
+                    "profile": profile,
+                    "image_key": image_key,
+                    "image_profile_fingerprint": gce_image_profile_fingerprint(profile) if require_images else "",
                     "source": instance,
                     "ssh_username": ssh_username,
                     "host_ssh_username": host_ssh_username,

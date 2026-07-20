@@ -35,8 +35,9 @@ boot plus container auto-start. They are dispatched through the shared
 `bake-scenario` job adds an encryption check and a fresh-boot golden-verify
 before publishing `/shifter/ami/<key>`. The operator supplies an isolated bake
 subnet, a no-inbound security group, and an SSM-enabled builder instance profile
-as workflow inputs (plus `aptl_version` for techvault, or the S3 build tarball
-for polaris-vm). Provisioner bodies live in `scripts/techvault/`,
+as workflow inputs (plus the S3 build tarball for polaris-vm). TechVault's APTL
+version and full transitive dependency graph are repository-locked rather than
+operator-selectable. Provisioner bodies live in `scripts/techvault/`,
 `scripts/polaris/`, and the runner-side verify helpers in `scripts/bake/`.
 Migrated from the hand-rolled SSM bake workflows in #1469.
 
