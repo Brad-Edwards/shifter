@@ -232,9 +232,9 @@ def _feature_ref_from_resource(address: object, resource: object) -> _ContentRef
         return None
     feature_type = template.get("type")
     feature_type = feature_type.lower() if isinstance(feature_type, str) else ""
-    if feature_type == "service":
-        return None
     if feature_type not in {"artifact", "configuration"}:
+        if feature_type == "service":
+            return None
         raise ContentDeliveryError("feature binding has no delivery realization")
     name, version = _parse_source(template.get("source"))
     if not name:

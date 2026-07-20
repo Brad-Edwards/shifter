@@ -1,27 +1,21 @@
 """Shifter's ACES RuntimeTarget provisioning backend (ADR-031, ADR-032).
 
-Supersedes the #1262 ``scenario_ref`` passthrough. This backend rides the ACES
-contract end to end (ADR-032): it validates a compiled ACES ``ProvisioningPlan``
-against the declared ``ProvisionerCapabilities`` envelope, then dispatches the
-**serialized plan itself** through an injected
+Supersedes the #1262 ``scenario_ref`` passthrough. It validates a compiled ACES
+``ProvisioningPlan`` against the declared capability envelope, then dispatches
+the **serialized plan itself** through an injected
 :class:`~shared.aces.dispatch_port.ShifterProvisioningDispatchPort`. Shifter
 introduces no parallel SDL and no re-modeled provisioning schema; the realization
 side (engine/provisioner) reads the ACES plan payloads directly via accessors
 that mirror the reference ACES backends.
 
-It mirrors the ``aces_backend_libvirt`` / APTL reference backend pattern:
-
-* ``validate`` and ``apply`` funnel through one pure interpret step (no I/O);
-* every plan term is checked against the declared ``ProvisionerCapabilities``
-  envelope and any out-of-envelope term (unsupported node type, OS family, ACL
-  when ``supports_acls`` is false, or account/placement resource) yields a
-  bounded typed ERROR diagnostic;
+It mirrors the reference backend pattern: ``validate`` and ``apply`` funnel
+through one pure interpret step; every plan term is checked against the
+declared capability envelope and unsupported terms yield typed diagnostics;
 * ``apply`` refuses to dispatch on any error, and on a valid plan returns an
   ``ApplyResult`` with non-empty ``changed_addresses`` and a PROVISIONING
   ``RuntimeSnapshot`` reflecting the accepted realization.
 
-Only modules under :mod:`shared.aces` may import the ``aces-sdl`` tooling
-(ADR-031-R1 / ADR-024); the realization side consumes the serialized plan as
+Only :mod:`shared.aces` may import ``aces-sdl`` (ADR-031-R1 / ADR-024); realization consumes the serialized plan as
 plain data via the injected dispatch port.
 """
 
@@ -323,6 +317,16 @@ def _unknown_network_diagnostics(
     return diagnostics
 
 
+def _extend_unique_diagnostics(diagnostics: list[Diagnostic], additions: list[Diagnostic]) -> None:
+    """Append diagnostics not already present by code, address, and message."""
+    seen = {(item.code, item.address, item.message) for item in diagnostics}
+    for diagnostic in additions:
+        key = (diagnostic.code, diagnostic.address, diagnostic.message)
+        if key not in seen:
+            seen.add(key)
+            diagnostics.append(diagnostic)
+
+
 def interpret_provisioning_plan(
     plan: ProvisioningPlan,
     *,
@@ -361,17 +365,8 @@ def interpret_provisioning_plan(
     # operation-only or resource-divergent account payload cannot bypass the realization
     # ledger before dispatch (#1563 codex review). Deduplicate against the resource pass:
     # a resource and its own CREATE operation produce an identical diagnostic.
-    seen = {(diagnostic.code, diagnostic.address, diagnostic.message) for diagnostic in diagnostics}
-    for diagnostic in account_operation_diagnostics(plan.operations, capabilities):
-        key = (diagnostic.code, diagnostic.address, diagnostic.message)
-        if key not in seen:
-            seen.add(key)
-            diagnostics.append(diagnostic)
-    for diagnostic in feature_operation_diagnostics(plan.operations):
-        key = (diagnostic.code, diagnostic.address, diagnostic.message)
-        if key not in seen:
-            seen.add(key)
-            diagnostics.append(diagnostic)
+    _extend_unique_diagnostics(diagnostics, account_operation_diagnostics(plan.operations, capabilities))
+    _extend_unique_diagnostics(diagnostics, feature_operation_diagnostics(plan.operations))
 
     if any(diagnostic.is_error for diagnostic in diagnostics):
         return None, diagnostics

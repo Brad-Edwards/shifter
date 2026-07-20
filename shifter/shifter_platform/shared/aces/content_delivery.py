@@ -179,13 +179,14 @@ class DeliveryBinding:
         ride along), an unsupported version, a non-sha256 digest, an empty
         address / key, or a negative byte count.
         """
-        _require(isinstance(raw, Mapping), "delivery binding transport shape is invalid")
+        invalid_shape = "delivery binding transport shape is invalid"
+        _require(isinstance(raw, Mapping), invalid_shape)
         version = raw.get("binding_version")
         storage_key = _validated_str(raw.get("storage_key"), "delivery binding storage_key is invalid")
         sha256 = _validated_sha256(raw.get("sha256"), "delivery binding sha256 is invalid")
         byte_count = _validated_byte_count(raw.get("byte_count"), "delivery binding byte_count is invalid")
         if version == BINDING_VERSION:
-            _require(set(raw) == _BINDING_V1_KEYS, "delivery binding transport shape is invalid")
+            _require(set(raw) == _BINDING_V1_KEYS, invalid_shape)
             return cls(
                 content_address=_validated_str(
                     raw.get("content_address"), "delivery binding content_address is invalid"
@@ -196,7 +197,7 @@ class DeliveryBinding:
                 binding_version=BINDING_VERSION,
             )
         if version == FEATURE_BINDING_VERSION:
-            _require(set(raw) == _BINDING_V2_KEYS, "delivery binding transport shape is invalid")
+            _require(set(raw) == _BINDING_V2_KEYS, invalid_shape)
             resource_type = _validated_str(raw.get("resource_type"), "delivery binding resource_type is invalid")
             _require(resource_type == "feature-binding", "delivery binding resource_type is unsupported")
             payload_kind = _validated_str(raw.get("payload_kind"), "delivery binding payload_kind is invalid")

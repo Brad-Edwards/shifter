@@ -87,6 +87,7 @@ class AcesFeatureServicePlan:
     """Install/locate one package-backed service and verify its live state."""
 
     def __init__(self, *, platform: str, package: str, version: str | None) -> None:
+        """Validate and retain one platform/package/version service identity."""
         if platform not in {"linux", "windows"}:
             raise ValueError("unsupported ACES feature service platform")
         self._platform = platform

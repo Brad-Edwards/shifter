@@ -201,13 +201,16 @@ class TestAssertContentDeliveryBindingsComplete:
             assert_content_delivery_bindings_complete(plan, [])
 
     def test_feature_binding_overclaim_fails_closed(self):
+        plan = _plan()
+        binding = _feature_binding()
         with pytest.raises(AcesGceCompositionError, match="does not match any deliverable resource"):
-            assert_content_delivery_bindings_complete(_plan(), [_feature_binding()])
+            assert_content_delivery_bindings_complete(plan, [binding])
 
     def test_feature_environment_fails_before_cloud_realization(self):
         plan = _plan(features=(_feature(has_environment=True),))
+        binding = _feature_binding()
         with pytest.raises(AcesGceCompositionError, match="no safe realization contract"):
-            assert_content_delivery_bindings_complete(plan, [_feature_binding()])
+            assert_content_delivery_bindings_complete(plan, [binding])
 
 
 # ---------------------------------------------------------------------------
@@ -419,11 +422,12 @@ class TestRealizeAcesContentDelivery:
         second = _feature(address="feature.second", ordering_dependencies=("feature.first",))
         plan = _plan(features=(first, second))
         ops, _storage, executors = _ops()
+        outputs = [_output("node.web#0")]
 
         with pytest.raises(AcesContentDeliveryError, match="dependencies contain a cycle"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
+                instance_outputs=outputs,
                 delivery_bindings=[],
                 ops=ops,
             )
