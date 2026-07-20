@@ -337,6 +337,11 @@ def _build_composition_value[CompositionValue: (AcesPlanContent, AcesPlanAccount
                 ordering_dependencies=ordering_dependencies.get(address, ()),
             ),
         )
+    elif isinstance(value, AcesPlanContent):
+        # Stamp the compiled resource address so #1564 delivery bindings (which
+        # the CMS side keys by this same serialized-plan resource address) join
+        # by a stable identity rather than by target_address/path.
+        value = cast(CompositionValue, replace(cast(AcesPlanContent, value), address=address))
     if value.target_address not in node_lookup:
         raise AcesPlanError(f"{resource_type} resource at {address} targets unknown node {value.target_address!r}")
     return value

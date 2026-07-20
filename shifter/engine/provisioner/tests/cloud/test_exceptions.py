@@ -8,6 +8,7 @@ from cloud.exceptions import (
     CloudProviderNotImplementedError,
     CloudSecretsError,
     CloudStorageError,
+    ObjectPreconditionError,
 )
 
 
@@ -21,6 +22,10 @@ class TestExceptionHierarchy:
         assert issubclass(CloudStorageError, CloudError)
         assert issubclass(CloudSecretsError, CloudError)
         assert issubclass(CloudProviderNotImplementedError, CloudError)
+
+    def test_object_precondition_error_is_a_cloud_storage_error(self):
+        assert issubclass(ObjectPreconditionError, CloudStorageError)
+        assert issubclass(ObjectPreconditionError, CloudError)
 
     def test_cloud_error_inherits_from_exception(self):
         assert issubclass(CloudError, Exception)

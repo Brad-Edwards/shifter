@@ -4,10 +4,13 @@ Genuine baked-image + inline delivery (the model chosen for the ACES cutover):
 
 - **content, file + inline ``text``** -> the file is written for real (base64, so
   arbitrary bytes/quotes/newlines are safe), mode 0600 when ``sensitive``.
-- **content, directory** (or a file/dataset backed by a ``source`` package) -> the
-  bytes are supplied by the baked image / guest repo, so the realizer only creates
-  the structural target directory; it never fetches an artifact and never writes an
-  inert descriptor stub (the reference backend's thin path is deliberately rejected).
+- **content, source-backed file or directory** -> excluded from this bootstrap
+  entirely (#1564): the bytes are delivered post-boot over an authenticated guest
+  channel with a provisioner-side + in-guest digest verification, never baked
+  into the startup script (see ``aces_content_delivery``).
+- **content, source-less directory** -> the realizer only creates the structural
+  target directory; it never fetches an artifact and never writes an inert
+  descriptor stub (the reference backend's thin path is deliberately rejected).
 - **account** -> a real guest user (groups/shell/home; locked when ``disabled``).
 - **feature, service** -> a real install+enable step; the package is resolved by
   the guest package manager or already present in the baked image.
@@ -73,8 +76,16 @@ def _node_composition(
     node: AcesPlanNode,
     plan: AcesPlan,
 ) -> tuple[list[AcesPlanContent], list[AcesPlanAccount], list[AcesPlanFeature]]:
-    """Return local-only composition placements targeting one node."""
-    content = [item for item in plan.content if item.target_address == node.address]
+    """Return local-only composition placements targeting one node.
+
+    Source-backed content (``source_name`` set) is excluded here: it is
+    delivered post-boot over an authenticated guest channel with a
+    provisioner-side + in-guest digest verification (#1564,
+    ``aces_content_delivery``), never baked into the startup script. Inline
+    (``text``) files and source-less directories are unaffected -- they keep
+    the existing bootstrap realization below.
+    """
+    content = [item for item in plan.content if item.target_address == node.address and item.source_name is None]
     # Domain-bound placements (including the authority account) are directory
     # principals and are realized only after the controller/member topology is
     # live. They must never also become local guest users.
@@ -120,9 +131,9 @@ def _linux_content(content: AcesPlanContent) -> list[str]:
             "ACES_B64_EOF",
             f"chmod {mode} {shlex.quote(content.path)}",
         ]
-    # Directory, or a file/dataset whose bytes are baked into the image: create the
-    # structural target only. path's parent for a source-backed file; destination
-    # for a directory.
+    # A directory (source-less; source-backed directories are excluded from
+    # composition entirely -- see _node_composition), or a file with neither
+    # inline text nor a source: create the structural target only.
     target = content.destination or (posixpath.dirname(content.path) if content.path else "")
     return [f"mkdir -p {shlex.quote(target)}"] if target else []
 

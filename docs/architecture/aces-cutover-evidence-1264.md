@@ -114,12 +114,44 @@ operation receipt/status/snapshot evidence is sufficient because range success i
 now conditional on the in-directory readbacks above; do not export usernames,
 SPNs, secret references, or raw AD command output into the evidence surface.
 
+### Source-backed content delivery (#1564)
+
+A pack that authors source-backed `file` / `directory` content (a content item
+with a `source`, as opposed to an inline `text` file or an empty directory) is
+genuinely delivered as of #1564: the CMS side materializes the payload from the
+digest-verified pack against the pack's author-declared delivery projection
+(`delivery/content-projection.json`, validated against the associated-artifact
+inventory), promotes it content-addressed to the platform assets bucket, and
+hands the engine a byte-free delivery binding; the provisioner downloads +
+digest-verifies the payload, delivers it over the authenticated guest channel,
+and gates range readiness on an in-guest digest readback. `file` and `directory`
+are declared manifest capabilities again because every admitted shape now has a
+genuine, verified guest effect (ADR-032-R3, ADR-034-R6).
+
+Cutover prerequisites for source-backed content (in addition to the image
+mapping above):
+
+- The provisioner runtime must resolve the assets bucket via
+  `ACES_CONTENT_DELIVERY_BUCKET` or `STORAGE_BUCKET_NAME` (the same assets
+  bucket the portal promotes to). An unset bucket fails closed at delivery time.
+- The provisioner already holds `roles/storage.objectViewer` on the assets
+  bucket (`platform/terraform/gcp/modules/portal/iam` `provisioner:assets`), so
+  reusing that bucket needs no new IAM grant; the payload objects live under the
+  `SHIFTER_ACES_CONTENT_DELIVERY_PREFIX` key prefix within it.
+- A validation pack exercising this capability must ship a
+  `delivery/content-projection.json` mapping each source-backed content
+  `source` to its pack-relative input; a pack that authors source-backed content
+  without a valid projection is non-realizable and fails closed before dispatch.
+
 ## What does not satisfy the gate
 
 Direct Terraform / cloud / provisioner calls, demo-only launchers, seeded
 sidecar rows, raw logs, provider dumps, and ACES-authored backend realization
 details do not satisfy this gate. The evidence must come from the normal launch
-path and the redacted read seam.
+path and the redacted read seam. For content, a structural target (a created
+parent directory or destination), a descriptor, a marker file, or a successful
+object upload / SSH exit is not delivery: only an in-guest digest readback of
+the realized artifact does.
 
 ## Boundaries
 

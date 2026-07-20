@@ -19,7 +19,8 @@
         "spn"
       ],
       "supported_content_types": [
-        "directory"
+        "directory",
+        "file"
       ],
       "supported_domain_profiles": [
         "active_directory"

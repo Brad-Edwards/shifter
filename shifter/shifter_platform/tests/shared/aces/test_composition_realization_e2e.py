@@ -9,12 +9,14 @@ serialized plan as plain data) -- asserting the scenario's directory content,
 accounts, and credential intent survive into the realizer. If the compiler's payload
 convention shifts, or the provisioner reader/realizer drifts, this fails.
 
-It exercises only terms the manifest genuinely declares (#1563): ``directory``
-content and account placements. Inline-``file`` content realization is real
-provisioner behaviour but is no longer a declared manifest capability -- the coarse
-``file`` type also admits unrealized source-backed files -- so it is covered by the
-provisioner composition unit tests in ``test_aces_gcp_composition.py``, not cited
-here as manifest support.
+It exercises ``directory`` content and account placements through the full
+compile -> serialize -> parse -> realize pipeline. ``file`` and ``directory`` are
+both declared manifest capabilities again as of #1564 (every admitted shape --
+inline text, empty directory, and genuinely-delivered source-backed file/directory
+-- has a real, digest-verified guest effect). Inline-file bootstrap rendering is
+covered by ``test_aces_gcp_composition.py``; genuine source-backed content
+delivery (materialize -> promote -> transport -> in-guest digest readback) is
+covered by the CMS delivery-prep tests and the provisioner delivery tests.
 """
 
 from __future__ import annotations

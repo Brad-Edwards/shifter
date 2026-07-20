@@ -531,9 +531,10 @@ def test_retained_account_features_pass_declaration_and_evidence(spec: dict) -> 
     )
 
 
-@pytest.mark.parametrize("content_type", ["file", "dataset"])
+@pytest.mark.parametrize("content_type", ["dataset"])
 def test_dropped_content_types_fail_closed(content_type: str) -> None:
-    # supported_content_types narrowed to {directory}; file/dataset fail closed (#1564 re-adds source-backed content).
+    # #1564 re-declares file + directory (genuine, digest-verified delivery); dataset
+    # stays out (no deterministic materializer + readback) and fails closed.
     plan = _plan(
         _node("provision.node.a", "a"),
         _content_placement("provision.content.x", target="provision.node.a", content_type=content_type),
@@ -541,6 +542,18 @@ def test_dropped_content_types_fail_closed(content_type: str) -> None:
     serialized, diagnostics = _interpret(plan)
     assert serialized is None
     assert any(d.is_error and d.code == "shifter-provisioner.unsupported-content-type" for d in diagnostics)
+
+
+@pytest.mark.parametrize("content_type", ["file", "directory"])
+def test_declared_content_types_are_admitted(content_type: str) -> None:
+    # #1564: file + directory are declared capabilities; a well-formed placement of
+    # either type must NOT raise an unsupported-content-type diagnostic.
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _content_placement("provision.content.x", target="provision.node.a", content_type=content_type),
+    )
+    _serialized, diagnostics = _interpret(plan)
+    assert not any(d.code == "shifter-provisioner.unsupported-content-type" for d in diagnostics)
 
 
 def _mail_overclaimed_capabilities() -> ProvisionerCapabilities:

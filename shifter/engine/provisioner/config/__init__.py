@@ -25,6 +25,10 @@ from ._aws_polaris import (
     AWSPolarisAgentConfig,
     load_aws_polaris_agent_config,
 )
+from ._content_delivery import (
+    AcesContentDeliveryConfig,
+    load_aces_content_delivery_config,
+)
 from ._crypto import (
     FieldDecryptError,
     decrypt_field,
@@ -69,6 +73,7 @@ from ._range import (
 
 __all__ = [
     "AWSPolarisAgentConfig",
+    "AcesContentDeliveryConfig",
     "FieldDecryptError",
     "GCERangeCellConfig",
     "GCERangeImageProfile",
@@ -90,6 +95,7 @@ __all__ = [
     "get_range_from_db",
     "has_ngfw_attachment_state",
     "is_gce_range_cell_backend",
+    "load_aces_content_delivery_config",
     "load_aws_polaris_agent_config",
     "load_gce_range_cell_config",
     "load_gdc_network_access_config",
