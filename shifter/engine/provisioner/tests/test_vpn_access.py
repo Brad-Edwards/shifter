@@ -227,13 +227,15 @@ def test_aws_gateway_stays_pending_until_service_and_policy_probe():
     assert 'self.request.sendall(b"ready\\n")' in bootstrap
 
 
-def test_aws_gateway_bootstrap_installs_its_runtime_dependencies():
+def test_aws_gateway_bootstrap_uses_the_baked_runtime_without_package_egress():
     module = Path(__file__).parents[1] / "terraform" / "modules" / "range"
     bootstrap = (module / "templates" / "openvpn_gateway_aws.py.tpl").read_text(encoding="utf-8")
 
-    assert "package_update: true" in bootstrap
-    assert "  - openvpn\n" in bootstrap
-    assert "  - python3-boto3\n" in bootstrap
+    assert "package_update:" not in bootstrap
+    assert "\npackages:" not in bootstrap
+    assert "apt-get" not in bootstrap
+    assert "import boto3" in bootstrap
+    assert "  - [python3, /usr/local/sbin/configure-shifter-openvpn.py]" in bootstrap
 
 
 def test_server_payload_excludes_client_and_ca_signing_keys():
