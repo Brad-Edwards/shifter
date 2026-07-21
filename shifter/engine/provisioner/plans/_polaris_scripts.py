@@ -57,7 +57,7 @@ services:
       - "3389:3389"
     environment:
       KALI_AUTHORIZED_KEY: "$KALI_PUBKEY"
-      KALI_SPLICE_PRIVATE_KEY_B64: "$SPLICE_PRIVATE_KEY_B64"{{ aws_agent_compose_block }}
+      KALI_SPLICE_PRIVATE_KEY_B64: "$SPLICE_PRIVATE_KEY_B64"{{ aws_agent_compose_block }}{{ gcp_agent_compose_block }}
   a9-splice:
     environment:
       A9_AUTHORIZED_KEY: "$SPLICE_PUBLIC_KEY"

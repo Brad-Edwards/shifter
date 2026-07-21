@@ -48,6 +48,7 @@ from ._polaris_scripts_aws import (
 )
 from ._polaris_scripts_gcp import (
     FETCH_POLARIS_TESTS_SCRIPT_GCS,
+    GCP_AGENT_COMPOSE_BLOCK,
     KALI_VERTEX_SHARD_SCRIPT,
 )
 from .base import SetupStep
@@ -240,6 +241,7 @@ class PolarisRangeBootstrapPlan:
             # to before -- _aws_agent_context overrides both with real content.
             "aws_agent_setup_block": "",
             "aws_agent_compose_block": "",
+            "gcp_agent_compose_block": "",
         }
 
     @staticmethod
@@ -332,6 +334,7 @@ class PolarisRangeBootstrapPlan:
             "range_id": range_id,
             "vertex_project_id": project,
             "vertex_region": region,
+            "gcp_agent_compose_block": GCP_AGENT_COMPOSE_BLOCK,
             **PolarisRangeBootstrapPlan._vertex_models(instance),
         }
 
