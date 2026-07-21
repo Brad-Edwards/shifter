@@ -7,6 +7,18 @@ set. Keeping the large embedded bash split by provider keeps both modules under
 the Sonar line budget without changing the plan's public surface.
 """
 
+# GCP-only Compose fragment injected into the shared range bootstrap before
+# a14-kali is created. Docker owns /etc/hosts and regenerates it on restart, so
+# direct in-container writes are not durable. extra_hosts keeps the restricted
+# OAuth and Vertex routes present across ordinary container restarts.
+GCP_AGENT_COMPOSE_BLOCK = (
+    "\n    extra_hosts:"
+    '\n      - "oauth2.googleapis.com:199.36.153.8"'
+    '\n      - "aiplatform.googleapis.com:199.36.153.8"'
+    '\n      - "us-central1-aiplatform.googleapis.com:199.36.153.8"'
+)
+
+
 # GCE twin of FETCH_POLARIS_TESTS_SCRIPT. Pulls the tests/ tree from a GCS
 # bucket instead of S3. The range host VM authenticates with its attached
 # service account via Application Default Credentials (metadata server), so no

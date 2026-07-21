@@ -224,6 +224,7 @@ class TestPolarisRangeBootstrapPlan:
         # rendering never raises a missing-template-variable error (#1377).
         assert context["aws_agent_setup_block"] == ""
         assert context["aws_agent_compose_block"] == ""
+        assert "oauth2.googleapis.com:199.36.153.8" in context["gcp_agent_compose_block"]
 
     def test_gcp_context_requires_vertex_project(self, monkeypatch):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
@@ -554,12 +555,9 @@ class TestPolarisAwsAgentSecurity:
                 )
             assert result.returncode == 0, f"{name} failed bash -n: {result.stderr}"
 
-    def test_gcp_compose_rewrite_is_byte_identical_to_pre_slice5(self):
-        """The AWS-only fragments are Python-computed and substituted via
-        plain {{ }} tokens (never a bash-runtime `if`), so with both tokens
-        empty (GCP's actual context) rendering must reproduce, byte for byte,
-        both insertion points exactly as they were before #1377 slice 5:
-        the compose YAML block, and the blank line before `cd .../build`."""
+    def test_empty_provider_fragments_preserve_pre_slice5_compose(self):
+        """With every provider fragment empty, the shared template preserves
+        the original compose block and blank line before ``cd .../build``."""
         from orchestrators.setup_orchestrator import SetupOrchestrator
         from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
 
@@ -568,6 +566,7 @@ class TestPolarisAwsAgentSecurity:
             "public_key": "ssh-rsa AAAA",
             "aws_agent_setup_block": "",
             "aws_agent_compose_block": "",
+            "gcp_agent_compose_block": "",
         }
         rendered = SetupOrchestrator._render_script(POLARIS_RANGE_BOOTSTRAP_SCRIPT, context, "polaris_range_bootstrap")
 
@@ -614,6 +613,24 @@ class TestPolarisAwsAgentSecurity:
         assert "kali sudoers policy missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "Xwrapper allowed_users was not repaired" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "XRDP key is not readable by xrdp after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
+    def test_gcp_bootstrap_persists_private_google_routes_in_compose(self, monkeypatch):
+        from orchestrators.setup_orchestrator import SetupOrchestrator
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        monkeypatch.setenv("POLARIS_TESTS_BUCKET", "gcs-bucket")
+        monkeypatch.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "proj-123")
+        context = PolarisRangeBootstrapPlan(provider="gcp").get_context(MockPolarisInstance())
+        rendered = SetupOrchestrator._render_script(
+            POLARIS_RANGE_BOOTSTRAP_SCRIPT,
+            context,
+            "polaris_range_bootstrap",
+        )
+
+        assert '"oauth2.googleapis.com:199.36.153.8"' in rendered
+        assert '"aiplatform.googleapis.com:199.36.153.8"' in rendered
+        assert '"us-central1-aiplatform.googleapis.com:199.36.153.8"' in rendered
 
     # --- Fail-closed verification (AWS-only verify_step variant) ----------
 
