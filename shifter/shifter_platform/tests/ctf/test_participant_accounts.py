@@ -141,9 +141,10 @@ def _boundary_response(user, path):
     return CTFAccountBoundaryMiddleware(lambda _request: HttpResponse("escaped"))(request)
 
 
-def test_ctf_boundary_admits_live_participant_spa_bootstrap_and_guacamole_range_access(ctf_event_active, monkeypatch):
+def test_ctf_boundary_admits_live_participant_spa_bootstrap_and_range_access(ctf_event_active, monkeypatch):
     # Issue #1740: a live participant must reach the Mission Control Guacamole
-    # range-access endpoints (RDP/SSH bootstrap + status/open) for their own box.
+    # range-access surfaces (terminal page + RDP/SSH bootstrap + status/open)
+    # for their own box.
     from management.services import set_ctf_password_change_required
 
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -159,6 +160,7 @@ def test_ctf_boundary_admits_live_participant_spa_bootstrap_and_guacamole_range_
         "/api/v1/mission-control/guacamole/ssh-url/",
         "/api/v1/mission-control/guacamole/bootstrap/00000000-0000-0000-0000-000000000000/",
         "/api/v1/mission-control/guacamole/bootstrap/00000000-0000-0000-0000-000000000000/open/",
+        "/mission-control/terminal/",
     ):
         response = _boundary_response(user, path)
         assert response.status_code == 200, path
@@ -184,7 +186,7 @@ def test_live_participant_can_load_real_spa_bootstrap(client, ctf_event_active, 
 
 def test_ctf_boundary_still_denies_non_guacamole_mission_control(ctf_event_active, monkeypatch):
     # The exception is narrow: NGFW, range lifecycle, credentials, and the
-    # terminal page stay blocked for temporary accounts (issue #1740).
+    # rest of Mission Control stay blocked for temporary accounts (issue #1740).
     from management.services import set_ctf_password_change_required
 
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -197,7 +199,8 @@ def test_ctf_boundary_still_denies_non_guacamole_mission_control(ctf_event_activ
         "/api/v1/mission-control/ngfw/00000000-0000-0000-0000-000000000000/ssh-url/",
         "/api/v1/mission-control/range/launch/",
         "/api/v1/mission-control/credentials/",
-        "/mission-control/terminal/",
+        "/mission-control/",
+        "/mission-control/agents/",
     ):
         response = _boundary_response(user, path)
         assert response.status_code == 403, path
