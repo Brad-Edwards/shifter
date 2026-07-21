@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from cyberscript.enums import ResourceStatus
+
 from config import resolve_ngfw_attachment_config
 from provisioner_db import get_db_connection
 from state_helpers import _get_cloud_provider
@@ -26,11 +28,17 @@ def get_user_ngfw_data(user_id: int) -> dict[str, Any] | None:
             JOIN engine_request r ON i.request_id = r.id
             WHERE r.user_id = %s
               AND i.role = 'ngfw'
-              AND i.status IN ('ready', 'paused', 'pausing', 'resuming')
+              AND i.status IN (%s, %s, %s, %s)
             ORDER BY i.created_at DESC
             LIMIT 1
             """,
-            (user_id,),
+            (
+                user_id,
+                ResourceStatus.READY.value,
+                ResourceStatus.PAUSED.value,
+                ResourceStatus.PAUSING.value,
+                ResourceStatus.RESUMING.value,
+            ),
         )
         row = cur.fetchone()
         if not row:

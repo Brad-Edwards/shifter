@@ -21,7 +21,14 @@ from shared.remote_access import parse_openvpn_capability, validate_openvpn_capa
 import range_terraform_runner
 from cloud.exceptions import CloudError
 from config import is_gce_range_cell_backend, resolve_cloud_provider
-from events import publish_destroyed, publish_failed, publish_ready, publish_status_update
+from events import (
+    STATUS_DESTROYED,
+    STATUS_PROVISIONING,
+    publish_destroyed,
+    publish_failed,
+    publish_ready,
+    publish_status_update,
+)
 from instance_orchestrator import run_instance_setup
 from provisioner_db import (
     get_range_data_by_request_id,
@@ -322,7 +329,7 @@ def _run_terraform_provision(
         request_id=request_id,
         range_id=range_id,
         user_id=user_id,
-        new_status="provisioning",
+        new_status=STATUS_PROVISIONING,
     )
 
     logger.info("Running terraform apply for range...")
@@ -432,7 +439,7 @@ def _ensure_range_is_active(request_id: str, range_id: int) -> bool:
     except ValueError as e:
         logger.warning("Range not found for request %s, skipping destroy: %s", request_id, e)
         return False
-    if range_data.get("status") == "destroyed":
+    if range_data.get("status") == STATUS_DESTROYED:
         logger.info("Range %d already destroyed, skipping", range_id)
         return False
     return True
