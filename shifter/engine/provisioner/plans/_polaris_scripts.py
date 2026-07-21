@@ -169,6 +169,11 @@ if [ -f /etc/xrdp/xrdp.ini ]; then
   else
     printf "%s\n" "crypt_level=high" >> /etc/xrdp/xrdp.ini
   fi
+  if grep -q "^ssl_protocols=" /etc/xrdp/xrdp.ini; then
+    sed -i "s/^ssl_protocols=.*/ssl_protocols=TLSv1.2/" /etc/xrdp/xrdp.ini
+  else
+    printf "%s\n" "ssl_protocols=TLSv1.2" >> /etc/xrdp/xrdp.ini
+  fi
 fi
 '
 docker restart a14-kali >/dev/null
@@ -213,6 +218,10 @@ if ! docker exec a14-kali grep -q '^security_layer=tls$' /etc/xrdp/xrdp.ini; the
 fi
 if ! docker exec a14-kali grep -q '^crypt_level=high$' /etc/xrdp/xrdp.ini; then
   echo "polaris bootstrap: XRDP crypt_level was not repaired" >&2
+  exit 1
+fi
+if ! docker exec a14-kali grep -q '^ssl_protocols=TLSv1.2$' /etc/xrdp/xrdp.ini; then
+  echo "polaris bootstrap: XRDP TLS protocol compatibility was not repaired" >&2
   exit 1
 fi
 echo "polaris bootstrap: kali sudo and XRDP prerequisites enforced"
