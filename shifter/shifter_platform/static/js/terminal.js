@@ -6,11 +6,11 @@
  */
 // TerminalLayoutBase and the shared status constants are published on
 // globalThis by terminal-layout.js, which must load before this script.
-const TerminalLayoutBase = globalThis.TerminalLayoutBase;
-const STATUS_INDICATOR_CLASS = globalThis.STATUS_INDICATOR_CLASS;
-const NOT_CONNECTED_TEXT = globalThis.NOT_CONNECTED_TEXT;
+const TerminalLayoutBaseClass = globalThis.TerminalLayoutBase;
+const TERMINAL_STATUS_INDICATOR_CLASS = globalThis.STATUS_INDICATOR_CLASS;
+const TERMINAL_NOT_CONNECTED_TEXT = globalThis.NOT_CONNECTED_TEXT;
 
-class TerminalManager extends TerminalLayoutBase {
+class TerminalManager extends TerminalLayoutBaseClass {
     constructor(options) {
         super();
         this.instances = options.instances || [];
@@ -355,7 +355,7 @@ class TerminalManager extends TerminalLayoutBase {
             const text = statusEl.querySelector('.status-text');
 
             if (indicator) {
-                indicator.className = STATUS_INDICATOR_CLASS + ' ' + status;
+                indicator.className = TERMINAL_STATUS_INDICATOR_CLASS + ' ' + status;
             }
 
             if (text) {
@@ -376,7 +376,7 @@ class TerminalManager extends TerminalLayoutBase {
                         text.textContent = 'Failed';
                         break;
                     default:
-                        text.textContent = NOT_CONNECTED_TEXT;
+                        text.textContent = TERMINAL_NOT_CONNECTED_TEXT;
                 }
             }
         }
