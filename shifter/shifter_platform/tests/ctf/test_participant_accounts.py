@@ -402,6 +402,7 @@ def test_post_event_retention_purge_anonymizes_accounts(ctf_event_active, monkey
 
 def test_ctf_login_rate_limits_repeated_failures(client, standard_user, settings):
     settings.CTF_LOGIN_RATE_LIMIT_MAX = 2
+    settings.CTF_LOGIN_SOURCE_RATE_LIMIT_MAX = 20
     settings.CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 300
 
     client.post(reverse("ctf:ctf_login"), {"username": standard_user.username, "password": "wrong"})
@@ -409,6 +410,27 @@ def test_ctf_login_rate_limits_repeated_failures(client, standard_user, settings
     response = client.post(
         reverse("ctf:ctf_login"),
         {"username": standard_user.username, "password": "wrong"},
+    )
+
+    assert response.status_code == 429
+    assert response["Retry-After"] == "300"
+
+
+def test_ctf_login_allows_event_users_behind_shared_source(client, settings):
+    settings.CTF_LOGIN_RATE_LIMIT_MAX = 2
+    settings.CTF_LOGIN_SOURCE_RATE_LIMIT_MAX = 6
+    settings.CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 300
+
+    for participant_number in range(6):
+        response = client.post(
+            reverse("ctf:ctf_login"),
+            {"username": f"event-participant-{participant_number}", "password": "wrong"},
+        )
+        assert response.status_code == 200
+
+    response = client.post(
+        reverse("ctf:ctf_login"),
+        {"username": "event-participant-7", "password": "wrong"},
     )
 
     assert response.status_code == 429
