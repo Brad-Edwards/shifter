@@ -40,6 +40,22 @@ describe("ChallengesPage", () => {
     expect(screen.getByText("Solved")).toBeInTheDocument();
   });
 
+  it("renders authored mission categories in numeric mission order", async () => {
+    mockApi.mockResolvedValue([
+      challenge({ id: "c10", name: "Tenth", category: "Mission 10 — Finale" }),
+      challenge({ id: "c2", name: "Second", category: "Mission 2 — Inside Boreas" }),
+      challenge({ id: "c1", name: "First", category: "Mission 1 — Boreas" }),
+    ]);
+    renderRoute(<ChallengesPage />);
+
+    const headings = await screen.findAllByRole("heading", { level: 2 });
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      "Mission 1 — Boreas",
+      "Mission 2 — Inside Boreas",
+      "Mission 10 — Finale",
+    ]);
+  });
+
   it("summarizes solved-of-total in the header", async () => {
     mockApi.mockResolvedValue([challenge(), challenge({ id: "c2", name: "B", solved: true })]);
     renderRoute(<ChallengesPage />);

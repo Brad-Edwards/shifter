@@ -50,6 +50,15 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
     event = participant.event
     challenges = get_available_challenges(event.id).prefetch_related("tags", "topics")
 
+    # Categories are organizer-authored tracks (for example, Polaris mission
+    # names), not a platform-owned taxonomy. Keep friendly labels for the
+    # built-in technical defaults while preserving authored labels verbatim.
+    from ctf.enums import ChallengeCategory
+
+    default_category_labels = dict(ChallengeCategory.choices())
+    category_values = list(challenges.order_by("category").values_list("category", flat=True).distinct())
+    categories = [(value, default_category_labels.get(value, value)) for value in category_values]
+
     # Apply category filter if provided
     category_filter = request.GET.get("category")
     if category_filter:
@@ -97,7 +106,6 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
     for challenge in challenge_list:
         challenges_by_category[challenge.category].append(challenge)
 
-    from ctf.enums import ChallengeCategory
     from ctf.models import CTFChallengeTag
 
     # Get all tags used by challenges in this event
@@ -129,7 +137,7 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         "category_filter": category_filter,
         "tag_filter": tag_filter,
         "topic_filter": topic_filter,
-        "categories": ChallengeCategory.choices(),
+        "categories": categories,
         "event_tags": event_tags,
         "event_topics": event_topics,
         "solved_ids": solved_ids,

@@ -13,7 +13,7 @@ from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from ctf.enums import ChallengeCategory, ParticipantStatus
+from ctf.enums import ParticipantStatus
 from ctf.models import CTFParticipant
 
 from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
@@ -42,9 +42,29 @@ class TestParticipantChallengeListView:
         response = authenticated_participant_client.get(reverse("ctf:challenges"))
 
         assert response.status_code == 200
-        assert response.context["categories"] == ChallengeCategory.choices()
+        assert response.context["categories"] == [("web", "Web Exploitation")]
         assert b"Web Exploitation" in response.content
         assert ctf_challenge.name.encode() in response.content
+
+    @override_settings(
+        PLATFORM_SPA_ENABLED=False,
+        CTF_WORKSPACE_SPA_ENABLED=False,
+        STORAGES=_SIMPLE_STORAGES,
+    )
+    def test_renders_authored_mission_category(
+        self, authenticated_participant_client, participant_user, ctf_participant, ctf_challenge
+    ):
+        from management.services import set_active_ctf_event
+
+        ctf_challenge.category = "Mission 2 — Inside Boreas"
+        ctf_challenge.save(update_fields=["category"])
+        set_active_ctf_event(participant_user, ctf_participant.event_id)
+
+        response = authenticated_participant_client.get(reverse("ctf:challenges"))
+
+        assert response.status_code == 200
+        assert response.context["categories"] == [("Mission 2 — Inside Boreas", "Mission 2 — Inside Boreas")]
+        assert "Mission 2 — Inside Boreas" in response.content.decode()
 
 
 class TestAdminParticipantListView:

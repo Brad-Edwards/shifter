@@ -181,6 +181,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { surface: "Event Home", routeName: "ctf:dashboard", purpose: "Event entry point with current participant state.", routePath: "/ctf/", iconKey: "home", activeContext: "event" },
       { surface: "Challenges", routeName: "ctf:challenges", purpose: "Browse available challenges and progression.", routePath: "/ctf/challenges/", iconKey: "flag" },
       { surface: "Range", routeName: "ctf:range", purpose: "Access range status and participant resources.", routePath: "/ctf/range/", iconKey: "server", activeContext: "range" },
+      { surface: "Terminal", routeName: "ctf:participant_terminal", purpose: "Open the terminal for the participant range.", routePath: "/ctf/terminal/", iconKey: "terminal", activeContext: "range" },
       { surface: "Scoreboard", routeName: "ctf:scoreboard", purpose: "Compare event scoring and rank.", routePath: "/ctf/scoreboard/", iconKey: "trophy" },
       { surface: "Team", routeName: "ctf:team", purpose: "Inspect team membership and status.", routePath: "/ctf/team/", iconKey: "users" },
       { surface: "Help", routeName: "ctf:help", purpose: "Get CTF-specific help.", routePath: "/ctf/help/", iconKey: "help-circle" },
