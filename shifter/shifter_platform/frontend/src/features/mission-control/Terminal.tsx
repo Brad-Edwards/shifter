@@ -88,6 +88,47 @@ export function Terminal({ instanceUuid, onConnectionStateChange }: Readonly<Ter
     term.open(container);
     fitAddon.fit();
 
+    const terminalElement = term.element;
+    const copySelection = () => {
+      const selection = term.getSelection();
+      if (selection && navigator.clipboard) {
+        void navigator.clipboard.writeText(selection).catch(() => undefined);
+      }
+    };
+    const pasteClipboard = () => {
+      if (navigator.clipboard) {
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) term.paste(text);
+          })
+          .catch(() => undefined);
+      }
+    };
+    const handleMouseUp = () => copySelection();
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      pasteClipboard();
+    };
+
+    // tmux owns wheel events so its history remains scrollable. xterm's standard
+    // Shift+drag bypass creates a browser selection; copy it when the drag ends
+    // and paste on right click. Keep keyboard equivalents for keyboard-only use.
+    terminalElement?.addEventListener("mouseup", handleMouseUp);
+    terminalElement?.addEventListener("contextmenu", handleContextMenu);
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) return true;
+      if (event.key.toLowerCase() === "c") {
+        copySelection();
+        return false;
+      }
+      if (event.key.toLowerCase() === "v") {
+        pasteClipboard();
+        return false;
+      }
+      return true;
+    });
+
     const socket = new WebSocket(terminalSocketUrl(instanceUuid));
 
     function sendResize() {
@@ -141,6 +182,8 @@ export function Terminal({ instanceUuid, onConnectionStateChange }: Readonly<Ter
 
     return () => {
       window.removeEventListener("resize", handleWindowResize);
+      terminalElement?.removeEventListener("mouseup", handleMouseUp);
+      terminalElement?.removeEventListener("contextmenu", handleContextMenu);
       dataDisposable.dispose();
       resizeDisposable.dispose();
       socket.onopen = null;

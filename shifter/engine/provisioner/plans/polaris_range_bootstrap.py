@@ -59,7 +59,7 @@ from .base import SetupStep
 # per-range Terraform agent-role policy.
 _GCP_DEFAULT_MODEL = "claude-sonnet-4-6"
 _GCP_DEFAULT_SMALL_FAST_MODEL = "claude-haiku-4-5"
-_GCP_DEFAULT_VERTEX_REGION = "us-east5"
+_GCP_DEFAULT_VERTEX_REGION = "global"
 
 
 class PolarisRangeBootstrapPlan:

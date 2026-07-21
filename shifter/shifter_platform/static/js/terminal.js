@@ -166,22 +166,36 @@ class TerminalManager extends TerminalLayoutBaseClass {
             terminal.loadAddon(webLinksAddon);
             terminal.open(container);
 
-            // Wire clipboard: Ctrl+Shift+C copies selection, Ctrl+Shift+V pastes.
-            // Without this xterm.js shows highlighting but never reaches the
-            // system clipboard, so participants can't copy command output.
+            const copySelection = () => {
+                const selection = terminal.getSelection();
+                if (selection && navigator.clipboard) {
+                    navigator.clipboard.writeText(selection).catch(() => {});
+                }
+            };
+            const pasteClipboard = () => {
+                if (navigator.clipboard) {
+                    navigator.clipboard.readText().then((text) => {
+                        if (text) terminal.paste(text);
+                    }).catch(() => {});
+                }
+            };
+
+            // tmux owns wheel events so its history remains scrollable. xterm's
+            // standard Shift+drag bypass creates a browser selection; copy it
+            // when the drag ends and paste on right click. Retain Ctrl+Shift+C/V.
+            terminal.element?.addEventListener('mouseup', copySelection);
+            terminal.element?.addEventListener('contextmenu', (event) => {
+                event.preventDefault();
+                pasteClipboard();
+            });
             terminal.attachCustomKeyEventHandler((ev) => {
                 if (ev.type !== 'keydown') return true;
                 if (ev.ctrlKey && ev.shiftKey && (ev.key === 'C' || ev.key === 'c')) {
-                    const sel = terminal.getSelection();
-                    if (sel) {
-                        navigator.clipboard.writeText(sel).catch(() => {});
-                    }
+                    copySelection();
                     return false;
                 }
                 if (ev.ctrlKey && ev.shiftKey && (ev.key === 'V' || ev.key === 'v')) {
-                    navigator.clipboard.readText().then((txt) => {
-                        if (txt) this.sendInput(instance.uuid, txt);
-                    }).catch(() => {});
+                    pasteClipboard();
                     return false;
                 }
                 return true;
