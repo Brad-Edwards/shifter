@@ -146,7 +146,7 @@ def _setup_attacker_role(
                 failure_prefix="Kali RDP password push failed",
                 target_container=local_password_target_container,
             )
-        except Exception as exc:  # noqa: BLE001 - RDP push is best-effort; SSH/terminal access is key-based
+        except SetupError as exc:
             logger.warning("Kali RDP password push non-fatal skip for %s: %s", execution.target, exc)
     else:
         logger.info("Kali local password push deferred for %s", execution.target)
@@ -184,7 +184,7 @@ def _set_attacker_container_password_after_bootstrap(
                 failure_prefix=f"{container_name} RDP password push failed",
                 target_container=container_name,
             )
-        except Exception as exc:  # noqa: BLE001 - RDP push is best-effort; SSH/terminal access is key-based
+        except SetupError as exc:
             logger.warning("%s RDP password push non-fatal skip: %s", container_name, exc)
     finally:
         execution.close()
