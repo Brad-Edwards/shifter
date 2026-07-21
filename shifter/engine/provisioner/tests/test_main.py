@@ -465,6 +465,9 @@ class TestRangeStatePayloads:
         instance_state = json.loads(mock_cursor.execute.call_args_list[1].args[1][1])
         provisioned_instances = json.loads(mock_cursor.execute.call_args_list[2].args[1][0])
 
+        assert "destroyed_at = NULL" in mock_cursor.execute.call_args_list[0].args[0]
+        assert "destroyed_at = NULL" in mock_cursor.execute.call_args_list[1].args[0]
+        assert "destroyed_at = NULL" in mock_cursor.execute.call_args_list[2].args[0]
         assert subnet_state["cloud_provider"] == "gcp"
         assert subnet_state["aws_subnet_id"] is None
         assert subnet_state["provider_metadata"]["gcp"]["network_name"] == "range-42-attack"

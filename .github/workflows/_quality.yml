@@ -585,6 +585,15 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
+      - name: Check for missing migrations
+        working-directory: shifter/shifter_platform
+        env:
+          TESTING: "1"
+          TEST_DB_BACKEND: sqlite
+          DJANGO_DEBUG: "true"
+          DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: uv run python manage.py makemigrations --check --dry-run
+
   shifter-platform-lint-js:
     permissions:
       contents: read
@@ -1373,8 +1382,10 @@ jobs:
           # ``--cov`` (no path) measures the production roots declared in
           # pyproject ``[tool.coverage.run] source`` and honours its ``omit`` +
           # ``fail_under`` (#1529 / REV1 Q6): config, not the command line, owns
-          # the coverage universe and the non-regression floor. The documentation
-          # suite runs here too (Q4, no ``--ignore=tests/documentation``).
+          # the coverage universe and the non-regression floor. ``tests/`` runs in
+          # full: the former ``--ignore=tests/documentation`` was dropped when the
+          # Django docs app and its suite were retired (#1591), so no path is
+          # excluded here.
           uv run pytest tests/ -m "not redis and not postgres" --cov --cov-report=term-missing --cov-report=xml:coverage.xml
 
       # Real-stack Redis channel-layer evidence (#924). Runs only the

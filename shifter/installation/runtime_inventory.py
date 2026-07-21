@@ -99,6 +99,7 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # value. MAILGUN_SENDER_DOMAIN is emitted only for the Mailgun backend.
         "DEFAULT_FROM_EMAIL",
         "EMAIL_API_KEY_SECRET_ID",
+        "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL",
         "GCP_RANGE_CELL_NETWORK_MODE",
         "GCP_RANGE_DC_DISK_SIZE_GB",
         "GCP_RANGE_DC_DISK_TYPE",
@@ -158,6 +159,7 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "DB_USER",
         "ENGINE_TASK_IMAGE",
         "GCP_PROJECT_ID",
+        "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL",
         "GCP_RANGE_BACKEND",
         "GCP_RANGE_CELL_NETWORK_MODE",
         "GCP_RANGE_DC_DISK_SIZE_GB",
