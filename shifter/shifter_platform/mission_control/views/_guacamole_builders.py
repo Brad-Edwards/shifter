@@ -85,7 +85,7 @@ def _sftp_root_for_os(os_type: str | None) -> str | None:
 def _rdp_security_for_os(os_type: str | None) -> str:
     """Return Guacamole's RDP security mode for the given OS type."""
     if os_type == "kali":
-        return "rdp"
+        return "tls"
     return "any"
 
 

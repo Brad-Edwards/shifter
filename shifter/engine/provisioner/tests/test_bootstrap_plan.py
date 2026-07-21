@@ -601,8 +601,8 @@ class TestPolarisAwsAgentSecurity:
         assert "needs_root_rights=yes" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "repair_xrdp_file /etc/xrdp/cert.pem 0644" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "repair_xrdp_file /etc/xrdp/key.pem 0640" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
-        assert "security_layer=rdp" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
-        assert "crypt_level=low" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "security_layer=tls" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "crypt_level=high" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "docker restart a14-kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "kali sudo entitlement missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "kali sudoers policy missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
