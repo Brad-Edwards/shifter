@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 import { Loader2 } from "lucide-react";
 
 import { useCtfRangeStatus, useVpnProfileDownload } from "@/api/ctf";
@@ -6,13 +8,15 @@ import type { CtfRangeStatus } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useGuacamoleSession } from "@/features/mission-control/guacamole";
+import { cn } from "@/lib/utils";
 
 import { titleCase } from "./format";
+import { ctfTerminalPath } from "./routes";
 
 const READY = "ready";
 
@@ -23,25 +27,40 @@ type CtfTargetInstance = CtfRangeStatus["target_instances"][number];
 
 function TargetBoxRow({ box }: Readonly<{ box: CtfTargetInstance }>) {
   const session = useGuacamoleSession();
-  const busy = session.pendingProtocol === "rdp";
   return (
     <TableRow>
       <TableCell className="font-medium">{box.name || "—"}</TableCell>
       <TableCell className="font-mono text-sm text-muted-foreground">{box.private_ip || "—"}</TableCell>
       <TableCell>{titleCase(box.os_type)}</TableCell>
       <TableCell>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={busy || !box.uuid}
-          aria-busy={busy}
-          aria-label={`Open ${box.name || "range box"} session`}
-          onClick={() => session.open({ protocol: "rdp", instanceUuid: box.uuid })}
-        >
-          {busy ? <Loader2 className="mr-1 size-3.5 animate-spin" aria-hidden="true" /> : null}
-          Open
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to={ctfTerminalPath(box.uuid)}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            aria-label={`Open ${box.name || "range box"} terminal`}
+          >
+            Terminal
+          </Link>
+          {(["ssh", "rdp"] as const).map((protocol) => {
+            const busy = session.pendingProtocol === protocol;
+            const label = protocol.toUpperCase();
+            return (
+              <Button
+                key={protocol}
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy || !box.uuid}
+                aria-busy={busy}
+                aria-label={`Open ${box.name || "range box"} ${label} session`}
+                onClick={() => session.open({ protocol, instanceUuid: box.uuid })}
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+                {label}
+              </Button>
+            );
+          })}
+        </div>
         {session.error ? (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {session.error}

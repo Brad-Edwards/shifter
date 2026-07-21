@@ -64,6 +64,7 @@ def _string_list(raw: object) -> list[str]:
 _CONSOLE_EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 _MAILGUN_EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
 _GCE_RANGE_ENV_KEYS = (
+    "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL",
     "GCP_RANGE_PLANE",
     "GCP_RANGE_CELL_NETWORK_MODE",
     "RANGE_NETWORK_ZONE",

@@ -15,6 +15,7 @@ from cloud.exceptions import CloudProviderNotImplementedError
 from config import resolve_cloud_provider
 from events import (
     STATUS_FAILED,
+    STATUS_PAUSED,
     STATUS_PROVISIONING,
     STATUS_READY,
     publish_ngfw_event,
@@ -207,12 +208,12 @@ def _short_circuit_local_dev_post_provision(
         status=STATUS_READY,
     )
     logger.info("LOCAL DEV MODE: Setting NGFW status to paused")
-    update_instance_state(request_id, "paused")
+    update_instance_state(request_id, STATUS_PAUSED)
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
         app_id=app_id,
-        status="paused",
+        status=STATUS_PAUSED,
     )
 
 

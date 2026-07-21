@@ -57,6 +57,7 @@ _FULL_MAILGUN_EMAIL_CONFIG = {
 def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
     values = {
         "GCP_RANGE_BACKEND": "gce",
+        "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL": "provisioner@example.iam.gserviceaccount.com",
         "GCP_RANGE_PLANE": "compute-engine",
         "GCP_RANGE_CELL_NETWORK_MODE": "vpc-per-range",
         "RANGE_NETWORK_ZONE": "us-central1-b",
@@ -275,6 +276,7 @@ def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
     rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
 
     assert "GCP_RANGE_BACKEND=gce\n" in rendered
+    assert "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL=provisioner@example.iam.gserviceaccount.com\n" in rendered
     assert "GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range\n" in rendered
     assert "RANGE_NETWORK_ZONE=us-central1-b\n" in rendered
     assert "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=range-host@example.iam.gserviceaccount.com\n" in rendered

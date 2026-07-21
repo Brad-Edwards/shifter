@@ -18,6 +18,7 @@ export const ctfEventPath = (): string => `${CTF_BASE}/event/`;
 export const ctfChallengesPath = (): string => `${CTF_BASE}/challenges/`;
 export const ctfChallengeDetailPath = (challengeId: string): string => `${CTF_BASE}/challenges/${challengeId}/`;
 export const ctfRangePath = (): string => `${CTF_BASE}/range/`;
+export const ctfTerminalPath = (instanceUuid: string): string => `${CTF_BASE}/terminal/${instanceUuid}/`;
 export const ctfScoreboardPath = (): string => `${CTF_BASE}/scoreboard/`;
 export const ctfTeamPath = (): string => `${CTF_BASE}/team/`;
 export const ctfAccountPath = (): string => `${CTF_BASE}/account/`;

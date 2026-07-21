@@ -650,6 +650,7 @@ def _plan_with_accounts(*accounts: AcesPlanAccount, os_family: str = "linux", co
 class _RecordingCredentialExecutor:
     def __init__(self):
         self.scripts: list[str] = []
+        self.stdin_inputs: list[str | None] = []
         self.closed = False
 
     def wait_for_ready(self, target, timeout_seconds, document_name):
@@ -657,6 +658,7 @@ class _RecordingCredentialExecutor:
 
     def run_command(self, instance_id, script, timeout_seconds, document_name, stdin_input=None):
         self.scripts.append(script)
+        self.stdin_inputs.append(stdin_input)
         return CommandResult(success=True, exit_code=0, stdout="", stderr="")
 
     def close(self):
@@ -708,7 +710,8 @@ def test_normal_apply_path_realizes_both_account_auth_methods_without_output_exp
     )
 
     rendered_scripts = "\n".join(executors[0].scripts)
-    assert "PASSWORD" in rendered_scripts
+    assert "PASSWORD" not in rendered_scripts
+    assert "PASSWORD" in "\n".join(value or "" for value in executors[0].stdin_inputs)
     assert "ssh-rsa PUBLIC" in rendered_scripts
     if os_family == "windows":
         assert "Set-LocalUser" in rendered_scripts

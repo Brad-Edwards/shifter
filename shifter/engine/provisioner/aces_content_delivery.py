@@ -268,15 +268,10 @@ def _deliver_to_instance(
 ) -> None:
     """Deliver + in-guest-verify one content item's bytes on one concrete instance.
 
-    ``SetupOrchestrator.orchestrate`` already raises ``SetupError`` if the
-    deliver step itself fails after retries (a failing step's
-    ``StepResult.success=False`` makes ``orchestrate`` raise before returning
-    at all -- its ``SetupResult.success`` is unconditionally ``True`` on every
-    normal return). It does **not**, however, raise when a ``verify_step`` runs
-    but exits non-zero -- only a hard transport error during verification
-    raises -- so the in-guest digest readback is checked explicitly here via
-    ``result.verification_result``, to satisfy the fail-before-``publish_ready``
-    contract.
+    ``SetupOrchestrator.orchestrate`` raises ``SetupError`` if the deliver or
+    verify step fails after retries. The verify-step branch is mapped back onto
+    the ACES-specific digest verification error so callers keep the stronger
+    fail-before-``publish_ready`` signal instead of a generic setup failure.
     """
     execution = ops.execution_builder(output, os_type=delivery.platform, role="aces-node")
     try:
@@ -298,7 +293,9 @@ def _deliver_to_instance(
             result = ops.orchestrator_factory(execution.executor).orchestrate(
                 execution.target, plan, plan.get_context({}), execution.document_name
             )
-        except SetupError:
+        except SetupError as exc:
+            if exc.step_name == plan.verify_step.name:
+                raise AcesContentDeliveryError("ACES content delivery in-guest digest verification failed") from None
             raise AcesContentDeliveryError("ACES content delivery setup plan failed") from None
         verification = result.verification_result
         if verification is None or not verification.success:
@@ -331,7 +328,9 @@ def _realize_service_on_instance(
             result = ops.orchestrator_factory(execution.executor).orchestrate(
                 execution.target, plan, plan.get_context({}), execution.document_name
             )
-        except SetupError:
+        except SetupError as exc:
+            if exc.step_name == plan.verify_step.name:
+                raise AcesContentDeliveryError("ACES feature service verification failed") from None
             raise AcesContentDeliveryError("ACES feature service setup plan failed") from None
         verification = result.verification_result
         if verification is None or not verification.success:

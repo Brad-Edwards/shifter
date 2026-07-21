@@ -39,13 +39,13 @@ test: test-platform test-provisioner test-packer test-installation test-bootstra
 test-platform: ## Platform fast lane (SQLite; sole coverage publisher)
 	cd shifter/shifter_platform && uv sync --group dev && \
 	  $(PLATFORM_ENV) uv run python manage.py collectstatic --noinput && \
-	  $(PLATFORM_ENV) uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov
+	  $(PLATFORM_ENV) uv run pytest tests/ -m "not redis and not postgres" --cov
 
 test-platform-postgres: ## Platform PostgreSQL semantics lane (needs a Postgres service on :5432)
 	cd shifter/shifter_platform && uv sync --group dev && \
 	  TESTING=1 DJANGO_DEBUG=true TEST_DB_BACKEND=postgres DJANGO_SECRET_KEY=$(TEST_DJANGO_SECRET_KEY) \
 	  DB_HOST=localhost DB_PORT=5432 DB_NAME=shifter DB_USER=test DB_PASSWORD=test \
-	  uv run pytest tests/ --ignore=tests/documentation -m "not redis"
+	  uv run pytest tests/ -m "not redis"
 
 test-platform-redis: ## Platform Redis channel-layer integration lane (needs a Redis service on :6379)
 	cd shifter/shifter_platform && uv sync --group dev && \
