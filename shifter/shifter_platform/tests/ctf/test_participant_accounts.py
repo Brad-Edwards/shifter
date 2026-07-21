@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -165,6 +166,75 @@ def test_ctf_boundary_admits_live_participant_spa_bootstrap_and_range_access(ctf
         response = _boundary_response(user, path)
         assert response.status_code == 200, path
         assert response.content == b"escaped", path
+
+
+def _websocket_boundary_messages(user, path):
+    """Run the CTF WebSocket boundary and return downstream calls/messages."""
+    from config.websocket_auth import CTFAccountWebSocketBoundary
+
+    downstream_calls = []
+    messages = []
+
+    async def downstream(scope, receive, send):
+        downstream_calls.append(scope["path"])
+
+    async def receive():
+        return {"type": "websocket.connect"}
+
+    async def send(message):
+        messages.append(message)
+
+    boundary = CTFAccountWebSocketBoundary(downstream)
+    asyncio.run(boundary({"user": user, "path": path}, receive, send))
+    return downstream_calls, messages
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ctf_websocket_boundary_admits_live_participant_terminal(ctf_event_active, monkeypatch):
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+
+    calls, messages = _websocket_boundary_messages(
+        User.objects.get(pk=participant.user_id),
+        "/ws/terminal/00000000-0000-0000-0000-000000000000/",
+    )
+
+    assert calls == ["/ws/terminal/00000000-0000-0000-0000-000000000000/"]
+    assert messages == []
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ctf_websocket_boundary_denies_other_platform_socket(ctf_event_active, monkeypatch):
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+
+    calls, messages = _websocket_boundary_messages(
+        User.objects.get(pk=participant.user_id),
+        "/ws/range-status/00000000-0000-0000-0000-000000000000/",
+    )
+
+    assert calls == []
+    assert messages == [{"type": "websocket.close", "code": 4403}]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ctf_websocket_boundary_denies_terminal_before_password_change(ctf_event_active, monkeypatch):
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+
+    calls, messages = _websocket_boundary_messages(
+        User.objects.get(pk=participant.user_id),
+        "/ws/terminal/00000000-0000-0000-0000-000000000000/",
+    )
+
+    assert calls == []
+    assert messages == [{"type": "websocket.close", "code": 4403}]
 
 
 def test_live_participant_can_load_real_spa_bootstrap(client, ctf_event_active, monkeypatch):
