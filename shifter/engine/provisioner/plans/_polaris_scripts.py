@@ -123,6 +123,7 @@ if ! id kali >/dev/null 2>&1; then
   echo "polaris bootstrap: kali user missing in a14-kali" >&2
   exit 1
 fi
+install -d -o kali -g kali -m 0755 /home/kali
 if ! getent group sudo >/dev/null 2>&1; then
   groupadd sudo
 fi
@@ -147,7 +148,7 @@ if command -v setcap >/dev/null 2>&1 && [ -e /usr/lib/nmap/nmap ]; then
   setcap -r /usr/lib/nmap/nmap 2>/dev/null || true
 fi
 
-# tmux owns wheel events so its history remains scrollable. xterm's standard
+# tmux owns wheel events so its history remains scrollable. The xterm standard
 # Shift+drag bypass selects browser text; the portal copies that selection and
 # handles right-click paste and Ctrl+Shift+C/V. Apply the option both to future
 # servers and to a tmux server that may already be running.

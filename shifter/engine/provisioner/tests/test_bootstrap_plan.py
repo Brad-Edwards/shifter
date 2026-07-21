@@ -595,8 +595,9 @@ class TestPolarisAwsAgentSecurity:
         Kali contract instead of assuming the standalone Kali image applied."""
         from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
 
+        assert "install -d -o kali -g kali -m 0755 /home/kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "usermod -aG sudo kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
-        assert "kali ALL=(ALL:ALL) ALL" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "kali ALL=(ALL:ALL) NOPASSWD: ALL" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "allowed_users=anybody" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "needs_root_rights=yes" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "repair_xrdp_file /etc/xrdp/cert.pem 0644" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
