@@ -63,3 +63,45 @@ def test_rdp_url_build_uses_nonblank_identity_for_email_less_account(monkeypatch
     assert captured["username"] == "range-abcd1234"
     assert captured["username"], "Guacamole username must never be blank"
     assert url.startswith("https://example/guacamole/#/client/")
+
+
+def test_rdp_url_build_forces_classic_rdp_security_for_kali(monkeypatch):
+    """Kali/xrdp targets must not rely on Guacamole negotiate mode."""
+    user = User(username="range-abcd1234", email="player@example.com")
+    captured: dict[str, str] = {}
+
+    monkeypatch.setattr(
+        "mission_control.views._guacamole._resolve_rdp_conn",
+        lambda _user, _instance_uuid: {**_CONN_INFO, "os_type": "kali"},
+    )
+
+    def _fake_create(req):
+        captured["security"] = req.security
+        return "https://example/guacamole/#/client/abc?token=t"
+
+    monkeypatch.setattr("mission_control.guacamole.create_guacamole_rdp_url", _fake_create)
+
+    _resolve_and_build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
+
+    assert captured["security"] == "rdp"
+
+
+def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):
+    """Windows RDP keeps Guacamole's default negotiate security mode."""
+    user = User(username="range-abcd1234", email="player@example.com")
+    captured: dict[str, str] = {}
+
+    monkeypatch.setattr(
+        "mission_control.views._guacamole._resolve_rdp_conn",
+        lambda _user, _instance_uuid: dict(_CONN_INFO),
+    )
+
+    def _fake_create(req):
+        captured["security"] = req.security
+        return "https://example/guacamole/#/client/abc?token=t"
+
+    monkeypatch.setattr("mission_control.guacamole.create_guacamole_rdp_url", _fake_create)
+
+    _resolve_and_build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
+
+    assert captured["security"] == "any"

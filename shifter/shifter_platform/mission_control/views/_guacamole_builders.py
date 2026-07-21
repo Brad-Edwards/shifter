@@ -82,6 +82,13 @@ def _sftp_root_for_os(os_type: str | None) -> str | None:
     return _SFTP_ROOT_BY_OS.get(os_type)
 
 
+def _rdp_security_for_os(os_type: str | None) -> str:
+    """Return Guacamole's RDP security mode for the given OS type."""
+    if os_type == "kali":
+        return "rdp"
+    return "any"
+
+
 def _resolve_rdp_conn(user: User, instance_uuid: str) -> dict[str, Any]:
     """Get the RDP connection info or raise ``_ViewError``."""
     from engine.services import get_rdp_connection_info
@@ -110,7 +117,8 @@ def _generate_rdp_url(
     """Generate the Guacamole RDP URL or raise ``_ViewError``."""
     from mission_control.guacamole import GuacRDPUrlRequest, create_guacamole_rdp_url
 
-    sftp_root_directory = _sftp_root_for_os(conn_info.get("os_type"))
+    os_type = conn_info.get("os_type")
+    sftp_root_directory = _sftp_root_for_os(os_type)
     try:
         return create_guacamole_rdp_url(
             GuacRDPUrlRequest(
@@ -125,6 +133,7 @@ def _generate_rdp_url(
                 api_base_url=guacamole_api_url,
                 sftp_root_directory=sftp_root_directory,
                 sftp_private_key=conn_info.get("ssh_key"),
+                security=_rdp_security_for_os(os_type),
             )
         )
     except ValueError as e:

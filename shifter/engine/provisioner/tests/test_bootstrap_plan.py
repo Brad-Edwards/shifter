@@ -599,9 +599,15 @@ class TestPolarisAwsAgentSecurity:
         assert "kali ALL=(ALL:ALL) ALL" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "allowed_users=anybody" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "needs_root_rights=yes" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "repair_xrdp_file /etc/xrdp/cert.pem 0644" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "repair_xrdp_file /etc/xrdp/key.pem 0640" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "security_layer=rdp" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "crypt_level=low" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "docker restart a14-kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "kali sudo entitlement missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "kali sudoers policy missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "Xwrapper allowed_users was not repaired" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "XRDP key is not readable by xrdp after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
 
     # --- Fail-closed verification (AWS-only verify_step variant) ----------
 

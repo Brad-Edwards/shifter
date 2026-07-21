@@ -142,7 +142,47 @@ if grep -q "^needs_root_rights=" /etc/X11/Xwrapper.config; then
 else
   printf "%s\n" "needs_root_rights=yes" >> /etc/X11/Xwrapper.config
 fi
+
+repair_xrdp_file() {
+  source_path="$1"
+  mode="$2"
+  if [ -e "$source_path" ]; then
+    tmp_path="${source_path}.shifter"
+    cp -L "$source_path" "$tmp_path"
+    chown xrdp:xrdp "$tmp_path"
+    chmod "$mode" "$tmp_path"
+    mv -f "$tmp_path" "$source_path"
+  fi
+}
+if id xrdp >/dev/null 2>&1; then
+  repair_xrdp_file /etc/xrdp/cert.pem 0644
+  repair_xrdp_file /etc/xrdp/key.pem 0640
+fi
+if [ -f /etc/xrdp/xrdp.ini ]; then
+  if grep -q "^security_layer=" /etc/xrdp/xrdp.ini; then
+    sed -i "s/^security_layer=.*/security_layer=rdp/" /etc/xrdp/xrdp.ini
+  else
+    printf "%s\n" "security_layer=rdp" >> /etc/xrdp/xrdp.ini
+  fi
+  if grep -q "^crypt_level=" /etc/xrdp/xrdp.ini; then
+    sed -i "s/^crypt_level=.*/crypt_level=low/" /etc/xrdp/xrdp.ini
+  else
+    printf "%s\n" "crypt_level=low" >> /etc/xrdp/xrdp.ini
+  fi
+fi
 '
+docker restart a14-kali >/dev/null
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  if docker ps --format '{{.Names}} {{.Status}}' | grep -q '^a14-kali .*Up'; then
+    echo "polaris bootstrap: a14-kali restarted after XRDP repair"
+    break
+  fi
+  sleep 5
+done
+if ! docker ps --format '{{.Names}} {{.Status}}' | grep -q '^a14-kali .*Up'; then
+  echo "polaris bootstrap: a14-kali did not restart after XRDP repair" >&2
+  exit 1
+fi
 if ! docker exec a14-kali id kali | grep -q 'sudo'; then
   echo "polaris bootstrap: kali sudo entitlement missing after repair" >&2
   exit 1
@@ -157,6 +197,22 @@ if ! docker exec a14-kali grep -q '^allowed_users=anybody$' /etc/X11/Xwrapper.co
 fi
 if ! docker exec a14-kali grep -q '^needs_root_rights=yes$' /etc/X11/Xwrapper.config; then
   echo "polaris bootstrap: Xwrapper needs_root_rights was not repaired" >&2
+  exit 1
+fi
+if docker exec a14-kali test -L /etc/xrdp/key.pem; then
+  echo "polaris bootstrap: XRDP key remained a symlink after repair" >&2
+  exit 1
+fi
+if ! docker exec --user xrdp a14-kali test -r /etc/xrdp/key.pem; then
+  echo "polaris bootstrap: XRDP key is not readable by xrdp after repair" >&2
+  exit 1
+fi
+if ! docker exec a14-kali grep -q '^security_layer=rdp$' /etc/xrdp/xrdp.ini; then
+  echo "polaris bootstrap: XRDP security_layer was not repaired" >&2
+  exit 1
+fi
+if ! docker exec a14-kali grep -q '^crypt_level=low$' /etc/xrdp/xrdp.ini; then
+  echo "polaris bootstrap: XRDP crypt_level was not repaired" >&2
   exit 1
 fi
 echo "polaris bootstrap: kali sudo and XRDP prerequisites enforced"
