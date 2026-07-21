@@ -190,6 +190,19 @@ jobs:
           role-session-name: image-build-${{ inputs.ami_type }}-${{ github.run_id }}-${{ github.run_attempt }}
           aws-region: us-east-2
 
+      # polaris-dc promotes an AD forest at bake time and refuses to bake with a
+      # default DSRM secret (promote-bake.ps1). Generate a build-only DSRM
+      # (Directory Services Restore Mode) password per build so no shared,
+      # source-controlled DSRM secret ships in the image; cleanup strips the
+      # build transcript before capture. Masked and passed via $GITHUB_ENV as a
+      # sensitive PKR var, never echoed or on argv. Mirrors packer-gcp.yml (#1795).
+      - name: Generate DSRM secret (polaris-dc only)
+        if: inputs.ami_type == 'polaris-dc'
+        run: |
+          DSRM_PW="$(openssl rand -base64 24)"
+          echo "::add-mask::${DSRM_PW}"
+          echo "PKR_VAR_dc_dsrm_password=${DSRM_PW}" >> "$GITHUB_ENV"
+
       - name: Initialize Packer
         run: packer init .
 

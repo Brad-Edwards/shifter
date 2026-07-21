@@ -18,7 +18,13 @@ from typing import Any
 import psycopg
 from psycopg import sql
 
-from events import STATUS_DESTROYED
+from events import (
+    STATUS_DESTROYED,
+    STATUS_FAILED,
+    STATUS_PAUSED,
+    STATUS_PROVISIONING,
+    STATUS_READY,
+)
 from executors.ngfw_executor import NGFWExecutor
 from log_redact import safe_log_fingerprint
 from ngfw_polling import poll_for_serial_number, wait_for_autocommit
@@ -180,9 +186,9 @@ def find_stale_routes_by_db(
             query = sql.SQL("""
                 SELECT id FROM mission_control_range
                 WHERE id IN ({})
-                AND status NOT IN ('destroyed', 'failed')
+                AND status NOT IN (%s, %s)
                 """).format(sql.SQL(", ").join(sql.Placeholder() * len(range_ids)))
-            cur.execute(query, range_ids)
+            cur.execute(query, [*range_ids, STATUS_DESTROYED, STATUS_FAILED])
             active_range_ids = {row[0] for row in cur.fetchall()}
 
         for range_id, routes in routes_by_range.items():
@@ -300,7 +306,7 @@ def remove_ngfw_subnets(user_id: int, subnets: list[dict[str, Any]], range_id: i
         logger.warning("NGFW missing management_ip or ssh_key, skipping removal")
         return
 
-    if status == "paused":
+    if status == STATUS_PAUSED:
         logger.error(
             "NGFW is paused during range destroy - this should never happen! "
             "range_id=%s user_id=%s ngfw_request_id=%s. Skipping NGFW cleanup.",
@@ -356,9 +362,9 @@ def user_has_active_ranges(user_id: int, exclude_range_id: int) -> bool:
             FROM mission_control_range
             WHERE user_id = %s
               AND id != %s
-              AND status IN ('ready', 'provisioning')
+              AND status IN (%s, %s)
             """,
-            (user_id, exclude_range_id),
+            (user_id, exclude_range_id, STATUS_READY, STATUS_PROVISIONING),
         )
         row = cur.fetchone()
         count = row[0] if row else 0

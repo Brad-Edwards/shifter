@@ -279,31 +279,19 @@ Eliminating state exposure entirely would require external secret
 generation (for example, a Lambda invoking `aws secretsmanager create-secret`)
 and is a separate workstream.
 
-#### Residual SSM Run Command body exposure (AWS)
+#### AWS delivery channel
 
-For the AWS push path, the rendered `SetLocalPasswordPlan` script body
-contains the per-instance password (Linux: in a `chpasswd` here-doc;
-Windows: as the `$Password` variable assigned to `ConvertTo-SecureString`).
-SSM Run Command persists the command body in CloudWatch Logs / S3
-output (if configured) and in the `GetCommandInvocation` API record.
-This is the same residual exposure as the pre-existing `DCSetupPlan`
-and `DomainJoinPlan`, which also render `DC_DOMAIN_PASSWORD` into
-their script bodies. The established mitigations are:
+After bootstrap, the provisioner reads the guest's ed25519 SSH host public key
+over the authenticated SSM control channel. It then pins that key, retrieves the
+per-instance password and management private key from Secrets Manager, and sends
+the password only over the pinned SSH connection's stdin. The non-secret setup
+script travels separately. The password therefore does not enter EC2 user data,
+SSM Run Command history, script source, process argv, environment, or metadata.
+The guest instance role has no permission to read the secret store.
 
-- `ssm:GetCommandInvocation` and `ssm:ListCommands` are scoped to
-  the engine-provisioner ECS task role and platform administrators;
-  range guests and portal users never have this grant.
-- `SetupOrchestrator.SENSITIVE_CONTEXT_KEY_PARTS` masks the value in
-  our own captured stdout/stderr (the orchestrator-side log redaction).
-- Run Command results in the AWS-managed S3 bucket are server-side
-  encrypted with the bucket's KMS key.
-
-The architecturally cleanest fix would be SSM SecureString parameter
-substitution (`{{ssm-secure:/path/to/secret}}`), which resolves the
-value inside the SSM agent on the target without recording the value
-in the command body. That requires migrating the secret store from
-Secrets Manager to SSM Parameter Store SecureString (or maintaining
-both) and is a separate workstream tracked outside of #762.
+Do not replace this with `{{ssm-secure:...}}`: that syntax is a CloudFormation
+dynamic reference and Systems Manager Run Command document parameters do not
+support SecureString Parameter Store references.
 
 #### Rotation
 

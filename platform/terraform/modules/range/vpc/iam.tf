@@ -7,9 +7,9 @@
 # - Bedrock access for Claude Code on range instances
 # - Instance profile to attach role to EC2 instances
 #
-# Range guests do NOT access SSM Parameter Store via this role: all range
-# SSM access is brokered by the engine provisioner via Run Command
-# (`{{ssm-secure:<name>}}` substitution and provisioner-side GetParameter).
+# Range guests do NOT access SSM Parameter Store via this role. Guest setup is
+# brokered by the engine provisioner; secret-bearing password delivery uses a
+# host-key-pinned SSH stdin channel after non-secret SSM bootstrap.
 # A direct Parameter Store grant here would be over-broad and cross-tenant;
 # see issue #1178 and scripts/check_tf_iam_ssm_range_scope.
 

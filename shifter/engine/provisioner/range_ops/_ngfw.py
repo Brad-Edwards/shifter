@@ -10,6 +10,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from events import (
+    STATUS_DESTROYED,
+    STATUS_FAILED,
+    STATUS_PAUSED,
+    STATUS_PAUSING,
+    STATUS_READY,
+    STATUS_RESUMING,
+)
 from plans.ngfw_stop import NGFWStopPlan
 
 logger = logging.getLogger(__name__)
@@ -115,10 +123,10 @@ def should_pause_ngfw(ngfw_instance_id: int, exclude_range_id: int) -> bool:
             FROM mission_control_range
             WHERE ngfw_instance_id = %s
               AND id != %s
-              AND status NOT IN ('destroyed', 'failed')
+              AND status NOT IN (%s, %s)
             GROUP BY status
             """,
-            (ngfw_instance_id, exclude_range_id),
+            (ngfw_instance_id, exclude_range_id, STATUS_DESTROYED, STATUS_FAILED),
         )
         rows = cur.fetchall()
 
@@ -126,18 +134,18 @@ def should_pause_ngfw(ngfw_instance_id: int, exclude_range_id: int) -> bool:
     logger.debug("should_pause_ngfw: other range counts=%s", counts)
 
     # RESUMING wins - don't pause if any range is resuming
-    if counts.get("resuming", 0) > 0:
+    if counts.get(STATUS_RESUMING, 0) > 0:
         logger.info(
             "should_pause_ngfw: False - %d ranges resuming",
-            counts["resuming"],
+            counts[STATUS_RESUMING],
         )
         return False
 
     # Don't pause if any range is ready
-    if counts.get("ready", 0) > 0:
+    if counts.get(STATUS_READY, 0) > 0:
         logger.info(
             "should_pause_ngfw: False - %d ranges ready",
-            counts["ready"],
+            counts[STATUS_READY],
         )
         return False
 
@@ -209,7 +217,7 @@ def pause_ngfw_for_range(request_id: str) -> None:
         return
 
     # Idempotent: already paused or pausing
-    if ngfw_info["status"] in ("paused", "pausing"):
+    if ngfw_info["status"] in (STATUS_PAUSED, STATUS_PAUSING):
         logger.info(
             "pause_ngfw_for_range: NGFW already %s, skipping",
             ngfw_info["status"],
@@ -222,14 +230,14 @@ def pause_ngfw_for_range(request_id: str) -> None:
         return
 
     # Update status to pausing
-    _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], "pausing")
+    _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], STATUS_PAUSING)
 
     # Publish event
     _pkg.publish_ngfw_event(
         request_id=ngfw_info["ngfw_request_id"],
         instance_id=ngfw_info["instance_uuid"],
         app_id=ngfw_info["app_id"],
-        status="pausing",
+        status=STATUS_PAUSING,
     )
 
     # Execute stop plan
@@ -250,24 +258,24 @@ def pause_ngfw_for_range(request_id: str) -> None:
     if not result.success:
         error_msg = result.error or "NGFW stop failed"
         logger.error("pause_ngfw_for_range: %s", error_msg)
-        _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], "failed")
+        _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], STATUS_FAILED)
         _pkg.publish_ngfw_event(
             request_id=ngfw_info["ngfw_request_id"],
             instance_id=ngfw_info["instance_uuid"],
             app_id=ngfw_info["app_id"],
-            status="failed",
+            status=STATUS_FAILED,
         )
         raise RuntimeError(error_msg)
 
     # Update status to paused
-    _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], "paused")
+    _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], STATUS_PAUSED)
 
     # Publish success event
     _pkg.publish_ngfw_event(
         request_id=ngfw_info["ngfw_request_id"],
         instance_id=ngfw_info["instance_uuid"],
         app_id=ngfw_info["app_id"],
-        status="paused",
+        status=STATUS_PAUSED,
     )
 
     logger.info(
@@ -337,7 +345,7 @@ def _run_ngfw_start_with_retry(ngfw_info: dict[str, Any], request_id: str) -> No
         if attempt == NGFW_START_MAX_RETRIES - 1:
             error_msg = result.error or "NGFW start failed"
             logger.error("ensure_ngfw_running: %s", error_msg)
-            _publish_ngfw_status(ngfw_info, "failed")
+            _publish_ngfw_status(ngfw_info, STATUS_FAILED)
             raise RuntimeError(error_msg)
 
         delay = NGFW_START_RETRY_DELAYS[attempt]
@@ -352,7 +360,7 @@ def _run_ngfw_start_with_retry(ngfw_info: dict[str, Any], request_id: str) -> No
         _pkg.time.sleep(delay)
 
         refreshed = _pkg.get_range_ngfw_info(request_id)
-        if refreshed and refreshed["status"] == "ready":
+        if refreshed and refreshed["status"] == STATUS_READY:
             logger.info(
                 "ensure_ngfw_running: NGFW became ready during retry wait, request_id=%s",
                 request_id,
@@ -386,22 +394,22 @@ def ensure_ngfw_running(request_id: str) -> None:
         return
 
     status = ngfw_info["status"]
-    if status == "ready":
+    if status == STATUS_READY:
         logger.info("ensure_ngfw_running: NGFW already ready, skipping")
         return
-    if status == "failed":
+    if status == STATUS_FAILED:
         raise RuntimeError("NGFW is in failed state, cannot resume range")
-    if status == "resuming":
+    if status == STATUS_RESUMING:
         logger.info("ensure_ngfw_running: NGFW is resuming, waiting...")
         # Fall through; AWSExecutor.wait_for_running will block.
-    if status == "pausing":
+    if status == STATUS_PAUSING:
         _wait_for_ngfw_pause_to_complete(ngfw_info)
-    if status not in ("paused", "pausing", "resuming"):
+    if status not in (STATUS_PAUSED, STATUS_PAUSING, STATUS_RESUMING):
         return
 
-    _publish_ngfw_status(ngfw_info, "resuming")
+    _publish_ngfw_status(ngfw_info, STATUS_RESUMING)
     _run_ngfw_start_with_retry(ngfw_info, request_id)
-    _publish_ngfw_status(ngfw_info, "ready")
+    _publish_ngfw_status(ngfw_info, STATUS_READY)
     logger.info(
         "ensure_ngfw_running: NGFW resumed ec2=%s request_id=%s",
         ngfw_info["ec2_instance_id"],
