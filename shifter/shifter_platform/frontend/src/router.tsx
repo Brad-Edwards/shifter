@@ -148,6 +148,7 @@ export const router = createBrowserRouter(
             { path: "challenges", element: <ChallengesPage /> },
             { path: "challenges/:id", element: <ChallengeDetailPage /> },
             { path: "range", element: <RangePage /> },
+            { path: "terminal/:instanceUuid", element: <TerminalPage /> },
             { path: "scoreboard", element: <ScoreboardPage /> },
             { path: "team", element: <TeamPage /> },
             { path: "account", element: <AccountPage /> },
