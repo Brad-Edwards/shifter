@@ -1,8 +1,10 @@
 """Tests for cms.services query helpers.
 
 Covers get_range_target_instances, which selects the instances shown on the
-CTF participant range page. See #1465: a single-seat purple-team lab (TechVault)
-provisions only an attacker-tagged seat host, and the page must still show it.
+CTF participant range page. Explicit scenario ``participant_access`` bindings
+are authoritative: POLARIS exposes the Kali workstation, not the DC. See #1465:
+a single-seat purple-team lab (TechVault) provisions only an attacker-tagged
+seat host, and the page must still show it.
 
 The selector reads the user's ready range from the engine, so these exercise
 the real database rather than mocking the first-party query seam (ADR-019-R1):
@@ -22,6 +24,11 @@ _ATTACKER = {
     "os_type": "kali",
     "private_ip": "10.1.2.22",
     "uuid": "aaaa",
+}
+_POLARIS_KALI = {
+    **_ATTACKER,
+    "name": "kali",
+    "participant_access_channels": ["ssh", "rdp"],
 }
 _DC = {
     "name": "dc01",
@@ -51,8 +58,13 @@ def _ready_range(user, provisioned_instances):
 class TestGetRangeTargetInstances:
     """Behavior of the CTF range-page instance selector."""
 
-    def test_multi_node_hides_attacker_and_shows_targets(self, user):
-        """POLARIS-style range: attacker workstation hidden, targets shown."""
+    def test_explicit_participant_access_returns_declared_target(self, user):
+        """POLARIS-style range: the declared Kali workstation is the user target."""
+        _ready_range(user, [_POLARIS_KALI, _DC])
+        assert get_range_target_instances(user.id) == [_POLARIS_KALI]
+
+    def test_legacy_multi_node_hides_attacker_and_shows_targets(self, user):
+        """Legacy rows without access channels keep the non-attacker heuristic."""
         _ready_range(user, [_ATTACKER, _DC])
         assert get_range_target_instances(user.id) == [_DC]
 

@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from botocore.exceptions import ClientError
 
+import vpn_secrets
 from gcp_vpn_identity import gcp_vpn_gateway_service_account_email
 from vpn_secrets import AWSVpnSecretOps, GCPVpnSecretOps, openvpn_access_enabled
 
@@ -59,17 +60,34 @@ class _AlreadyExists(Exception):
     pass
 
 
+class _InvalidArgument(Exception):
+    pass
+
+
+class _FakeBindings(list):
+    def add(self):
+        binding = SimpleNamespace(role="", members=[])
+        self.append(binding)
+        return binding
+
+
+def _gcp_adapter(client, iam_client, *, project_id: str = "range-project") -> GCPVpnSecretOps:
+    iam_client.get_iam_policy.return_value = SimpleNamespace(bindings=_FakeBindings())
+    return GCPVpnSecretOps(
+        client=client,
+        iam_client=iam_client,
+        exceptions=SimpleNamespace(NotFound=_NotFound, AlreadyExists=_AlreadyExists, InvalidArgument=_InvalidArgument),
+        project_id=project_id,
+        provisioner_service_account_email=f"provisioner@{project_id}.iam.gserviceaccount.com",
+    )
+
+
 def test_gcp_server_secret_grants_only_the_gateway_service_account():
     client = MagicMock()
     iam_client = MagicMock()
     client.access_secret_version.side_effect = _NotFound()
     generation = uuid4()
-    adapter = GCPVpnSecretOps(
-        client=client,
-        iam_client=iam_client,
-        exceptions=SimpleNamespace(NotFound=_NotFound, AlreadyExists=_AlreadyExists),
-        project_id="range-project",
-    )
+    adapter = _gcp_adapter(client, iam_client)
 
     adapter.put_server(42, generation, "server-material")
 
@@ -77,6 +95,16 @@ def test_gcp_server_secret_grants_only_the_gateway_service_account():
     client.add_secret_version.assert_called_once()
     iam_client.create_service_account.assert_called_once()
     gateway_email = gcp_vpn_gateway_service_account_email("range-project", 42, generation)
+    iam_client.get_iam_policy.assert_called_once_with(
+        request={"resource": f"projects/range-project/serviceAccounts/{gateway_email}"}
+    )
+    act_as_policy = iam_client.set_iam_policy.call_args.kwargs["request"]["policy"]
+    assert [(binding.role, list(binding.members)) for binding in act_as_policy.bindings] == [
+        (
+            "roles/iam.serviceAccountUser",
+            ["serviceAccount:provisioner@range-project.iam.gserviceaccount.com"],
+        )
+    ]
     policy = client.set_iam_policy.call_args.kwargs["request"]["policy"]
     assert policy == {
         "bindings": [
@@ -88,16 +116,31 @@ def test_gcp_server_secret_grants_only_the_gateway_service_account():
     }
 
 
+def test_gcp_server_secret_retries_gateway_identity_propagation(monkeypatch):
+    client = MagicMock()
+    iam_client = MagicMock()
+    client.access_secret_version.side_effect = _NotFound()
+    generation = uuid4()
+    adapter = _gcp_adapter(client, iam_client)
+    gateway_email = gcp_vpn_gateway_service_account_email("range-project", 42, generation)
+    client.set_iam_policy.side_effect = [
+        _InvalidArgument(f"400 Service account {gateway_email} does not exist."),
+        None,
+    ]
+    sleep = MagicMock()
+    monkeypatch.setattr(vpn_secrets.time, "sleep", sleep)
+
+    adapter.put_server(42, generation, "server-material")
+
+    assert client.set_iam_policy.call_count == 2
+    sleep.assert_called_once_with(adapter._SECRET_IAM_PROPAGATION_RETRY_SECONDS)
+
+
 def test_gcp_generations_get_distinct_gateway_identities_and_cleanup():
     client = MagicMock()
     iam_client = MagicMock()
     client.access_secret_version.side_effect = _NotFound()
-    adapter = GCPVpnSecretOps(
-        client=client,
-        iam_client=iam_client,
-        exceptions=SimpleNamespace(NotFound=_NotFound, AlreadyExists=_AlreadyExists),
-        project_id="range-project",
-    )
+    adapter = _gcp_adapter(client, iam_client)
     first = uuid4()
     second = uuid4()
 
@@ -122,12 +165,7 @@ def test_gcp_generations_get_distinct_gateway_identities_and_cleanup():
 def test_gcp_compensation_preserves_identity_for_same_generation_retry():
     client = MagicMock()
     iam_client = MagicMock()
-    adapter = GCPVpnSecretOps(
-        client=client,
-        iam_client=iam_client,
-        exceptions=SimpleNamespace(NotFound=_NotFound, AlreadyExists=_AlreadyExists),
-        project_id="range-project",
-    )
+    adapter = _gcp_adapter(client, iam_client)
 
     adapter.delete_generation(42, uuid4(), delete_identity=False)
 
@@ -155,6 +193,7 @@ def test_capability_gate_requires_selected_provider_prerequisites(monkeypatch):
     monkeypatch.setenv("GCP_RANGE_CELL_NETWORK_MODE", "shared-vpc")
     monkeypatch.setenv("GCP_RANGE_PRIVATE_GOOGLE_ACCESS", "true")
     monkeypatch.setenv("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "range-host@example.test")
+    monkeypatch.setenv("GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL", "provisioner@example.test")
     monkeypatch.setenv("GCP_RANGE_LINUX_IMAGE", "projects/test/global/images/ubuntu")
     assert openvpn_access_enabled() is True
 

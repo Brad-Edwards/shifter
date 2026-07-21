@@ -541,11 +541,10 @@ class TestRealizeAcesContentDelivery:
         assert executors == []
 
     def test_in_guest_verify_step_failure_fails_closed_before_ready(self, monkeypatch):
-        """SetupOrchestrator.orchestrate() does not itself raise when a verify_step
-        runs but exits non-zero -- only a hard transport error during verification
-        raises. realize_aces_content_delivery must check result.verification_result
-        explicitly so a failed in-guest readback still blocks (this is the
-        publish_ready gate the security review calls for)."""
+        """SetupOrchestrator raises when a verify_step exits non-zero.
+        realize_aces_content_delivery must preserve the ACES-specific error so
+        failed in-guest readback still blocks with the publish_ready gate signal
+        the security review calls for."""
         monkeypatch.setattr("time.sleep", lambda *_a, **_k: None)  # skip the real 15s x4 retry backoff
         content = _content(source_name="pkg", path="/opt/x.bin")
         plan = _plan(content=(content,))
@@ -564,6 +563,30 @@ class TestRealizeAcesContentDelivery:
                 ops=ops,
             )
         assert len(executors[0].calls) >= 2  # both steps really ran
+
+    def test_feature_service_verify_step_failure_reports_verification_error(self, monkeypatch):
+        monkeypatch.setattr("time.sleep", lambda *_a, **_k: None)
+        feature = _feature(
+            feature_type="service",
+            source_name="nginx",
+            source_version="1.24.0",
+            destination=None,
+        )
+        plan = _plan(features=(feature,))
+        executor = _FakeExecutor(
+            results=[_success("ACES_FEATURE_SERVICE_INSTALLED"), _failure("FATAL: service not active")]
+        )
+        ops, _storage, executors = _ops(executor=executor)
+        instance_outputs = [_output("node.web#0")]
+
+        with pytest.raises(AcesContentDeliveryError, match="feature service verification failed"):
+            realize_aces_content_delivery(
+                aces_plan=plan,
+                instance_outputs=instance_outputs,
+                delivery_bindings=[],
+                ops=ops,
+            )
+        assert len(executors[0].calls) >= 2
 
     def test_deliver_step_failure_fails_closed(self, monkeypatch):
         monkeypatch.setattr("time.sleep", lambda *_a, **_k: None)

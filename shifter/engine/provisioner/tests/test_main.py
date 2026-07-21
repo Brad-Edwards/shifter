@@ -457,9 +457,17 @@ class TestRangeStatePayloads:
             write_provisioned_state(range_id=42, subnets=subnets, instances=instances, ngfw_instance_id=None)
 
         subnet_state = json.loads(mock_cursor.execute.call_args_list[0].args[1][0])
-        instance_state = json.loads(mock_cursor.execute.call_args_list[1].args[1][0])
+        # Both status-bearing UPDATEs bind their status from ResourceStatus.READY.
+        # Subnet UPDATE: state JSON is arg 0, status is arg 1. Instance UPDATE: status
+        # is arg 0, state JSON is arg 1.
+        assert mock_cursor.execute.call_args_list[0].args[1][1] == "ready"
+        assert mock_cursor.execute.call_args_list[1].args[1][0] == "ready"
+        instance_state = json.loads(mock_cursor.execute.call_args_list[1].args[1][1])
         provisioned_instances = json.loads(mock_cursor.execute.call_args_list[2].args[1][0])
 
+        assert "destroyed_at = NULL" in mock_cursor.execute.call_args_list[0].args[0]
+        assert "destroyed_at = NULL" in mock_cursor.execute.call_args_list[1].args[0]
+        assert "destroyed_at = NULL" in mock_cursor.execute.call_args_list[2].args[0]
         assert subnet_state["cloud_provider"] == "gcp"
         assert subnet_state["aws_subnet_id"] is None
         assert subnet_state["provider_metadata"]["gcp"]["network_name"] == "range-42-attack"
@@ -538,6 +546,10 @@ class TestRangeStatePayloads:
 
         mark_range_instances_destroyed(42)
 
+        # Both status-bearing UPDATEs bind "destroyed" from ResourceStatus.DESTROYED
+        # (engine_instance UPDATE is call 0, engine_subnet UPDATE is call 1).
+        assert mock_cursor.execute.call_args_list[0].args[1][0] == "destroyed"
+        assert mock_cursor.execute.call_args_list[1].args[1][0] == "destroyed"
         assert any("vpn_access_binding = NULL" in call.args[0] for call in mock_cursor.execute.call_args_list)
 
 

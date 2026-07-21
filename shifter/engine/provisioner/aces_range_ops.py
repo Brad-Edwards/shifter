@@ -23,6 +23,7 @@ from aces_plan import AcesPlanNode, parse_plan
 from aces_snapshot import snapshot_resources
 from config import GCERangeImageProfile
 from events import (
+    STATUS_PROVISIONING,
     publish_aces_operation,
     publish_aces_snapshot,
     publish_destroyed,
@@ -73,7 +74,7 @@ def run_aces_range_provision(request_id: str) -> None:
     user_id = data["user_id"]
     operation_id = str(request_id)
     logger.info("Starting ACES range provision for request_id=%s", request_id)
-    publish_status_update(request_id=request_id, range_id=range_id, user_id=user_id, new_status="provisioning")
+    publish_status_update(request_id=request_id, range_id=range_id, user_id=user_id, new_status=STATUS_PROVISIONING)
     publish_aces_operation(
         request_id=request_id, range_id=range_id, user_id=user_id, operation_id=operation_id, status="running"
     )
