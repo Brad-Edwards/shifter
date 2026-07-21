@@ -74,6 +74,11 @@ class TestSpaEnabled:
         assert resp.status_code == 200
         assert b'id="root"' in resp.content
 
+    def test_terminal_deep_link_serves_shell(self, spa_on, authenticated_participant_client):
+        resp = authenticated_participant_client.get(f"/ctf/terminal/{uuid4()}/")
+        assert resp.status_code == 200
+        assert b'id="root"' in resp.content
+
     def test_shell_served_without_participant_role(self, spa_on, authenticated_standard_client):
         # The shell host is thin-auth (authenticated only); per-surface access is
         # enforced by the /api/v1/ctf/ endpoints the SPA calls. Any authenticated

@@ -163,6 +163,15 @@ class SetupOrchestrator(_SetupOrchestratorPanOSMixin, _SetupOrchestratorLoggingM
             logger.debug("orchestrate: running verification step")
             try:
                 verify_result = self._execute_step(instance_id, plan.verify_step, context, document_name)
+                if not verify_result.success:
+                    logger.error(
+                        "orchestrate: verification step '%s' failed after retries",
+                        plan.verify_step.name,
+                    )
+                    raise SetupError(
+                        "Verification failed after all retry attempts",
+                        step_name=plan.verify_step.name,
+                    )
             except ExecutorError as e:
                 logger.exception("orchestrate: verification failed error=%s", e)
                 raise SetupError(

@@ -576,6 +576,20 @@ class TestPolarisAwsAgentSecurity:
         assert "/run/shifter-agent" not in rendered
         assert "credential_process" not in rendered
 
+    def test_bootstrap_explicitly_stages_splice_key_and_fails_closed(self):
+        """The provisioner must not depend on the baked a14/a9 entrypoints to
+        understand the splice key env vars. It generates the per-range keypair,
+        writes both halves into the recreated containers, and aborts if either
+        file is still missing."""
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
+        assert "base64 -d | docker exec -i a14-kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "cat > /home/kali/.ssh/splice_relay" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "Host splice-relay" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "cat > /root/.ssh/authorized_keys" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "splice_staged=0" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "polaris bootstrap: splice key staging failed" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
     # --- Fail-closed verification (AWS-only verify_step variant) ----------
 
     def test_gcp_verify_script_is_byte_identical_to_pre_slice5(self):
