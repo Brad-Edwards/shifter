@@ -129,7 +129,7 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         "category_filter": category_filter,
         "tag_filter": tag_filter,
         "topic_filter": topic_filter,
-        "categories": ChallengeCategory,
+        "categories": ChallengeCategory.choices(),
         "event_tags": event_tags,
         "event_topics": event_topics,
         "solved_ids": solved_ids,
