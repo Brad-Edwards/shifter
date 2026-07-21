@@ -135,5 +135,27 @@ docker cp "$PROFILE_FILE" a14-kali:/etc/profile.d/claude-vertex.sh
 docker exec a14-kali chmod 644 /etc/profile.d/claude-vertex.sh
 rm -f "$PROFILE_FILE"
 
+# Polaris intentionally denies general internet DNS/egress. Route only the
+# Google OAuth and Vertex endpoints over Private Google Access so Claude Code
+# can exchange its scoped service-account credential and call Vertex without
+# opening participant internet access. The global API hostname is required by
+# Sonnet 4.6; keep the regional hostname for explicit operator overrides.
+PRIVATE_GOOGLE_API_VIP=199.36.153.8
+for api_host in \
+  oauth2.googleapis.com \
+  aiplatform.googleapis.com \
+  "${VERTEX_REGION}-aiplatform.googleapis.com"; do
+  docker exec a14-kali sh -c \
+    "grep -v '[[:space:]]${api_host}$' /etc/hosts > /tmp/hosts.shifter || true; \
+     cat /tmp/hosts.shifter > /etc/hosts; \
+     printf '%s %s\\n' '$PRIVATE_GOOGLE_API_VIP' '$api_host' >> /etc/hosts; \
+     rm -f /tmp/hosts.shifter"
+  resolved=$(docker exec a14-kali getent ahostsv4 "$api_host" | awk 'NR==1 {print $1}')
+  if [[ "$resolved" != "$PRIVATE_GOOGLE_API_VIP" ]]; then
+    echo "polaris kali vertex shard: $api_host resolved to $resolved, expected Private Google Access VIP" >&2
+    exit 2
+  fi
+done
+
 echo "polaris kali vertex shard: config applied (per-range key, metadata blocked)"
 """

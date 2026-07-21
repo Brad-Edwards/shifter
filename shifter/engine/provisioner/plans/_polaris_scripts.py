@@ -135,8 +135,25 @@ chown root:root /etc/ssh/ssh_host_ed25519_key.pub
 chmod 0644 /etc/ssh/ssh_host_ed25519_key.pub
 
 install -d -m 0755 /etc/sudoers.d
-printf "%s\n" "kali ALL=(ALL:ALL) ALL" > /etc/sudoers.d/90-shifter-kali
+printf "%s\n" "kali ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/90-shifter-kali
 chmod 0440 /etc/sudoers.d/90-shifter-kali
+
+# The packaged nmap launcher execs /usr/lib/nmap/nmap. Some upstream Kali
+# images attach NET_ADMIN file capabilities to that real binary; Docker rejects
+# exec entirely when a file capability is outside the container bounding set.
+# Root already has the required NET_RAW capability, so remove the incompatible
+# file capability and let participants elevate through passwordless sudo.
+if command -v setcap >/dev/null 2>&1 && [ -e /usr/lib/nmap/nmap ]; then
+  setcap -r /usr/lib/nmap/nmap 2>/dev/null || true
+fi
+
+# tmux owns wheel events so its history remains scrollable. xterm's standard
+# Shift+drag bypass selects browser text; the portal copies that selection and
+# handles right-click paste and Ctrl+Shift+C/V. Apply the option both to future
+# servers and to a tmux server that may already be running.
+printf "%s\n" "set -g mouse on" "set -g set-clipboard on" > /home/kali/.tmux.conf
+chown kali:kali /home/kali/.tmux.conf
+chmod 0644 /home/kali/.tmux.conf
 
 install -d -m 0755 /etc/X11
 if [ -f /etc/X11/Xwrapper.config ] && [ ! -f /etc/X11/Xwrapper.config.shifter.bak ]; then
@@ -189,6 +206,8 @@ if [ -f /etc/xrdp/xrdp.ini ]; then
   fi
 fi
 '
+docker exec --user kali a14-kali tmux set-option -g mouse on 2>/dev/null || true
+docker exec --user kali a14-kali tmux set-option -g set-clipboard on 2>/dev/null || true
 docker restart a14-kali >/dev/null
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
   if docker ps --format '{{.Names}} {{.Status}}' | grep -q '^a14-kali .*Up'; then
