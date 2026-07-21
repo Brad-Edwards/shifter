@@ -604,6 +604,10 @@ class TestPolarisAwsAgentSecurity:
         assert "security_layer=tls" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "crypt_level=high" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "ssl_protocols=TLSv1.2" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "docker cp /etc/ssh/ssh_host_ed25519_key a14-kali:/etc/ssh/ssh_host_ed25519_key" in (
+            POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        )
+        assert "ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "docker restart a14-kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "kali sudo entitlement missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "kali sudoers policy missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT

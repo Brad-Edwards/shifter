@@ -128,6 +128,21 @@ def _resolve_instance_ssh_key_secret_ref(instance: dict[str, Any]) -> str:
     )
 
 
+def _resolve_instance_ssh_host_public_key(instance: dict[str, Any]) -> str:
+    """Resolve trusted SSH host-key material emitted by the provisioner."""
+    provider_metadata = _get_instance_provider_metadata(instance)
+    return _first_connection_value(
+        instance.get("participant_ssh_host_public_key"),
+        instance.get("gcp_host_public_key"),
+        instance.get("gdc_host_public_key"),
+        instance.get("ssh_host_public_key"),
+        provider_metadata.get("participant_ssh_host_public_key"),
+        provider_metadata.get("gcp_host_public_key"),
+        provider_metadata.get("gdc_host_public_key"),
+        provider_metadata.get("ssh_host_public_key"),
+    )
+
+
 def _resolve_instance_rdp_password_secret_ref(instance: dict[str, Any]) -> str:
     """Resolve the active secret reference for the per-instance RDP password.
 

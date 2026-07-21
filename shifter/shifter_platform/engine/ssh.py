@@ -36,6 +36,7 @@ class SSHConnection:
         term_type: str = "xterm-256color",
         term_size: tuple[int, int] = (80, 24),
         session_id: str | None = None,
+        host_public_key: str = "",
     ) -> None:
         """
         Initialize SSH connection parameters.
@@ -49,10 +50,12 @@ class SSHConnection:
             term_size: Terminal size as (columns, rows)
             session_id: Optional tmux session ID for persistent sessions.
                 If provided, attaches to existing session or creates new one.
+            host_public_key: Trusted OpenSSH public host key for this target.
         """
         self.host = host
         self.username = username
         self.private_key = private_key
+        self.host_public_key = host_public_key.strip()
         self.port = port
         self.term_type = term_type
         self.term_size = term_size
@@ -73,11 +76,18 @@ class SSHConnection:
             key = asyncssh.import_private_key(self.private_key)
 
             # Connect to SSH server
+            connect_options = {}
+            if self.host_public_key:
+                known_hosts_host = self.host if self.port == 22 else f"[{self.host}]:{self.port}"
+                connect_options["known_hosts"] = asyncssh.import_known_hosts(
+                    f"{known_hosts_host} {self.host_public_key}\n"
+                )
             self._conn = await asyncssh.connect(
                 self.host,
                 port=self.port,
                 username=self.username,
                 client_keys=[key],
+                **connect_options,
             )
 
             # Build command for persistent tmux session or default shell

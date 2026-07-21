@@ -110,6 +110,13 @@ done
 # upstream compose tarball changes or a14-kali is force-recreated:
 # - `kali` can use sudo with its assigned range password.
 # - XRDP's Xorg backend can launch for non-console sessions.
+# - Participant SSH presents the provisioner-issued host key recorded in the
+#   range output, so the portal can pin the browser terminal connection.
+if [ ! -s /etc/ssh/ssh_host_ed25519_key ]; then
+  echo "polaris bootstrap: provisioner-issued host key is missing" >&2
+  exit 1
+fi
+docker cp /etc/ssh/ssh_host_ed25519_key a14-kali:/etc/ssh/ssh_host_ed25519_key
 docker exec a14-kali sh -c '
 set -eu
 if ! id kali >/dev/null 2>&1; then
@@ -120,6 +127,12 @@ if ! getent group sudo >/dev/null 2>&1; then
   groupadd sudo
 fi
 usermod -aG sudo kali
+
+chown root:root /etc/ssh/ssh_host_ed25519_key
+chmod 0600 /etc/ssh/ssh_host_ed25519_key
+ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
+chown root:root /etc/ssh/ssh_host_ed25519_key.pub
+chmod 0644 /etc/ssh/ssh_host_ed25519_key.pub
 
 install -d -m 0755 /etc/sudoers.d
 printf "%s\n" "kali ALL=(ALL:ALL) ALL" > /etc/sudoers.d/90-shifter-kali
