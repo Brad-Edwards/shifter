@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import shlex
 import subprocess
 import tempfile
 import time
@@ -203,6 +204,23 @@ class GuestSSHExecutor:
                 "-ExecutionPolicy",
                 "Bypass",
                 "-EncodedCommand",
+                encoded_script,
+            ]
+            command_input = stdin_input
+        elif stdin_input is not None:
+            # Keep a secret-bearing Linux plan out of both the SSH command line
+            # and the script stream. The non-secret script is base64-encoded in
+            # argv and evaluated by a privileged child shell; stdin remains an
+            # independent runtime-data channel consumed by that script.
+            encoded_script = base64.b64encode(script.encode()).decode("ascii")
+            wrapper = 'script=$(printf %s "$1" | base64 -d); exec bash -euo pipefail -c "$script"'
+            remote_command = [
+                "sudo",
+                "-n",
+                "bash",
+                "-c",
+                shlex.quote(wrapper),
+                "shifter-setup",
                 encoded_script,
             ]
             command_input = stdin_input
