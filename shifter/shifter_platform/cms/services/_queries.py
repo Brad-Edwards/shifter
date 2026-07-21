@@ -78,6 +78,13 @@ def get_range_target_instances(user_id: int) -> list[dict[str, str]]:
     declared_targets = [inst for inst in instances if _has_participant_access_channel(inst)]
     if declared_targets:
         return declared_targets
+    # Fallback when channels are absent (the AWS range Terraform does not emit
+    # participant_access_channels): attacker-workstation scenarios such as
+    # POLARIS are played FROM the attacker box (Kali), so expose that seat
+    # rather than the DC the participant attacks over the network.
+    attacker = [inst for inst in instances if inst.get("role") == "attacker"]
+    if attacker:
+        return attacker
     targets = [inst for inst in instances if inst.get("role") != "attacker"]
     return targets if targets else instances
 
