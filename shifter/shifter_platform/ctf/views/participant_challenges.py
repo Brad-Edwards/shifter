@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -30,6 +31,19 @@ from ctf.views._access import (
 
 logger = logging.getLogger(__name__)
 
+_MISSION_CATEGORY = re.compile(r"^Mission\s+(\d+)\b", re.IGNORECASE)
+
+
+def _category_sort_key(category: str) -> tuple[int, int, str]:
+    """Put onboarding first, then authored missions in numeric order."""
+    normalized = category.strip()
+    if normalized.casefold() == "start here":
+        return (0, 0, normalized.casefold())
+    mission = _MISSION_CATEGORY.match(normalized)
+    if mission:
+        return (1, int(mission.group(1)), normalized.casefold())
+    return (2, 0, normalized.casefold())
+
 
 @login_required
 @ctf_participant_required
@@ -56,7 +70,10 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
     from ctf.enums import ChallengeCategory
 
     default_category_labels = dict(ChallengeCategory.choices())
-    category_values = list(challenges.order_by("category").values_list("category", flat=True).distinct())
+    category_values = sorted(
+        challenges.order_by("category").values_list("category", flat=True).distinct(),
+        key=_category_sort_key,
+    )
     categories = [(value, default_category_labels.get(value, value)) for value in category_values]
 
     # Apply category filter if provided
@@ -100,6 +117,14 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         challenge.is_locked = challenge.id in locked_ids  # type: ignore[attr-defined]
         challenge.required_challenges = prereqs_by_challenge.get(challenge.id, [])  # type: ignore[attr-defined]
         challenge_list.append(challenge)
+
+    challenge_list.sort(
+        key=lambda challenge: (
+            _category_sort_key(challenge.category),
+            challenge.order,
+            challenge.name.casefold(),
+        )
+    )
 
     # Group by category
     challenges_by_category = defaultdict(list)
