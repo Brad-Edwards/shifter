@@ -210,16 +210,20 @@ resource "google_project_iam_member" "provisioner_dynamic_secret_admin" {
 }
 
 # The provisioner creates and removes one no-role service account per OpenVPN
-# range generation. This custom role intentionally excludes key creation,
-# policy administration, and every non-service-account IAM permission.
+# range generation, then grants itself serviceAccountUser on that exact
+# generated identity before Compute attaches it. Project-level conditional
+# serviceAccountUser cannot safely scope this because IAM service accounts do
+# not expose resource.name to IAM Conditions.
 resource "google_project_iam_custom_role" "provisioner_vpn_gateway_identity_admin" {
   project     = var.project_id
   role_id     = "${replace(var.name_prefix, "-", "")}_vpnGatewayIdentityAdmin"
   title       = "Shifter VPN gateway identity admin"
-  description = "Create and delete generation-isolated OpenVPN gateway service accounts"
+  description = "Manage generation-isolated OpenVPN gateway service accounts"
   permissions = [
     "iam.serviceAccounts.create",
     "iam.serviceAccounts.delete",
+    "iam.serviceAccounts.getIamPolicy",
+    "iam.serviceAccounts.setIamPolicy",
   ]
 }
 
@@ -227,22 +231,6 @@ resource "google_project_iam_member" "provisioner_vpn_gateway_identity_admin" {
   project = var.project_id
   role    = google_project_iam_custom_role.provisioner_vpn_gateway_identity_admin.name
   member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
-}
-
-# Compute requires iam.serviceAccounts.actAs when attaching an identity. Scope
-# that permission to the deterministic sh-vpn-* principals only.
-resource "google_project_iam_member" "provisioner_vpn_gateway_user" {
-  # checkov:skip=CKV_GCP_41:The conditional grant permits Service Account User only for deterministic sh-vpn-* gateway identities; see ADR-039-R10 exception registry.
-  # checkov:skip=CKV_GCP_49:The provisioner cannot impersonate other project service accounts because resource.name is restricted to sh-vpn-*; see ADR-039-R10 exception registry.
-  project = var.project_id
-  role    = "roles/iam.serviceAccountUser"
-  member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
-
-  condition {
-    title       = "generation_openvpn_gateways_only"
-    description = "Permit attachment only of provisioner-owned OpenVPN gateway identities"
-    expression  = "resource.name.startsWith('projects/${var.project_id}/serviceAccounts/sh-vpn-')"
-  }
 }
 
 resource "google_service_account_iam_member" "workload_identity" {

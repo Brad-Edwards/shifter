@@ -60,14 +60,11 @@ def find_range_instance_id_by_request(request_id: str | UUID) -> int | None:
 def get_range_target_instances(user_id: int) -> list[dict[str, str]]:
     """Get the accessible provisioned instances for a user's ready range.
 
-    Normally these are the non-attacker targets: multi-node scenarios (e.g.
-    POLARIS) hide the attacker workstation and expose the targets the
-    participant works against. A single-seat purple-team lab (e.g. TechVault),
-    however, provisions only the attacker-tagged seat host that the participant
-    works *from* (VS Code Desktop over RDP). In that case there are no
-    non-attacker instances, so fall back to returning the seat host(s) —
-    otherwise the participant's range page renders empty with no way to reach
-    their environment.
+    Explicit participant-access channels are authoritative when present. For
+    example, POLARIS declares RDP/SSH access to Kali only even though the range
+    also contains a DC target. Legacy rows that predate channel metadata keep
+    the previous heuristic: show non-attacker targets, or fall back to attacker
+    seats for single-workstation labs such as TechVault.
 
     Args:
         user_id: PK of the user.
@@ -78,5 +75,16 @@ def get_range_target_instances(user_id: int) -> list[dict[str, str]]:
     from engine.services import get_user_ready_range_instances
 
     instances = list(get_user_ready_range_instances(user_id))
+    declared_targets = [inst for inst in instances if _has_participant_access_channel(inst)]
+    if declared_targets:
+        return declared_targets
     targets = [inst for inst in instances if inst.get("role") != "attacker"]
     return targets if targets else instances
+
+
+def _has_participant_access_channel(instance: dict[str, object]) -> bool:
+    """Return whether a provisioned instance has an explicit user access channel."""
+    channels = instance.get("participant_access_channels")
+    if not isinstance(channels, list | tuple | set):
+        return False
+    return any(isinstance(channel, str) and channel.strip() for channel in channels)
