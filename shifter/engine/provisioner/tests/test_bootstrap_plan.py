@@ -590,6 +590,19 @@ class TestPolarisAwsAgentSecurity:
         assert "splice_staged=0" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
         assert "polaris bootstrap: splice key staging failed" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
 
+    def test_bootstrap_enforces_kali_sudo_and_xrdp_prerequisites(self):
+        """Polaris users land in a14-kali, so the bootstrap owns the user-facing
+        Kali contract instead of assuming the standalone Kali image applied."""
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
+        assert "usermod -aG sudo kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "kali ALL=(ALL:ALL) ALL" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "allowed_users=anybody" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "needs_root_rights=yes" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "kali sudo entitlement missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "kali sudoers policy missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "Xwrapper allowed_users was not repaired" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
     # --- Fail-closed verification (AWS-only verify_step variant) ----------
 
     def test_gcp_verify_script_is_byte_identical_to_pre_slice5(self):

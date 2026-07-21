@@ -104,6 +104,63 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
   sleep 5
 done
 
+# The participant lands in the Polaris a14-kali container, not the
+# standalone Kali image path. Enforce the normal Kali user experience at
+# bootstrap time so the container remains authoritative even when the
+# upstream compose tarball changes or a14-kali is force-recreated:
+# - `kali` can use sudo with its assigned range password.
+# - XRDP's Xorg backend can launch for non-console sessions.
+docker exec a14-kali sh -c '
+set -eu
+if ! id kali >/dev/null 2>&1; then
+  echo "polaris bootstrap: kali user missing in a14-kali" >&2
+  exit 1
+fi
+if ! getent group sudo >/dev/null 2>&1; then
+  groupadd sudo
+fi
+usermod -aG sudo kali
+
+install -d -m 0755 /etc/sudoers.d
+printf "%s\n" "kali ALL=(ALL:ALL) ALL" > /etc/sudoers.d/90-shifter-kali
+chmod 0440 /etc/sudoers.d/90-shifter-kali
+
+install -d -m 0755 /etc/X11
+if [ -f /etc/X11/Xwrapper.config ] && [ ! -f /etc/X11/Xwrapper.config.shifter.bak ]; then
+  cp /etc/X11/Xwrapper.config /etc/X11/Xwrapper.config.shifter.bak
+fi
+if [ ! -f /etc/X11/Xwrapper.config ]; then
+  touch /etc/X11/Xwrapper.config
+fi
+if grep -q "^allowed_users=" /etc/X11/Xwrapper.config; then
+  sed -i "s/^allowed_users=.*/allowed_users=anybody/" /etc/X11/Xwrapper.config
+else
+  printf "%s\n" "allowed_users=anybody" >> /etc/X11/Xwrapper.config
+fi
+if grep -q "^needs_root_rights=" /etc/X11/Xwrapper.config; then
+  sed -i "s/^needs_root_rights=.*/needs_root_rights=yes/" /etc/X11/Xwrapper.config
+else
+  printf "%s\n" "needs_root_rights=yes" >> /etc/X11/Xwrapper.config
+fi
+'
+if ! docker exec a14-kali id kali | grep -q 'sudo'; then
+  echo "polaris bootstrap: kali sudo entitlement missing after repair" >&2
+  exit 1
+fi
+if ! docker exec a14-kali sudo -l -U kali >/dev/null; then
+  echo "polaris bootstrap: kali sudoers policy missing after repair" >&2
+  exit 1
+fi
+if ! docker exec a14-kali grep -q '^allowed_users=anybody$' /etc/X11/Xwrapper.config; then
+  echo "polaris bootstrap: Xwrapper allowed_users was not repaired" >&2
+  exit 1
+fi
+if ! docker exec a14-kali grep -q '^needs_root_rights=yes$' /etc/X11/Xwrapper.config; then
+  echo "polaris bootstrap: Xwrapper needs_root_rights was not repaired" >&2
+  exit 1
+fi
+echo "polaris bootstrap: kali sudo and XRDP prerequisites enforced"
+
 # Stage the splice credential explicitly after the force-recreate. Newer
 # a14/a9 entrypoints consume the env vars above, but older baked Polaris images
 # may not; writing the files here keeps the provisioner bootstrap authoritative
