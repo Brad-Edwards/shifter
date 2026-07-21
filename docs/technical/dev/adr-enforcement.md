@@ -69,6 +69,21 @@ Documentation site (ADR-038):
   `exclude_docs`. The in-app Django documentation app is retired. This is a
   runtime/build gate, not an `adr_guard` static check.
 
+Migration state (CI gate):
+
+- Django models and their committed migrations must stay in parity. The
+  `shifter-platform-lint` job in `.github/workflows/_quality.yml` runs
+  `manage.py makemigrations --check --dry-run` (with `TESTING=1`,
+  `TEST_DB_BACKEND=sqlite`, `DJANGO_DEBUG=true`, and a synthetic CI-only
+  `DJANGO_SECRET_KEY`) as a blocking step. The command runs globally with no
+  app-name arguments, so `INSTALLED_APPS` is the coverage seam and new Django
+  apps are gated automatically. `--dry-run` writes nothing and needs no
+  database, so a model change that is not captured by a committed migration
+  (including database-neutral drift such as `help_text` or model manager
+  changes) fails the job. This is a CI gate, not an `adr_guard` static check,
+  and it mirrors the `api_contract --check` drift gate in the same workflow.
+  Added by issue #1061.
+
 ## Current Checks
 
 The first slice intentionally stays small:

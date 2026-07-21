@@ -213,7 +213,7 @@ def _write_subnet_states(
         cur.execute(
             """
             UPDATE engine_subnet
-            SET state = %s, status = 'ready'
+            SET state = %s, status = 'ready', destroyed_at = NULL
             WHERE uuid = %s AND range_id = %s
             """,
             (json.dumps(state), subnet_uuid, range_id),
@@ -244,7 +244,7 @@ def _write_instance_states(
         cur.execute(
             """
             UPDATE engine_instance
-            SET status = 'ready', state = %s
+            SET status = 'ready', state = %s, destroyed_at = NULL
             WHERE uuid = %s
             """,
             (json.dumps(instance_state), instance_uuid),
@@ -293,6 +293,7 @@ def write_provisioned_state(
                 SET provisioned_instances = %s,
                     vpn_access_binding = %s,
                     ngfw_instance_id = %s,
+                    destroyed_at = NULL,
                     updated_at = NOW()
                 WHERE id = %s
                 """,

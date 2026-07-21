@@ -104,6 +104,44 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
   sleep 5
 done
 
+# Stage the splice credential explicitly after the force-recreate. Newer
+# a14/a9 entrypoints consume the env vars above, but older baked Polaris images
+# may not; writing the files here keeps the provisioner bootstrap authoritative
+# for the participant-visible credential contract.
+docker exec a14-kali sh -c '
+mkdir -p /home/kali/.ssh
+chown kali:kali /home/kali/.ssh
+chmod 700 /home/kali/.ssh
+'
+printf '%s' "$SPLICE_PRIVATE_KEY_B64" | base64 -d | docker exec -i a14-kali sh -c '
+umask 077
+cat > /home/kali/.ssh/splice_relay
+chown kali:kali /home/kali/.ssh/splice_relay
+chmod 600 /home/kali/.ssh/splice_relay
+'
+docker exec a14-kali sh -c '
+touch /home/kali/.ssh/config
+if ! grep -q "^Host splice-relay$" /home/kali/.ssh/config; then
+cat >> /home/kali/.ssh/config <<'"'"'SSH_CONFIG_EOF'"'"'
+Host splice-relay
+  HostName a9-splice
+  User root
+  IdentityFile /home/kali/.ssh/splice_relay
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+SSH_CONFIG_EOF
+fi
+chown kali:kali /home/kali/.ssh/config
+chmod 600 /home/kali/.ssh/config'
+docker exec a9-splice sh -c '
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+'
+printf '%s\n' "$SPLICE_PUBLIC_KEY" | docker exec -i a9-splice sh -c '
+cat > /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+'
+
 # Verify the kali container actually has the per-instance pubkey written
 # (the a14 entrypoint reads $KALI_AUTHORIZED_KEY and writes the file).
 for attempt in 1 2 3 4 5; do
@@ -116,6 +154,7 @@ done
 
 # Verify the splice key staging (#707): private key on a14-kali, public
 # key in a9-splice. The Bunker chain depends on both.
+splice_staged=0
 for attempt in 1 2 3 4 5; do
   splice_priv_ok=0
   splice_pub_ok=0
@@ -123,10 +162,15 @@ for attempt in 1 2 3 4 5; do
   docker exec a9-splice test -s /root/.ssh/authorized_keys 2>/dev/null && splice_pub_ok=1
   if [[ "$splice_priv_ok" == "1" && "$splice_pub_ok" == "1" ]]; then
     echo "polaris bootstrap: splice key staged on a14-kali and a9-splice"
+    splice_staged=1
     break
   fi
   sleep 3
 done
+if [[ "$splice_staged" != "1" ]]; then
+  echo "polaris bootstrap: splice key staging failed" >&2
+  exit 1
+fi
 
 echo "polaris bootstrap: complete"
 exit 0

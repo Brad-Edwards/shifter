@@ -585,6 +585,15 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
+      - name: Check for missing migrations
+        working-directory: shifter/shifter_platform
+        env:
+          TESTING: "1"
+          TEST_DB_BACKEND: sqlite
+          DJANGO_DEBUG: "true"
+          DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: uv run python manage.py makemigrations --check --dry-run
+
   shifter-platform-lint-js:
     permissions:
       contents: read
