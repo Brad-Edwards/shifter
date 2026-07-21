@@ -104,6 +104,9 @@ build {
     environment_vars = [
       "DC_DOMAIN_NAME=${var.dc_domain_name}",
       "DC_NETBIOS_NAME=${var.dc_netbios_name}",
+      // Build-only DSRM secret, generated per build and injected as a sensitive
+      // var (never committed). promote-bake.ps1 refuses to promote without it.
+      "DC_DSRM_PASSWORD=${var.dc_dsrm_password}",
     ]
     script = "gcp/scripts/dc-prebaked/promote-bake.ps1"
   }
