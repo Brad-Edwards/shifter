@@ -197,14 +197,6 @@ def _build_instance_state(instance_data: dict[str, Any], provider: str | None = 
         # Secret Manager resource path); the password value itself is
         # never persisted in state.
         "rdp_password_secret_arn": instance_data.get("rdp_password_secret_arn"),
-        # SSM Parameter Store SecureString name for the same per-
-        # instance password (AWS only; GCP carries ``None``). Used by
-        # the AWS push path's ``{{ssm-secure:<name>}}`` substitution so
-        # the value never lands in SSM Run Command history (#762 codex
-        # cycle 3). Mirrors the Secrets Manager copy referenced above;
-        # the portal continues to read the value from Secrets Manager
-        # via ``shared.cloud`` at access time.
-        "rdp_password_ssm_param_name": instance_data.get("rdp_password_ssm_param_name"),
         "ssh_username": instance_data.get("ssh_username"),
         "subnet_name": instance_data.get("subnet_name"),
         "provider_metadata": _build_instance_provider_metadata(instance_data, resolved_provider),
@@ -234,8 +226,6 @@ def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider:
         "ssh_key_secret_arn": instance_data.get("ssh_key_secret_arn"),
         # Per-instance RDP password secret reference (#762).
         "rdp_password_secret_arn": instance_data.get("rdp_password_secret_arn"),
-        # AWS-only mirror in SSM Parameter Store SecureString (#762 cycle 3).
-        "rdp_password_ssm_param_name": instance_data.get("rdp_password_ssm_param_name"),
         "ssh_username": instance_data.get("ssh_username"),
         "cloud_provider": resolved_provider,
         "provider_metadata": _build_instance_provider_metadata(instance_data, resolved_provider),

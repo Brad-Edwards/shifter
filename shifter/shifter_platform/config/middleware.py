@@ -34,6 +34,12 @@ _CTF_ACCOUNT_ALWAYS_ALLOWED = frozenset(
     }
 )
 
+# The unified SPA shell always loads this authenticated, advisory-only payload
+# before it renders a workspace. Temporary CTF accounts need the exact endpoint
+# after their forced password change; admitting a prefix would unnecessarily
+# expose future composition-root APIs.
+_CTF_ACCOUNT_SPA_ALLOWED = frozenset({"/api/v1/bootstrap/"})
+
 # Mission Control range-access endpoints a live participant legitimately needs to
 # reach their OWN range box: the Guacamole RDP/SSH URL bootstrap plus its
 # status/open polling (issue #1740). These self-authorize per user — the
@@ -48,6 +54,17 @@ _CTF_ACCOUNT_ALWAYS_ALLOWED = frozenset(
 # blocked. Any NEW route added under this prefix becomes reachable by temporary
 # accounts and therefore requires its own security review.
 _PARTICIPANT_MISSION_CONTROL_PREFIXES = ("/api/v1/mission-control/guacamole/",)
+
+
+def _is_ctf_participant_surface(path: str) -> bool:
+    """Return whether ``path`` belongs to the temporary-participant surface."""
+    ctf_surface = path.startswith("/ctf/") and not path.startswith("/ctf/admin/")
+    return (
+        ctf_surface
+        or path.startswith("/api/v1/ctf/")
+        or path.startswith(_PARTICIPANT_MISSION_CONTROL_PREFIXES)
+        or path in _CTF_ACCOUNT_SPA_ALLOWED
+    )
 
 
 class RequestIDMiddleware:
@@ -99,11 +116,7 @@ class CTFAccountBoundaryMiddleware:
             path = request.path
             from ctf.services.participant.accounts import live_participant_for_user
 
-            participant_surface = (
-                (path.startswith("/ctf/") and not path.startswith("/ctf/admin/"))
-                or path.startswith("/api/v1/ctf/")
-                or path.startswith(_PARTICIPANT_MISSION_CONTROL_PREFIXES)
-            )
+            participant_surface = _is_ctf_participant_surface(path)
             forbidden = (path != "/logout/" and live_participant_for_user(user) is None) or (
                 path not in _CTF_ACCOUNT_ALWAYS_ALLOWED and not participant_surface
             )
