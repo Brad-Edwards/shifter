@@ -136,6 +136,10 @@ function openRdpSession(button, instanceUuid) {
     button.disabled = true;
     var originalText = button.textContent;
     button.textContent = 'Opening...';
+    var sessionWindow = window.open('about:blank', '_blank');
+    if (sessionWindow) {
+        sessionWindow.opener = null;
+    }
 
     fetch('{% url "v1:mission_control:guacamole-rdp-url" %}', {
         method: 'POST',
@@ -154,15 +158,53 @@ function openRdpSession(button, instanceUuid) {
         return response.json();
     })
     .then(function(data) {
-        window.open(data.url, '_blank');
+        if (!data.status_url) {
+            throw new Error('Session request did not return a status URL');
+        }
+        return pollRdpSession(data.status_url, 60);
+    })
+    .then(function(url) {
+        if (sessionWindow) {
+            sessionWindow.location.replace(url);
+        } else {
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
     })
     .catch(function(error) {
+        if (sessionWindow) {
+            sessionWindow.close();
+        }
         alert('Failed to open session: ' + error.message);
     })
     .finally(function() {
         button.disabled = false;
         button.textContent = originalText;
     });
+}
+
+function pollRdpSession(statusUrl, attemptsRemaining) {
+    return fetch(statusUrl, {credentials: 'same-origin'})
+        .then(function(response) {
+            return response.json().then(function(data) {
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to generate access URL');
+                }
+                if (data.url) {
+                    return data.url;
+                }
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                if (attemptsRemaining <= 1) {
+                    throw new Error('RDP session request timed out');
+                }
+                return new Promise(function(resolve) {
+                    window.setTimeout(resolve, 1000);
+                }).then(function() {
+                    return pollRdpSession(statusUrl, attemptsRemaining - 1);
+                });
+            });
+        });
 }
     </script>
 {% endblock %}
