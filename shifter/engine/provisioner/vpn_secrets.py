@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 import urllib.request
 from collections.abc import Callable, Iterator, MutableSequence
 from contextlib import suppress
@@ -130,6 +131,7 @@ class _GCPExceptions(Protocol):
 
     NotFound: type[Exception]
     AlreadyExists: type[Exception]
+    InvalidArgument: type[Exception]
 
 
 class _GCPSecretsClient(Protocol):
@@ -216,6 +218,9 @@ def _metadata_service_account_email() -> str:
 class GCPVpnSecretOps(VpnSecretOps):
     """GCP Secret Manager implementation for a GCE range cell."""
 
+    _SECRET_IAM_PROPAGATION_TIMEOUT_SECONDS = 60.0
+    _SECRET_IAM_PROPAGATION_RETRY_SECONDS = 2.0
+
     def __init__(
         self,
         client: _GCPSecretsClient | None = None,
@@ -279,9 +284,42 @@ class GCPVpnSecretOps(VpnSecretOps):
     def _name(self, secret_id: str) -> str:
         return f"projects/{self._project_id}/secrets/{secret_id}"
 
+    def _gateway_identity_not_visible(self, exc: Exception, gateway_email: str) -> bool:
+        message = str(exc)
+        return "Service account" in message and gateway_email in message and "does not exist" in message
+
     def _read(self, name: str) -> str:
         response = self._client.access_secret_version(request={"name": f"{name}/versions/latest"})
         return response.payload.data.decode("utf-8")
+
+    def _grant_gateway_secret_access(self, name: str, gateway_email: str) -> None:
+        """Grant a just-created gateway identity access to its server secret.
+
+        GCP IAM Admin can return the generated service account before Secret
+        Manager IAM accepts that same principal as a policy member. Treat only
+        that narrow propagation race as retryable; all other IAM errors still
+        fail immediately.
+        """
+        request: dict[str, object] = {
+            "resource": name,
+            "policy": {
+                "bindings": [
+                    {
+                        "role": "roles/secretmanager.secretAccessor",
+                        "members": [f"serviceAccount:{gateway_email}"],
+                    }
+                ]
+            },
+        }
+        deadline = time.monotonic() + self._SECRET_IAM_PROPAGATION_TIMEOUT_SECONDS
+        while True:
+            try:
+                self._client.set_iam_policy(request=request)
+                return
+            except self._exceptions.InvalidArgument as exc:
+                if not self._gateway_identity_not_visible(exc, gateway_email) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(self._SECRET_IAM_PROPAGATION_RETRY_SECONDS)
 
     def _create_or_update(self, secret_id: str, payload: str, *, gateway_email: str = "") -> str:
         name = self._name(secret_id)
@@ -300,19 +338,7 @@ class GCPVpnSecretOps(VpnSecretOps):
         if current != payload:
             self._client.add_secret_version(request={"parent": name, "payload": {"data": payload.encode("utf-8")}})
         if gateway_email:
-            self._client.set_iam_policy(
-                request={
-                    "resource": name,
-                    "policy": {
-                        "bindings": [
-                            {
-                                "role": "roles/secretmanager.secretAccessor",
-                                "members": [f"serviceAccount:{gateway_email}"],
-                            }
-                        ]
-                    },
-                }
-            )
+            self._grant_gateway_secret_access(name, gateway_email)
         return name
 
     def read_or_create_issuer(self, range_id: int, generation: UUID, payload_factory: Callable[[], str]) -> str:
