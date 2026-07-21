@@ -29,3 +29,11 @@ def test_ctf_participant_dashboard_hides_terminal_sidebar_link(authenticated_par
 def test_ctf_participant_can_open_terminal_page(authenticated_participant_client, ctf_participant):
     response = authenticated_participant_client.get(reverse("ctf:participant_terminal"))
     assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_ctf_participant_range_polls_queued_guacamole_bootstrap(authenticated_participant_client, ctf_participant):
+    response = authenticated_participant_client.get(reverse("ctf:participant_range"))
+    assert response.status_code == 200
+    assert b"pollRdpSession(data.status_url, 60)" in response.content
+    assert b"window.open(data.url" not in response.content
