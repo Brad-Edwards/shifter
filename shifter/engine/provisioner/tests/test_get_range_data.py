@@ -91,9 +91,14 @@ class TestGetRangeDataNGFWLookup:
         monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
         result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
-        # Verify the SQL includes paused/pausing statuses
-        sql_executed = mock_cursor.execute.call_args_list[1][0][0]
-        assert "paused" in sql_executed.lower()
+        # Verify the NGFW lookup queries paused/pausing statuses. They are now bound
+        # as DB-API parameters (enum-derived via ResourceStatus) rather than inlined.
+        ngfw_call = mock_cursor.execute.call_args_list[1]
+        sql_executed = ngfw_call[0][0]
+        params = ngfw_call[0][1]
+        assert "status in (%s, %s, %s, %s)" in sql_executed.lower()
+        assert "paused" in params
+        assert "pausing" in params
         assert result["ngfw_instance_id"] == 597
 
     def test_ngfw_query_does_not_require_aws_only_fields(self, monkeypatch):

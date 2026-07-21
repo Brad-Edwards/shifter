@@ -20,6 +20,7 @@ import os
 from typing import Any
 
 import psycopg
+from cyberscript.enums import ResourceStatus
 from psycopg import sql
 from shared.remote_access import parse_openvpn_binding
 
@@ -213,10 +214,10 @@ def _write_subnet_states(
         cur.execute(
             """
             UPDATE engine_subnet
-            SET state = %s, status = 'ready', destroyed_at = NULL
+            SET state = %s, status = %s, destroyed_at = NULL
             WHERE uuid = %s AND range_id = %s
             """,
-            (json.dumps(state), subnet_uuid, range_id),
+            (json.dumps(state), ResourceStatus.READY.value, subnet_uuid, range_id),
         )
         if cur.rowcount == 0:
             raise ValueError(f"No engine_subnet record found for uuid={subnet_uuid}, range_id={range_id}")
@@ -244,10 +245,10 @@ def _write_instance_states(
         cur.execute(
             """
             UPDATE engine_instance
-            SET status = 'ready', state = %s, destroyed_at = NULL
+            SET status = %s, state = %s, destroyed_at = NULL
             WHERE uuid = %s
             """,
-            (json.dumps(instance_state), instance_uuid),
+            (ResourceStatus.READY.value, json.dumps(instance_state), instance_uuid),
         )
         if cur.rowcount == 0:
             raise ValueError(f"No engine_instance record found for uuid={instance_uuid}")
@@ -331,7 +332,7 @@ def mark_range_instances_destroyed(range_id: int) -> tuple[int, int]:
             cur.execute(
                 """
                 UPDATE engine_instance
-                SET status = 'destroyed', destroyed_at = NOW()
+                SET status = %s, destroyed_at = NOW()
                 WHERE uuid IN (
                     SELECT DISTINCT i.uuid
                     FROM engine_instance i
@@ -340,7 +341,7 @@ def mark_range_instances_destroyed(range_id: int) -> tuple[int, int]:
                     WHERE rng.id = %s
                 )
                 """,
-                (range_id,),
+                (ResourceStatus.DESTROYED.value, range_id),
             )
             instance_count = cur.rowcount
             logger.debug(
@@ -352,10 +353,10 @@ def mark_range_instances_destroyed(range_id: int) -> tuple[int, int]:
             cur.execute(
                 """
                 UPDATE engine_subnet
-                SET status = 'destroyed', destroyed_at = NOW()
+                SET status = %s, destroyed_at = NOW()
                 WHERE range_id = %s
                 """,
-                (range_id,),
+                (ResourceStatus.DESTROYED.value, range_id),
             )
             subnet_count = cur.rowcount
             logger.debug(
@@ -439,11 +440,17 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 JOIN engine_request er ON ei.request_id = er.id
                 WHERE er.user_id = %s
                   AND ei.role = 'ngfw'
-                  AND ei.status IN ('ready', 'paused', 'pausing', 'resuming')
+                  AND ei.status IN (%s, %s, %s, %s)
                 ORDER BY ei.created_at DESC
                 LIMIT 1
                 """,
-                (user_id,),
+                (
+                    user_id,
+                    ResourceStatus.READY.value,
+                    ResourceStatus.PAUSED.value,
+                    ResourceStatus.PAUSING.value,
+                    ResourceStatus.RESUMING.value,
+                ),
             )
             ngfw_row = cur.fetchone()
             if ngfw_row and has_ngfw_attachment_state(ngfw_row[1]):

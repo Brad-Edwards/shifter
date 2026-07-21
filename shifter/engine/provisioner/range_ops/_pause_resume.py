@@ -11,7 +11,12 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from events import build_status_event
+from events import (
+    STATUS_FAILED,
+    STATUS_PAUSED,
+    STATUS_READY,
+    build_status_event,
+)
 from executors.aws_executor import AWSExecutor
 from orchestrators.ops_orchestrator import OpsOrchestrator
 from plans.range_pause import RangePausePlan
@@ -114,9 +119,9 @@ def get_range_instance_ids(request_id: str) -> list[dict[str, Any]]:
             FROM engine_instance i
             JOIN engine_request r ON i.request_id = r.id
             WHERE r.request_id = %s
-              AND i.status IN ('ready', 'paused')
+              AND i.status IN (%s, %s)
             """,
-            (request_id,),
+            (request_id, STATUS_READY, STATUS_PAUSED),
         )
         rows = cur.fetchall()
 
@@ -229,7 +234,7 @@ def run_range_pause(request_id: str) -> None:
     current_status = range_data["status"]
 
     # Idempotent: if already paused, return success
-    if current_status == "paused":
+    if current_status == STATUS_PAUSED:
         logger.info("run_range_pause: range already paused, no-op request_id=%s", request_id)
         return
 
@@ -279,14 +284,14 @@ def run_range_pause(request_id: str) -> None:
         # Update status and enqueue event atomically
         _pkg.update_range_status(
             range_id,
-            "failed",
+            STATUS_FAILED,
             error_message=error_msg,
-            outbox_event=build_status_event(request_id, range_id, user_id, "failed", error_msg),
+            outbox_event=build_status_event(request_id, range_id, user_id, STATUS_FAILED, error_msg),
         )
         raise RuntimeError(error_msg)
 
     # Update instance statuses in database
-    _pkg._update_instance_statuses(request_id, "paused")
+    _pkg._update_instance_statuses(request_id, STATUS_PAUSED)
 
     # Cascade: pause NGFW if no other ranges need it (before reporting paused)
     try:
@@ -302,9 +307,9 @@ def run_range_pause(request_id: str) -> None:
     # Update range status to paused and enqueue event atomically
     _pkg.update_range_status(
         range_id,
-        "paused",
+        STATUS_PAUSED,
         paused_at="NOW()",
-        outbox_event=build_status_event(request_id, range_id, user_id, "paused"),
+        outbox_event=build_status_event(request_id, range_id, user_id, STATUS_PAUSED),
     )
 
     logger.info(
@@ -340,7 +345,7 @@ def run_range_resume(request_id: str) -> None:
     current_status = range_data["status"]
 
     # Idempotent: if already ready, return success
-    if current_status == "ready":
+    if current_status == STATUS_READY:
         logger.info("run_range_resume: range already ready, no-op request_id=%s", request_id)
         return
 
@@ -353,9 +358,9 @@ def run_range_resume(request_id: str) -> None:
         logger.exception("run_range_resume: %s request_id=%s", error_msg, request_id)
         _pkg.update_range_status(
             range_id,
-            "failed",
+            STATUS_FAILED,
             error_message=error_msg,
-            outbox_event=build_status_event(request_id, range_id, user_id, "failed", error_msg),
+            outbox_event=build_status_event(request_id, range_id, user_id, STATUS_FAILED, error_msg),
         )
         raise RuntimeError(error_msg) from e
 
@@ -404,21 +409,21 @@ def run_range_resume(request_id: str) -> None:
         # Update status and enqueue event atomically
         _pkg.update_range_status(
             range_id,
-            "failed",
+            STATUS_FAILED,
             error_message=error_msg,
-            outbox_event=build_status_event(request_id, range_id, user_id, "failed", error_msg),
+            outbox_event=build_status_event(request_id, range_id, user_id, STATUS_FAILED, error_msg),
         )
         raise RuntimeError(error_msg)
 
     # Update instance statuses in database
-    _pkg._update_instance_statuses(request_id, "ready")
+    _pkg._update_instance_statuses(request_id, STATUS_READY)
 
     # Update range status to ready and enqueue event atomically
     _pkg.update_range_status(
         range_id,
-        "ready",
+        STATUS_READY,
         ready_at="NOW()",
-        outbox_event=build_status_event(request_id, range_id, user_id, "ready"),
+        outbox_event=build_status_event(request_id, range_id, user_id, STATUS_READY),
     )
 
     logger.info(

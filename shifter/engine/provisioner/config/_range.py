@@ -10,6 +10,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from cyberscript.enums import ResourceStatus
+
 from log_redact import safe_log_fingerprint
 
 from ._env import _parse_csv_env
@@ -287,11 +289,17 @@ def get_range_from_db(range_id: int) -> dict[str, Any]:
                 JOIN engine_request er ON ei.request_id = er.id
                 WHERE er.user_id = %s
                   AND ei.role = 'ngfw'
-                  AND ei.status IN ('ready', 'paused', 'pausing', 'resuming')
+                  AND ei.status IN (%s, %s, %s, %s)
                 ORDER BY ei.created_at DESC
                 LIMIT 1
                 """,
-                (user_id,),
+                (
+                    user_id,
+                    ResourceStatus.READY.value,
+                    ResourceStatus.PAUSED.value,
+                    ResourceStatus.PAUSING.value,
+                    ResourceStatus.RESUMING.value,
+                ),
             )
             ngfw_row = cur.fetchone()
             if ngfw_row:
