@@ -61,11 +61,16 @@ function terminalSocketUrl(instanceUuid: string): string {
 
 export interface TerminalProps {
   instanceUuid: string;
+  tmuxWheelScrolling?: boolean;
   onConnectionStateChange?: (state: TerminalConnectionState, closeInfo: TerminalCloseInfo | null) => void;
 }
 
 /** Owns one xterm instance + one terminal websocket for its lifetime; remount (via `key`) to reconnect. */
-export function Terminal({ instanceUuid, onConnectionStateChange }: Readonly<TerminalProps>) {
+export function Terminal({
+  instanceUuid,
+  tmuxWheelScrolling = false,
+  onConnectionStateChange,
+}: Readonly<TerminalProps>) {
   const containerRef = useRef<HTMLElement>(null);
   const onStateChangeRef = useRef(onConnectionStateChange);
   onStateChangeRef.current = onConnectionStateChange;
@@ -130,6 +135,25 @@ export function Terminal({ instanceUuid, onConnectionStateChange }: Readonly<Ter
     });
 
     const socket = new WebSocket(terminalSocketUrl(instanceUuid));
+    let lastWheelInputAt = 0;
+    const handleTmuxWheel = (event: WheelEvent) => {
+      if (!tmuxWheelScrolling || event.deltaY === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      // Trackpads emit many events per gesture. Throttle them into deliberate
+      // tmux scroll steps rather than flooding the SSH websocket.
+      const now = performance.now();
+      if (now - lastWheelInputAt < 35) return;
+      lastWheelInputAt = now;
+      if (socket.readyState === WebSocket.OPEN) {
+        const key = event.deltaY < 0 ? "\u001b[23~" : "\u001b[24~"; // F11 / F12
+        socket.send(JSON.stringify({ type: "input", data: key }));
+      }
+    };
+    if (tmuxWheelScrolling) {
+      terminalElement?.addEventListener("wheel", handleTmuxWheel, { capture: true, passive: false });
+    }
 
     function sendResize() {
       if (socket.readyState === WebSocket.OPEN) {
@@ -184,6 +208,7 @@ export function Terminal({ instanceUuid, onConnectionStateChange }: Readonly<Ter
       window.removeEventListener("resize", handleWindowResize);
       terminalElement?.removeEventListener("mouseup", handleMouseUp);
       terminalElement?.removeEventListener("contextmenu", handleContextMenu);
+      terminalElement?.removeEventListener("wheel", handleTmuxWheel, { capture: true });
       dataDisposable.dispose();
       resizeDisposable.dispose();
       socket.onopen = null;
@@ -197,7 +222,7 @@ export function Terminal({ instanceUuid, onConnectionStateChange }: Readonly<Ter
     // (set on every render, above) rather than closed over directly, so an
     // inline callback identity doesn't tear down and reopen the socket every
     // render; only a real `instanceUuid` change (or unmount) should do that.
-  }, [instanceUuid]);
+  }, [instanceUuid, tmuxWheelScrolling]);
 
   return (
     <section

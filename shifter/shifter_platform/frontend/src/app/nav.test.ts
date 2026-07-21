@@ -121,9 +121,11 @@ describe("visibleNavGroups", () => {
     const bs = bootstrap({ permissions: { ...STAFF_BOOTSTRAP.permissions, is_ctf_participant: true } });
     const [participate] = visibleNavGroups("participant", bs);
     const eventHome = participate.entries.find((e) => e.surface === "Event Home");
+    const terminal = participate.entries.find((e) => e.surface === "Terminal");
     expect(eventHome?.external).toBeFalsy();
     expect(eventHome?.featureFlag).toBe("ctf_workspace_spa");
     expect(eventHome?.routePath).toBe("/ctf/");
+    expect(terminal?.routePath).toBe("/ctf/terminal/");
     expect(participate.entries.every((e) => e.featureFlag === "ctf_workspace_spa" && !e.external)).toBe(true);
   });
 

@@ -151,7 +151,15 @@ fi
 # Shift+drag bypass selects browser text; the portal copies that selection and
 # handles right-click paste and Ctrl+Shift+C/V. Apply the option both to future
 # servers and to a tmux server that may already be running.
-printf "%s\n" "set -g mouse on" "set -g set-clipboard on" > /home/kali/.tmux.conf
+printf "%s\n" \
+  "set -g mouse on" \
+  "set -g set-clipboard on" \
+  "bind-key -n F11 copy-mode -eu" \
+  "bind-key -T copy-mode F11 send-keys -X -N 3 scroll-up" \
+  "bind-key -T copy-mode-vi F11 send-keys -X -N 3 scroll-up" \
+  "bind-key -T copy-mode F12 send-keys -X -N 3 scroll-down" \
+  "bind-key -T copy-mode-vi F12 send-keys -X -N 3 scroll-down" \
+  > /home/kali/.tmux.conf
 chown kali:kali /home/kali/.tmux.conf
 chmod 0644 /home/kali/.tmux.conf
 
@@ -208,6 +216,11 @@ fi
 '
 docker exec --user kali a14-kali tmux set-option -g mouse on 2>/dev/null || true
 docker exec --user kali a14-kali tmux set-option -g set-clipboard on 2>/dev/null || true
+docker exec --user kali a14-kali tmux bind-key -n F11 copy-mode -eu 2>/dev/null || true
+docker exec --user kali a14-kali tmux bind-key -T copy-mode F11 send-keys -X -N 3 scroll-up 2>/dev/null || true
+docker exec --user kali a14-kali tmux bind-key -T copy-mode-vi F11 send-keys -X -N 3 scroll-up 2>/dev/null || true
+docker exec --user kali a14-kali tmux bind-key -T copy-mode F12 send-keys -X -N 3 scroll-down 2>/dev/null || true
+docker exec --user kali a14-kali tmux bind-key -T copy-mode-vi F12 send-keys -X -N 3 scroll-down 2>/dev/null || true
 docker restart a14-kali >/dev/null
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
   if docker ps --format '{{.Names}} {{.Status}}' | grep -q '^a14-kali .*Up'; then

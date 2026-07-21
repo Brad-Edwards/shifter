@@ -176,6 +176,27 @@ describe("Terminal", () => {
     await waitFor(() => expect(term.paste).toHaveBeenCalledWith("clipboard input"));
   });
 
+  it("bridges CTF wheel gestures to tmux copy-mode keys without affecting ordinary terminals", () => {
+    const { unmount } = render(<Terminal instanceUuid={INSTANCE_UUID} tmuxWheelScrolling />);
+    const socket = latestSocket();
+    const term = latestTerm();
+    act(() => socket.emitOpen());
+    socket.sent.length = 0;
+
+    fireEvent.wheel(term.element, { deltaY: -100 });
+
+    expect(socket.sent).toContainEqual(JSON.stringify({ type: "input", data: "\u001b[23~" }));
+    unmount();
+
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const ordinarySocket = latestSocket();
+    const ordinaryTerm = latestTerm();
+    act(() => ordinarySocket.emitOpen());
+    ordinarySocket.sent.length = 0;
+    fireEvent.wheel(ordinaryTerm.element, { deltaY: -100 });
+    expect(ordinarySocket.sent).toHaveLength(0);
+  });
+
   it("ignores malformed or non-output frames without throwing", () => {
     render(<Terminal instanceUuid={INSTANCE_UUID} />);
     const socket = latestSocket();
