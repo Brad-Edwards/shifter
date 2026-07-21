@@ -37,6 +37,7 @@ class TestGetSSHConnectionInfo:
             "role": "attacker",
             "os_type": "kali",
             "cloud_provider": "gcp",
+            "gcp_host_public_key": "ssh-ed25519 AAAATESTHOSTKEY shifter",
             "provider_metadata": {
                 "gcp": {
                     "instance_name": "shifter-range-vm-1",
@@ -56,6 +57,7 @@ class TestGetSSHConnectionInfo:
         assert result["connection_name"] == "shifter-range-vm-1"
         assert result["cloud_provider"] == "gcp"
         assert result["private_key"] == SSH_KEY_PEM
+        assert result["host_public_key"] == "ssh-ed25519 AAAATESTHOSTKEY shifter"
 
     def test_returns_connection_info_from_gdc_style_provider_metadata(self, settings, user):
         from engine.services import get_ssh_connection_info
