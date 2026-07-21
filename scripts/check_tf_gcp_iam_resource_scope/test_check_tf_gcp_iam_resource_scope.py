@@ -431,22 +431,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1).strip(), 'key != "guacamole-db"')
 
-    def test_literal_project_grants_are_exactly_the_residuals_and_scoped_vpn_act_as(self) -> None:
+    def test_literal_project_grants_are_exactly_the_residuals(self) -> None:
         # Secret/storage literals remain exactly the two ALLOWLIST residuals.
-        # The only additional literal is actAs, condition-scoped to generation
-        # OpenVPN identities rather than all project service accounts.
-        expected = set(ALLOWLIST.keys()) | {("provisioner", "roles/iam.serviceAccountUser")}
-        self.assertEqual(self.literal_project_grants, expected)
-        vpn_blocks = [
-            body
-            for name, _line, body in _extract_resource_blocks(self.lines, _PROJECT_IAM_MEMBER_RE)
-            if name == "provisioner_vpn_gateway_user"
-        ]
-        self.assertEqual(len(vpn_blocks), 1)
-        self.assertIn(
-            "resource.name.startsWith('projects/${var.project_id}/serviceAccounts/sh-vpn-')",
-            vpn_blocks[0],
-        )
+        self.assertEqual(self.literal_project_grants, set(ALLOWLIST.keys()))
         self.assertEqual(check_paths(sorted(LIVE_IAM_DIR.glob("*.tf"))), [])
 
 

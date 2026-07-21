@@ -164,10 +164,12 @@ class TestOpenVpnGatewayResource:
         assert body["service_accounts"][0]["email"] == "sh-vpn-generation@test-project.iam.gserviceaccount.com"
         startup = body["metadata"]["items"][0]["value"]
         assert "shifter-range-42-vpn-87a99f875af246e6a4590e5eb1ab1bf2-server" in startup
+        assert "urllib.parse.quote" not in startup
+        assert "dh none" in startup
         assert '"10.50.2.4/32"' in startup
         assert "shifter-openvpn-health.service" in startup
         assert '("0.0.0.0", 1195)' in startup
-        assert 'b"ready\\n"' in startup
+        assert 'b"ready\\\\n"' in startup
         assert "ca_private_key" not in startup
 
 
