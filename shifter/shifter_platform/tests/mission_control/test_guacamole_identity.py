@@ -65,8 +65,8 @@ def test_rdp_url_build_uses_nonblank_identity_for_email_less_account(monkeypatch
     assert url.startswith("https://example/guacamole/#/client/")
 
 
-def test_rdp_url_build_forces_classic_rdp_security_for_kali(monkeypatch):
-    """Kali/xrdp targets must not rely on Guacamole negotiate mode."""
+def test_rdp_url_build_forces_tls_security_for_kali(monkeypatch):
+    """Kali/xrdp targets must use TLS instead of incompatible classic RDP crypto."""
     user = User(username="range-abcd1234", email="player@example.com")
     captured: dict[str, str] = {}
 
@@ -83,7 +83,7 @@ def test_rdp_url_build_forces_classic_rdp_security_for_kali(monkeypatch):
 
     _resolve_and_build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
 
-    assert captured["security"] == "rdp"
+    assert captured["security"] == "tls"
 
 
 def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):

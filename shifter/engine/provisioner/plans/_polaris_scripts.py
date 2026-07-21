@@ -160,14 +160,14 @@ if id xrdp >/dev/null 2>&1; then
 fi
 if [ -f /etc/xrdp/xrdp.ini ]; then
   if grep -q "^security_layer=" /etc/xrdp/xrdp.ini; then
-    sed -i "s/^security_layer=.*/security_layer=rdp/" /etc/xrdp/xrdp.ini
+    sed -i "s/^security_layer=.*/security_layer=tls/" /etc/xrdp/xrdp.ini
   else
-    printf "%s\n" "security_layer=rdp" >> /etc/xrdp/xrdp.ini
+    printf "%s\n" "security_layer=tls" >> /etc/xrdp/xrdp.ini
   fi
   if grep -q "^crypt_level=" /etc/xrdp/xrdp.ini; then
-    sed -i "s/^crypt_level=.*/crypt_level=low/" /etc/xrdp/xrdp.ini
+    sed -i "s/^crypt_level=.*/crypt_level=high/" /etc/xrdp/xrdp.ini
   else
-    printf "%s\n" "crypt_level=low" >> /etc/xrdp/xrdp.ini
+    printf "%s\n" "crypt_level=high" >> /etc/xrdp/xrdp.ini
   fi
 fi
 '
@@ -207,11 +207,11 @@ if ! docker exec --user xrdp a14-kali test -r /etc/xrdp/key.pem; then
   echo "polaris bootstrap: XRDP key is not readable by xrdp after repair" >&2
   exit 1
 fi
-if ! docker exec a14-kali grep -q '^security_layer=rdp$' /etc/xrdp/xrdp.ini; then
+if ! docker exec a14-kali grep -q '^security_layer=tls$' /etc/xrdp/xrdp.ini; then
   echo "polaris bootstrap: XRDP security_layer was not repaired" >&2
   exit 1
 fi
-if ! docker exec a14-kali grep -q '^crypt_level=low$' /etc/xrdp/xrdp.ini; then
+if ! docker exec a14-kali grep -q '^crypt_level=high$' /etc/xrdp/xrdp.ini; then
   echo "polaris bootstrap: XRDP crypt_level was not repaired" >&2
   exit 1
 fi
