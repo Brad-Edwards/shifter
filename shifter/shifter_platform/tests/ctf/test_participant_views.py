@@ -13,7 +13,7 @@ from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from ctf.enums import ParticipantStatus
+from ctf.enums import ChallengeCategory, ParticipantStatus
 from ctf.models import CTFParticipant
 
 from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
@@ -24,6 +24,27 @@ _SIMPLE_STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
+
+
+class TestParticipantChallengeListView:
+    @override_settings(
+        PLATFORM_SPA_ENABLED=False,
+        CTF_WORKSPACE_SPA_ENABLED=False,
+        STORAGES=_SIMPLE_STORAGES,
+    )
+    def test_renders_category_filters(
+        self, authenticated_participant_client, participant_user, ctf_participant, ctf_challenge
+    ):
+        from management.services import set_active_ctf_event
+
+        set_active_ctf_event(participant_user, ctf_participant.event_id)
+
+        response = authenticated_participant_client.get(reverse("ctf:challenges"))
+
+        assert response.status_code == 200
+        assert response.context["categories"] == ChallengeCategory.choices()
+        assert b"Web Exploitation" in response.content
+        assert ctf_challenge.name.encode() in response.content
 
 
 class TestAdminParticipantListView:
