@@ -1,5 +1,3 @@
-import { Link } from "react-router-dom";
-
 import { Loader2 } from "lucide-react";
 
 import { useCtfRangeStatus, useVpnProfileDownload } from "@/api/ctf";
@@ -8,15 +6,13 @@ import type { CtfRangeStatus } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useGuacamoleSession } from "@/features/mission-control/guacamole";
-import { cn } from "@/lib/utils";
 
 import { titleCase } from "./format";
-import { ctfTerminalPath } from "./routes";
 
 const READY = "ready";
 
@@ -34,13 +30,6 @@ function TargetBoxRow({ box }: Readonly<{ box: CtfTargetInstance }>) {
       <TableCell>{titleCase(box.os_type)}</TableCell>
       <TableCell>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to={ctfTerminalPath(box.uuid)}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            aria-label={`Open ${box.name || "range box"} terminal`}
-          >
-            Terminal
-          </Link>
           {(["ssh", "rdp"] as const).map((protocol) => {
             const busy = session.pendingProtocol === protocol;
             const label = protocol.toUpperCase();
