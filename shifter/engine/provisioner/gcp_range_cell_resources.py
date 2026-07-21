@@ -263,7 +263,6 @@ import base64
 import json
 import pathlib
 import subprocess
-import urllib.parse
 import urllib.request
 
 metadata = urllib.request.Request(
@@ -272,7 +271,7 @@ metadata = urllib.request.Request(
 )
 with urllib.request.urlopen(metadata, timeout=10) as response:
     token = json.load(response)["access_token"]
-name = urllib.parse.quote("projects/{project_id}/secrets/{secret_id}/versions/latest", safe="")
+name = "projects/{project_id}/secrets/{secret_id}/versions/latest"
 request = urllib.request.Request(
     f"https://secretmanager.googleapis.com/v1/{{name}}:access",
     headers={{"Authorization": f"Bearer {{token}}"}},
@@ -299,6 +298,7 @@ server 172.30.0.0 255.255.255.0
 ca /etc/openvpn/server/ca.crt
 cert /etc/openvpn/server/server.crt
 key /etc/openvpn/server/server.key
+dh none
 tls-crypt /etc/openvpn/server/tls-crypt.key
 verify-client-cert require
 remote-cert-eku "TLS Web Client Authentication"
@@ -368,7 +368,7 @@ def healthy():
 class Handler(socketserver.BaseRequestHandler):
     def handle(self):
         if healthy():
-            self.request.sendall(b"ready\\n")
+            self.request.sendall(b"ready\\\\n")
 
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
