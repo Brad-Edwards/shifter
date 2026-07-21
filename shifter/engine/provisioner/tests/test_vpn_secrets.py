@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from botocore.exceptions import ClientError
 
+import vpn_secrets
 from gcp_vpn_identity import gcp_vpn_gateway_service_account_email
 from vpn_secrets import AWSVpnSecretOps, GCPVpnSecretOps, openvpn_access_enabled
 
@@ -59,6 +60,10 @@ class _AlreadyExists(Exception):
     pass
 
 
+class _InvalidArgument(Exception):
+    pass
+
+
 class _FakeBindings(list):
     def add(self):
         binding = SimpleNamespace(role="", members=[])
@@ -71,7 +76,7 @@ def _gcp_adapter(client, iam_client, *, project_id: str = "range-project") -> GC
     return GCPVpnSecretOps(
         client=client,
         iam_client=iam_client,
-        exceptions=SimpleNamespace(NotFound=_NotFound, AlreadyExists=_AlreadyExists),
+        exceptions=SimpleNamespace(NotFound=_NotFound, AlreadyExists=_AlreadyExists, InvalidArgument=_InvalidArgument),
         project_id=project_id,
         provisioner_service_account_email=f"provisioner@{project_id}.iam.gserviceaccount.com",
     )
@@ -109,6 +114,26 @@ def test_gcp_server_secret_grants_only_the_gateway_service_account():
             }
         ]
     }
+
+
+def test_gcp_server_secret_retries_gateway_identity_propagation(monkeypatch):
+    client = MagicMock()
+    iam_client = MagicMock()
+    client.access_secret_version.side_effect = _NotFound()
+    generation = uuid4()
+    adapter = _gcp_adapter(client, iam_client)
+    gateway_email = gcp_vpn_gateway_service_account_email("range-project", 42, generation)
+    client.set_iam_policy.side_effect = [
+        _InvalidArgument(f"400 Service account {gateway_email} does not exist."),
+        None,
+    ]
+    sleep = MagicMock()
+    monkeypatch.setattr(vpn_secrets.time, "sleep", sleep)
+
+    adapter.put_server(42, generation, "server-material")
+
+    assert client.set_iam_policy.call_count == 2
+    sleep.assert_called_once_with(adapter._SECRET_IAM_PROPAGATION_RETRY_SECONDS)
 
 
 def test_gcp_generations_get_distinct_gateway_identities_and_cleanup():
