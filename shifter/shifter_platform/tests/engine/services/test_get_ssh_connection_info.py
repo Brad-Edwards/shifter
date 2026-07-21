@@ -37,13 +37,13 @@ class TestGetSSHConnectionInfo:
             "role": "attacker",
             "os_type": "kali",
             "cloud_provider": "gcp",
-            "gcp_host_public_key": "ssh-ed25519 AAAATESTHOSTKEY shifter",
             "provider_metadata": {
                 "gcp": {
                     "instance_name": "shifter-range-vm-1",
                     "private_ip": "10.50.1.10",
                     "ssh_key_secret_id": "projects/test/secrets/range-ssh-key",
                     "ssh_username": "kali",
+                    "host_public_key": "ssh-ed25519 AAAATESTHOSTKEY shifter",
                 }
             },
         }

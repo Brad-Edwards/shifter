@@ -136,10 +136,12 @@ def _resolve_instance_ssh_host_public_key(instance: dict[str, Any]) -> str:
         instance.get("gcp_host_public_key"),
         instance.get("gdc_host_public_key"),
         instance.get("ssh_host_public_key"),
+        instance.get("host_public_key"),
         provider_metadata.get("participant_ssh_host_public_key"),
         provider_metadata.get("gcp_host_public_key"),
         provider_metadata.get("gdc_host_public_key"),
         provider_metadata.get("ssh_host_public_key"),
+        provider_metadata.get("host_public_key"),
     )
 
 
