@@ -17,8 +17,15 @@ import { ctfChallengeDetailPath } from "./routes";
 
 const UNCATEGORIZED = "Uncategorized";
 const MISSION_CATEGORY = /^Mission\s+(\d+)\b/i;
+const START_HERE_CATEGORY = /^Start Here$/i;
 
 function compareCategories(left: string, right: string): number {
+  const leftStart = START_HERE_CATEGORY.test(left);
+  const rightStart = START_HERE_CATEGORY.test(right);
+  if (leftStart || rightStart) {
+    if (leftStart && rightStart) return left.localeCompare(right);
+    return leftStart ? -1 : 1;
+  }
   const leftMission = MISSION_CATEGORY.exec(left);
   const rightMission = MISSION_CATEGORY.exec(right);
   if (leftMission && rightMission) {
