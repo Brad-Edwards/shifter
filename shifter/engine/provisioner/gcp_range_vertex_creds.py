@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from contextlib import suppress
 from typing import Protocol
 
@@ -125,6 +126,7 @@ def ensure_range_vertex_key(
     google_exceptions: _GoogleExceptions | None = None,
     project_id: str | None = None,
     host_service_account_email: str = "",
+    shared_key_secret_id: str | None = None,
 ) -> str:
     """Mint (or reuse) a per-range Vertex SA key and return its secret name.
 
@@ -151,11 +153,21 @@ def ensure_range_vertex_key(
         logger.info("Range Vertex key secret exists secret_fp=%s", safe_log_fingerprint(secret_name))
         return secret_name
 
-    iam = iam_client or _build_iam_client()
-    key = iam.create_service_account_key(request={"name": f"projects/-/serviceAccounts/{service_account_email}"})
-    key_json = (
-        key.private_key_data.decode("utf-8") if isinstance(key.private_key_data, bytes) else str(key.private_key_data)
-    )
+    shared_secret_id = (
+        shared_key_secret_id
+        if shared_key_secret_id is not None
+        else os.environ.get("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "")
+    ).strip()
+    if shared_secret_id:
+        shared_secret_name = f"projects/{resolved_project}/secrets/{shared_secret_id}"
+        shared_version = secrets.access_secret_version(request={"name": f"{shared_secret_name}/versions/latest"})
+        key_data = shared_version.payload.data
+        key_json = key_data if isinstance(key_data, bytes) else str(key_data).encode("utf-8")
+    else:
+        iam = iam_client or _build_iam_client()
+        key = iam.create_service_account_key(request={"name": f"projects/-/serviceAccounts/{service_account_email}"})
+        key_data = key.private_key_data
+        key_json = key_data if isinstance(key_data, bytes) else str(key_data).encode("utf-8")
 
     with suppress(exceptions.AlreadyExists):
         secrets.create_secret(
@@ -165,7 +177,7 @@ def ensure_range_vertex_key(
                 "secret": {"replication": {"automatic": {}}},
             }
         )
-    secrets.add_secret_version(request={"parent": secret_name, "payload": {"data": key_json.encode("utf-8")}})
+    secrets.add_secret_version(request={"parent": secret_name, "payload": {"data": key_json}})
     if host_service_account_email:
         # The secret is freshly created here, so set (not merge) a policy that
         # grants only the range host SA read access to this one secret.
@@ -182,7 +194,8 @@ def ensure_range_vertex_key(
                 },
             }
         )
-    logger.info("Minted range Vertex key secret_fp=%s", safe_log_fingerprint(secret_name))
+    action = "Copied shared" if shared_secret_id else "Minted"
+    logger.info("%s range Vertex key secret_fp=%s", action, safe_log_fingerprint(secret_name))
     return secret_name
 
 
@@ -193,6 +206,7 @@ def delete_range_vertex_key(
     secret_client: _SecretClient | None = None,
     google_exceptions: _GoogleExceptions | None = None,
     project_id: str | None = None,
+    shared_key_secret_id: str | None = None,
 ) -> None:
     """Delete a range's Vertex SA key and its secret, ignoring missing resources."""
     try:
@@ -204,10 +218,17 @@ def delete_range_vertex_key(
     secret_id = _vertex_secret_id(range_id)
     secret_name = f"projects/{resolved_project}/secrets/{secret_id}"
 
+    shared_secret_id = (
+        shared_key_secret_id
+        if shared_key_secret_id is not None
+        else os.environ.get("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "")
+    ).strip()
+
     key_name = ""
-    with suppress(exceptions.NotFound):
-        response = secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
-        key_name = _key_resource_name(response.payload.data)
+    if not shared_secret_id:
+        with suppress(exceptions.NotFound):
+            response = secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
+            key_name = _key_resource_name(response.payload.data)
 
     if key_name:
         iam = iam_client or _build_iam_client()

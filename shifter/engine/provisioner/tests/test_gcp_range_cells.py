@@ -20,6 +20,7 @@ from shared.range_cells import (
 from shared.remote_access import build_openvpn_capability
 
 from config import GCERangeCellConfig, GCERangeImageProfile
+from gcp_range_cell_firewall import build_firewall_plan
 from gcp_range_cell_outputs import InstanceCredentials, instance_output
 from gcp_range_cells import (
     GCEGuestSecretOps,
@@ -88,6 +89,12 @@ def _sample_config() -> GCERangeCellConfig:
         },
         portal_network_cidrs=("10.40.0.0/20",),
     )
+
+
+def test_preprovisioned_firewall_mode_skips_per_range_rules(monkeypatch):
+    monkeypatch.setenv("GCP_RANGE_PREPROVISIONED_FIREWALLS", "true")
+
+    assert build_firewall_plan(42, [], _sample_config()) == []
 
 
 def _scenario_payload() -> dict:
