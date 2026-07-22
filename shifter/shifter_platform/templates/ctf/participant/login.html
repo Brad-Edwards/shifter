@@ -15,22 +15,22 @@
   <body class="theme-dark ctf-login-page">
     <main class="ctf-login-shell">
       <section class="ctf-login-intro" aria-labelledby="ctf-login-heading">
-        <div class="ctf-login-brand" aria-label="Shifter CTF">
+        <div class="ctf-login-brand" aria-label="{% trans 'Shifter CTF' %}">
           <span class="ctf-login-brand-mark" aria-hidden="true"></span>
-          <span>SHIFTER // CTF</span>
+          <span>{% trans "SHIFTER // CTF" %}</span>
         </div>
         <p class="ctf-login-kicker">{% trans "AUTHORIZED PARTICIPANTS" %}</p>
         <h1 id="ctf-login-heading">{% trans "Enter the range." %}</h1>
         <p class="ctf-login-summary">
           {% trans "Sign in with the participant credentials supplied by your event organizer." %}
         </p>
-        <div class="ctf-login-status" aria-label="Platform status">
+        <div class="ctf-login-status" aria-label="{% trans 'Platform status' %}">
           <span class="ctf-login-status-dot" aria-hidden="true"></span>
           {% trans "Competition environment online" %}
         </div>
       </section>
 
-      <section class="ctf-login-card" aria-label="Participant sign in">
+      <section class="ctf-login-card" aria-label="{% trans 'Participant sign in' %}">
         <div class="ctf-login-card-header">
           <p class="ctf-login-eyebrow">{% trans "Participant access" %}</p>
           <h2>{% trans "Sign in" %}</h2>
