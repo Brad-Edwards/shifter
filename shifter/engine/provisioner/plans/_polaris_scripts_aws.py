@@ -5,7 +5,7 @@ a14-kali agent-credential scripts (#1377) live here; shared/provider-neutral
 scripts stay in ``_polaris_scripts.py``.
 """
 
-from ._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_COMMON
+from ._polaris_scripts_aux import VERIFY_POLARIS_BOOTSTRAP_COMMON
 
 # AWS-only fragments that POLARIS_RANGE_BOOTSTRAP_SCRIPT substitutes via the
 # {{ aws_agent_setup_block }} / {{ aws_agent_compose_block }} template tokens

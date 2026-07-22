@@ -132,12 +132,8 @@ body.ctf-login-page {
     letter-spacing: -0.03em;
 }
 
-.ctf-login-card-header > p:last-child {
-    margin: 8px 0 0;
-    color: #87969c;
-    font-size: 13px;
-}
-
+/* Declared before `.ctf-login-card-header > p:last-child` so the paragraph
+   selectors stay ordered least- to most-specific (no-descending-specificity). */
 .ctf-login-alert {
     display: flex;
     align-items: flex-start;
@@ -166,6 +162,12 @@ body.ctf-login-page {
     margin: 0;
     font-size: 13px;
     line-height: 1.5;
+}
+
+.ctf-login-card-header > p:last-child {
+    margin: 8px 0 0;
+    color: #87969c;
+    font-size: 13px;
 }
 
 .ctf-login-form {

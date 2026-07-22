@@ -1,8 +1,10 @@
 """Context processors for mission_control app."""
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from django.conf import settings
 from django.http import HttpRequest
@@ -11,6 +13,9 @@ from cms.services import get_active_range, get_scenario, has_ready_active_range
 from mission_control.utils import build_connection_urls
 from shared.enums import RangeSource
 from shared.schemas import InstanceContext, RangeContext
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +122,7 @@ def _needs_terminal_payload(request: HttpRequest) -> bool:
     return bool(match and match.view_name == _TERMINAL_VIEW_NAME)
 
 
-def _range_source_for_user(user: Any) -> RangeSource:
+def _range_source_for_user(user: User) -> RangeSource:
     """Select the product source whose active range should back the UI."""
     from shared.auth import is_ctf_participant_only
 
