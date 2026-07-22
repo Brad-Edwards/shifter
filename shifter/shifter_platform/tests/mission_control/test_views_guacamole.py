@@ -1,11 +1,12 @@
-"""Behavior tests for mission_control.views._guacamole — RDP and range-SSH URLs.
+"""Behavior tests for the Guacamole RDP and range-SSH URL endpoints.
 
-Drives the real views → real ``engine.services`` (against real READY ``Range``
-rows with provisioned instances) → real ``mission_control.guacamole`` URL
-builders. Only the cloud/network boundaries are mocked: the boto3 Secrets
-Manager client (``secrets_boundary``) and the urllib Guacamole token POST
-(``guac_exchange``), instead of patching ``engine.services.*`` /
-``mission_control.guacamole.*`` / the bootstrap enqueue.
+Drives the real DRF views → real ``mission_control.guacamole_session`` service
+→ real ``engine.services`` (against real READY ``Range`` rows with provisioned
+instances) → real ``mission_control.guacamole`` URL builders. Only the
+cloud/network boundaries are mocked: the boto3 Secrets Manager client
+(``secrets_boundary``) and the urllib Guacamole token POST (``guac_exchange``),
+instead of patching ``engine.services.*`` / ``mission_control.guacamole.*`` /
+the bootstrap enqueue.
 
 NGFW SSH paths are exercised in ``test_api_ngfw_ssh_url.py``; the bootstrap
 status/open polling views and the ``_sftp_root_for_os`` helper are pure (no
@@ -337,19 +338,19 @@ class TestGuacamoleRDPURL:
 
 class TestSftpRootHelper:
     def test_known_os_returns_path(self):
-        from mission_control.views._guacamole_builders import _sftp_root_for_os
+        from mission_control.guacamole_session import _sftp_root_for_os
 
         assert _sftp_root_for_os("kali") == "/home/kali"
         assert _sftp_root_for_os("ubuntu") == "/home/ubuntu"
         assert _sftp_root_for_os("windows").startswith("/C:")
 
     def test_unknown_os_returns_none(self):
-        from mission_control.views._guacamole_builders import _sftp_root_for_os
+        from mission_control.guacamole_session import _sftp_root_for_os
 
         assert _sftp_root_for_os("unknown") is None
 
     def test_none_returns_none(self):
-        from mission_control.views._guacamole_builders import _sftp_root_for_os
+        from mission_control.guacamole_session import _sftp_root_for_os
 
         assert _sftp_root_for_os(None) is None
 
