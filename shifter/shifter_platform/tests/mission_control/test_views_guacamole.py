@@ -338,19 +338,19 @@ class TestGuacamoleRDPURL:
 
 class TestSftpRootHelper:
     def test_known_os_returns_path(self):
-        from mission_control.guacamole_session import _sftp_root_for_os
+        from mission_control._guacamole_session_builders import _sftp_root_for_os
 
         assert _sftp_root_for_os("kali") == "/home/kali"
         assert _sftp_root_for_os("ubuntu") == "/home/ubuntu"
         assert _sftp_root_for_os("windows").startswith("/C:")
 
     def test_unknown_os_returns_none(self):
-        from mission_control.guacamole_session import _sftp_root_for_os
+        from mission_control._guacamole_session_builders import _sftp_root_for_os
 
         assert _sftp_root_for_os("unknown") is None
 
     def test_none_returns_none(self):
-        from mission_control.guacamole_session import _sftp_root_for_os
+        from mission_control._guacamole_session_builders import _sftp_root_for_os
 
         assert _sftp_root_for_os(None) is None
 

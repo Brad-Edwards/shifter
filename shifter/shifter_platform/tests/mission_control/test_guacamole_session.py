@@ -91,17 +91,20 @@ class TestLaunchSucceeds:
 class TestLaunchSynchronousFailures:
     def test_missing_signing_secret_fails_closed_with_503(self, user, settings):
         settings.GUACAMOLE_JSON_AUTH_SECRET = ""
+        target_id = str(uuid4())
 
         with pytest.raises(BootstrapFailure) as exc:
-            launch_guacamole_session(user=user, protocol=_PROTOCOL.RDP, target_id=str(uuid4()))
+            launch_guacamole_session(user=user, protocol=_PROTOCOL.RDP, target_id=target_id)
 
         assert exc.value.status_code == 503
         assert "not configured" in str(exc.value)
 
     def test_unsupported_access_kind_is_rejected(self, user, guac_configured):
         # The closed dispatch never enqueues an unknown access kind.
+        target_id = str(uuid4())
+
         with pytest.raises(ValueError, match="Unsupported Guacamole access kind"):
-            launch_guacamole_session(user=user, protocol="vnc", target_id=str(uuid4()))
+            launch_guacamole_session(user=user, protocol="vnc", target_id=target_id)
 
 
 class TestLaunchSaturation:
@@ -115,6 +118,7 @@ class TestLaunchSaturation:
         from mission_control import guacamole_bootstrap
 
         settings.GUACAMOLE_BOOTSTRAP_WORKERS = 1
+        target_id = str(uuid4())
         slots = guacamole_bootstrap._get_slots()
         acquired = slots.acquire(blocking=False)
         try:
@@ -122,7 +126,7 @@ class TestLaunchSaturation:
                 caplog.at_level(logging.WARNING, logger="mission_control.guacamole_session"),
                 pytest.raises(BootstrapQueueFull),
             ):
-                launch_guacamole_session(user=user, protocol=_PROTOCOL.RANGE_SSH, target_id=str(uuid4()))
+                launch_guacamole_session(user=user, protocol=_PROTOCOL.RANGE_SSH, target_id=target_id)
         finally:
             if acquired:
                 slots.release()

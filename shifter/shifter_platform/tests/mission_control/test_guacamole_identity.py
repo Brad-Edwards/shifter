@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 
-from mission_control.guacamole_session import _build_rdp_url, guacamole_identity
+from mission_control._guacamole_session_builders import _build_rdp_url, guacamole_identity
 
 User = get_user_model()
 
@@ -48,7 +48,7 @@ def test_rdp_url_build_uses_nonblank_identity_for_email_less_account(monkeypatch
     captured: dict[str, str] = {}
 
     monkeypatch.setattr(
-        "mission_control.guacamole_session._resolve_rdp_conn",
+        "mission_control._guacamole_session_builders._resolve_rdp_conn",
         lambda _user, _instance_uuid: dict(_CONN_INFO),
     )
 
