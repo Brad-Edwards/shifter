@@ -164,6 +164,34 @@ def test_gcp_public_dispatch_enqueues_without_launching(settings) -> None:
     assert ref.startswith(f"{settings.ENGINE_TASK_CLUSTER}/pulumi-provisioner-")
 
 
+@pytest.mark.parametrize("provider", ["aws", "gcp"])
+def test_public_dispatch_enqueues_the_same_intent_on_both_providers(settings, provider: str) -> None:
+    """AWS and GCP share the single launch-intent contract (ADR-043-R2, #1833):
+    the public dispatch entrypoint persists exactly one ``ProvisionerLaunchIntent``
+    and returns its reserved ref without ever launching the provider TaskRunner,
+    regardless of which provider is configured."""
+    from engine.ecs import start_range_provisioning
+    from engine.models import ProvisionerLaunchIntent
+
+    settings.CLOUD_PROVIDER = provider
+    settings.LOCAL_PROVISIONER = None
+    settings.ENGINE_TASK_CLUSTER = "shifter-jobs"
+    settings.ENGINE_TASK_DEFINITION = "registry.example/provisioner:sha"
+    if provider == "aws":
+        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
+        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
+    request_id = UUID("99999999-9999-9999-9999-999999999999")
+    _authorized_range(str(request_id))
+
+    ref = start_range_provisioning(request_id)
+
+    intent = ProvisionerLaunchIntent.objects.get()
+    assert ref == intent.task_ref
+    assert intent.payload["resource"] == "range"
+    assert intent.payload["operation"] == "provision"
+    assert intent.payload["request_id"] == str(request_id)
+
+
 def test_gcp_public_dispatch_does_not_enqueue_with_incomplete_task_config(settings) -> None:
     from engine.ecs import start_range_provisioning
     from engine.models import ProvisionerLaunchIntent

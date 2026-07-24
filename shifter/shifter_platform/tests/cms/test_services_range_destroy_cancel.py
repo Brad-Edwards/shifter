@@ -6,8 +6,6 @@ instead of patching ``RangeInstance.objects`` / ``get_range`` / the engine calls
 ``audit_log``.
 """
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -20,7 +18,6 @@ from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
-from shared.cloud.exceptions import CloudTaskError
 from shared.enums import ResourceStatus
 from tests.conftest import INVALID_RANGE_IDS, INVALID_USERS
 
@@ -43,18 +40,6 @@ def _request_id_of(range_instance):
     return str(range_instance.request.request_id)
 
 
-def _configure_failing_ecs(settings):
-    settings.CLOUD_PROVIDER = "aws"
-    settings.LOCAL_PROVISIONER = None
-    settings.ENGINE_TASK_CLUSTER = "test-cluster"
-    settings.ENGINE_TASK_DEFINITION = "test-taskdef"
-    settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
-    settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
-    client = MagicMock()
-    client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
-    return client
-
-
 class TestDestroyRange:
     def test_sets_status_to_destroying_and_soft_deletes(self, user, provision_range):
         # range_id deliberately differs from pk; destroy resolves by pk (#1139).
@@ -71,17 +56,10 @@ class TestDestroyRange:
             entity_type=AuditEntityType.RANGE, entity_id=ri.pk, action=AuditAction.DEPROVISION
         ).exists()
 
-    def test_reverts_when_engine_dispatch_fails(self, user, provision_range, settings):
-        ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.READY)
-        ri.status = ResourceStatus.READY.value
-        ri.save(update_fields=["status"])
-
-        with patch("boto3.client", return_value=_configure_failing_ecs(settings)), pytest.raises(CloudTaskError):
-            services.destroy_range(user, ri.pk)
-
-        reloaded = RangeInstance.objects.get(pk=ri.pk)
-        assert reloaded.status == ResourceStatus.READY.value
-        assert reloaded.deleted_at is None
+    # The old synchronous "provider dispatch failed -> range reverted" path no
+    # longer exists: dispatch enqueues a launch intent and the drainer owns
+    # provider-dispatch failure (DLQ -> FAILED), covered by
+    # tests/engine/test_provisioner_launch_outbox.py (ADR-043-R2, #1833).
 
     def test_raises_cms_error_when_range_not_found(self, user):
         with pytest.raises(CMSError, match="Range 999999 not found"):
@@ -227,16 +205,8 @@ class TestCancelRangeByRequestId:
             services.cancel_range_by_request_id(user, str_)
 
 
-class TestDestroyRangeByRequestId:
-    def test_reverts_when_engine_dispatch_fails(self, user, provision_range, settings):
-        ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.READY)
-        ri.status = ResourceStatus.READY.value
-        ri.save(update_fields=["status"])
-
-        request_id = _request_id_of(ri)
-        with patch("boto3.client", return_value=_configure_failing_ecs(settings)), pytest.raises(CloudTaskError):
-            services.destroy_range_by_request_id(user, request_id)
-
-        reloaded = RangeInstance.objects.get(pk=ri.pk)
-        assert reloaded.status == ResourceStatus.READY.value
-        assert reloaded.deleted_at is None
+# TestDestroyRangeByRequestId's only test, "reverts when engine dispatch
+# fails", asserted the old synchronous "provider dispatch failed -> range
+# reverted" path, which no longer exists: dispatch enqueues a launch intent
+# and the drainer owns provider-dispatch failure (DLQ -> FAILED), covered by
+# tests/engine/test_provisioner_launch_outbox.py (ADR-043-R2, #1833).

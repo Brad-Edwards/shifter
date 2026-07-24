@@ -484,10 +484,10 @@ echo "Stopping existing containers..."
 # Docker stop timeout exceeds the Gunicorn graceful-timeout (30s) so long-lived
 # terminal/WebSocket connections drain before SIGKILL (issue #931). Sized below
 # the ASG termination drain window.
-docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
+docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
 # Force-remove so a redeploy is idempotent (matches scripts/portal-deploy/deploy_portal.sh,
 # #1127); the docker stop above already does the graceful drain (#931).
-docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
+docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
 
 echo "Starting portal..."
 eval docker run -d --name portal --restart unless-stopped -p 8000:8000 $COMMON_ENV "$IMAGE"
@@ -502,11 +502,13 @@ GUAC_PRUNE_HEALTH="--health-cmd='find /tmp/guacamole-bootstrap-prune-heartbeat -
 ACES_PRUNE_HEALTH="--health-cmd='find /tmp/aces-operation-record-prune-heartbeat -mmin -2 | grep -q .'"
 OUTBOX_DRAINER_HEALTH="--health-cmd='find /tmp/worker-outbox-drainer-heartbeat -mmin -2 | grep -q .'"
 RECONCILER_HEALTH="--health-cmd='find /tmp/worker-reconciler-heartbeat -mmin -2 | grep -q .'"
+PROVISIONER_LAUNCHER_HEALTH="--health-cmd='find /tmp/worker-provisioner-launcher-heartbeat -mmin -2 | grep -q .'"
 eval docker run -d --name worker-cms --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_CMS_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue cms
 eval docker run -d --name worker-engine --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_ENGINE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue engine
 eval docker run -d --name worker-mc --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_MC_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue mc
 eval docker run -d --name worker-outbox-drainer --restart unless-stopped $WORKER_HEALTH_BASE "$OUTBOX_DRAINER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py drain_range_event_outbox --loop --interval 10
 eval docker run -d --name worker-reconciler --restart unless-stopped $WORKER_HEALTH_BASE "$RECONCILER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py reconcile_range_events --loop --interval 60
+eval docker run -d --name worker-provisioner-launcher --restart unless-stopped $WORKER_HEALTH_BASE "$PROVISIONER_LAUNCHER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py drain_provisioner_launch_outbox --loop --interval 10
 eval docker run -d --name ctf-scheduler --restart unless-stopped $WORKER_HEALTH_BASE "$CTF_SCHEDULER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_ctf_scheduler
 eval docker run -d --name guacamole-bootstrap-prune --restart unless-stopped $WORKER_HEALTH_BASE "$GUAC_PRUNE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_guacamole_bootstrap_prune
 eval docker run -d --name aces-operation-record-prune --restart unless-stopped $WORKER_HEALTH_BASE "$ACES_PRUNE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_aces_operation_record_prune
