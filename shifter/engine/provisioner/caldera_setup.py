@@ -19,6 +19,7 @@ _DEFAULT_TARGET_ROLES = ["victim", "dc"]
 _DEFAULT_WINDOWS_DEFENDER_MODE = "path_exclusion"
 _DEFAULT_SERVER_WORKING_DIRECTORY = "/opt/caldera"
 _DEFAULT_SERVER_START_COMMAND = "/usr/local/bin/start-caldera"
+_ERR_INVALID_CALLBACK_PORT = "Invalid Caldera callback port in range spec"
 _WINDOWS_OS_TYPES = {"windows"}
 _SUPPORTED_TARGET_ROLES = frozenset({"victim", "dc"})
 _SUPPORTED_WINDOWS_DEFENDER_MODES = frozenset({"path_exclusion", "disable_realtime"})
@@ -26,6 +27,8 @@ _SUPPORTED_WINDOWS_DEFENDER_MODES = frozenset({"path_exclusion", "disable_realti
 
 @dataclass(frozen=True)
 class _CalderaRuntimeProfile:
+    """Provisioner-local Caldera runtime profile derived from the range spec."""
+
     enabled: bool = False
     callback_port: int = _DEFAULT_CALLBACK_PORT
     target_roles: list[str] = field(default_factory=lambda: list(_DEFAULT_TARGET_ROLES))
@@ -35,6 +38,8 @@ class _CalderaRuntimeProfile:
 
 
 def _normalize_caldera_profile(range_spec: dict[str, Any]) -> _CalderaRuntimeProfile:
+    """Return a validated Caldera runtime profile from a raw range spec."""
+
     raw = range_spec.get("caldera", False)
     if raw is None:
         return _CalderaRuntimeProfile()
@@ -66,23 +71,27 @@ def _normalize_caldera_profile(range_spec: dict[str, Any]) -> _CalderaRuntimePro
 
 
 def _parse_callback_port(raw: object) -> int:
+    """Parse and validate the Caldera callback port."""
+
     if isinstance(raw, bool):
-        raise SetupError("Invalid Caldera callback port in range spec")
+        raise SetupError(_ERR_INVALID_CALLBACK_PORT)
     if isinstance(raw, int):
         port = raw
     elif isinstance(raw, str):
         try:
             port = int(raw)
         except ValueError as exc:
-            raise SetupError("Invalid Caldera callback port in range spec") from exc
+            raise SetupError(_ERR_INVALID_CALLBACK_PORT) from exc
     else:
-        raise SetupError("Invalid Caldera callback port in range spec")
+        raise SetupError(_ERR_INVALID_CALLBACK_PORT)
     if port < 1 or port > 65535:
-        raise SetupError("Invalid Caldera callback port in range spec")
+        raise SetupError(_ERR_INVALID_CALLBACK_PORT)
     return port
 
 
 def _parse_target_roles(raw: object) -> list[str]:
+    """Parse the target roles that should receive sandcat agents."""
+
     if not isinstance(raw, list) or not raw:
         raise SetupError("Caldera target_roles must be a non-empty list")
     roles = [str(role) for role in raw]
@@ -95,6 +104,8 @@ def _parse_target_roles(raw: object) -> list[str]:
 
 
 def _required_string(raw: object, label: str) -> str:
+    """Return a stripped string value or raise a setup error."""
+
     value = str(raw or "").strip()
     if not value:
         raise SetupError(f"{label} is required")
@@ -102,10 +113,14 @@ def _required_string(raw: object, label: str) -> str:
 
 
 def _is_vm_instance(instance: dict[str, Any]) -> bool:
+    """Return whether an asset should be treated as a guest VM."""
+
     return instance.get("asset_type", "vm_runtime_vm") != "scenario_pod"
 
 
 def _select_caldera_attacker(vm_instances: list[dict[str, Any]]) -> dict[str, Any]:
+    """Select the single Kali attacker that hosts the Caldera server."""
+
     attackers = [instance for instance in vm_instances if instance.get("role") == "attacker"]
     kali_attackers = [instance for instance in attackers if instance.get("os") == "kali"]
     if len(attackers) != 1 or len(kali_attackers) != 1:
@@ -121,6 +136,8 @@ def _select_caldera_targets(
     attacker: dict[str, Any],
     target_roles: list[str],
 ) -> list[dict[str, Any]]:
+    """Select non-attacker VMs whose roles are configured as Caldera targets."""
+
     attacker_id = attacker.get("instance_id")
     return [
         instance
@@ -130,6 +147,8 @@ def _select_caldera_targets(
 
 
 def _wait_for_guest_or_raise(execution: GuestExecutionContext) -> None:
+    """Wait for guest command transport readiness or raise a setup error."""
+
     if not execution.wait_for_ready(timeout_seconds=_setup_ready_timeout(execution.transport_name)):
         raise SetupError(
             f"Caldera setup target {execution.target} did not become ready over {execution.transport_name}"
@@ -145,6 +164,8 @@ def _run_setup_plan_or_raise(
     context: dict[str, Any],
     failure_prefix: str,
 ) -> None:
+    """Run one setup plan against one guest and normalize failures."""
+
     execution = build_guest_execution_context(instance_data, os_type=os_type, role=role)
     orchestrator = SetupOrchestrator(executor=execution.executor)
     try:
@@ -162,6 +183,8 @@ def _run_setup_plan_or_raise(
 
 
 def _start_caldera_server(attacker: dict[str, Any], profile: _CalderaRuntimeProfile) -> str:
+    """Start the Caldera server on the attacker and return its callback URL."""
+
     plan = CalderaServerPlan()
     context = plan.get_context(
         {
@@ -179,10 +202,12 @@ def _start_caldera_server(attacker: dict[str, Any], profile: _CalderaRuntimeProf
         failure_prefix="Caldera server setup failed",
     )
     attacker_ip = str(attacker["private_ip"]).strip()
-    return f"http://{attacker_ip}:{profile.callback_port}"
+    return f"http://{attacker_ip}:{profile.callback_port}"  # NOSONAR - private range; Sandcat uses HTTP.
 
 
 def _deploy_sandcat(target: dict[str, Any], server_url: str, profile: _CalderaRuntimeProfile) -> None:
+    """Deploy the appropriate sandcat agent to a target VM."""
+
     os_type = str(target.get("os", "") or "")
     role = str(target.get("role", "") or "")
     if os_type in _WINDOWS_OS_TYPES:

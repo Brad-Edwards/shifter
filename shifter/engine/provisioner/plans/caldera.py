@@ -265,7 +265,8 @@ class CalderaServerPlan:
         is_verification=True,
     )
 
-    def get_context(self, config: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def get_context(config: dict[str, Any]) -> dict[str, Any]:
         """Return defaulted server start context."""
         return {
             "callback_port": config.get("callback_port", _DEFAULT_CALLBACK_PORT),
@@ -300,7 +301,8 @@ class LinuxSandcatAgentPlan:
         is_verification=True,
     )
 
-    def get_context(self, config: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def get_context(config: dict[str, Any]) -> dict[str, Any]:
         """Return agent callback context."""
         server_url = config.get("caldera_server_url")
         if not server_url:
@@ -331,7 +333,8 @@ class WindowsSandcatAgentPlan:
         is_verification=True,
     )
 
-    def get_context(self, config: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def get_context(config: dict[str, Any]) -> dict[str, Any]:
         """Return agent callback and Windows Defender policy context."""
         server_url = config.get("caldera_server_url")
         if not server_url:

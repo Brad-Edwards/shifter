@@ -43,21 +43,21 @@ def test_caldera_disabled_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     build_context.assert_not_called()
 
 
-def test_enabled_caldera_requires_exactly_one_kali_attacker() -> None:
-    with pytest.raises(SetupError, match="exactly one Kali attacker"):
-        caldera_setup.run_caldera_setup_if_enabled(
-            [_instance("i-victim", role="victim", os_type="ubuntu", private_ip="10.0.1.20")],
-            {"caldera": {"enabled": True}},
-        )
+def test_enabled_caldera_requires_a_kali_attacker() -> None:
+    instances = [_instance("i-victim", role="victim", os_type="ubuntu", private_ip="10.0.1.20")]
 
     with pytest.raises(SetupError, match="exactly one Kali attacker"):
-        caldera_setup.run_caldera_setup_if_enabled(
-            [
-                _instance("i-a1", role="attacker", os_type="kali", private_ip="10.0.1.10"),
-                _instance("i-a2", role="attacker", os_type="kali", private_ip="10.0.1.11"),
-            ],
-            {"caldera": {"enabled": True}},
-        )
+        caldera_setup.run_caldera_setup_if_enabled(instances, {"caldera": {"enabled": True}})
+
+
+def test_enabled_caldera_rejects_multiple_attackers() -> None:
+    instances = [
+        _instance("i-a1", role="attacker", os_type="kali", private_ip="10.0.1.10"),
+        _instance("i-a2", role="attacker", os_type="kali", private_ip="10.0.1.11"),
+    ]
+
+    with pytest.raises(SetupError, match="exactly one Kali attacker"):
+        caldera_setup.run_caldera_setup_if_enabled(instances, {"caldera": {"enabled": True}})
 
 
 def test_starts_server_before_deploying_agents(monkeypatch: pytest.MonkeyPatch) -> None:
