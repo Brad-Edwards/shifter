@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -141,9 +142,10 @@ def _boundary_response(user, path):
     return CTFAccountBoundaryMiddleware(lambda _request: HttpResponse("escaped"))(request)
 
 
-def test_ctf_boundary_admits_live_participant_spa_bootstrap_and_guacamole_range_access(ctf_event_active, monkeypatch):
+def test_ctf_boundary_admits_live_participant_spa_bootstrap_and_range_access(ctf_event_active, monkeypatch):
     # Issue #1740: a live participant must reach the Mission Control Guacamole
-    # range-access endpoints (RDP/SSH bootstrap + status/open) for their own box.
+    # range-access surfaces (terminal page + RDP/SSH bootstrap + status/open)
+    # for their own box.
     from management.services import set_ctf_password_change_required
 
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -159,10 +161,80 @@ def test_ctf_boundary_admits_live_participant_spa_bootstrap_and_guacamole_range_
         "/api/v1/mission-control/guacamole/ssh-url/",
         "/api/v1/mission-control/guacamole/bootstrap/00000000-0000-0000-0000-000000000000/",
         "/api/v1/mission-control/guacamole/bootstrap/00000000-0000-0000-0000-000000000000/open/",
+        "/mission-control/terminal/",
     ):
         response = _boundary_response(user, path)
         assert response.status_code == 200, path
         assert response.content == b"escaped", path
+
+
+def _websocket_boundary_messages(user, path):
+    """Run the CTF WebSocket boundary and return downstream calls/messages."""
+    from config.websocket_auth import CTFAccountWebSocketBoundary
+
+    downstream_calls = []
+    messages = []
+
+    async def downstream(scope, receive, send):
+        downstream_calls.append(scope["path"])
+
+    async def receive():
+        return {"type": "websocket.connect"}
+
+    async def send(message):
+        messages.append(message)
+
+    boundary = CTFAccountWebSocketBoundary(downstream)
+    asyncio.run(boundary({"user": user, "path": path}, receive, send))
+    return downstream_calls, messages
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ctf_websocket_boundary_admits_live_participant_terminal(ctf_event_active, monkeypatch):
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+
+    calls, messages = _websocket_boundary_messages(
+        User.objects.get(pk=participant.user_id),
+        "/ws/terminal/00000000-0000-0000-0000-000000000000/",
+    )
+
+    assert calls == ["/ws/terminal/00000000-0000-0000-0000-000000000000/"]
+    assert messages == []
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ctf_websocket_boundary_denies_other_platform_socket(ctf_event_active, monkeypatch):
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+
+    calls, messages = _websocket_boundary_messages(
+        User.objects.get(pk=participant.user_id),
+        "/ws/range-status/00000000-0000-0000-0000-000000000000/",
+    )
+
+    assert calls == []
+    assert messages == [{"type": "websocket.close", "code": 4403}]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ctf_websocket_boundary_denies_terminal_before_password_change(ctf_event_active, monkeypatch):
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+
+    calls, messages = _websocket_boundary_messages(
+        User.objects.get(pk=participant.user_id),
+        "/ws/terminal/00000000-0000-0000-0000-000000000000/",
+    )
+
+    assert calls == []
+    assert messages == [{"type": "websocket.close", "code": 4403}]
 
 
 def test_live_participant_can_load_real_spa_bootstrap(client, ctf_event_active, monkeypatch):
@@ -184,7 +256,7 @@ def test_live_participant_can_load_real_spa_bootstrap(client, ctf_event_active, 
 
 def test_ctf_boundary_still_denies_non_guacamole_mission_control(ctf_event_active, monkeypatch):
     # The exception is narrow: NGFW, range lifecycle, credentials, and the
-    # terminal page stay blocked for temporary accounts (issue #1740).
+    # rest of Mission Control stay blocked for temporary accounts (issue #1740).
     from management.services import set_ctf_password_change_required
 
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -197,7 +269,8 @@ def test_ctf_boundary_still_denies_non_guacamole_mission_control(ctf_event_activ
         "/api/v1/mission-control/ngfw/00000000-0000-0000-0000-000000000000/ssh-url/",
         "/api/v1/mission-control/range/launch/",
         "/api/v1/mission-control/credentials/",
-        "/mission-control/terminal/",
+        "/mission-control/",
+        "/mission-control/agents/",
     ):
         response = _boundary_response(user, path)
         assert response.status_code == 403, path
@@ -329,6 +402,7 @@ def test_post_event_retention_purge_anonymizes_accounts(ctf_event_active, monkey
 
 def test_ctf_login_rate_limits_repeated_failures(client, standard_user, settings):
     settings.CTF_LOGIN_RATE_LIMIT_MAX = 2
+    settings.CTF_LOGIN_SOURCE_RATE_LIMIT_MAX = 20
     settings.CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 300
 
     client.post(reverse("ctf:ctf_login"), {"username": standard_user.username, "password": "wrong"})
@@ -336,6 +410,27 @@ def test_ctf_login_rate_limits_repeated_failures(client, standard_user, settings
     response = client.post(
         reverse("ctf:ctf_login"),
         {"username": standard_user.username, "password": "wrong"},
+    )
+
+    assert response.status_code == 429
+    assert response["Retry-After"] == "300"
+
+
+def test_ctf_login_allows_event_users_behind_shared_source(client, settings):
+    settings.CTF_LOGIN_RATE_LIMIT_MAX = 2
+    settings.CTF_LOGIN_SOURCE_RATE_LIMIT_MAX = 6
+    settings.CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 300
+
+    for participant_number in range(6):
+        response = client.post(
+            reverse("ctf:ctf_login"),
+            {"username": f"event-participant-{participant_number}", "password": "wrong"},
+        )
+        assert response.status_code == 200
+
+    response = client.post(
+        reverse("ctf:ctf_login"),
+        {"username": "event-participant-7", "password": "wrong"},
     )
 
     assert response.status_code == 429

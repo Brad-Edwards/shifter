@@ -340,6 +340,7 @@ class GuacRDPUrlRequest:
     api_base_url: str | None = None
     sftp_root_directory: str | None = None
     sftp_private_key: str | None = None
+    security: str = "any"
 
 
 def create_guacamole_rdp_url(req: GuacRDPUrlRequest) -> str:
@@ -371,6 +372,7 @@ def create_guacamole_rdp_url(req: GuacRDPUrlRequest) -> str:
                     password=req.rdp_password,
                     sftp_root_directory=req.sftp_root_directory,
                     sftp_private_key=req.sftp_private_key,
+                    security=req.security,
                 )
             ),
         }

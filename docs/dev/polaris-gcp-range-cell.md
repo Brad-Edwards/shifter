@@ -72,7 +72,7 @@ Vertex-only:
 Also set:
 
 - `GCP_RANGE_VERTEX_PROJECT_ID` (defaults to `GCP_PROJECT_ID`).
-- `GCP_RANGE_VERTEX_REGION` (defaults to `us-east5`).
+- `GCP_RANGE_VERTEX_REGION` (defaults to `global`, required by the default Claude Sonnet 4.6 model).
 - `GCP_RANGE_KALI_ANTHROPIC_MODEL` and
   `GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL` for the Vertex model ids.
 
