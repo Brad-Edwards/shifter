@@ -192,6 +192,33 @@ def test_public_dispatch_enqueues_the_same_intent_on_both_providers(settings, pr
     assert intent.payload["request_id"] == str(request_id)
 
 
+@pytest.mark.parametrize("provider", ["aws", "gcp"])
+def test_public_dispatch_fails_closed_when_domain_state_forbids_operation(settings, provider: str) -> None:
+    """Fail-closed authorization (ADR-043-R2): the dispatch entrypoint enqueues
+    nothing and raises when current domain state does not authorize the operation.
+    The happy-path dispatch tests all build the row in an authorizing status, so
+    this exercises the ``authorize_provisioner_payload`` rejection branch they
+    never hit — deleting that check would now fail a test, on both providers."""
+    from engine.ecs import start_range_provisioning
+    from engine.models import ProvisionerLaunchIntent, Range
+
+    settings.CLOUD_PROVIDER = provider
+    settings.LOCAL_PROVISIONER = None
+    settings.ENGINE_TASK_CLUSTER = "shifter-jobs"
+    settings.ENGINE_TASK_DEFINITION = "registry.example/provisioner:sha"
+    if provider == "aws":
+        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
+        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
+    request_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    _authorized_range(request_id)
+    # READY is not a provision-authorizing status; the operation must fail closed.
+    Range.objects.filter(request__request_id=request_id).update(status=Range.Status.READY)
+
+    with pytest.raises(ValueError):
+        start_range_provisioning(UUID(request_id))
+    assert not ProvisionerLaunchIntent.objects.exists()
+
+
 def test_gcp_public_dispatch_does_not_enqueue_with_incomplete_task_config(settings) -> None:
     from engine.ecs import start_range_provisioning
     from engine.models import ProvisionerLaunchIntent
