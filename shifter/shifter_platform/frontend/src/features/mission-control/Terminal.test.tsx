@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 
 import { installFakeWebSocket, latestSocket } from "@/test/fake-websocket";
 
@@ -20,6 +20,10 @@ vi.mock("@xterm/xterm", () => {
     write = vi.fn();
     focus = vi.fn();
     dispose = vi.fn();
+    element = document.createElement("div");
+    getSelection = vi.fn(() => "");
+    paste = vi.fn();
+    attachCustomKeyEventHandler = vi.fn();
     onDataCallback: ((data: string) => void) | null = null;
     onResizeCallback: ((size: { cols: number; rows: number }) => void) | null = null;
 
@@ -45,10 +49,14 @@ import { Terminal as XTermCtor } from "@xterm/xterm";
 import { Terminal } from "./Terminal";
 
 interface FakeXTermInstance {
+  element: HTMLElement;
   open: ReturnType<typeof vi.fn>;
   write: ReturnType<typeof vi.fn>;
   focus: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
+  getSelection: ReturnType<typeof vi.fn>;
+  paste: ReturnType<typeof vi.fn>;
+  attachCustomKeyEventHandler: ReturnType<typeof vi.fn>;
   onDataCallback: ((data: string) => void) | null;
   onResizeCallback: ((size: { cols: number; rows: number }) => void) | null;
 }
@@ -63,10 +71,18 @@ function latestTerm(): FakeXTermInstance {
 const INSTANCE_UUID = "22222222-2222-2222-2222-222222222222";
 
 let restoreWebSocket: () => void;
+let clipboardReadText: ReturnType<typeof vi.fn>;
+let clipboardWriteText: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   restoreWebSocket = installFakeWebSocket();
   (XTermCtor as unknown as { instances: unknown[] }).instances = [];
+  clipboardReadText = vi.fn(() => Promise.resolve("clipboard input"));
+  clipboardWriteText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { readText: clipboardReadText, writeText: clipboardWriteText },
+  });
 });
 
 afterEach(() => {
@@ -126,6 +142,59 @@ describe("Terminal", () => {
     const socket = latestSocket();
     act(() => socket.emitMessage({ type: "output", data: "$ " }));
     expect(latestTerm().write).toHaveBeenCalledWith("$ ");
+  });
+
+  it("copies a completed mouse selection to the browser clipboard", async () => {
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const term = latestTerm();
+    term.getSelection.mockReturnValue("selected output");
+
+    fireEvent.mouseUp(term.element);
+
+    await waitFor(() => expect(clipboardWriteText).toHaveBeenCalledWith("selected output"));
+  });
+
+  it("pastes browser clipboard text into xterm on right click", async () => {
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const term = latestTerm();
+
+    fireEvent.contextMenu(term.element);
+
+    await waitFor(() => expect(term.paste).toHaveBeenCalledWith("clipboard input"));
+  });
+
+  it("supports Ctrl+Shift+C and Ctrl+Shift+V clipboard shortcuts", async () => {
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const term = latestTerm();
+    term.getSelection.mockReturnValue("keyboard selection");
+    const keyHandler = term.attachCustomKeyEventHandler.mock.calls[0]?.[0] as (event: KeyboardEvent) => boolean;
+
+    expect(keyHandler(new KeyboardEvent("keydown", { key: "c", ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(keyHandler(new KeyboardEvent("keydown", { key: "v", ctrlKey: true, shiftKey: true }))).toBe(false);
+
+    await waitFor(() => expect(clipboardWriteText).toHaveBeenCalledWith("keyboard selection"));
+    await waitFor(() => expect(term.paste).toHaveBeenCalledWith("clipboard input"));
+  });
+
+  it("bridges CTF wheel gestures to tmux copy-mode keys without affecting ordinary terminals", () => {
+    const { unmount } = render(<Terminal instanceUuid={INSTANCE_UUID} tmuxWheelScrolling />);
+    const socket = latestSocket();
+    const term = latestTerm();
+    act(() => socket.emitOpen());
+    socket.sent.length = 0;
+
+    fireEvent.wheel(term.element, { deltaY: -100 });
+
+    expect(socket.sent).toContainEqual(JSON.stringify({ type: "input", data: "\u001b[23~" }));
+    unmount();
+
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const ordinarySocket = latestSocket();
+    const ordinaryTerm = latestTerm();
+    act(() => ordinarySocket.emitOpen());
+    ordinarySocket.sent.length = 0;
+    fireEvent.wheel(ordinaryTerm.element, { deltaY: -100 });
+    expect(ordinarySocket.sent).toHaveLength(0);
   });
 
   it("ignores malformed or non-output frames without throwing", () => {

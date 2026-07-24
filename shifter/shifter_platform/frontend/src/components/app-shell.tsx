@@ -67,7 +67,8 @@ function isActive(pathname: string, entry: NavEntry): boolean {
   // Only in-SPA entries can be "current"; external legacy links never match.
   if (entry.external) return false;
   if (entry.routePath === "/") return pathname === "/";
-  return pathname === entry.routePath || pathname.startsWith(`${entry.routePath}/`);
+  const routePrefix = entry.routePath.endsWith("/") ? entry.routePath : `${entry.routePath}/`;
+  return pathname === entry.routePath || pathname.startsWith(routePrefix);
 }
 
 function NavLink({ entry }: Readonly<{ entry: NavEntry }>) {

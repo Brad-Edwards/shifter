@@ -191,7 +191,7 @@ class ChallengeWriteSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=200)
     description = serializers.CharField(required=False, allow_blank=True)
-    category = serializers.CharField(required=False, allow_blank=True)
+    category = serializers.CharField(required=False, allow_blank=True, max_length=100)
     points = serializers.IntegerField(required=False)
     difficulty = serializers.CharField(required=False, allow_blank=True)
     flag_format = serializers.CharField(required=False, allow_blank=True)

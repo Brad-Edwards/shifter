@@ -159,6 +159,8 @@ workers:
 
 guacd:
   replicas: 1
+  freerdpConfigVolume:
+    sizeLimit: 16Mi
   resources:
     requests:
       cpu: 100m

@@ -108,6 +108,17 @@ def _sftp_root_for_os(os_type: str | None) -> str | None:
     return _SFTP_ROOT_BY_OS.get(os_type)
 
 
+def _rdp_security_for_os(os_type: str | None) -> str:
+    """Return Guacamole's RDP security mode for the given OS type.
+
+    Kali/xrdp targets speak TLS, not the classic RDP crypto Guacamole
+    negotiates by default, so they must be pinned to ``tls`` (issue #1801).
+    """
+    if os_type == "kali":
+        return "tls"
+    return "any"
+
+
 def _resolve_rdp_conn(user: User, instance_uuid: str) -> dict[str, Any]:
     """Resolve the RDP connection info or raise ``BootstrapFailure``."""
     from engine.services import get_rdp_connection_info
@@ -136,7 +147,8 @@ def _generate_rdp_url(
     """Generate the Guacamole RDP URL or raise ``BootstrapFailure``."""
     from mission_control.guacamole import GuacRDPUrlRequest, create_guacamole_rdp_url
 
-    sftp_root_directory = _sftp_root_for_os(conn_info.get("os_type"))
+    os_type = conn_info.get("os_type")
+    sftp_root_directory = _sftp_root_for_os(os_type)
     try:
         return create_guacamole_rdp_url(
             GuacRDPUrlRequest(
@@ -151,6 +163,7 @@ def _generate_rdp_url(
                 api_base_url=guacamole_api_url,
                 sftp_root_directory=sftp_root_directory,
                 sftp_private_key=conn_info.get("ssh_key"),
+                security=_rdp_security_for_os(os_type),
             )
         )
     except ValueError as e:
