@@ -210,12 +210,13 @@ def test_public_dispatch_fails_closed_when_domain_state_forbids_operation(settin
         settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
         settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
     request_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    request_uuid = UUID(request_id)
     _authorized_range(request_id)
     # READY is not a provision-authorizing status; the operation must fail closed.
     Range.objects.filter(request__request_id=request_id).update(status=Range.Status.READY)
 
     with pytest.raises(ValueError):
-        start_range_provisioning(UUID(request_id))
+        start_range_provisioning(request_uuid)
     assert not ProvisionerLaunchIntent.objects.exists()
 
 
