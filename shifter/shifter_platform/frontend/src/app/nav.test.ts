@@ -124,6 +124,7 @@ describe("visibleNavGroups", () => {
     expect(eventHome?.external).toBeFalsy();
     expect(eventHome?.featureFlag).toBe("ctf_workspace_spa");
     expect(eventHome?.routePath).toBe("/ctf/");
+    expect(participate.entries.map((entry) => entry.surface)).not.toContain("Terminal");
     expect(participate.entries.every((e) => e.featureFlag === "ctf_workspace_spa" && !e.external)).toBe(true);
   });
 

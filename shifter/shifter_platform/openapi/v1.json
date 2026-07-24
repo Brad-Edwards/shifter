@@ -12715,7 +12715,8 @@
             "type": "string"
           },
           "category": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "points": {
             "type": "integer"

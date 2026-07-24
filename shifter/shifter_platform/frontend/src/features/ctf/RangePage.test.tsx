@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe("RangePage", () => {
-  it("renders a ready range's target boxes with terminal, SSH, and RDP actions", async () => {
+  it("renders a ready range's target boxes with Guacamole SSH and RDP actions only", async () => {
     mockApi.mockResolvedValue(readyStatus({ target_instances: [BOX] }));
     renderRoute(<RangePage />);
 
@@ -55,10 +55,7 @@ describe("RangePage", () => {
     expect(screen.getByText("Range instance #5")).toBeInTheDocument();
     expect(screen.getByText("dc01")).toBeInTheDocument();
     expect(screen.getByText("10.1.2.56")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open dc01 terminal" })).toHaveAttribute(
-      "href",
-      `/ctf/terminal/${BOX.uuid}/`,
-    );
+    expect(screen.queryByRole("link", { name: "Open dc01 terminal" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open dc01 SSH session" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open dc01 RDP session" })).toBeInTheDocument();
   });
