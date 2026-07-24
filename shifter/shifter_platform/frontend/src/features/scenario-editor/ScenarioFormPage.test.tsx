@@ -39,6 +39,7 @@ describe("ScenarioFormPage (create)", () => {
     fireEvent.change(screen.getByLabelText("Scenario ID"), { target: { value: "my-lab" } });
     fireEvent.change(screen.getByLabelText("Name", { selector: "#f-name" }), { target: { value: "My Lab" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "A lab." } });
+    fireEvent.click(screen.getByLabelText("Enable Caldera runtime setup"));
     fireEvent.change(screen.getByLabelText("Name", { selector: "#i-name-0" }), { target: { value: "Attacker" } });
     fireEvent.click(screen.getByRole("button", { name: "Create scenario" }));
 
@@ -53,6 +54,7 @@ describe("ScenarioFormPage (create)", () => {
             scenario_id: "my-lab",
             name: "My Lab",
             description: "A lab.",
+            caldera: true,
             instances: expect.arrayContaining([
               expect.objectContaining({ name: "Attacker", role: "victim", os_type: "from_agent" }),
             ]),

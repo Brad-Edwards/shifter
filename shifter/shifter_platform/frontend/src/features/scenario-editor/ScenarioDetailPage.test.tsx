@@ -35,6 +35,7 @@ function detail(overrides: Record<string, unknown> = {}) {
     deletable: true,
     exportable: true,
     ngfw: false,
+    caldera: false,
     instances: [{ name: "Attacker", role: "attacker", os_type: "kali", xdr_agent: false }],
     subnets: [{ name: "core", instances: ["Attacker"], connected_to: [] }],
     aces: null,
@@ -72,6 +73,14 @@ describe("ScenarioDetailPage", () => {
     expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Clone" })).toBeInTheDocument();
+  });
+
+  it("shows whether Caldera runtime setup is enabled", async () => {
+    mockApi.mockResolvedValue(detail({ enabled: false, caldera: true }));
+    renderDetail();
+    expect(await screen.findByRole("heading", { name: "My Lab" })).toBeInTheDocument();
+    expect(screen.getByText("Caldera")).toBeInTheDocument();
+    expect(screen.getByText("Enabled")).toBeInTheDocument();
   });
 
   it("renders the ACES provenance block for an ACES scenario", async () => {

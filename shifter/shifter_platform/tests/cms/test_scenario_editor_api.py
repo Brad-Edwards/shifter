@@ -41,6 +41,7 @@ def _export_url(scenario_id: str) -> str:
 
 _DEFINITION = {
     "ngfw": False,
+    "caldera": False,
     "instances": [
         {"name": "Attacker", "role": "attacker", "os_type": "kali", "xdr_agent": False},
         {"name": "Victim", "role": "victim", "os_type": "from_agent", "xdr_agent": False},
@@ -106,6 +107,17 @@ class TestScenarioCreate:
         assert response.json()["scenario_id"] == "my-lab"
         assert Scenario.objects.filter(scenario_id="my-lab").exists()
 
+    def test_authoring_actor_can_enable_caldera_in_structured_scenario(self, api_client, authoring_user):
+        api_client.force_authenticate(user=authoring_user)
+        body = _create_body(scenario_id="caldera-lab", name="Caldera Lab")
+        body["caldera"] = True
+
+        response = api_client.post(SCENARIOS_URL, body, format="json")
+
+        assert response.status_code == 201
+        scenario = Scenario.objects.get(scenario_id="caldera-lab")
+        assert scenario.definition["caldera"] is True
+
     def test_invalid_definition_returns_validation_errors(self, api_client, authoring_user):
         api_client.force_authenticate(user=authoring_user)
         body = _create_body()
@@ -148,7 +160,24 @@ class TestScenarioDetail:
         assert payload["source"] == "custom"
         assert payload["editable"] is True
         assert payload["deletable"] is True
+        assert payload["caldera"] is False
         assert [i["name"] for i in payload["instances"]] == ["Attacker", "Victim"]
+
+    def test_custom_scenario_detail_exposes_caldera_flag(self, api_client, authoring_user):
+        scenario = Scenario.objects.create(
+            scenario_id="caldera-lab",
+            name="Caldera Lab",
+            description="Caldera-enabled custom scenario.",
+            definition={**_DEFINITION, "caldera": True},
+            created_by=authoring_user,
+            updated_by=authoring_user,
+        )
+        api_client.force_authenticate(user=authoring_user)
+
+        response = api_client.get(_detail_url(scenario.scenario_id))
+
+        assert response.status_code == 200
+        assert response.json()["caldera"] is True
 
     def test_builtin_scenario_detail_is_read_only(self, api_client, authoring_user):
         api_client.force_authenticate(user=authoring_user)
@@ -303,6 +332,7 @@ class TestScenarioExport:
         payload = response.json()
         assert payload["scenario_id"] == "existing-lab"
         assert "id: existing-lab" in payload["yaml"]
+        assert "caldera: false" in payload["yaml"]
 
     def test_export_unknown_returns_404(self, api_client, authoring_user):
         api_client.force_authenticate(user=authoring_user)

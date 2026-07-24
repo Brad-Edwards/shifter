@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import get_args
 
 from cyberscript import wire_constants as event_types
 from cyberscript import wire_spec_keys as spec_keys
 from cyberscript.enums import ResourceStatus
+from cyberscript.schemas.range import CalderaRuntimeSpec
 
 _TERRAFORM_VARS = Path(__file__).resolve().parents[1] / "terraform_vars.py"
 _SPEC_KEY_WALK_FUNCTIONS = frozenset(
@@ -72,3 +74,26 @@ class TestTerraformVarsRangeSpecKeyWalk:
         used = _dict_get_literal_keys_in_functions(_TERRAFORM_VARS, _SPEC_KEY_WALK_FUNCTIONS)
         unknown = used - allowed
         assert not unknown, f"Unregistered dict.get keys in terraform_vars.py: {sorted(unknown)}"
+
+
+class TestCalderaRuntimeProfileContract:
+    def test_caldera_setup_profile_validation_matches_cyberscript_schema(self) -> None:
+        import caldera_setup
+
+        target_roles_field = CalderaRuntimeSpec.model_fields["target_roles"]
+        defender_mode_field = CalderaRuntimeSpec.model_fields["windows_defender_mode"]
+
+        assert set(target_roles_field.default_factory()) == caldera_setup._SUPPORTED_TARGET_ROLES
+        assert set(get_args(get_args(target_roles_field.annotation)[0])) == caldera_setup._SUPPORTED_TARGET_ROLES
+        assert set(get_args(defender_mode_field.annotation)) == caldera_setup._SUPPORTED_WINDOWS_DEFENDER_MODES
+
+    def test_caldera_setup_profile_defaults_match_cyberscript_schema(self) -> None:
+        import caldera_setup
+
+        default_profile = CalderaRuntimeSpec()
+
+        assert default_profile.callback_port == caldera_setup._DEFAULT_CALLBACK_PORT
+        assert default_profile.target_roles == caldera_setup._DEFAULT_TARGET_ROLES
+        assert default_profile.windows_defender_mode == caldera_setup._DEFAULT_WINDOWS_DEFENDER_MODE
+        assert default_profile.server_working_directory == caldera_setup._DEFAULT_SERVER_WORKING_DIRECTORY
+        assert default_profile.server_start_command == caldera_setup._DEFAULT_SERVER_START_COMMAND

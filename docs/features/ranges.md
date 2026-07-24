@@ -39,6 +39,11 @@ Provisioning takes about 10 minutes.
 
 The Ranges page shows real-time status updates during provisioning. You'll see progress as instances are created and configured.
 
+Some scenarios opt in to Caldera setup during provisioning. For those scenarios,
+the provisioner starts the baked Caldera server on the Kali attacker and deploys
+sandcat agents to victim/DC VMs. Caldera uses in-range private connectivity to
+the attacker on port `8888`; it is not exposed as a public or portal endpoint.
+
 ## Access a Range
 
 Once Ready:

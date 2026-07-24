@@ -79,6 +79,18 @@
                     </td>
                 </tr>
                 <tr>
+                    <th scope="row" class="text-muted label-col">
+                        {% trans "Caldera Setup" %}
+                    </th>
+                    <td>
+                        {% if scenario.caldera %}
+                            {% trans "Enabled" %}
+                        {% else %}
+                            {% trans "Disabled" %}
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
                     <th scope="row" class="text-muted">
                         {% trans "Total Instances" %}
                     </th>

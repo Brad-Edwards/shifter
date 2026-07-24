@@ -10,6 +10,7 @@ from ._common import ScenarioEditorError
 from ._crud import clone_scenario, create_scenario, delete_scenario, update_scenario
 from ._metadata import update_metadata
 from ._post_helpers import (
+    FIELD_CALDERA,
     FIELD_DESCRIPTION,
     FIELD_ID,
     FIELD_INSTANCES,
@@ -36,6 +37,7 @@ from ._validation import validate_definition, validate_yaml
 from ._yaml import export_scenario_yaml, new_scenario_template_yaml
 
 __all__ = [
+    "FIELD_CALDERA",
     "FIELD_DESCRIPTION",
     "FIELD_ID",
     "FIELD_INSTANCES",

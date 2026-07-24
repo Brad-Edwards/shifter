@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from agent_assets import get_agent_presigned_url
+from caldera_setup import run_caldera_setup_if_enabled
 from dc_setup import _run_dc_setup
 from instance_setup import (
     _DomainJoinSpec,
@@ -235,4 +236,5 @@ def run_instance_setup(
     _setup_other_instances_parallel(
         other_instances, uuid_to_config, actual_dc_ip, actual_domain, range_id, polaris_agent_role_arn
     )
+    run_caldera_setup_if_enabled(vm_instances, range_spec)
     logger.info("All instance setup complete")

@@ -28,6 +28,7 @@ interface FormState {
   name: string;
   description: string;
   ngfw: boolean;
+  caldera: boolean;
   instances: InstanceForm[];
   subnets: SubnetForm[];
 }
@@ -45,6 +46,7 @@ function fromDetail(detail: ScenarioDetail): FormState {
     name: detail.name,
     description: detail.description,
     ngfw: detail.ngfw,
+    caldera: detail.caldera,
     instances: detail.instances.map((instance, index) => ({
       key: `load-${index}`,
       name: instance.name,
@@ -94,6 +96,7 @@ function toPayload(state: FormState): ScenarioCreate {
     name: state.name,
     description: state.description,
     ngfw: state.ngfw,
+    caldera: state.caldera,
     instances: state.instances.map(toInstancePayload),
     subnets: state.subnets.map(
       (subnet): ScenarioSubnet => ({
@@ -124,6 +127,7 @@ export function ScenarioFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>
     name: "",
     description: "",
     ngfw: false,
+    caldera: false,
     instances: [emptyInstance(nextKey())],
     subnets: [],
   }));
@@ -261,6 +265,15 @@ export function ScenarioFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>
                 onChange={(event) => set("ngfw", event.target.checked)}
               />
               <span>Requires NGFW provisioning</span>
+            </label>
+            <label className="flex select-none items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 rounded border-input bg-transparent accent-primary"
+                checked={state.caldera}
+                onChange={(event) => set("caldera", event.target.checked)}
+              />
+              <span>Enable Caldera runtime setup</span>
             </label>
           </CardContent>
         </Card>

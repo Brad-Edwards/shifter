@@ -32,6 +32,7 @@ def export_scenario_yaml(scenario_id: str) -> str:
         "name": data["name"],
         "description": data["description"],
         "ngfw": data.get("ngfw", False),
+        "caldera": data.get("caldera", False),
         "instances": data.get("instances", []),
     }
     if data.get("subnets"):
@@ -47,6 +48,7 @@ def new_scenario_template_yaml() -> str:
         "name: My New Scenario\n"
         "description: Describe your scenario here.\n"
         "ngfw: false\n"
+        "caldera: false\n"
         "\n"
         "instances:\n"
         "  - name: Attacker\n"

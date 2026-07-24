@@ -29,6 +29,7 @@ describe("ScenarioYamlPage (create)", () => {
     renderRoute(<ScenarioYamlPage mode="create" />);
     const textarea = screen.getByLabelText("Scenario YAML") as HTMLTextAreaElement;
     expect(textarea.value).toContain("id: my-new-scenario");
+    expect(textarea.value).toContain("caldera: false");
   });
 
   it("validates the YAML through the API", async () => {

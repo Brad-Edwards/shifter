@@ -23,6 +23,7 @@ const STARTER_YAML = `id: my-new-scenario
 name: My New Scenario
 description: Describe your scenario here.
 ngfw: false
+caldera: false
 
 instances:
   - name: Attacker
@@ -46,6 +47,7 @@ function updateFromDefinition(definition: Record<string, unknown>): ScenarioUpda
     name: typeof definition.name === "string" ? definition.name : "",
     description: typeof definition.description === "string" ? definition.description : "",
     ngfw: Boolean(definition.ngfw),
+    caldera: Boolean(definition.caldera),
     instances: (Array.isArray(definition.instances) ? definition.instances : []) as ScenarioUpdate["instances"],
     subnets: (Array.isArray(definition.subnets) ? definition.subnets : []) as ScenarioUpdate["subnets"],
   };

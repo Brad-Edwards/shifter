@@ -75,6 +75,7 @@ class TestChannelGroupCanary:
 class TestWireSpecKeysAlignWithSchemas:
     def test_range_spec_schema_keys_are_model_fields(self) -> None:
         assert spec_keys.RANGE_SPEC_TOP_LEVEL_SCHEMA_KEYS <= set(RangeSpec.model_fields)
+        assert "caldera" in spec_keys.RANGE_SPEC_TOP_LEVEL_SCHEMA_KEYS
 
     def test_subnet_schema_keys_are_model_fields(self) -> None:
         assert spec_keys.SUBNET_SCHEMA_KEYS <= set(SubnetSpec.model_fields)

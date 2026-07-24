@@ -11,6 +11,7 @@ Complete schema reference for CyberScript scenario YAML templates. Validated by 
 | **`description`** | string | yes | -- | User-facing description of the scenario. |
 | **`enabled`** | bool | no | `true` | Whether the scenario is visible in the scenario catalog. |
 | **`ngfw`** | bool | no | `false` | Whether the scenario requires NGFW provisioning. |
+| **`caldera`** | bool | no | `false` | Whether provisioning starts Caldera on the Kali attacker and deploys sandcat to non-attacker VMs. |
 | **`instances`** | list | yes | -- | Instance configurations. Must contain at least one entry. |
 | **`subnets`** | list | no | `[]` | Subnet configurations. If empty, the hydrator creates a single `default` subnet at runtime. |
 
@@ -50,6 +51,25 @@ Convention: lowercase, underscores for word separation (for example `ad_attack_l
 ### `ngfw`
 
 When `true`, the Engine provisions a Palo Alto Networks NGFW appliance alongside the range instances. Subnet `connected_to` declarations become firewall rules routed through the NGFW. See [Networking](networking.md).
+
+### `caldera`
+
+When `true`, provisioning starts the baked Caldera server on the single Kali
+attacker instance and deploys sandcat agents to VM instances with role `victim`
+or `dc`.
+
+Defaults are intentionally conservative:
+
+- Caldera is disabled unless the scenario opts in.
+- The attacker callback URL uses the attacker's private IP and port `8888`.
+- Linux sandcat is left at `/tmp/sandcat.go-linux`.
+- Windows sandcat is left at `C:\Users\Public\sandcat.exe`.
+- Windows Defender handling uses a path/process exclusion for the sandcat path.
+
+The range topology remains authoritative. Enabling Caldera does not add public
+ingress, expose the Caldera UI/API through Mission Control or Guacamole, or
+install Caldera at runtime; the Kali image bake owns `/opt/caldera` and
+`/usr/local/bin/start-caldera`.
 
 ### `instances`
 

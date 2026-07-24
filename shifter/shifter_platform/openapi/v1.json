@@ -15895,6 +15895,10 @@
             "type": "boolean",
             "default": false
           },
+          "caldera": {
+            "type": "boolean",
+            "default": false
+          },
           "instances": {
             "type": "array",
             "items": {
@@ -16764,6 +16768,10 @@
             "type": "boolean",
             "default": false
           },
+          "caldera": {
+            "type": "boolean",
+            "default": false
+          },
           "instances": {
             "type": "array",
             "items": {
@@ -16861,6 +16869,10 @@
             "type": "boolean",
             "readOnly": true
           },
+          "caldera": {
+            "type": "boolean",
+            "readOnly": true
+          },
           "instances": {
             "type": "array",
             "items": {
@@ -16887,6 +16899,7 @@
         },
         "required": [
           "aces",
+          "caldera",
           "deletable",
           "description",
           "editable",
@@ -17015,6 +17028,9 @@
             "type": "boolean"
           },
           "ngfw": {
+            "type": "boolean"
+          },
+          "caldera": {
             "type": "boolean"
           },
           "instances": {

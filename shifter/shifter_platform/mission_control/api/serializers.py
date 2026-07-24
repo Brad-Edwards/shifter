@@ -287,6 +287,7 @@ class ScenarioListItemSerializer(serializers.Serializer):
     staff_only = serializers.BooleanField()
     launchable = serializers.BooleanField()
     ngfw = serializers.BooleanField(required=False)
+    caldera = serializers.BooleanField(required=False)
     instances = serializers.ListField(child=serializers.DictField(), required=False)
     subnets = serializers.ListField(child=serializers.DictField(), required=False)
     agent_requirements = serializers.DictField(required=False)

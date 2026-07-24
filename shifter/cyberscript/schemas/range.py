@@ -50,6 +50,43 @@ class DCConfig(BaseModel):
     netbios_name: str
 
 
+class CalderaRuntimeSpec(BaseModel):
+    """Optional Caldera runtime setup profile for demo ranges.
+
+    The authoring/API surface may use ``caldera: true`` for the common case,
+    but the persisted range contract keeps the defaults explicit so provisioner
+    retries and future profile extensions consume one normalized shape.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    callback_port: int = Field(default=8888, ge=1, le=65535)
+    target_roles: list[Literal["victim", "dc"]] = Field(default_factory=lambda: ["victim", "dc"])
+    windows_defender_mode: Literal["path_exclusion", "disable_realtime"] = "path_exclusion"
+    server_working_directory: str = "/opt/caldera"
+    server_start_command: str = "/usr/local/bin/start-caldera"
+
+    @field_validator("target_roles")
+    @classmethod
+    def target_roles_not_empty_or_duplicate(cls, value: list[Literal["victim", "dc"]]) -> list[Literal["victim", "dc"]]:
+        """Require at least one unique non-attacker target role."""
+        if not value:
+            raise ValueError("target_roles must contain at least one role")
+        if len(set(value)) != len(value):
+            raise ValueError("target_roles must not contain duplicates")
+        return value
+
+    @field_validator("server_working_directory", "server_start_command")
+    @classmethod
+    def path_not_empty(cls, value: str) -> str:
+        """Reject empty Caldera server path settings."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Caldera server path values cannot be empty")
+        return normalized
+
+
 class InstanceSpec(SpecBase):
     """Single instance specification.
 
@@ -269,11 +306,23 @@ class RangeSpec(RangeSpecBase):
     Attributes:
         range_type: Discriminator field, always 'demo'.
         ngfw: Whether this range requires NGFW traffic inspection.
+        caldera: Optional Caldera server/sandcat runtime setup profile.
     """
 
     range_type: Literal["demo"] = "demo"
     ngfw: bool = False
+    caldera: CalderaRuntimeSpec = Field(default_factory=CalderaRuntimeSpec)
     participant_access: list[RangeAccessBinding] = Field(default_factory=list)
+
+    @field_validator("caldera", mode="before")
+    @classmethod
+    def normalize_caldera_shorthand(cls, value: object) -> object:
+        """Accept ``caldera: true/false`` and normalize to the runtime profile."""
+        if value is None:
+            return {}
+        if isinstance(value, bool):
+            return {"enabled": value}
+        return value
 
     @model_validator(mode="after")
     def participant_access_targets_exist(self) -> RangeSpec:

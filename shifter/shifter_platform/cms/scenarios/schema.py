@@ -123,6 +123,7 @@ class ScenarioTemplate(BaseModel):
         enabled: Whether scenario is visible in the UI (default True).
         scenario_type: Discriminator — always 'demo' for legacy templates.
         ngfw: Whether scenario requires NGFW provisioning.
+        caldera: Whether scenario enables Caldera server/sandcat runtime setup.
         instances: List of instance configurations.
         subnets: List of subnet configurations (optional).
         participant_access: Explicit participant-facing member channels.
@@ -134,6 +135,7 @@ class ScenarioTemplate(BaseModel):
     enabled: bool = True
     scenario_type: Literal["demo"] = "demo"
     ngfw: bool = False
+    caldera: bool = False
     instances: list[InstanceConfig]
     subnets: list[SubnetConfig] = []
     participant_access: list[ParticipantAccessConfig] = []

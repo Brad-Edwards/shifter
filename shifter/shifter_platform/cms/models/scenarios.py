@@ -34,7 +34,7 @@ class Scenario(SoftDeleteMixin, models.Model):
     through the scenario editor.
 
     The definition field holds the structural parts of the scenario
-    (instances, subnets, ngfw flag) as JSON. It is validated against
+    (instances, subnets, ngfw/caldera flags) as JSON. It is validated against
     ScenarioTemplate on save.
 
     Attributes:
@@ -42,7 +42,7 @@ class Scenario(SoftDeleteMixin, models.Model):
         scenario_id: URL-safe unique identifier (e.g., 'my-custom-lab').
         name: Human-readable display name.
         description: User-facing description.
-        definition: JSON with instances, subnets, ngfw fields.
+        definition: JSON with instances, subnets, ngfw/caldera fields.
         created_by: Staff user who created this scenario.
         updated_by: Staff user who last updated this scenario.
         created_at: Creation timestamp.

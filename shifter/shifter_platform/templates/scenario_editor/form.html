@@ -101,6 +101,22 @@
                     </label>
                 </div>
             </div>
+            <div class="form-group">
+                <div class="form-checkbox">
+                    <input type="checkbox"
+                           id="caldera"
+                           name="caldera"
+                           {% if scenario.caldera %}
+                               checked
+                           {% endif %}>
+                    <label for="caldera" class="form-label-inline">
+                        {% trans "Enable Caldera runtime setup" %}
+                    </label>
+                </div>
+                <p class="form-help">
+                    {% trans "Starts the baked Caldera server on the Kali attacker and deploys sandcat to non-attacker VMs." %}
+                </p>
+            </div>
         </div>
         <!-- Instances -->
         <div class="card mb-lg">

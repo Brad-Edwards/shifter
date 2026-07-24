@@ -3952,6 +3952,8 @@ export interface components {
             description?: string;
             /** @default false */
             ngfw: boolean;
+            /** @default false */
+            caldera: boolean;
             instances?: components["schemas"]["ScenarioInstance"][];
             subnets?: components["schemas"]["ScenarioSubnet"][];
         };
@@ -4260,6 +4262,8 @@ export interface components {
             description: string;
             /** @default false */
             ngfw: boolean;
+            /** @default false */
+            caldera: boolean;
             instances: components["schemas"]["ScenarioInstance"][];
             subnets?: components["schemas"]["ScenarioSubnet"][];
             scenario_id: string;
@@ -4291,6 +4295,7 @@ export interface components {
             readonly deletable: boolean;
             readonly exportable: boolean;
             readonly ngfw: boolean;
+            readonly caldera: boolean;
             readonly instances: components["schemas"]["ScenarioInstance"][];
             readonly subnets: components["schemas"]["ScenarioSubnet"][];
             readonly aces: components["schemas"]["AcesCatalogFields"] | null;
@@ -4353,6 +4358,7 @@ export interface components {
             staff_only: boolean;
             launchable: boolean;
             ngfw?: boolean;
+            caldera?: boolean;
             instances?: {
                 [key: string]: unknown;
             }[];

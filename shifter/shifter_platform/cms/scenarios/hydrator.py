@@ -18,7 +18,15 @@ from typing import TYPE_CHECKING, Literal
 from cms.exceptions import CMSError
 from cms.scenarios.schema import CTFScenarioTemplate, ScenarioTemplate
 from shared.log_sanitize import safe_log_value
-from shared.schemas import CTFRangeSpec, InstanceSpec, NGFWAppSpec, RangeAccessBinding, RangeSpec, SubnetSpec
+from shared.schemas import (
+    CalderaRuntimeSpec,
+    CTFRangeSpec,
+    InstanceSpec,
+    NGFWAppSpec,
+    RangeAccessBinding,
+    RangeSpec,
+    SubnetSpec,
+)
 
 from .registry import load_scenario_template as load_scenario
 
@@ -133,6 +141,7 @@ def hydrate_scenario(
         user_id=user_id,
         subnets=subnets,
         ngfw=template.ngfw,
+        caldera=CalderaRuntimeSpec(enabled=template.caldera),
         participant_access=[
             RangeAccessBinding(
                 target_ref=str(instances_by_name[binding.target].uuid),

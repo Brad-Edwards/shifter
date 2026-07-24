@@ -16,6 +16,12 @@ from pydantic import ValidationError
 
 _ROUND_TRIP_CASES = [
     pytest.param(
+        "shared.schemas.range.CalderaRuntimeSpec",
+        {"enabled": True, "callback_port": 9999, "target_roles": ["victim"], "windows_defender_mode": "path_exclusion"},
+        {"enabled": True, "callback_port": 9999, "target_roles": ["victim"], "windows_defender_mode": "path_exclusion"},
+        id="CalderaRuntimeSpec",
+    ),
+    pytest.param(
         "shared.schemas.range.AgentDetails",
         {"s3_key": "agents/agent.msi", "filename": "agent.msi", "sha256": "abc123"},
         {"s3_key": "agents/agent.msi", "filename": "agent.msi", "sha256": "abc123"},
@@ -254,6 +260,16 @@ class TestRangeSpec:
         assert request.user_id == 1
         assert len(request.subnets) == 1
         assert len(request.all_instances) == 1
+
+    def test_caldera_boolean_shorthand_normalizes_to_runtime_profile(self):
+        """RangeSpec accepts `caldera: true` and persists a defaulted profile."""
+        from shared.schemas.range import RangeSpec
+
+        request = RangeSpec(scenario_id="caldera-lab", user_id=1, subnets=[], caldera=True)
+
+        assert request.caldera.enabled is True
+        assert request.caldera.callback_port == 8888
+        assert request.caldera.target_roles == ["victim", "dc"]
 
     @pytest.mark.parametrize(
         "missing_field,kwargs",

@@ -118,6 +118,7 @@ function OverviewCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
           </Field>
           <Field label="Launchable">{scenario.launchable ? "Yes" : "No"}</Field>
           <Field label="NGFW">{scenario.ngfw ? "Required" : "Not required"}</Field>
+          <Field label="Caldera">{scenario.caldera ? "Enabled" : "Disabled"}</Field>
           <Field label="Description">
             <p className="whitespace-pre-wrap">{scenario.description || "—"}</p>
           </Field>

@@ -168,8 +168,8 @@ class TestSubnetConfig:
             SubnetConfig(name="empty", instances=[])
 
 
-class TestScenarioTemplate:
-    """Tests for ScenarioTemplate Pydantic model."""
+class TestScenarioTemplateBasics:
+    """Tests for ScenarioTemplate Pydantic fields and validation."""
 
     def test_create_basic_scenario(self):
         """ScenarioTemplate can be created with basic fields."""
@@ -211,6 +211,31 @@ class TestScenarioTemplate:
             instances=[InstanceConfig(name="Attacker", role="attacker", os_type="kali")],
         )
         assert template.ngfw is False
+
+    def test_caldera_defaults_to_false(self):
+        """ScenarioTemplate Caldera setup defaults to disabled."""
+        from cms.scenarios.schema import InstanceConfig, ScenarioTemplate
+
+        template = ScenarioTemplate(
+            id="test",
+            name="Test",
+            description="Test",
+            instances=[InstanceConfig(name="Attacker", role="attacker", os_type="kali")],
+        )
+        assert template.caldera is False
+
+    def test_caldera_can_be_enabled(self):
+        """ScenarioTemplate accepts Caldera setup opt-in."""
+        from cms.scenarios.schema import InstanceConfig, ScenarioTemplate
+
+        template = ScenarioTemplate(
+            id="test",
+            name="Test",
+            description="Test",
+            caldera=True,
+            instances=[InstanceConfig(name="Attacker", role="attacker", os_type="kali")],
+        )
+        assert template.caldera is True
 
     def test_id_is_required(self):
         """ScenarioTemplate requires id field."""
@@ -328,6 +353,10 @@ class TestScenarioTemplate:
         victim = next(i for i in template.instances if i.role == "victim")
         assert victim.join_domain is True
         assert victim.xdr_agent is True
+
+
+class TestScenarioTemplateAgentRequirements:
+    """Tests for ScenarioTemplate agent requirement derivation."""
 
     def test_requires_agent_returns_true_when_xdr_agent_present(self):
         """requires_agent() returns True if any instance has xdr_agent=True."""

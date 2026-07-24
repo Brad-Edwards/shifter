@@ -34,6 +34,7 @@ BASIC_DEF = {
         {"target": "Attacker", "channel": "rdp"},
     ],
     "ngfw": False,
+    "caldera": False,
 }
 
 # Mirrors the shipped `basic.yaml`: the victim derives its OS from the
@@ -46,6 +47,7 @@ BASIC_NO_XDR_DEF = {
     ],
     "subnets": [{"name": "core", "instances": ["Attacker", "Victim"]}],
     "ngfw": False,
+    "caldera": False,
 }
 
 AD_DEF = {
@@ -63,6 +65,7 @@ AD_DEF = {
     ],
     "subnets": [{"name": "core", "instances": ["Attacker", "DC", "Victim"]}],
     "ngfw": False,
+    "caldera": True,
 }
 
 
@@ -239,6 +242,13 @@ class TestHydrateAdAttackLab:
         dc = next(i for i in result.all_instances if i.role == "dc")
         assert dc.agent is not None
         assert dc.agent.s3_key == windows_agent["windows"].s3_key
+
+    def test_caldera_flag_hydrates_to_runtime_profile(self, user, ad_scenario, windows_agent):
+        result = hydrate_scenario(ad_scenario.scenario_id, user.id, windows_agent)
+
+        assert result.caldera.enabled is True
+        assert result.caldera.callback_port == 8888
+        assert result.caldera.target_roles == ["victim", "dc"]
 
 
 class TestHydrateScenarioErrors:

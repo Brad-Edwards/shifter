@@ -8,7 +8,7 @@ silently across the process boundary.
 
 from __future__ import annotations
 
-RANGE_SPEC_TOP_LEVEL_SCHEMA_KEYS = frozenset({"subnets", "ngfw"})
+RANGE_SPEC_TOP_LEVEL_SCHEMA_KEYS = frozenset({"subnets", "ngfw", "caldera"})
 
 SUBNET_SCHEMA_KEYS = frozenset({"name", "uuid", "instances", "connected_to"})
 SUBNET_RUNTIME_KEYS = frozenset({"cidr", "provider_metadata"})

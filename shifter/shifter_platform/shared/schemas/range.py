@@ -2,6 +2,7 @@
 
 from cyberscript.schemas.range import (
     AgentDetails,
+    CalderaRuntimeSpec,
     DCConfig,
     InstanceContext,
     InstanceContextBase,
@@ -17,6 +18,7 @@ from cyberscript.schemas.range import (
 
 __all__ = [
     "AgentDetails",
+    "CalderaRuntimeSpec",
     "DCConfig",
     "InstanceContext",
     "InstanceContextBase",

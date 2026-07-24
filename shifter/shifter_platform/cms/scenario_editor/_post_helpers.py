@@ -24,6 +24,7 @@ FIELD_INSTANCES_JSON = "instances_json"
 FIELD_NAME = "name"
 FIELD_NEW_NAME = "new_name"
 FIELD_NEW_SCENARIO_ID = "new_scenario_id"
+FIELD_CALDERA = "caldera"
 FIELD_NGFW = "ngfw"
 FIELD_SCENARIO_ID = "scenario_id"
 FIELD_SUBNETS = "subnets"
@@ -90,18 +91,25 @@ class ScenarioFormFields:
     name: str
     description: str
     ngfw: bool
+    caldera: bool
     instances: object
     subnets: object
 
     @property
     def definition(self) -> ScenarioDefinition:
-        return {FIELD_INSTANCES: self.instances, FIELD_SUBNETS: self.subnets, FIELD_NGFW: self.ngfw}
+        return {
+            FIELD_INSTANCES: self.instances,
+            FIELD_SUBNETS: self.subnets,
+            FIELD_NGFW: self.ngfw,
+            FIELD_CALDERA: self.caldera,
+        }
 
     def as_context(self, *, include_id: bool) -> dict[str, object]:
         context = {
             FIELD_NAME: self.name,
             FIELD_DESCRIPTION: self.description,
             FIELD_NGFW: self.ngfw,
+            FIELD_CALDERA: self.caldera,
             FIELD_INSTANCES: self.instances,
             FIELD_SUBNETS: self.subnets,
         }
@@ -146,6 +154,7 @@ def parse_scenario_form_fields(
     name = _post_value(post_data, FIELD_NAME)
     description = _post_value(post_data, FIELD_DESCRIPTION)
     ngfw = _post_value(post_data, FIELD_NGFW) == "on"
+    caldera = _post_value(post_data, FIELD_CALDERA) == "on"
     instances, instance_errors = _load_json_field(_post_value(post_data, FIELD_INSTANCES_JSON, "[]"), FIELD_INSTANCES)
     subnets, subnet_errors = _load_json_field(_post_value(post_data, FIELD_SUBNETS_JSON, "[]"), FIELD_SUBNETS)
 
@@ -168,7 +177,7 @@ def parse_scenario_form_fields(
     if not instances:
         errors.append("At least one instance is required")
 
-    return ScenarioFormFields(scenario_id, name, description, ngfw, instances, subnets), errors
+    return ScenarioFormFields(scenario_id, name, description, ngfw, caldera, instances, subnets), errors
 
 
 def create_scenario_from_form_post(user: User, post_data: Mapping[str, object]) -> tuple[ScenarioFormFields, list[str]]:
@@ -217,6 +226,7 @@ def _definition_from_yaml_fields(parsed: Mapping[str, object]) -> ScenarioDefini
         FIELD_INSTANCES: parsed.get(FIELD_INSTANCES, []),
         FIELD_SUBNETS: parsed.get(FIELD_SUBNETS, []),
         FIELD_NGFW: parsed.get(FIELD_NGFW, False),
+        FIELD_CALDERA: parsed.get(FIELD_CALDERA, False),
     }
 
 

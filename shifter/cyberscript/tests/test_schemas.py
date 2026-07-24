@@ -173,6 +173,46 @@ class TestRangeSpecValidation:
                 subnets=[],
             )
 
+    def test_caldera_defaults_to_disabled_profile(self):
+        """RangeSpec normalizes missing Caldera setup to a disabled profile."""
+        from cyberscript.schemas import RangeSpec
+
+        spec = RangeSpec(scenario_id="test-scenario", user_id=1, subnets=[])
+
+        assert spec.caldera.enabled is False
+        assert spec.caldera.callback_port == 8888
+        assert spec.caldera.target_roles == ["victim", "dc"]
+        assert spec.caldera.windows_defender_mode == "path_exclusion"
+
+    @pytest.mark.parametrize(("value", "enabled"), [(True, True), (False, False)])
+    def test_caldera_accepts_boolean_shorthand(self, value, enabled):
+        """RangeSpec accepts the authoring shorthand used by scenario YAML/API."""
+        from cyberscript.schemas import RangeSpec
+
+        spec = RangeSpec(scenario_id="test-scenario", user_id=1, subnets=[], caldera=value)
+
+        assert spec.caldera.enabled is enabled
+        assert spec.caldera.callback_port == 8888
+
+    def test_caldera_rejects_invalid_callback_port(self):
+        """Caldera callback port must stay in the TCP/UDP port range."""
+        from cyberscript.schemas import RangeSpec
+
+        with pytest.raises(ValueError):
+            RangeSpec(scenario_id="test-scenario", user_id=1, subnets=[], caldera={"enabled": True, "callback_port": 0})
+
+    def test_caldera_rejects_attacker_as_agent_target(self):
+        """Caldera sandcat target roles explicitly exclude the attacker."""
+        from cyberscript.schemas import RangeSpec
+
+        with pytest.raises(ValueError):
+            RangeSpec(
+                scenario_id="test-scenario",
+                user_id=1,
+                subnets=[],
+                caldera={"enabled": True, "target_roles": ["attacker"]},
+            )
+
 
 class TestInstanceSpecValidation:
     """Tests for InstanceSpec validation."""

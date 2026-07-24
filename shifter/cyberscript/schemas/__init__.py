@@ -51,6 +51,7 @@ from .ctf import (
 )
 from .range import (
     AgentDetails,
+    CalderaRuntimeSpec,
     DCConfig,
     InstanceContext,
     InstanceContextBase,
@@ -94,6 +95,7 @@ __all__ = [
     "AgentAppContext",
     "AgentAppSpec",
     "AgentDetails",
+    "CalderaRuntimeSpec",
     "AnyRangeSpec",
     "AppContext",
     "AppContextBase",

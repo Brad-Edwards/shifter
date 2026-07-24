@@ -149,6 +149,7 @@ class ScenarioDetailSerializer(serializers.Serializer):
     deletable = serializers.BooleanField(read_only=True)
     exportable = serializers.BooleanField(read_only=True)
     ngfw = serializers.BooleanField(read_only=True)
+    caldera = serializers.BooleanField(read_only=True)
     instances = ScenarioInstanceSerializer(many=True, read_only=True)
     subnets = ScenarioSubnetSerializer(many=True, read_only=True)
     aces = AcesCatalogFieldsSerializer(read_only=True, allow_null=True)
@@ -160,6 +161,7 @@ class _ScenarioDefinitionSerializer(serializers.Serializer):
     name = serializers.CharField()
     description = serializers.CharField()
     ngfw = serializers.BooleanField(required=False, default=False)
+    caldera = serializers.BooleanField(required=False, default=False)
     instances = ScenarioInstanceSerializer(many=True)
     subnets = ScenarioSubnetSerializer(many=True, required=False, default=list)
 
@@ -170,6 +172,7 @@ class _ScenarioDefinitionSerializer(serializers.Serializer):
             "instances": data["instances"],
             "subnets": data.get("subnets", []),
             "ngfw": data.get("ngfw", False),
+            "caldera": data.get("caldera", False),
         }
 
 
