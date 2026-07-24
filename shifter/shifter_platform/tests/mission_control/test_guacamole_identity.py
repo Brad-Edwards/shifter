@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 
-from mission_control.views._guacamole import _resolve_and_build_rdp_url, guacamole_identity
+from mission_control._guacamole_session_builders import _build_rdp_url, guacamole_identity
 
 User = get_user_model()
 
@@ -48,7 +48,7 @@ def test_rdp_url_build_uses_nonblank_identity_for_email_less_account(monkeypatch
     captured: dict[str, str] = {}
 
     monkeypatch.setattr(
-        "mission_control.views._guacamole._resolve_rdp_conn",
+        "mission_control._guacamole_session_builders._resolve_rdp_conn",
         lambda _user, _instance_uuid: dict(_CONN_INFO),
     )
 
@@ -58,7 +58,7 @@ def test_rdp_url_build_uses_nonblank_identity_for_email_less_account(monkeypatch
 
     monkeypatch.setattr("mission_control.guacamole.create_guacamole_rdp_url", _fake_create)
 
-    url = _resolve_and_build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
+    url = _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
 
     assert captured["username"] == "range-abcd1234"
     assert captured["username"], "Guacamole username must never be blank"
@@ -71,7 +71,7 @@ def test_rdp_url_build_forces_tls_security_for_kali(monkeypatch):
     captured: dict[str, str] = {}
 
     monkeypatch.setattr(
-        "mission_control.views._guacamole._resolve_rdp_conn",
+        "mission_control._guacamole_session_builders._resolve_rdp_conn",
         lambda _user, _instance_uuid: {**_CONN_INFO, "os_type": "kali"},
     )
 
@@ -81,7 +81,7 @@ def test_rdp_url_build_forces_tls_security_for_kali(monkeypatch):
 
     monkeypatch.setattr("mission_control.guacamole.create_guacamole_rdp_url", _fake_create)
 
-    _resolve_and_build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
+    _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
 
     assert captured["security"] == "tls"
 
@@ -92,7 +92,7 @@ def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):
     captured: dict[str, str] = {}
 
     monkeypatch.setattr(
-        "mission_control.views._guacamole._resolve_rdp_conn",
+        "mission_control._guacamole_session_builders._resolve_rdp_conn",
         lambda _user, _instance_uuid: dict(_CONN_INFO),
     )
 
@@ -102,6 +102,6 @@ def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):
 
     monkeypatch.setattr("mission_control.guacamole.create_guacamole_rdp_url", _fake_create)
 
-    _resolve_and_build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
+    _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
 
     assert captured["security"] == "any"
