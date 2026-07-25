@@ -115,11 +115,8 @@ class Range(models.Model):
         help_text="Subnet CIDR (e.g., 10.1.5.0/24)",
     )
     subnet_index = models.PositiveIntegerField(null=True, blank=True, help_text="Unique index for CIDR allocation")
-    # ADR-008-R7: reserved index into the pre-provisioned GCP OpenVPN gateway
-    # service-account pool (sh-vpn-pool-<slot>). Assigned per active range when its
-    # gateway is created and freed implicitly by the destroy/failed status
-    # transition, so the runtime provisioner attaches a pool identity it already
-    # holds actAs on instead of creating one and granting itself setIamPolicy.
+    # ADR-008-R7: reserved slot into the pre-provisioned GCP OpenVPN gateway SA
+    # pool (sh-vpn-pool-<slot>); freed implicitly by the destroy/failed status.
     vpn_gateway_pool_slot = models.PositiveIntegerField(
         null=True, blank=True, help_text="Reserved GCP OpenVPN gateway SA pool slot (single-project pool)"
     )
@@ -389,13 +386,8 @@ class Range(models.Model):
         ``settings.VPN_GATEWAY_POOL_SIZE`` and must match the number of
         ``sh-vpn-pool-<slot>`` service accounts Terraform pre-creates. A slot is
         freed implicitly when its range reaches a terminal (DESTROYED/FAILED)
-        status, so no explicit release path is needed.
-
-        Returns:
-            int: The reserved pool slot (0-based).
-
-        Raises:
-            ValueError: If the pool is unset/exhausted.
+        status, so no explicit release path is needed. Returns the 0-based slot;
+        raises ValueError if the pool is unset or exhausted.
         """
         from django.conf import settings
         from django.db import connection

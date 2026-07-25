@@ -127,9 +127,10 @@ def test_gcp_put_server_raises_when_no_pool_slot_reserved(monkeypatch):
     client.access_secret_version.side_effect = _NotFound()
     _mock_slot_read(monkeypatch, None)
     adapter = _gcp_adapter(client)
+    generation = uuid4()
 
     with pytest.raises(RuntimeError, match="gateway pool slot"):
-        adapter.put_server(42, uuid4(), "server-material")
+        adapter.put_server(42, generation, "server-material")
 
 
 def test_gcp_delete_generation_removes_secrets_without_touching_identities():
