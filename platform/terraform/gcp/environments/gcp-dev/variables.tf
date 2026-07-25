@@ -46,7 +46,7 @@ variable "gke_master_ipv4_cidr" {
 }
 
 variable "gke_master_authorized_cidrs" {
-  description = "CIDR blocks allowed to reach the public GKE control-plane endpoint."
+  description = "Optional RFC1918 CIDR blocks allowed to reach the private GKE control-plane endpoint from connected private networks. Leave empty when using Connect Gateway."
   type        = list(string)
   default     = []
 }
