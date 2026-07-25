@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 
 from config import GCERangeCellConfig
 from gcp_range_cell_naming import _network_tag, _short_resource_name
@@ -265,6 +266,8 @@ def build_firewall_plan(
     vpn_gateway: OpenVpnGatewayPlan | None = None,
 ) -> list[FirewallPlan]:
     """Render the firewall plan for internal range traffic and management."""
+    if os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}:
+        return []
     range_tag = _network_tag(range_id)
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
     portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)

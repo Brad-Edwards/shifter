@@ -142,6 +142,33 @@ def test_ensure_is_idempotent_when_secret_exists(mocker):
     iam.create_service_account_key.assert_not_called()
 
 
+def test_ensure_copies_shared_key_without_minting_service_account_key(mocker, monkeypatch):
+    monkeypatch.setenv("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "shared-vertex-key")
+    iam = SimpleNamespace(create_service_account_key=mocker.Mock())
+    secrets = _secret_client(exists=False)
+
+    def _access(*, request):
+        if request["name"] == "projects/proj/secrets/shared-vertex-key/versions/latest":
+            return SimpleNamespace(payload=SimpleNamespace(data=_KEY_JSON.encode("utf-8")))
+        raise NotFound()
+
+    secrets.access_secret_version = _access
+    add_version = mocker.spy(secrets, "add_secret_version")
+
+    ref = ensure_range_vertex_key(
+        42,
+        "range-vertex@proj.iam.gserviceaccount.com",
+        iam_client=iam,
+        secret_client=secrets,
+        google_exceptions=_EXCEPTIONS,
+        project_id="proj",
+    )
+
+    assert ref == "projects/proj/secrets/shifter-range-42-vertex-key"
+    iam.create_service_account_key.assert_not_called()
+    assert add_version.call_args.kwargs["request"]["payload"]["data"] == _KEY_JSON.encode("utf-8")
+
+
 def test_ensure_requires_service_account_email():
     with pytest.raises(RuntimeError, match="Vertex service account"):
         ensure_range_vertex_key(42, "", google_exceptions=_EXCEPTIONS, project_id="proj")
@@ -179,3 +206,23 @@ def test_delete_is_noop_when_secret_absent(mocker):
     )
 
     iam.delete_service_account_key.assert_not_called()
+
+
+def test_delete_shared_key_mode_removes_only_range_secret(mocker, monkeypatch):
+    monkeypatch.setenv("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "shared-vertex-key")
+    iam = SimpleNamespace(delete_service_account_key=mocker.Mock())
+    secrets = _secret_client(exists=True)
+    access_secret = mocker.spy(secrets, "access_secret_version")
+    delete_secret = mocker.spy(secrets, "delete_secret")
+
+    delete_range_vertex_key(
+        42,
+        iam_client=iam,
+        secret_client=secrets,
+        google_exceptions=_EXCEPTIONS,
+        project_id="proj",
+    )
+
+    access_secret.assert_not_called()
+    iam.delete_service_account_key.assert_not_called()
+    delete_secret.assert_called_once_with(request={"name": "projects/proj/secrets/shifter-range-42-vertex-key"})

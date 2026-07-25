@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from contextlib import suppress
 from typing import Protocol
 
@@ -116,6 +117,39 @@ def _google_exceptions() -> _GoogleExceptions:
     return import_google_module(_GOOGLE_EXCEPTIONS_MODULE)
 
 
+def _shared_secret_id() -> str:
+    """Return the configured shared Vertex key secret id (empty when unset).
+
+    When set, ranges copy the key from this one shared secret instead of minting
+    a fresh per-range SA key, which avoids service-account key quota pressure on
+    deployments that provision the shared key out-of-band.
+    """
+    return os.environ.get("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "").strip()
+
+
+def _as_bytes(data: object) -> bytes:
+    """Coerce a Secret Manager / SA-key payload to bytes."""
+    return data if isinstance(data, bytes) else str(data).encode("utf-8")
+
+
+def _resolve_range_key_json(
+    *,
+    service_account_email: str,
+    resolved_project: str,
+    secrets: _SecretClient,
+    shared_secret_id: str,
+    iam_client: _IamClient | None,
+) -> bytes:
+    """Return the Vertex key JSON, copied from the shared secret or freshly minted."""
+    if shared_secret_id:
+        shared_secret_name = f"projects/{resolved_project}/secrets/{shared_secret_id}"
+        shared_version = secrets.access_secret_version(request={"name": f"{shared_secret_name}/versions/latest"})
+        return _as_bytes(shared_version.payload.data)
+    iam = iam_client or _build_iam_client()
+    key = iam.create_service_account_key(request={"name": f"projects/-/serviceAccounts/{service_account_email}"})
+    return _as_bytes(key.private_key_data)
+
+
 def ensure_range_vertex_key(
     range_id: int,
     service_account_email: str,
@@ -151,10 +185,13 @@ def ensure_range_vertex_key(
         logger.info("Range Vertex key secret exists secret_fp=%s", safe_log_fingerprint(secret_name))
         return secret_name
 
-    iam = iam_client or _build_iam_client()
-    key = iam.create_service_account_key(request={"name": f"projects/-/serviceAccounts/{service_account_email}"})
-    key_json = (
-        key.private_key_data.decode("utf-8") if isinstance(key.private_key_data, bytes) else str(key.private_key_data)
+    shared_secret_id = _shared_secret_id()
+    key_json = _resolve_range_key_json(
+        service_account_email=service_account_email,
+        resolved_project=resolved_project,
+        secrets=secrets,
+        shared_secret_id=shared_secret_id,
+        iam_client=iam_client,
     )
 
     with suppress(exceptions.AlreadyExists):
@@ -165,7 +202,7 @@ def ensure_range_vertex_key(
                 "secret": {"replication": {"automatic": {}}},
             }
         )
-    secrets.add_secret_version(request={"parent": secret_name, "payload": {"data": key_json.encode("utf-8")}})
+    secrets.add_secret_version(request={"parent": secret_name, "payload": {"data": key_json}})
     if host_service_account_email:
         # The secret is freshly created here, so set (not merge) a policy that
         # grants only the range host SA read access to this one secret.
@@ -182,7 +219,8 @@ def ensure_range_vertex_key(
                 },
             }
         )
-    logger.info("Minted range Vertex key secret_fp=%s", safe_log_fingerprint(secret_name))
+    action = "Copied shared" if shared_secret_id else "Minted"
+    logger.info("%s range Vertex key secret_fp=%s", action, safe_log_fingerprint(secret_name))
     return secret_name
 
 
@@ -204,10 +242,13 @@ def delete_range_vertex_key(
     secret_id = _vertex_secret_id(range_id)
     secret_name = f"projects/{resolved_project}/secrets/{secret_id}"
 
+    shared_secret_id = _shared_secret_id()
+
     key_name = ""
-    with suppress(exceptions.NotFound):
-        response = secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
-        key_name = _key_resource_name(response.payload.data)
+    if not shared_secret_id:
+        with suppress(exceptions.NotFound):
+            response = secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
+            key_name = _key_resource_name(response.payload.data)
 
     if key_name:
         iam = iam_client or _build_iam_client()
