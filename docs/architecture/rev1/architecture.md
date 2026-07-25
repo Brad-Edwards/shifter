@@ -88,25 +88,21 @@ conformance evidence.
 **Severity: medium**
 
 The import checks cover engine, CMS, management, Mission Control, CTF, and the
-ACES facade, but installed first-party packages such as `config` and
-`documentation` are not classified. Both guard suites pass, which is useful
-evidence that the problem is coverage, not a current violation.
+ACES facade, but installed first-party packages such as `risk_register`,
+`config`, and `documentation` are not classified. Both guard suites pass, which
+is useful evidence that the problem is coverage, not a current violation.
 
 **Impact:** a green architecture gate does not mean whole-platform boundary
 conformance, and a new Django app can silently enter without an ownership rule.
 
 **Action:** classify every first-party package as a domain layer, presentation
 layer, or support package and add a guard that rejects unclassified additions to
-`INSTALLED_APPS`. The cross-cutting audit contract has since been extracted
-from the `risk_register` feature package (removed in #1374) into the neutral
-`shared.audit` port: CTF, engine, management, CMS, and Mission Control now
-import the port rather than a feature-domain audit model. The context
-processor that used to import upward from `risk_register` moved out of
-`shared` to `config/context_processors.py` (the composition root) so the
-contracts layer no longer imports a feature domain at all (#1523); the moved
-processor's `risk_register`-specific flag (`can_access_risk_register`) no
-longer exists after #1374. Existing #530 is stale because CTF is already
-enforced and does not cover this broader requirement.
+`INSTALLED_APPS`. Extract the cross-cutting audit contract from the
+`risk_register` feature package into a neutral port: CTF, engine, management,
+CMS, and Mission Control currently import audit models directly, while
+`shared/context_processors.py` imports upward from `risk_register`. Existing
+#530 is stale because CTF is already enforced and does not cover this broader
+requirement.
 
 ## A5: Presentation orchestration ownership remains ambiguous
 

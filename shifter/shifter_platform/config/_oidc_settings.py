@@ -9,8 +9,9 @@ binding the module-level constants used in the re-export.
 from __future__ import annotations
 
 import os
+import warnings
 
-from config._runtime_env import AUTH_PROVIDER, required_runtime_env
+from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, required_runtime_env
 
 __all__ = [
     "AUTHENTICATION_BACKENDS",
@@ -45,6 +46,7 @@ __all__ = [
     "OIDC_USERNAME_ALGO",
     "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
     "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
+    "RISK_REGISTER_ALLOWED_COGNITO_GROUPS",
     "SESSION_COOKIE_AGE",
 ]
 
@@ -191,3 +193,12 @@ OIDC_EXEMPT_URLS = [
 # CTF sessions are additionally bounded by the live-event account policy.
 # 14 days
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
+
+# Risk register Cognito group gate (issue #151). Fail closed when unset outside tests.
+RISK_REGISTER_ALLOWED_COGNITO_GROUPS = _env_list("RISK_REGISTER_ALLOWED_COGNITO_GROUPS")
+if not RISK_REGISTER_ALLOWED_COGNITO_GROUPS and not IS_TEST_RUN:
+    warnings.warn(
+        "RISK_REGISTER_ALLOWED_COGNITO_GROUPS is unset; risk register access is denied for all principals.",
+        RuntimeWarning,
+        stacklevel=2,
+    )

@@ -29,7 +29,7 @@ layers (`config/dev_auth.py`):
 
 ## Audit source-IP attribution
 
-`shared.audit.get_client_ip()` is the single canonical resolver for
+`risk_register.services.get_client_ip()` is the single canonical resolver for
 HTTP audit `source_ip`. It delegates to `select_trusted_client_ip()`, which
 trusts the **rightmost** (proxy-appended) `X-Forwarded-For` hop (the value the
 ALB appends is the real client as seen by the trusted proxy), and falls back to
@@ -117,7 +117,7 @@ admin. This is enforced by `tests/config/test_organizer_authority.py` and
 ## Audit trail for role changes
 
 Every change a `user_type` sync produces is recorded by
-`shared.audit.audit_role_sync()` as an `AuditLog` row with
+`risk_register.services.audit_role_sync()` as an `AuditLog` row with
 `entity_type=USER` and `action=ROLE_SYNC`, capturing the actor, subject user id,
 old/new `user_type`, old/new CTF groups, source provider, and request context
 (source IP / user agent / request id where request-bound). The write is
@@ -126,21 +126,3 @@ mutation, so if the audit row cannot be persisted the mutation is rolled back.
 Rows are queryable through the existing audit API (`AuditLogViewSet`) and admin
 (`AuditLogAdmin`, filterable by `action`). No tokens, cookies, full headers, or
 provider payloads are written to audit state.
-
-## Audit read authorization
-
-Reading that trail (`GET /api/v1/audit/`) is itself a trust boundary: rows
-carry actor identity, source IPs, user agents, request ids, and before/after
-state. Since #1374 the read gate is a compound check — a session must be
-**both** staff/superuser **and** a member of a Cognito group listed in
-`AUDIT_LOG_ALLOWED_COGNITO_GROUPS` — restoring the pre-#1374 risk-register
-semantics under an audit-owned name (`shared.api.permissions.HasAuditLogCognitoGroup`
-+ `IsStaffSessionAudited`). Group membership resolves from
-`request.session["cognito_groups"]` first (the same capture this document's
-"Audit source-IP attribution" and organizer-authority sections describe), then
-falls back to the stored `UserProfile.cognito_groups` for a session that
-predates group capture. An unset/empty allow-list **fails closed** — it denies
-every principal, staff included, rather than degrading to staff-only — and every
-denial is both logged and written as an `ACCESS_DENIED` audit row. See
-`docs/architecture/audit-system-architecture.md` for the full read-surface
-architecture.

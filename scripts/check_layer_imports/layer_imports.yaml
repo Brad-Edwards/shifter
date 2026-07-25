@@ -26,6 +26,7 @@ classification:
     - cms
     - management
     - ctf
+    - risk_register
   # Owns HTTP/WebSocket presentation orchestration. May use `shared` and
   # explicitly allowed public domain service facades; never domain models.
   presentation:
@@ -74,6 +75,12 @@ allowed:
     - cms.services
     - management.services
 
+  # Domain: owns the AuditLog store and risk CRUD. Its access policy reads a
+  # user profile through the management public facade.
+  risk_register:
+    - shared
+    - management.services
+
   # Composition root: wires public domain service facades and the ASGI/routing
   # + operational-metrics surfaces. Enumerated narrowly — it must not import
   # domain models or private modules.
@@ -82,6 +89,7 @@ allowed:
     - cms.services
     - ctf.services
     - management.services
+    - risk_register.services
     - mission_control.routing
     - mission_control.terminal_sessions
 

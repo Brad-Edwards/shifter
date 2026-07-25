@@ -13,11 +13,11 @@ from cms.models import RangeInstance
 from cms.models import Request as CmsRequest
 from engine.models import Instance, Range
 from engine.models import Request as EngineRequest
+from risk_register.models import AuditLog
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 from shared.audit import AuditAction, AuditEntityType
 from shared.enums import RangeSource, RequestType, ResourceStatus
-from shared.models import AuditLog
 from tests.engine.services.conftest import boto3_secrets, make_secrets_client
 
 pytestmark = pytest.mark.django_db

@@ -326,7 +326,7 @@ rows:
     legacy_field: ScriptExecutionContext, ScriptCommand, RunArtifact, ExperimentArtifact, Claude transcript artifacts, and behavior-history evidence references
     category: ACES schema/profile gap
     aces_target: ACES behavior-history and evidence records carrying artifact refs, digests, provenance, capture profile, retention class, and redaction status
-    shifter_owner: future ACES-backed experiment design, shared.script_context, shared.uploads, shared.cloud, shared.audit
+    shifter_owner: future ACES-backed experiment design, shared.script_context, shared.uploads, shared.cloud, risk_register.services.audit_log
     validation_evidence: "docs/architecture/aces-participant-runtime-history-evidence-preflight-1289.md plus future #1289 implementation tests and ADR-027 removal evidence"
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1289: Capture participant runtime history and evidence"
@@ -454,11 +454,11 @@ rows:
 
   - id: aces.runtime-snapshot-retention
     surface: artifact
-    legacy_source: engine.Range.provisioned_instances; cms.RangeInstance.range_spec; shared.models.AuditLog
+    legacy_source: engine.Range.provisioned_instances; cms.RangeInstance.range_spec; risk_register.AuditLog
     legacy_field: runtime observation, snapshot, audit, and diagnostic JSON surfaces
     category: Shifter backend responsibility
     aces_target: bounded, redacted runtime-snapshot-v1 records plus optional short operational history
-    shifter_owner: shared contracts, engine services, cms services, shared.audit
+    shifter_owner: shared contracts, engine services, cms services, risk_register.services.audit_log
     validation_evidence: shifter/shifter_platform/tests/cms/; shifter/shifter_platform/tests/engine/
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1277: Implement snapshot retention, redaction, and audit rules"

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Shifter portal single-page application (ADR-029).",
+  "description": "Shifter portal single-page application (ADR-029). Phase 1: Risk Register workspace (#1302).",
   "engines": {
     "node": ">=20.19.0"
   },
