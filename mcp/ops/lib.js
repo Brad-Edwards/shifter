@@ -235,6 +235,7 @@ export const LOCAL_PORTS = { dev: 15432, prod: 15433 };
 export const SERVICE_LAYERS = {
   cms_: "Shifter CMS (content management)",
   engine_: "Shifter Engine (range provisioning)",
+  risk_register_: "Risk Register (security tracking)",
   auth_: "Django Auth",
   django_: "Django Framework",
   health_check_: "Health Checks",
@@ -258,12 +259,31 @@ export function getServiceLayer(tableName) {
 export const FORBIDDEN_PATTERN =
   /\b(DROP|DELETE|UPDATE|INSERT|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|VACUUM|REINDEX)\b/i;
 
-// Risk Register (risk/comment/apikey tools, severity/status/STRIDE schemas)
-// was removed in #1374 Part B. The audit table entry survives here because
-// it was rehomed to the shared app (#1374 Part A), not because it was ever
-// risk-register-owned.
+// --- Risk Register Constants ---
+
 export const RISK_TABLES = {
-  audit_log: "shared_auditlog",
+  risk: "risk_register_risk",
+  comment: "risk_register_comment",
+  apikey: "risk_register_apikey",
+  audit_log: "risk_register_auditlog",
+};
+
+export const SEVERITY_VALUES = ["critical", "high", "medium", "low"];
+export const STATUS_VALUES = [
+  "open",
+  "acknowledged",
+  "mitigating",
+  "resolved",
+  "closed",
+];
+export const STRIDE_CODES = ["S", "T", "R", "I", "D", "E"];
+export const STRIDE_LABELS = {
+  S: "Spoofing",
+  T: "Tampering",
+  R: "Repudiation",
+  I: "Information Disclosure",
+  D: "Denial of Service",
+  E: "Elevation of Privilege",
 };
 
 /**

@@ -24,8 +24,8 @@ from cms.scenarios.legacy_ids import ScenarioIdCollisionError
 from cms.scenarios.pack_validation import PackDigestError, pack_digest
 from cms.scenarios.registry import get_catalog_entry
 from cms.services import PackRegistrationRequest, register_pack
+from risk_register.models import AuditLog
 from shared.audit import AuditAction, AuditEntityType
-from shared.models import AuditLog
 
 User = get_user_model()
 

@@ -23,6 +23,7 @@ EXPECTED_PACKAGES = {
     "mission_control",
     "ctf",
     "config",
+    "risk_register",
 }
 
 _CLASSIFICATION_YAML = """\
@@ -80,12 +81,6 @@ class InstalledAppsClassifiedTests(unittest.TestCase):
     def test_canonical_classification_matches_expected_packages(self) -> None:
         classified = ADR_GUARD._classified_packages(ADR_GUARD.REPO_ROOT)
         self.assertEqual(classified, EXPECTED_PACKAGES)
-
-    def test_risk_register_removed_from_canonical_classification(self) -> None:
-        # risk_register was removed (#1374); the canonical classification must
-        # not carry it as a stale, dangling package entry.
-        classified = ADR_GUARD._classified_packages(ADR_GUARD.REPO_ROOT)
-        self.assertNotIn("risk_register", classified)
 
     def test_adr_guard_layers_have_set_equality_with_classification(self) -> None:
         classified = ADR_GUARD._classified_packages(ADR_GUARD.REPO_ROOT)

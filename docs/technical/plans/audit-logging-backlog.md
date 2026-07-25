@@ -1,6 +1,6 @@
 # Audit Logging Backlog
 
-Prioritized issues for implementing unified platform audit logging. See [Architecture](../../architecture/audit-system-architecture.md).
+Prioritized issues for implementing unified platform audit logging. See [Architecture](../risk/audit-system-architecture.md).
 
 ## Priority Levels
 
@@ -17,10 +17,9 @@ Prioritized issues for implementing unified platform audit logging. See [Archite
 
 **Summary**: Add entity types, actions, and metadata fields to support platform-wide auditing.
 
-**Files** (rehomed from `risk_register` to `shared` in #1374; see
-`shared/migrations/0006_rehome_auditlog.py`):
-- `shared/models.py` (`AuditLog`)
-- `shared/audit/vocabulary.py` (`AuditEntityType`, `AuditAction`, `AuditActorType` choices)
+**Files**:
+- `risk_register/models.py`
+- `risk_register/migrations/` (new migration)
 
 **Changes**:
 
@@ -78,11 +77,8 @@ Prioritized issues for implementing unified platform audit logging. See [Archite
 
 **Summary**: Centralized service functions for audit logging, callable from any app.
 
-**Files** (rehomed from `risk_register.services` into the neutral
-`shared.audit` port/policy contract, #1523 / #1374):
-- `shared/audit/policy.py` (`audit_log`, `audit_log_from_request`, `audit_log_system_event`)
-- `shared/audit/attribution.py` (`get_actor_from_request` and request IP/id extraction)
-- `shared/audit_adapter.py` (the concrete `AuditLog` persistence adapter bound at startup)
+**Files**:
+- `risk_register/services.py` (new file or extend existing)
 
 **Functions**:
 
@@ -153,10 +149,8 @@ Prioritized issues for implementing unified platform audit logging. See [Archite
 
 **Summary**: Update AuditLogAdmin to filter/search new fields.
 
-**Status**: Implemented (rehomed from `risk_register.admin` to `shared.admin` in #1374).
-
 **Files**:
-- `shared/admin.py` (`AuditLogAdmin`)
+- `risk_register/admin.py`
 
 **Changes**:
 
@@ -176,10 +170,10 @@ Prioritized issues for implementing unified platform audit logging. See [Archite
 4. Add `readonly_fields` for new fields (maintain immutability).
 
 **Acceptance Criteria**:
-- [x] Can filter by all entity types
-- [x] Can filter by all actions
-- [x] Can search by request_id
-- [x] No add/change/delete permissions remain
+- [ ] Can filter by all entity types
+- [ ] Can filter by all actions
+- [ ] Can search by request_id
+- [ ] No add/change/delete permissions remain
 
 **Estimate**: Small
 
@@ -660,13 +654,10 @@ Prioritized issues for implementing unified platform audit logging. See [Archite
 
 **Summary**: Read-only API for querying audit logs.
 
-**Status**: Implemented (rehomed from `risk_register/api/` to `shared/api/` in
-#1374; mounted from `config/api_urls.py` via `shared/api/urls.py`).
-
 **Files**:
-- `shared/api/audit.py` (`AuditLogViewSet`, `AuditLogSerializer`)
-- `shared/api/urls.py`
-- `shared/api/permissions.py` (`HasAuditLogCognitoGroup`, `IsStaffSessionAudited`)
+- `risk_register/api/views.py`
+- `risk_register/api/serializers.py`
+- `risk_register/api/urls.py`
 
 **Endpoints**:
 
@@ -695,19 +686,14 @@ class AuditLogSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 ```
 
-**Permissions**: Compound gate restoring the pre-#1374 risk-register semantics
-under an audit-owned name — a session must be both a member of a configured
-Cognito group (`AUDIT_LOG_ALLOWED_COGNITO_GROUPS`, `HasAuditLogCognitoGroup`)
-and staff/superuser (`IsStaffSessionAudited`); fails closed when the group
-allow-list is unconfigured. No platform API token scope is accepted for audit
-reads (ADR-029). Permission denials are themselves audited (see AUDIT-018).
+**Permissions**: Admin users only (IsAdminUser).
 
 **Acceptance Criteria**:
-- [x] List endpoint with pagination
-- [x] All filter parameters work
-- [x] Date range filtering works
-- [x] No write operations exposed
-- [x] Admin-only access enforced
+- [ ] List endpoint with pagination
+- [ ] All filter parameters work
+- [ ] Date range filtering works
+- [ ] No write operations exposed
+- [ ] Admin-only access enforced
 
 **Dependencies**: AUDIT-001
 
@@ -760,11 +746,8 @@ reads (ADR-029). Permission denials are themselves audited (see AUDIT-018).
 
 **Summary**: Management command to archive old audit logs to S3.
 
-**Status**: Implemented (rehomed from `risk_register.management.commands` to
-`shared.management.commands` in #1374).
-
 **Files**:
-- `shared/management/commands/audit_archive.py`
+- `risk_register/management/commands/audit_archive.py` (new)
 
 **Command**: `python manage.py audit_archive`
 
@@ -780,11 +763,11 @@ reads (ADR-029). Permission denials are themselves audited (see AUDIT-018).
 - `--no-delete` - Archive but keep in database
 
 **Acceptance Criteria**:
-- [x] Old records exported correctly
-- [x] S3 upload with compression
-- [x] Database records deleted after successful upload
-- [x] Dry-run mode works
-- [x] Idempotent (can re-run safely)
+- [ ] Old records exported correctly
+- [ ] S3 upload with compression
+- [ ] Database records deleted after successful upload
+- [ ] Dry-run mode works
+- [ ] Idempotent (can re-run safely)
 
 **Dependencies**: AUDIT-001
 
@@ -796,41 +779,32 @@ reads (ADR-029). Permission denials are themselves audited (see AUDIT-018).
 
 **Summary**: Log authorization failures in DRF permission classes.
 
-**Status**: Implemented for the audited endpoint (rehomed from
-`risk_register.api.permissions` to `shared.api.permissions` in #1374).
-Broader rollout to other apps' permission classes remains open.
-
 **Files**:
-- `shared/api/permissions.py` (`AuditedPermissionDenialMixin`, `IsStaffSessionAudited`)
+- `risk_register/api/permissions.py`
 - Other apps' permission classes as needed
 
 **Changes**:
 
-1. `AuditedPermissionDenialMixin` records an `ACCESS_DENIED` audit row on
-   denial (`shared/api/permissions.py`), catching and logging any audit
-   failure so it never breaks the permission flow:
+1. Create `AuditedPermission` mixin:
    ```python
-   class AuditedPermissionDenialMixin:
-       def _log_permission_denied(self, request, view, message=""):
+   class AuditedPermissionMixin:
+       def permission_denied_audit(self, request, view, message):
            audit_log_from_request(
                request,
-               entity_type=AuditEntityType.CONFIG,
-               entity_id=entity_id,
-               action=AuditAction.ACCESS_DENIED,
-               context=context,
+               entity_type=self.get_entity_type(view),
+               entity_id=self.get_entity_id(view),
+               action="access_denied",
+               context=message,
            )
    ```
 
-2. Applied today to both `HasAuditLogCognitoGroup` and `IsStaffSessionAudited`
-   (the audit-read endpoint, AUDIT-015). Apply to other critical permission
-   classes as needed.
+2. Apply to critical permission classes.
 
 **Acceptance Criteria**:
-- [x] Permission denied events logged
-- [x] Entity being accessed captured
-- [x] Denial reason in context
-- [x] Does not break existing permission flow
-- [ ] Applied broadly to other apps' critical permission classes
+- [ ] Permission denied events logged
+- [ ] Entity being accessed captured
+- [ ] Denial reason in context
+- [ ] Does not break existing permission flow
 
 **Dependencies**: AUDIT-002
 
@@ -939,10 +913,10 @@ graph TD
 | P0 | 3 | Foundation (schema, service, admin) - **Done** |
 | P1 | 7 | Auth events, range lifecycle, credentials - **Partially done** |
 | P2 | 5 | Sessions, agents, NGFW, users, API - **Partially done** |
-| P3 | 3 | Middleware, archival, permission logging - **Archival and permission-denial audit done (narrow scope); middleware still open** |
+| P3 | 3 | Middleware, archival, permission logging |
 | New | 4 | Pause/resume, removed legacy experiments/scripts, scenario editor - **Done** |
 
-**Total**: 22 issues (16 implemented, 6 remaining)
+**Total**: 22 issues (12 implemented, 10 remaining)
 
 **Recommended Sprint Plan**:
 1. Sprint 1: P0 (foundation) - AUDIT-001, 002, 003

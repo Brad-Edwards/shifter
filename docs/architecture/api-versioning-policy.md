@@ -74,27 +74,10 @@ still a compatibility change for clients that coded against it; resolve
 generator inaccuracies before the first publication rather than treating a later
 correction as routine drift.
 
-### Removing a never-published surface
-
-Removing a surface that never had a consumer contract is not a break in this
-sense, but it must be declared rather than assumed (ADR-040-R5). Each removed
-element gets an entry in `shifter/shifter_platform/openapi/v1-breaking-allowances.json`
-carrying the `oasdiff` fingerprint, rule id, path, owning issue, owner, reason,
-and an expiry. The gate matches those entries exactly on fingerprint, id, and
-path — never by pattern — so an undeclared break still fails, and an expired
-entry fails until it is renewed with review or deleted. An entry that no longer
-matches any reported break is listed for deletion but does not fail, so a spent
-allowance cannot break unrelated pull requests.
-
-This is deliberately narrow. The declaration ships in the same change as the
-removal it authorizes, so its safety rests on review of an explicit, enumerated,
-expiring list rather than on the gate alone. It does not cover a surface with
-any external consumer; that still requires `/api/v2/` plus a migration note. A
-pull-request label, a commit-message token, or an `info.version` edit alone
-authorizes nothing.
-
-`docs/adr/exceptions.yaml` does not apply here: the breaking-change gate does
-not read it.
+A narrowly justified exception belongs in `docs/adr/exceptions.yaml` with an
+owner, an expiry, the affected surface, and migration evidence. A pull-request
+label, a commit-message token, or an `info.version` edit alone does not
+authorize a break.
 
 ## Continuous integration gates
 
@@ -111,10 +94,7 @@ runs on every pull request that touches the platform:
 - **Breaking-change gate.** A pinned, checksum-verified OpenAPI-aware checker
   (`oasdiff`) compares the committed artifact against the base branch's already
   published artifact, resolved from the trusted base commit that the same pull
-  request cannot rewrite. A consumer-breaking change to `v1` fails the build
-  unless every reported change is covered by an exact, unexpired entry in
-  `openapi/v1-breaking-allowances.json` (see "Removing a never-published
-  surface" above).
+  request cannot rewrite. A consumer-breaking change to `v1` fails the build.
 
 ## Scope of the current contract
 

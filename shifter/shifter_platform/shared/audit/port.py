@@ -1,8 +1,8 @@
 """Audit writer port and startup binding (neutral contracts layer).
 
 The audit port inverts the historical dependency: emitters depend on this
-neutral protocol, and the concrete persistence adapter (``shared.audit_adapter``)
-is bound to it once at startup (``config.apps.PortalConfig.ready``). The single
+neutral protocol, and the concrete persistence adapter (``risk_register``) is
+bound to it once at startup (``config.apps.PortalConfig.ready``). The single
 binding is the extensibility seam — a future writer is selected without changing
 any emitter. A missing or conflicting binding is a startup configuration error,
 never a silent no-op (#1523).

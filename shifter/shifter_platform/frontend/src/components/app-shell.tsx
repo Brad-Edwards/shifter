@@ -16,6 +16,7 @@ import {
   Server,
   Settings,
   Shield,
+  ShieldAlert,
   Sun,
   Terminal,
   Trophy,
@@ -47,6 +48,7 @@ const ICONS: Record<NavIconKey, ComponentType<{ className?: string }>> = {
   terminal: Terminal,
   settings: Settings,
   "file-code": FileCode,
+  "shield-alert": ShieldAlert,
   "user-cog": UserCog,
   "circle-dollar-sign": CircleDollarSign,
 };

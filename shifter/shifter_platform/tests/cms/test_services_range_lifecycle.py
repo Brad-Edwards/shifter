@@ -14,11 +14,11 @@ from django.contrib.auth import get_user_model
 from cms import services
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
+from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
-from shared.models import AuditLog
 
 pytestmark = pytest.mark.django_db
 

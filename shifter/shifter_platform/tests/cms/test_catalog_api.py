@@ -116,7 +116,7 @@ class TestCatalogListAPI:
         assert response.status_code == 200
 
     def test_token_without_cms_read_scope_is_forbidden(self, api_client, staff_user):
-        raw = _token(staff_user, scopes.MISSION_CONTROL_RANGE_READ)  # valid token, wrong scope
+        raw = _token(staff_user, scopes.RISK_READ)  # valid token, wrong scope
 
         response = _bearer(api_client, raw).get(CATALOG_LIST_URL)
 

@@ -49,10 +49,7 @@ class TestLayerConfiguration:
         assert "mission_control" in ALL_LAYERS
         assert "ctf" in ALL_LAYERS
         assert "config" in ALL_LAYERS
-
-    def test_risk_register_layer_removed(self):
-        """risk_register was removed (#1374); it must not reappear as a layer."""
-        assert "risk_register" not in ALL_LAYERS
+        assert "risk_register" in ALL_LAYERS
 
     def test_all_layers_set_equality_with_canonical_classification(self):
         """ALL_LAYERS must exactly equal the canonical classification (#1523).

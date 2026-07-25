@@ -47,13 +47,8 @@ describe("AppShell", () => {
     const nav = screen.getByRole("navigation", { name: "Primary" });
     expect(nav).toHaveTextContent("Operate");
     expect(nav).toHaveTextContent("Overview");
-  });
-
-  it("does not render a Risk Register nav entry now that it is removed (#1374)", () => {
-    renderShell();
-    const nav = screen.getByRole("navigation", { name: "Primary" });
-    expect(nav).not.toHaveTextContent("Govern");
-    expect(nav).not.toHaveTextContent("Risk Register");
+    expect(nav).toHaveTextContent("Govern");
+    expect(nav).toHaveTextContent("Risk Register");
   });
 
   it("links not-yet-migrated surfaces to their legacy Django route (full-page nav)", () => {

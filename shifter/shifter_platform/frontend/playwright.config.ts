@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Playwright drives one end-to-end happy path against a running Django + built
-// SPA stack (PLATFORM_SPA_ENABLED=1). The stack is started outside this
+// SPA stack (RISK_REGISTER_SPA_ENABLED=1). The stack is started outside this
 // config (CI job / local `manage.py runserver`); point SPA_E2E_BASE_URL at it.
 export default defineConfig({
   testDir: "./e2e",

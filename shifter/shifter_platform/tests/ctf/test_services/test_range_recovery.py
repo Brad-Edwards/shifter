@@ -56,10 +56,10 @@ from ctf.services.range.recovery import get_recovery_status, recover_participant
 from ctf.services.range.spares import create_managed_spare_user
 from engine.models import Range as EngineRange
 from engine.models import Request as EngineRequest
+from risk_register.models import AuditLog
 from shared.audit import AuditAction
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import RangeSource, RequestType, ResourceStatus
-from shared.models import AuditLog
 
 
 def _make_spare_range(*, owner, scenario_id: str = "basic") -> RangeInstance:

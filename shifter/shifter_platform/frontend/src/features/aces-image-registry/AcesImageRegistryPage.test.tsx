@@ -16,7 +16,7 @@ vi.mock("@/api/client", () => ({ apiFetch: vi.fn() }));
 function bootstrapValue(canAuthor = true) {
   return {
     principal: { id: 1, username: "author", display_name: "Author", is_authenticated: true, is_staff: true, is_superuser: false },
-    permissions: { can_access_threat_research: canAuthor },
+    permissions: { can_access_risk_register: false, can_access_threat_research: canAuthor },
     feature_flags: { aces_native_provisioning: true },
   };
 }

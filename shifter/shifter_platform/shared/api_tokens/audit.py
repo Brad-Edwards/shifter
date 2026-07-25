@@ -1,11 +1,11 @@
 """Audit seam for API-token lifecycle events (PLAT-102).
 
 The platform token principal lives in ``shared``; its durable audit trail lives
-in ``shared.audit`` / ``shared.models.AuditLog`` (rehomed from ``risk_register``
-in #1374; the canonical platform audit store the whole platform already uses).
-This seam keeps the call site free of an eager module-level import of the
-audit subsystem by resolving ``shared.audit`` lazily, inside the call, and only
-when an event is actually recorded.
+in ``risk_register`` (the canonical platform audit store the whole platform
+already uses). This seam keeps the ``shared.api_tokens`` package free of an
+app-layer dependency at import time by resolving ``risk_register.services``
+lazily, inside the call — the only place a ``shared`` -> app reference exists,
+and only when an event is actually recorded.
 
 Only token **creation**, **revocation**, and **authentication failure** are
 recorded. Successful authentication is deliberately not audited per-request to

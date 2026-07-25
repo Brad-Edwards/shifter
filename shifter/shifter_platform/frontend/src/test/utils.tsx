@@ -16,6 +16,7 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
     is_superuser: false,
   },
   permissions: {
+    can_access_risk_register: true,
     can_access_threat_research: false,
     is_ctf_organizer: false,
     is_ctf_participant: false,
@@ -25,6 +26,7 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
   },
   modes: { participant: false, operator: true, default: "operator" },
   feature_flags: {
+    risk_register_spa: true,
     platform_spa: true,
     mission_control_spa: true,
     scenario_editor_spa: true,

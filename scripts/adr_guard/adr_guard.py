@@ -24,10 +24,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Every first-party Django app is classified (ADR-001, #1523). Held to
 # set-equality with the canonical classification in layer_imports.yaml by the
 # layer-classification-parity check.
-LAYERS = ("shared", "engine", "cms", "management", "mission_control", "ctf", "config")
+LAYERS = ("shared", "engine", "cms", "management", "mission_control", "ctf", "config", "risk_register")
 IMPORT_PATTERN = re.compile(
     r"^\s*(?:from|import)\s+"
-    r"((?:shared|engine|cms|management|mission_control|ctf|config)(?:\.\w+)*)",
+    r"((?:shared|engine|cms|management|mission_control|ctf|config|risk_register)(?:\.\w+)*)",
     re.MULTILINE,
 )
 CYBERSCRIPT_IMPORT_PATTERN = re.compile(

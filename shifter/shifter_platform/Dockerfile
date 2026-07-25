@@ -1,13 +1,4 @@
-# No `# syntax=` directive on purpose. That directive makes BuildKit resolve an
-# external frontend image from Docker Hub on every build, and `docker/dockerfile:1`
-# is a mutable tag, so it was the one unpinned network dependency in an otherwise
-# fully digest-pinned file (ADR-037-R2). Docker Hub rate-limits unauthenticated
-# GitHub runners, which intermittently failed the stack-smoke build with
-# `dial tcp ...: i/o timeout` resolving the frontend manifest. This file uses no
-# feature that needs an external frontend (no `RUN --mount`, heredocs, or
-# `COPY --link`), so BuildKit's built-in frontend is sufficient and the fetch is
-# pure risk. If a future edit needs a frontend feature, reintroduce the directive
-# pinned by digest, never by tag.
+# syntax=docker/dockerfile:1
 
 # Build stage - use uv's official image for faster builds. Digest-pinned for
 # build provenance (ADR-037-R2): the resolved input is an immutable @sha256,
