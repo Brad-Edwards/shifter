@@ -405,6 +405,22 @@ class TestGithubEnvironmentBinding(unittest.TestCase):
                 )
 
 
+class TestGcpPrivateControlPlaneAccess(unittest.TestCase):
+    """#1850: every GCP deploy credential refresh stays on Connect Gateway."""
+
+    def test_gcp_deploy_never_reverts_to_direct_endpoint_credentials(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("google-github-actions/get-gke-credentials@", workflow)
+        self.assertGreaterEqual(
+            workflow.count("gcloud container fleet memberships get-credentials"),
+            2,
+            "GCP deploy must configure Connect Gateway before bootstrap work and "
+            "refresh it before applying workloads",
+        )
+
+
 class TestProvisionerDeployTestGate(unittest.TestCase):
     """#555: engine image build/deploy is gated by provisioner tests."""
 
