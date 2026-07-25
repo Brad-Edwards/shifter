@@ -1349,7 +1349,7 @@ jobs:
       # PostgreSQL backend now lives in the dedicated shifter-platform-tests-postgres
       # job (#1524); this SQLite job carries no PostgreSQL service or DB_* bundle.
       redis:
-        image: redis:7
+        image: redis:7.4.9
         ports:
           - 6379:6379
         options: >-
