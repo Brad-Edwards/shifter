@@ -160,7 +160,7 @@ class TestCreateRangeBehavior:
         assert ri.agent_id == agent.id
 
     def test_records_an_audit_row(self, user, make_agent, hydratable_scenario):
-        from risk_register.models import AuditLog
+        from shared.models import AuditLog
 
         before = AuditLog.objects.count()
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": make_agent(user).id})

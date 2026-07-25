@@ -143,7 +143,7 @@ responsibilities:
 
 | Concern | Canonical incumbent | Binding rule |
 | --- | --- | --- |
-| Authentication, authorization, ownership, rate limits, audit | Mission Control permissions/serializers, CTF gates, `cms.services`, `risk_register.AuditLog` | Substrate adapters are never HTTP entrypoints or authorization oracles. They receive an already-authorized range identity. |
+| Authentication, authorization, ownership, rate limits, audit | Mission Control permissions/serializers, CTF gates, `cms.services`, `shared.models.AuditLog` | Substrate adapters are never HTTP entrypoints or authorization oracles. They receive an already-authorized range identity. |
 | Authoring and realization intent | `shared.schemas.RequestSpec` / `RangeSpec`; ADR-031/032 ACES `ProvisioningPlan` transport | Do not duplicate or providerize scenario/topology schemas. Validate before cloud mutation. |
 | Public lifecycle state | `shared.enums.ResourceStatus`, Engine/CMS state machines | Do not add provider status enums to public APIs. Adapter phases are private operation evidence. |
 | Backend selection/config | `shifter/installation` loader, schema, contract, registry, runtime inventory, backend settings models | The registry advertises the substrate capability and conformance evidence. No independent `CLOUD_PROVIDER` default or branch/provider switch may select it. |

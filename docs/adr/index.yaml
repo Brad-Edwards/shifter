@@ -700,7 +700,7 @@
     "title": "Unified platform information architecture uses a shared navigation contract",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter treats CTF, Mission Control, Scenario Editor, Risk Register, and Documentation as one platform information architecture. Future navigation implementation must use a shared, role-aware navigation contract derived from the maintained IA and taxonomy artifacts rather than duplicating app-local navigation schemas.",
+    "decision": "Shifter treats CTF, Mission Control, Scenario Editor, and Documentation as one platform information architecture. Future navigation implementation must use a shared, role-aware navigation contract derived from the maintained IA and taxonomy artifacts rather than duplicating app-local navigation schemas. Risk Register was a nav IA surface here until it was removed in #1374; it is no longer part of this contract.",
     "rules": [
       {
         "id": "ADR-013-R1",
@@ -709,7 +709,7 @@
       },
       {
         "id": "ADR-013-R2",
-        "description": "Future navigation data must be centralized behind the shared platform boundary instead of being duplicated independently by CTF, Mission Control, Scenario Editor, Risk Register, and Documentation.",
+        "description": "Future navigation data must be centralized behind the shared platform boundary instead of being duplicated independently by CTF, Mission Control, Scenario Editor, and Documentation.",
         "checks": []
       },
       {
@@ -792,7 +792,6 @@
       "shifter/installation/contract.py",
       "shifter/installation/errors.py",
       "shifter/shifter_platform/shared/auth.py",
-      "shifter/shifter_platform/risk_register/services.py",
       "shifter/shifter_platform/config/dev_auth.py",
       "shifter/shifter_platform/config/settings.py",
       "shifter/shifter_platform/shared/log_sanitize.py"
@@ -1133,33 +1132,28 @@
     "title": "Agent risk audit findings use canonical internal identity and sanitized public tracking",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Repeatable agent-driven risk audits treat the Risk Register as the canonical internal store for detailed findings and GitHub issues as sanitized tracking proxies only. A tracked risk has one opaque persisted `risk_key`; same-risk matching is based on a versioned structural tuple, not titles, prose, GitHub issue numbers, or database primary keys. Public GitHub issue content is generated from a sanitized summary policy and must not copy Risk Register detail, exploit evidence, raw scanner output, internal topology, live cloud identifiers, or secrets. Risk Register writes, GitHub issue creation/update, severity or confidence promotion, and lifecycle changes require an explicit human review gate. Productized writes reuse the Risk Register API/service/audit path, Cognito group authorization, and exact `shared.api_tokens` `risk:read` / `risk:write` scopes; operator MCP runs may use `mcp/ops` named DB tools only with the MCP policy/audit evidence surface called out explicitly.",
+    "decision": "Repeatable agent-driven risk audits must keep detailed findings out of public GitHub issue bodies: GitHub issues are sanitized tracking proxies only, generated from a sanitized summary policy that never copies exploit evidence, raw scanner output, internal topology, live cloud identifiers, or secrets. A tracked risk has one opaque persisted `risk_key`; same-risk matching is based on a versioned structural tuple, not titles, prose, GitHub issue numbers, or database primary keys. Any risk-audit write, GitHub issue creation/update, severity or confidence promotion, and lifecycle change requires an explicit human review gate. The Risk Register feature that originally backed this ADR as the canonical internal store (its API/service/audit path, Cognito group authorization, and `shared.api_tokens` `risk:read` / `risk:write` scopes) was removed in #1374; there is currently no productized internal canonical store for agent risk-audit findings, and implementers must not revive the deleted Risk Register API, service layer, model, or `risk:*` scopes as a shortcut to restore one. A new canonical store requires its own accepted design. Operator MCP runs may still use `mcp/ops` named DB tools only, with the MCP policy/audit evidence surface called out explicitly.",
     "rules": [
       {
         "id": "ADR-023-R1",
-        "description": "Risk Register entries are the internal source of truth for detailed agent risk-audit findings. GitHub issues are sanitized tracking proxies and may carry only coarse component, broad risk class, high-level mitigation objective, review/status labels, and an opaque `Risk-Key`; they must not carry exploit steps, proof-of-concept commands, secrets, raw logs, scanner output, internal endpoints/topology, or live cloud identifiers.",
+        "description": "Detailed agent risk-audit findings must not be published verbatim to GitHub. GitHub issues are sanitized tracking proxies and may carry only coarse component, broad risk class, high-level mitigation objective, review/status labels, and an opaque `Risk-Key`; they must not carry exploit steps, proof-of-concept commands, secrets, raw logs, scanner output, internal endpoints/topology, or live cloud identifiers. The Risk Register app that stored the detailed side was removed in #1374 without a replacement; a future canonical store needs its own accepted design, not a revival of the deleted app.",
         "checks": []
       },
       {
         "id": "ADR-023-R2",
-        "description": "Same-risk matching uses an opaque persisted `risk_key` plus a versioned normalized tuple covering component scope, asset class, risk kind, control failure, actor vector, precondition class, and impact class. Future implementation must add explicit structured Risk Register metadata or link tables when needed; it must not hide machine identity, dedupe fingerprints, confidence, last-seen state, or GitHub links in free-form descriptions or comments.",
+        "description": "Same-risk matching uses an opaque persisted `risk_key` plus a versioned normalized tuple covering component scope, asset class, risk kind, control failure, actor vector, precondition class, and impact class. A future canonical-store implementation must add explicit structured metadata or link tables when needed; it must not hide machine identity, dedupe fingerprints, confidence, last-seen state, or GitHub links in free-form descriptions or comments.",
         "checks": []
       },
       {
         "id": "ADR-023-R3",
-        "description": "Risk-audit automation may analyze the repository and propose Risk Register or GitHub updates, but writes, issue creation/update, severity or confidence promotion, and lifecycle changes require a human review gate. Product/API mutations reuse the existing Risk Register auth, serializer, service, and audit paths; operator MCP direct-table workflows must rely on `.shifter.yaml`, `mcp/ops/policy.js`, and `mcp/ops/audit.js` as their evidence surface.",
+        "description": "Risk-audit automation may analyze the repository and propose canonical-store or GitHub updates, but writes, issue creation/update, severity or confidence promotion, and lifecycle changes require a human review gate. Any reintroduced product/API mutation path requires its own accepted auth, serializer, service, and audit design; it must not revive the removed Risk Register API/service/audit path or `risk:*` scopes. Operator MCP direct-table workflows must rely on `.shifter.yaml`, `mcp/ops/policy.js`, and `mcp/ops/audit.js` as their evidence surface.",
         "checks": []
       }
     ],
     "exceptions": [],
     "enforcement": ["agent-policy"],
     "evidence": [
-      "docs/architecture/agent-risk-audit-preflight-163.md",
-      "shifter/shifter_platform/risk_register/models.py",
-      "shifter/shifter_platform/risk_register/api/serializers.py",
-      "shifter/shifter_platform/risk_register/api/views.py",
-      "shifter/shifter_platform/risk_register/services.py",
-      "shifter/shifter_platform/shared/api_tokens",
+      "docs/architecture/remove-risk-register-audit-rehome-preflight-1374.md",
       "mcp/ops/index.js",
       "mcp/ops/policy.js",
       "mcp/ops/audit.js"
@@ -1344,7 +1338,7 @@
     "title": "SPA cutover frontend stack, deployment, and API boundary",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. The client runtime uses React Router v7 in library/data-router mode for route and URL state, and TanStack Query v5 over a single typed fetch client for server state, caching, invalidation, idempotent GET retry, and mutation no-retry policy. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. The cutover is phased per module in order: Risk Register, Mission Control, CTF, Scenario Editor, Docs. Legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md; the first module's runtime-library defaults and Risk Register workspace boundary are in docs/design/spa-risk-register-workspace-1301.md. Governing issues: #1300, #1301, #1302.",
+    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. The client runtime uses React Router v7 in library/data-router mode for route and URL state, and TanStack Query v5 over a single typed fetch client for server state, caching, invalidation, idempotent GET retry, and mutation no-retry policy. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. The cutover was phased per module in order: Risk Register, Mission Control, CTF, Scenario Editor, Docs; Risk Register was the first module and established the runtime-library defaults, then was itself removed in #1374 (its SPA workspace and design doc removed with it). Legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md. Governing issues: #1300, #1301, #1302, #1374.",
     "rules": [
       {
         "id": "ADR-029-R1",
@@ -1372,8 +1366,7 @@
     "evidence": [
       "docs/architecture/spa-cutover-architecture-1300.md",
       "docs/design/spa-design-system-foundation-1299.md",
-      "docs/design/spa-risk-register-workspace-1301.md",
-      "docs/architecture/spa-risk-register-implementation-preflight-1302.md",
+      "docs/architecture/remove-risk-register-audit-rehome-preflight-1374.md",
       "docs/design/design-system/README.md"
     ]
   },
@@ -1942,6 +1935,11 @@
         "id": "ADR-040-R4",
         "description": "The contract MUST truthfully reuse and describe the existing security and response boundaries: fail-closed shf_ bearer authentication, same-origin session authentication with CSRF on unsafe methods, exact application scopes from shared.api_tokens (never fictitious OAuth2 or wildcard scopes), existing per-app actor/role permissions, PageNumberPagination, and the sanitized shared.api.errors envelope. Generation uses test settings and no live data, credentials, cloud access, secret values, or sensitive process argv; deliberate non-JSON operations declare their actual media and statuses.",
         "checks": []
+      },
+      {
+        "id": "ADR-040-R5",
+        "description": "Removing a surface that was never a published consumer contract is not a v1 break, but it MUST be declared, not assumed. Each removed element requires an entry in openapi/<major>-breaking-allowances.json carrying the oasdiff fingerprint, rule id, path, owning issue, owner, reason, and an expiry. Matching is exact on fingerprint + id + path, never a pattern, so any undeclared break still fails the gate, and an expired allowance fails until it is renewed with review or deleted. An allowance that no longer matches any reported break is reported for deletion but does not fail, so a spent entry cannot break unrelated pull requests. This deliberately narrows ADR-040-R2's 'the compatibility oracle cannot be refreshed by the same proposed change' property: a declaration ships in the same diff as the removal it authorizes, so its safety rests on review of an explicit, enumerated, expiring list rather than on the gate alone. It does not license removing a surface that has any external consumer; those still require a parallel /api/v2/ plus a migration note.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1959,8 +1957,10 @@
       "shifter/shifter_platform/shared/api/contract.py",
       "shifter/shifter_platform/config/management/commands/api_contract.py",
       "shifter/shifter_platform/openapi/v1.json",
+      "shifter/shifter_platform/openapi/v1-breaking-allowances.json",
       "shifter/shifter_platform/frontend/src/api/schema.d.ts",
       "docs/architecture/api-versioning-policy.md",
+      "https://github.com/Brad-Edwards/shifter/issues/1374",
       ".github/workflows/_quality.yml"
     ]
   },

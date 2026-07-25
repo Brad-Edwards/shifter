@@ -5,24 +5,9 @@ from __future__ import annotations
 import pytest
 from rest_framework.test import APIClient
 
-from management.services import get_user_profile
-
 pytestmark = pytest.mark.django_db
 
 BOOTSTRAP_URL = "/api/v1/bootstrap/"
-ALLOWED_GROUPS = ["security"]
-
-
-@pytest.fixture(autouse=True)
-def _allowed_groups(settings):
-    settings.RISK_REGISTER_ALLOWED_COGNITO_GROUPS = ALLOWED_GROUPS
-
-
-def _grant(user, groups=None):
-    profile = get_user_profile(user)
-    profile.cognito_groups = list(groups if groups is not None else ALLOWED_GROUPS)
-    profile.save(update_fields=["cognito_groups"])
-    return profile
 
 
 @pytest.fixture
@@ -52,36 +37,20 @@ def test_authenticated_returns_principal(user):
     assert principal["is_superuser"] is False
 
 
-def test_risk_register_access_reflects_group_membership(user):
-    _grant(user)
+def test_risk_register_permission_key_is_gone(user):
+    # Risk Register was removed in #1374: the bootstrap contract no longer
+    # carries a risk-register permission key at all.
     client = APIClient()
     client.force_authenticate(user=user)
     body = client.get(BOOTSTRAP_URL).json()
-    assert body["permissions"]["can_access_risk_register"] is True
+    assert "can_access_risk_register" not in body["permissions"]
 
 
-def test_risk_register_access_denied_without_group(user):
-    _grant(user, groups=["other-group"])
+def test_risk_register_feature_flag_key_is_gone(user):
     client = APIClient()
     client.force_authenticate(user=user)
     body = client.get(BOOTSTRAP_URL).json()
-    assert body["permissions"]["can_access_risk_register"] is False
-
-
-def test_feature_flag_reported(user, settings):
-    settings.RISK_REGISTER_SPA_ENABLED = True
-    client = APIClient()
-    client.force_authenticate(user=user)
-    body = client.get(BOOTSTRAP_URL).json()
-    assert body["feature_flags"]["risk_register_spa"] is True
-
-
-def test_feature_flag_default_false(user, settings):
-    settings.RISK_REGISTER_SPA_ENABLED = False
-    client = APIClient()
-    client.force_authenticate(user=user)
-    body = client.get(BOOTSTRAP_URL).json()
-    assert body["feature_flags"]["risk_register_spa"] is False
+    assert "risk_register_spa" not in body["feature_flags"]
 
 
 def test_platform_spa_feature_flag_reported(user, settings):

@@ -5,11 +5,13 @@ authenticated principal, effective permission flags, feature flags, and UX mode
 eligibility once from this endpoint after authentication (replacing
 ``config.context_processors.user_permissions`` for the browser client).
 
-This is cross-domain composition (it needs the risk-register access policy), so
-it lives at the ``config`` composition root and consumes the public
-``risk_register.services`` facade rather than importing the risk-register domain
-directly (ADR-001, #1523). It was moved here from ``shared`` so the contracts
-layer no longer imports a feature domain.
+This is cross-domain composition, so it lives at the ``config`` composition
+root. It was moved here from ``shared`` so the contracts layer no longer
+imports a feature domain (ADR-001, #1523).
+
+The Risk Register feature (and its Cognito-group access policy) was removed in
+#1374. Neither the bootstrap permissions nor the feature flags carry a
+risk-register entry any longer.
 
 The permission flags and mode eligibility are **advisory UI state only**. Every
 mutation and read still passes the authoritative DRF permission classes on the
@@ -34,7 +36,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from risk_register.services import principal_has_risk_register_access
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.api_tokens.models import ApiToken
@@ -63,7 +64,6 @@ class BootstrapPrincipalSerializer(serializers.Serializer):
 class BootstrapPermissionsSerializer(serializers.Serializer):
     """Advisory authorization flags mirroring the template context processors."""
 
-    can_access_risk_register = serializers.BooleanField()
     can_access_threat_research = serializers.BooleanField()
     is_ctf_organizer = serializers.BooleanField()
     is_ctf_participant = serializers.BooleanField()
@@ -87,7 +87,6 @@ class BootstrapModesSerializer(serializers.Serializer):
 class BootstrapFeatureFlagsSerializer(serializers.Serializer):
     """Server-owned feature flags surfaced to the SPA (no secret values)."""
 
-    risk_register_spa = serializers.BooleanField()
     platform_spa = serializers.BooleanField()
     mission_control_spa = serializers.BooleanField()
     scenario_editor_spa = serializers.BooleanField()
@@ -162,10 +161,10 @@ def _modes_for_user(user: User | None) -> dict[str, object]:
     """Compute UX mode eligibility for a session user (advisory, not authz).
 
     Participant mode is available to CTF participants; operator mode to anyone
-    who is not a CTF-participant-only account (organizers, staff, threat
-    research, and risk-register operators). The default is operator unless the
-    principal is participant-only. Token principals are programmatic and default
-    to operator with no participant frame.
+    who is not a CTF-participant-only account (organizers, staff, and threat
+    research). The default is operator unless the principal is
+    participant-only. Token principals are programmatic and default to
+    operator with no participant frame.
     """
     if user is None:
         return {"participant": False, "operator": True, "default": "operator"}
@@ -197,7 +196,6 @@ class BootstrapView(APIView):
         payload = {
             "principal": principal,
             "permissions": {
-                "can_access_risk_register": principal_has_risk_register_access(request),
                 "can_access_threat_research": can_threat,
                 "is_ctf_organizer": bool(session_user is not None and is_ctf_organizer(session_user)),
                 "is_ctf_participant": bool(session_user is not None and is_ctf_participant(session_user)),
@@ -207,7 +205,6 @@ class BootstrapView(APIView):
             },
             "modes": _modes_for_user(session_user),
             "feature_flags": {
-                "risk_register_spa": bool(getattr(settings, "RISK_REGISTER_SPA_ENABLED", False)),
                 "platform_spa": bool(getattr(settings, "PLATFORM_SPA_ENABLED", False)),
                 "mission_control_spa": bool(getattr(settings, "MISSION_CONTROL_SPA_ENABLED", False)),
                 "scenario_editor_spa": bool(getattr(settings, "SCENARIO_EDITOR_SPA_ENABLED", False)),

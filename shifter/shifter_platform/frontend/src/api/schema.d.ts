@@ -110,11 +110,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Read-only ViewSet for audit log queries. Admin only.
+         * @description Read-only audit log queries for administrators.
          *
-         *     Provides list and detail views for querying audit logs.
-         *     Supports filtering by entity_type, entity_id, action, actor_type,
-         *     actor_id, and date range.
+         *     Provides list and detail views over the platform audit trail, filterable by
+         *     entity_type, entity_id, action, actor_type, actor_id, and date range.
+         *     Requires a staff or superuser session that is also a member of an allowed
+         *     audit Cognito group; API tokens are not accepted.
          */
         get: operations["audit_list"];
         put?: never;
@@ -133,11 +134,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Read-only ViewSet for audit log queries. Admin only.
+         * @description Read-only audit log queries for administrators.
          *
-         *     Provides list and detail views for querying audit logs.
-         *     Supports filtering by entity_type, entity_id, action, actor_type,
-         *     actor_id, and date range.
+         *     Provides list and detail views over the platform audit trail, filterable by
+         *     entity_type, entity_id, action, actor_type, actor_id, and date range.
+         *     Requires a staff or superuser session that is also a member of an allowed
+         *     audit Cognito group; API tokens are not accepted.
          */
         get: operations["audit_retrieve"];
         put?: never;
@@ -2316,127 +2318,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/risks/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description ViewSet for Risk CRUD operations.
-         *
-         *     Accepts a staff/superuser session or a platform API token scoped
-         *     ``risk:read`` (safe methods) / ``risk:write`` (mutations).
-         */
-        get: operations["risks_list"];
-        put?: never;
-        /** @description Create a new risk with audit logging. */
-        post: operations["risks_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/risks/{id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description ViewSet for Risk CRUD operations.
-         *
-         *     Accepts a staff/superuser session or a platform API token scoped
-         *     ``risk:read`` (safe methods) / ``risk:write`` (mutations).
-         */
-        get: operations["risks_retrieve"];
-        /** @description Update a risk with audit logging. */
-        put: operations["risks_update"];
-        post?: never;
-        /** @description Soft-delete a risk. */
-        delete: operations["risks_destroy"];
-        options?: never;
-        head?: never;
-        /**
-         * @description ViewSet for Risk CRUD operations.
-         *
-         *     Accepts a staff/superuser session or a platform API token scoped
-         *     ``risk:read`` (safe methods) / ``risk:write`` (mutations).
-         */
-        patch: operations["risks_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/risks/{id}/restore/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * @description Restore a soft-deleted risk.
-         *
-         *     Bypasses ``self.get_object()`` (which uses the active-only
-         *     SoftDeleteManager and would 404 a deleted risk) and looks the
-         *     target up via ``Risk.all_objects`` directly. Object-level
-         *     permission checks are still enforced explicitly because we lose
-         *     the ``check_object_permissions()`` call that ``self.get_object()``
-         *     would have run on our behalf.
-         */
-        post: operations["risks_restore_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/risks/{risk_pk}/comments/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description List comments for a risk.
-         *
-         *     With ``?include_deleted=true`` the parent ``Risk`` is also looked
-         *     up via ``all_objects`` so comment history on a soft-deleted risk
-         *     is reachable; default-active for both parent and children
-         *     otherwise.
-         */
-        get: operations["risks_comments_list"];
-        put?: never;
-        /** @description Create a comment on a risk. */
-        post: operations["risks_comments_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/risks/{risk_pk}/comments/{id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** @description Soft-delete a comment. */
-        delete: operations["risks_comments_destroy"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2717,12 +2598,20 @@ export interface components {
             readonly status: string;
             readonly bracket: components["schemas"]["_NamedRef"] | null;
         };
-        /** @description Serializer for AuditLog model (read-only). */
+        /**
+         * @description Serializer for AuditLog model (read-only).
+         *
+         *     ``entity_type`` and ``action`` are declared as plain, un-enumerated
+         *     strings rather than inheriting the model's ``choices``: historical rows
+         *     carry retired values (``"risk"``, ``"comment"``) that are no longer part
+         *     of the active vocabulary, and the published OpenAPI contract must not
+         *     advertise a closed enum that existing data violates (#1374).
+         */
         AuditLog: {
             readonly id: number;
-            readonly entity_type: components["schemas"]["EntityTypeEnum"];
+            readonly entity_type: string;
             readonly entity_id: number;
-            readonly action: components["schemas"]["AuditLogActionEnum"];
+            readonly action: string;
             readonly actor_type: components["schemas"]["ActorTypeEnum"];
             readonly actor_id: number | null;
             /** Format: date-time */
@@ -2735,33 +2624,6 @@ export interface components {
             readonly user_agent: string;
             readonly request_id: string;
         };
-        /**
-         * @description * `create` - Create
-         *     * `update` - Update
-         *     * `delete` - Delete
-         *     * `restore` - Restore
-         *     * `close` - Close
-         *     * `reopen` - Reopen
-         *     * `login` - Login
-         *     * `logout` - Logout
-         *     * `login_failed` - Login Failed
-         *     * `access_denied` - Access Denied
-         *     * `role_sync` - Role Sync
-         *     * `connect` - Connect
-         *     * `disconnect` - Disconnect
-         *     * `download` - Download
-         *     * `provision` - Provision
-         *     * `deprovision` - Deprovision
-         *     * `ready` - Ready
-         *     * `failed` - Failed
-         *     * `pause` - Pause
-         *     * `resume` - Resume
-         *     * `cancel` - Cancel
-         *     * `recover` - Recover
-         *     * `spare_provision` - Spare Provision
-         * @enum {string}
-         */
-        AuditLogActionEnum: "create" | "update" | "delete" | "restore" | "close" | "reopen" | "login" | "logout" | "login_failed" | "access_denied" | "role_sync" | "connect" | "disconnect" | "download" | "provision" | "deprovision" | "ready" | "failed" | "pause" | "resume" | "cancel" | "recover" | "spare_provision";
         /** @description One organizer-granted award row (CTF-204). */
         Award: {
             readonly id: string;
@@ -2788,7 +2650,6 @@ export interface components {
         };
         /** @description Server-owned feature flags surfaced to the SPA (no secret values). */
         BootstrapFeatureFlags: {
-            risk_register_spa: boolean;
             platform_spa: boolean;
             mission_control_spa: boolean;
             scenario_editor_spa: boolean;
@@ -2804,7 +2665,6 @@ export interface components {
         };
         /** @description Advisory authorization flags mirroring the template context processors. */
         BootstrapPermissions: {
-            can_access_risk_register: boolean;
             can_access_threat_research: boolean;
             is_ctf_organizer: boolean;
             is_ctf_participant: boolean;
@@ -2979,22 +2839,6 @@ export interface components {
          * @enum {string}
          */
         CleanupControlRequestActionEnum: "defer" | "cancel";
-        /** @description Serializer for Comment model. */
-        Comment: {
-            readonly id: number;
-            readonly risk_id: number;
-            content: string;
-            readonly author: components["schemas"]["CommentAuthor"];
-            readonly parent_comment_id: number | null;
-            /** Format: date-time */
-            readonly created_at: string;
-        };
-        /** @description Serializer for comment author info. */
-        CommentAuthor: {
-            type: string;
-            id: number;
-            name: string;
-        };
         /** @description One entry from ``mission_control.utils.build_connection_urls``. */
         ConnectionUrl: {
             uuid: string | null;
@@ -3055,16 +2899,10 @@ export interface components {
             present: boolean;
             status: string | null;
         };
-        /** @description Risk-register load summary, gated by advisory access. */
-        DashboardRiskRegister: {
-            accessible: boolean;
-            open_count: number | null;
-        };
         /** @description Top-level dashboard summary payload. */
         DashboardSummary: {
             active_range: components["schemas"]["DashboardRange"];
             active_event: components["schemas"]["DashboardEvent"];
-            risk_register: components["schemas"]["DashboardRiskRegister"];
         };
         /**
          * @description * `participant` - participant
@@ -3101,23 +2939,6 @@ export interface components {
             /** @default  */
             text_body: string;
         };
-        /**
-         * @description * `risk` - Risk
-         *     * `comment` - Comment
-         *     * `apikey` - API Key
-         *     * `range` - Range
-         *     * `credential` - Credential
-         *     * `agent` - Agent
-         *     * `user` - User
-         *     * `session` - Session
-         *     * `ngfw` - NGFW
-         *     * `config` - Configuration
-         *     * `experiment` - Experiment
-         *     * `scenario` - Scenario
-         *     * `script` - Script
-         * @enum {string}
-         */
-        EntityTypeEnum: "risk" | "comment" | "apikey" | "range" | "credential" | "agent" | "user" | "session" | "ngfw" | "config" | "experiment" | "scenario" | "script";
         /** @description Full organizer-facing event detail projection. */
         EventDetail: {
             readonly id: string;
@@ -3625,21 +3446,6 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["AuditLog"][];
         };
-        PaginatedRiskList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["Risk"][];
-        };
         /** @description One sent announcement on the participant surface (CTF-803). */
         ParticipantAnnouncement: {
             readonly id: string;
@@ -3918,29 +3724,6 @@ export interface components {
             name?: string;
             affiliation?: string;
         };
-        /** @description Serializer for updating risks. */
-        PatchedRiskUpdate: {
-            title?: string;
-            description?: string;
-            severity?: components["schemas"]["SeverityEnum"];
-            status?: components["schemas"]["StatusEnum"];
-            /** @description List of STRIDE category codes (S, T, R, I, D, E) */
-            stride_categories?: unknown;
-            /**
-             * Format: int64
-             * @description 1-5 scale
-             */
-            likelihood_score?: number | null;
-            /**
-             * Format: int64
-             * @description 1-5 scale
-             */
-            impact_score?: number | null;
-            attack_vector?: string;
-            affected_assets?: string;
-            mitigation_status?: string;
-            resolution_reason?: string;
-        };
         /** @description Metadata (availability/audience) update; both fields optional for PATCH. */
         PatchedScenarioMetadataUpdate: {
             enabled?: boolean;
@@ -4172,82 +3955,6 @@ export interface components {
          * @enum {string}
          */
         ResourceStatusEnum: "pending" | "provisioning" | "ready" | "pausing" | "paused" | "resuming" | "destroying" | "destroyed" | "failed";
-        /** @description Serializer for Risk model. */
-        Risk: {
-            readonly id: number;
-            title: string;
-            description: string;
-            severity?: components["schemas"]["SeverityEnum"];
-            status?: components["schemas"]["StatusEnum"];
-            /** @description List of STRIDE category codes (S, T, R, I, D, E) */
-            stride_categories?: unknown;
-            /**
-             * Format: int64
-             * @description 1-5 scale
-             */
-            likelihood_score?: number | null;
-            /**
-             * Format: int64
-             * @description 1-5 scale
-             */
-            impact_score?: number | null;
-            readonly risk_score: number;
-            attack_vector?: string;
-            affected_assets?: string;
-            mitigation_status?: string;
-            resolution_reason?: string;
-            readonly comment_count: number;
-            /** Format: date-time */
-            readonly created_at: string;
-            /** Format: date-time */
-            readonly updated_at: string;
-            readonly is_deleted: boolean;
-        };
-        /** @description Serializer for creating risks. */
-        RiskCreate: {
-            title: string;
-            description: string;
-            severity?: components["schemas"]["SeverityEnum"];
-            status?: components["schemas"]["StatusEnum"];
-            /** @description List of STRIDE category codes (S, T, R, I, D, E) */
-            stride_categories?: unknown;
-            /**
-             * Format: int64
-             * @description 1-5 scale
-             */
-            likelihood_score?: number | null;
-            /**
-             * Format: int64
-             * @description 1-5 scale
-             */
-            impact_score?: number | null;
-            attack_vector?: string;
-            affected_assets?: string;
-            mitigation_status?: string;
-        };
-        /** @description Serializer for updating risks. */
-        RiskUpdate: {
-            title: string;
-            description: string;
-            severity?: components["schemas"]["SeverityEnum"];
-            status?: components["schemas"]["StatusEnum"];
-            /** @description List of STRIDE category codes (S, T, R, I, D, E) */
-            stride_categories?: unknown;
-            /**
-             * Format: int64
-             * @description 1-5 scale
-             */
-            likelihood_score?: number | null;
-            /**
-             * Format: int64
-             * @description 1-5 scale
-             */
-            impact_score?: number | null;
-            attack_vector?: string;
-            affected_assets?: string;
-            mitigation_status?: string;
-            resolution_reason?: string;
-        };
         /** @description Clone request body. */
         ScenarioClone: {
             new_scenario_id: string;
@@ -4415,14 +4122,6 @@ export interface components {
         SetActiveRequest: {
             is_active: boolean;
         };
-        /**
-         * @description * `critical` - Critical
-         *     * `high` - High
-         *     * `medium` - Medium
-         *     * `low` - Low
-         * @enum {string}
-         */
-        SeverityEnum: "critical" | "high" | "medium" | "low";
         /** @description Organizer spare-pool top-up request body (``count`` bounded non-negative). */
         SparePoolRequest: {
             count: number;
@@ -4434,15 +4133,6 @@ export interface components {
             readonly existing: number;
             readonly created: number;
         };
-        /**
-         * @description * `open` - Open
-         *     * `acknowledged` - Acknowledged
-         *     * `mitigating` - Mitigating
-         *     * `resolved` - Resolved
-         *     * `closed` - Closed
-         * @enum {string}
-         */
-        StatusEnum: "open" | "acknowledged" | "mitigating" | "resolved" | "closed";
         /** @description One of the requesting participant's own submissions. */
         SubmissionListItem: {
             readonly id: string;
@@ -11222,433 +10912,6 @@ export interface operations {
                 };
             };
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_list: {
-        parameters: {
-            query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description A search term. */
-                search?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedRiskList"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RiskCreate"];
-                "application/x-www-form-urlencoded": components["schemas"]["RiskCreate"];
-                "multipart/form-data": components["schemas"]["RiskCreate"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RiskCreate"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this risk. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Risk"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this risk. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RiskUpdate"];
-                "application/x-www-form-urlencoded": components["schemas"]["RiskUpdate"];
-                "multipart/form-data": components["schemas"]["RiskUpdate"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RiskUpdate"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this risk. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this risk. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedRiskUpdate"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedRiskUpdate"];
-                "multipart/form-data": components["schemas"]["PatchedRiskUpdate"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RiskUpdate"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_restore_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this risk. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Risk"];
-                "application/x-www-form-urlencoded": components["schemas"]["Risk"];
-                "multipart/form-data": components["schemas"]["Risk"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Risk"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_comments_list: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                risk_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Comment"][];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_comments_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                risk_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Comment"];
-                "application/x-www-form-urlencoded": components["schemas"]["Comment"];
-                "multipart/form-data": components["schemas"]["Comment"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Comment"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    risks_comments_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-                risk_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
