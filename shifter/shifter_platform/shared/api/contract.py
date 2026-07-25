@@ -17,6 +17,7 @@ import json
 import shutil
 import subprocess  # nosec B404 - fixed argv, no shell; read-only git and pinned oasdiff only  # NOSONAR
 import tempfile
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -160,14 +161,67 @@ def resolve_base_document(base_ref: str, major: str = API_MAJOR) -> str | None:
     return shown.stdout
 
 
-def check_breaking_changes(base_text: str, current_text: str) -> tuple[bool, str]:
+def allowance_path(major: str = API_MAJOR) -> Path:
+    """Return the reviewed breaking-change allowance file for an API major."""
+    return ARTIFACT_DIR / f"{major}-breaking-allowances.json"
+
+
+def _load_allowances(major: str = API_MAJOR) -> list[dict[str, Any]]:
+    """Return the declared allowances, or an empty list when none are declared."""
+    path = allowance_path(major)
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _allowance_key(entry: dict[str, Any]) -> tuple[str, str, str]:
+    """Return the exact-match key for an allowance or an oasdiff breaking change.
+
+    Keyed on oasdiff's stable ``fingerprint`` plus the human-readable ``id`` and
+    ``path``. The fingerprint alone would match, but it is opaque: carrying the
+    id and path makes the committed file reviewable and turns a mistyped or
+    copy-pasted fingerprint into a miss rather than a silent broad waiver.
+    """
+    return (str(entry.get("fingerprint", "")), str(entry.get("id", "")), str(entry.get("path", "")))
+
+
+def _expired_allowances(allowances: list[dict[str, Any]], today: date) -> list[dict[str, Any]]:
+    """Return allowances whose ``expires_on`` has passed."""
+    expired = []
+    for entry in allowances:
+        raw = entry.get("expires_on")
+        if raw and date.fromisoformat(str(raw)) < today:
+            expired.append(entry)
+    return expired
+
+
+def _render_breaks(breaks: list[dict[str, Any]]) -> str:
+    """Render breaking changes as one reviewable line each."""
+    return "\n".join(f"  {b.get('id')} at {b.get('path')}: {b.get('text')} [{b.get('fingerprint')}]" for b in breaks)
+
+
+def check_breaking_changes(
+    base_text: str,
+    current_text: str,
+    allowances: list[dict[str, Any]] | None = None,
+    today: date | None = None,
+) -> tuple[bool, str]:
     """Compare two OpenAPI documents for consumer-breaking changes via oasdiff.
 
-    Returns ``(is_compatible, detail)``. ``oasdiff breaking --fail-on ERR`` exits
-    non-zero when it finds a breaking change; the OpenAPI-aware semantics live in
-    oasdiff, not in this wrapper. A breaking change to ``/api/v1/`` must instead
-    ship as a parallel ``/api/v2/`` with a migration note (ADR-040).
+    Returns ``(is_compatible, detail)``. The OpenAPI-aware semantics live in the
+    pinned oasdiff binary, not in this wrapper (ADR-040-R2). A breaking change to
+    ``/api/v1/`` must ship as a parallel ``/api/v2/`` with a migration note
+    (ADR-040-R3) unless it is a reviewed removal of a never-published surface
+    declared in the allowance file (ADR-040-R5).
+
+    Allowances are matched exactly, never by pattern: an undeclared break still
+    fails. An expired allowance fails. A spent allowance — one that no longer
+    matches any reported break, which is the normal state once the base branch
+    has caught up — is reported for cleanup but does not fail, so it cannot break
+    unrelated pull requests.
     """
+    allowances = allowances or []
+    today = today or date.today()
     binary = shutil.which(_OASDIFF_BIN) or _OASDIFF_BIN
     with tempfile.TemporaryDirectory() as tmp:
         # Fixed, literal file names under a private temp dir — the paths never
@@ -180,13 +234,39 @@ def check_breaking_changes(base_text: str, current_text: str) -> tuple[bool, str
         with revision_file.open("w", encoding="utf-8") as handle:
             handle.write(current_text)
         result = subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell; pinned oasdiff binary
-            [binary, "breaking", str(base_file), str(revision_file), "--fail-on", "ERR"],
+            [binary, "breaking", str(base_file), str(revision_file), "--fail-on", "ERR", "-f", "json"],
             capture_output=True,
             text=True,
             check=False,
         )
-    detail = (result.stdout + result.stderr).strip()
-    return result.returncode == 0, detail
+
+    expired = _expired_allowances(allowances, today)
+    if expired:
+        listed = "\n".join(f"  {e.get('id')} at {e.get('path')} expired {e.get('expires_on')}" for e in expired)
+        return False, f"Expired ADR-040-R5 allowance(s); renew with review or remove:\n{listed}"
+
+    if result.returncode == 0:
+        return True, (result.stdout + result.stderr).strip()
+
+    try:
+        reported = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        # oasdiff failed before producing a report (missing binary, unreadable
+        # document). Fail closed on its raw output rather than guessing.
+        return False, (result.stdout + result.stderr).strip()
+
+    allowed_keys = {_allowance_key(entry) for entry in allowances}
+    unallowed = [b for b in reported if _allowance_key(b) not in allowed_keys]
+    if unallowed:
+        return False, f"{len(unallowed)} breaking change(s) with no ADR-040-R5 allowance:\n{_render_breaks(unallowed)}"
+
+    matched = {_allowance_key(b) for b in reported}
+    spent = [e for e in allowances if _allowance_key(e) not in matched]
+    detail = f"{len(reported)} breaking change(s), all covered by reviewed ADR-040-R5 allowances."
+    if spent:
+        listed = "\n".join(f"  {e.get('id')} at {e.get('path')} [{e.get('fingerprint')}]" for e in spent)
+        detail += f"\n{len(spent)} spent allowance(s) no longer matching any break; delete them:\n{listed}"
+    return True, detail
 
 
 def check_breaking_against(base_ref: str, major: str = API_MAJOR) -> tuple[bool, str]:
@@ -201,4 +281,4 @@ def check_breaking_against(base_ref: str, major: str = API_MAJOR) -> tuple[bool,
     path = artifact_path(major)
     if not path.exists():
         return False, f"Committed artifact is missing: {path}. Run `manage.py api_contract`."
-    return check_breaking_changes(base_text, path.read_text(encoding="utf-8"))
+    return check_breaking_changes(base_text, path.read_text(encoding="utf-8"), _load_allowances(major))

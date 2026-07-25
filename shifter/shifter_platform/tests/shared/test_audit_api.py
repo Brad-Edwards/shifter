@@ -250,3 +250,77 @@ class TestResponseShape:
         field = AuditLogSerializer().fields["entity_type"]
         assert isinstance(field, serializers.CharField)
         assert not isinstance(field, serializers.ChoiceField)
+
+
+@pytest.mark.django_db
+class TestQueryFilters:
+    """The endpoint's query-param filters are part of the behavior #1374 preserves.
+
+    Each filter selects the seeded row and excludes a deliberately non-matching
+    one, so a filter silently dropped during the rehome fails here rather than
+    quietly returning the whole audit trail.
+    """
+
+    @pytest.fixture
+    def two_rows(self):
+        """One RANGE/CREATE/SYSTEM row and one distinct SCENARIO/DELETE/USER row."""
+        audit_log(
+            AuditEvent(
+                entity_type=AuditEntityType.RANGE,
+                entity_id=41,
+                action=AuditAction.CREATE,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=7,
+                context="wanted",
+                request_id="req-wanted",
+            )
+        )
+        audit_log(
+            AuditEvent(
+                entity_type=AuditEntityType.SCENARIO,
+                entity_id=99,
+                action=AuditAction.DELETE,
+                actor_type=AuditActorType.USER,
+                actor_id=8,
+                context="unwanted",
+                request_id="req-unwanted",
+            )
+        )
+        return (
+            AuditLog.objects.get(request_id="req-wanted"),
+            AuditLog.objects.get(request_id="req-unwanted"),
+        )
+
+    @pytest.mark.parametrize(
+        "param,value",
+        [
+            ("entity_type", AuditEntityType.RANGE),
+            ("entity_id", "41"),
+            ("action", AuditAction.CREATE),
+            ("actor_type", AuditActorType.SYSTEM),
+            ("actor_id", "7"),
+            ("request_id", "req-wanted"),
+        ],
+    )
+    def test_filter_selects_only_the_matching_row(self, client, staff_user, two_rows, param, value):
+        wanted, unwanted = two_rows
+        client.force_authenticate(user=staff_user)
+        response = client.get(AUDIT_URL, {param: value})
+        assert response.status_code == 200
+        ids = [row["id"] for row in response.json()["results"]]
+        assert wanted.id in ids, f"{param} filter dropped the matching row"
+        assert unwanted.id not in ids, f"{param} filter did not exclude the non-matching row"
+
+    def test_date_range_bounds_the_result_set(self, client, staff_user, two_rows):
+        """``from_date`` / ``to_date`` bound on ``timestamp``; a window before the
+        seeded rows must return nothing, and one around them must return them."""
+        wanted, _unwanted = two_rows
+        client.force_authenticate(user=staff_user)
+
+        before = client.get(AUDIT_URL, {"to_date": "2000-01-01"})
+        assert before.status_code == 200
+        assert before.json()["results"] == []
+
+        around = client.get(AUDIT_URL, {"from_date": "2000-01-01"})
+        assert around.status_code == 200
+        assert wanted.id in [row["id"] for row in around.json()["results"]]

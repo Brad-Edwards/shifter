@@ -1,7 +1,7 @@
 """Concrete audit persistence adapter (#1374 rehome from risk_register, #1523).
 
 Binds the neutral ``shared.audit`` writer port to the durable ``AuditLog`` table.
-This is the ONLY place ``AuditLog.log()`` is called at runtime: emitters depend
+This is the ONLY place ``AuditLog`` rows are created at runtime: emitters depend
 on the port, and ``config`` binds this adapter at startup. The adapter owns ORM
 mapping and persistence only; it raises persistence faults up to the shared
 emission policy and never adds a second catch/swallow hierarchy.
@@ -28,7 +28,7 @@ class DjangoAuditLogWriter:
         Raises whatever the ORM raises on a persistence failure; the shared
         emission policy decides whether that is best-effort or fail-closed.
         """
-        AuditLog.log(
+        AuditLog.objects.create(
             entity_type=event.entity_type,
             entity_id=event.entity_id,
             action=event.action,

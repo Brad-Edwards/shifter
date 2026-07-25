@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from django.conf import settings
 from django.db import models
@@ -303,8 +302,8 @@ class AuditLog(models.Model):
     Central audit log for all platform operations. Immutable - records cannot
     be modified or deleted through the application. The concrete persistence
     adapter (``shared.audit_adapter.DjangoAuditLogWriter``) is the only place
-    ``AuditLog.log()`` is called at runtime (#1523); emitters depend on the
-    neutral ``shared.audit`` port instead.
+    these rows are created at runtime (#1523); emitters depend on the neutral
+    ``shared.audit`` port instead.
     """
 
     # The audit vocabulary is owned by ``shared.audit`` (ADR-001, #1523); the
@@ -345,36 +344,6 @@ class AuditLog(models.Model):
     def __str__(self) -> str:
         """Return a compact diagnostic representation."""
         return f"{self.action} {self.entity_type} {self.entity_id} at {self.timestamp}"
-
-    @classmethod
-    def log(
-        cls,
-        entity_type: str,
-        entity_id: int,
-        action: str,
-        actor_type: str,
-        actor_id: int | None = None,
-        previous_state: dict[str, Any] | None = None,
-        new_state: dict[str, Any] | None = None,
-        context: str = "",
-        source_ip: str | None = None,
-        user_agent: str = "",
-        request_id: str = "",
-    ) -> AuditLog:
-        """Create an audit log entry."""
-        return cls.objects.create(
-            entity_type=entity_type,
-            entity_id=entity_id,
-            action=action,
-            actor_type=actor_type,
-            actor_id=actor_id,
-            previous_state=previous_state,
-            new_state=new_state,
-            context=context,
-            source_ip=source_ip,
-            user_agent=user_agent,
-            request_id=request_id,
-        )
 
 
 # SonarCloud S1192: extracted duplicated string literal.

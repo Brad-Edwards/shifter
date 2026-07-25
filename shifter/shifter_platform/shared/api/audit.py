@@ -11,6 +11,7 @@ staff/superuser AND a member of a configured Cognito group
 
 from __future__ import annotations
 
+from django.db.models import QuerySet
 from rest_framework import serializers, viewsets
 
 from shared.api.permissions import HasAuditLogCognitoGroup, IsStaffSessionAudited
@@ -31,6 +32,8 @@ class AuditLogSerializer(serializers.ModelSerializer):
     action = serializers.CharField(read_only=True)
 
     class Meta:
+        """Expose the audit row as a read-only projection."""
+
         model = AuditLog
         fields = [
             "id",
@@ -79,7 +82,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AuditLogSerializer
     permission_classes = [HasAuditLogCognitoGroup, IsStaffSessionAudited]
 
-    def get_queryset(self):
+    def get_queryset(self) -> QuerySet[AuditLog]:
         """Return audit logs with optional filtering."""
         queryset = AuditLog.objects.all()
 

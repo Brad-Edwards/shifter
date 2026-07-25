@@ -93,24 +93,24 @@ class AuditLogAdmin(admin.ModelAdmin):
     ]
 
     @admin.display(description="Source IP")
-    def source_ip_display(self, obj):
+    def source_ip_display(self, obj: AuditLog) -> str:
         return obj.source_ip or "-"
 
     @admin.display(description="Request ID")
-    def request_id_display(self, obj):
+    def request_id_display(self, obj: AuditLog) -> str:
         if obj.request_id:
             return obj.request_id[:12] + "..." if len(obj.request_id) > 12 else obj.request_id
         return "-"
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         """Prevent manual creation of audit logs."""
         return False
 
-    def has_change_permission(self, request, obj=None):
+    def has_change_permission(self, request: HttpRequest, obj: AuditLog | None = None) -> bool:
         """Prevent editing of audit logs."""
         return False
 
-    def has_delete_permission(self, request, obj=None):
+    def has_delete_permission(self, request: HttpRequest, obj: AuditLog | None = None) -> bool:
         """Prevent deletion of audit logs."""
         return False
 
@@ -146,7 +146,7 @@ class APIKeyAdmin(admin.ModelAdmin):
     ]
 
     @admin.display(boolean=True)
-    def is_active(self, obj):
+    def is_active(self, obj: APIKey) -> bool:
         return obj.is_active
 
     def has_add_permission(self, request: HttpRequest) -> bool:

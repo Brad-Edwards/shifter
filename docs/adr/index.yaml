@@ -1935,6 +1935,11 @@
         "id": "ADR-040-R4",
         "description": "The contract MUST truthfully reuse and describe the existing security and response boundaries: fail-closed shf_ bearer authentication, same-origin session authentication with CSRF on unsafe methods, exact application scopes from shared.api_tokens (never fictitious OAuth2 or wildcard scopes), existing per-app actor/role permissions, PageNumberPagination, and the sanitized shared.api.errors envelope. Generation uses test settings and no live data, credentials, cloud access, secret values, or sensitive process argv; deliberate non-JSON operations declare their actual media and statuses.",
         "checks": []
+      },
+      {
+        "id": "ADR-040-R5",
+        "description": "Removing a surface that was never a published consumer contract is not a v1 break, but it MUST be declared, not assumed. Each removed element requires an entry in openapi/<major>-breaking-allowances.json carrying the oasdiff fingerprint, rule id, path, owning issue, owner, reason, and an expiry. Matching is exact on fingerprint + id + path, never a pattern, so any undeclared break still fails the gate, and an expired allowance fails until it is renewed with review or deleted. An allowance that no longer matches any reported break is reported for deletion but does not fail, so a spent entry cannot break unrelated pull requests. This deliberately narrows ADR-040-R2's 'the compatibility oracle cannot be refreshed by the same proposed change' property: a declaration ships in the same diff as the removal it authorizes, so its safety rests on review of an explicit, enumerated, expiring list rather than on the gate alone. It does not license removing a surface that has any external consumer; those still require a parallel /api/v2/ plus a migration note.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1952,8 +1957,10 @@
       "shifter/shifter_platform/shared/api/contract.py",
       "shifter/shifter_platform/config/management/commands/api_contract.py",
       "shifter/shifter_platform/openapi/v1.json",
+      "shifter/shifter_platform/openapi/v1-breaking-allowances.json",
       "shifter/shifter_platform/frontend/src/api/schema.d.ts",
       "docs/architecture/api-versioning-policy.md",
+      "https://github.com/Brad-Edwards/shifter/issues/1374",
       ".github/workflows/_quality.yml"
     ]
   },

@@ -28,8 +28,8 @@ def test_auditlog_table_is_shared_auditlog() -> None:
 
 
 def test_auditlog_create_and_query_roundtrip() -> None:
-    """Rows created via the classmethod helper persist and are queryable."""
-    row = AuditLog.log(
+    """Rows persist and are queryable from the rehomed shared table."""
+    row = AuditLog.objects.create(
         entity_type="range",
         entity_id=1,
         action="create",

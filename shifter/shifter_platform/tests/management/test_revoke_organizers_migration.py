@@ -153,5 +153,7 @@ def test_resolve_audit_table_raises_when_neither_table_exists(monkeypatch):
     class _FakeSchemaEditor:
         connection = _FakeConnection()
 
+    schema_editor = _FakeSchemaEditor()
+
     with pytest.raises(RuntimeError, match="Neither shared_auditlog nor risk_register_auditlog"):
-        _MIGRATION._resolve_audit_table(_FakeSchemaEditor())
+        _MIGRATION._resolve_audit_table(schema_editor)

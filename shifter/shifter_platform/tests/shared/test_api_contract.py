@@ -9,6 +9,7 @@ the boundary-mock policy.
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -323,3 +324,109 @@ class TestPlatformAutoSchemaFallback:
         schema.view = _View()
         resolved = schema._resolved_permissions()
         assert any(isinstance(permission, _Perm) for permission in resolved)
+
+
+class TestBreakingChangeAllowances:
+    """ADR-040-R5: reviewed, exact allowances for never-published-surface removals.
+
+    The gate must keep its teeth. Each test drives a way the allowance mechanism
+    could be subverted and asserts the gate still fails, so a future edit that
+    loosens matching, drops expiry enforcement, or lets an undeclared break
+    through goes red here.
+    """
+
+    BREAK = {
+        "id": "api-path-removed-without-deprecation",
+        "text": "api path removed without deprecation",
+        "level": 3,
+        "path": "/api/v1/risks/",
+        "fingerprint": "106a6ac3973a",
+    }
+
+    @staticmethod
+    def _oasdiff(monkeypatch: pytest.MonkeyPatch, breaks: list[dict[str, Any]]) -> None:
+        """Mock only the oasdiff subprocess boundary, per the boundary-mock policy."""
+        monkeypatch.setattr(
+            contract.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=json.dumps(breaks), stderr=""),
+        )
+
+    def _allowance(self, **overrides: Any) -> dict[str, Any]:
+        entry = {
+            "fingerprint": self.BREAK["fingerprint"],
+            "id": self.BREAK["id"],
+            "path": self.BREAK["path"],
+            "issue": "#1374",
+            "owner": "@Brad-Edwards",
+            "reason": "internal-only pilot removal",
+            "expires_on": "2099-01-01",
+        }
+        entry.update(overrides)
+        return entry
+
+    def test_declared_break_is_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, detail = contract.check_breaking_changes("{}", "{}", [self._allowance()])
+        assert ok
+        assert "covered by reviewed ADR-040-R5 allowances" in detail
+
+    def test_undeclared_break_still_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        other = {**self.BREAK, "path": "/api/v1/ranges/", "fingerprint": "ffffffffffff"}
+        self._oasdiff(monkeypatch, [self.BREAK, other])
+        ok, detail = contract.check_breaking_changes("{}", "{}", [self._allowance()])
+        assert not ok
+        assert "/api/v1/ranges/" in detail
+        assert "no ADR-040-R5 allowance" in detail
+
+    def test_wrong_fingerprint_does_not_match(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, _detail = contract.check_breaking_changes("{}", "{}", [self._allowance(fingerprint="deadbeefcafe")])
+        assert not ok
+
+    def test_wrong_path_does_not_match(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, _detail = contract.check_breaking_changes("{}", "{}", [self._allowance(path="/api/v1/other/")])
+        assert not ok
+
+    def test_expired_allowance_fails_even_when_it_matches(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, detail = contract.check_breaking_changes(
+            "{}", "{}", [self._allowance(expires_on="2020-01-01")], today=date(2026, 7, 25)
+        )
+        assert not ok
+        assert "Expired" in detail
+
+    def test_spent_allowance_reports_but_does_not_fail(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Once the base branch catches up the break disappears; that must not
+        fail unrelated pull requests, but it must be visible so it gets deleted."""
+        monkeypatch.setattr(
+            contract.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        )
+        ok, _detail = contract.check_breaking_changes("{}", "{}", [self._allowance()])
+        assert ok
+
+    def test_no_allowances_means_any_break_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, _detail = contract.check_breaking_changes("{}", "{}", [])
+        assert not ok
+
+    def test_unparseable_oasdiff_output_fails_closed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            contract.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout="not json", stderr="boom"),
+        )
+        ok, detail = contract.check_breaking_changes("{}", "{}", [self._allowance()])
+        assert not ok
+        assert "boom" in detail
+
+    def test_committed_allowance_file_is_reviewable(self) -> None:
+        """Every committed allowance carries the review metadata the ADR requires."""
+        entries = contract._load_allowances()
+        for entry in entries:
+            assert entry["fingerprint"] and entry["id"] and entry["path"]
+            assert entry["issue"] and entry["owner"] and entry["reason"]
+            assert date.fromisoformat(entry["expires_on"]) > date(2026, 7, 25)
