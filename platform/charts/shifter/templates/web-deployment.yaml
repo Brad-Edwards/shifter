@@ -22,7 +22,7 @@ spec:
     spec:
       {{- include "shifter.podSecurityContext" . | nindent 6 }}
       serviceAccountName: {{ .Values.serviceAccounts.portal.name }} # NOSONAR - bound by rbac-job-launcher.yaml.
-      automountServiceAccountToken: true
+      automountServiceAccountToken: false
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -36,7 +36,7 @@ spec:
       containers:
         - name: portal
           image: {{ include "shifter.portalImage" . }}
-          imagePullPolicy: {{ .Values.images.portal.pullPolicy }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           {{- include "shifter.containerSecurityContextApp" . | nindent 10 }}
           # readOnlyRootFilesystem is on (containerSecurityContextApp); the portal
           # writes media under MEDIA_ROOT=/app/media (Django FileSystemStorage, also

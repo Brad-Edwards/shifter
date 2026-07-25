@@ -1,16 +1,21 @@
 """Context processors for mission_control app."""
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from django.conf import settings
 from django.http import HttpRequest
 
 from cms.services import get_active_range, get_scenario, has_ready_active_range
 from mission_control.utils import build_connection_urls
-from shared.auth import is_ctf_participant_only
+from shared.enums import RangeSource
 from shared.schemas import InstanceContext, RangeContext
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +88,11 @@ def _build_active_range_context(
         is_ready,
     )
 
-    # CTF participants only see Kali (attacker) instances
-    if is_ctf_participant_only(request.user):
-        range_context.instances = [inst for inst in range_context.instances if inst.os_type == "kali"]
+    # Instance visibility is a domain policy (#483): CTF registers a per-event
+    # filter through the shared seam; other users see everything.
+    from shared.range_visibility import filter_visible_instances
+
+    range_context.instances = filter_visible_instances(request.user, range_context.instances)
 
     scenario_name = None
     if range_context.scenario_id:
@@ -115,6 +122,15 @@ def _needs_terminal_payload(request: HttpRequest) -> bool:
     return bool(match and match.view_name == _TERMINAL_VIEW_NAME)
 
 
+def _range_source_for_user(user: User) -> RangeSource:
+    """Select the product source whose active range should back the UI."""
+    from shared.auth import is_ctf_participant_only
+
+    if is_ctf_participant_only(user):
+        return RangeSource.CTF
+    return RangeSource.MISSION_CONTROL
+
+
 def _nav_active_range(request: HttpRequest) -> dict[str, Any]:
     """``nav``-tier context: the cheap ``has_active_range`` sidebar indicator only.
 
@@ -126,7 +142,7 @@ def _nav_active_range(request: HttpRequest) -> dict[str, Any]:
     user = cast(User, request.user)
     context = _empty_active_range_context()
     try:
-        context["has_active_range"] = has_ready_active_range(user)
+        context["has_active_range"] = has_ready_active_range(user, _range_source_for_user(user))
     except Exception:
         logger.exception("Error computing has_active_range for user_id=%s", user.id)
     return context
@@ -160,7 +176,7 @@ def _safe_active_range(request: HttpRequest) -> dict[str, Any]:
     user = cast(User, request.user)
     user_id = user.id
     try:
-        range_context = get_active_range(user)
+        range_context = get_active_range(user, _range_source_for_user(user))
     except Exception:
         logger.exception("Error in active_range context processor for user_id=%s", user_id)
         return _empty_active_range_context()
@@ -173,3 +189,13 @@ def _safe_active_range(request: HttpRequest) -> dict[str, Any]:
         )
         return _empty_active_range_context()
     return _build_active_range_context(range_context, request, user_id)
+
+
+def docs_site_url(_request: HttpRequest) -> dict[str, Any]:
+    """Expose the public documentation site URL to templates (ADR-038).
+
+    Django calls context processors with the request positionally; this one does
+    not need it. Templates link out to the hosted mkdocs site instead of
+    hardcoding the absolute URL; the value is configured in settings.DOCS_SITE_URL.
+    """
+    return {"DOCS_SITE_URL": settings.DOCS_SITE_URL}

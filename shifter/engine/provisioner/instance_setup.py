@@ -17,15 +17,14 @@ from typing import Any
 
 from components.instance import sanitize_hostname
 from executors.factory import GuestExecutionContext, build_guest_execution_context, get_ssh_username
+from instance_password_setup import set_local_password_or_raise as _push_local_password_or_raise
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
 from plans.base import SetupPlan
 from plans.bootstrap import BootstrapPlan
 from plans.domain_join import DomainJoinPlan
 from plans.linux_bootstrap import LinuxBootstrapPlan
 from plans.linux_xdr_agent_install import LinuxXDRAgentInstallPlan
-from plans.set_local_password import SetLocalPasswordPlan
 from plans.xdr_agent_install import XDRAgentInstallPlan
-from state_helpers import _get_cloud_provider
 
 logger = logging.getLogger(__name__)
 
@@ -96,21 +95,6 @@ def _run_setup_plan(
         raise SetupError(f"{failure_prefix}: {result.error}")
 
 
-def _resolve_rdp_password_from_secret_ref(rdp_password_secret_arn: str | None) -> str | None:
-    """Fetch the per-instance RDP password value from the active cloud secret store.
-
-    Returns ``None`` when no secret reference is recorded (e.g., DC role,
-    or older state without the field). Callers that require the value
-    must check for ``None`` and either skip the push or raise.
-    """
-    if not rdp_password_secret_arn:
-        return None
-    from cloud import get_secrets_store
-
-    secrets = get_secrets_store()
-    return secrets.get_secret(rdp_password_secret_arn)
-
-
 def _set_local_password_or_raise(
     orchestrator: SetupOrchestrator,
     execution: GuestExecutionContext,
@@ -120,48 +104,16 @@ def _set_local_password_or_raise(
     failure_prefix: str,
     target_container: str | None = None,
 ) -> None:
-    """Push the per-instance local guest password via SSM/SSH (#762)."""
-    cloud_provider = _get_cloud_provider()
-    instance_id = execution.target
-    rdp_token: str
-    if cloud_provider == "aws":
-        ssm_param_name = instance_data.get("rdp_password_ssm_param_name")
-        if not ssm_param_name:
-            raise SetupError(
-                f"{failure_prefix}: instance {instance_id} has no "
-                "rdp_password_ssm_param_name; provisioner did not record an SSM "
-                "Parameter Store reference for the per-instance password"
-            )
-        rdp_token = f"{{{{ssm-secure:{ssm_param_name}}}}}"
-    else:
-        secret_ref = instance_data.get("rdp_password_secret_arn")
-        if not secret_ref:
-            raise SetupError(
-                f"{failure_prefix}: instance {instance_id} has no rdp_password_secret_arn "
-                "in its provisioned state; provisioner did not record a per-instance secret reference"
-            )
-        fetched = _resolve_rdp_password_from_secret_ref(secret_ref)
-        if not fetched:
-            raise SetupError(f"{failure_prefix}: per-instance RDP password fetch returned empty for {instance_id}")
-        rdp_token = fetched
-    plan = SetLocalPasswordPlan(platform=platform, target_container=target_container)
-    context = plan.get_context({"rdp_username": ctx.ssh_user, "rdp_password": rdp_token})
-    _run_setup_plan(
+    """Adapt the instance context to the password-transport service."""
+    _push_local_password_or_raise(
         orchestrator,
         execution,
-        plan,
-        context,
-        execution.document_name,
+        instance_data,
+        ssh_user=ctx.ssh_user,
+        platform=platform,
         failure_prefix=failure_prefix,
+        target_container=target_container,
     )
-    if target_container:
-        logger.info(
-            "Per-instance local credential set on %s (%s container target configured)",
-            instance_id,
-            platform,
-        )
-    else:
-        logger.info("Per-instance local credential set on %s (%s)", instance_id, platform)
 
 
 def _setup_attacker_role(
@@ -451,21 +403,19 @@ def _dispatch_instance_setup_role(
     )
 
 
+# GDC ("range-pod-ssh") and GCE ("ssh") in-range guests run a full first-boot
+# cloud-init before SSH is ready (the heavy Polaris host does not finish within
+# the EC2/SSM-tuned default), so both get a larger budget; SSM stays default.
 _GDC_RANGE_TRANSPORT = "range-pod-ssh"
 _DEFAULT_SETUP_READY_TIMEOUT_SECONDS = 300
-_GDC_SETUP_READY_TIMEOUT_SECONDS = 600
+_INRANGE_SSH_SETUP_READY_TIMEOUT_SECONDS = 900
+_INRANGE_SSH_TRANSPORTS = frozenset({_GDC_RANGE_TRANSPORT, "ssh"})
 
 
 def _setup_ready_timeout(transport_name: str) -> int:
-    """SSH-ready budget for guest setup, by transport.
-
-    GDC VM Runtime guests boot on bare metal and run a full first-boot
-    cloud-init pass (datasource detection + host-key install + service restart)
-    before SSH is ready, which is materially slower than the EC2/SSM path the
-    300s default was tuned for, so the in-range transport gets a larger budget.
-    """
-    if transport_name == _GDC_RANGE_TRANSPORT:
-        return _GDC_SETUP_READY_TIMEOUT_SECONDS
+    """SSH-ready budget for guest setup, by transport (in-range SSH vs SSM)."""
+    if transport_name in _INRANGE_SSH_TRANSPORTS:
+        return _INRANGE_SSH_SETUP_READY_TIMEOUT_SECONDS
     return _DEFAULT_SETUP_READY_TIMEOUT_SECONDS
 
 

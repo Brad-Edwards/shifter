@@ -80,10 +80,11 @@ def test_aws_deploy_paths_start_ctf_scheduler_container(path: Path) -> None:
     # between the templated user-data and the redeploy script.
     assert "docker stop --time " in deployment_text
     # All portal workers must appear in the stop/rm lists; the order is:
-    # portal, queue workers, outbox drainer, reconciler, ctf-scheduler, guacamole-prune.
+    # portal, queue workers, outbox drainer, reconciler, provisioner launcher,
+    # operation-result applier, ctf-scheduler, guacamole-prune.
     container_rm_targets = (
         f"portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler "
-        f"{SCHEDULER_NAME} guacamole-bootstrap-prune"
+        f"worker-provisioner-launcher worker-operation-result-applier {SCHEDULER_NAME} guacamole-bootstrap-prune"
     )
     assert container_rm_targets in deployment_text
     assert (
@@ -100,6 +101,8 @@ def test_aws_deploy_paths_start_ctf_scheduler_container(path: Path) -> None:
         "worker-mc-heartbeat",
         "worker-outbox-drainer-heartbeat",
         "worker-reconciler-heartbeat",
+        "worker-provisioner-launcher-heartbeat",
+        "worker-operation-result-applier-heartbeat",
         "ctf-scheduler-heartbeat",
     ):
         assert f"/tmp/{heartbeat} -mmin -2 | grep -q ." in deployment_text  # noqa: S108
@@ -146,7 +149,7 @@ def test_aws_runtime_containers_skip_boot_migrations(path: Path, expected_runtim
         ("helm", _load_helm_documents),
     ],
 )
-def test_gcp_scheduler_deployment_runs_and_can_launch_jobs(source_name: str, loader: Any) -> None:
+def test_gcp_scheduler_deployment_runs_without_kubernetes_credentials(source_name: str, loader: Any) -> None:
     deployment = _deployment(loader(), SCHEDULER_NAME)
     pod_spec = deployment["spec"]["template"]["spec"]
     container = _scheduler_container(deployment)
@@ -155,6 +158,6 @@ def test_gcp_scheduler_deployment_runs_and_can_launch_jobs(source_name: str, loa
     assert container["args"] == SCHEDULER_COMMAND
     assert "ctf-scheduler-heartbeat" in " ".join(container["livenessProbe"]["exec"]["command"])
     assert pod_spec["serviceAccountName"] == SCHEDULER_NAME
-    assert pod_spec["automountServiceAccountToken"] is True, (
-        f"{source_name} scheduler must mount its dedicated token so due CTF spin-up tasks can submit GCP Jobs"
+    assert pod_spec["automountServiceAccountToken"] is False, (
+        f"{source_name} scheduler must stay tokenless because provisioner-launcher submits GCP Jobs"
     )

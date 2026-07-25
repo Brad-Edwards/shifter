@@ -32,6 +32,9 @@ import {
   DEFAULT_GITHUB_REPO,
   BASE_AMI_TYPES,
   PROMOTE_AMI_REF,
+  BUILD_AMI_REF,
+  PROTECTED_AMI_REFS,
+  resolveProtectedAmiRef,
   GCE_IMAGE_TYPES,
   PROMOTE_GCE_IMAGE_REF,
   buildGhWorkflowRunArgs,
@@ -1285,6 +1288,26 @@ describe("PROMOTE_AMI_REF", () => {
   });
 });
 
+describe("resolveProtectedAmiRef (#1656)", () => {
+  it("defaults to the protected build ref when no ref is given", () => {
+    assert.equal(resolveProtectedAmiRef(undefined), BUILD_AMI_REF);
+    assert.equal(BUILD_AMI_REF, "dev");
+  });
+
+  it("accepts the protected refs", () => {
+    for (const ref of PROTECTED_AMI_REFS) {
+      assert.equal(resolveProtectedAmiRef(ref), ref);
+    }
+    assert.deepEqual([...PROTECTED_AMI_REFS], ["dev", "main"]);
+  });
+
+  it("rejects a non-protected (feature/injected) ref rather than dispatching it", () => {
+    for (const bad of ["feature-x", "411-ops-mcp-ami", "dev | evil", ""]) {
+      assert.throws(() => resolveProtectedAmiRef(bad), /protected branch/);
+    }
+  });
+});
+
 describe("BASE_AMI_TYPES", () => {
   it("matches packer-promote base AMI choices", () => {
     assert.deepEqual([...BASE_AMI_TYPES], [
@@ -1308,6 +1331,9 @@ describe("GCE_IMAGE_TYPES", () => {
       "kali",
       "windows",
       "dc",
+      "polaris-vm",
+      "techvault",
+      "dc-prebaked",
     ]);
   });
 });

@@ -6,10 +6,12 @@ Covers:
 """
 
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from shared.remote_access import build_openvpn_capability
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -24,8 +26,9 @@ def _install_destroy_fakes(monkeypatch, *, status="ready", variables=None):
     monkeypatch.setattr("terraform_ops.range_terraform_runner", mock_tf_runner)
     monkeypatch.setattr("terraform_ops.build_range_variables", mock_build_vars)
     monkeypatch.setattr("terraform_ops.publish_destroyed", mock_publish)
-    monkeypatch.setattr("terraform_ops.mark_range_instances_destroyed", mock_mark)
-    monkeypatch.setattr("terraform_ops.remove_ngfw_subnets", MagicMock())
+    monkeypatch.setattr("range_subnet_allocation.mark_range_instances_destroyed", mock_mark)
+    monkeypatch.setattr("terraform_ops.get_vpn_secret_ops", MagicMock())
+    monkeypatch.setattr("terraform_ops.cleanup_openvpn_access", MagicMock())
     return mock_get_data, mock_tf_runner, mock_build_vars, mock_publish, mock_mark
 
 
@@ -34,45 +37,45 @@ class TestRunTerraformDestroySkipsOnlyDestroyed:
 
     def test_skips_destroyed_status(self, monkeypatch):
         """Destroyed ranges should be skipped."""
-        from terraform_ops import _run_terraform_destroy
+        from terraform_ops import RangeOperation, _run_terraform_destroy
 
         _mock_get_data, mock_tf_runner, _mock_build_vars, mock_publish, _mock_mark = _install_destroy_fakes(
             monkeypatch, status="destroyed"
         )
 
-        _run_terraform_destroy("req-1", 80, 20, {})
+        _run_terraform_destroy(RangeOperation("req-1", 80, 20, {}))
 
         mock_tf_runner.destroy_range.assert_not_called()
         mock_publish.assert_not_called()
 
     def test_does_not_skip_failed_status(self, monkeypatch):
         """Failed ranges should NOT be skipped - they may have orphaned resources."""
-        from terraform_ops import _run_terraform_destroy
+        from terraform_ops import RangeOperation, _run_terraform_destroy
 
         _mock_get_data, mock_tf_runner, _mock_build_vars, mock_publish, _mock_mark = _install_destroy_fakes(
             monkeypatch, status="failed"
         )
 
-        _run_terraform_destroy("req-1", 80, 20, {})
+        _run_terraform_destroy(RangeOperation("req-1", 80, 20, {}))
 
         mock_tf_runner.destroy_range.assert_called_once()
         mock_publish.assert_called_once()
 
     def test_proceeds_for_ready_status(self, monkeypatch):
         """Ready (active) ranges should proceed with destroy."""
-        from terraform_ops import _run_terraform_destroy
+        from terraform_ops import RangeOperation, _run_terraform_destroy
 
         _mock_get_data, mock_tf_runner, _mock_build_vars, _mock_publish, _mock_mark = _install_destroy_fakes(
             monkeypatch, status="ready"
         )
 
-        _run_terraform_destroy("req-1", 80, 20, {})
+        _run_terraform_destroy(RangeOperation("req-1", 80, 20, {}))
 
         mock_tf_runner.destroy_range.assert_called_once()
 
     def test_destroy_passes_variables_to_destroy_range(self, monkeypatch):
         """_run_terraform_destroy must pass variables to destroy_range."""
-        from terraform_ops import _run_terraform_destroy
+        from terraform_ops import RangeOperation, _run_terraform_destroy
 
         fake_vars = {"range_id": 80, "user_id": 20, "request_uuid": "req-1", "vpc_id": "vpc-123"}
         _mock_get_data, mock_tf_runner, _mock_build_vars, _mock_publish, _mock_mark = _install_destroy_fakes(
@@ -80,9 +83,9 @@ class TestRunTerraformDestroySkipsOnlyDestroyed:
         )
         range_spec = {"subnets": []}
 
-        _run_terraform_destroy("req-1", 80, 20, range_spec)
+        _run_terraform_destroy(RangeOperation("req-1", 80, 20, range_spec))
 
-        mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars)
+        mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars, backend=None)
 
 
 class TestAutoCleanupPassesVariables:
@@ -91,6 +94,9 @@ class TestAutoCleanupPassesVariables:
     def test_cleanup_passes_variables_to_destroy(self, monkeypatch):
         """Auto-cleanup should rebuild variables and pass them to destroy_range."""
         from terraform_ops import run_range_terraform
+
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
 
         mock_get_data = MagicMock(
             return_value={
@@ -113,14 +119,17 @@ class TestAutoCleanupPassesVariables:
         with pytest.raises(RuntimeError, match="NGFW config failed"):
             run_range_terraform("up", "req-1")
 
-        mock_build_vars.assert_called_once_with("req-1", 80, 20, {"ngfw": False, "subnets": []})
-        mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars)
+        mock_build_vars.assert_called_once_with("req-1", 80, 20, {"ngfw": False, "subnets": []}, backend=None)
+        mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars, backend=None)
 
     def test_cleanup_failure_logged_not_swallowed(self, monkeypatch, caplog):
         """When auto-cleanup fails, error should be logged (not just warned)."""
         import logging
 
         from terraform_ops import run_range_terraform
+
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
 
         monkeypatch.setattr(
             "terraform_ops.get_range_data_by_request_id",
@@ -153,6 +162,9 @@ class TestAutoCleanupPassesVariables:
         """Auto-cleanup should only run for 'up' operations, not 'destroy'."""
         from terraform_ops import run_range_terraform
 
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
+
         mock_get_data = MagicMock(
             return_value={
                 "range_id": 80,
@@ -173,3 +185,62 @@ class TestAutoCleanupPassesVariables:
 
         # destroy_range on the terraform_runner should NOT be called for cleanup
         mock_tf_runner.destroy_range.assert_not_called()
+
+
+class TestRemoteAccessAdmission:
+    def test_capability_rejects_an_unconfigured_adapter_before_dispatch(self, monkeypatch):
+        from cloud.exceptions import CloudError
+        from terraform_ops import run_range_terraform
+
+        target_ref = "11111111-1111-4111-8111-111111111111"
+        capability = build_openvpn_capability(target_ref, datetime.now(UTC) + timedelta(days=5))
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        for name in (
+            "RANGE_VPN_EDGE_SUBNET_ID",
+            "RANGE_VPN_GATEWAY_PERMISSIONS_BOUNDARY_ARN",
+            "RANGE_VPN_PROVIDER_ENDPOINT_SECURITY_GROUP_ID",
+            "PORTAL_NETWORK_CIDRS",
+            "PORTAL_VPC_CIDR",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr(
+            "terraform_ops.get_range_data_by_request_id",
+            MagicMock(
+                return_value={
+                    "range_id": 80,
+                    "user_id": 20,
+                    "spec": {"subnets": [{"instances": [{"uuid": target_ref}]}]},
+                    "remote_access_capability": capability,
+                }
+            ),
+        )
+        dispatch = MagicMock()
+        monkeypatch.setattr("terraform_ops._dispatch_terraform_operation", dispatch)
+        monkeypatch.setattr("terraform_ops.publish_failed", MagicMock())
+
+        with pytest.raises(CloudError, match="not configured"):
+            run_range_terraform("up", "req-1")
+
+        dispatch.assert_not_called()
+
+    def test_kali_topology_without_capability_does_not_activate_vpn_admission(self, monkeypatch):
+        from terraform_ops import run_range_terraform
+
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.setattr(
+            "terraform_ops.get_range_data_by_request_id",
+            MagicMock(
+                return_value={
+                    "range_id": 80,
+                    "user_id": 20,
+                    "spec": {"subnets": [{"instances": [{"role": "attacker", "os_type": "kali"}]}]},
+                    "remote_access_capability": None,
+                }
+            ),
+        )
+        dispatch = MagicMock()
+        monkeypatch.setattr("terraform_ops._dispatch_terraform_operation", dispatch)
+
+        run_range_terraform("up", "req-1")
+
+        dispatch.assert_called_once()

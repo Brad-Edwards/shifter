@@ -18,7 +18,13 @@ from typing import Any
 import psycopg
 from psycopg import sql
 
-from events import STATUS_DESTROYED
+from events import (
+    STATUS_DESTROYED,
+    STATUS_FAILED,
+    STATUS_PAUSED,
+    STATUS_PROVISIONING,
+    STATUS_READY,
+)
 from executors.ngfw_executor import NGFWExecutor
 from log_redact import safe_log_fingerprint
 from ngfw_polling import poll_for_serial_number, wait_for_autocommit
@@ -26,13 +32,28 @@ from orchestrators.setup_orchestrator import SetupOrchestrator
 from plans.base import DynamicPlan, SetupPlan
 from plans.ngfw_configure_subnets import NGFWConfigureSubnetsPlan, NGFWRemoveSubnetsPlan
 from provisioner_db import get_db_connection
+from provisioner_db_appends import append_operation_result
 from provisioner_db_ngfw import get_user_ngfw_data
 
 logger = logging.getLogger(__name__)
 
 
-def update_instance_state(request_id: str, status: str, **state_updates: Any) -> None:
-    """Update NGFW Instance and App status/state in Engine database."""
+def update_instance_state(
+    request_id: str,
+    status: str,
+    *,
+    operation_id: str | None = None,
+    operation: str | None = None,
+    **state_updates: Any,
+) -> None:
+    """Update NGFW Instance and App status/state in Engine database.
+
+    ``operation_id``/``operation`` are ADR-043 shadow-append inputs (Phase 2,
+    #1834): when ``operation_id`` is ``None`` (local dev / not-yet-threaded
+    caller) the shadow append to the operation result inbox is skipped
+    entirely; the direct SQL writes below remain the sole authoritative write
+    either way.
+    """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -95,6 +116,21 @@ def update_instance_state(request_id: str, status: str, **state_updates: Any) ->
                         """,
                         (status, app_id),
                     )
+
+            if operation_id is not None and operation is not None:
+                append_operation_result(
+                    operation_id=operation_id,
+                    request_id=request_id,
+                    resource="ngfw",
+                    operation=operation,
+                    result_kind="RESOURCE_STATE",
+                    result_payload={
+                        "status": status,
+                        "instance_id": instance_id,
+                        "app_id": app_id,
+                    },
+                    cur=cur,
+                )
 
         conn.commit()
 
@@ -180,9 +216,9 @@ def find_stale_routes_by_db(
             query = sql.SQL("""
                 SELECT id FROM mission_control_range
                 WHERE id IN ({})
-                AND status NOT IN ('destroyed', 'failed')
+                AND status NOT IN (%s, %s)
                 """).format(sql.SQL(", ").join(sql.Placeholder() * len(range_ids)))
-            cur.execute(query, range_ids)
+            cur.execute(query, [*range_ids, STATUS_DESTROYED, STATUS_FAILED])
             active_range_ids = {row[0] for row in cur.fetchall()}
 
         for range_id, routes in routes_by_range.items():
@@ -300,7 +336,7 @@ def remove_ngfw_subnets(user_id: int, subnets: list[dict[str, Any]], range_id: i
         logger.warning("NGFW missing management_ip or ssh_key, skipping removal")
         return
 
-    if status == "paused":
+    if status == STATUS_PAUSED:
         logger.error(
             "NGFW is paused during range destroy - this should never happen! "
             "range_id=%s user_id=%s ngfw_request_id=%s. Skipping NGFW cleanup.",
@@ -356,9 +392,9 @@ def user_has_active_ranges(user_id: int, exclude_range_id: int) -> bool:
             FROM mission_control_range
             WHERE user_id = %s
               AND id != %s
-              AND status IN ('ready', 'provisioning')
+              AND status IN (%s, %s)
             """,
-            (user_id, exclude_range_id),
+            (user_id, exclude_range_id, STATUS_READY, STATUS_PROVISIONING),
         )
         row = cur.fetchone()
         count = row[0] if row else 0

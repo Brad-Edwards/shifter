@@ -9,6 +9,8 @@ template set so the AWS `packer build .` / `-only='*.<type>'` flow never sees a
 Run with: pytest shifter/packer/tests/test_packer_gcp.py -v
 """
 
+import json
+import os
 import re
 import shutil
 import subprocess
@@ -21,7 +23,7 @@ GCP_DIR = PACKER_DIR / "gcp"
 GCP_SCRIPTS_DIR = GCP_DIR / "scripts"
 
 # Image types that ship a GCE builder in this iteration.
-GCE_IMAGE_TYPES = ["ubuntu", "brokenbk", "kali", "windows", "dc", "polaris-vm", "dc-prebaked"]
+GCE_IMAGE_TYPES = ["ubuntu", "brokenbk", "kali", "windows", "dc", "polaris-vm", "techvault", "dc-prebaked"]
 
 
 class TestGcpTemplateStructure:
@@ -170,6 +172,16 @@ class TestGcpKaliSourceImage:
         assert "google-guest-agent" in script
         assert "--force-overwrite" in script
 
+    def test_kali_conversion_script_regenerates_ssh_host_keys(self):
+        script = (PACKER_DIR / "scripts" / "kali" / "gce-debian-to-kali.sh").read_text()
+        # cleanup.sh strips host keys; Kali (unlike Ubuntu) does not regenerate
+        # them on first boot, so sshd never binds :22 and the range provisioner's
+        # SSH-wait times out (#1745). The conversion must install a first-boot
+        # oneshot that runs `ssh-keygen -A` before sshd.
+        assert "regenerate-ssh-host-keys.service" in script
+        assert "ssh-keygen -A" in script
+        assert "systemctl enable regenerate-ssh-host-keys.service" in script
+
 
 class TestGcpPackerValidate:
     """`packer validate` passes against the GCE templates (when packer is present)."""
@@ -194,6 +206,780 @@ class TestGcpPackerValidate:
             cwd=GCP_DIR,
         )
         assert result.returncode == 0, f"Packer validate failed: {result.stderr}"
+
+
+REPO_ROOT = PACKER_DIR.parent.parent
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+
+
+class TestGcpPolarisVerifyStackWiring:
+    """The polaris-vm stack verify is wired into the template + vars (#1343 gap 1)."""
+
+    def test_variables_declare_checksum_and_generation(self):
+        content = (GCP_DIR / "variables.pkr.hcl").read_text()
+        assert 'variable "polaris_stack_sha256"' in content
+        assert 'variable "polaris_stack_generation"' in content
+
+    def test_polaris_vm_template_requires_stack(self):
+        content = (GCP_DIR / "polaris-vm.pkr.hcl").read_text()
+        assert "POLARIS_REQUIRE_STACK=1" in content
+        assert "POLARIS_STACK_SHA256=${var.polaris_stack_sha256}" in content
+        assert "POLARIS_STACK_GENERATION=${var.polaris_stack_generation}" in content
+        # host-setup installs docker/sdk; verify-stack (fail-closed) runs next.
+        assert "scripts/polaris/verify-stack.sh" in content
+        assert content.index("host-setup.sh") < content.index("verify-stack.sh")
+
+
+class TestGcpTechVaultTemplate:
+    """The native GCE TechVault image preserves the reviewed golden-image contract."""
+
+    @pytest.fixture
+    def template(self):
+        return (GCP_DIR / "techvault.pkr.hcl").read_text()
+
+    def test_uses_gce_native_ubuntu_2404(self, template):
+        assert 'source_image_family     = "ubuntu-2404-lts-amd64"' in template
+        assert 'source_image_project_id = ["ubuntu-os-cloud"]' in template
+        assert 'ssh_username            = "ubuntu"' in template
+
+    def test_publishes_techvault_family_and_manifest(self, template):
+        assert 'image_family      = "${var.image_prefix}-techvault"' in template
+        assert 'image-type = "techvault"' in template
+        assert 'output     = "techvault-manifest.json"' in template
+
+    def test_uses_shared_running_stack_scripts(self, template):
+        for script in ("toolchain.sh", "stack.sh", "seat.sh", "wait-stack.sh"):
+            assert f'"../scripts/techvault/{script}"' in template
+        assert "cleanup.sh" not in template
+
+    def test_binds_pinned_supply_chain_inputs(self, template):
+        assert 'source      = "../scripts/techvault/aptl-requirements.lock"' in template
+        assert "APTL_REQUIREMENTS_LOCK=/tmp/aptl-requirements.lock" in template
+
+    def test_has_adequate_root_disk(self, template):
+        match = re.search(r"disk_size\s*=\s*(\d+)", template)
+        assert match and int(match.group(1)) >= 100
+
+
+class TestGcpTechVaultWorkflowWiring:
+    """Build and validation workflows expose TechVault without implying GDC support."""
+
+    @pytest.fixture
+    def build_workflow(self):
+        return (WORKFLOWS_DIR / "packer-gcp.yml").read_text()
+
+    @pytest.fixture
+    def validate_workflow(self):
+        return (WORKFLOWS_DIR / "packer-gcp-validate.yml").read_text()
+
+    def test_build_and_validate_choices_include_techvault(self, build_workflow, validate_workflow):
+        assert "\n          - techvault\n" in build_workflow
+        assert "\n          - techvault\n" in validate_workflow
+
+    def test_build_uses_repository_locked_techvault_inputs(self, build_workflow):
+        assert "PKR_VAR_aptl_version" not in build_workflow
+        assert "GCP_TECHVAULT_APTL_VERSION" not in build_workflow
+        assert "GCP_TECHVAULT_CLAUDE_CODE_VERSION" not in build_workflow
+        assert "GCP_TECHVAULT_PACKER_MACHINE_TYPE" in build_workflow
+
+    def test_techvault_is_excluded_from_gdc_export(self, build_workflow):
+        assert "inputs.image_type != 'techvault'" in build_workflow
+
+    def test_validate_routes_techvault_profile(self, validate_workflow):
+        gather = (GCP_SCRIPTS_DIR / "validate" / "gather-evidence.sh").read_text()
+        assert '[[ "${IMAGE_TYPE}" == "techvault" ]]' in gather
+        assert 'CHECK_SCRIPT="${SCRIPT_DIR}/techvault.sh"' in gather
+        assert 'IMAGE_TYPE="${IMAGE_TYPE}"' in validate_workflow
+
+
+class TestGcpTechVaultSupplyChain:
+    """The shared TechVault installer uses reviewed, pinned inputs."""
+
+    @pytest.fixture
+    def toolchain(self):
+        return (PACKER_DIR / "scripts" / "techvault" / "toolchain.sh").read_text()
+
+    @pytest.fixture
+    def stack(self):
+        return (PACKER_DIR / "scripts" / "techvault" / "stack.sh").read_text()
+
+    @pytest.fixture
+    def lock(self):
+        return (PACKER_DIR / "scripts" / "techvault" / "aptl-requirements.lock").read_text()
+
+    def test_toolchain_uses_signed_distribution_packages(self, toolchain):
+        assert "get.docker.com" not in toolchain
+        assert "deb.nodesource.com" not in toolchain
+        assert re.search(r"(?<![A-Za-z0-9.+-])docker[.]io(?![A-Za-z0-9.+-])", toolchain)
+        assert "docker-compose-v2" in toolchain
+
+    def test_claude_code_tarball_is_digest_verified_and_installed_offline(self, toolchain):
+        assert 'CLAUDE_CODE_VERSION="2.1.215"' in toolchain
+        assert 'readonly CURL_PROTO_HTTPS_ONLY="=https"' in toolchain
+        assert toolchain.count('"${CURL_PROTO_HTTPS_ONLY}"') == 4
+        assert "CLAUDE_CODE_TARBALL_SHA256" in toolchain
+        assert "CLAUDE_CODE_LINUX_X64_TARBALL_SHA256" in toolchain
+        assert "sha256sum --check" in toolchain
+        assert "npm install -g --offline" in toolchain
+        assert "NOSONAR" not in toolchain
+
+    def test_aptl_complete_dependency_lock_is_hash_enforced(self, stack, lock):
+        assert "APTL_REQUIREMENTS_LOCK:?" in stack
+        assert "--require-hashes" in stack
+        assert "--only-binary=:all:" in stack
+        assert "--no-deps" in stack
+        assert "aptl-labs==4.1.2" in lock
+        assert "--hash=sha256:772eae0370cacc00ee1f844c27e7ec7e1678305410218fd68ee1b8b8eeb84ced" in lock
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+class TestGcpTechVaultValidationBehavior:
+    """The live candidate profile fails closed on an incomplete TechVault stack."""
+
+    VALIDATOR = GCP_SCRIPTS_DIR / "validate" / "techvault.sh"
+
+    def test_fail_helper_returns_explicitly_under_errexit(self):
+        validator = self.VALIDATOR.read_text()
+
+        assert "set -euo pipefail" in validator
+        assert re.search(
+            r"fail\(\) \{\n  echo \"shifter-validate: FAIL techvault \$\*\" >&2\n  return 1\n\}",
+            validator,
+        )
+
+    def _run(
+        self,
+        tmp_path,
+        *,
+        running=30,
+        docker_group_members="ubuntu",
+        code_ok=True,
+        claude_ok=True,
+        unexpected_exited=None,
+    ):
+        home = tmp_path / "ubuntu"
+        stack = home / "techvault"
+        stack.mkdir(parents=True)
+        (stack / "aptl.json").write_text("{}\n")
+        (stack / "docker-compose.yml").write_text("services: {}\n")
+        stub = tmp_path / "bin"
+        stub.mkdir()
+        scripts = {
+            "systemctl": "#!/bin/bash\nexit 0\n",
+            "id": '#!/bin/bash\n[ "$1" = "-u" ] && echo 1000\n',
+            "stat": "#!/bin/bash\necho ubuntu\n",
+            "getent": f"#!/bin/bash\necho 'docker:x:999:{docker_group_members}'\n",
+            "ss": "#!/bin/bash\nprintf 'LISTEN 0 128 0.0.0.0:22\\nLISTEN 0 128 0.0.0.0:3389\\n'\n",
+            "code": f"#!/bin/bash\nexit {0 if code_ok else 1}\n",
+            "claude": f"#!/bin/bash\nexit {0 if claude_ok else 1}\n",
+            "docker": (
+                "#!/bin/bash\n"
+                'if [ "$1 $2 $3" = "compose config --images" ]; then printf \'img:a\\nimg:b\\n\'; exit 0; fi\n'
+                'if [ "$1 $2" = "image inspect" ]; then exit 0; fi\n'
+                'if [ "$1 $2" = "compose version" ] || [ "$1 $2" = "compose config" ]; then exit 0; fi\n'
+                'if [ "$1" = "ps" ] && [[ " $* " == *" health=unhealthy "* ]]; then exit 0; fi\n'
+                'if [ "$1" = "ps" ] && [[ " $* " == *" status=exited "* ]]; then\n'
+                "  echo aptl-cortex-index-init\n"
+                f"  [ -n '{unexpected_exited or ''}' ] && echo '{unexpected_exited or ''}'\n"
+                "  exit 0\n"
+                "fi\n"
+                'if [ "$1" = "ps" ] && [[ " $* " == *" --format "* ]]; then\n'
+                f"  [ {running} -ge 1 ] && echo aptl-wazuh-manager\n"
+                f"  [ {running} -ge 2 ] && echo aptl-victim\n"
+                f"  [ {running} -ge 3 ] && echo aptl-kali\n"
+                f"  [ {running} -gt 3 ] && for i in $(seq 4 {running}); do echo aptl-svc-$i; done\n"
+                "  exit 0\n"
+                "fi\n"
+                'if [ "$1" = "inspect" ]; then echo \'0\'; exit 0; fi\n'
+                "exit 0\n"
+            ),
+        }
+        for name, body in scripts.items():
+            path = stub / name
+            path.write_text(body)
+            path.chmod(0o755)
+        env = dict(os.environ)
+        env["PATH"] = f"{stub}:{env['PATH']}"
+        env["TECHVAULT_HOME"] = str(home)
+        env["TECHVAULT_USER"] = "ubuntu"
+        bash_path = shutil.which("bash")
+        assert bash_path is not None
+        return subprocess.run(  # noqa: S603
+            [bash_path, str(self.VALIDATOR)], capture_output=True, text=True, env=env
+        )
+
+    def test_complete_profile_passes(self, tmp_path):
+        result = self._run(tmp_path, running=30)
+        assert result.returncode == 0, result.stderr
+
+    def test_fewer_than_30_running_containers_fails(self, tmp_path):
+        result = self._run(tmp_path, running=29)
+        assert result.returncode != 0
+
+    def test_user_missing_from_docker_group_fails(self, tmp_path):
+        result = self._run(tmp_path, docker_group_members="operator")
+        assert result.returncode != 0
+
+    @pytest.mark.parametrize("missing_cli", ["code", "claude"])
+    def test_required_participant_cli_missing_fails(self, tmp_path, missing_cli):
+        result = self._run(
+            tmp_path,
+            code_ok=missing_cli != "code",
+            claude_ok=missing_cli != "claude",
+        )
+        assert result.returncode != 0
+
+    def test_unexpected_exited_container_fails(self, tmp_path):
+        result = self._run(tmp_path, unexpected_exited="aptl-victim")
+        assert result.returncode != 0
+
+
+class TestGcpPromotionEvidenceBinding:
+    """Promotion verifies trusted run evidence instead of trusting a mutable label."""
+
+    @pytest.fixture
+    def promote(self):
+        return (WORKFLOWS_DIR / "packer-gcp-promote.yml").read_text()
+
+    def test_workflow_reads_validation_run_and_revision_labels(self, promote):
+        assert "labels.validated-run" in promote
+        assert "labels.validated-revision" in promote
+
+    def test_workflow_downloads_and_verifies_validation_evidence(self, promote):
+        assert "actions: read" in promote
+        assert "gh run download" in promote
+        assert "verify-promotion-evidence.sh" in promote
+
+    def test_verifier_script_exists(self):
+        assert (GCP_SCRIPTS_DIR / "validate" / "verify-promotion-evidence.sh").exists()
+
+    def _run_verifier(self, tmp_path, *, evidence_updates=None, run_updates=None):
+        evidence = {
+            "candidate_image": "shifter-techvault-123",
+            "project": "dev-project",
+            "image_family": "shifter-techvault",
+            "image_type": "techvault",
+            "source_revision": "a" * 40,
+            "validation_run": "12345",
+            "result": "passed",
+        }
+        run = {
+            "id": 12345,
+            "name": "Packer GCE Image Validate",
+            "path": ".github/workflows/packer-gcp-validate.yml",
+            "event": "workflow_dispatch",
+            "head_branch": "dev",
+            "head_sha": "a" * 40,
+            "conclusion": "success",
+        }
+        evidence.update(evidence_updates or {})
+        run.update(run_updates or {})
+        evidence_file = tmp_path / "validation-evidence.json"
+        run_file = tmp_path / "validation-run.json"
+        evidence_file.write_text(json.dumps(evidence))
+        run_file.write_text(json.dumps(run))
+        env = dict(os.environ)
+        env.update(
+            {
+                "SRC_IMAGE": "shifter-techvault-123",
+                "SRC_PROJECT": "dev-project",
+                "IMAGE_FAMILY": "shifter-techvault",
+                "IMAGE_TYPE": "techvault",
+                "VALIDATED_RUN": "12345",
+                "VALIDATED_REVISION": "a" * 40,
+                "EVIDENCE_FILE": str(evidence_file),
+                "RUN_FILE": str(run_file),
+            }
+        )
+        bash_path = shutil.which("bash")
+        assert bash_path is not None
+        return subprocess.run(  # noqa: S603
+            [bash_path, str(GCP_SCRIPTS_DIR / "validate" / "verify-promotion-evidence.sh")],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def test_verifier_accepts_exact_successful_protected_run_evidence(self, tmp_path):
+        result = self._run_verifier(tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    @pytest.mark.parametrize(
+        ("evidence_updates", "run_updates"),
+        [
+            ({"candidate_image": "other-image"}, None),
+            ({"project": "other-project"}, None),
+            ({"result": "failed"}, None),
+            (None, {"head_branch": "feature"}),
+            (None, {"head_sha": "b" * 40}),
+            (None, {"conclusion": "failure"}),
+            (None, {"path": ".github/workflows/other.yml"}),
+        ],
+    )
+    def test_verifier_rejects_mismatched_or_untrusted_evidence(self, tmp_path, evidence_updates, run_updates):
+        result = self._run_verifier(tmp_path, evidence_updates=evidence_updates, run_updates=run_updates)
+        assert result.returncode != 0
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+class TestGcpPolarisVerifyStackBehavior:
+    """verify-stack.sh actually fails the build on each fail-closed condition.
+
+    Executes the script with stubbed gcloud/docker so the fail-closed BRANCHES
+    are exercised (not just asserted present) — #1343 test-quality review.
+    """
+
+    VERIFY_STACK = GCP_SCRIPTS_DIR / "polaris" / "verify-stack.sh"
+
+    def _run(
+        self,
+        tmp_path,
+        env,
+        *,
+        with_stub_bin=True,
+        docker_ok=True,
+        images="img:latest",
+        services="svc-a svc-b",
+        running_services="svc-a running\nsvc-b running\n",
+        fail_compose_up=False,
+        config_json='{"services":{"svc-a":{"build":"."},"svc-b":{"build":"."}}}',
+    ):
+        import os
+
+        stub = tmp_path / "bin"
+        stub.mkdir(exist_ok=True)
+        if with_stub_bin:
+            # gcloud stub writes deterministic tarball bytes to the cp destination
+            # (last argv). The test sets POLARIS_STACK_SHA256 to that content hash.
+            (stub / "gcloud").write_text('#!/bin/bash\ndest="${@: -1}"\nprintf polaris-stack-bytes > "$dest"\n')
+            docker_rc = "0" if docker_ok else "1"
+            # docker stub: `compose config --images` prints the image list; every
+            # other subcommand (config/build/pull/image inspect) exits docker_rc.
+            (stub / "docker").write_text(
+                "#!/bin/bash\n"
+                'printf "docker %s\\n" "$*" >> "$DOCKER_LOG"\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--images" ]; then\n'
+                f'  printf "%s\\n" {images}; exit 0\nfi\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--format" ]; then\n'
+                '  printf "%s\\n" "$DOCKER_STUB_CONFIG_JSON"; exit 0\nfi\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--services" ]; then\n'
+                '  printf "%s\\n" $DOCKER_STUB_SERVICES; exit 0\nfi\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "ps" ]; then\n'
+                '  printf "%b" "$DOCKER_STUB_RUNNING_SERVICES"; exit 0\nfi\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "up" ] && [ "$DOCKER_STUB_FAIL_UP" = "1" ]; then\n'
+                "  exit 1\nfi\n"
+                f"exit {docker_rc}\n"
+            )
+            (stub / "iptables").write_text('#!/bin/bash\nprintf "iptables %s\\n" "$*" >> "$DOCKER_LOG"\nexit 0\n')
+            for f in ("gcloud", "docker", "iptables"):
+                (stub / f).chmod(0o755)
+        run_env = dict(os.environ)
+        run_env["PATH"] = f"{stub}:{run_env['PATH']}"
+        run_env["POLARIS_ROOT"] = str(tmp_path / "polaris")
+        run_env["COMPOSE_DIR"] = str(tmp_path / "polaris" / "build")
+        run_env["DOCKER_LOG"] = str(tmp_path / "docker.log")
+        run_env["DOCKER_STUB_SERVICES"] = services
+        run_env["DOCKER_STUB_RUNNING_SERVICES"] = running_services
+        run_env["DOCKER_STUB_FAIL_UP"] = "1" if fail_compose_up else "0"
+        run_env["DOCKER_STUB_CONFIG_JSON"] = config_json
+        run_env["POLARIS_STACK_START_TIMEOUT_SECONDS"] = "0"
+        run_env.update(env)
+        bash_path = shutil.which("bash")
+        return subprocess.run(  # noqa: S603
+            [bash_path, str(self.VERIFY_STACK)],
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+
+    def test_missing_bucket_when_required_fails(self, tmp_path):
+        r = self._run(tmp_path, {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": ""})
+        assert r.returncode != 0, r.stderr
+
+    def test_missing_checksum_when_required_fails(self, tmp_path):
+        r = self._run(tmp_path, {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": ""})
+        assert r.returncode != 0, r.stderr
+
+    def test_checksum_mismatch_fails(self, tmp_path):
+        r = self._run(
+            tmp_path,
+            {
+                "POLARIS_REQUIRE_STACK": "1",
+                "POLARIS_STACK_BUCKET": "b",
+                "POLARIS_STACK_SHA256": "0" * 64,  # deliberately wrong
+            },
+        )
+        assert r.returncode != 0, r.stderr
+
+    def test_missing_stack_when_not_required_succeeds(self, tmp_path):
+        r = self._run(tmp_path, {"POLARIS_REQUIRE_STACK": "0", "POLARIS_STACK_BUCKET": ""})
+        assert r.returncode == 0, r.stderr
+
+    @staticmethod
+    def _stub_tar(tmp_path):
+        # verify-stack.sh runs `tar xzf <file> -C <dir>`; the gcloud stub writes
+        # raw bytes (not a real tar), so stub tar to drop a compose file in -C.
+        stub = tmp_path / "bin"
+        stub.mkdir(exist_ok=True)
+        (stub / "tar").write_text(
+            "#!/bin/bash\n"
+            'd="";prev="";for a in "$@";do [ "$prev" = "-C" ] && d="$a";prev="$a";done\n'
+            'printf "services: {}\\n" > "$d/docker-compose.yml"\n'
+        )
+        (stub / "tar").chmod(0o755)
+
+    def test_valid_stack_passes(self, tmp_path):
+        import hashlib
+
+        # The gcloud stub writes these exact bytes; declare their real sha256.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            docker_ok=True,
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+
+    def test_valid_stack_starts_all_declared_services_before_capture(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        assert "docker compose up -d" in (tmp_path / "docker.log").read_text()
+
+    def test_installs_metadata_isolation_before_starting_services(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        commands = (tmp_path / "docker.log").read_text()
+        assert "iptables -I OUTPUT 1 -d 169.254.169.254/32 -j DROP" in commands
+        assert "iptables -I DOCKER-USER 1 -d 169.254.169.254/32 -j DROP" in commands
+        assert commands.index("iptables -I OUTPUT") < commands.index("docker compose up -d")
+
+    @pytest.mark.parametrize(
+        "config_json,error",
+        [
+            ('{"services":{"svc-a":{"image":"registry.example/a:latest"}}}', "immutable sha256 digest"),
+            ('{"services":{"svc-a":{"build":".","privileged":true}}}', "privileged/host namespace"),
+        ],
+    )
+    def test_rejects_unsafe_external_workload_before_execution(self, tmp_path, config_json, error):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            config_json=config_json,
+        )
+        assert r.returncode != 0
+        assert error in r.stderr
+        assert "docker compose up" not in (tmp_path / "docker.log").read_text()
+
+    def test_missing_declared_service_fails_before_capture(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            running_services="svc-a running\n",
+        )
+        assert r.returncode != 0, r.stdout
+
+    def test_failed_compose_up_fails_before_capture(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            fail_compose_up=True,
+        )
+        assert r.returncode != 0, r.stdout
+
+    def test_failed_docker_step_fails(self, tmp_path):
+        import hashlib
+
+        # Even with a valid, checksum-matching stack, a failing docker step
+        # (config/build/pull) must fail the build — no `|| true`.
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            docker_ok=False,
+        )
+        assert r.returncode != 0, r.stdout
+
+
+class TestGcpValidationWorkflow:
+    """A candidate-boot validation gate exists and boots an isolated VM (#1343 gap 2)."""
+
+    @pytest.fixture
+    def workflow(self):
+        return (WORKFLOWS_DIR / "packer-gcp-validate.yml").read_text()
+
+    @staticmethod
+    def _run_linux_validator(tmp_path, *, running_services):
+        import os
+
+        stub = tmp_path / "bin"
+        stub.mkdir()
+        command_log = tmp_path / "validator-docker.log"
+        compose_dir = tmp_path / "compose"
+        compose_dir.mkdir()
+        (compose_dir / "docker-compose.yml").write_text("services: {}\n")
+        (stub / "systemctl").write_text("#!/bin/bash\nexit 0\n")
+        (stub / "ss").write_text('#!/bin/bash\nprintf "LISTEN 0 128 0.0.0.0:2222 0.0.0.0:*\\n"\n')
+        (stub / "docker").write_text(
+            "#!/bin/bash\n"
+            'printf "%s\\n" "$*" >> "$VALIDATOR_DOCKER_LOG"\n'
+            'if [ "$1" = "compose" ] && { [ "$2" = "up" ] || [ "$2" = "start" ]; }; then exit 90; fi\n'
+            'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--images" ]; then\n'
+            '  printf "img:latest\\n"; exit 0\nfi\n'
+            'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--services" ]; then\n'
+            '  printf "svc-a\\nsvc-b\\n"; exit 0\nfi\n'
+            'if [ "$1" = "compose" ] && [ "$2" = "ps" ]; then\n'
+            '  printf "%b" "$VALIDATOR_RUNNING_SERVICES"; exit 0\nfi\n'
+            "exit 0\n"
+        )
+        for command in ("systemctl", "ss", "docker"):
+            (stub / command).chmod(0o755)
+        run_env = dict(os.environ)
+        run_env.update(
+            {
+                "PATH": f"{stub}:{run_env['PATH']}",
+                "VALIDATE_IMAGE_TYPE": "polaris-vm",
+                "MGMT_SSH_PORT": "2222",
+                "COMPOSE_DIR": str(compose_dir),
+                "STACK_START_TIMEOUT_SECONDS": "0",
+                "VALIDATOR_DOCKER_LOG": str(command_log),
+                "VALIDATOR_RUNNING_SERVICES": running_services,
+            }
+        )
+        result = subprocess.run(  # noqa: S603
+            [shutil.which("bash"), str(GCP_SCRIPTS_DIR / "validate" / "linux.sh")],
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        return result, command_log.read_text()
+
+    def test_validate_workflow_exists(self):
+        assert (WORKFLOWS_DIR / "packer-gcp-validate.yml").exists()
+
+    def test_validation_scripts_exist(self):
+        assert (GCP_SCRIPTS_DIR / "validate" / "linux.sh").exists()
+        assert (GCP_SCRIPTS_DIR / "validate" / "dc-probe.sh").exists()
+        assert (GCP_SCRIPTS_DIR / "validate" / "gather-evidence.sh").exists()
+        # The guest self-report script is removed; evidence is runner-gathered.
+        assert not (GCP_SCRIPTS_DIR / "validate" / "dc.ps1").exists()
+
+    def test_validation_vm_has_no_external_ip(self, workflow):
+        assert "--no-address" in workflow
+
+    def test_validation_vm_is_shielded(self, workflow):
+        assert "--shielded-secure-boot" in workflow
+        assert "--shielded-vtpm" in workflow
+        assert "--shielded-integrity-monitoring" in workflow
+
+    def test_validation_vm_blocks_project_ssh_keys(self, workflow):
+        assert "block-project-ssh-keys=TRUE" in workflow
+
+    def test_validation_reboots_and_rechecks(self, workflow):
+        assert "instances reset" in workflow
+
+    def test_validation_labels_the_candidate(self, workflow):
+        assert "validated=passed" in workflow
+
+    def test_validation_pins_exact_candidate(self, workflow):
+        # The candidate is resolved once and pinned; downstream uses the exact
+        # name, and an explicit source_image input skips family resolution.
+        assert "source_image" in workflow
+
+    def test_binds_candidate_family_to_selected_profile(self, workflow):
+        # The candidate's own family must equal the family for the requested
+        # image_type, so a weak profile cannot validate a sensitive-family image.
+        assert '"${IMG_FAMILY}" != "${FAMILY}"' in workflow
+
+    def test_matrix_excludes_first_boot_dc_and_sysprepped_windows(self, workflow):
+        # Only image types with a matching validator are selectable; the
+        # sysprepped `windows` and first-boot-promotion `dc` images are excluded.
+        assert "\n          - windows\n" not in workflow
+        assert "\n          - dc\n" not in workflow
+        assert "\n          - dc-prebaked\n" in workflow
+        assert "\n          - polaris-vm\n" in workflow
+
+    def test_validation_vm_has_no_guest_service_account(self, workflow):
+        # The VM boots candidate code, so it must have no cloud identity — guest
+        # code cannot read a token and mutate its own image label.
+        assert "--no-service-account --no-scopes" in workflow
+        assert '--service-account="${BUILD_SA}"' not in workflow
+
+    def test_dc_validation_binds_domain_from_checked_in_profile(self, workflow):
+        # The expected forest domain is resolved from the checked-in profile
+        # (the allowlist); an unknown profile / empty domain is rejected, and the
+        # profile is a strict slug (no path traversal).
+        assert "dc-profiles/${DC_PROFILE}.pkrvars.hcl" in workflow
+        assert "dc_domain_name" in workflow
+        assert "^[a-z0-9][a-z0-9-]*$" in workflow
+
+    def test_validation_cleans_up_the_vm(self, workflow):
+        assert "instances delete" in workflow
+        assert "if: always()" in workflow
+
+    def test_evidence_gathered_by_runner_not_guest(self, workflow):
+        # The runner executes the checks over IAP and gates on the result; there
+        # is no guest-emitted serial sentinel trusted as the pass signal.
+        assert "gather-evidence.sh" in workflow
+        assert "SHIFTER_VALIDATION_RESULT" not in workflow
+        assert "get-serial-port-output" not in workflow
+        linux = (GCP_SCRIPTS_DIR / "validate" / "linux.sh").read_text()
+        assert "SHIFTER_VALIDATION_RESULT" not in linux
+
+    def test_gather_evidence_uses_iap_tunnel_and_exit_code(self):
+        g = (GCP_SCRIPTS_DIR / "validate" / "gather-evidence.sh").read_text()
+        assert "start-iap-tunnel" in g
+        # Linux is SSH-exec'd; the DC is probed over LDAP; both gate on exit code.
+        assert "ssh " in g
+        assert "dc-probe.sh" in g
+
+    def test_linux_validation_checks_stack_health_by_exit_code(self):
+        linux = (GCP_SCRIPTS_DIR / "validate" / "linux.sh").read_text()
+        assert "google-guest-agent" in linux
+        assert "docker compose config --images" in linux
+        # Exits non-zero on failure so the runner gates on the exit code.
+        assert "exit 1" in linux and "exit 0" in linux
+
+    def test_linux_validation_observes_without_creating_the_stack(self):
+        linux = (GCP_SCRIPTS_DIR / "validate" / "linux.sh").read_text()
+        assert "docker compose up -d" not in linux
+
+    def test_linux_validation_passes_only_when_every_existing_service_runs(self, tmp_path):
+        result, commands = self._run_linux_validator(
+            tmp_path,
+            running_services="svc-a running\nsvc-b running\n",
+        )
+        assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+        assert "compose up" not in commands
+        assert "compose start" not in commands
+
+    def test_linux_validation_fails_without_creating_a_missing_service(self, tmp_path):
+        result, commands = self._run_linux_validator(
+            tmp_path,
+            running_services="svc-a running\n",
+        )
+        assert result.returncode == 1
+        assert "svc-b(absent)" in result.stderr
+        assert "compose up" not in commands
+        assert "compose start" not in commands
+
+    def test_dc_probe_reads_ad_without_promoting(self):
+        probe = (GCP_SCRIPTS_DIR / "validate" / "dc-probe.sh").read_text()
+        # Runner-side AD probe: an anonymous rootDSE query proves a serving
+        # forest; it must never promote one, and it must require a specific
+        # expected domain (no unbound "any DC" pass).
+        assert "ldapsearch" in probe
+        assert "defaultNamingContext" in probe
+        assert "Install-ADDSForest" not in probe
+        assert 'EXPECTED_DOMAIN}" ]] || fail' in probe
+
+    def test_dc_evidence_loop_has_no_false_pass(self):
+        # In the DC branch, rc must default non-zero and be set 0 ONLY on a real
+        # probe success — never read $? after the if-compound (bash returns 0 when
+        # no branch runs, which would turn an all-failed loop into a false pass).
+        g = (GCP_SCRIPTS_DIR / "validate" / "gather-evidence.sh").read_text()
+        dc_section = g.split("# Linux: SSH-execute", 1)[0]
+        assert "rc=$?" not in dc_section
+        assert "rc=1" in dc_section
+
+
+class TestGcpPromoteEvidenceDriven:
+    """Promotion copies the exact validated candidate, not newest-in-family (#1343 gaps 3/4)."""
+
+    @pytest.fixture
+    def promote(self):
+        return (WORKFLOWS_DIR / "packer-gcp-promote.yml").read_text()
+
+    def test_requires_exact_source_image_input(self, promote):
+        assert "source_image:" in promote
+        assert "SRC_IMAGE: ${{ inputs.source_image }}" in promote
+
+    def test_verifies_validation_label_before_promotion(self, promote):
+        assert "labels.validated" in promote
+        assert '"${VALIDATED}" != "passed"' in promote
+
+    def test_copies_the_exact_candidate(self, promote):
+        assert '--source-image="${SRC_IMAGE}"' in promote
+
+    def test_does_not_resolve_source_from_family(self, promote):
+        # The dev-side source must be the pinned candidate, never re-resolved to
+        # newest-in-family at promotion time (the TOCTOU gap).
+        assert "SRC_IMAGE=$(gcloud compute images describe-from-family" not in promote
+        assert 'SRC_IMAGE="$(gcloud compute images describe-from-family' not in promote
+        # describe-from-family survives ONLY to read the prod head for deprecation.
+        assert 'PREV_PROD_IMAGE="$(gcloud compute images describe-from-family' in promote
+
+    def test_verifies_new_prod_image_before_deprecating_old_head(self, promote):
+        assert "NEW_STATUS" in promote
+        assert "deprecate" in promote
+
+    def test_derives_family_from_image_for_polaris_and_dc(self, promote):
+        # Family comes from the image's own family attribute, so polaris-vm and
+        # purpose-scoped <purpose>-dc families need no per-name logic.
+        assert "value(family)" in promote
+
+
+class TestGcpDcPrebakedCredentialHygiene:
+    """The pre-promoted DC ships no baked credential/transcript (#1343 gaps 5/6)."""
+
+    def test_promote_bake_has_no_committed_dsrm_default(self):
+        content = (GCP_SCRIPTS_DIR / "dc-prebaked" / "promote-bake.ps1").read_text()
+        assert "DsrmR3store" not in content
+        assert 'DsrmPassword = "' not in content
+        assert "DC_DSRM_PASSWORD" in content
+
+    def test_variables_declare_sensitive_dsrm(self):
+        content = (GCP_DIR / "variables.pkr.hcl").read_text()
+        assert 'variable "dc_dsrm_password"' in content
+        # Must be marked sensitive so packer never prints it.
+        block = content.split('variable "dc_dsrm_password"', 1)[1].split("}", 1)[0]
+        assert "sensitive   = true" in block
+
+    def test_finalize_strips_transcripts_and_seed_in_session(self):
+        # Cleanup runs inside finalize.ps1's still-authenticated session (the
+        # content seed resets the Administrator password, so a later provisioner
+        # could not reconnect). Verify finalize strips the secret-bearing seed +
+        # transcripts, and there is no separate cleanup provisioner to re-auth.
+        content = (GCP_SCRIPTS_DIR / "dc-prebaked" / "finalize.ps1").read_text()
+        assert "dc-prebaked-promote-bake.log" in content
+        assert "dc-prebaked-finalize.log" in content
+        assert 'Remove-Item -Path "C:\\polaris\\a2_setup.ps1"' in content
+        assert not (GCP_SCRIPTS_DIR / "dc-prebaked" / "cleanup.ps1").exists()
+
+    def test_dc_prebaked_finalize_is_last_and_injects_dsrm(self):
+        content = (GCP_DIR / "dc-prebaked.pkr.hcl").read_text()
+        assert "DC_DSRM_PASSWORD=${var.dc_dsrm_password}" in content
+        # finalize (which now also cleans up) is the last provisioner before the
+        # manifest post-processor; no separate cleanup provisioner follows it.
+        assert "scripts/dc-prebaked/cleanup.ps1" not in content
+        assert content.index("finalize.ps1") < content.index("post-processor")
 
 
 class TestAwsTemplatesUnaffected:

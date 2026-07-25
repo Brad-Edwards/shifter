@@ -16,6 +16,8 @@ from terraform_ops import run_range_terraform
 
 logger = logging.getLogger(__name__)
 
+_ENVIRONMENT_LOG = "Environment: %s"
+
 
 if __name__ == "__main__":
     from logging_config import configure_logging
@@ -26,6 +28,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Shifter Engine for provisioning cyber ranges and NGFW operations")
     subparsers = parser.add_subparsers(dest="resource", required=True, help="Resource type")
+
+    # --operation-id is optional and carries the ADR-043 canonical operation
+    # generation (#1834). The engine appends it as a trailing
+    # `--operation-id <uuid>` pair only on the remote/drainer dispatch path
+    # (engine.launch_intents.command_from_payload); local-dev runs never carry
+    # it, so it must never be required here.
+    _operation_id_help = "ADR-043 canonical operation generation UUID (absent on local-dev runs)"
 
     range_parser = subparsers.add_parser("range", help="Range lifecycle operations")
     range_parser.add_argument(
@@ -39,6 +48,36 @@ if __name__ == "__main__":
         required=True,
         dest="request_id",
         help="UUID of the Request for this Range",
+    )
+    range_parser.add_argument(
+        "--operation-id",
+        type=str,
+        default=None,
+        dest="operation_id",
+        help=_operation_id_help,
+    )
+
+    aces_range_parser = subparsers.add_parser(
+        "aces-range", help="ACES-native range lifecycle operations (serialized ACES plan)"
+    )
+    aces_range_parser.add_argument(
+        "operation",
+        choices=["provision", "destroy"],
+        help="Operation to perform: provision (create) or destroy (teardown)",
+    )
+    aces_range_parser.add_argument(
+        "--request-id",
+        type=str,
+        required=True,
+        dest="request_id",
+        help="UUID of the Request for this ACES range",
+    )
+    aces_range_parser.add_argument(
+        "--operation-id",
+        type=str,
+        default=None,
+        dest="operation_id",
+        help=_operation_id_help,
     )
 
     ngfw_parser = subparsers.add_parser("ngfw", help="NGFW runtime operations")
@@ -59,21 +98,39 @@ if __name__ == "__main__":
         type=str,
         help="EC2 instance ID (for start/stop)",
     )
+    ngfw_parser.add_argument(
+        "--operation-id",
+        type=str,
+        default=None,
+        dest="operation_id",
+        help=_operation_id_help,
+    )
 
     args = parser.parse_args()
 
-    if args.resource == "ngfw":
+    if args.resource == "aces-range":
+        from aces_range_ops import run_aces_range_destroy, run_aces_range_provision
+
+        logger.info("Starting ACES range %s for request_id=%s", args.operation, args.request_id)
+        logger.info(_ENVIRONMENT_LOG, os.environ.get("ENVIRONMENT", "unknown"))
+        if args.operation == "provision":
+            run_aces_range_provision(args.request_id)
+        else:
+            run_aces_range_destroy(args.request_id)
+        logger.info("Completed ACES range %s for request_id=%s", args.operation, args.request_id)
+
+    elif args.resource == "ngfw":
         logger.info("Starting NGFW %s for request_id=%s", args.operation, args.request_id)
-        logger.info("Environment: %s", os.environ.get("ENVIRONMENT", "unknown"))
+        logger.info(_ENVIRONMENT_LOG, os.environ.get("ENVIRONMENT", "unknown"))
 
         if args.operation in ("provision", "deprovision"):
             tf_op = "up" if args.operation == "provision" else "destroy"
-            run_ngfw_terraform(tf_op, args.request_id)
+            run_ngfw_terraform(tf_op, args.request_id, operation_id=args.operation_id)
         else:
             kwargs: dict[str, str] = {}
             if args.ec2_instance_id:
                 kwargs["ec2_instance_id"] = args.ec2_instance_id
-            run_ngfw_operation(args.operation, args.request_id, **kwargs)
+            run_ngfw_operation(args.operation, args.request_id, operation_id=args.operation_id, **kwargs)
 
         logger.info("Completed NGFW %s for request_id=%s", args.operation, args.request_id)
 
@@ -82,10 +139,10 @@ if __name__ == "__main__":
         tf_op = "up" if args.operation == "provision" else "destroy"
 
         logger.info("Starting range %s for request_id=%s", args.operation, request_id)
-        logger.info("Environment: %s", os.environ.get("ENVIRONMENT", "unknown"))
+        logger.info(_ENVIRONMENT_LOG, os.environ.get("ENVIRONMENT", "unknown"))
 
         if args.operation in ("provision", "destroy"):
-            run_range_terraform(tf_op, request_id)
+            run_range_terraform(tf_op, request_id, operation_id=args.operation_id)
         elif args.operation == "pause":
             from range_ops import run_range_pause
 

@@ -21,12 +21,12 @@ spec:
         checksum/runtime-config: {{ include "shifter.runtimeConfigChecksum" . }}
     spec:
       {{- include "shifter.podSecurityContext" . | nindent 6 }}
-      automountServiceAccountToken: true
+      automountServiceAccountToken: false
       serviceAccountName: {{ .Values.serviceAccounts.ctfScheduler.name }}
       containers:
         - name: ctf-scheduler
           image: {{ include "shifter.portalImage" . }}
-          imagePullPolicy: {{ .Values.images.portal.pullPolicy }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           {{- include "shifter.containerSecurityContextApp" . | nindent 10 }}
           {{- include "shifter.tmpVolumeMount" . | nindent 10 }}
           args: ["python", "manage.py", "run_ctf_scheduler"]

@@ -7,6 +7,7 @@ from typing import Any
 import boto3
 
 import terraform_runner
+from config import resolve_cloud_provider
 from events import (
     STATUS_DESTROYED,
     STATUS_DESTROYING,
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _cleanup_ngfw_bootstrap_objects(instance_id: str) -> None:
     """Delete sensitive AWS S3 bootstrap objects after NGFW readiness."""
-    if os.environ.get("CLOUD_PROVIDER", "aws") != "aws":
+    if resolve_cloud_provider() != "aws":
         return
 
     bootstrap_bucket = os.environ.get("NGFW_BOOTSTRAP_BUCKET", "").strip()
@@ -81,11 +82,13 @@ def _run_gdc_deprovision(
     request_id: str,
     instance_id: str,
     app_id: str,
+    *,
+    operation_id: str | None = None,
 ) -> None:
     """Deactivate and destroy a Palo Alto VM-Series firewall on GDC VM Runtime."""
     import gdc_vmseries_ngfw
 
-    update_instance_state(request_id, STATUS_DESTROYING)
+    update_instance_state(request_id, STATUS_DESTROYING, operation_id=operation_id, operation="deprovision")
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
@@ -117,7 +120,7 @@ def _run_gdc_deprovision(
     logger.info("Destroying GDC VM Runtime Palo Alto VM-Series resources...")
     gdc_vmseries_ngfw.destroy_ngfw(current_state)
 
-    update_instance_state(request_id, STATUS_DESTROYED)
+    update_instance_state(request_id, STATUS_DESTROYED, operation_id=operation_id, operation="deprovision")
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
@@ -163,9 +166,11 @@ def _run_deprovision(
     request_id: str,
     instance_id: str,
     app_id: str,
+    *,
+    operation_id: str | None = None,
 ) -> None:
     """Run license deactivation then Terraform destroy for NGFW."""
-    update_instance_state(request_id, STATUS_DESTROYING)
+    update_instance_state(request_id, STATUS_DESTROYING, operation_id=operation_id, operation="deprovision")
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
@@ -190,7 +195,7 @@ def _run_deprovision(
     logger.info("Cleaning up Terraform state...")
     terraform_runner.cleanup_ngfw_state(request_id)
 
-    update_instance_state(request_id, STATUS_DESTROYED)
+    update_instance_state(request_id, STATUS_DESTROYED, operation_id=operation_id, operation="deprovision")
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,

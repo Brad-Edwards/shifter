@@ -4,6 +4,7 @@ import importlib.util
 import ipaddress
 import json
 import os
+import re
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -136,10 +137,11 @@ def render_gcp_platform_runtime_env(
     config: GDCBootstrapConfig,
     *,
     bootstrap_operator_email: str | None = None,
+    bootstrap_env_values: dict[str, str] | None = None,
 ) -> str:
     """Render the static, project-aware runtime env contract for the GKE control plane."""
     gdc_vm_image_secret = f"projects/{config.project_id}/secrets/{config.gdc_vm_image_gcs_secret_id}"
-    bootstrap_values = load_bootstrap_env_values()
+    bootstrap_values = load_bootstrap_env_values() if bootstrap_env_values is None else bootstrap_env_values
     bootstrap_staff_emails = _merge_csv_env_values(
         [bootstrap_values.get("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "")],
         [bootstrap_operator_email or ""],
@@ -149,10 +151,19 @@ def render_gcp_platform_runtime_env(
         [bootstrap_operator_email or ""],
     )
     lines = [
-        "CLOUD_PROVIDER=gcp",
+        # CLOUD_PROVIDER is not rendered here: _render_gcp_runtime_env merges this
+        # bootstrap-owned contract with scripts/gcp/render_runtime_env.py's output,
+        # which is the renderer-owned source of the backend identity (PLAT-2005).
+        # A second hardcoded literal here would be redundant and could silently
+        # drift from that renderer-owned value.
         f"ENVIRONMENT={config.environment}",
         f"CLOUD_REGION={config.region}",
         f"GCP_REGION={config.region}",
+        # AWS_REGION == CLOUD_REGION in Django settings (config/_cloud.py), so the
+        # provisioner-launcher always emits a non-empty AWS_REGION even on GCP. It
+        # must therefore be present in the runtime ConfigMap or the
+        # restrict-provisioner-jobs admission policy denies the range Job (#1742).
+        f"AWS_REGION={config.region}",
         f"GCP_PROJECT_ID={config.project_id}",
         f"GOOGLE_CLOUD_PROJECT={config.project_id}",
         # GCE range cells are the default GCP range backend; the GDC VM Runtime
@@ -277,13 +288,39 @@ def parse_simple_env_file(path: Path) -> dict[str, str]:
     return values
 
 
-def load_bootstrap_env_values() -> dict[str, str]:
-    """Load bootstrap values from repo-local env files, then overlay the process environment."""
-    repo_root = get_repo_root()
+# gcp-dev environment overlay that records the first Identity Platform operator
+# credentials as the source of truth (issue #1570). local.auto.tfvars is
+# gitignored; operators keep the value here, CI renders it from the matching
+# GitHub secret. parse_simple_env_file handles the HCL `key = "value"` form.
+_GCP_DEV_TFVARS_OVERLAY = "platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars"
+# The overlay's HCL keys map to bootstrap env vars by uppercasing (e.g.
+# gcp_bootstrap_admin_email -> GCP_BOOTSTRAP_ADMIN_EMAIL), so derive the env key
+# rather than hardcoding a second literal for each.
+_TFVARS_BOOTSTRAP_KEYS = ("gcp_bootstrap_admin_email", "gcp_bootstrap_admin_password")
+
+
+def _gcp_bootstrap_creds_from_tfvars(repo_root: Path) -> dict[str, str]:
+    """Read the first-operator creds from the gcp-dev tfvars overlay (source of truth)."""
+    parsed = parse_simple_env_file(repo_root / _GCP_DEV_TFVARS_OVERLAY)
+    return {tf_key.upper(): parsed[tf_key] for tf_key in _TFVARS_BOOTSTRAP_KEYS if parsed.get(tf_key)}
+
+
+def load_bootstrap_env_values(repo_root: Path | None = None) -> dict[str, str]:
+    """Load bootstrap values from repo-local env files, then the process environment.
+
+    The gcp-dev tfvars overlay is applied last so the recorded operator credentials
+    (``gcp_bootstrap_admin_email`` / ``gcp_bootstrap_admin_password``) are the
+    authoritative source rather than an easily-lost interactive/secret value.
+
+    ``repo_root`` defaults to :func:`get_repo_root`; it is injectable so callers
+    (and tests) can point the lookup at a specific checkout.
+    """
+    repo_root = repo_root or get_repo_root()
     values: dict[str, str] = {}
     for env_path in [repo_root / ".env", repo_root.parent / "shifter" / ".env"]:
         values.update(parse_simple_env_file(env_path))
     values.update(os.environ)
+    values.update(_gcp_bootstrap_creds_from_tfvars(repo_root))
     return values
 
 
@@ -476,7 +513,7 @@ def _render_gcp_runtime_env(
         **parse_env_contract(
             render_gcp_platform_runtime_env(config, bootstrap_operator_email=bootstrap_operator_email)
         ),
-        **parse_env_contract(runtime_renderer.render_env(outputs, image_tag=image_tag)),
+        **parse_env_contract(runtime_renderer.render_env(outputs, engine_image=image_tag)),
     }
 
 
@@ -490,7 +527,6 @@ def _gcp_private_service_cidrs(outputs: dict[str, dict[str, object]]) -> list[st
             _host_as_single_address_cidr(control_plane_database.get("private_ip")),
             _host_as_single_address_cidr(control_plane_cache.get("host")),
             _host_as_single_address_cidr(guacamole_database.get("host")),
-            str(_get_output_value(outputs, "gke_services_cidr")).strip(),
         ]
     )
 
@@ -501,21 +537,24 @@ def _helm_service_account_values(service_accounts: dict[str, str]) -> dict[str, 
         "portal": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["portal"]}},
         "workers": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["workers"]}},
         "ctfScheduler": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["ctf-scheduler"]}},
+        "provisionerLauncher": {
+            "name": "provisioner-launcher",
+            "annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["provisioner-launcher"]},
+        },
         "provisioner": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["provisioner"]}},
     }
 
 
-def _helm_image_values(image_roots: dict[str, str], image_tag: str) -> dict[str, object]:
-    """Return pinned image references for chart workloads."""
-    return {
-        "portal": {"repository": image_roots["portal"], "tag": image_tag, "pullPolicy": "Always"},
-        "guacd": {"repository": image_roots["guacd"], "tag": image_tag, "pullPolicy": "Always"},
-        "guacamoleClient": {
-            "repository": image_roots["guacamole-client"],
-            "tag": image_tag,
-            "pullPolicy": "Always",
-        },
-    }
+def _helm_image_values(image_identities: dict[str, str]) -> dict[str, str]:
+    """Return exact attested image identities for chart workloads."""
+    required = {"platform", "guacd", "guacamoleClient"}
+    if set(image_identities) != required:
+        raise ValueError(f"GCP Helm image identities must contain exactly {', '.join(sorted(required))}")
+    digest_pattern = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+    for name, identity in image_identities.items():
+        if not digest_pattern.fullmatch(identity):
+            raise ValueError(f"GCP Helm image {name!r} must be repository@sha256:<64 lowercase hex>")
+    return dict(image_identities)
 
 
 def _helm_ingress_values(
@@ -549,8 +588,10 @@ def _helm_backend_config_values(edge_policy_name: str) -> dict[str, object]:
 
 def _helm_network_policy_values(
     private_service_cidrs: list[str],
+    kubernetes_api_cidrs: list[str],
     range_cluster_api_cidrs: list[str],
     range_cluster_api_port: int,
+    range_access_cidrs: list[str],
 ) -> dict[str, object]:
     """Return network-policy CIDR values for the Helm release."""
     return {
@@ -564,8 +605,14 @@ def _helm_network_policy_values(
             "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP range.
         ],
         "privateServiceCidrs": private_service_cidrs,
+        "kubernetesApiCidrs": kubernetes_api_cidrs,
         "rangeClusterApiCidrs": range_cluster_api_cidrs,
         "rangeClusterApiPort": range_cluster_api_port,
+        # Participant/operator range access (issue #1349): the portal and guacd
+        # workloads dial range guests on the range network for browser SSH and
+        # Guacamole SSH/RDP. Scope egress to the range network CIDR; the chart
+        # defaults the ports (22/3389). Empty list -> no policy rendered.
+        "rangeAccessCidrs": range_access_cidrs,
     }
 
 
@@ -574,11 +621,11 @@ def render_gcp_helm_values(
     outputs: dict[str, dict[str, object]],
     *,
     image_tag: str,
+    image_identities: dict[str, str] | None = None,
     bootstrap_operator_email: str | None = None,
 ) -> dict[str, object]:
     """Render non-secret Helm values for the Shifter release from Terraform outputs."""
     pinned_image_tag = validate_image_tag(image_tag)
-    image_roots = _get_string_mapping_output(outputs, "artifact_registry_image_roots")
     service_accounts = _get_output_value(outputs, "workload_service_accounts")
     public_hostname = str(_get_output_value(outputs, "public_hostname")).strip()
     managed_tls_enabled = bool(_get_output_value(outputs, "managed_tls_enabled"))
@@ -594,6 +641,10 @@ def render_gcp_helm_values(
     # exactly that endpoint host/port; empty until the endpoint is wired.
     range_cluster_host, _, range_cluster_port = (config.control_plane_platform_endpoint or "").partition(":")
     range_cluster_api_cidrs = _unique_nonempty_strings([_host_as_single_address_cidr(range_cluster_host)])
+    # Range network CIDR the portal/guacd workloads reach for participant SSH/RDP
+    # (issue #1349). Empty until the range network is provisioned, which leaves
+    # the range-access egress policy unrendered.
+    range_access_cidrs = _unique_nonempty_strings([str(_get_output_value(outputs, "range_network_cidr")).strip()])
 
     return {
         "releaseNamespace": "shifter-system",
@@ -603,19 +654,82 @@ def render_gcp_helm_values(
         # of band from Secret Manager (see sync_gcp_guacamole_runtime_secret).
         # Secret values must never enter Helm values or release history (#1180).
         "guacamoleRuntimeSecret": {"name": _GUACAMOLE_RUNTIME_RESOURCE_NAME},
-        "images": _helm_image_values(image_roots, pinned_image_tag),
-        "ingress": _helm_ingress_values(
-            outputs,
-            public_hostname=public_hostname,
-            managed_tls_enabled=managed_tls_enabled,
+        "images": _helm_image_values(
+            image_identities
+            if image_identities is not None
+            else _get_string_mapping_output(outputs, "attested_image_identities")
         ),
+        "edge": {
+            "ingress": {
+                "enabled": True,
+                "className": "gce",
+                "annotations": {
+                    "kubernetes.io/ingress.global-static-ip-name": str(
+                        _get_output_value(outputs, "public_ingress_ip_name")
+                    )
+                },
+                "host": public_hostname,
+                "tls": {"enabled": False, "secretName": ""},
+                "gcpManagedTls": {
+                    "enabled": managed_tls_enabled,
+                    "certificateName": "platform-managed-cert",
+                    "frontendConfigName": "platform-frontend-config",
+                },
+            }
+        },
         "services": _helm_backend_config_values(edge_policy_name),
-        "networkPolicy": _helm_network_policy_values(
-            _gcp_private_service_cidrs(outputs),
-            range_cluster_api_cidrs,
-            int(range_cluster_port or _GDC_APISERVER_BACKEND_PORT),
-        ),
+        "network": {
+            "enabled": True,
+            "ingressSourceCidrs": [
+                "35.191.0.0/16",  # NOSONAR - Google Cloud Load Balancer range.
+                "130.211.0.0/22",  # NOSONAR - Google Cloud Load Balancer range.
+            ],
+            "providerApiCidrs": [
+                "199.36.153.4/30",  # NOSONAR - restricted.googleapis.com VIP.
+                "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
+            ],
+            "privateServiceCidrs": _gcp_private_service_cidrs(outputs),
+            "kubernetesApiCidrs": [str(_get_output_value(outputs, "gke_services_cidr")).strip()],
+            "rangeClusterApiCidrs": range_cluster_api_cidrs,
+            "rangeClusterApiPort": int(range_cluster_port or _GDC_APISERVER_BACKEND_PORT),
+            "rangeAccessCidrs": range_access_cidrs,
+            "rangeAccessPorts": [22, 3389],
+        },
     }
+
+
+def resolve_gcp_control_plane_image_identities(
+    outputs: dict[str, dict[str, object]],
+    *,
+    image_tag: str,
+) -> dict[str, str]:
+    """Resolve pushed Artifact Registry tags to exact sha256 identities."""
+    tag = validate_image_tag(image_tag)
+    roots = _get_string_mapping_output(outputs, "artifact_registry_image_roots")
+    repositories = {
+        "platform": roots["portal"],
+        "guacd": roots["guacd"],
+        "guacamoleClient": roots["guacamole-client"],
+    }
+    identities: dict[str, str] = {}
+    for name, repository in repositories.items():
+        result = run_cmd(
+            [
+                "gcloud",
+                "artifacts",
+                "docker",
+                "images",
+                "describe",
+                f"{repository}:{tag}",
+                "--format=value(image_summary.digest)",
+            ],
+            capture=True,
+        )
+        digest = str(getattr(result, "stdout", "")).strip()
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            raise RuntimeError(f"Artifact Registry did not return an exact digest for image {name!r}")
+        identities[name] = f"{repository}@{digest}"
+    return identities
 
 
 def fetch_gcp_secret_payload(secret_id: str, project_id: str) -> str:
@@ -683,20 +797,26 @@ def _is_retryable_gcp_terraform_apply_error(message: str) -> bool:
 def run_gcp_terraform_init_with_retry(
     config: GDCBootstrapConfig,
     tf_state_bucket: str,
-    credentials_path: Path,
+    credentials_path: Path | None,
     *,
     max_attempts: int = 12,
     sleep_seconds: int = 5,
 ) -> None:
-    """Run terraform init and retry only documented GCS backend IAM propagation failures."""
+    """Run terraform init and retry only documented GCS backend IAM propagation failures.
+
+    credentials_path=None runs against the caller's ambient ADC (the operator-adc
+    terraform identity, #1718); the GCS backend then authenticates with ADC and no
+    -backend-config=credentials is passed.
+    """
     init_cmd = [
         "terraform",
         "init",
         "-reconfigure",
         f"-backend-config=bucket={tf_state_bucket}",
         f"-backend-config=prefix=shifter/{config.environment}/platform-core",
-        f"-backend-config=credentials={credentials_path}",
     ]
+    if credentials_path is not None:
+        init_cmd.append(f"-backend-config=credentials={credentials_path}")
     info(f"Running: {' '.join(init_cmd)}")
 
     for attempt in range(1, max_attempts + 1):
@@ -1196,11 +1316,8 @@ def apply_gcp_control_plane_terraform(
             )
             return {}
 
-        with gcp_terraform_bootstrap_credentials(config) as credentials_path:
-            run_gcp_terraform_init_with_retry(config, tf_state_bucket, credentials_path)
-            wait_for_gcp_terraform_bootstrap_access(config, credentials_path)
-            run_gcp_terraform_apply_with_retry(config)
-
+        def _capture_terraform_outputs() -> dict[str, dict[str, object]]:
+            """Return the control-plane Terraform outputs as parsed JSON."""
             output_result = subprocess.run(  # nosec B603 B607
                 ["terraform", "output", "-json"],
                 capture_output=True,
@@ -1211,6 +1328,34 @@ def apply_gcp_control_plane_terraform(
                 stderr = output_result.stderr.strip() if output_result.stderr else _UNKNOWN_ERROR
                 raise RuntimeError(f"Failed to capture Terraform outputs: {stderr}")
             return json.loads(output_result.stdout)
+
+        if config.terraform_uses_operator_adc:
+            # Operator-ADC identity (#1718): run terraform directly under the caller's
+            # Application Default Credentials, skipping the privileged tf-bootstrap SA
+            # (no owner-on-SA grant, no SA key) for hardened orgs.
+            info(
+                "Terraform identity: operator ADC — running terraform as the caller's "
+                "Application Default Credentials; skipping the tf-bootstrap service account."
+            )
+            # Under a user's ADC, Google APIs that bill/quota against a project
+            # (identitytoolkit / Identity Platform) reject requests that carry no
+            # quota project ("... requires a quota project ... 403"). Point the
+            # provider at this project as the quota project so those resources
+            # apply. A service-account credential carries its own project, so the
+            # bootstrap-sa path does not need this. The subprocess terraform calls
+            # inherit os.environ, matching how the bootstrap-sa path exports its
+            # credentials (#1738).
+            os.environ["USER_PROJECT_OVERRIDE"] = "true"
+            os.environ["GOOGLE_BILLING_PROJECT"] = config.project_id
+            run_gcp_terraform_init_with_retry(config, tf_state_bucket, None)
+            run_gcp_terraform_apply_with_retry(config)
+            return _capture_terraform_outputs()
+
+        with gcp_terraform_bootstrap_credentials(config) as credentials_path:
+            run_gcp_terraform_init_with_retry(config, tf_state_bucket, credentials_path)
+            wait_for_gcp_terraform_bootstrap_access(config, credentials_path)
+            run_gcp_terraform_apply_with_retry(config)
+            return _capture_terraform_outputs()
     finally:
         os.chdir(original_dir)
 
@@ -1221,6 +1366,7 @@ def stage_gcp_control_plane_values(
     staging_root: Path,
     *,
     image_tag: str,
+    image_identities: dict[str, str],
     bootstrap_operator_email: str | None = None,
 ) -> Path:
     """Stage the generated Helm values file for the Shifter release."""
@@ -1228,6 +1374,7 @@ def stage_gcp_control_plane_values(
         config,
         outputs,
         image_tag=image_tag,
+        image_identities=image_identities,
         bootstrap_operator_email=bootstrap_operator_email,
     )
     values_path = staging_root / "shifter.values.generated.json"
@@ -1652,11 +1799,16 @@ def deploy_gcp_control_plane_with_helm(
 
     ensure_gke_gcloud_auth_plugin(dry_run=dry_run)
 
+    # The control plane is private with no public IP endpoint and no Google DNS
+    # endpoint (org policy); reach it via Connect Gateway, which is IAM-authenticated
+    # and works for operator and CI without a bastion (#1723). The fleet membership
+    # id equals the cluster name (registered via the cluster's fleet{} block).
     run_cmd(
         [
             "gcloud",
             "container",
-            "clusters",
+            "fleet",
+            "memberships",
             "get-credentials",
             cluster_name,
             "--location",
@@ -1822,12 +1974,14 @@ def bootstrap_gcp_control_plane(config: GDCBootstrapConfig, dry_run: bool = Fals
     bootstrap_operator_email = ensure_gcp_identity_platform_operator(config, outputs, dry_run=dry_run)
     image_tag = resolve_gcp_control_plane_image_tag()
     push_gcp_control_plane_images(outputs, image_tag=image_tag, dry_run=dry_run)
+    image_identities = resolve_gcp_control_plane_image_identities(outputs, image_tag=image_tag)
     with tempfile.TemporaryDirectory(prefix="shifter-gcp-platform-") as staging_root_name:
         values_path = stage_gcp_control_plane_values(
             config,
             outputs,
             Path(staging_root_name),
             image_tag=image_tag,
+            image_identities=image_identities,
             bootstrap_operator_email=bootstrap_operator_email,
         )
         deploy_gcp_control_plane_with_helm(config, outputs, values_path, dry_run=dry_run)
@@ -1836,24 +1990,31 @@ def bootstrap_gcp_control_plane(config: GDCBootstrapConfig, dry_run: bool = Fals
     return outputs
 
 
-def gdc_bootstrap_cluster(config: GDCBootstrapConfig, dry_run: bool = False) -> dict[str, str]:
-    """Bootstrap the repeatable GDC-on-Compute-Engine VM Runtime cluster."""
-    if not config.project_id:
-        error("GDC bootstrap requires a GCP project ID. Set PANW_GCP_DEV or pass --project-id.")
-        sys.exit(1)
-
-    header(f"Bootstrapping {config.cluster_id} GDC Cluster")
+def _announce_gdc_bootstrap_plan(config: GDCBootstrapConfig, builds_substrate: bool) -> str:
+    """Print the bootstrap plan banner and return the confirmation prompt."""
+    if builds_substrate:
+        header(f"Bootstrapping {config.cluster_id} GDC Cluster")
+    else:
+        header(f"Bootstrapping {config.environment} Shifter GCP deployment")
 
     info(f"GCP Project: {config.project_id}")
     info(f"Region / Zone: {config.region} / {config.zone}")
-    info(f"Network: {config.resolved_network_name} ({config.subnet_cidr})")
-    info(f"Service Account: {config.service_account_email}")
-    info(f"VM Runtime VIPs: control-plane={config.control_plane_vip}, ingress={config.ingress_vip}")
+    if builds_substrate:
+        info(f"Network: {config.resolved_network_name} ({config.subnet_cidr})")
+        info(f"Service Account: {config.service_account_email}")
+        info(f"VM Runtime VIPs: control-plane={config.control_plane_vip}, ingress={config.ingress_vip}")
+        return "Create or reconcile these GDC bootstrap resources?"
 
-    if not dry_run and not confirm("Create or reconcile these GDC bootstrap resources?"):
-        warn("Aborted by user")
-        sys.exit(0)
+    info(
+        "Range backend 'gce': skipping the ABM/GDC VM Runtime substrate "
+        "(only required for GCP_RANGE_BACKEND=gdc). Deploying the keyless GKE control "
+        "plane and the GCE range plane; no service-account JSON key is created."
+    )
+    return "Create or reconcile these Shifter GCP control-plane resources?"
 
+
+def _build_gdc_substrate(config: GDCBootstrapConfig, dry_run: bool = False) -> None:
+    """Create the ABM/GDC VM Runtime substrate (only required for the gdc range backend)."""
     ensure_gdc_apis(config, dry_run=dry_run)
     ensure_gdc_service_account(config, dry_run=dry_run)
 
@@ -1874,7 +2035,12 @@ def gdc_bootstrap_cluster(config: GDCBootstrapConfig, dry_run: bool = False) -> 
         sync_gdc_access_secret(config, dry_run=dry_run)
         sync_gdc_vm_image_secret(config, staged_assets["service_account_key"], dry_run=dry_run)
 
-    control_plane_outputs = bootstrap_gcp_control_plane(config, dry_run=dry_run)
+
+def _report_gdc_bootstrap_success(config: GDCBootstrapConfig, builds_substrate: bool) -> None:
+    """Print the success banner and, for the gdc substrate path, the follow-up commands."""
+    if not builds_substrate:
+        success("Shifter GCP control-plane bootstrap complete")
+        return
 
     success("GDC bootstrap complete")
     print("\nNext commands:")
@@ -1888,18 +2054,49 @@ shifter-gdc-kubectl get nodes
 shifter-gdc-kubeconfig"""
     )
 
+
+def _gdc_bootstrap_result(
+    config: GDCBootstrapConfig,
+    control_plane_outputs: dict[str, dict[str, object]],
+    builds_substrate: bool,
+) -> dict[str, str]:
+    """Assemble the gdc-bootstrap return payload; substrate fields are empty for the gce path."""
+    gke_cluster_name = (
+        str(_get_output_value(control_plane_outputs, "gke_cluster_name")) if control_plane_outputs else ""
+    )
     return {
         "project_id": config.project_id,
         "cluster_id": config.cluster_id,
         "region": config.region,
         "zone": config.zone,
-        "network_name": config.resolved_network_name,
-        "subnetwork_name": config.resolved_subnetwork_name,
-        "workstation": config.workstation.name,
-        "kubeconfig_path": config.kubeconfig_path,
-        "gdc_access_secret_id": config.gdc_access_secret_id,
-        "gdc_vm_image_gcs_secret_id": config.gdc_vm_image_gcs_secret_id,
-        "gke_cluster_name": (
-            str(_get_output_value(control_plane_outputs, "gke_cluster_name")) if control_plane_outputs else ""
-        ),
+        "network_name": config.resolved_network_name if builds_substrate else "",
+        "subnetwork_name": config.resolved_subnetwork_name if builds_substrate else "",
+        "workstation": config.workstation.name if builds_substrate else "",
+        "kubeconfig_path": config.kubeconfig_path if builds_substrate else "",
+        "gdc_access_secret_id": config.gdc_access_secret_id if builds_substrate else "",
+        "gdc_vm_image_gcs_secret_id": config.gdc_vm_image_gcs_secret_id if builds_substrate else "",
+        "gke_cluster_name": gke_cluster_name,
     }
+
+
+def gdc_bootstrap_cluster(config: GDCBootstrapConfig, dry_run: bool = False) -> dict[str, str]:
+    """Bootstrap the repeatable GDC-on-Compute-Engine VM Runtime cluster."""
+    if not config.project_id:
+        error("GDC bootstrap requires a GCP project ID. Set PANW_GCP_DEV or pass --project-id.")
+        sys.exit(1)
+
+    builds_substrate = config.builds_gdc_substrate
+    confirm_prompt = _announce_gdc_bootstrap_plan(config, builds_substrate)
+
+    if not dry_run and not confirm(confirm_prompt):
+        warn("Aborted by user")
+        sys.exit(0)
+
+    if builds_substrate:
+        _build_gdc_substrate(config, dry_run=dry_run)
+
+    control_plane_outputs = bootstrap_gcp_control_plane(config, dry_run=dry_run)
+
+    _report_gdc_bootstrap_success(config, builds_substrate)
+
+    return _gdc_bootstrap_result(config, control_plane_outputs, builds_substrate)

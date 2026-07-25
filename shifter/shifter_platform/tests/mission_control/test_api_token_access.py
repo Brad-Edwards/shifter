@@ -67,6 +67,8 @@ class TestRangeTokenAccess:
             "connection_urls": [],
             "aces_projection": None,
             "aces_participant_runtime": None,
+            "lifecycle": None,
+            "vpn_profile_available": False,
         }
 
     def test_token_without_range_read_scope_is_forbidden(self, client, user):
@@ -133,11 +135,15 @@ class TestSubsurfaceTokenAccess:
 
         assert response.status_code == 403
 
-    def test_guacamole_bootstrap_response_uses_canonical_urls(self, client, monkeypatch, user):
+    def test_guacamole_bootstrap_response_uses_canonical_urls(self, client, monkeypatch, user, settings):
         request_id = UUID("00000000-0000-0000-0000-000000000001")
-        monkeypatch.setattr("mission_control.api.views._get_guac_settings", lambda protocol: object())
+        # Config binding now lives in the service; set the signing secret so the
+        # synchronous readiness check passes without patching a first-party seam.
+        settings.GUACAMOLE_JSON_AUTH_SECRET = "0123456789abcdef0123456789abcdef"  # nosec B105
+        # Fake only the bounded async enqueue boundary so the launch adapter's URL
+        # reversal is what these assertions exercise.
         monkeypatch.setattr(
-            "mission_control.views._guacamole_bootstrap.enqueue_guacamole_bootstrap",
+            "mission_control.guacamole_session.enqueue_guacamole_bootstrap",
             lambda **kwargs: SimpleNamespace(id=request_id, status=GuacamoleBootstrapRequest.Status.PENDING),
         )
         raw = _token(user, scopes.MISSION_CONTROL_GUACAMOLE_READ)

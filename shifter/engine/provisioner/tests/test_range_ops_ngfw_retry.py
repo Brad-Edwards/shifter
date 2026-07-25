@@ -4,11 +4,12 @@ Verifies that transient orchestration failures are retried up to
 NGFW_START_MAX_RETRIES times before permanently failing the range.
 """
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from range_ops import NGFW_START_MAX_RETRIES, ensure_ngfw_running
+from range_ops import NGFW_START_MAX_RETRIES, ensure_ngfw_running, pause_ngfw_for_range
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -161,3 +162,72 @@ class TestEnsureNgfwRunningRetries:
 
         # Start plan should not have been attempted
         mocks["orch"].orchestrate.assert_not_called()
+
+
+def _executed_sql(call) -> str:
+    """Return the whitespace-normalized SQL text of a cursor.execute call.
+
+    Composed (non-string) SQL yields an empty string; the pause flow uses plain
+    string statements.
+    """
+    stmt = call.args[0] if call.args else ""
+    return " ".join(stmt.split()) if isinstance(stmt, str) else ""
+
+
+def test_pause_ngfw_for_range_happy_path(mock_psycopg_connect, monkeypatch, mocker):
+    """pause_ngfw_for_range drives the full pause flow against real range_ops code.
+
+    Covers should_pause_ngfw's no-other-ranges branch plus the pausing/paused
+    write+publish path, asserting the ResourceStatus-derived values that issue
+    #424 wires through the events.py STATUS_* aliases. Only genuine external
+    boundaries are faked (ADR-019): the psycopg DB connection and the boto3 AWS
+    session. get_range_ngfw_info, should_pause_ngfw, _update_ngfw_status, the
+    stop orchestration, and the outbox publish all run for real, so the
+    assertion is the observable DB status flow rather than internal mock calls.
+    """
+    # get_db_connection validates connection env before opening the (mocked)
+    # psycopg connection; supply the required non-secret values.
+    for key, value in {
+        "DB_HOST": "test-db",
+        "DB_USER": "shifter_app",
+        "DB_NAME": "shifter",
+        "CLOUD_REGION": "us-east-2",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    _mock_connect, _mock_conn, mock_cursor = mock_psycopg_connect
+
+    # get_range_ngfw_info -> one ready NGFW row (7 columns in query order);
+    # should_pause_ngfw -> no other ranges, so the pause proceeds.
+    mock_cursor.fetchone.return_value = (
+        1,
+        "ngfw-req-uuid",
+        "i-ngfw123",
+        "ngfw-inst-uuid",
+        "ready",
+        "ngfw-app-uuid",
+        42,
+    )
+    mock_cursor.fetchall.return_value = []
+
+    # AWS boundary: a stubbed boto3 Session whose ec2 stop_instances + waiter
+    # return without error, so the real stop orchestration reports success.
+    mocker.patch("boto3.Session")
+
+    pause_ngfw_for_range("req-uuid-123")
+
+    # The NGFW instance status is driven pausing -> paused in the database.
+    instance_status_writes = [
+        call.args[1][0]
+        for call in mock_cursor.execute.call_args_list
+        if "UPDATE engine_instance" in _executed_sql(call)
+    ]
+    assert instance_status_writes == ["pausing", "paused"]
+
+    # The same transitions are published to the durable event outbox.
+    published = [
+        json.loads(call.args[1][2])["status"]
+        for call in mock_cursor.execute.call_args_list
+        if "engine_range_event_outbox" in _executed_sql(call)
+    ]
+    assert published == ["pausing", "paused"]

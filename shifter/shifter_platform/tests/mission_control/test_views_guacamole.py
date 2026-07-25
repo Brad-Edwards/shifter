@@ -1,11 +1,12 @@
-"""Behavior tests for mission_control.views._guacamole — RDP and range-SSH URLs.
+"""Behavior tests for the Guacamole RDP and range-SSH URL endpoints.
 
-Drives the real views → real ``engine.services`` (against real READY ``Range``
-rows with provisioned instances) → real ``mission_control.guacamole`` URL
-builders. Only the cloud/network boundaries are mocked: the boto3 Secrets
-Manager client (``secrets_boundary``) and the urllib Guacamole token POST
-(``guac_exchange``), instead of patching ``engine.services.*`` /
-``mission_control.guacamole.*`` / the bootstrap enqueue.
+Drives the real DRF views → real ``mission_control.guacamole_session`` service
+→ real ``engine.services`` (against real READY ``Range`` rows with provisioned
+instances) → real ``mission_control.guacamole`` URL builders. Only the
+cloud/network boundaries are mocked: the boto3 Secrets Manager client
+(``secrets_boundary``) and the urllib Guacamole token POST (``guac_exchange``),
+instead of patching ``engine.services.*`` / ``mission_control.guacamole.*`` /
+the bootstrap enqueue.
 
 NGFW SSH paths are exercised in ``test_api_ngfw_ssh_url.py``; the bootstrap
 status/open polling views and the ``_sftp_root_for_os`` helper are pure (no
@@ -23,7 +24,10 @@ from botocore.exceptions import ClientError
 from django.test import RequestFactory
 from rest_framework.test import force_authenticate
 
-pytestmark = pytest.mark.django_db
+# transaction=True: the inline Guacamole bootstrap path calls
+# close_old_connections(), which corrupts pytest-django's rolled-back wrapping
+# transaction on PostgreSQL. SQLite tolerated it; a real backend does not (#1524).
+pytestmark = pytest.mark.django_db(transaction=True)
 
 VALID_SECRET = "0123456789abcdef0123456789abcdef"  # nosec B105
 
@@ -76,7 +80,7 @@ def _json(response):
 
 
 def _get_status(rf, user, request_id):
-    from mission_control.views import guacamole_bootstrap_status
+    from mission_control.api.views import guacamole_bootstrap_status
 
     request = rf.get(f"/mc/api/guacamole/bootstrap/{request_id}/")
     request.user = user
@@ -85,7 +89,7 @@ def _get_status(rf, user, request_id):
 
 
 def _get_open(rf, user, request_id):
-    from mission_control.views import guacamole_bootstrap_open
+    from mission_control.api.views import guacamole_bootstrap_open
 
     request = rf.get(f"/mc/api/guacamole/bootstrap/{request_id}/open/")
     request.user = user
@@ -244,7 +248,7 @@ class TestGuacamoleBootstrapStatus:
 
         assert response.status_code == 200
         body = response.content.decode("utf-8")
-        assert f"api/guacamole/bootstrap/{bootstrap.id}/" in body
+        assert f"api/v1/mission-control/guacamole/bootstrap/{bootstrap.id}/" in body
 
     def test_open_page_returns_404_for_other_user(self, rf, mock_user):
         from mission_control.models import GuacamoleBootstrapRequest
@@ -263,7 +267,7 @@ class TestGuacamoleBootstrapStatus:
 
 class TestGuacamoleRDPURL:
     def test_returns_400_for_invalid_json(self, rf, mock_user, settings):
-        from mission_control.views import guacamole_rdp_url
+        from mission_control.api.views import guacamole_rdp_url
 
         settings.GUACAMOLE_JSON_AUTH_SECRET = VALID_SECRET
         request = _post(rf, "/mc/guac/rdp/", "not json", mock_user)
@@ -271,7 +275,7 @@ class TestGuacamoleRDPURL:
         assert response.status_code == 400
 
     def test_returns_400_when_instance_uuid_missing(self, rf, mock_user, settings):
-        from mission_control.views import guacamole_rdp_url
+        from mission_control.api.views import guacamole_rdp_url
 
         settings.GUACAMOLE_JSON_AUTH_SECRET = VALID_SECRET
         request = _post(rf, "/mc/guac/rdp/", {}, mock_user)
@@ -279,7 +283,7 @@ class TestGuacamoleRDPURL:
         assert response.status_code == 400
 
     def test_returns_503_when_secret_not_configured(self, rf, user, settings, range_rdp_instance, secrets_boundary):
-        from mission_control.views import guacamole_rdp_url
+        from mission_control.api.views import guacamole_rdp_url
 
         settings.GUACAMOLE_JSON_AUTH_SECRET = ""
         _rng, instance = range_rdp_instance(user, os_type="windows")
@@ -289,7 +293,7 @@ class TestGuacamoleRDPURL:
         assert response.status_code == 503
 
     def test_returns_400_when_no_active_range(self, rf, user, guac_configured):
-        from mission_control.views import guacamole_rdp_url
+        from mission_control.api.views import guacamole_rdp_url
 
         # Resolution moved into the worker (#929): no range -> the engine service
         # raises ValueError -> polled FAILED bootstrap with status 400.
@@ -302,7 +306,7 @@ class TestGuacamoleRDPURL:
     def test_returns_bootstrap_status_url_on_success(
         self, rf, user, guac_configured, range_rdp_instance, secrets_boundary, guac_exchange
     ):
-        from mission_control.views import guacamole_rdp_url
+        from mission_control.api.views import guacamole_rdp_url
 
         _rng, instance = range_rdp_instance(user, os_type="kali")
         request = _post(rf, "/mc/guac/rdp/", {"instance_uuid": instance["uuid"]}, user)
@@ -318,7 +322,7 @@ class TestGuacamoleRDPURL:
     def test_status_returns_500_when_url_generation_raises(
         self, rf, user, settings, range_rdp_instance, secrets_boundary
     ):
-        from mission_control.views import guacamole_rdp_url
+        from mission_control.api.views import guacamole_rdp_url
 
         # A non-AES-length signing secret makes the real RDP URL build raise.
         settings.GUACAMOLE_JSON_AUTH_SECRET = "abcd"  # nosec B105
@@ -334,19 +338,19 @@ class TestGuacamoleRDPURL:
 
 class TestSftpRootHelper:
     def test_known_os_returns_path(self):
-        from mission_control.views._guacamole_builders import _sftp_root_for_os
+        from mission_control._guacamole_session_builders import _sftp_root_for_os
 
         assert _sftp_root_for_os("kali") == "/home/kali"
         assert _sftp_root_for_os("ubuntu") == "/home/ubuntu"
         assert _sftp_root_for_os("windows").startswith("/C:")
 
     def test_unknown_os_returns_none(self):
-        from mission_control.views._guacamole_builders import _sftp_root_for_os
+        from mission_control._guacamole_session_builders import _sftp_root_for_os
 
         assert _sftp_root_for_os("unknown") is None
 
     def test_none_returns_none(self):
-        from mission_control.views._guacamole_builders import _sftp_root_for_os
+        from mission_control._guacamole_session_builders import _sftp_root_for_os
 
         assert _sftp_root_for_os(None) is None
 
@@ -358,7 +362,7 @@ class TestSftpRootHelper:
 
 class TestGuacamoleSSHURL:
     def test_returns_400_for_invalid_json(self, rf, mock_user, settings):
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         settings.GUACAMOLE_JSON_AUTH_SECRET = VALID_SECRET
         request = _post(rf, "/mc/guac/ssh/", "not json", mock_user)
@@ -366,7 +370,7 @@ class TestGuacamoleSSHURL:
         assert response.status_code == 400
 
     def test_returns_400_when_instance_uuid_missing(self, rf, mock_user, settings):
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         settings.GUACAMOLE_JSON_AUTH_SECRET = VALID_SECRET
         request = _post(rf, "/mc/guac/ssh/", {}, mock_user)
@@ -374,7 +378,7 @@ class TestGuacamoleSSHURL:
         assert response.status_code == 400
 
     def test_returns_400_when_no_active_range(self, rf, user, guac_configured):
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         # Resolution moved into the worker (#929): no range -> ValueError ->
         # polled FAILED bootstrap with status 400.
@@ -387,7 +391,7 @@ class TestGuacamoleSSHURL:
     def test_returns_500_when_secrets_manager_fails(
         self, rf, user, guac_configured, range_ssh_instance, secrets_boundary, secrets_client_factory
     ):
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         _rng, instance = range_ssh_instance(user)
         request = _post(rf, "/mc/guac/ssh/", {"instance_uuid": instance["uuid"]}, user)
@@ -406,7 +410,7 @@ class TestGuacamoleSSHURL:
     def test_returns_bootstrap_status_url_on_success(
         self, rf, user, guac_configured, range_ssh_instance, secrets_boundary, guac_exchange
     ):
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         _rng, instance = range_ssh_instance(user)
         request = _post(rf, "/mc/guac/ssh/", {"instance_uuid": instance["uuid"]}, user)
@@ -433,7 +437,7 @@ class TestGuacamoleSSHURL:
         import threading
         from concurrent.futures import ThreadPoolExecutor
 
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         settings.GUACAMOLE_BOOTSTRAP_INLINE = False
         _rng, instance = range_ssh_instance(user)
@@ -496,7 +500,7 @@ class TestGuacamoleSSHURL:
         self, rf, user, guac_configured, range_ssh_instance, secrets_boundary, settings
     ):
         from mission_control import guacamole_bootstrap
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         settings.GUACAMOLE_BOOTSTRAP_WORKERS = 1
         _rng, instance = range_ssh_instance(user)
@@ -517,7 +521,7 @@ class TestGuacamoleSSHURL:
     def test_status_returns_500_when_url_gen_raises_valueerror(
         self, rf, user, settings, range_ssh_instance, secrets_boundary
     ):
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         settings.GUACAMOLE_JSON_AUTH_SECRET = "abcd"  # nosec B105
         _rng, instance = range_ssh_instance(user)
@@ -532,7 +536,7 @@ class TestGuacamoleSSHURL:
     def test_status_returns_500_when_token_exchange_errors_unexpectedly(
         self, rf, user, guac_configured, range_ssh_instance, secrets_boundary
     ):
-        from mission_control.views import guacamole_ssh_url
+        from mission_control.api.views import guacamole_ssh_url
 
         _rng, instance = range_ssh_instance(user)
         request = _post(rf, "/mc/guac/ssh/", {"instance_uuid": instance["uuid"]}, user)

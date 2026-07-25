@@ -3,34 +3,46 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render
-from django.utils import timezone
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    from django.db.models import QuerySet
     from django.http import HttpRequest
 
-    from ctf.models import (
-        CTFChallenge,
-        CTFEvent,
-        CTFHint,
-        CTFParticipant,
-        CTFSubmission,
-    )
 
+from ctf.services.participant.play import (
+    compute_attempt_state as _compute_attempt_state,
+)
+from ctf.services.participant.play import (
+    compute_hint_purchase_info as _compute_hint_purchase_info,
+)
+from ctf.services.participant.play import (
+    resolve_target_connection_info as _resolve_target_connection_info,
+)
 from ctf.views import _access
 from ctf.views._access import (
     ctf_participant_required,
 )
 
 logger = logging.getLogger(__name__)
+
+_MISSION_CATEGORY = re.compile(r"^Mission\s+(\d+)\b", re.IGNORECASE)
+
+
+def _category_sort_key(category: str) -> tuple[int, int, str]:
+    """Put onboarding first, then authored missions in numeric order."""
+    normalized = category.strip()
+    if normalized.casefold() == "start here":
+        return (0, 0, normalized.casefold())
+    mission = _MISSION_CATEGORY.match(normalized)
+    if mission:
+        return (1, int(mission.group(1)), normalized.casefold())
+    return (2, 0, normalized.casefold())
 
 
 @login_required
@@ -51,6 +63,18 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
 
     event = participant.event
     challenges = get_available_challenges(event.id).prefetch_related("tags", "topics")
+
+    # Categories are organizer-authored tracks (for example, Polaris mission
+    # names), not a platform-owned taxonomy. Keep friendly labels for the
+    # built-in technical defaults while preserving authored labels verbatim.
+    from ctf.enums import ChallengeCategory
+
+    default_category_labels = dict(ChallengeCategory.choices())
+    category_values = sorted(
+        challenges.order_by("category").values_list("category", flat=True).distinct(),
+        key=_category_sort_key,
+    )
+    categories = [(value, default_category_labels.get(value, value)) for value in category_values]
 
     # Apply category filter if provided
     category_filter = request.GET.get("category")
@@ -94,12 +118,19 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         challenge.required_challenges = prereqs_by_challenge.get(challenge.id, [])  # type: ignore[attr-defined]
         challenge_list.append(challenge)
 
+    challenge_list.sort(
+        key=lambda challenge: (
+            _category_sort_key(challenge.category),
+            challenge.order,
+            challenge.name.casefold(),
+        )
+    )
+
     # Group by category
     challenges_by_category = defaultdict(list)
     for challenge in challenge_list:
         challenges_by_category[challenge.category].append(challenge)
 
-    from ctf.enums import ChallengeCategory
     from ctf.models import CTFChallengeTag
 
     # Get all tags used by challenges in this event
@@ -131,7 +162,7 @@ def participant_challenges(request: HttpRequest) -> HttpResponse:
         "category_filter": category_filter,
         "tag_filter": tag_filter,
         "topic_filter": topic_filter,
-        "categories": ChallengeCategory,
+        "categories": categories,
         "event_tags": event_tags,
         "event_topics": event_topics,
         "solved_ids": solved_ids,
@@ -252,95 +283,3 @@ def challenge_detail(request: HttpRequest, challenge_id: UUID) -> HttpResponse:
         context["rating_buttons"] = [{"value": i, "active": own_rating_value == i} for i in range(1, 6)]
 
     return render(request, "ctf/participant/challenge_detail.html", context)
-
-
-def _compute_hint_purchase_info(
-    event: CTFEvent,
-    challenge: CTFChallenge,
-    all_hints: Iterable[CTFHint],
-    unlocked_hint_ids: set[UUID],
-    total_hint_penalty: int,
-) -> dict[str, Any]:
-    """Compute next-hint, cost, and warning state for the challenge detail page.
-
-    Extracted to keep `challenge_detail`'s cognitive complexity below the
-    SonarCloud threshold (python:S3776). Projected values dispatch through the
-    event's scoring mode so the displayed cost matches how a solve is scored.
-    """
-    from ctf.services.scoring import calculate_solve_points
-
-    next_hint = next((h for h in all_hints if h.id not in unlocked_hint_ids), None)
-    next_hint_cost = 0
-    points_after_next_hint = challenge.points
-    penalty_warning = False
-    if next_hint and next_hint.penalty > 0:
-        current_value = calculate_solve_points(event, challenge, total_hint_penalty)
-        projected_penalty = total_hint_penalty + next_hint.penalty
-        points_after_next_hint = calculate_solve_points(event, challenge, projected_penalty)
-        next_hint_cost = current_value - points_after_next_hint
-        penalty_warning = projected_penalty >= 100
-    return {
-        "next_hint": next_hint,
-        "next_hint_cost": next_hint_cost,
-        "points_after_next_hint": points_after_next_hint,
-        "penalty_warning": penalty_warning,
-    }
-
-
-def _match_target_instance(challenge: CTFChallenge, instances: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return connection info for the instance matching the challenge target, or None."""
-    for inst in instances:
-        if inst.get("name") != challenge.target_instance_name:
-            continue
-        host = inst.get("private_ip")
-        if not host:
-            return None
-        return {
-            "host": host,
-            "port": challenge.target_port,
-            "instance_name": inst["name"],
-            "os_type": inst.get("os_type", ""),
-        }
-    return None
-
-
-def _resolve_target_connection_info(challenge: CTFChallenge, participant: CTFParticipant) -> dict[str, Any] | None:
-    """Return connection-info dict for the challenge's target instance, or None.
-
-    Extracted from `challenge_detail` (SonarCloud python:S3776).
-    """
-    participant_user = participant.user
-    if not challenge.target_instance_name or participant.range_status != "ready" or participant_user is None:
-        return None
-    import cms.services as cms_services
-
-    return _match_target_instance(challenge, cms_services.get_range_target_instances(participant_user.pk))
-
-
-def _compute_attempt_state(
-    challenge: CTFChallenge,
-    participant: CTFParticipant,
-    submissions: QuerySet[CTFSubmission],
-    attempt_count: int,
-) -> tuple[int, int | None, int | None]:
-    """Return `(attempt_count, timeout_retry_after, attempts_remaining)`.
-
-    Extracted from `challenge_detail` (SonarCloud python:S3776). Recomputes
-    `attempt_count` under "timeout" attempt-limit mode (counts only the
-    current cooldown window) and derives the retry-after timer and
-    remaining-attempts display.
-    """
-    timeout_retry_after = None
-    if participant.event.attempt_limit_mode == "timeout" and challenge.max_attempts > 0:
-        from ctf.services.submission import _count_attempts_in_current_window
-
-        attempt_cooldown = participant.event.attempt_limit_cooldown_seconds
-        attempt_count = _count_attempts_in_current_window(submissions, attempt_cooldown)
-        if attempt_count >= challenge.max_attempts:
-            last_sub = submissions.first()
-            if last_sub:
-                elapsed = (timezone.now() - last_sub.submitted_at).total_seconds()
-                if elapsed < attempt_cooldown:
-                    timeout_retry_after = int(attempt_cooldown - elapsed) + 1
-    attempts_remaining = max(0, challenge.max_attempts - attempt_count) if challenge.max_attempts else None
-    return attempt_count, timeout_retry_after, attempts_remaining

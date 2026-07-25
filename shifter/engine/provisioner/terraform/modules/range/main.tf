@@ -57,6 +57,31 @@ locals {
 
   # DC instances for SSM parameter creation
   dc_instances = [for inst in local.all_instances : inst if inst.role == "dc"]
+
+  # Boot-time DNS pin for Linux range guests (issue #1632). The range-guest
+  # AMIs run systemd-resolved as the stub resolver (/etc/resolv.conf ->
+  # 127.0.0.53), but on some boots it comes up with no upstream DNS (the
+  # DHCP-provided VPC resolver is not registered with systemd-resolved), so
+  # the system resolver returns SERVFAIL. The SSM agent, which uses the
+  # system resolver, then loops on
+  # "lookup ssm...amazonaws.com on 127.0.0.53:53: server misbehaving" and
+  # never registers, so LinuxBootstrapPlan cannot run and range
+  # provisioning fails. Pin the link-local AmazonProvidedDNS
+  # (169.254.169.253 - reachable in every VPC regardless of CIDR) as the
+  # upstream so the agent's retries resolve. Defined once and injected into
+  # both Linux templates via the `dns_pin` variable. No-op on hosts without
+  # systemd-resolved (e.g. the containerized Kali stack on the polaris VM).
+  linux_range_dns_pin = <<-EOT
+    if [ -d /run/systemd/system ] && systemctl cat systemd-resolved.service >/dev/null 2>&1; then
+      echo "Pinning AmazonProvidedDNS for systemd-resolved..."
+      mkdir -p /etc/systemd/resolved.conf.d
+      printf '[Resolve]\nDNS=169.254.169.253\nFallbackDNS=169.254.169.253\n' > /etc/systemd/resolved.conf.d/amazon-vpc-dns.conf
+      systemctl restart systemd-resolved || true
+      echo "systemd-resolved DNS pinned to AmazonProvidedDNS"
+    else
+      echo "systemd-resolved not present; skipping DNS pin"
+    fi
+  EOT
 }
 
 #------------------------------------------------------------------------------
@@ -268,10 +293,9 @@ resource "aws_secretsmanager_secret_version" "ssh_key" {
 # Generates a unique random password per instance so a compromise of one
 # range (or one image build artifact, or one source checkout) does not
 # leak credentials valid for any other environment. Mirrors the SSH key
-# pattern above; the password value is written into user_data so the
-# guest OS can apply it during first-boot setup, and the ARN is exposed
-# via outputs so the portal's engine.services can resolve the value
-# through shared.cloud at access time.
+# pattern above; the ARN is exposed via outputs so the provisioner can deliver
+# the value over pinned SSH stdin and the portal can resolve it through
+# shared.cloud at access time.
 #
 # Character set excludes shell- and YAML-quoting hazards (backtick,
 # single-quote, double-quote, dollar, backslash, whitespace) so the
@@ -317,30 +341,6 @@ resource "aws_secretsmanager_secret_version" "guest_password" {
   secret_string = random_password.guest[each.key].result
 }
 
-# Mirror the per-instance password to SSM Parameter Store SecureString
-# so the engine provisioner can use ``{{ssm-secure:<name>}}``
-# substitution in SSM Run Command bodies (#762 codex cycle 3 finding).
-# The SSM service substitutes the placeholder on the way to the agent;
-# the command record holds the placeholder, not the resolved value, so
-# the password never lands in ``GetCommandInvocation`` history. The
-# Secrets Manager copy above continues to back the portal's
-# access-time lookup via ``shared.cloud``.
-resource "aws_ssm_parameter" "guest_password" {
-  for_each = local.instance_map
-
-  name        = "/shifter/${var.environment}/range/${var.range_id}/${each.value.role}-${substr(each.value.instance_uuid, 0, 8)}-rdp-password"
-  type        = "SecureString"
-  value       = random_password.guest[each.key].result
-  key_id      = var.secrets_kms_key_arn
-  description = "Per-instance RDP password (SSM SecureString) for ${each.value.role} ${each.value.instance_uuid} — mirrors the Secrets Manager copy; consumed by SSM Run Command substitution at push time"
-
-  tags = merge(local.common_tags, {
-    "shifter:instance_uuid" = each.value.instance_uuid
-    "shifter:role"          = each.value.role
-    "shifter:credential"    = "rdp-password"
-  })
-}
-
 #------------------------------------------------------------------------------
 # DC SSM Parameter (for domain join - populated by Ansible after DC boots)
 #------------------------------------------------------------------------------
@@ -381,6 +381,7 @@ resource "aws_instance" "range" {
     each.value.role == "attacker" ? templatefile("${path.module}/templates/kali.sh.tpl", {
       hostname   = each.value.name != "" ? each.value.name : "shifter-kali-${var.range_id}"
       public_key = tls_private_key.instance[each.key].public_key_openssh
+      dns_pin    = local.linux_range_dns_pin
     }) :
     each.value.role == "dc" ? templatefile("${path.module}/templates/dc_windows.ps1.tpl", {
       hostname = each.value.name != "" ? each.value.name : "shifter-dc-${var.range_id}"
@@ -390,6 +391,7 @@ resource "aws_instance" "range" {
     }) :
     templatefile("${path.module}/templates/victim_linux.sh.tpl", {
       hostname = each.value.name != "" ? each.value.name : "shifter-victim-${var.range_id}"
+      dns_pin  = local.linux_range_dns_pin
     })
   )
 

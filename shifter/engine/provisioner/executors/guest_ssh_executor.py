@@ -6,8 +6,10 @@ command plane. It talks directly to Linux and Windows guests over OpenSSH.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
+import shlex
 import subprocess
 import tempfile
 import time
@@ -158,7 +160,15 @@ class GuestSSHExecutor:
                 "-Command",
                 "-",
             ]
-        return ["bash", "-se"]
+        # Run guest shell setup as root, matching the AWS SSM RunShellScript
+        # execution context (SSM runs as root; this SSH path logs in as an
+        # unprivileged host user). Range setup needs root: writing under
+        # /opt/polaris (root-owned from the image bake), installing systemd units
+        # (the splice watcher), and iptables rules (the Kali metadata block). The
+        # guest images ship passwordless sudo for the login user (the reboot path
+        # already relies on it); -n fails fast instead of hanging if that ever
+        # regresses.
+        return ["sudo", "-n", "bash", "-se"]
 
     def _build_command_input(self, script: str, stdin_input: str | None, document_name: str) -> str:
         parts: list[str] = []
@@ -180,8 +190,41 @@ class GuestSSHExecutor:
     ) -> CommandResult:
         host = instance_id
         remote_command = self._get_remote_command(document_name)
-        ssh_args = self._build_ssh_args(host, remote_command)
         command_input = self._build_command_input(script, stdin_input, document_name)
+        if document_name == "AWS-RunPowerShellScript" and stdin_input is not None:
+            # Secret-bearing PowerShell plans need two distinct channels: the
+            # non-secret script is encoded in argv, while runtime data alone is
+            # supplied on stdin. This keeps credentials out of PowerShell source,
+            # process argv, environment, metadata, and temporary scripts.
+            encoded_script = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+            remote_command = [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                encoded_script,
+            ]
+            command_input = stdin_input
+        elif stdin_input is not None:
+            # Keep a secret-bearing Linux plan out of both the SSH command line
+            # and the script stream. The non-secret script is base64-encoded in
+            # argv and evaluated by a privileged child shell; stdin remains an
+            # independent runtime-data channel consumed by that script.
+            encoded_script = base64.b64encode(script.encode()).decode("ascii")
+            wrapper = 'script=$(printf %s "$1" | base64 -d); exec bash -euo pipefail -c "$script"'
+            remote_command = [
+                "sudo",
+                "-n",
+                "bash",
+                "-c",
+                shlex.quote(wrapper),
+                "shifter-setup",
+                encoded_script,
+            ]
+            command_input = stdin_input
+        ssh_args = self._build_ssh_args(host, remote_command)
 
         logger.info("Running %s script over SSH on %s as %s", document_name, host, self._username)
 

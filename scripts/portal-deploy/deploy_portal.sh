@@ -276,14 +276,14 @@ run_containers() {
   # (issue #931). DOCKER_STOP_TIMEOUT must stay below the ASG termination drain.
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
-  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
+  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
   # Force-remove so a redeploy is idempotent. `docker stop` above does the
   # graceful drain (#931); a plain `docker rm` then fails for any container
   # still running (e.g. one the stop did not fully stop / a restart-policy
   # race), the failure is swallowed by `|| true`, and the subsequent
   # `docker run --name <x>` aborts with "name already in use". `-f` removes
   # regardless of state so the new containers always get their names.
-  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
+  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
@@ -300,6 +300,12 @@ run_containers() {
   docker run -d --name worker-reconciler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-reconciler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py reconcile_range_events --loop --interval 60
+  docker run -d --name worker-provisioner-launcher --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/worker-provisioner-launcher-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py drain_provisioner_launch_outbox --loop --interval 10
+  docker run -d --name worker-operation-result-applier --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/worker-operation-result-applier-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py apply_operation_results --loop --interval 10
   docker run -d --name ctf-scheduler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_ctf_scheduler
@@ -354,8 +360,14 @@ main() {
   local portal_worker_soft_concurrency
   local range_events_topic_id
   local environment
+  local cloud_provider
 
   environment=$(get_param "$PS_PREFIX/environment")
+  # Backend identity for config._cloud.resolve_cloud_provider (PLAT-2005). The
+  # deploy-time migrate + run containers must set the same CLOUD_PROVIDER the ASG
+  # boot path sets (portal/ec2 user_data.sh); required, so a missing parameter
+  # fails closed rather than silently defaulting to the wrong cloud.
+  cloud_provider=$(get_param "$PS_PREFIX/cloud-provider")
   image_digest=$(get_optional_param "$PS_PREFIX/image-digest")
   image_tag=$(get_param "$PS_PREFIX/image-tag")
   ecr_registry=$(get_param "$PS_PREFIX/ecr-registry")
@@ -429,6 +441,7 @@ main() {
 
   DOCKER_ENV=()
   append_env ENVIRONMENT "$environment"
+  append_env CLOUD_PROVIDER "$cloud_provider"
   append_env AWS_REGION "$AWS_REGION"
   append_env AWS_S3_BUCKET_NAME "$s3_bucket"
   append_env DB_SECRET_ARN "$db_secret_arn"

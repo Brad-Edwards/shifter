@@ -16,7 +16,6 @@ engine NGFW instance with an attached range, which the real
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -32,7 +31,10 @@ from cms.services._ngfws import (
     _validate_ngfw_user,
 )
 from risk_register.models import AuditLog
-from shared.cloud.exceptions import CloudTaskError
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+)
 from shared.enums import RequestType, ResourceStatus
 from shared.schemas.app import NGFWAppContext, NGFWAppRef
 
@@ -120,8 +122,9 @@ class TestValidateNgfwUser:
             _validate_ngfw_user(None)
 
     def test_raises_valueerror_for_unsaved_user(self):
+        user_2 = User(username="unsaved")
         with pytest.raises(ValueError):
-            _validate_ngfw_user(User(username="unsaved"))
+            _validate_ngfw_user(user_2)
 
 
 class TestValidateNgfwName:
@@ -263,8 +266,9 @@ class TestGetNgfw:
         assert result.serial_number == "SER-9"
 
     def test_raises_cms_error_when_missing(self, user):
+        uuid4_2 = uuid4()
         with pytest.raises(CMSError, match="NGFW not found"):
-            get_ngfw(user, uuid4())
+            get_ngfw(user, uuid4_2)
 
     def test_raises_cms_error_for_other_users_ngfw(self, user, django_user_model):
         other = django_user_model.objects.create_user(username="ngfw-other2@e.com", email="ngfw-other2@e.com")
@@ -298,7 +302,7 @@ class TestCreateNgfw:
         assert app.app_type.slug == "panw-ngfw"
         assert App.objects.filter(instance__request__user=user, app_type__slug="panw-ngfw").exists()
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.NGFW, action=AuditLog.Action.PROVISION, actor_id=user.id
+            entity_type=AuditEntityType.NGFW, action=AuditAction.PROVISION, actor_id=user.id
         ).exists()
 
     def test_creates_ngfw_via_pin(self, user, deployment_profile, scm_credential):
@@ -328,47 +332,10 @@ class TestCreateNgfw:
         with pytest.raises(TypeError):
             create_ngfw(user=None, name="X", deployment_profile_id=1, registration_method="pin")
 
-    def test_marks_owned_records_failed_when_engine_dispatch_fails(self, user, deployment_profile, settings):
-        from cms.models import App as CMSApp
-        from cms.models import Instance as CMSInstance
-        from engine.models import App as EngineApp
-        from engine.models import Instance as EngineInstance
-
-        settings.CLOUD_PROVIDER = "aws"
-        settings.LOCAL_PROVISIONER = None
-        settings.ENGINE_TASK_CLUSTER = "test-cluster"
-        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
-        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
-        ecs_client = MagicMock()
-        ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
-
-        with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
-            create_ngfw(
-                user=user,
-                name="DispatchFailNGFW",
-                deployment_profile_id=deployment_profile.id,
-                registration_method="otp",
-                otp_value="OTP123",
-                otp_folder="folder/",
-            )
-
-        cms_app = CMSApp.all_objects.get(instance__request__user=user)
-        cms_instance = CMSInstance.all_objects.get(request__user=user)
-        assert cms_app.status == ResourceStatus.FAILED.value
-        assert cms_app.deleted_at is not None
-        assert cms_instance.status == ResourceStatus.FAILED.value
-        assert cms_instance.deleted_at is not None
-
-        engine_instance = EngineInstance.objects.get(request__request_id=cms_instance.request.request_id)
-        engine_app = EngineApp.objects.get(request__request_id=cms_instance.request.request_id)
-        assert engine_instance.status == ResourceStatus.FAILED.value
-        assert engine_app.status == ResourceStatus.FAILED.value
-        assert not AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.NGFW,
-            action=AuditLog.Action.PROVISION,
-            actor_id=user.id,
-        ).exists()
+    # The old synchronous "provider dispatch failed -> owned records FAILED"
+    # path no longer exists: dispatch enqueues a launch intent and the drainer
+    # owns provider-dispatch failure (DLQ -> FAILED), covered by
+    # tests/engine/test_provisioner_launch_outbox.py (ADR-043-R2, #1833).
 
     def test_marks_owned_records_failed_when_hydration_fails(self, user, caplog):
         """Hydrator failure marks CMS Instance/App FAILED and logs at ERROR without leaking secrets."""
@@ -399,8 +366,8 @@ class TestCreateNgfw:
         assert cms_instance.deleted_at is not None
 
         assert not AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.NGFW,
-            action=AuditLog.Action.PROVISION,
+            entity_type=AuditEntityType.NGFW,
+            action=AuditAction.PROVISION,
             actor_id=user.id,
         ).exists()
 
@@ -431,12 +398,13 @@ class TestDestroyNgfw:
         assert app.status == ResourceStatus.DESTROYING.value
         assert app.deleted_at is not None
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.NGFW, action=AuditLog.Action.DEPROVISION, actor_id=user.id
+            entity_type=AuditEntityType.NGFW, action=AuditAction.DEPROVISION, actor_id=user.id
         ).exists()
 
     def test_raises_when_not_found(self, user):
+        uuid4_2 = uuid4()
         with pytest.raises(CMSError, match="NGFW not found"):
-            destroy_ngfw(user, uuid4(), "anything")
+            destroy_ngfw(user, uuid4_2, "anything")
 
     def test_raises_on_name_mismatch(self, user):
         app = _cms_ngfw(user, name="ToKill")

@@ -7,6 +7,18 @@ set. Keeping the large embedded bash split by provider keeps both modules under
 the Sonar line budget without changing the plan's public surface.
 """
 
+# GCP-only Compose fragment injected into the shared range bootstrap before
+# a14-kali is created. Docker owns /etc/hosts and regenerates it on restart, so
+# direct in-container writes are not durable. extra_hosts keeps the restricted
+# OAuth and Vertex routes present across ordinary container restarts.
+GCP_AGENT_COMPOSE_BLOCK = (
+    "\n    extra_hosts:"
+    '\n      - "oauth2.googleapis.com:199.36.153.8"'
+    '\n      - "aiplatform.googleapis.com:199.36.153.8"'
+    '\n      - "us-central1-aiplatform.googleapis.com:199.36.153.8"'
+)
+
+
 # GCE twin of FETCH_POLARIS_TESTS_SCRIPT. Pulls the tests/ tree from a GCS
 # bucket instead of S3. The range host VM authenticates with its attached
 # service account via Application Default Credentials (metadata server), so no
@@ -95,9 +107,19 @@ fi
 # argv/logs.
 KEY_FILE="$(mktemp)"
 chmod 600 "$KEY_FILE"
-if ! gcloud secrets versions access latest --secret="$SECRET_ID" > "$KEY_FILE" 2>/dev/null; then
-  rm -f "$KEY_FILE"
-  echo "polaris kali vertex shard: could not read Vertex key secret $SECRET_ID" >&2
+# The per-range secret lives in the VM's own (range-cell) project. Resolve it
+# explicitly from the metadata server and pass --project: this step runs as root
+# (via sudo) and gcloud in that context does not reliably pick up a default
+# project, and — unlike the tarball fetch, which carries a gs:// URL — this
+# command has nothing else to infer the project from, so an unset project made
+# the access fail with an error that looked like a permission problem.
+META_URL="http://metadata.google.internal/computeMetadata/v1/project/project-id"
+PROJ="$(curl -s -H 'Metadata-Flavor: Google' "$META_URL")"
+ERRF=/tmp/vertex-secret-err
+if ! gcloud secrets versions access latest --secret="$SECRET_ID" --project="$PROJ" >"$KEY_FILE" 2>"$ERRF"; then
+  echo "polaris kali vertex shard: could not read Vertex key secret $SECRET_ID in project $PROJ" >&2
+  cat "$ERRF" >&2 || true
+  rm -f "$KEY_FILE" "$ERRF"
   exit 2
 fi
 docker exec a14-kali mkdir -p /etc/vertex
@@ -124,6 +146,28 @@ PROFILE_EOF
 docker cp "$PROFILE_FILE" a14-kali:/etc/profile.d/claude-vertex.sh
 docker exec a14-kali chmod 644 /etc/profile.d/claude-vertex.sh
 rm -f "$PROFILE_FILE"
+
+# Polaris intentionally denies general internet DNS/egress. Route only the
+# Google OAuth and Vertex endpoints over Private Google Access so Claude Code
+# can exchange its scoped service-account credential and call Vertex without
+# opening participant internet access. The global API hostname is required by
+# Sonnet 4.6; keep the regional hostname for explicit operator overrides.
+PRIVATE_GOOGLE_API_VIP=199.36.153.8
+for api_host in \
+  oauth2.googleapis.com \
+  aiplatform.googleapis.com \
+  "${VERTEX_REGION}-aiplatform.googleapis.com"; do
+  docker exec a14-kali sh -c \
+    "grep -v '[[:space:]]${api_host}$' /etc/hosts > /tmp/hosts.shifter || true; \
+     cat /tmp/hosts.shifter > /etc/hosts; \
+     printf '%s %s\\n' '$PRIVATE_GOOGLE_API_VIP' '$api_host' >> /etc/hosts; \
+     rm -f /tmp/hosts.shifter"
+  resolved=$(docker exec a14-kali getent ahostsv4 "$api_host" | awk 'NR==1 {print $1}')
+  if [[ "$resolved" != "$PRIVATE_GOOGLE_API_VIP" ]]; then
+    echo "polaris kali vertex shard: $api_host resolved to $resolved, expected Private Google Access VIP" >&2
+    exit 2
+  fi
+done
 
 echo "polaris kali vertex shard: config applied (per-range key, metadata blocked)"
 """

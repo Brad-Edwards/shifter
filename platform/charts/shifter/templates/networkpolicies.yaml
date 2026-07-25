@@ -1,4 +1,4 @@
-{{- if .Values.networkPolicy.enabled }}
+{{- if .Values.network.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -53,6 +53,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+{{- if .Values.network.ingressSourceCidrs }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -98,7 +99,7 @@ spec:
     - Ingress
   ingress:
     - from:
-        {{- range .Values.networkPolicy.gclbSourceRanges }}
+        {{- range .Values.network.ingressSourceCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
         {{- end }}
@@ -107,6 +108,7 @@ spec:
           port: 8000
         - protocol: TCP
           port: 8080
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -151,11 +153,12 @@ spec:
       ports:
         - protocol: TCP
           port: 4822
+{{- if .Values.network.providerApiCidrs }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-platform-google-apis-egress
+  name: allow-platform-provider-apis-egress
   namespace: {{ .Values.namespaces.platform }}
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
@@ -165,7 +168,7 @@ spec:
     - Egress
   egress:
     - to:
-        {{- range .Values.networkPolicy.googleApiCidrs }}
+        {{- range .Values.network.providerApiCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
         {{- end }}
@@ -176,7 +179,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-jobs-google-apis-egress
+  name: allow-jobs-provider-apis-egress
   namespace: {{ .Values.namespaces.jobs }}
   labels:
     {{- include "shifter.partOfLabels" . | nindent 4 }}
@@ -186,14 +189,15 @@ spec:
     - Egress
   egress:
     - to:
-        {{- range .Values.networkPolicy.googleApiCidrs }}
+        {{- range .Values.network.providerApiCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
         {{- end }}
       ports:
         - protocol: TCP
           port: 443
-{{- if .Values.networkPolicy.rangeClusterApiCidrs }}
+{{- end }}
+{{- if .Values.network.rangeClusterApiCidrs }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -212,15 +216,15 @@ spec:
     - Egress
   egress:
     - to:
-        {{- range .Values.networkPolicy.rangeClusterApiCidrs }}
+        {{- range .Values.network.rangeClusterApiCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
         {{- end }}
       ports:
         - protocol: TCP
-          port: {{ .Values.networkPolicy.rangeClusterApiPort | default 6444 }}
+          port: {{ .Values.network.rangeClusterApiPort | default 6444 }}
 {{- end }}
-{{- if .Values.networkPolicy.privateServiceCidrs }}
+{{- if .Values.network.privateServiceCidrs }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -235,13 +239,11 @@ spec:
     - Egress
   egress:
     - to:
-        {{- range .Values.networkPolicy.privateServiceCidrs }}
+        {{- range .Values.network.privateServiceCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
         {{- end }}
       ports:
-        - protocol: TCP
-          port: 443
         - protocol: TCP
           port: 5432
         - protocol: TCP
@@ -254,5 +256,69 @@ spec:
           # able to reach it on egress or channels_redis cannot negotiate
           # TLS to the Memorystore instance.
           port: 6378
+{{- end }}
+{{- if .Values.network.kubernetesApiCidrs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-provisioner-launcher-kubernetes-api-egress
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: worker-provisioner-launcher
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.network.kubernetesApiCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}
+{{- if .Values.network.rangeAccessCidrs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-range-access-egress
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  # Participant/operator range access (issue #1349): the portal ASGI pod dials
+  # range guests for the browser SSH terminal, and guacd dials them for
+  # Guacamole SSH/RDP. Range VMs are private-only, so without this egress the
+  # GKE default-deny blocks the portal/guacd -> range path even though the
+  # per-range GCE ingress firewall permits it. Scoped to just those two
+  # workloads (not all platform pods; guacd, not guacamole-client, is the
+  # dialer) and to the participant channel ports. AWS parity: the guacd egress
+  # rule in platform/terraform/modules/guacamole/security.tf.
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - portal
+          - guacd
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.network.rangeAccessCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        {{- range .Values.network.rangeAccessPorts }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
 {{- end }}
 {{- end }}

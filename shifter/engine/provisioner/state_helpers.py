@@ -13,6 +13,8 @@ import logging
 import os
 from typing import Any
 
+from config import resolve_cloud_provider
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,7 +67,7 @@ def _validate_provisioned_outputs(
 
 def _get_cloud_provider() -> str:
     """Return the active cloud provider for range state persistence."""
-    return os.environ.get("CLOUD_PROVIDER", "aws")
+    return resolve_cloud_provider()
 
 
 def _get_bool_env(name: str) -> bool | None:
@@ -195,14 +197,6 @@ def _build_instance_state(instance_data: dict[str, Any], provider: str | None = 
         # Secret Manager resource path); the password value itself is
         # never persisted in state.
         "rdp_password_secret_arn": instance_data.get("rdp_password_secret_arn"),
-        # SSM Parameter Store SecureString name for the same per-
-        # instance password (AWS only; GCP carries ``None``). Used by
-        # the AWS push path's ``{{ssm-secure:<name>}}`` substitution so
-        # the value never lands in SSM Run Command history (#762 codex
-        # cycle 3). Mirrors the Secrets Manager copy referenced above;
-        # the portal continues to read the value from Secrets Manager
-        # via ``shared.cloud`` at access time.
-        "rdp_password_ssm_param_name": instance_data.get("rdp_password_ssm_param_name"),
         "ssh_username": instance_data.get("ssh_username"),
         "subnet_name": instance_data.get("subnet_name"),
         "provider_metadata": _build_instance_provider_metadata(instance_data, resolved_provider),
@@ -224,11 +218,14 @@ def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider:
         "subnet_name": instance_data.get("subnet_name"),
         "instance_id": instance_data.get("instance_id"),
         "private_ip": instance_data.get("private_ip"),
+        # Scenario-declared participant access channels: the closed realized
+        # access binding the portal authorizes against (issue #1349). Absent on
+        # providers that expose every instance (AWS), where credential presence
+        # remains the gate.
+        "participant_access_channels": instance_data.get("participant_access_channels"),
         "ssh_key_secret_arn": instance_data.get("ssh_key_secret_arn"),
         # Per-instance RDP password secret reference (#762).
         "rdp_password_secret_arn": instance_data.get("rdp_password_secret_arn"),
-        # AWS-only mirror in SSM Parameter Store SecureString (#762 cycle 3).
-        "rdp_password_ssm_param_name": instance_data.get("rdp_password_ssm_param_name"),
         "ssh_username": instance_data.get("ssh_username"),
         "cloud_provider": resolved_provider,
         "provider_metadata": _build_instance_provider_metadata(instance_data, resolved_provider),

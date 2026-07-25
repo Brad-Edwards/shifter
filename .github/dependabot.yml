@@ -16,6 +16,10 @@
 # Every update block targets `dev` (the integration branch); `main` is the
 # stable release line per CONTRIBUTING.md and only receives release-PR
 # promotions, never automated dep bumps.
+#
+# Each block sets a Conventional Commit `commit-message` prefix
+# (`chore(deps): ...`) so Dependabot's PR titles pass `pr-title-lint.yml`,
+# which enforces Conventional Commit titles on all PRs to `dev` (#1776).
 
 version: 2
 updates:
@@ -25,6 +29,9 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -40,6 +47,9 @@ updates:
   - package-ecosystem: "pre-commit"
     directory: "/"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -55,6 +65,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/shifter/shifter_platform"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
@@ -67,6 +80,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/shifter/installation"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -79,6 +95,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/shifter/cyberscript"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -91,6 +110,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/shifter/packer"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -103,6 +125,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/shifter/engine/provisioner"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -115,6 +140,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/scripts/bootstrap"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -127,6 +155,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/scripts/gcp"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -139,6 +170,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/scripts/check_layer_imports"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -151,6 +185,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/scripts/check_rds_pending_modifications"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -166,6 +203,9 @@ updates:
   - package-ecosystem: "npm"
     directory: "/shifter/shifter_platform"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
@@ -178,6 +218,9 @@ updates:
   - package-ecosystem: "npm"
     directory: "/mcp/shared"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -190,6 +233,9 @@ updates:
   - package-ecosystem: "npm"
     directory: "/mcp/ngfw"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -202,6 +248,9 @@ updates:
   - package-ecosystem: "npm"
     directory: "/mcp/ops"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -214,6 +263,9 @@ updates:
   - package-ecosystem: "npm"
     directory: "/mcp/planner"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -226,6 +278,9 @@ updates:
   - package-ecosystem: "npm"
     directory: "/platform/terraform/gcp/modules/platform-core/functions/identity-platform"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -235,12 +290,24 @@ updates:
           - "minor"
           - "patch"
 
-  # Auto-bump the digest-pinned base images in the portal Dockerfile so the
-  # pins stay current with upstream security rebuilds (the FROM lines are
-  # pinned by @sha256 for reproducible, integrity-checked builds).
+  # Track the digest-pinned base images across every first-party and scenario
+  # Dockerfile (ADR-037-R2). The FROM lines are pinned by @sha256 for
+  # reproducible, integrity-checked builds; Dependabot surfaces base-image
+  # updates on the weekly reviewed-PR cadence. Note: Dependabot's digest-only
+  # refresh is best-effort (it opens an initial PR but does not always
+  # supersede); the authoritative refresh procedure is documented in
+  # docs/architecture/rev1-build-deployment-provenance.md.
   - package-ecosystem: "docker"
-    directory: "/shifter/shifter_platform"
+    directories:
+      - "/shifter/shifter_platform"
+      - "/shifter/engine/provisioner"
+      - "/shifter/engine/guacd"
+      - "/shifter/engine/guacamole"
+      - "/scenario-dev/polaris/containers/*"
     target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

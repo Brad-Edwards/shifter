@@ -223,6 +223,80 @@ def test_update_instance_state_writes_ngfw_instance_and_app(monkeypatch: pytest.
     conn.commit.assert_called_once_with()
 
 
+def _make_ngfw_state_conn_mock() -> tuple[MagicMock, MagicMock]:
+    """Return (conn_mock, cursor_mock) shaped for update_instance_state's SELECT + UPDATEs."""
+    cursor_mock = MagicMock()
+    cursor_mock.fetchone.return_value = (10, {}, None)
+    conn_mock = MagicMock()
+    conn_mock.__enter__ = MagicMock(return_value=conn_mock)
+    conn_mock.__exit__ = MagicMock(return_value=False)
+    conn_mock.cursor.return_value.__enter__ = MagicMock(return_value=cursor_mock)
+    conn_mock.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    return conn_mock, cursor_mock
+
+
+def test_update_instance_state_appends_shadow_result_when_operation_id_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-043 Phase 2 (#1834): the shadow append fires only when operation_id is present."""
+    from ngfw_runtime import update_instance_state
+
+    conn_mock, cursor_mock = _make_ngfw_state_conn_mock()
+    monkeypatch.setattr("ngfw_runtime.get_db_connection", MagicMock(return_value=conn_mock))
+    mock_append = MagicMock()
+    monkeypatch.setattr("ngfw_runtime.append_operation_result", mock_append)
+
+    update_instance_state(
+        "ngfw-req",
+        "ready",
+        operation_id="op-1",
+        operation="start",
+        serial_number="12345",
+    )
+
+    mock_append.assert_called_once()
+    _args, kwargs = mock_append.call_args
+    assert kwargs["operation_id"] == "op-1"
+    assert kwargs["request_id"] == "ngfw-req"
+    assert kwargs["resource"] == "ngfw"
+    assert kwargs["operation"] == "start"
+    assert kwargs["result_kind"] == "RESOURCE_STATE"
+    assert kwargs["result_payload"] == {"status": "ready", "instance_id": 10, "app_id": None}
+    assert kwargs["cur"] is cursor_mock
+
+
+def test_update_instance_state_skips_shadow_append_when_operation_id_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """local-dev / not-yet-threaded callers never carry operation_id -- append is skipped."""
+    from ngfw_runtime import update_instance_state
+
+    conn_mock, _cursor_mock = _make_ngfw_state_conn_mock()
+    monkeypatch.setattr("ngfw_runtime.get_db_connection", MagicMock(return_value=conn_mock))
+    mock_append = MagicMock()
+    monkeypatch.setattr("ngfw_runtime.append_operation_result", mock_append)
+
+    update_instance_state("ngfw-req", "ready")
+
+    mock_append.assert_not_called()
+
+
+def test_update_instance_state_skips_shadow_append_when_operation_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """operation_id alone is not enough -- a missing canonical operation also skips the append."""
+    from ngfw_runtime import update_instance_state
+
+    conn_mock, _cursor_mock = _make_ngfw_state_conn_mock()
+    monkeypatch.setattr("ngfw_runtime.get_db_connection", MagicMock(return_value=conn_mock))
+    mock_append = MagicMock()
+    monkeypatch.setattr("ngfw_runtime.append_operation_result", mock_append)
+
+    update_instance_state("ngfw-req", "ready", operation_id="op-1")
+
+    mock_append.assert_not_called()
+
+
 def test_find_stale_routes_by_db_returns_destroyed_range_routes(monkeypatch: pytest.MonkeyPatch) -> None:
     from ngfw_runtime import find_stale_routes_by_db
 
@@ -319,7 +393,9 @@ def test_gcp_ngfw_operation_marks_failed_on_power_error(monkeypatch: pytest.Monk
     with pytest.raises(RuntimeError, match="power failed"):
         _run_gcp_ngfw_operation("start", "ngfw-req", "inst-uuid", "app-uuid", {"cloud_provider": "gcp"})
 
-    assert update_state.call_args_list[-1] == call("ngfw-req", "failed", error_message="power failed")
+    assert update_state.call_args_list[-1] == call(
+        "ngfw-req", "failed", operation_id=None, operation="start", error_message="power failed"
+    )
     assert publish_event.call_args_list[-1].kwargs["status"] == "failed"
 
 
@@ -350,6 +426,8 @@ def test_aws_ngfw_operation_marks_failed_when_plan_fails(monkeypatch: pytest.Mon
     assert update_state.call_args_list[-1] == call(
         "ngfw-req",
         "failed",
+        operation_id=None,
+        operation="stop",
         error_message="Operation stop failed",
     )
     assert publish_event.call_args_list[-1].kwargs["status"] == "failed"
@@ -452,7 +530,7 @@ def test_provisioner_db_ngfw_reads_user_and_request_data(monkeypatch: pytest.Mon
 
 
 def test_range_ngfw_helpers_use_direct_runtime_and_db_modules(monkeypatch: pytest.MonkeyPatch) -> None:
-    from terraform_ops import (
+    from terraform_ngfw_range import (
         _configure_ngfw_for_range,
         _maybe_pause_user_ngfw,
         _recover_aws_ngfw_stuck_resuming,
@@ -462,9 +540,9 @@ def test_range_ngfw_helpers_use_direct_runtime_and_db_modules(monkeypatch: pytes
     )
 
     run_ngfw_operation = MagicMock()
-    monkeypatch.setattr("terraform_ops.run_ngfw_operation", run_ngfw_operation)
-    monkeypatch.setattr("terraform_ops.AWSExecutor", MagicMock())
-    monkeypatch.setattr("terraform_ops._describe_ec2_state", MagicMock(return_value="stopped"))
+    monkeypatch.setattr("terraform_ngfw_range.run_ngfw_operation", run_ngfw_operation)
+    monkeypatch.setattr("terraform_ngfw_range.AWSExecutor", MagicMock())
+    monkeypatch.setattr("terraform_ngfw_range._describe_ec2_state", MagicMock(return_value="stopped"))
 
     _recover_aws_ngfw_stuck_resuming("i-ngfw", "ngfw-req")
     _resume_aws_ngfw_for_provisioning({"status": "paused", "ngfw_request_id": "ngfw-req"})
@@ -484,15 +562,15 @@ def test_range_ngfw_helpers_use_direct_runtime_and_db_modules(monkeypatch: pytes
         "attachment_mode": "aws-data-eni",
         "status": "ready",
     }
-    monkeypatch.setattr("terraform_ops.get_user_ngfw_data", MagicMock(return_value=ngfw_data))
+    monkeypatch.setattr("terraform_ngfw_range.get_user_ngfw_data", MagicMock(return_value=ngfw_data))
     configure_subnets = MagicMock()
     record_attachment = MagicMock()
     remove_subnets = MagicMock()
     remove_attachment = MagicMock()
-    monkeypatch.setattr("terraform_ops.configure_ngfw_subnets", configure_subnets)
-    monkeypatch.setattr("terraform_ops._record_ngfw_range_attachment", record_attachment)
-    monkeypatch.setattr("terraform_ops.remove_ngfw_subnets", remove_subnets)
-    monkeypatch.setattr("terraform_ops._remove_ngfw_range_attachment", remove_attachment)
+    monkeypatch.setattr("terraform_ngfw_range.configure_ngfw_subnets", configure_subnets)
+    monkeypatch.setattr("terraform_ngfw_range._record_ngfw_range_attachment", record_attachment)
+    monkeypatch.setattr("terraform_ngfw_range.remove_ngfw_subnets", remove_subnets)
+    monkeypatch.setattr("terraform_ngfw_range._remove_ngfw_range_attachment", remove_attachment)
 
     _validate_ngfw_range_attachment({"ngfw": True}, user_id=7)
     _configure_ngfw_for_range(
@@ -510,7 +588,7 @@ def test_range_ngfw_helpers_use_direct_runtime_and_db_modules(monkeypatch: pytes
     remove_subnets.assert_called_once_with(7, [{"name": "attack"}], 42)
     remove_attachment.assert_called_once_with(ngfw_request_id="ngfw-req", ngfw_status="ready", range_id=42)
 
-    monkeypatch.setattr("terraform_ops.user_has_active_ranges", MagicMock(return_value=False))
+    monkeypatch.setattr("terraform_ngfw_range.user_has_active_ranges", MagicMock(return_value=False))
     _maybe_pause_user_ngfw(7, 42)
 
     assert run_ngfw_operation.call_args_list[-1] == call("stop", "ngfw-req")

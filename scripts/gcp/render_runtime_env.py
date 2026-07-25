@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -63,6 +64,7 @@ def _string_list(raw: object) -> list[str]:
 _CONSOLE_EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 _MAILGUN_EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
 _GCE_RANGE_ENV_KEYS = (
+    "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL",
     "GCP_RANGE_PLANE",
     "GCP_RANGE_CELL_NETWORK_MODE",
     "RANGE_NETWORK_ZONE",
@@ -76,6 +78,7 @@ _GCE_RANGE_ENV_KEYS = (
     "GCP_RANGE_KALI_MACHINE_TYPE",
     "GCP_RANGE_KALI_DISK_SIZE_GB",
     "GCP_RANGE_KALI_DISK_TYPE",
+    "GCP_RANGE_IMAGE_KEY_PROFILES_JSON",
     "GCP_RANGE_WINDOWS_IMAGE",
     "GCP_RANGE_WINDOWS_MACHINE_TYPE",
     "GCP_RANGE_WINDOWS_DISK_SIZE_GB",
@@ -152,8 +155,34 @@ def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
     return email_values
 
 
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Build one JSON object without silently overwriting duplicate keys."""
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key!r}")
+        value[key] = item
+    return value
+
+
+def _canonical_image_key_profiles(raw: str) -> str:
+    """Return compact one-line JSON while preserving semantic validation for the provisioner."""
+    if len(raw.encode("utf-8")) > 32_768:
+        raise ValueError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 32768-byte configuration limit")
+    try:
+        decoded = json.loads(raw, object_pairs_hook=_reject_duplicate_json_keys)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be valid JSON: {exc}") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be a JSON object")
+    return json.dumps(decoded, separators=(",", ":"), sort_keys=True)
+
+
 def _optional_gce_range_values() -> dict[str, str]:
-    return {key: value for key in _GCE_RANGE_ENV_KEYS if (value := os.environ.get(key, "").strip())}
+    values = {key: value for key in _GCE_RANGE_ENV_KEYS if (value := os.environ.get(key, "").strip())}
+    if raw_profiles := values.get("GCP_RANGE_IMAGE_KEY_PROFILES_JSON"):
+        values["GCP_RANGE_IMAGE_KEY_PROFILES_JSON"] = _canonical_image_key_profiles(raw_profiles)
+    return values
 
 
 def _project_from_self_link(self_link: object) -> str:
@@ -173,16 +202,45 @@ def _project_from_self_link(self_link: object) -> str:
     return ""
 
 
-def _validated_image_tag(image_tag: str) -> str:
-    tag = image_tag.strip()
-    if not tag:
-        raise ValueError("image_tag must be non-empty")
-    if tag == "latest":
-        raise ValueError("image_tag must be immutable; refusing to render latest")
-    return tag
+_ENGINE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
-def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
+def _validated_engine_digest(engine_image_digest: str) -> str:
+    """Require an immutable ``sha256:<64 hex>`` provisioner image digest.
+
+    The CI GKE deploy path passes the verified build digest so ENGINE_TASK_IMAGE
+    (which the GKE ValidatingAdmissionPolicy pins to, ADR-006-R4) is the exact
+    attested image, never a mutable tag (ADR-037-R6).
+    """
+    digest = engine_image_digest.strip()
+    if not digest:
+        raise ValueError("engine_image_digest must be non-empty")
+    if not _ENGINE_DIGEST_RE.match(digest):
+        raise ValueError(
+            "engine_image_digest must be an immutable sha256 digest (sha256:<64 hex>); refusing to render a mutable tag"
+        )
+    return digest
+
+
+def _engine_task_image(root: str, engine_image: str) -> str:
+    """Build ENGINE_TASK_IMAGE from the provisioner image root.
+
+    ``engine_image`` is either an immutable ``sha256:<64 hex>`` digest (the CI
+    GKE deploy path, ADR-037-R6 -> ``root@digest``) or a version tag (the GDC
+    bootstrap path, which resolves its own image identity -> ``root:tag``).
+    ``latest`` and empty values are refused in both modes.
+    """
+    identity = engine_image.strip()
+    if not identity:
+        raise ValueError("engine_image must be non-empty")
+    if _ENGINE_DIGEST_RE.match(identity):
+        return f"{root}@{identity}"
+    if identity == "latest":
+        raise ValueError("engine_image must be immutable; refusing to render latest")
+    return f"{root}:{identity}"
+
+
+def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     """Render the GCP portal runtime env contract.
 
     A configured public hostname and managed TLS are mandatory: the renderer
@@ -191,7 +249,6 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
     session/CSRF cookies, Identity Platform auth, ``https://<hostname>``
     ``SITE_URL``) is emitted unconditionally.
     """
-    pinned_image_tag = _validated_image_tag(image_tag)
     assets_bucket = _value(outputs, "assets_bucket_name")
     terraform_state_bucket = _value(outputs, "terraform_state_bucket_name")
     topic_id = _value(outputs, "platform_events_topic_id")
@@ -243,6 +300,11 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
     bootstrap_superuser_emails = ",".join(_csv_env("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS"))
 
     values = {
+        # This module IS the GCP backend runtime-env renderer (installation.registry's
+        # ``_cloud_provider_output``); CLOUD_PROVIDER is this backend's own identity,
+        # renderer-owned rather than a static overlay literal or branch-name inference
+        # (PLAT-2005, docs/architecture/root-configured-backend-bundles.md).
+        "CLOUD_PROVIDER": "gcp",
         "STORAGE_BUCKET_NAME": assets_bucket,
         "AGENT_STORAGE_BUCKET": assets_bucket,
         "TF_STATE_BUCKET": terraform_state_bucket,
@@ -257,12 +319,27 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],
         "GDC_ACCESS_SECRET_ID": _derive_sibling_secret_id(secret_ids["app"], "app", "gdc-access"),
+        # Prebaked Windows DC domain Administrator password (GCE + GDC range
+        # backends). The entrypoint resolves DC_DOMAIN_PASSWORD from this
+        # reference and ecs.py passes it into the provisioner Job; without it the
+        # DC's set_admin_password step gets an empty password. Only the secret
+        # reference rides the ConfigMap; the value never does.
+        "DC_DOMAIN_PASSWORD_SECRET_ID": _derive_sibling_secret_id(secret_ids["app"], "app", "dc-domain-password"),
         # Production runtime security profile — unconditional (ADR-008-R1, R3).
         "DJANGO_DEBUG": "false",
         "SESSION_COOKIE_SECURE": "true",
         "CSRF_COOKIE_SECURE": "true",
         "DB_HOST": database["private_ip"],
         "DB_PORT": str(database["port"]),
+        # DB_NAME / DB_USER are non-secret and MUST ride the runtime ConfigMap as
+        # literals: the restrict-provisioner-jobs admission policy (issue #1177)
+        # lists them in requiredLiteralEnv and validates every Job literal against
+        # this ConfigMap (params.data). The provisioner-launcher emits them (the
+        # entrypoint hydrates them into the pod env from the DB secret bundle), so
+        # if they are absent here the policy denies every range Job (#1742). Only
+        # DB_PASSWORD is Secret-backed; name/user are plain connection metadata.
+        "DB_NAME": database["database_name"],
+        "DB_USER": database["user_name"],
         # Redis host/port are non-secret and ride in the runtime ConfigMap.
         # REDIS_TLS / REDIS_SECRET_ID (added below) flag the secure posture
         # and point the entrypoint at the Secret Manager bundle that carries
@@ -278,13 +355,18 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "GUACAMOLE_POSTGRESQL_HOSTNAME": guacamole_database["host"],
         "GUACAMOLE_POSTGRESQL_PORT": str(guacamole_database["port"]),
         "GUACAMOLE_POSTGRESQL_DATABASE": guacamole_database["database_name"],
-        "ENGINE_TASK_IMAGE": f"{image_roots['pulumi-provisioner']}:{pinned_image_tag}",
+        "ENGINE_TASK_IMAGE": _engine_task_image(image_roots["pulumi-provisioner"], engine_image),
         # GCP deployments authenticate against Identity Platform in every case.
         "AUTH_PROVIDER": "identity_platform",
         # Real deploy project (not the overlay placeholder), so Google client
         # libraries bill the correct quota/consumer project.
         "GCP_PROJECT_ID": real_project,
         "GOOGLE_CLOUD_PROJECT": real_project,
+        # CLOUD_PROJECT_ID is emitted by the provisioner-launcher (its
+        # _get_gcp_provisioner_env_overrides fallback is settings.GCP_PROJECT_ID),
+        # so it must be present in this ConfigMap or the restrict-provisioner-jobs
+        # policy denies the Job (#1742). Mirror GCP_PROJECT_ID (the real project).
+        "CLOUD_PROJECT_ID": real_project,
         "IDENTITY_PLATFORM_API_KEY": identity_platform_api_key,
         "IDENTITY_PLATFORM_PROJECT_ID": identity_platform_project_id,
         "IDENTITY_PLATFORM_AUTH_DOMAIN": f"{identity_platform_project_id}.firebaseapp.com",
@@ -357,12 +439,14 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--terraform-output-json", required=True, type=Path)
-    parser.add_argument("--image-tag", required=True)
+    parser.add_argument("--engine-image-digest", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
     outputs = json.loads(args.terraform_output_json.read_text())
-    rendered = render_env(outputs, image_tag=args.image_tag)
+    # The CLI (CI GKE deploy) enforces an immutable digest (ADR-037-R6); the
+    # GDC bootstrap calls render_env() directly with its own image identity.
+    rendered = render_env(outputs, engine_image=_validated_engine_digest(args.engine_image_digest))
     args.output.write_text(rendered)
     return 0
 

@@ -16,6 +16,19 @@ securityContext:
     type: {{ .Values.security.pod.seccompProfile }}
 {{- end }}
 
+{{- define "shifter.podAntiAffinity" -}}
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: shifter
+              app.kubernetes.io/component: {{ .component }}
+          topologyKey: kubernetes.io/hostname
+{{- end }}
+
 {{- define "shifter.containerSecurityContextApp" -}}
 securityContext:
   allowPrivilegeEscalation: false
@@ -66,17 +79,17 @@ volumes:
 {{- end }}
 
 {{- define "shifter.runtimeConfigChecksum" -}}
-{{ toJson .Values.runtimeEnv | sha256sum }}
+{{ toJson (dict "runtimeEnv" .Values.runtimeEnv "jobsNamespace" .Values.namespaces.jobs "provisionerServiceAccount" .Values.serviceAccounts.provisioner.name) | sha256sum }}
 {{- end }}
 
 {{- define "shifter.portalImage" -}}
-{{ printf "%s:%s" .Values.images.portal.repository .Values.images.portal.tag }}
+{{ .Values.images.platform }}
 {{- end }}
 
 {{- define "shifter.guacdImage" -}}
-{{ printf "%s:%s" .Values.images.guacd.repository .Values.images.guacd.tag }}
+{{ .Values.images.guacd }}
 {{- end }}
 
 {{- define "shifter.guacamoleClientImage" -}}
-{{ printf "%s:%s" .Values.images.guacamoleClient.repository .Values.images.guacamoleClient.tag }}
+{{ .Values.images.guacamoleClient }}
 {{- end }}

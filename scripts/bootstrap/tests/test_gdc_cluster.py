@@ -450,7 +450,9 @@ class TestGdcBootstrapCluster:
 
     def test_executes_bootstrap_steps_in_order(self, tmp_path):
         """The GDC bootstrap path should execute the expected sequence of helper steps."""
-        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        # range_backend="gdc" is what builds the ABM/GDC substrate (#1716); the gce
+        # default skips it and is covered by TestGdcBootstrapRangeBackend.
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", range_backend="gdc")
         staged_assets = {
             "assets_dir": tmp_path / "cluster1",
             "ssh_metadata": tmp_path / "cluster1" / "ssh-metadata",
@@ -680,7 +682,8 @@ class TestGdcControlPlaneRollout:
         assert commands[0] == [
             "gcloud",
             "container",
-            "clusters",
+            "fleet",
+            "memberships",
             "get-credentials",
             "shifter-gcp-dev-platform",
             "--location",
@@ -747,6 +750,15 @@ class TestGdcControlPlaneRollout:
             patch("deploy.apply_gcp_control_plane_terraform", side_effect=record("apply")),
             patch("deploy.ensure_gcp_identity_platform_operator", side_effect=record("seed_operator")),
             patch("deploy.push_gcp_control_plane_images", side_effect=record("push_images")),
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    ["gcloud"],
+                    0,
+                    stdout="sha256:" + ("1" * 64) + "\n",
+                    stderr="",
+                ),
+            ),
             patch("deploy.stage_gcp_control_plane_values", side_effect=record("stage")),
             patch("deploy.deploy_gcp_control_plane_with_helm", side_effect=record("deploy")),
             patch("deploy.walkthrough_gcp_dns_setup_and_wait_for_tls", side_effect=record("dns_tls")),
