@@ -669,12 +669,23 @@ The first slice intentionally stays small:
   service; unconditioned wildcard `kms:Decrypt` is too broad.
   Existence is gated on `secretsmanager:GetSecretValue` (not file
   layout) so unrelated roles that happen to live in the same file
-  are not forced to acquire unnecessary KMS grants. Currently scoped
-  via the pre-commit `files:` regex (and the matching CI invocation
-  list) to `platform/terraform/modules/engine-provisioner/iam.tf`,
-  `platform/terraform/modules/portal/ec2/main.tf`, and
-  `platform/terraform/modules/guacamole/iam.tf`; expand both when a
-  new module starts reading portal Secrets Manager secrets. The
+  are not forced to acquire unnecessary KMS grants. Scoped via the
+  pre-commit `files:` regex (and the matching CI invocation list) to
+  every `.tf` in `platform/terraform/modules/engine-provisioner/`,
+  `platform/terraform/modules/portal/ec2/`, and
+  `platform/terraform/modules/guacamole/`; expand both when a new
+  module starts reading portal Secrets Manager secrets. These are
+  module-directory globs rather than three individual filenames
+  (#1846): the previous list scanned only `iam.tf` / `main.tf`, so a
+  role defined elsewhere in those modules was never checked -
+  `guacamole/rds_kms.tf` defines one.
+
+  Because the role/grant pairing is evaluated **within a single
+  file** (cross-file aggregation is deliberately out of scope; see
+  the checker's module docstring), each role must stay in the same
+  file as its `secretsmanager` and `kms:Decrypt` policies. Splitting
+  them across siblings leaves the check passing while verifying
+  nothing. The
   check is implemented in
   `scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py`
   and tested in

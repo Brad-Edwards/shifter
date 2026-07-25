@@ -320,22 +320,28 @@ repos:
       # Secrets Manager values.
       - id: check-tf-kms-secrets-grant
         name: Secrets Manager kms:Decrypt grant (portal CMK readers)
-        # Pass the full scoped file list (pass_filenames=false) instead
-        # of just the changed files, so cross-file aggregation works:
-        # the checker can detect a policy in `policies.tf` attached to a
-        # role defined in `roles.tf` even when only one of the two
-        # changed. The `files:` regex still gates whether the hook
-        # runs (on any change to the scoped files); the explicit list
-        # is what gets handed to the checker.
+        # Pass the full scoped file list (pass_filenames=false) instead of
+        # just the changed files, so every role is re-checked whenever any
+        # scoped file changes. The `files:` regex gates whether the hook runs;
+        # the glob list is what gets handed to the checker.
+        #
+        # Module-directory globs rather than individual filenames (#1846): the
+        # previous list named three files, so a role defined in any other file
+        # of those modules was never scanned. guacamole/rds_kms.tf defines one.
+        #
+        # The checker pairs a role with its kms:Decrypt grant *within a single
+        # file* (see its module docstring - cross-file aggregation is
+        # deliberately out of scope), so each role must keep its
+        # secretsmanager and kms:Decrypt policies in the same file as the role.
         entry: >-
           bash -c '
           python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py
-          platform/terraform/modules/engine-provisioner/iam.tf
-          platform/terraform/modules/portal/ec2/main.tf
-          platform/terraform/modules/guacamole/iam.tf
+          platform/terraform/modules/engine-provisioner/*.tf
+          platform/terraform/modules/portal/ec2/*.tf
+          platform/terraform/modules/guacamole/*.tf
           '
         language: system
-        files: ^(platform/terraform/modules/engine-provisioner/iam\.tf|platform/terraform/modules/portal/ec2/main\.tf|platform/terraform/modules/guacamole/iam\.tf)$
+        files: ^platform/terraform/modules/(engine-provisioner|portal/ec2|guacamole)/.+\.tf$
         pass_filenames: false
 
       # ADR-008-R7 / issue #1517: GCP application workload identities (portal,
