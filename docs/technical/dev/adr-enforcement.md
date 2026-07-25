@@ -693,6 +693,27 @@ The first slice intentionally stays small:
   `shifter/shifter_platform/entrypoint-lib.sh` and
   `shifter/shifter_platform/tests/test_entrypoint_lib.sh`).
 
+- `check-portal-target-sg-sources`
+  Pre-commit hook AND CI step enforcing that portal target-service SG
+  ingress (Django:8000, Guacamole client:8080) sources only from a
+  security-group reference or `module.vpc.alb_ingress_subnet_cidrs`,
+  never the whole public tier where standalone public workloads live.
+  Scoped to the `dev`, `proof` and `prod` portal roots. `proof` was
+  absent from the original `dev|prod` regex and CI list despite
+  deploying the same portal composition, so the #911 NET-2 / #933
+  invariant went unenforced there (#1846). Enforces ADR-004-R11.
+
+- `check-tf-iam-ec2-scope`
+  Pre-commit hook AND CI step rejecting mutable EC2 instance lifecycle
+  actions (`TerminateInstances`, `StopInstances`, `StartInstances`,
+  `ModifyInstanceAttribute`, `ModifyInstanceMetadataOptions`) on a
+  wildcard resource, and requiring the Shifter ownership resource-tag
+  conditions. Previously it ran in pre-commit and as a unit test in CI,
+  but never against the live Terraform, unlike its `check-tf-iam-elb-scope`
+  and `check-tf-iam-ssm-scope` siblings; a commit that bypassed pre-commit
+  could land the regression (#1846). The live CI invocation was added to
+  close that gap.
+
 ## Local Usage
 
 Run the fast profile on the full repo:

@@ -285,6 +285,14 @@ jobs:
           python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
             platform/terraform/modules/engine-provisioner/iam.tf
 
+      # Issue #1846: this checker previously ran only in pre-commit and as a
+      # unit test in CI, unlike its elb/ssm siblings above, so a commit that
+      # bypassed pre-commit could land an EC2 lifecycle IAM regression.
+      - name: Run check-tf-iam-ec2-scope
+        run: |
+          python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py \
+            platform/terraform/modules/engine-provisioner/iam.tf
+
       - name: Run check-tf-iam-role-naming
         run: |
           python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
@@ -363,6 +371,7 @@ jobs:
         run: |
           python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py \
             platform/terraform/environments/dev/portal/main.tf \
+            platform/terraform/environments/proof/portal/main.tf \
             platform/terraform/environments/prod/portal/main.tf
 
       # Pin the behavior of the check_tf_* IAM/security checkers

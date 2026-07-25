@@ -215,7 +215,10 @@ repos:
         name: Portal target-service SG ingress source scoping (#933)
         entry: python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py
         language: system
-        files: ^platform/terraform/environments/(dev|prod)/portal/main\.tf$
+        # proof deploys the same portal composition as dev and prod; it was
+        # absent from this regex, so the #911 NET-2 / #933 ingress invariant
+        # was unenforced there (#1846).
+        files: ^platform/terraform/environments/(dev|proof|prod)/portal/main\.tf$
 
       - id: check-tf-iam-ec2-scope
         name: AWS EC2 lifecycle IAM scoping (engine provisioner)
