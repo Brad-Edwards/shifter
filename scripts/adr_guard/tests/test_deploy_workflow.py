@@ -381,6 +381,24 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
         self.assertNotIn("scenario-smoketest-tests", self.jobs)
 
 
+class TestTflintPluginAuthentication(unittest.TestCase):
+    """#1850: TFLint plugin downloads use the job-scoped GitHub token."""
+
+    def test_tflint_init_avoids_unauthenticated_api_rate_limit(self):
+        quality = _load("_quality.yml")
+        jobs = ADR_GUARD._dw_jobs(quality, "_quality.yml")
+        terraform_lint = jobs["terraform-lint"]
+        init_step = next(
+            step
+            for step in terraform_lint.get("steps", [])
+            if step.get("name") == "Init TFLint"
+        )
+        self.assertEqual(
+            init_step.get("env", {}).get("GITHUB_TOKEN"),
+            "${{ github.token }}",
+        )
+
+
 class TestGithubEnvironmentBinding(unittest.TestCase):
     """#935 / ADR-003-R5: mutating deploy jobs bind a GitHub Environment."""
 
