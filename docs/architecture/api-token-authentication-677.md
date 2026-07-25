@@ -28,11 +28,12 @@ frontend makes a single, coherent, scoped DRF API the desired end state
    belongs to the `shared` Django app (migration under `shared/migrations/`).
 
 2. **Audit at the edge.** The token model is free of app-layer imports. Audit
-   writes (create / revoke / auth-failure) reuse the canonical
-   `risk_register.services` audit store via a lazy, call-local import in
-   `shared/api_tokens/audit.py`. This keeps the principal layer import-clean while
-   avoiding a risky relocation of the audit model. Successful authentication is
-   not audited per request (write-amplification); coalesced `last_used_at`
+   writes (create / revoke / auth-failure) reuse the canonical audit store
+   (originally `risk_register.services`, rehomed to `shared.audit` in #1374)
+   via a lazy, call-local import in `shared/api_tokens/audit.py`. This keeps
+   the principal layer import-clean while avoiding a risky relocation of the
+   audit model. Successful authentication is not audited per request
+   (write-amplification); coalesced `last_used_at`
    provides liveness instead.
 
 3. **Opaque token, non-reversible verifier.** Format `shf_<token_id>.<secret>`.

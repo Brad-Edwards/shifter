@@ -15,7 +15,8 @@ Related artifacts:
 - `docs/design/ux-003-oss-shifter-research-personas.md` (personas and JTBD).
 - `docs/design/spa-design-system-foundation-1299.md` (the locked Apple-dark
   Tailwind v4 plus shadcn/ui system).
-- `docs/design/spa-risk-register-workspace-1301.md` (the first built SPA module).
+- `docs/design/spa-risk-register-workspace-1301.md` (the first built SPA
+  module; removed along with the Risk Register module in #1374).
 - `docs/architecture/spa-cohesive-ux-preflight-1368.md` (binding guardrails).
 
 ## Purpose and Scope
@@ -183,14 +184,18 @@ the largest readiness gap in this pass.
 | Self-hoster | See platform cost and spend to support deployment decisions | No portal cost view exists | none in the portal | Cost tracking has no portal API; #1373 must define whether cost is surfaced and from where. Do not surface live cloud identifiers or secret-bearing data |
 | Self-hoster or operator | Change platform and account settings | Settings are per-surface today | `mission_control` settings and account menu | Consolidate account and platform settings under the shell account menu and an Administer settings surface |
 
-### Risk Register
+### Risk Register (removed by #1374)
 
 Personas served: self-hoster, contributor evaluator, demo operator.
 
-Backend owner: the `risk_register` app, with a mature DRF `/api/v1` surface
-(`risk_register/api/urls.py`): a risks ViewSet and an audit-log ViewSet, plus a
-session bootstrap. This is the first built SPA module (#1301 and #1302) and the
-reference implementation for the patterns in this document.
+Backend owner at the time of this pass: the `risk_register` app, with a mature
+DRF `/api/v1` surface (`risk_register/api/urls.py`): a risks ViewSet and an
+audit-log ViewSet, plus a session bootstrap. This was the first built SPA
+module (#1301 and #1302) and the reference implementation for the patterns in
+this document. The Risk Register module and its backing `risk_register` app
+were removed in #1374 rather than aligned to the cohesive system; the
+use-case notes below are retained as a historical record of the surface as it
+existed at the time of this pass.
 
 | Actor | Job | Current pain | Backend owner | API and readiness gaps |
 | --- | --- | --- | --- | --- |
@@ -340,12 +345,19 @@ Alternatives considered and set aside:
 - Merging Operate and Administer. Rejected: the audiences and cadence differ.
   Administration is lower-frequency, platform-lifecycle work.
 
-## Risk Register Alignment Notes
+## Risk Register Alignment Notes (superseded by #1374)
+
+> #1374 removed the Risk Register module rather than aligning it to the
+> cohesive system (see
+> `docs/architecture/remove-risk-register-audit-rehome-preflight-1374.md`).
+> The notes below record the alignment plan as designed at the time of this
+> pass and are retained for historical context only.
 
 The Risk Register is the first validated module and the reference for these
 patterns. It is not the visual template for every surface. The cohesive system
-implies these deltas from the current #1301 and #1302 design; each is a change
-for the Risk Register alignment issue (#1374), not for this pass.
+implies these deltas from the current #1301 and #1302 design; each was a
+planned change for the Risk Register alignment issue (#1374), not for this
+pass.
 
 - The current shell (`frontend/src/components/app-shell.tsx`) hardcodes one
   navigation group (Govern, with a single Risks entry). Generalize it to the
@@ -403,4 +415,6 @@ map to this pass as follows.
 - #1370 (Mission Control), #1371 (Scenario Editor), #1372 (CTF), and #1373
   (Admin) fill the layout slots for their surfaces and register their navigation
   entries. Each reads the capability matrix for its known gaps.
-- #1374 aligns the Risk Register to the cohesive system per the alignment notes.
+- #1374 removed the Risk Register module rather than aligning it to the
+  cohesive system per the alignment notes (see
+  `docs/architecture/remove-risk-register-audit-rehome-preflight-1374.md`).

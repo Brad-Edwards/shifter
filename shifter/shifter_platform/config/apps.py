@@ -11,17 +11,21 @@ class PortalConfig(AppConfig):
     name = "config"
 
     def ready(self) -> None:
+        from config.cognito_groups import cognito_groups_provider
         from config.health_checks import (
             register_audit_log_degraded_health_check,
             register_channel_layer_redis_health_check,
         )
         from config.organizer_authority import register_organizer_authority_signals
-        from risk_register.services import audit_log_writer
-        from shared.audit import bind_audit_writer
+        from shared.audit import bind_audit_writer, bind_cognito_groups_provider
+        from shared.audit_adapter import audit_log_writer
 
         # Bind the one concrete audit writer to the neutral port. A missing or
         # conflicting binding is a startup configuration error (#1523).
         bind_audit_writer(audit_log_writer)
+        # Bind the Cognito-groups provider the audit-read permission depends on
+        # for its session-predates-capture fallback (#1374 fix-forward).
+        bind_cognito_groups_provider(cognito_groups_provider)
         register_audit_log_degraded_health_check()
         register_channel_layer_redis_health_check()
         register_organizer_authority_signals()
