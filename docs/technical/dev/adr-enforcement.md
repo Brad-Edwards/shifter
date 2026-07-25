@@ -25,6 +25,10 @@ The current enforcement stack has six parts:
    - `import-linter` for Python package contracts
    - `actionlint` for GitHub Actions workflows
    - `TFLint` for Terraform linting (including the `tflint-ruleset-google` plugin for GCP resources)
+     The CI initialization step supplies the job-scoped `github.token` as
+     `GITHUB_TOKEN`, so provider-plugin release lookups use the authenticated
+     GitHub API allowance instead of the shared runner IP's unauthenticated
+     rate limit.
    - `gitleaks` for new secret leakage detection
    - `helm lint` for Helm chart validation where files are templates rather than plain YAML
    - `kubeconform` for Kubernetes manifest schema validation

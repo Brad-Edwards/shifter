@@ -229,6 +229,11 @@ jobs:
         uses: terraform-linters/setup-tflint@6e87008f9dd1fe3e34e66aca6c97b4a69f72a7f4 # v4
 
       - name: Init TFLint
+        env:
+          # TFLint resolves provider plugins through the GitHub Releases API.
+          # Authenticate those requests so shared hosted-runner IPs do not hit
+          # the unauthenticated 60-request/hour limit.
+          GITHUB_TOKEN: ${{ github.token }}
         run: tflint --init --config "${GITHUB_WORKSPACE}/.tflint.hcl"
 
       - name: Run TFLint
