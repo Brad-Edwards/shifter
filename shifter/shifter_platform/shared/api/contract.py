@@ -200,6 +200,53 @@ def _render_breaks(breaks: list[dict[str, Any]]) -> str:
     return "\n".join(f"  {b.get('id')} at {b.get('path')}: {b.get('text')} [{b.get('fingerprint')}]" for b in breaks)
 
 
+def _run_oasdiff(base_text: str, current_text: str) -> subprocess.CompletedProcess[str]:
+    """Run the pinned checker over two documents and return its completed process."""
+    binary = shutil.which(_OASDIFF_BIN) or _OASDIFF_BIN
+    with tempfile.TemporaryDirectory() as tmp:
+        # Fixed, literal file names under a private temp dir — the paths never
+        # derive from the document contents; only trusted OpenAPI JSON is written
+        # through the open file handle.
+        base_file = Path(tmp) / "base.json"
+        revision_file = Path(tmp) / "revision.json"
+        with base_file.open("w", encoding="utf-8") as handle:
+            handle.write(base_text)
+        with revision_file.open("w", encoding="utf-8") as handle:
+            handle.write(current_text)
+        return subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell; pinned oasdiff binary
+            [binary, "breaking", str(base_file), str(revision_file), "--fail-on", "ERR", "-f", "json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
+def _evaluate_report(
+    result: subprocess.CompletedProcess[str],
+    allowances: list[dict[str, Any]],
+) -> tuple[bool, str]:
+    """Decide compatibility from a non-clean oasdiff run against the allowances."""
+    try:
+        reported = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        # oasdiff failed before producing a report (missing binary, unreadable
+        # document). Fail closed on its raw output rather than guessing.
+        return False, (result.stdout + result.stderr).strip()
+
+    allowed_keys = {_allowance_key(entry) for entry in allowances}
+    unallowed = [b for b in reported if _allowance_key(b) not in allowed_keys]
+    if unallowed:
+        return False, f"{len(unallowed)} breaking change(s) with no ADR-040-R5 allowance:\n{_render_breaks(unallowed)}"
+
+    matched = {_allowance_key(b) for b in reported}
+    spent = [e for e in allowances if _allowance_key(e) not in matched]
+    detail = f"{len(reported)} breaking change(s), all covered by reviewed ADR-040-R5 allowances."
+    if spent:
+        listed = "\n".join(f"  {e.get('id')} at {e.get('path')} [{e.get('fingerprint')}]" for e in spent)
+        detail += f"\n{len(spent)} spent allowance(s) no longer matching any break; delete them:\n{listed}"
+    return True, detail
+
+
 def check_breaking_changes(
     base_text: str,
     current_text: str,
@@ -221,52 +268,14 @@ def check_breaking_changes(
     unrelated pull requests.
     """
     allowances = allowances or []
-    today = today or date.today()
-    binary = shutil.which(_OASDIFF_BIN) or _OASDIFF_BIN
-    with tempfile.TemporaryDirectory() as tmp:
-        # Fixed, literal file names under a private temp dir — the paths never
-        # derive from the document contents; only trusted OpenAPI JSON is written
-        # through the open file handle.
-        base_file = Path(tmp) / "base.json"
-        revision_file = Path(tmp) / "revision.json"
-        with base_file.open("w", encoding="utf-8") as handle:
-            handle.write(base_text)
-        with revision_file.open("w", encoding="utf-8") as handle:
-            handle.write(current_text)
-        result = subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell; pinned oasdiff binary
-            [binary, "breaking", str(base_file), str(revision_file), "--fail-on", "ERR", "-f", "json"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-    expired = _expired_allowances(allowances, today)
+    expired = _expired_allowances(allowances, today or date.today())
     if expired:
         listed = "\n".join(f"  {e.get('id')} at {e.get('path')} expired {e.get('expires_on')}" for e in expired)
         return False, f"Expired ADR-040-R5 allowance(s); renew with review or remove:\n{listed}"
-
+    result = _run_oasdiff(base_text, current_text)
     if result.returncode == 0:
         return True, (result.stdout + result.stderr).strip()
-
-    try:
-        reported = json.loads(result.stdout or "[]")
-    except json.JSONDecodeError:
-        # oasdiff failed before producing a report (missing binary, unreadable
-        # document). Fail closed on its raw output rather than guessing.
-        return False, (result.stdout + result.stderr).strip()
-
-    allowed_keys = {_allowance_key(entry) for entry in allowances}
-    unallowed = [b for b in reported if _allowance_key(b) not in allowed_keys]
-    if unallowed:
-        return False, f"{len(unallowed)} breaking change(s) with no ADR-040-R5 allowance:\n{_render_breaks(unallowed)}"
-
-    matched = {_allowance_key(b) for b in reported}
-    spent = [e for e in allowances if _allowance_key(e) not in matched]
-    detail = f"{len(reported)} breaking change(s), all covered by reviewed ADR-040-R5 allowances."
-    if spent:
-        listed = "\n".join(f"  {e.get('id')} at {e.get('path')} [{e.get('fingerprint')}]" for e in spent)
-        detail += f"\n{len(spent)} spent allowance(s) no longer matching any break; delete them:\n{listed}"
-    return True, detail
+    return _evaluate_report(result, allowances)
 
 
 def check_breaking_against(base_ref: str, major: str = API_MAJOR) -> tuple[bool, str]:

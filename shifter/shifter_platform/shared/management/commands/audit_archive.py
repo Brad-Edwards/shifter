@@ -209,8 +209,13 @@ class Command(BaseCommand):
         archived_count = 0
         deleted_count = 0
         batch_num = 0
+        # Deleting a batch shrinks the queryset, so the window stays at 0 and the
+        # next slice is fresh rows. With --no-delete nothing is removed, so the
+        # window MUST advance or the same batch is re-read and re-uploaded
+        # forever (#1374: found by the first tests this command ever had).
+        offset = 0
         while True:
-            batch = list(queryset.order_by("timestamp")[:batch_size])
+            batch = list(queryset.order_by("timestamp")[offset : offset + batch_size])
             if not batch:
                 break
             batch_num += 1
@@ -226,6 +231,8 @@ class Command(BaseCommand):
             deleted_count += deleted
             if not ok:
                 break
+            if no_delete:
+                offset += len(batch)
 
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS("Archive complete:"))
