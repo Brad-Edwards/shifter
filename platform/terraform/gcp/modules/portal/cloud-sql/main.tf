@@ -1,6 +1,14 @@
 resource "random_password" "db_password" {
   length  = 32
   special = true
+
+  # Rotation 1 repairs tenants whose write-only Cloud SQL user password
+  # drifted from the Terraform-managed Secret Manager payload. Increment this
+  # value for an intentional future rotation so the SQL user and secret
+  # version are updated together.
+  keepers = {
+    rotation = 1
+  }
 }
 
 resource "random_password" "guacamole_db_password" {
