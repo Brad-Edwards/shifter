@@ -677,7 +677,7 @@ The first slice intentionally stays small:
   module starts reading portal Secrets Manager secrets. These are
   module-directory globs rather than individual filenames (#688) so
   that reorganizing a module's files cannot silently drop it out of
-  coverage — an exact-filename regex stops matching after a split and
+  coverage: an exact-filename regex stops matching after a split and
   the hook then passes by never running.
 
   Because the role/grant pairing is evaluated **within a single
@@ -714,7 +714,7 @@ The first slice intentionally stays small:
   `platform/terraform/modules/portal/composition/` since the dev/proof/prod
   portal composition was deduplicated (#688); the scope follows them and
   still covers the environment roots, so a root that adds its own rule
-  stays checked. `proof` is included — it was absent from the original
+  stays checked. `proof` is included because it was absent from the original
   `dev|prod` regex despite deploying the same portal composition.
   Enforces the #911 NET-2 / #933 segmentation invariant.
 
@@ -738,7 +738,7 @@ The first slice intentionally stays small:
     any single file, so they are evaluated once over all sibling files
     concatenated in sorted order (`check_github_oidc_module`). Evaluating
     the cap per file would let a split satisfy each file individually
-    while the role exceeds AWS's hard 10-managed-policy limit — five
+    while the role exceeds AWS's hard 10-managed-policy limit: five
     attachments in one sibling and three in another each stay under the
     cap while the role does not. The aggregate check runs on every
     invocation regardless of which files were passed, so a commit
