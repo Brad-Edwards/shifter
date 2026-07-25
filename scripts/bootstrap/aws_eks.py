@@ -413,32 +413,15 @@ def _terraform_outputs(root: Path, *, aws_profile: str | None) -> dict[str, obje
     return outputs
 
 
-def deploy_eks(
-    config_path: str | Path,
-    images_path: str | Path,
+def _apply_eks_terraform(
+    root: Path,
     *,
-    backend_config_path: str | Path | None = None,
-    terraform_inputs_path: str | Path | None = None,
-    aws_profile: str | None = None,
-    dry_run: bool = False,
-) -> dict[str, str]:
-    """Apply a saved EKS plan and atomically roll out the shared Helm chart."""
-    config = load_root_config(config_path)
-    _validate_config(config)
-    profile = config.deployment.profile
-    preflight_gate(Cloud.AWS, Mode.LOCAL, profile, headless=True)
-    root = eks_root(profile)
-    allowed_roots = _protected_input_roots()
-    backend_config = _required_file(
-        backend_config_path,
-        label="EKS Terraform backend config",
-        allowed_roots=allowed_roots,
-    )
-    terraform_inputs = _validate_terraform_inputs(
-        terraform_inputs_path,
-        config,
-        allowed_roots=allowed_roots,
-    )
+    backend_config: Path,
+    terraform_inputs: Path,
+    aws_profile: str | None,
+    dry_run: bool,
+) -> None:
+    """Initialize the isolated root, create a saved plan, and apply that plan."""
     plan_name = "shifter-eks.tfplan"
     run_cmd(
         [
@@ -465,6 +448,41 @@ def deploy_eks(
         profile=aws_profile,
     )
     run_cmd(["terraform", f"-chdir={root}", "apply", plan_name], dry_run=dry_run, profile=aws_profile)
+
+
+def deploy_eks(
+    config_path: str | Path,
+    images_path: str | Path,
+    *,
+    backend_config_path: str | Path | None = None,
+    terraform_inputs_path: str | Path | None = None,
+    aws_profile: str | None = None,
+    dry_run: bool = False,
+) -> dict[str, str]:
+    """Apply a saved EKS plan and atomically roll out the shared Helm chart."""
+    config = load_root_config(config_path)
+    _validate_config(config)
+    profile = config.deployment.profile
+    preflight_gate(Cloud.AWS, Mode.LOCAL, profile, headless=True)
+    root = eks_root(profile)
+    allowed_roots = _protected_input_roots()
+    backend_config = _required_file(
+        backend_config_path,
+        label="EKS Terraform backend config",
+        allowed_roots=allowed_roots,
+    )
+    terraform_inputs = _validate_terraform_inputs(
+        terraform_inputs_path,
+        config,
+        allowed_roots=allowed_roots,
+    )
+    _apply_eks_terraform(
+        root,
+        backend_config=backend_config,
+        terraform_inputs=terraform_inputs,
+        aws_profile=aws_profile,
+        dry_run=dry_run,
+    )
     health_url = f"https://{config.deployment.domain}/health/"
     if dry_run:
         return {"backend": "aws", "profile": profile, "health_url": health_url}
