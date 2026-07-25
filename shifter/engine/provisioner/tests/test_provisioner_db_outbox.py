@@ -4,8 +4,8 @@ Phase 1 (#476): provisioner_db.enqueue_event_outbox inserts a PENDING row into
 engine_range_event_outbox. update_range_status and write_provisioned_state
 accept an optional outbox_event= so state + event intent commit atomically.
 
-ADR-043 Phase 2 (#1834): provisioner_db.append_operation_result is the shadow,
-best-effort append to engine_operation_result_inbox. It mirrors
+ADR-043 Phase 2 (#1834): provisioner_db_appends.append_operation_result is the
+shadow, best-effort append to engine_operation_result_inbox. It mirrors
 enqueue_event_outbox's optional-cursor idiom exactly.
 
 Mocks are at the psycopg boundary (get_db_connection); no first-party
@@ -327,7 +327,7 @@ class TestAppendOperationResult:
         cursor_mock.rowcount = 1
         monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=conn_mock))
 
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         append_operation_result(
             operation_id=self.OPERATION_ID,
@@ -349,7 +349,7 @@ class TestAppendOperationResult:
 
         from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
 
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         payload = {"status": "ready", "range_id": 42}
         append_operation_result(
@@ -409,7 +409,7 @@ class TestAppendOperationResult:
         cursor_mock.rowcount = 1
         monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=conn_mock))
 
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         append_operation_result(
             operation_id=self.OPERATION_ID,
@@ -428,7 +428,7 @@ class TestAppendOperationResult:
         mock_get_conn = MagicMock()
         monkeypatch.setattr("provisioner_db.get_db_connection", mock_get_conn)
 
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         caller_cursor = MagicMock()
         caller_cursor.rowcount = 1
@@ -454,7 +454,7 @@ class TestAppendOperationResult:
         mock_get_conn = MagicMock()
         monkeypatch.setattr("provisioner_db.get_db_connection", mock_get_conn)
 
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         caller_cursor = MagicMock()
         caller_cursor.rowcount = 1
@@ -475,7 +475,7 @@ class TestAppendOperationResult:
         """Same result_identity + same payload digest: no warning, no raise."""
         from shared.operation_envelope import canonical_payload_digest
 
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         payload = {"status": "ready"}
         digest = canonical_payload_digest(payload)
@@ -500,7 +500,7 @@ class TestAppendOperationResult:
 
     def test_conflicting_digest_logs_a_fixed_reason_code_and_does_not_raise(self, monkeypatch):
         """Same result_identity, different payload digest: logged WARNING, never raised."""
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         caller_cursor = MagicMock()
         caller_cursor.rowcount = 0  # ON CONFLICT DO NOTHING: zero rows inserted
@@ -524,7 +524,7 @@ class TestAppendOperationResult:
 
     def test_unexpected_error_is_logged_and_swallowed_not_raised(self, monkeypatch):
         """A shadow-append failure must never fail an authoritative provisioning operation."""
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         caller_cursor = MagicMock()
         caller_cursor.execute.side_effect = RuntimeError("boom")
@@ -547,7 +547,7 @@ class TestAppendOperationResult:
 
     def test_invalid_envelope_input_is_swallowed_not_raised(self, monkeypatch):
         """An invalid operation_id/resource/operation fails envelope validation but never raises."""
-        from provisioner_db import append_operation_result
+        from provisioner_db_appends import append_operation_result
 
         mock_get_conn = MagicMock()
         monkeypatch.setattr("provisioner_db.get_db_connection", mock_get_conn)

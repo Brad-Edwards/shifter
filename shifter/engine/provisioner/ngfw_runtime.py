@@ -31,7 +31,8 @@ from ngfw_polling import poll_for_serial_number, wait_for_autocommit
 from orchestrators.setup_orchestrator import SetupOrchestrator
 from plans.base import DynamicPlan, SetupPlan
 from plans.ngfw_configure_subnets import NGFWConfigureSubnetsPlan, NGFWRemoveSubnetsPlan
-from provisioner_db import append_operation_result, get_db_connection
+from provisioner_db import get_db_connection
+from provisioner_db_appends import append_operation_result
 from provisioner_db_ngfw import get_user_ngfw_data
 
 logger = logging.getLogger(__name__)

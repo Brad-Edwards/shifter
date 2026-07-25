@@ -26,17 +26,16 @@ from shared.remote_access import parse_openvpn_binding
 
 from config import has_ngfw_attachment_state
 from log_redact import safe_log_fingerprint
+
+# enqueue_event_outbox is called by the writers below and imported here so
+# events.py's provisioner_db.enqueue_event_outbox reference and the outbox tests
+# keep resolving after the append helpers moved to provisioner_db_appends.py.
 from provisioner_db_appends import (
     OperationRef,
     append_range_destroy_result,
     append_range_provision_result,
+    enqueue_event_outbox,
 )
-
-# Re-export so existing `from provisioner_db import <name>` imports and the
-# provisioner_db.* monkeypatch targets keep resolving after the append helpers
-# moved to provisioner_db_appends.py (ngfw_runtime, events, tests).
-from provisioner_db_appends import append_operation_result as append_operation_result
-from provisioner_db_appends import enqueue_event_outbox as enqueue_event_outbox
 from state_helpers import (
     _build_instance_state,
     _build_provisioned_instance_payload,
