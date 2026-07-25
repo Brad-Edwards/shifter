@@ -8,11 +8,11 @@ never read, imported, adopted, or destroyed by this module.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 from bootstrap_core import get_repo_root, run_cmd, run_cmd_secret_stdin
 from preflight import Cloud, Mode, preflight_gate
@@ -24,11 +24,14 @@ if str(_SHIFTER_PACKAGE_ROOT) not in sys.path:
 
 from installation.loader import load_root_config  # noqa: E402
 from installation.runtime_inventory import AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS  # noqa: E402
+from installation.schema import RootConfig  # noqa: E402
 
 _LOWERCASE_HEX = frozenset("0123456789abcdef")
 _EKS_NAMESPACE = "shifter-system"
 _HELM_RELEASE = "shifter"
 _LOAD_BALANCER_CONTROLLER_CHART_VERSION = "3.2.2"
+_MAX_PROTECTED_JSON_BYTES = 1024 * 1024
+_TERRAFORM_NONINTERACTIVE = "-input=false"
 _PLATFORM_NAMESPACES = {
     "shifter-platform": "control",
     "shifter-jobs": "jobs",
@@ -64,14 +67,16 @@ def eks_root(profile: str) -> Path:
     return get_repo_root() / "platform" / "terraform" / "environments" / profile / "eks"
 
 
-def _output(outputs: Mapping[str, object], name: str) -> Any:
+def _output(outputs: Mapping[str, object], name: str) -> object:
+    """Return a required value from Terraform's JSON output envelope."""
     raw = outputs.get(name)
     if not isinstance(raw, Mapping) or "value" not in raw:
         raise ValueError(f"missing required EKS Terraform output {name!r}")
     return raw["value"]
 
 
-def _validate_config(config: Any) -> None:
+def _validate_config(config: RootConfig) -> None:
+    """Require the AWS backend and an EKS-supported deployment profile."""
     if config.backend != "aws":
         raise ValueError("the EKS lifecycle requires shifter.yaml backend: aws")
     if config.deployment.profile not in {"dev", "proof", "prod"}:
@@ -79,6 +84,7 @@ def _validate_config(config: Any) -> None:
 
 
 def _validated_images(images: Mapping[str, object]) -> dict[str, str]:
+    """Return image identities after enforcing digest-pinned references."""
     if not images:
         raise ValueError("at least one attested image identity is required")
     validated: dict[str, str] = {}
@@ -114,6 +120,7 @@ def _run_helm_with_values(command: list[str], values: Mapping[str, object]) -> N
 
 
 def _cidr_output(outputs: Mapping[str, object], name: str) -> list[str]:
+    """Return a required Terraform output containing only CIDR strings."""
     values = _output(outputs, name)
     if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
         raise ValueError(f"EKS Terraform output {name!r} must be a list of CIDR strings")
@@ -121,10 +128,12 @@ def _cidr_output(outputs: Mapping[str, object], name: str) -> list[str]:
 
 
 def _runtime_environment(profile: str) -> str:
+    """Map the deployment profile to the Django runtime environment."""
     return {"dev": "development", "prod": "production"}.get(profile, profile)
 
 
-def _runtime_env(config: Any, outputs: Mapping[str, object]) -> dict[str, str]:
+def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str, str]:
+    """Build the complete canonical runtime environment for AWS EKS."""
     raw = _output(outputs, "runtime_env")
     if not isinstance(raw, Mapping) or not all(
         isinstance(key, str) and isinstance(value, str) and value for key, value in raw.items()
@@ -148,22 +157,78 @@ def _runtime_env(config: Any, outputs: Mapping[str, object]) -> dict[str, str]:
     }
 
 
-def _required_file(path: str | Path | None, *, label: str) -> Path:
+def _protected_input_roots() -> tuple[Path, ...]:
+    """Return the explicit roots from which protected deploy inputs may be read."""
+    candidates = {
+        get_repo_root(),
+        Path(tempfile.gettempdir()),
+    }
+    for variable in ("RUNNER_TEMP", "SHIFTER_PROTECTED_INPUT_ROOT"):
+        configured = os.environ.get(variable)
+        if configured:
+            candidates.add(Path(configured).expanduser())
+    return tuple(candidate.resolve() for candidate in candidates)
+
+
+def _required_file(
+    path: str | Path | None,
+    *,
+    label: str,
+    allowed_roots: tuple[Path, ...],
+) -> Path:
+    """Resolve a regular input file and enforce its protected-root boundary."""
     if path is None or not str(path).strip():
         raise ValueError(f"{label} is required")
-    resolved = Path(path)
+    candidate = Path(path).expanduser()
+    if candidate.is_symlink():
+        raise ValueError(f"{label} must not be a symbolic link")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"{label} does not exist") from exc
     if not resolved.is_file():
         raise ValueError(f"{label} does not exist")
+    if not any(resolved.is_relative_to(root) for root in allowed_roots):
+        roots = ", ".join(str(root) for root in allowed_roots)
+        raise ValueError(f"{label} must be inside an approved protected-input root: {roots}")
     return resolved
 
 
-def _validate_terraform_inputs(path: Path, config: Any) -> None:
+def _read_json_mapping(
+    path: str | Path | None,
+    *,
+    label: str,
+    allowed_roots: tuple[Path, ...],
+) -> tuple[Path, dict[str, object]]:
+    """Read a bounded JSON object from an approved protected-input root."""
+    resolved = _required_file(path, label=label, allowed_roots=allowed_roots)
+    if not any(resolved.is_relative_to(root) for root in allowed_roots):
+        raise ValueError(f"{label} escaped its approved protected-input roots")
+    if resolved.suffix != ".json":
+        raise ValueError(f"{label} must use a .json suffix")
+    if resolved.stat().st_size > _MAX_PROTECTED_JSON_BYTES:
+        raise ValueError(f"{label} exceeds the {_MAX_PROTECTED_JSON_BYTES}-byte limit")
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError("the protected EKS Terraform input file must be valid JSON") from exc
-    if not isinstance(payload, Mapping):
-        raise ValueError("the protected EKS Terraform input file must contain a JSON object")
+        raise ValueError(f"{label} must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must contain a JSON object")
+    return resolved, payload
+
+
+def _validate_terraform_inputs(
+    path: str | Path | None,
+    config: RootConfig,
+    *,
+    allowed_roots: tuple[Path, ...],
+) -> Path:
+    """Validate the protected Terraform projection and return its safe path."""
+    resolved, payload = _read_json_mapping(
+        path,
+        label="EKS Terraform input file",
+        allowed_roots=allowed_roots,
+    )
     missing = sorted(_REQUIRED_TERRAFORM_INPUTS.difference(payload))
     if missing:
         raise ValueError("the protected EKS Terraform input file is missing: " + ", ".join(missing))
@@ -171,9 +236,11 @@ def _validate_terraform_inputs(path: Path, config: Any) -> None:
         raise ValueError("the protected EKS Terraform input region does not match shifter.yaml")
     if payload["domain_name"] != config.deployment.domain:
         raise ValueError("the protected EKS Terraform input domain does not match shifter.yaml")
+    return resolved
 
 
 def _bootstrap_cluster(outputs: Mapping[str, object]) -> None:
+    """Create platform namespaces and install the AWS load-balancer controller."""
     roles = _output(outputs, "workload_role_arns")
     if not isinstance(roles, Mapping) or not isinstance(roles.get("ingress"), str):
         raise ValueError("workload_role_arns must include the ingress controller role")
@@ -248,7 +315,7 @@ def _bootstrap_cluster(outputs: Mapping[str, object]) -> None:
 
 
 def render_aws_values(
-    config: Any,
+    config: RootConfig,
     terraform_outputs: Mapping[str, object],
     images: Mapping[str, object],
 ) -> dict[str, object]:
@@ -315,17 +382,22 @@ def render_aws_values(
     }
 
 
-def _read_images(path: str | Path) -> dict[str, object]:
-    try:
-        raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError("could not read the attested image identity file") from exc
-    if not isinstance(raw, dict):
-        raise ValueError("the attested image identity file must contain a JSON object")
+def _read_images(
+    path: str | Path,
+    *,
+    allowed_roots: tuple[Path, ...],
+) -> dict[str, object]:
+    """Read attested image identities from an approved protected-input root."""
+    _resolved, raw = _read_json_mapping(
+        path,
+        label="attested image identity file",
+        allowed_roots=allowed_roots,
+    )
     return raw
 
 
 def _terraform_outputs(root: Path, *, aws_profile: str | None) -> dict[str, object]:
+    """Read and validate the current EKS Terraform output object."""
     result = run_cmd(
         ["terraform", f"-chdir={root}", "output", "-json"],
         capture=True,
@@ -356,16 +428,24 @@ def deploy_eks(
     profile = config.deployment.profile
     preflight_gate(Cloud.AWS, Mode.LOCAL, profile, headless=True)
     root = eks_root(profile)
-    backend_config = _required_file(backend_config_path, label="EKS Terraform backend config")
-    terraform_inputs = _required_file(terraform_inputs_path, label="EKS Terraform input file")
-    _validate_terraform_inputs(terraform_inputs, config)
+    allowed_roots = _protected_input_roots()
+    backend_config = _required_file(
+        backend_config_path,
+        label="EKS Terraform backend config",
+        allowed_roots=allowed_roots,
+    )
+    terraform_inputs = _validate_terraform_inputs(
+        terraform_inputs_path,
+        config,
+        allowed_roots=allowed_roots,
+    )
     plan_name = "shifter-eks.tfplan"
     run_cmd(
         [
             "terraform",
             f"-chdir={root}",
             "init",
-            "-input=false",
+            _TERRAFORM_NONINTERACTIVE,
             "-reconfigure",
             f"-backend-config={backend_config}",
         ],
@@ -377,7 +457,7 @@ def deploy_eks(
             "terraform",
             f"-chdir={root}",
             "plan",
-            "-input=false",
+            _TERRAFORM_NONINTERACTIVE,
             f"-var-file={terraform_inputs}",
             f"-out={plan_name}",
         ],
@@ -407,7 +487,11 @@ def deploy_eks(
         profile=aws_profile,
     )
     _bootstrap_cluster(outputs)
-    values = render_aws_values(config, outputs, _read_images(images_path))
+    values = render_aws_values(
+        config,
+        outputs,
+        _read_images(images_path, allowed_roots=allowed_roots),
+    )
     chart = get_repo_root() / "platform" / "charts" / "shifter"
     provider_values = chart / f"values-aws-{profile}.yaml"
     _run_helm_with_values(["helm", "lint", str(chart), "--values", str(provider_values)], values)
@@ -457,15 +541,24 @@ def teardown_eks(
     config = load_root_config(config_path)
     _validate_config(config)
     root = eks_root(config.deployment.profile)
-    backend_config = _required_file(backend_config_path, label="EKS Terraform backend config")
-    terraform_inputs = _required_file(terraform_inputs_path, label="EKS Terraform input file")
+    allowed_roots = _protected_input_roots()
+    backend_config = _required_file(
+        backend_config_path,
+        label="EKS Terraform backend config",
+        allowed_roots=allowed_roots,
+    )
+    terraform_inputs = _validate_terraform_inputs(
+        terraform_inputs_path,
+        config,
+        allowed_roots=allowed_roots,
+    )
     run_cmd(["helm", "uninstall", _HELM_RELEASE, "--namespace", _EKS_NAMESPACE, "--wait"], dry_run=dry_run)
     run_cmd(
         [
             "terraform",
             f"-chdir={root}",
             "init",
-            "-input=false",
+            _TERRAFORM_NONINTERACTIVE,
             "-reconfigure",
             f"-backend-config={backend_config}",
         ],

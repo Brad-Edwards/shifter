@@ -378,6 +378,103 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
     gdc_parser.add_argument("--yes", action="store_true", help=HELP_YES)
 
 
+def _add_eks_subparsers(subparsers: argparse._SubParsersAction) -> None:
+    """Add the explicit AWS EKS deploy and teardown commands."""
+    deploy_parser = subparsers.add_parser(
+        "eks-deploy",
+        help="Explicitly deploy backend: aws to EKS through the shared Helm chart",
+    )
+    deploy_parser.add_argument("--config", default="shifter.yaml", help="Validated root installation config")
+    deploy_parser.add_argument(
+        "--images",
+        default=".shifter/images.json",
+        help="JSON mapping of workloads to attested repository@sha256 identities",
+    )
+    deploy_parser.add_argument(
+        "--backend-config",
+        default=os.environ.get("SHIFTER_BACKEND_CONFIG_PATH", ""),
+        help="Protected S3 backend config rendered outside the repository",
+    )
+    deploy_parser.add_argument(
+        "--terraform-inputs",
+        default=os.environ.get("SHIFTER_EKS_TFVARS_PATH", ""),
+        help="Protected JSON var-file containing the EKS infrastructure/runtime projection",
+    )
+    deploy_parser.add_argument("--profile", help=HELP_AWS_PROFILE)
+    deploy_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+
+    teardown_parser = subparsers.add_parser(
+        "eks-teardown",
+        help="Explicitly tear down only the root-configured AWS EKS bundle",
+    )
+    teardown_parser.add_argument("--config", default="shifter.yaml", help="Validated root installation config")
+    teardown_parser.add_argument(
+        "--backend-config",
+        default=os.environ.get("SHIFTER_BACKEND_CONFIG_PATH", ""),
+        help="Protected S3 backend config rendered outside the repository",
+    )
+    teardown_parser.add_argument(
+        "--terraform-inputs",
+        default=os.environ.get("SHIFTER_EKS_TFVARS_PATH", ""),
+        help="Protected JSON var-file containing the isolated EKS root inputs",
+    )
+    teardown_parser.add_argument("--profile", help=HELP_AWS_PROFILE)
+    teardown_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+
+
+def _add_aws_deploy_subparsers(subparsers: argparse._SubParsersAction) -> None:
+    """Add the AWS bootstrap, Terraform, and full-deploy commands."""
+    bootstrap_parser = subparsers.add_parser(
+        "bootstrap", help="Bootstrap AWS account (S3 state bucket with native locking, GitHub OIDC, IAM)"
+    )
+    bootstrap_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
+    bootstrap_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    bootstrap_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    bootstrap_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+    bootstrap_parser.add_argument("--yes", action="store_true", help=HELP_YES)
+
+    terraform_parser = subparsers.add_parser("terraform", help="Deploy Terraform infrastructure")
+    terraform_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
+    terraform_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    terraform_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    terraform_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+    terraform_parser.add_argument("--yes", action="store_true", help=HELP_YES)
+
+    full_parser = subparsers.add_parser("full", help="Full interactive deployment (bootstrap + config + terraform)")
+    full_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
+    full_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    full_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    full_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+    full_parser.add_argument("--yes", action="store_true", help=HELP_YES)
+
+
+def _add_preflight_and_recovery_subparsers(subparsers: argparse._SubParsersAction) -> None:
+    """Add prerequisite validation and account-leftover recovery commands."""
+    preflight_parser = subparsers.add_parser(
+        "preflight", help="Validate deploy prerequisites (tools, secrets, config) without making changes"
+    )
+    preflight_parser.add_argument("--cloud", required=True, choices=[c.value for c in Cloud], help="Target cloud")
+    preflight_parser.add_argument("--env", required=True, help="Environment (e.g. dev, proof, prod, gcp-dev)")
+    preflight_parser.add_argument(
+        "--component", choices=sorted(_AWS_COMPONENTS), default=None, help="AWS component to scope overlay checks"
+    )
+    preflight_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+
+    recovery_parser = subparsers.add_parser(
+        "account-recovery",
+        help="Detect (and optionally --sweep) leftover AWS resources from an incomplete prior teardown",
+    )
+    recovery_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
+    recovery_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    recovery_parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Delete the owned leftovers (explicit destructive opt-in; detection is read-only without it)",
+    )
+    recovery_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    recovery_parser.add_argument("--yes", action="store_true", help=HELP_YES)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the bootstrap CLI argument parser and its subcommands."""
     parser = argparse.ArgumentParser(
@@ -403,102 +500,9 @@ Examples:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
-
-    eks_deploy_parser = subparsers.add_parser(
-        "eks-deploy",
-        help="Explicitly deploy backend: aws to EKS through the shared Helm chart",
-    )
-    eks_deploy_parser.add_argument("--config", default="shifter.yaml", help="Validated root installation config")
-    eks_deploy_parser.add_argument(
-        "--images",
-        default=".shifter/images.json",
-        help="JSON mapping of workloads to attested repository@sha256 identities",
-    )
-    eks_deploy_parser.add_argument(
-        "--backend-config",
-        default=os.environ.get("SHIFTER_BACKEND_CONFIG_PATH", ""),
-        help="Protected S3 backend config rendered outside the repository",
-    )
-    eks_deploy_parser.add_argument(
-        "--terraform-inputs",
-        default=os.environ.get("SHIFTER_EKS_TFVARS_PATH", ""),
-        help="Protected JSON var-file containing the EKS infrastructure/runtime projection",
-    )
-    eks_deploy_parser.add_argument("--profile", help=HELP_AWS_PROFILE)
-    eks_deploy_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
-
-    eks_teardown_parser = subparsers.add_parser(
-        "eks-teardown",
-        help="Explicitly tear down only the root-configured AWS EKS bundle",
-    )
-    eks_teardown_parser.add_argument("--config", default="shifter.yaml", help="Validated root installation config")
-    eks_teardown_parser.add_argument(
-        "--backend-config",
-        default=os.environ.get("SHIFTER_BACKEND_CONFIG_PATH", ""),
-        help="Protected S3 backend config rendered outside the repository",
-    )
-    eks_teardown_parser.add_argument(
-        "--terraform-inputs",
-        default=os.environ.get("SHIFTER_EKS_TFVARS_PATH", ""),
-        help="Protected JSON var-file containing the isolated EKS root inputs",
-    )
-    eks_teardown_parser.add_argument("--profile", help=HELP_AWS_PROFILE)
-    eks_teardown_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
-
-    # Bootstrap command
-    bootstrap_parser = subparsers.add_parser(
-        "bootstrap", help="Bootstrap AWS account (S3 state bucket with native locking, GitHub OIDC, IAM)"
-    )
-    bootstrap_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
-    bootstrap_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
-    bootstrap_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
-    bootstrap_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
-    bootstrap_parser.add_argument("--yes", action="store_true", help=HELP_YES)
-
-    # Terraform command
-    tf_parser = subparsers.add_parser("terraform", help="Deploy Terraform infrastructure")
-    tf_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
-    tf_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
-    tf_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
-    tf_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
-    tf_parser.add_argument("--yes", action="store_true", help=HELP_YES)
-
-    # Full command
-    full_parser = subparsers.add_parser("full", help="Full interactive deployment (bootstrap + config + terraform)")
-    full_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
-    full_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
-    full_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
-    full_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
-    full_parser.add_argument("--yes", action="store_true", help=HELP_YES)
-
-    # Preflight command: validate deploy prerequisites without making any change.
-    preflight_parser = subparsers.add_parser(
-        "preflight", help="Validate deploy prerequisites (tools, secrets, config) without making changes"
-    )
-    preflight_parser.add_argument("--cloud", required=True, choices=[c.value for c in Cloud], help="Target cloud")
-    preflight_parser.add_argument("--env", required=True, help="Environment (e.g. dev, proof, prod, gcp-dev)")
-    preflight_parser.add_argument(
-        "--component", choices=sorted(_AWS_COMPONENTS), default=None, help="AWS component to scope overlay checks"
-    )
-    preflight_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
-
-    # Account leftover recovery: detect (and optionally sweep) state-absent
-    # control-plane residue from an incomplete prior teardown so a re-standup
-    # does not fail collision-by-collision (issue #1639 / #1618).
-    recovery_parser = subparsers.add_parser(
-        "account-recovery",
-        help="Detect (and optionally --sweep) leftover AWS resources from an incomplete prior teardown",
-    )
-    recovery_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
-    recovery_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
-    recovery_parser.add_argument(
-        "--sweep",
-        action="store_true",
-        help="Delete the owned leftovers (explicit destructive opt-in; detection is read-only without it)",
-    )
-    recovery_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
-    recovery_parser.add_argument("--yes", action="store_true", help=HELP_YES)
-
+    _add_eks_subparsers(subparsers)
+    _add_aws_deploy_subparsers(subparsers)
+    _add_preflight_and_recovery_subparsers(subparsers)
     _add_runners_subparser(subparsers)
     _add_gdc_bootstrap_subparser(subparsers)
 
@@ -557,76 +561,87 @@ def _dispatch_runners(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_preflight(args: argparse.Namespace) -> None:
+    """Run the read-only prerequisite gate."""
+    preflight_gate(Cloud(args.cloud), Mode.LOCAL, args.env, component=args.component, headless=args.headless)
+
+
+def _handle_account_recovery(args: argparse.Namespace) -> None:
+    """Run account-leftover detection or its explicitly authorized sweep."""
+    account_recovery(args.env, args.profile, sweep=args.sweep, dry_run=args.dry_run)
+
+
+def _handle_eks_deploy(args: argparse.Namespace) -> None:
+    """Deploy the root-configured AWS EKS bundle."""
+    deploy_eks(
+        args.config,
+        args.images,
+        backend_config_path=args.backend_config,
+        terraform_inputs_path=args.terraform_inputs,
+        aws_profile=args.profile,
+        dry_run=args.dry_run,
+    )
+
+
+def _handle_eks_teardown(args: argparse.Namespace) -> None:
+    """Tear down only the root-configured AWS EKS bundle."""
+    teardown_eks(
+        args.config,
+        backend_config_path=args.backend_config,
+        terraform_inputs_path=args.terraform_inputs,
+        aws_profile=args.profile,
+        dry_run=args.dry_run,
+    )
+
+
+def _handle_bootstrap(args: argparse.Namespace) -> None:
+    """Bootstrap the selected AWS account and render operator handoffs."""
+    config = BootstrapConfig(env=args.env)
+    result = bootstrap_account(config, args.profile, dry_run=args.dry_run)
+    if not args.dry_run:
+        walkthrough_github_secrets(result, dry_run=False)
+        walkthrough_backend_config(result, dry_run=False)
+
+
+def _handle_terraform(args: argparse.Namespace) -> None:
+    """Deploy AWS Terraform and complete its operator walkthroughs."""
+    outputs = terraform_deploy(args.env, args.profile, dry_run=args.dry_run)
+    if not args.dry_run and outputs:
+        walkthrough_acm_validation(outputs, dry_run=False)
+        walkthrough_dns_setup(outputs, dry_run=False)
+        walkthrough_cognito_user(outputs, args.env, args.profile, dry_run=False)
+        walkthrough_final_steps(args.env)
+
+
+def _handle_full(args: argparse.Namespace) -> None:
+    """Run the complete AWS deployment workflow."""
+    full_deployment(args.env, args.profile, dry_run=args.dry_run)
+
+
+def _handle_gdc_bootstrap(args: argparse.Namespace) -> None:
+    """Bootstrap the configured GDC VM Runtime control plane."""
+    gdc_bootstrap_cluster(_build_gdc_bootstrap_config(args), dry_run=args.dry_run)
+
+
+_COMMAND_HANDLERS = {
+    "preflight": _handle_preflight,
+    "account-recovery": _handle_account_recovery,
+    "eks-deploy": _handle_eks_deploy,
+    "eks-teardown": _handle_eks_teardown,
+    "bootstrap": _handle_bootstrap,
+    "terraform": _handle_terraform,
+    "full": _handle_full,
+    "runners": _dispatch_runners,
+    "gdc-bootstrap": _handle_gdc_bootstrap,
+}
+
+
 def main() -> None:
-    """Parse CLI arguments and dispatch the requested bootstrap operation."""
-    parser = _build_parser()
-    args = parser.parse_args()
-    # --yes lets the bootstrap flow's confirm() prompts proceed without a TTY
-    # (issue #1639). Routine prompts only; the leftover sweep stays separately gated.
+    """Parse CLI arguments, enforce shared gates, and invoke one handler."""
+    args = _build_parser().parse_args()
     if getattr(args, "yes", False):
         set_assume_yes(True)
     check_dependencies(args.command, cloud=getattr(args, "cloud", None))
-
-    if args.command == "preflight":
-        preflight_gate(Cloud(args.cloud), Mode.LOCAL, args.env, component=args.component, headless=args.headless)
-        return
-
-    if args.command == "account-recovery":
-        # Recovery is not a deploy; it resolves the account itself and gates its
-        # own destructive sweep. It does not run the deploy preflight_gate.
-        account_recovery(args.env, args.profile, sweep=args.sweep, dry_run=args.dry_run)
-        return
-
-    if args.command == "eks-deploy":
-        deploy_eks(
-            args.config,
-            args.images,
-            backend_config_path=args.backend_config,
-            terraform_inputs_path=args.terraform_inputs,
-            aws_profile=args.profile,
-            dry_run=args.dry_run,
-        )
-        return
-
-    if args.command == "eks-teardown":
-        teardown_eks(
-            args.config,
-            backend_config_path=args.backend_config,
-            terraform_inputs_path=args.terraform_inputs,
-            aws_profile=args.profile,
-            dry_run=args.dry_run,
-        )
-        return
-
-    # Fail-safe gate: verify prerequisites and confirm the manual ones before any
-    # deploy command touches the account. Raises SystemExit(1) if a required
-    # prerequisite is missing. Run `preflight --component <c>` for overlay/secret depth.
     if args.command in {"bootstrap", "terraform", "full"}:
         preflight_gate(Cloud.AWS, Mode.LOCAL, args.env, headless=args.headless)
-
-    if args.command == "bootstrap":
-        config = BootstrapConfig(env=args.env)
-        result = bootstrap_account(config, args.profile, dry_run=args.dry_run)
-        if not args.dry_run:
-            walkthrough_github_secrets(result, dry_run=args.dry_run)
-            walkthrough_backend_config(result, dry_run=args.dry_run)
-
-    elif args.command == "terraform":
-        outputs = terraform_deploy(args.env, args.profile, dry_run=args.dry_run)
-        if not args.dry_run and outputs:
-            walkthrough_acm_validation(outputs, dry_run=args.dry_run)
-            walkthrough_dns_setup(outputs, dry_run=args.dry_run)
-            walkthrough_cognito_user(outputs, args.env, args.profile, dry_run=args.dry_run)
-            walkthrough_final_steps(args.env)
-
-    elif args.command == "full":
-        full_deployment(args.env, args.profile, dry_run=args.dry_run)
-
-    elif args.command == "runners":
-        _dispatch_runners(args)
-
-    elif args.command == "gdc-bootstrap":
-        gdc_bootstrap_cluster(
-            _build_gdc_bootstrap_config(args),
-            dry_run=args.dry_run,
-        )
+    _COMMAND_HANDLERS[args.command](args)

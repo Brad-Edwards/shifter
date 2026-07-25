@@ -18,7 +18,10 @@ The explicit entrypoint is:
 
 `shifter.yaml` must select `backend: aws`. The image file is a JSON mapping
 whose values are attested `repository@sha256:<digest>` identities. Tags are
-rejected. The lifecycle owner validates root config, runs shared preflight,
+rejected. Protected input files must resolve beneath the repository, the system
+temporary directory, `RUNNER_TEMP`, or an operator-selected
+`SHIFTER_PROTECTED_INPUT_ROOT`; symbolic links are rejected.
+The lifecycle owner validates root config, runs shared preflight,
 applies a saved plan from the isolated
 `platform/terraform/environments/<profile>/eks` root, acquires cluster access
 through the Terraform-output deploy role, and performs an atomic Helm upgrade.

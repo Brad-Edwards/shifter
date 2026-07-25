@@ -78,6 +78,20 @@ def _images() -> dict[str, str]:
     }
 
 
+def _terraform_inputs() -> dict[str, object]:
+    return {
+        "aws_region": "us-east-2",
+        "deployment_role_arn": "arn:aws:iam::123456789012:role/shifter-dev-deployer",
+        "domain_name": "shifter.example.com",
+        "ingress_source_cidrs": ["10.42.0.0/16"],
+        "load_balancer_controller_policy_arn": (
+            "arn:aws:iam::123456789012:policy/shifter-dev-load-balancer-controller"
+        ),
+        "provider_api_cidrs": ["10.42.0.0/16"],
+        "runtime_env": _terraform_outputs()["runtime_env"]["value"],
+    }
+
+
 def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     values = aws_eks.render_aws_values(_config(), _terraform_outputs(), _images())
 
@@ -112,9 +126,11 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
 def test_render_values_rejects_incomplete_runtime_contract():
     outputs = _terraform_outputs()
     outputs["runtime_env"]["value"].pop("ENGINE_TASK_CLUSTER")
+    config = _config()
+    images = _images()
 
     with pytest.raises(ValueError, match="ENGINE_TASK_CLUSTER"):
-        aws_eks.render_aws_values(_config(), outputs, _images())
+        aws_eks.render_aws_values(config, outputs, images)
 
 
 @pytest.mark.parametrize(
@@ -129,9 +145,11 @@ def test_render_values_rejects_incomplete_runtime_contract():
 def test_render_values_rejects_non_attested_image_identities(image):
     images = _images()
     images["platform"] = image
+    config = _config()
+    outputs = _terraform_outputs()
 
     with pytest.raises(ValueError, match="repository@sha256"):
-        aws_eks.render_aws_values(_config(), _terraform_outputs(), images)
+        aws_eks.render_aws_values(config, outputs, images)
 
 
 def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path, monkeypatch):
@@ -142,21 +160,7 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     backend_config_path = tmp_path / "dev.s3.tfbackend"
     backend_config_path.write_text('bucket = "state"\n')
     terraform_inputs_path = tmp_path / "eks.tfvars.json"
-    terraform_inputs_path.write_text(
-        json.dumps(
-            {
-                "aws_region": "us-east-2",
-                "deployment_role_arn": "arn:aws:iam::123456789012:role/shifter-dev-deployer",
-                "domain_name": "shifter.example.com",
-                "ingress_source_cidrs": ["10.42.0.0/16"],
-                "load_balancer_controller_policy_arn": (
-                    "arn:aws:iam::123456789012:policy/shifter-dev-load-balancer-controller"
-                ),
-                "provider_api_cidrs": ["10.42.0.0/16"],
-                "runtime_env": _terraform_outputs()["runtime_env"]["value"],
-            }
-        )
-    )
+    terraform_inputs_path.write_text(json.dumps(_terraform_inputs()))
     calls: list[list[str]] = []
     secret_stdin_calls: list[tuple[list[str], str]] = []
     result = SimpleNamespace(stdout=json.dumps(_terraform_outputs()))
@@ -237,7 +241,7 @@ def test_teardown_is_scoped_to_the_eks_root_and_fails_without_valid_aws_config(t
     backend_config_path = tmp_path / "dev.s3.tfbackend"
     backend_config_path.write_text('bucket = "state"\n')
     terraform_inputs_path = tmp_path / "eks.tfvars.json"
-    terraform_inputs_path.write_text("{}")
+    terraform_inputs_path.write_text(json.dumps(_terraform_inputs()))
 
     aws_eks.teardown_eks(
         config_path,
@@ -265,6 +269,34 @@ def test_teardown_is_scoped_to_the_eks_root_and_fails_without_valid_aws_config(t
         f"-var-file={terraform_inputs_path}",
     ] in calls
     assert not any("/portal" in token or "/range" in token for call in calls for token in call)
+
+
+def test_protected_input_reader_rejects_paths_outside_approved_roots(tmp_path):
+    approved_root = tmp_path / "approved"
+    approved_root.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+
+    with pytest.raises(ValueError, match="approved protected-input root"):
+        aws_eks._read_json_mapping(
+            outside,
+            label="test input",
+            allowed_roots=(approved_root,),
+        )
+
+
+def test_protected_input_reader_rejects_symbolic_links(tmp_path):
+    target = tmp_path / "target.json"
+    target.write_text("{}")
+    link = tmp_path / "link.json"
+    link.symlink_to(target)
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        aws_eks._read_json_mapping(
+            link,
+            label="test input",
+            allowed_roots=(tmp_path,),
+        )
 
 
 def test_cli_exposes_explicit_eks_commands_without_branch_inputs(monkeypatch):

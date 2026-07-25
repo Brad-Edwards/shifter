@@ -119,13 +119,10 @@ def test_production_settings_reject_unsupported_cloud_provider() -> None:
     assert "CLOUD_PROVIDER" in result.stderr + result.stdout
 
 
-def test_aws_eks_runtime_projection_initializes_deployed_settings() -> None:
+def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -> None:
     """The rendered EKS environment reaches the deployed Django composition root."""
-    sys.path.insert(0, str(BOOTSTRAP_DIR))
-    try:
-        import aws_eks
-    finally:
-        sys.path.remove(str(BOOTSTRAP_DIR))
+    monkeypatch.syspath_prepend(str(BOOTSTRAP_DIR))
+    aws_eks = importlib.import_module("aws_eks")
 
     runtime_env = {
         "AWS_REGION": "us-east-2",

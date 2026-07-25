@@ -54,6 +54,8 @@ from .settings_gcp import GcpBackendSettings
 # silently re-version these bundles — a new version requires an intentional edit here
 # (and a settings/renderer migration for the backend).
 _CONTRACT_VERSION = 1
+_ROOT_CONFIG_PATH = "shifter.yaml"
+_SHIFTER_CHART_PATH = "platform/charts/shifter"
 
 # A plausible AWS region token: two letters, one or more lowercase words, then a trailing
 # number — ``us-east-2``, ``us-gov-east-1``, ``ap-southeast-4``. Deliberately permissive:
@@ -124,7 +126,7 @@ _AWS_AND_GCP_CAPABILITIES: frozenset[BackendCapability] = frozenset(
 _ROOT_CONFIG_CHECK = ValidationCheck(
     name="root-config",
     command=CommandSpec(
-        argv=("uv", "run", "--project", "shifter/installation", "shifter-config", "validate", "shifter.yaml"),
+        argv=("uv", "run", "--project", "shifter/installation", "shifter-config", "validate", _ROOT_CONFIG_PATH),
         description="Validate the root installation config (shifter.yaml) shape.",
     ),
     description="Fail fast on a malformed shifter.yaml before any backend infrastructure runs.",
@@ -217,11 +219,11 @@ _AWS_BUNDLE = BackendBundle(
     # Migrated by #1116 / GH #728: the closed operator-intent schema, no longer None.
     settings_model=AwsSettings,
     deploy=CommandSpec(
-        argv=("python3", "scripts/bootstrap/deploy.py", "eks-deploy", "--config", "shifter.yaml"),
+        argv=("python3", "scripts/bootstrap/deploy.py", "eks-deploy", "--config", _ROOT_CONFIG_PATH),
         description="Deploy the AWS EKS bundle selected by the validated root config.",
     ),
     teardown=CommandSpec(
-        argv=("python3", "scripts/bootstrap/deploy.py", "eks-teardown", "--config", "shifter.yaml"),
+        argv=("python3", "scripts/bootstrap/deploy.py", "eks-teardown", "--config", _ROOT_CONFIG_PATH),
         description="Tear down only the AWS EKS bundle selected by the validated root config.",
     ),
     required_tools=(
@@ -262,7 +264,7 @@ _AWS_BUNDLE = BackendBundle(
     capabilities=_AWS_AND_GCP_CAPABILITIES,
     owned_files=OwnedFiles(
         infrastructure=("platform/terraform/modules", "platform/terraform/environments", "platform/cloudformation"),
-        kubernetes=("platform/charts/shifter",),
+        kubernetes=(_SHIFTER_CHART_PATH,),
         scripts=("scripts/bootstrap",),
         workflows=(".github/workflows/deploy.yml",),
         examples=("shifter/installation/examples/aws.yaml",),
@@ -393,7 +395,7 @@ _GCP_VALIDATION_CHECKS: tuple[ValidationCheck, ...] = (
     ValidationCheck(
         name="helm-template",
         command=CommandSpec(
-            argv=("helm", "template", "platform/charts/shifter"),
+            argv=("helm", "template", _SHIFTER_CHART_PATH),
             description="Render the shared platform Helm chart to catch template errors.",
         ),
         description="Fail closed if the platform chart does not render.",
@@ -458,7 +460,7 @@ _GCP_BUNDLE = BackendBundle(
     capabilities=_AWS_AND_GCP_CAPABILITIES,
     owned_files=OwnedFiles(
         infrastructure=("platform/terraform/gcp",),
-        kubernetes=("platform/k8s/gcp", "platform/charts/shifter"),
+        kubernetes=("platform/k8s/gcp", _SHIFTER_CHART_PATH),
         scripts=("scripts/gcp", "scripts/bootstrap"),
         workflows=(".github/workflows/_gcp-dev.yml",),
         examples=("shifter/installation/examples/gcp.yaml",),
