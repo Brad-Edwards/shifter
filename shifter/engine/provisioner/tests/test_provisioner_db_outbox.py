@@ -483,7 +483,7 @@ class TestAppendOperationResult:
         caller_cursor.rowcount = 0  # ON CONFLICT DO NOTHING: zero rows inserted
         caller_cursor.fetchone.return_value = (digest,)
         mock_warning = MagicMock()
-        monkeypatch.setattr("provisioner_db.logger.warning", mock_warning)
+        monkeypatch.setattr("provisioner_db_appends.logger.warning", mock_warning)
 
         append_operation_result(
             operation_id=self.OPERATION_ID,
@@ -506,7 +506,7 @@ class TestAppendOperationResult:
         caller_cursor.rowcount = 0  # ON CONFLICT DO NOTHING: zero rows inserted
         caller_cursor.fetchone.return_value = ("sha256:" + "0" * 64,)
         mock_warning = MagicMock()
-        monkeypatch.setattr("provisioner_db.logger.warning", mock_warning)
+        monkeypatch.setattr("provisioner_db_appends.logger.warning", mock_warning)
 
         # Should not raise -- shadow appends are best-effort; direct SQL stays authoritative.
         append_operation_result(
@@ -529,7 +529,7 @@ class TestAppendOperationResult:
         caller_cursor = MagicMock()
         caller_cursor.execute.side_effect = RuntimeError("boom")
         mock_warning = MagicMock()
-        monkeypatch.setattr("provisioner_db.logger.warning", mock_warning)
+        monkeypatch.setattr("provisioner_db_appends.logger.warning", mock_warning)
 
         # Must not raise.
         append_operation_result(
@@ -552,7 +552,7 @@ class TestAppendOperationResult:
         mock_get_conn = MagicMock()
         monkeypatch.setattr("provisioner_db.get_db_connection", mock_get_conn)
         mock_warning = MagicMock()
-        monkeypatch.setattr("provisioner_db.logger.warning", mock_warning)
+        monkeypatch.setattr("provisioner_db_appends.logger.warning", mock_warning)
 
         # Not a valid UUID -- build_operation_envelope raises OperationEnvelopeError.
         append_operation_result(
@@ -597,16 +597,18 @@ class TestAppendOperationResultWiredIntoWriteProvisionedState:
         def _capture(*, cur=None, **kwargs):
             append_calls.append({"cur": cur, **kwargs})
 
-        monkeypatch.setattr("provisioner_db.append_operation_result", _capture)
+        # write_provisioned_state routes through the append_range_provision_result
+        # builder, which resolves append_operation_result in provisioner_db_appends.
+        monkeypatch.setattr("provisioner_db_appends.append_operation_result", _capture)
 
         from provisioner_db import write_provisioned_state
+        from provisioner_db_appends import OperationRef
 
         write_provisioned_state(
             range_id=42,
             subnets={"attack": {"uuid": "sub-uuid-1"}},
             instances=[{"uuid": "inst-uuid-1"}],
-            request_id="req-1",
-            operation_id="op-1",
+            operation=OperationRef(request_id="req-1", operation_id="op-1"),
         )
 
         assert len(append_calls) == 1
@@ -623,7 +625,7 @@ class TestAppendOperationResultWiredIntoWriteProvisionedState:
         self._patch_state_helpers(monkeypatch)
 
         mock_append = MagicMock()
-        monkeypatch.setattr("provisioner_db.append_operation_result", mock_append)
+        monkeypatch.setattr("provisioner_db_appends.append_operation_result", mock_append)
 
         from provisioner_db import write_provisioned_state
 
@@ -654,11 +656,12 @@ class TestAppendOperationResultWiredIntoMarkRangeInstancesDestroyed:
         monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=conn_mock))
 
         mock_append = MagicMock()
-        monkeypatch.setattr("provisioner_db.append_operation_result", mock_append)
+        monkeypatch.setattr("provisioner_db_appends.append_operation_result", mock_append)
 
         from provisioner_db import mark_range_instances_destroyed
+        from provisioner_db_appends import OperationRef
 
-        mark_range_instances_destroyed(42, request_id="req-1", operation_id="op-1")
+        mark_range_instances_destroyed(42, operation=OperationRef(request_id="req-1", operation_id="op-1"))
 
         mock_append.assert_called_once()
         _args, kwargs = mock_append.call_args
@@ -674,7 +677,7 @@ class TestAppendOperationResultWiredIntoMarkRangeInstancesDestroyed:
         monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=conn_mock))
 
         mock_append = MagicMock()
-        monkeypatch.setattr("provisioner_db.append_operation_result", mock_append)
+        monkeypatch.setattr("provisioner_db_appends.append_operation_result", mock_append)
 
         from provisioner_db import mark_range_instances_destroyed
 

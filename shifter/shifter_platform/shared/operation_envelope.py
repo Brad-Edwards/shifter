@@ -60,12 +60,14 @@ ContractDict = dict[str, Any]
 
 
 def _require_dict(value: object, field: str) -> ContractDict:
+    """Return ``value`` if it is a dict, else raise a contract error."""
     if not isinstance(value, dict):
         raise OperationEnvelopeError(f"{field} must be an object")
     return value
 
 
 def _require_exact_keys(value: ContractDict, field: str) -> None:
+    """Raise a contract error unless ``value`` has exactly the envelope keys."""
     actual = frozenset(value)
     unexpected = sorted(actual - _ENVELOPE_KEYS)
     if unexpected:
@@ -86,6 +88,7 @@ def _require_uuid(value: object, field: str) -> str:
 
 
 def _require_choice(value: object, choices: frozenset[str], field: str) -> str:
+    """Return ``value`` if it is one of ``choices``, else raise a contract error."""
     if not isinstance(value, str) or value not in choices:
         raise OperationEnvelopeError(f"{field} must be one of: {', '.join(sorted(choices))}")
     return value

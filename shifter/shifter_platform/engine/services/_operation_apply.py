@@ -30,7 +30,9 @@ from shared.operation_envelope import (
     validate_operation_envelope,
 )
 
-if TYPE_CHECKING:  # engine.models is imported lazily (app-registry load order) below.
+# engine.models is imported lazily inside functions below (app-registry load
+# order); this block is type-check-only.
+if TYPE_CHECKING:
     from engine.models import Instance, OperationResultInbox, Range
 
 logger = logging.getLogger(__name__)
@@ -58,11 +60,19 @@ def _resolve_operation_target(resource: str, operation_id: UUID | str) -> Range 
     return None
 
 
+def _request_matches(target: Range | Instance, expected_request_id: object) -> bool:
+    """Return True if the target row's request matches the result's request_id."""
+    request = getattr(target, "request", None)
+    actual_request_id = getattr(request, "request_id", None)
+    return actual_request_id is not None and str(actual_request_id) == str(expected_request_id)
+
+
 def evaluate_operation_result(row: OperationResultInbox) -> tuple[str, str]:
     """Return ``(disposition, detail)`` for one inbox row. Pure: no mutation.
 
-    Fails closed on any of: invalid envelope, unsupported contract version, digest
-    mismatch, stale operation generation, or wrong resource ownership.
+    Fails closed, in order, on any of: invalid envelope, unsupported contract
+    version, digest mismatch, stale operation generation, or wrong resource
+    ownership. The first failing check wins; a single exit returns the verdict.
     """
     from engine.models import OperationResultDisposition
 
@@ -72,21 +82,28 @@ def evaluate_operation_result(row: OperationResultInbox) -> tuple[str, str]:
         return OperationResultDisposition.REJECTED_INVALID, str(exc)[:128]
 
     if row.contract_version not in ACCEPTED_CONTRACT_VERSIONS:
-        return OperationResultDisposition.REJECTED_VERSION, f"unsupported contract_version {row.contract_version}"[:128]
-
-    if canonical_payload_digest(envelope["payload"]) != row.payload_digest:
-        return OperationResultDisposition.REJECTED_CONFLICT, "stored payload digest does not match the envelope payload"
-
-    target = _resolve_operation_target(row.resource, row.operation_id)
-    if target is None:
-        return OperationResultDisposition.REJECTED_STALE, "operation generation is no longer current"
-
-    request = getattr(target, "request", None)
-    target_request_id = getattr(request, "request_id", None)
-    if target_request_id is None or str(target_request_id) != str(row.request_id):
-        return OperationResultDisposition.REJECTED_OWNERSHIP, "result request does not match the operation target"
-
-    return OperationResultDisposition.VALIDATED, ""
+        result = (
+            OperationResultDisposition.REJECTED_VERSION,
+            f"unsupported contract_version {row.contract_version}"[:128],
+        )
+    elif canonical_payload_digest(envelope["payload"]) != row.payload_digest:
+        result = (
+            OperationResultDisposition.REJECTED_CONFLICT,
+            "stored payload digest does not match the envelope payload",
+        )
+    elif (target := _resolve_operation_target(row.resource, row.operation_id)) is None:
+        result = (
+            OperationResultDisposition.REJECTED_STALE,
+            "operation generation is no longer current",
+        )
+    elif not _request_matches(target, row.request_id):
+        result = (
+            OperationResultDisposition.REJECTED_OWNERSHIP,
+            "result request does not match the operation target",
+        )
+    else:
+        result = (OperationResultDisposition.VALIDATED, "")
+    return result
 
 
 def apply_pending_operation_results(*, batch_size: int = 50) -> int:

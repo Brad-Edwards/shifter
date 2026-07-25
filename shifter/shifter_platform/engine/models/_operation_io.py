@@ -79,7 +79,8 @@ class OperationResultInbox(models.Model):
     contract_version = models.CharField(max_length=16)
     result_kind = models.CharField(max_length=32, choices=OperationResultKind.choices)
     result_identity = models.CharField(max_length=255, unique=True)
-    payload_digest = models.CharField(max_length=71)  # "sha256:" + 64 hex
+    # "sha256:" prefix + 64 hex characters
+    payload_digest = models.CharField(max_length=71)
     envelope = models.JSONField()
     disposition = models.CharField(
         max_length=24,

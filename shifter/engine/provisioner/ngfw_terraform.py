@@ -42,10 +42,7 @@ from provisioner_db_ngfw import get_ngfw_data_by_request_id
 
 logger = logging.getLogger(__name__)
 
-# ADR-043 (#1834): the provisioner argv's tf-op vocabulary ("up"/"destroy") is
-# internal dispatch plumbing, not the canonical operation vocabulary the
-# operation envelope closes over. Map back to the canonical name only for the
-# shadow operation-result append.
+# ADR-043 (#1834): map the argv tf-op back to the canonical operation name for the shadow append.
 _NGFW_TF_OP_TO_CANONICAL_OPERATION = {"up": "provision", "destroy": "deprovision"}
 
 
@@ -109,15 +106,10 @@ def _cleanup_failed_ngfw_provision(request_id: str, instance_id: str, app_spec: 
 def run_ngfw_terraform(operation: str, request_id: str, *, operation_id: str | None = None) -> None:
     """Run NGFW Terraform operation (provision or deprovision).
 
-    This is the Terraform equivalent of run_ngfw_pulumi. It makes the same
-    DB calls and emits the same SNS events, but uses Terraform instead of Pulumi.
-
     Args:
         operation: Either 'up' (provision) or 'destroy' (deprovision).
         request_id: UUID string of the Request.
-        operation_id: ADR-043 canonical operation generation (#1834), threaded
-            onto the argv only on the remote/drainer dispatch path; ``None`` on
-            local-dev runs.
+        operation_id: ADR-043 canonical operation generation (#1834); ``None`` on local-dev runs.
 
     Raises:
         ValueError: If unknown operation or Request not found.
@@ -216,8 +208,7 @@ def _short_circuit_local_dev_post_provision(
     Local dev mode (presence of `DB_PASSWORD` in the env) bypasses the live
     PAN-OS SSH bring-up because it isn't reachable. We still emit the ready
     and paused state transitions so the platform UI reflects the expected
-    lifecycle. ``operation_id`` will always be ``None`` here in practice (local
-    dev never carries it) but is threaded through for uniformity.
+    lifecycle.
     """
     logger.info("LOCAL DEV MODE: Skipping post-infrastructure NGFW configuration")
     ready_state = {**output_data, **_build_provider_state(output_data)}

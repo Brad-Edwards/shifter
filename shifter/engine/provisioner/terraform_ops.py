@@ -34,6 +34,7 @@ from provisioner_db import (
     get_range_data_by_request_id,
     write_provisioned_state,
 )
+from provisioner_db_appends import OperationRef
 from range_backend_evidence import resolve_legacy_range_backend
 from range_subnet_allocation import (
     _allocate_range_subnet_cidrs,
@@ -222,26 +223,9 @@ def _dispatch_terraform_operation(kind: str, operation: RangeOperation) -> None:
     routing unchanged.
     """
     if kind == "up":
-        _run_terraform_provision(
-            operation.request_id,
-            operation.range_id,
-            operation.user_id,
-            operation.range_spec,
-            scenario_artifact=operation.scenario_artifact,
-            remote_access_capability=operation.remote_access_capability,
-            operation_id=operation.operation_id,
-        )
+        _run_terraform_provision(operation)
     elif kind == "destroy":
-        _run_terraform_destroy(
-            operation.request_id,
-            operation.range_id,
-            operation.user_id,
-            operation.range_spec,
-            scenario_artifact=operation.scenario_artifact,
-            backend=operation.backend,
-            remote_access_capability=operation.remote_access_capability,
-            operation_id=operation.operation_id,
-        )
+        _run_terraform_destroy(operation)
     else:
         raise ValueError(f"Unknown operation: {kind}")
 
@@ -327,17 +311,14 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
         raise
 
 
-def _run_terraform_provision(
-    request_id: str,
-    range_id: int,
-    user_id: int,
-    range_spec: dict[str, Any],
-    *,
-    scenario_artifact: dict[str, Any] | None = None,
-    remote_access_capability: dict[str, object] | None = None,
-    operation_id: str | None = None,
-) -> None:
+def _run_terraform_provision(operation: RangeOperation) -> None:
     """Run Terraform apply for range, then run instance setup."""
+    request_id = operation.request_id
+    range_id = operation.range_id
+    user_id = operation.user_id
+    range_spec = operation.range_spec
+    scenario_artifact = operation.scenario_artifact
+    remote_access_capability = operation.remote_access_capability
     publish_status_update(
         request_id=request_id,
         range_id=range_id,
@@ -440,8 +421,7 @@ def _run_terraform_provision(
         instances=instances_output,
         ngfw_instance_id=range_data.get("ngfw_instance_id"),
         vpn_access_binding=vpn_access_binding,
-        request_id=request_id,
-        operation_id=operation_id,
+        operation=OperationRef(request_id=request_id, operation_id=operation.operation_id),
     )
 
     publish_ready(request_id=request_id, range_id=range_id, user_id=user_id)
@@ -460,23 +440,21 @@ def _ensure_range_is_active(request_id: str, range_id: int) -> bool:
     return True
 
 
-def _run_terraform_destroy(
-    request_id: str,
-    range_id: int,
-    user_id: int,
-    range_spec: dict[str, Any],
-    *,
-    scenario_artifact: dict[str, Any] | None = None,
-    backend: str | None = None,
-    remote_access_capability: dict[str, object] | None = None,
-    operation_id: str | None = None,
-) -> None:
+def _run_terraform_destroy(operation: RangeOperation) -> None:
     """Run Terraform destroy for range.
 
-    ``backend`` is the #1666 per-operation ownership binding: teardown routes from
-    the backend the range was provisioned on, not the current env selector, so a
-    ``gdc -> gce`` deploy-selector flip cannot strand an existing GDC range.
+    ``operation.backend`` is the #1666 per-operation ownership binding: teardown
+    routes from the backend the range was provisioned on, not the current env
+    selector, so a ``gdc -> gce`` deploy-selector flip cannot strand an existing
+    GDC range.
     """
+    request_id = operation.request_id
+    range_id = operation.range_id
+    user_id = operation.user_id
+    range_spec = operation.range_spec
+    scenario_artifact = operation.scenario_artifact
+    backend = operation.backend
+    remote_access_capability = operation.remote_access_capability
     if not _ensure_range_is_active(request_id, range_id):
         return
 
@@ -502,7 +480,7 @@ def _run_terraform_destroy(
         range_terraform_runner.cleanup_range_state(request_id, backend)
     finally:
         if terraform_succeeded:
-            _post_destroy_cleanup(request_id, range_id, operation_id=operation_id)
+            _post_destroy_cleanup(request_id, range_id, operation_id=operation.operation_id)
         _maybe_pause_user_ngfw(user_id, range_id)
 
     publish_destroyed(request_id=request_id, range_id=range_id, user_id=user_id)

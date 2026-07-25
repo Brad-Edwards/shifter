@@ -15,6 +15,7 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 
 from engine.models import (
+    Instance,
     OperationResultDisposition,
     OperationResultInbox,
     OperationResultKind,
@@ -99,6 +100,58 @@ class TestEvaluateOperationResult:
     def test_rejected_invalid_on_malformed_envelope(self):
         row = _seed(envelope_override={"contract_version": "1", "operation_id": "not-a-uuid"})
         assert evaluate_operation_result(row)[0] == OperationResultDisposition.REJECTED_INVALID
+
+
+def _seed_ngfw(*, current: bool = True, request_matches: bool = True) -> OperationResultInbox:
+    """Seed an NGFW Instance (the third closed resource kind) owning the current
+    generation unless ``current`` is False, plus a matching inbox result row, so
+    the ``resource == "ngfw"`` target-resolution branch is fenced like range."""
+    payload = {"status": "ready"}
+    operation_id = uuid4()
+    request_id = uuid4()
+    user = get_user_model().objects.create_user(username=f"{request_id}@example.com")
+    request = Request.objects.create(request_id=request_id, request_type="ngfw", user=user)
+    Instance.objects.create(
+        request=request,
+        role=Instance.Role.NGFW,
+        os_type=Instance.OSType.PANOS,
+        status="provisioning",
+        provisioner_operation_id=operation_id if current else uuid4(),
+    )
+    envelope_request_id = request_id if request_matches else uuid4()
+    envelope = build_operation_envelope(
+        operation_id=operation_id,
+        request_id=envelope_request_id,
+        resource="ngfw",
+        operation="provision",
+        payload=payload,
+    )
+    return OperationResultInbox.objects.create(
+        operation_id=operation_id,
+        request_id=envelope_request_id,
+        resource="ngfw",
+        operation="provision",
+        contract_version="1",
+        result_kind=OperationResultKind.RESOURCE_STATE,
+        result_identity=f"{operation_id}:{OperationResultKind.RESOURCE_STATE}",
+        payload_digest=canonical_payload_digest(payload),
+        envelope=envelope,
+    )
+
+
+class TestEvaluateNgfwOperationResult:
+    """The ngfw branch of _resolve_operation_target (Instance filtered by
+    role=NGFW) must be generation/ownership-fenced exactly like range."""
+
+    def test_validated_when_ngfw_generation_current_and_owned(self):
+        assert evaluate_operation_result(_seed_ngfw())[0] == OperationResultDisposition.VALIDATED
+
+    def test_rejected_stale_when_ngfw_generation_rotated(self):
+        assert evaluate_operation_result(_seed_ngfw(current=False))[0] == OperationResultDisposition.REJECTED_STALE
+
+    def test_rejected_ownership_when_ngfw_request_mismatches(self):
+        disposition, _ = evaluate_operation_result(_seed_ngfw(request_matches=False))
+        assert disposition == OperationResultDisposition.REJECTED_OWNERSHIP
 
 
 class TestApplyPendingOperationResults:

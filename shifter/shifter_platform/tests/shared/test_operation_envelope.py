@@ -47,8 +47,9 @@ class TestValidateOperationEnvelope:
         assert env["operation"] == "deprovision"
 
     def test_rejects_unexpected_key(self):
+        candidate = {**_valid(), "extra": 1}
         with pytest.raises(OperationEnvelopeError, match="unexpected"):
-            validate_operation_envelope({**_valid(), "extra": 1})
+            validate_operation_envelope(candidate)
 
     def test_rejects_missing_key(self):
         bad = _valid()
@@ -58,28 +59,34 @@ class TestValidateOperationEnvelope:
 
     @pytest.mark.parametrize("field", ["operation_id", "request_id"])
     def test_rejects_non_uuid_correlation(self, field):
+        candidate = _valid(**{field: "not-a-uuid"})
         with pytest.raises(OperationEnvelopeError, match="UUID"):
-            validate_operation_envelope(_valid(**{field: "not-a-uuid"}))
+            validate_operation_envelope(candidate)
 
     def test_rejects_unknown_resource(self):
+        candidate = _valid(resource="database")
         with pytest.raises(OperationEnvelopeError, match="resource"):
-            validate_operation_envelope(_valid(resource="database"))
+            validate_operation_envelope(candidate)
 
     def test_rejects_unknown_operation(self):
+        candidate = _valid(operation="exec")
         with pytest.raises(OperationEnvelopeError, match="operation"):
-            validate_operation_envelope(_valid(operation="exec"))
+            validate_operation_envelope(candidate)
 
     def test_rejects_unknown_contract_version(self):
+        candidate = _valid(contract_version="999")
         with pytest.raises(OperationEnvelopeError, match="contract_version"):
-            validate_operation_envelope(_valid(contract_version="999"))
+            validate_operation_envelope(candidate)
 
     def test_rejects_non_object_payload(self):
+        candidate = _valid(payload=["not", "an", "object"])
         with pytest.raises(OperationEnvelopeError, match="payload"):
-            validate_operation_envelope(_valid(payload=["not", "an", "object"]))
+            validate_operation_envelope(candidate)
 
     def test_rejects_oversized_envelope(self):
+        candidate = _valid(payload={"blob": "x" * (MAX_ENVELOPE_BYTES + 1)})
         with pytest.raises(OperationEnvelopeError, match="exceeds"):
-            validate_operation_envelope(_valid(payload={"blob": "x" * (MAX_ENVELOPE_BYTES + 1)}))
+            validate_operation_envelope(candidate)
 
 
 class TestCanonicalPayloadDigest:
