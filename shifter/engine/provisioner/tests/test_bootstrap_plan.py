@@ -635,7 +635,7 @@ class TestPolarisAwsAgentSecurity:
     # --- Fail-closed verification (AWS-only verify_step variant) ----------
 
     def test_gcp_verify_script_is_byte_identical_to_pre_slice5(self):
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aux import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
         assert VERIFY_POLARIS_BOOTSTRAP_SCRIPT == _ORIGINAL_VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
@@ -643,7 +643,7 @@ class TestPolarisAwsAgentSecurity:
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 
         plan = PolarisRangeBootstrapPlan(provider="gcp")
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aux import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
         assert plan.verify_step.script == VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
@@ -651,7 +651,7 @@ class TestPolarisAwsAgentSecurity:
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 
         plan = PolarisRangeBootstrapPlan(provider="aws")
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aux import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
         from plans._polaris_scripts_aws import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
         assert plan.verify_step.script == VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS

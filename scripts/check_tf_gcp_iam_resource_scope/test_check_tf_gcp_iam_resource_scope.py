@@ -197,6 +197,37 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             f"expected provisioner custom-role violation, got: {reasons}",
         )
 
+    def test_custom_role_with_service_account_setiampolicy_bound_to_workload_is_rejected(self) -> None:
+        # ADR-008-R7 gateway-identity escalation: a project-level custom role
+        # granting the provisioner iam.serviceAccounts.setIamPolicy lets it seize
+        # any service account. The pool model removes this; re-adding it must fail.
+        module = _CLEAN_MODULE + textwrap.dedent(
+            """
+            resource "google_project_iam_custom_role" "prov_sa_admin" {
+              role_id     = "shifterProvSaAdmin"
+              title       = "prov sa admin"
+              permissions = [
+                "iam.serviceAccounts.create",
+                "iam.serviceAccounts.delete",
+                "iam.serviceAccounts.setIamPolicy",
+              ]
+            }
+
+            resource "google_project_iam_member" "prov_sa_admin" {
+              project = var.project_id
+              role    = google_project_iam_custom_role.prov_sa_admin.id
+              member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+            }
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(
+            any("custom role" in r and "provisioner" in r for r in reasons),
+            f"expected provisioner SA-admin custom-role violation, got: {reasons}",
+        )
+
     def test_custom_role_with_benign_permissions_is_allowed(self) -> None:
         module = _CLEAN_MODULE + textwrap.dedent(
             """

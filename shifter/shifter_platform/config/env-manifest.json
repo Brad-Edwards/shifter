@@ -118,13 +118,13 @@
       "source_file": "config/_oidc_settings.py"
     },
     {
-      "default": "'100'",
-      "name": "CTF_LOGIN_SOURCE_RATE_LIMIT_MAX",
+      "default": "'300'",
+      "name": "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
       "source_file": "config/_oidc_settings.py"
     },
     {
-      "default": "'300'",
-      "name": "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+      "default": "'100'",
+      "name": "CTF_LOGIN_SOURCE_RATE_LIMIT_MAX",
       "source_file": "config/_oidc_settings.py"
     },
     {
@@ -600,6 +600,11 @@
     {
       "default": "str(_UPLOAD_INSPECTION_FLOOR)",
       "name": "UPLOAD_INSPECTION_MAX_HEADER_BYTES",
+      "source_file": "config/settings.py"
+    },
+    {
+      "default": "'24'",
+      "name": "VPN_GATEWAY_POOL_SIZE",
       "source_file": "config/settings.py"
     }
   ]

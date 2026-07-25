@@ -255,10 +255,10 @@ class TestNgfwTerraformOrchestrationHelpers:
         _run_ngfw_operation_for_provider("up", "req-2", "inst-2", "app-2", app_spec, "europe")
         _run_ngfw_operation_for_provider("destroy", "req-2", "inst-2", "app-2", app_spec, "europe")
 
-        mock_aws_provision.assert_called_once_with("req-1", "inst-1", "app-1", app_spec, "americas")
-        mock_aws_deprovision.assert_called_once_with("req-1", "inst-1", "app-1")
-        mock_gdc_provision.assert_called_once_with("req-2", "inst-2", "app-2", app_spec, "europe")
-        mock_gdc_deprovision.assert_called_once_with("req-2", "inst-2", "app-2")
+        mock_aws_provision.assert_called_once_with("req-1", "inst-1", "app-1", app_spec, "americas", operation_id=None)
+        mock_aws_deprovision.assert_called_once_with("req-1", "inst-1", "app-1", operation_id=None)
+        mock_gdc_provision.assert_called_once_with("req-2", "inst-2", "app-2", app_spec, "europe", operation_id=None)
+        mock_gdc_deprovision.assert_called_once_with("req-2", "inst-2", "app-2", operation_id=None)
 
         with pytest.raises(ValueError, match="Unknown operation"):
             _run_ngfw_operation_for_provider("rotate", "req-3", "inst-3", "app-3", app_spec, "americas")
@@ -348,6 +348,7 @@ class TestNgfwTerraformOrchestrationHelpers:
             "app-1",
             {"sls_region": "americas", "user_id": 7},
             "americas",
+            operation_id=None,
         )
 
     @patch("ngfw_terraform.publish_ngfw_event")
@@ -378,6 +379,8 @@ class TestNgfwTerraformOrchestrationHelpers:
         mock_update_instance_state.assert_called_once_with(
             "req-1",
             "failed",
+            operation_id=None,
+            operation="provision",
             error_message="apply failed",
         )
         mock_publish_ngfw_event.assert_called_once_with(
@@ -406,6 +409,8 @@ class TestNgfwTerraformOrchestrationHelpers:
                 call(
                     "req-1",
                     "ready",
+                    operation_id=None,
+                    operation="provision",
                     cloud_provider="gcp",
                     route_next_hop_ip="10.0.0.1",
                     attachment_mode="gdc-vmruntime-palo-alto-vmseries",
@@ -413,7 +418,7 @@ class TestNgfwTerraformOrchestrationHelpers:
                     attached_ranges=[],
                     provider_metadata={},
                 ),
-                call("req-1", "paused"),
+                call("req-1", "paused", operation_id=None, operation="provision"),
             ]
         )
         assert mock_publish_ngfw_event.call_count == 2
@@ -441,7 +446,9 @@ class TestNgfwTerraformOrchestrationHelpers:
 
         _run_provision("req-1", "inst-1", "app-1", {"user_id": 7}, "americas")
 
-        mock_update_instance_state.assert_called_once_with("req-1", "provisioning")
+        mock_update_instance_state.assert_called_once_with(
+            "req-1", "provisioning", operation_id=None, operation="provision"
+        )
         mock_publish_ngfw_event.assert_called_once_with(
             request_id="req-1",
             instance_id="inst-1",
@@ -454,6 +461,7 @@ class TestNgfwTerraformOrchestrationHelpers:
             app_id="app-1",
             output_data=mock_apply_ngfw.return_value,
             sls_region="americas",
+            operation_id=None,
         )
 
     @patch("ngfw_terraform._run_pan_os_post_provision")
@@ -491,6 +499,7 @@ class TestNgfwTerraformOrchestrationHelpers:
             app_id="app-1",
             output_data=output_data,
             sls_region="americas",
+            operation_id=None,
         )
 
 
@@ -593,7 +602,12 @@ class TestNgfwTerraformCleanupHelpers:
 
         _run_gdc_deprovision("req-1", "inst-1", "app-1")
 
-        mock_update_instance_state.assert_has_calls([call("req-1", "destroying"), call("req-1", "destroyed")])
+        mock_update_instance_state.assert_has_calls(
+            [
+                call("req-1", "destroying", operation_id=None, operation="deprovision"),
+                call("req-1", "destroyed", operation_id=None, operation="deprovision"),
+            ]
+        )
         fake_gdc.run_power_operation.assert_called_once_with("start", fake_state)
         mock_deactivate_license.assert_called_once_with(
             management_ip="10.200.1.10",
@@ -641,7 +655,12 @@ class TestNgfwTerraformCleanupHelpers:
         assert destroy_variables["name_prefix"] == "ngfw-user-7"
         assert destroy_variables["authcode"] == "auth-1"
         mock_cleanup_state.assert_called_once_with("req-1")
-        mock_update_instance_state.assert_has_calls([call("req-1", "destroying"), call("req-1", "destroyed")])
+        mock_update_instance_state.assert_has_calls(
+            [
+                call("req-1", "destroying", operation_id=None, operation="deprovision"),
+                call("req-1", "destroyed", operation_id=None, operation="deprovision"),
+            ]
+        )
         assert mock_publish_ngfw_event.call_count == 2
 
 

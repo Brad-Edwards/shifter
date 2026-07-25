@@ -34,10 +34,10 @@ from typing import Any
 
 from config import load_aws_polaris_agent_config
 
-from ._polaris_scripts import (
+from ._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+from ._polaris_scripts_aux import (
     FETCH_POLARIS_TESTS_SCRIPT,
     INSTALL_SPLICE_WATCHER_SCRIPT,
-    POLARIS_RANGE_BOOTSTRAP_SCRIPT,
     VERIFY_POLARIS_BOOTSTRAP_SCRIPT,
 )
 from ._polaris_scripts_aws import (

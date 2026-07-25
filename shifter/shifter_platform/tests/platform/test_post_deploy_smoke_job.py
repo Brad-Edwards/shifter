@@ -17,7 +17,8 @@ def test_platform_workflow_declares_post_deploy_smoke_job() -> None:
     assert "scripts/smoke-test.sh" in text
     start = text.index("post-deploy-smoke:")
     block = text[start : start + 800]
-    assert "needs: verify" in block or "needs: [verify]" in block
+    assert "needs: eks-deploy" in block or "needs: [eks-deploy]" in block
+    assert "needs.eks-deploy.result == 'success'" in block
 
 
 def test_post_deploy_smoke_job_is_dev_only() -> None:

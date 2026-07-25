@@ -370,7 +370,7 @@ rows:
 
   - id: aces.participant-access-projection
     surface: Mission Control
-    legacy_source: shifter/shifter_platform/mission_control/consumers.py; shifter/shifter_platform/mission_control/views/_guacamole.py; shifter/shifter_platform/mission_control/api/
+    legacy_source: shifter/shifter_platform/mission_control/consumers.py; shifter/shifter_platform/mission_control/guacamole_session.py; shifter/shifter_platform/mission_control/api/
     legacy_field: browser terminal websockets, Guacamole RDP/SSH bootstrap, NGFW SSH, range status websockets, and Mission Control access projection fields
     category: Shifter backend responsibility
     aces_target: read-only ACES participant/runtime/access-channel projection fields after participant-runtime sidecars exist
@@ -382,11 +382,11 @@ rows:
 
   - id: mission-control.terminal-guacamole
     surface: Mission Control
-    legacy_source: shifter/shifter_platform/mission_control/views/_guacamole.py
+    legacy_source: shifter/shifter_platform/mission_control/guacamole_session.py
     legacy_field: Guacamole and terminal access flows
     category: Shifter backend responsibility
     aces_target: n/a
-    shifter_owner: mission_control.views, engine.ssh
+    shifter_owner: mission_control.guacamole_session, mission_control.views, engine.services
     validation_evidence: shifter/shifter_platform/tests/mission_control/test_views_guacamole.py
     next_issue_kind: none
     candidate_issue_title: n/a

@@ -30,7 +30,7 @@ from gcp_range_cell_types import (
     ScenarioInstance,
     SubnetPlan,
 )
-from gcp_vpn_identity import gcp_vpn_gateway_service_account_email
+from gcp_vpn_identity import gcp_vpn_gateway_pool_service_account_email
 
 _MANAGED_BY_LABEL = "shifter-provisioner"
 
@@ -176,15 +176,24 @@ def _free_guest_address(subnet: SubnetPlan) -> str:
 
 def _openvpn_gateway_plan(
     range_id: int,
-    generation: str,
+    vpn_gateway_pool_slot: int | None,
     instance_plans: list[InstancePlan],
     subnet_plans: list[SubnetPlan],
     config: GCERangeCellConfig,
     remote_access: dict[str, object] | None,
 ) -> OpenVpnGatewayPlan | None:
-    """Plan the request-owned OpenVPN gateway adjacent to the authorized Kali."""
+    """Plan the request-owned OpenVPN gateway adjacent to the authorized Kali.
+
+    ``vpn_gateway_pool_slot`` is the range's reserved index into the pre-provisioned
+    gateway SA pool (ADR-008-R7); the gateway VM runs as that pooled identity.
+    """
     if remote_access is None:
         return None
+    if vpn_gateway_pool_slot is None:
+        raise RuntimeError(
+            f"Range {range_id} requests OpenVPN but has no reserved gateway pool slot; "
+            "it was not created with an OpenVPN capability"
+        )
     _require_openvpn_capable_config(config)
     targets = [instance for instance in instance_plans if instance["uuid"] == remote_access["target_ref"]]
     if len(targets) != 1:
@@ -201,10 +210,9 @@ def _openvpn_gateway_plan(
         "target_ip": target["private_ip"],
         "tag": _short_resource_name("shifter-r", range_id, "vpn-gateway"),
         "profile": config.get_profile(role="victim", os_type="ubuntu"),
-        "service_account_email": gcp_vpn_gateway_service_account_email(
+        "service_account_email": gcp_vpn_gateway_pool_service_account_email(
             config.project_id,
-            range_id,
-            generation,
+            vpn_gateway_pool_slot,
         ),
     }
 
@@ -215,8 +223,14 @@ def render_range_cell_plan(
     config: GCERangeCellConfig | None = None,
     *,
     require_images: bool = True,
+    vpn_gateway_pool_slot: int | None = None,
 ) -> RangeCellPlan:
-    """Render the deterministic GCE resources for one range cell."""
+    """Render the deterministic GCE resources for one range cell.
+
+    ``vpn_gateway_pool_slot`` is the range's reserved gateway SA pool slot
+    (ADR-008-R7), threaded to the OpenVPN gateway plan; ``None`` for ranges
+    without an OpenVPN capability.
+    """
     validated_request = validate_gcp_vm_range_cell_request(variables)
     operation = validated_request["operation"]
     if operation["request_id"] != request_uuid:
@@ -257,7 +271,7 @@ def render_range_cell_plan(
     remote_access = validated_request["remote_access"]
     vpn_gateway = _openvpn_gateway_plan(
         range_id,
-        request_uuid,
+        vpn_gateway_pool_slot,
         instance_plans,
         subnet_plans,
         resolved_config,

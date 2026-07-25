@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import asyncssh
 import pytest
 
-from engine.ssh import SSHConnection, SSHConnectionError
+from engine.ssh import PtySettings, SSHConnection, SSHConnectionError
 
 from .conftest import patch_asyncssh
 
@@ -33,8 +33,7 @@ class TestSSHConnectionInit:
         conn = SSHConnection(
             **valid_connection_params,
             port=2222,
-            term_type="vt100",
-            term_size=(120, 40),
+            pty=PtySettings(term_type="vt100", term_size=(120, 40)),
         )
 
         assert conn.port == 2222

@@ -437,7 +437,7 @@
       },
       {
         "id": "ADR-008-R7",
-        "description": "GCP application workload identities (portal, workers, CTF scheduler, and provisioner) must not receive project-level Secret Manager payload/admin or Cloud Storage object-admin roles. Static runtime access is bound on each named secret or bucket from the resource-owning module's outputs (portal/secrets `runtime_secret_ids`, portal/gcs `assets_bucket_name`), driven by a single canonical workload/resource matrix in `platform/terraform/gcp/modules/portal/iam/main.tf`. Dynamic provisioner-created secret lifecycle must be isolated by a dedicated project or broker because secret creation is authorized on the parent project before a resource-name condition can constrain the new secret ID; resource-name conditions remain appropriate for existing-secret access/update/delete. Repo-native Terraform guards and effective-permission tests must cover direct, binding/policy, local-map, and equivalent project custom-role shapes. The check is implemented in `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` and wired as the `check-tf-gcp-iam-resource-scope` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest + effective-permission oracle suite included in the `check_tf_*` checker tests. Until the dedicated boundary lands, the guard allowlists exactly two project-level residuals it cannot yet resource-scope — portal `roles/secretmanager.secretAccessor` (reads per-range `*-ssh`/`*-rdp-password` guest credentials) and provisioner `roles/secretmanager.admin` (per-range dynamic-secret create/version/access/delete + vertex-key setIamPolicy + operator GDC secret reads) — each carrying an expiry so the exception cannot outlive its review; the dedicated range-secret project / broker boundary that removes both is designed in #1586. Recorded by the architecture preflight for #1517.",
+        "description": "GCP application workload identities (portal, workers, CTF scheduler, and provisioner) must not receive project-level Secret Manager payload/admin, Cloud Storage object-admin, or service-account IAM-admin (`iam.serviceAccounts.create`/`delete`/`setIamPolicy`) roles, whether predefined or via an equivalent project-level custom role. Static runtime access is bound on each named secret or bucket from the resource-owning module's outputs (portal/secrets `runtime_secret_ids`, portal/gcs `assets_bucket_name`), driven by a single canonical workload/resource matrix in `platform/terraform/gcp/modules/portal/iam/main.tf`. Dynamic provisioner-created secret lifecycle must be isolated by a dedicated project or broker because secret creation is authorized on the parent project before a resource-name condition can constrain the new secret ID; resource-name conditions remain appropriate for existing-secret access/update/delete. Repo-native Terraform guards and effective-permission tests must cover direct, binding/policy, local-map, and equivalent project custom-role shapes. The check is implemented in `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` and wired as the `check-tf-gcp-iam-resource-scope` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest + effective-permission oracle suite included in the `check_tf_*` checker tests. Until the dedicated boundary lands, the guard allowlists exactly two project-level residuals it cannot yet resource-scope — portal `roles/secretmanager.secretAccessor` (reads per-range `*-ssh`/`*-rdp-password` guest credentials) and provisioner `roles/secretmanager.admin` (per-range dynamic-secret create/version/access/delete + vertex-key setIamPolicy + operator GDC secret reads) — each carrying an expiry so the exception cannot outlive its review; the dedicated range-secret project / broker boundary that removes both is designed in #1586. The provisioner's former project-level `iam.serviceAccounts.setIamPolicy` custom role (used to self-grant `serviceAccountUser` on dynamically created OpenVPN gateway service accounts, which GCP cannot resource-name-scope for setIamPolicy) is replaced by a pre-provisioned single-project gateway SA pool: Terraform pre-creates `sh-vpn-pool-<slot>` no-role service accounts and grants the provisioner `serviceAccountUser` on each specific member, and each active OpenVPN range reserves a slot via `Range.allocate_vpn_gateway_slot` bounded by `VPN_GATEWAY_POOL_SIZE` (must equal the Terraform `vpn_gateway_pool_size`). This removes all runtime service-account administration from the provisioner with no cross-project or org-policy dependency (single isolated tenant), so the guard also fails a project-level service-account IAM-admin custom role attached to a workload identity. Recorded by the architecture preflight for #1517.",
         "checks": []
       },
       {
@@ -2076,6 +2076,119 @@
       ".gc/plan-rules.md",
       ".github/workflows/pr-title-lint.yml",
       "docs/architecture/rev1-build-deployment-provenance.md"
+    ]
+  },
+  {
+    "id": "ADR-043",
+    "title": "Provisioner persistence crosses a versioned operation boundary, not Django tables",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Engine owns the request, range, instance, app, subnet, allocation, outbox, and audit persistence schemas. The separately deployed provisioner integrates through one operation-shaped boundary anchored to the existing ProvisionerLaunchIntent operation_id: an immutable versioned input projection consumed by the provisioner and an append-only versioned result inbox consumed by an Engine-owned applier. The applier validates ownership, lifecycle generation, contract version, ordering, idempotency, and payload shape before applying domain state, audit intent, and any ADR-025 RangeEventOutbox notification in a platform-owned transaction. Direct provisioner reads/writes of Django domain tables and direct inserts into the range-event outbox are compatibility shims to be removed with their grants; synchronous subnet reservation must remain serialized but move behind an Engine-owned stable coordination contract rather than remain an undocumented table exception.",
+    "rules": [
+      {
+        "id": "ADR-043-R1",
+        "description": "The provisioner MUST NOT use Django model tables, columns, joins, migration history, arbitrary field updates, or the range-event outbox as its service API. At completed cutover its database principal may read only the immutable operation-input integration surface, append only to the result inbox, and use an explicitly reviewed stable coordination surface for synchronous reservations; all legacy domain-table and outbox grants MUST be revoked by forward migration and proved absent with PostgreSQL effective-privilege tests.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R2",
+        "description": "Provisioner command, input, and result contracts MUST be operation-shaped, provider-neutral, versioned independently of application releases, bounded, runtime-validated at every process boundary, secret-free except for existing encrypted envelopes and provider-native secret references, and anchored to the existing operation_id generation. AWS and GCP MUST NOT use different generation or persistence contracts. Unknown versions, stale generations, wrong ownership, invalid transitions/order, oversized payloads, and a repeated result id with a different digest MUST fail closed without domain mutation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R3",
+        "description": "Engine is the sole result applier. Applying a provisioner result, recording its idempotent disposition, writing Engine domain state and system audit intent, and enqueueing any ADR-025 notification MUST share one platform-owned transaction. Delivery is at-least-once with idempotent application; launch retry, result-apply retry, range-event delivery, and CMS/Mission Control reconciliation remain distinct workflows and MUST NOT share tables, payloads, status meanings, or DLQ semantics.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R4",
+        "description": "Operation payloads MUST compose the existing shared persisted RangeSpec/ACES ProvisioningPlan, range-cell, backend-admission, remote-access, ACES content/evidence, ResourceStatus, NGFW attachment, audit, error, and logging contracts. They MUST NOT introduce table-shaped DTOs, a second authored/runtime state model, duplicate validators/status enums/event constants/exception hierarchies, raw provider-response persistence, or a generic repository/query/patch interface.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R5",
+        "description": "Process argv is limited to the canonical resource/operation and UUID correlation; payloads, capabilities, credentials, database tokens, signed URLs, VPN profiles, provider responses, and environment maps MUST NOT enter argv, logs, audit context, range error text, events, or public error envelopes. Existing IAM/Cloud SQL DB auth, TLS, sensitive-env projection, env inventories/renderers, admission policy, shared.log_sanitize/provisioner log_redact, and shared API error envelopes remain authoritative.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R6",
+        "description": "Subnet/CIDR reservation is synchronous pre-mutation coordination, not an eventual provisioner result. Its Engine-owned boundary MUST preserve the existing PostgreSQL serialization, uniqueness, cloud-drift observation, ownership, release, and failure-compensation semantics. Realized CIDRs MUST live in allocation/subnet state and operation contracts; the provisioner MUST NOT continue mutating authored range_config as runtime scratch state.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R7",
+        "description": "The operation boundary MUST retain immutable input until terminal recovery is no longer possible, support an explicit rolling producer/consumer version window, and provide bounded retry/DLQ plus operator-visible signals for inbox lag, unsupported versions, stale/conflicting results, and operations lacking terminal results. A crash after cloud mutation but before result append MUST be recoverable through idempotent re-drive or provider/Terraform reconciliation; ADR-025 projection reconciliation alone is insufficient.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/478",
+      "docs/architecture/provisioner-persistence-boundary-preflight-478.md",
+      "docs/architecture/gcp-provisioner-launch-boundary-preflight-1518.md",
+      "docs/architecture/range-event-delivery-preflight-476.md",
+      "shifter/shifter_platform/engine/launch_intents.py",
+      "shifter/shifter_platform/engine/models",
+      "shifter/shifter_platform/engine/services",
+      "shifter/shifter_platform/shared",
+      "shifter/engine/provisioner/provisioner_db.py",
+      "shifter/engine/provisioner/state_helpers.py"
+    ]
+  },
+  {
+    "id": "ADR-044",
+    "title": "Platform control-plane workloads use one backend-neutral Helm package",
+    "status": "accepted",
+    "scope": "platform_packaging",
+    "decision": "The Shifter Helm chart is the canonical control-plane workload package for supported Kubernetes backends. Root-selected backend bundles provision provider prerequisites and render validated identity, edge, network, image, runtime, and secret-reference values into the one chart. New AWS deployments use EKS plus Helm; existing ECS/ASG platform deployments remain a documented compatibility path with separate state and controlled cutover. Platform packaging, task delivery, range-substrate lifecycle, cloud backend selection, and user identity remain distinct concerns.",
+    "rules": [
+      {
+        "id": "ADR-044-R1",
+        "description": "platform/charts/shifter is the single canonical control-plane workload package for GKE and EKS. Backend-specific Terraform and bootstrap code may supply layered values and provider prerequisites, but must not fork the chart or create an ad hoc kubectl workload deployment path; raw GCP manifests remain supporting/parity evidence during migration.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R2",
+        "description": "The chart's neutral defaults must not emit provider-specific CRDs, annotations, ingress classes, load-balancer/API CIDRs, image roots, or credentials. Backend renderers project validated Terraform outputs and verified image digests into schema-validated values. Secret payloads are prohibited from Helm values/history and ConfigMaps and must flow through provider secret stores or Kubernetes Secrets using the existing hydration boundary.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R3",
+        "description": "For root-configured backend=aws deployments, EKS is the canonical platform compute without introducing an aws-eks backend. This does not by itself move the AWS provisioner task runner from private ECS tasks, replace ADR-039's AWS Terraform range-substrate adapter, or change Cognito/OIDC. GCP Job-launch RBAC/admission resources must not render on EKS unless a separately reviewed Kubernetes task-runner contract requires and tests them.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R4",
+        "description": "Every supported provider values render must preserve ADR-006 restricted Pod Security and default-deny network policy, least-privilege workload identity, private placement, HTTPS edge policy, exact attested OCI digests, atomic/waiting Helm rollout, and provider-appropriate health evidence. Branch names do not select deployments; CI validates bundle examples and owned artifacts through an explicit backend matrix while credentialed mutation remains explicitly invoked and protected.",
+        "checks": ["k8s-deployment-security-context", "k8s-network-policy-coverage"]
+      },
+      {
+        "id": "ADR-044-R5",
+        "description": "EKS infrastructure and legacy ECS/ASG infrastructure retain separate Terraform state and ownership. Compatibility migration must prevent both control planes from acting as concurrent active schedulers, queue consumers, outbox drainers, migration runners, or range launchers; cutover and rollback are explicit and must not rename, import, destroy, or silently adopt legacy resources.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1324",
+      "docs/architecture/aws-eks-helm-packaging-preflight-1324.md",
+      "docs/architecture/root-configured-backend-bundles.md",
+      "docs/architecture/branch-routing-provider-coupling-inventory.md",
+      "platform/charts/shifter/Chart.yaml",
+      "platform/charts/shifter/values.yaml",
+      "platform/charts/shifter/values.schema.json",
+      "platform/charts/shifter/values-aws-dev.yaml",
+      "platform/charts/shifter/values-aws-proof.yaml",
+      "platform/charts/shifter/values-aws-prod.yaml",
+      "platform/charts/shifter/tests/test_chart_contract.py",
+      "shifter/installation/contract",
+      "shifter/installation/registry.py",
+      "shifter/installation/runtime_inventory.py",
+      "scripts/bootstrap/deploy.py",
+      ".github/workflows/deploy.yml",
+      "scripts/adr_guard/adr_guard.py"
     ]
   }
 ]

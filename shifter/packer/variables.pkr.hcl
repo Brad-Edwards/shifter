@@ -84,3 +84,16 @@ variable "dc_content_script" {
   description = "Path (relative to shifter/packer) to the AD-content seed staged into the polaris-dc image and run post-promotion by dc-content-seed.ps1."
   default     = "../../scripts/polaris-aws-range/a2_setup.ps1"
 }
+
+variable "dc_dsrm_password" {
+  type        = string
+  sensitive   = true
+  description = <<-DESC
+    Build-only Directory Services Restore Mode (DSRM) password for the polaris-dc
+    forest. Generated per build and injected with -var (PKR_VAR_dc_dsrm_password)
+    by the CI workflow; NEVER commit a real value. promote-bake.ps1 refuses to
+    promote a DC without it, so a shared/source-controlled DSRM secret cannot ship
+    in the image. Empty is invalid for a polaris-dc build.
+  DESC
+  default     = ""
+}
