@@ -558,7 +558,8 @@ class TestGdcProvisioning:
 
     def test_run_terraform_provision_runs_setup_and_writes_state_for_gdc_ranges(self, monkeypatch):
         from config import RangeNetworkConfig
-        from terraform_ops import _run_terraform_provision
+        from provisioner_db_appends import OperationRef
+        from terraform_ops import RangeOperation, _run_terraform_provision
 
         range_spec = {
             "subnets": [
@@ -634,7 +635,7 @@ class TestGdcProvisioning:
         )
         monkeypatch.setattr("terraform_ops.publish_ready", MagicMock())
         with _provision_env("gcp", "10.200.0.96/28"):
-            _run_terraform_provision("req-123", 42, 7, range_spec)
+            _run_terraform_provision(RangeOperation("req-123", 42, 7, range_spec))
 
         mock_setup.assert_called_once_with(
             instances_output=terraform_output["instances"],
@@ -648,12 +649,13 @@ class TestGdcProvisioning:
             instances=terraform_output["instances"],
             ngfw_instance_id=None,
             vpn_access_binding=None,
+            operation=OperationRef(request_id="req-123", operation_id=None),
         )
 
     def test_run_terraform_provision_threads_polaris_agent_role_arn_from_output(self, monkeypatch):
         """The polaris_agent_role_arn Terraform output reaches run_instance_setup (#1377)."""
         from config import RangeNetworkConfig
-        from terraform_ops import _run_terraform_provision
+        from terraform_ops import RangeOperation, _run_terraform_provision
 
         range_spec = {
             "subnets": [
@@ -718,7 +720,7 @@ class TestGdcProvisioning:
         )
         monkeypatch.setattr("terraform_ops.publish_ready", MagicMock())
         with _provision_env("aws", "10.9.0.0/28"):
-            _run_terraform_provision("req-9", 9, 2, range_spec)
+            _run_terraform_provision(RangeOperation("req-9", 9, 2, range_spec))
 
         mock_setup.assert_called_once_with(
             instances_output=terraform_output["instances"],
@@ -732,7 +734,7 @@ class TestGdcProvisioning:
         from shared.remote_access import build_openvpn_capability, parse_openvpn_binding
 
         from config import RangeNetworkConfig
-        from terraform_ops import _run_terraform_provision
+        from terraform_ops import RangeOperation, _run_terraform_provision
 
         generation = uuid4()
         target_ref = uuid4()
@@ -809,11 +811,13 @@ class TestGdcProvisioning:
 
         with _provision_env("aws", "10.9.0.0/28"):
             _run_terraform_provision(
-                str(generation),
-                42,
-                7,
-                range_spec,
-                remote_access_capability=capability,
+                RangeOperation(
+                    str(generation),
+                    42,
+                    7,
+                    range_spec,
+                    remote_access_capability=capability,
+                )
             )
 
         binding = mock_write_state.call_args.kwargs["vpn_access_binding"]

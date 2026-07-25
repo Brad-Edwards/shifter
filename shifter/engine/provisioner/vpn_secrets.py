@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import os
-import time
-import urllib.request
-from collections.abc import Callable, Iterator, MutableSequence
+from collections.abc import Callable
 from contextlib import suppress
 from typing import Protocol
 from uuid import UUID
@@ -14,10 +12,8 @@ from botocore.exceptions import ClientError
 
 from cloud.gcp.base import get_project_id, import_google_module
 from config import is_gce_range_cell_backend, resolve_cloud_provider
-from gcp_vpn_identity import (
-    gcp_vpn_gateway_service_account_email,
-    gcp_vpn_gateway_service_account_id,
-)
+from gcp_vpn_identity import gcp_vpn_gateway_pool_service_account_email
+from provisioner_db import get_db_connection
 from vpn_access import VpnSecretOps
 
 
@@ -148,39 +144,6 @@ class _GCPSecretsClient(Protocol):
     def delete_secret(self, *, request: dict[str, object]) -> object: ...
 
 
-class _GCPIamBinding(Protocol):
-    """Subset of a GCP IAM policy binding mutated by the adapter."""
-
-    role: str
-    members: MutableSequence[str]
-
-
-class _GCPIamBindings(Protocol):
-    """Repeated IAM binding collection shape used by google-api-core."""
-
-    def __iter__(self) -> Iterator[_GCPIamBinding]: ...
-
-    def add(self) -> _GCPIamBinding: ...
-
-
-class _GCPIamPolicy(Protocol):
-    """Subset of a GCP IAM policy mutated by the adapter."""
-
-    bindings: _GCPIamBindings
-
-
-class _GCPIamClient(Protocol):
-    """Subset of the GCP IAM admin client used by the adapter."""
-
-    def create_service_account(self, *, request: dict[str, object]) -> object: ...
-
-    def get_iam_policy(self, *, request: dict[str, object]) -> _GCPIamPolicy: ...
-
-    def set_iam_policy(self, *, request: dict[str, object]) -> object: ...
-
-    def delete_service_account(self, *, request: dict[str, object]) -> object: ...
-
-
 class _GCPPayload(Protocol):
     """Secret version payload shape returned by the GCP client."""
 
@@ -199,127 +162,81 @@ def _gcp_secret_ids(range_id: int, generation: UUID) -> dict[str, str]:
     return {kind: f"shifter-range-{range_id}-vpn-{suffix}-{kind}" for kind in ("issuer", "server", "profile")}
 
 
-def _metadata_service_account_email() -> str:
-    """Return the current GCP workload service account email from metadata."""
-    request = urllib.request.Request(
-        "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email",
-        headers={"Metadata-Flavor": "Google"},
-    )
-    try:
-        # The URL is a fixed GCP metadata endpoint, not caller-controlled input.
-        with urllib.request.urlopen(request, timeout=2) as response:  # noqa: S310  # nosec B310
-            return response.read().decode("utf-8").strip()
-    except Exception as exc:
-        raise RuntimeError(
-            "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL is required when the GCP metadata service is unavailable"
-        ) from exc
-
-
 class GCPVpnSecretOps(VpnSecretOps):
     """GCP Secret Manager implementation for a GCE range cell."""
-
-    _SECRET_IAM_PROPAGATION_TIMEOUT_SECONDS = 60.0
-    _SECRET_IAM_PROPAGATION_RETRY_SECONDS = 2.0
 
     def __init__(
         self,
         client: _GCPSecretsClient | None = None,
-        iam_client: _GCPIamClient | None = None,
         exceptions: _GCPExceptions | None = None,
         *,
         project_id: str | None = None,
-        provisioner_service_account_email: str | None = None,
     ) -> None:
         self._client = client or import_google_module("google.cloud.secretmanager").SecretManagerServiceClient()
-        self._iam_client = iam_client or import_google_module("google.cloud.iam_admin_v1").IAMClient()
         self._exceptions = exceptions or import_google_module("google.api_core.exceptions")
         self._project_id = project_id or get_project_id()
-        self._provisioner_service_account_email = (
-            provisioner_service_account_email or os.environ.get("GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL", "")
-        ).strip()
         if not self._project_id:
             raise RuntimeError("GCP project ID is required for OpenVPN secrets")
 
-    def _gateway_email(self, range_id: int, generation: UUID) -> str:
-        return gcp_vpn_gateway_service_account_email(self._project_id, range_id, generation)
+    def _reserved_pool_slot(self, range_id: int) -> int:
+        """Return the OpenVPN gateway pool slot reserved for this range (ADR-008-R7).
 
-    def _gateway_resource(self, gateway_email: str) -> str:
-        return f"projects/{self._project_id}/serviceAccounts/{gateway_email}"
-
-    def _grant_gateway_act_as(self, gateway_email: str) -> None:
-        if not self._provisioner_service_account_email:
-            self._provisioner_service_account_email = _metadata_service_account_email()
-        resource = self._gateway_resource(gateway_email)
-        role = "roles/iam.serviceAccountUser"
-        member = f"serviceAccount:{self._provisioner_service_account_email}"
-        policy = self._iam_client.get_iam_policy(request={"resource": resource})
-        for binding in policy.bindings:
-            if binding.role != role:
-                continue
-            if member not in binding.members:
-                binding.members.append(member)
-            break
-        else:
-            binding = policy.bindings.add()
-            binding.role = role
-            binding.members.append(member)
-        self._iam_client.set_iam_policy(request={"resource": resource, "policy": policy})
-
-    def _ensure_gateway_identity(self, range_id: int, generation: UUID) -> str:
-        account_id = gcp_vpn_gateway_service_account_id(range_id, generation)
-        with suppress(self._exceptions.AlreadyExists):
-            self._iam_client.create_service_account(
-                request={
-                    "name": f"projects/{self._project_id}",
-                    "account_id": account_id,
-                    "service_account": {
-                        "display_name": f"Shifter range {range_id} OpenVPN gateway",
-                    },
-                }
+        The slot is reserved by ``Range.allocate_vpn_gateway_slot`` at range
+        creation; the provisioner only reads it here. A missing slot means the
+        range was not created with an OpenVPN capability, so no gateway identity
+        should be produced.
+        """
+        with get_db_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT vpn_gateway_pool_slot FROM mission_control_range WHERE id = %s",
+                (range_id,),
             )
-        gateway_email = self._gateway_email(range_id, generation)
-        self._grant_gateway_act_as(gateway_email)
-        return gateway_email
+            row = cur.fetchone()
+        if row is None or row[0] is None:
+            raise RuntimeError(
+                f"No OpenVPN gateway pool slot reserved for range {range_id}; "
+                "the range was not created with an OpenVPN capability"
+            )
+        return int(row[0])
+
+    def _ensure_gateway_identity(self, range_id: int) -> str:
+        """Return the pre-provisioned pool gateway identity reserved for this range.
+
+        No runtime service-account creation or self-``setIamPolicy`` (ADR-008-R7):
+        the ``sh-vpn-pool-<slot>`` identity already exists and the provisioner
+        already holds ``serviceAccountUser`` on that specific member. The identity
+        is per active range; the per-range server secret preserves generation-
+        scoped isolation.
+        """
+        return gcp_vpn_gateway_pool_service_account_email(self._project_id, self._reserved_pool_slot(range_id))
 
     def _name(self, secret_id: str) -> str:
         return f"projects/{self._project_id}/secrets/{secret_id}"
-
-    def _gateway_identity_not_visible(self, exc: Exception, gateway_email: str) -> bool:
-        message = str(exc)
-        return "Service account" in message and gateway_email in message and "does not exist" in message
 
     def _read(self, name: str) -> str:
         response = self._client.access_secret_version(request={"name": f"{name}/versions/latest"})
         return response.payload.data.decode("utf-8")
 
     def _grant_gateway_secret_access(self, name: str, gateway_email: str) -> None:
-        """Grant a just-created gateway identity access to its server secret.
+        """Grant the range's pooled gateway identity read access to its server secret.
 
-        GCP IAM Admin can return the generated service account before Secret
-        Manager IAM accepts that same principal as a policy member. Treat only
-        that narrow propagation race as retryable; all other IAM errors still
-        fail immediately.
+        The gateway is a pre-provisioned pool service account (ADR-008-R7), so it
+        is always a valid policy member -- there is no just-created-identity
+        propagation race to retry around.
         """
-        request: dict[str, object] = {
-            "resource": name,
-            "policy": {
-                "bindings": [
-                    {
-                        "role": "roles/secretmanager.secretAccessor",
-                        "members": [f"serviceAccount:{gateway_email}"],
-                    }
-                ]
-            },
-        }
-        deadline = time.monotonic() + self._SECRET_IAM_PROPAGATION_TIMEOUT_SECONDS
-        while True:
-            try:
-                self._client.set_iam_policy(request=request)
-                return
-            except self._exceptions.InvalidArgument as exc:
-                if not self._gateway_identity_not_visible(exc, gateway_email) or time.monotonic() >= deadline:
-                    raise
-                time.sleep(self._SECRET_IAM_PROPAGATION_RETRY_SECONDS)
+        self._client.set_iam_policy(
+            request={
+                "resource": name,
+                "policy": {
+                    "bindings": [
+                        {
+                            "role": "roles/secretmanager.secretAccessor",
+                            "members": [f"serviceAccount:{gateway_email}"],
+                        }
+                    ]
+                },
+            }
+        )
 
     def _create_or_update(self, secret_id: str, payload: str, *, gateway_email: str = "") -> str:
         name = self._name(secret_id)
@@ -352,7 +269,7 @@ class GCPVpnSecretOps(VpnSecretOps):
             return self._read(name)
 
     def put_server(self, range_id: int, generation: UUID, payload: str) -> None:
-        gateway_email = self._ensure_gateway_identity(range_id, generation)
+        gateway_email = self._ensure_gateway_identity(range_id)
         self._create_or_update(
             _gcp_secret_ids(range_id, generation)["server"],
             payload,
@@ -363,16 +280,15 @@ class GCPVpnSecretOps(VpnSecretOps):
         return self._create_or_update(_gcp_secret_ids(range_id, generation)["profile"], payload)
 
     def delete_generation(self, range_id: int, generation: UUID, *, delete_identity: bool = True) -> None:
+        # The gateway identity is a permanent pooled service account (ADR-008-R7):
+        # deleting the per-generation server secret revokes this range's access,
+        # and the freed pool slot returns to the pool on the destroy status
+        # transition. ``delete_identity`` is retained for interface compatibility
+        # but there is no per-range SA to delete. Only the secrets are removed.
+        del delete_identity
         for secret_id in _gcp_secret_ids(range_id, generation).values():
             with suppress(self._exceptions.NotFound):
                 self._client.delete_secret(request={"name": self._name(secret_id)})
-        if not delete_identity:
-            return
-        gateway_email = self._gateway_email(range_id, generation)
-        with suppress(self._exceptions.NotFound):
-            self._iam_client.delete_service_account(
-                request={"name": f"projects/{self._project_id}/serviceAccounts/{gateway_email}"}
-            )
 
 
 def get_vpn_secret_ops() -> VpnSecretOps:

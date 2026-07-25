@@ -32,13 +32,28 @@ from orchestrators.setup_orchestrator import SetupOrchestrator
 from plans.base import DynamicPlan, SetupPlan
 from plans.ngfw_configure_subnets import NGFWConfigureSubnetsPlan, NGFWRemoveSubnetsPlan
 from provisioner_db import get_db_connection
+from provisioner_db_appends import append_operation_result
 from provisioner_db_ngfw import get_user_ngfw_data
 
 logger = logging.getLogger(__name__)
 
 
-def update_instance_state(request_id: str, status: str, **state_updates: Any) -> None:
-    """Update NGFW Instance and App status/state in Engine database."""
+def update_instance_state(
+    request_id: str,
+    status: str,
+    *,
+    operation_id: str | None = None,
+    operation: str | None = None,
+    **state_updates: Any,
+) -> None:
+    """Update NGFW Instance and App status/state in Engine database.
+
+    ``operation_id``/``operation`` are ADR-043 shadow-append inputs (Phase 2,
+    #1834): when ``operation_id`` is ``None`` (local dev / not-yet-threaded
+    caller) the shadow append to the operation result inbox is skipped
+    entirely; the direct SQL writes below remain the sole authoritative write
+    either way.
+    """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -101,6 +116,21 @@ def update_instance_state(request_id: str, status: str, **state_updates: Any) ->
                         """,
                         (status, app_id),
                     )
+
+            if operation_id is not None and operation is not None:
+                append_operation_result(
+                    operation_id=operation_id,
+                    request_id=request_id,
+                    resource="ngfw",
+                    operation=operation,
+                    result_kind="RESOURCE_STATE",
+                    result_payload={
+                        "status": status,
+                        "instance_id": instance_id,
+                        "app_id": app_id,
+                    },
+                    cur=cur,
+                )
 
         conn.commit()
 

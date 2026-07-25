@@ -150,6 +150,13 @@ def _persist_range_atomically(
 
         user = user_model.objects.get(id=range_spec.user_id)
         subnet_index = range_model.allocate_subnet_index()
+        # ADR-008-R7: reserve a GCP OpenVPN gateway SA pool slot up front (same
+        # table-lock transaction as subnet_index) only when this range requests
+        # OpenVPN, so the provisioner attaches a pre-authorized pool identity
+        # instead of minting one and self-granting setIamPolicy.
+        vpn_gateway_pool_slot = (
+            range_model.allocate_vpn_gateway_slot() if remote_access_capability is not None else None
+        )
         range_artifact = build_scenario_artifact(wrap_persisted_spec("range_spec", range_spec))
 
         range_uuid = range_spec.uuid
@@ -163,6 +170,7 @@ def _persist_range_atomically(
                 cms_user_id=range_spec.user_id,
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
+                vpn_gateway_pool_slot=vpn_gateway_pool_slot,
                 range_config=range_artifact,
                 **remote_access_fields,
                 **binding_fields,
@@ -174,6 +182,7 @@ def _persist_range_atomically(
                 cms_user_id=range_spec.user_id,
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
+                vpn_gateway_pool_slot=vpn_gateway_pool_slot,
                 range_config=range_artifact,
                 **remote_access_fields,
                 **binding_fields,
