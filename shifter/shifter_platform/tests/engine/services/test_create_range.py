@@ -8,7 +8,6 @@ on persisted state and return values, not on mocked ORM/interpreter/ECS calls.
 """
 
 import logging
-from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -16,11 +15,8 @@ from django.contrib.auth import get_user_model
 from django.test import override_settings
 
 from engine import create_range
-from engine.models import Range
-from shared.cloud.exceptions import CloudTaskError
+from engine.models import ProvisionerLaunchIntent, Range
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
-
-from .conftest import ECS_TASK_ARN
 
 pytestmark = pytest.mark.django_db
 
@@ -98,11 +94,17 @@ class TestCreateRangePersistence:
         assert range_obj.provisioning_task_arn == ""
         assert range_obj.teardown_task_arn == ""
 
-    def test_stores_provisioning_task_arn_when_ecs_configured(self, user, ecs_dispatch):
+    def test_stores_provisioning_launch_ref_when_ecs_configured(self, user, ecs_dispatch):
+        # Dispatch enqueues a ProvisionerLaunchIntent (#1833); the range records
+        # that intent's opaque launch ref, not a synchronous ECS task ARN, and
+        # nothing reaches the boto3 ECS boundary at service time.
         create_range(make_request_spec(user_id=user.id))
         range_obj = Range.objects.get()
-        assert range_obj.provisioning_task_arn == ECS_TASK_ARN
+        intent = ProvisionerLaunchIntent.objects.get()
+        assert range_obj.provisioning_task_arn == intent.task_ref
+        assert range_obj.provisioning_task_arn.startswith("test-cluster/pulumi-provisioner-")
         assert range_obj.teardown_task_arn == ""
+        ecs_dispatch.run_task.assert_not_called()
 
     def test_reuses_existing_range_for_same_request_id(self, user):
         spec = make_request_spec(user_id=user.id)
@@ -112,23 +114,10 @@ class TestCreateRangePersistence:
         assert second.range_id == first.range_id
         assert Range.objects.count() == 1
 
-    def test_marks_range_failed_when_provisioning_dispatch_fails(self, user, settings):
-        settings.CLOUD_PROVIDER = "aws"
-        settings.LOCAL_PROVISIONER = None
-        settings.ENGINE_TASK_CLUSTER = "test-cluster"
-        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
-        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
-        ecs_client = MagicMock()
-        ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
-
-        spec = make_request_spec(user_id=user.id)
-        with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
-            create_range(spec)
-
-        range_obj = Range.objects.get(request__request_id=spec.request_id)
-        assert range_obj.status == Range.Status.FAILED
-        assert range_obj.error_message == "Provisioning dispatch failed"
+    # The old synchronous "provider dispatch failed -> range FAILED" path no
+    # longer exists: dispatch enqueues a launch intent and the drainer owns
+    # provider-dispatch failure (DLQ -> FAILED), covered by
+    # tests/engine/test_provisioner_launch_outbox.py (ADR-043-R2, #1833).
 
 
 class TestCreateRangeErrorValidation:
