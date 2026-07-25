@@ -8,14 +8,13 @@ never read, imported, adopted, or destroyed by this module.
 from __future__ import annotations
 
 import json
-import re
 import sys
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from bootstrap_core import get_repo_root, run_cmd
+from bootstrap_core import get_repo_root, run_cmd, run_cmd_secret_stdin
 from preflight import Cloud, Mode, preflight_gate
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -26,7 +25,7 @@ if str(_SHIFTER_PACKAGE_ROOT) not in sys.path:
 from installation.loader import load_root_config  # noqa: E402
 from installation.runtime_inventory import AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS  # noqa: E402
 
-_IMAGE_IDENTITY_RE = re.compile(r"^[^\s:@]+(?:[/:][^\s:@]+)*@sha256:[0-9a-f]{64}$")
+_LOWERCASE_HEX = frozenset("0123456789abcdef")
 _EKS_NAMESPACE = "shifter-system"
 _HELM_RELEASE = "shifter"
 _LOAD_BALANCER_CONTROLLER_CHART_VERSION = "3.2.2"
@@ -84,10 +83,34 @@ def _validated_images(images: Mapping[str, object]) -> dict[str, str]:
         raise ValueError("at least one attested image identity is required")
     validated: dict[str, str] = {}
     for name, identity in images.items():
-        if not isinstance(name, str) or not isinstance(identity, str) or not _IMAGE_IDENTITY_RE.fullmatch(identity):
+        if not isinstance(name, str) or not isinstance(identity, str) or not _is_attested_image_identity(identity):
             raise ValueError(f"image {name!r} must be an exact repository@sha256:<64 lowercase hex> identity")
         validated[name] = identity
     return validated
+
+
+def _is_attested_image_identity(identity: str) -> bool:
+    """Validate a digest-pinned image identity in linear time."""
+    repository, separator, digest = identity.rpartition("@sha256:")
+    repository_parts = repository.replace(":", "/").split("/")
+    return bool(
+        separator
+        and repository_parts
+        and all(repository_parts)
+        and all(not character.isspace() and character != "@" for character in repository)
+        and len(digest) == 64
+        and all(character in _LOWERCASE_HEX for character in digest)
+    )
+
+
+def _run_helm_with_values(command: list[str], values: Mapping[str, object]) -> None:
+    """Stream rendered values to Helm so secret references never touch disk."""
+    return_code = run_cmd_secret_stdin(
+        [*command, "--values", "-"],
+        secret_stdin=json.dumps(values, sort_keys=True),
+    )
+    if return_code != 0:
+        raise RuntimeError(f"Helm command failed with exit code {return_code}")
 
 
 def _cidr_output(outputs: Mapping[str, object], name: str) -> list[str]:
@@ -387,42 +410,37 @@ def deploy_eks(
     values = render_aws_values(config, outputs, _read_images(images_path))
     chart = get_repo_root() / "platform" / "charts" / "shifter"
     provider_values = chart / f"values-aws-{profile}.yaml"
-    with tempfile.TemporaryDirectory(prefix="shifter-eks-values-") as staging:
-        values_path = Path(staging) / "values.json"
-        values_path.write_text(json.dumps(values, sort_keys=True), encoding="utf-8")
-        run_cmd(["helm", "lint", str(chart), "--values", str(provider_values), "--values", str(values_path)])
-        run_cmd(
-            [
-                "helm",
-                "template",
-                _HELM_RELEASE,
-                str(chart),
-                "--values",
-                str(provider_values),
-                "--values",
-                str(values_path),
-            ]
-        )
-        run_cmd(
-            [
-                "helm",
-                "upgrade",
-                "--install",
-                _HELM_RELEASE,
-                str(chart),
-                "--namespace",
-                _EKS_NAMESPACE,
-                "--create-namespace",
-                "--values",
-                str(provider_values),
-                "--values",
-                str(values_path),
-                "--atomic",
-                "--wait",
-                "--timeout",
-                "15m",
-            ]
-        )
+    _run_helm_with_values(["helm", "lint", str(chart), "--values", str(provider_values)], values)
+    _run_helm_with_values(
+        [
+            "helm",
+            "template",
+            _HELM_RELEASE,
+            str(chart),
+            "--values",
+            str(provider_values),
+        ],
+        values,
+    )
+    _run_helm_with_values(
+        [
+            "helm",
+            "upgrade",
+            "--install",
+            _HELM_RELEASE,
+            str(chart),
+            "--namespace",
+            _EKS_NAMESPACE,
+            "--create-namespace",
+            "--values",
+            str(provider_values),
+            "--atomic",
+            "--wait",
+            "--timeout",
+            "15m",
+        ],
+        values,
+    )
     run_cmd(["curl", "--fail", "--silent", "--show-error", "--max-time", "30", health_url])
     return {"backend": "aws", "profile": profile, "health_url": health_url}
 

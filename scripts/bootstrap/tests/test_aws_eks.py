@@ -158,10 +158,16 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         )
     )
     calls: list[list[str]] = []
+    secret_stdin_calls: list[tuple[list[str], str]] = []
     result = SimpleNamespace(stdout=json.dumps(_terraform_outputs()))
     runner = Mock(side_effect=lambda cmd, **kwargs: calls.append(cmd) or result)
     monkeypatch.setattr(aws_eks, "load_root_config", lambda _path: _config())
     monkeypatch.setattr(aws_eks, "run_cmd", runner)
+    monkeypatch.setattr(
+        aws_eks,
+        "run_cmd_secret_stdin",
+        lambda cmd, *, secret_stdin: secret_stdin_calls.append((cmd, secret_stdin)) or 0,
+    )
     monkeypatch.setattr(aws_eks, "preflight_gate", Mock())
 
     evidence = aws_eks.deploy_eks(
@@ -209,9 +215,12 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         "--timeout=5m",
     ] in calls
     assert any(
-        cmd[:4] == ["helm", "upgrade", "--install", "shifter"] and {"--atomic", "--wait", "--values"} <= set(cmd)
-        for cmd in calls
+        cmd[:4] == ["helm", "upgrade", "--install", "shifter"] and {"--atomic", "--wait", "--values", "-"} <= set(cmd)
+        for cmd, _values in secret_stdin_calls
     )
+    assert len(secret_stdin_calls) == 3
+    assert all('"secretReferences"' in values for _cmd, values in secret_stdin_calls)
+    assert not any("shifter/dev/app" in token for call in calls for token in call)
     assert not any("destroy" in cmd for cmd in calls)
     assert evidence["backend"] == "aws"
     assert evidence["profile"] == "dev"
