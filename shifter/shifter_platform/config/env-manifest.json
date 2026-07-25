@@ -601,6 +601,11 @@
       "default": "str(_UPLOAD_INSPECTION_FLOOR)",
       "name": "UPLOAD_INSPECTION_MAX_HEADER_BYTES",
       "source_file": "config/settings.py"
+    },
+    {
+      "default": "'24'",
+      "name": "VPN_GATEWAY_POOL_SIZE",
+      "source_file": "config/settings.py"
     }
   ]
 }

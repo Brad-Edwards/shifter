@@ -416,7 +416,8 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 rng.status,
                 rng.range_backend,
                 rng.instantiation_purpose,
-                rng.remote_access_capability
+                rng.remote_access_capability,
+                rng.vpn_gateway_pool_slot
             FROM engine_request r
             JOIN mission_control_range rng ON rng.request_id = r.id
             WHERE r.request_id = %s
@@ -473,4 +474,5 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
             "range_backend": row[6],
             "instantiation_purpose": row[7],
             "remote_access_capability": row[8],
+            "vpn_gateway_pool_slot": row[9],
         }
