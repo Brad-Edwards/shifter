@@ -21,12 +21,12 @@ from cms import services
 from cms.assets.upload_token import generate_upload_token
 from cms.exceptions import CMSError
 from cms.models import AgentConfig
-from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
 from shared.constants import USER_CANNOT_BE_NONE
+from shared.models import AuditLog
 
 pytestmark = pytest.mark.django_db
 

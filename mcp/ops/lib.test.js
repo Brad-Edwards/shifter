@@ -12,10 +12,6 @@ import {
   SERVICE_LAYERS,
   LEGACY_TABLE_MAP,
   RISK_TABLES,
-  SEVERITY_VALUES,
-  STATUS_VALUES,
-  STRIDE_CODES,
-  STRIDE_LABELS,
   buildUpdateSet,
   getSsmDocument,
   MAX_S3_READ_SIZE,
@@ -216,11 +212,10 @@ describe("getServiceLayer", () => {
     );
   });
 
-  it("maps risk_register_ tables to Risk Register", () => {
-    assert.equal(
-      getServiceLayer("risk_register_risk"),
-      "Risk Register (security tracking)"
-    );
+  it("no longer classifies risk_register_ tables (#1374 Part B)", () => {
+    // Risk Register was removed; its tables are dropped, not merely renamed,
+    // so an unrecognized risk_register_ prefix now falls through to Unknown.
+    assert.equal(getServiceLayer("risk_register_risk"), "Unknown");
   });
 
   it("maps auth_ tables to Django Auth", () => {
@@ -327,56 +322,19 @@ describe("LOCAL_PORTS", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Risk Register Constants
+// RISK_TABLES (Risk Register itself was removed in #1374 Part B; only the
+// audit table entry survives, rehomed from risk_register to shared)
 // ---------------------------------------------------------------------------
 
 describe("RISK_TABLES", () => {
-  it("maps all four risk register models", () => {
-    assert.equal(RISK_TABLES.risk, "risk_register_risk");
-    assert.equal(RISK_TABLES.comment, "risk_register_comment");
-    assert.equal(RISK_TABLES.apikey, "risk_register_apikey");
-    assert.equal(RISK_TABLES.audit_log, "risk_register_auditlog");
-  });
-});
-
-describe("SEVERITY_VALUES", () => {
-  it("contains all four severity levels", () => {
-    assert.deepEqual(SEVERITY_VALUES, ["critical", "high", "medium", "low"]);
-  });
-});
-
-describe("STATUS_VALUES", () => {
-  it("contains all five status values", () => {
-    assert.deepEqual(STATUS_VALUES, [
-      "open",
-      "acknowledged",
-      "mitigating",
-      "resolved",
-      "closed",
-    ]);
-  });
-});
-
-describe("STRIDE_CODES", () => {
-  it("contains all six STRIDE codes", () => {
-    assert.deepEqual(STRIDE_CODES, ["S", "T", "R", "I", "D", "E"]);
-  });
-});
-
-describe("STRIDE_LABELS", () => {
-  it("maps each code to its full name", () => {
-    assert.equal(STRIDE_LABELS.S, "Spoofing");
-    assert.equal(STRIDE_LABELS.T, "Tampering");
-    assert.equal(STRIDE_LABELS.R, "Repudiation");
-    assert.equal(STRIDE_LABELS.I, "Information Disclosure");
-    assert.equal(STRIDE_LABELS.D, "Denial of Service");
-    assert.equal(STRIDE_LABELS.E, "Elevation of Privilege");
+  it("maps audit_log to the rehomed shared table (#1374)", () => {
+    assert.equal(RISK_TABLES.audit_log, "shared_auditlog");
   });
 
-  it("has a label for every STRIDE code", () => {
-    for (const code of STRIDE_CODES) {
-      assert.ok(STRIDE_LABELS[code], `Missing label for ${code}`);
-    }
+  it("no longer carries risk/comment/apikey entries (#1374 Part B)", () => {
+    assert.equal("risk" in RISK_TABLES, false);
+    assert.equal("comment" in RISK_TABLES, false);
+    assert.equal("apikey" in RISK_TABLES, false);
   });
 });
 

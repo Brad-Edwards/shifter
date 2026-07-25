@@ -37,6 +37,13 @@ class TestDashboardView:
         assert response.context["page_title"] == "Ranges"
         assert response.context["active_nav"] == "ranges"
 
+    def test_dashboard_nav_has_no_risk_register_entry(self, authenticated_client):
+        # Risk Register was removed in #1374: the left-nav chrome must not
+        # render a dead nav entry pointing at the retired feature.
+        client, _ = authenticated_client(email="dash-nonav@example.com")
+        response = client.get(self.URL)
+        assert "Risk Register" not in response.content.decode()
+
 
 class TestSettingsView:
     URL = reverse("mission_control:settings")

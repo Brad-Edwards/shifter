@@ -7,7 +7,6 @@ root_packages =
     shared
     ctf
     config
-    risk_register
 include_external_packages = True
 
 [importlinter:contract:engine-forbidden]
@@ -66,22 +65,6 @@ forbidden_modules =
     mission_control
 allow_indirect_imports = True
 
-# ADR-001 (#1523): risk_register is a domain layer. It owns the AuditLog store
-# and risk CRUD; it may use shared and management.services only, never another
-# feature/presentation domain or the composition root.
-[importlinter:contract:risk-register-forbidden]
-name = Risk Register may not depend on other feature layers or the composition root
-type = forbidden
-source_modules =
-    risk_register
-forbidden_modules =
-    cms
-    engine
-    mission_control
-    ctf
-    config
-allow_indirect_imports = True
-
 # ADR-001 (#1523): config is the composition root. It wires public domain
 # service facades but must never import domain models directly.
 [importlinter:contract:config-forbidden-domain-models]
@@ -95,7 +78,6 @@ forbidden_modules =
     management.models
     mission_control.models
     ctf.models
-    risk_register.models
 allow_indirect_imports = True
 
 # ADR-031-R1: the ACES SDL tooling (aces-sdl) may be imported only within
@@ -115,7 +97,6 @@ source_modules =
     mission_control
     ctf
     config
-    risk_register
 forbidden_modules =
     aces_sdl
     aces_contracts
