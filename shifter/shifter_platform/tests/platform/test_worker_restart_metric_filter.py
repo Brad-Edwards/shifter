@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _hcl import resource_block
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EC2_MODULE = REPO_ROOT / "platform" / "terraform" / "modules" / "portal" / "ec2"
 EC2_VARIABLES_TF = EC2_MODULE / "variables.tf"
@@ -30,25 +32,31 @@ def _ec2_module_hcl() -> str:
 
 
 def test_ec2_module_defines_worker_restart_metric_filter() -> None:
+    # Log group, namespace, metric name and dimension must belong to the same
+    # filter. Asserted independently across the module they would still pass if
+    # the per-queue filter watched the wrong log group or emitted into another
+    # namespace.
     text = _ec2_module_hcl()
-    assert "aws_cloudwatch_log_metric_filter" in text
-    assert "worker_restarts" in text
-    assert "worker_restarts_aggregate" in text
-    assert "aws_cloudwatch_log_group.portal.name" in text
-    assert "Shifter/Workers/${var.name_prefix}" in text
-    assert RESTART_METRIC in text
-    assert "WorkerRestartsTotal" in text
-    assert "labels.worker_queue" in text
-    assert 'Queue = "$.labels.worker_queue"' in text
+    per_queue = resource_block(text, "aws_cloudwatch_log_metric_filter", "worker_restarts")
+    assert "aws_cloudwatch_log_group.portal.name" in per_queue
+    assert "Shifter/Workers/${var.name_prefix}" in per_queue
+    assert RESTART_METRIC in per_queue
+    assert 'Queue = "$.labels.worker_queue"' in per_queue
+
+    aggregate = resource_block(text, "aws_cloudwatch_log_metric_filter", "worker_restarts_aggregate")
+    assert "aws_cloudwatch_log_group.portal.name" in aggregate
+    assert "Shifter/Workers/${var.name_prefix}" in aggregate
+    assert "WorkerRestartsTotal" in aggregate
 
 
 def test_ec2_module_defines_worker_restart_rate_alarm() -> None:
-    text = _ec2_module_hcl()
-    assert "worker_restart_rate" in text
-    assert "WorkerRestartsTotal" in text
-    assert "Shifter/Workers/${var.name_prefix}" in text
-    assert "var.worker_health_alarm_actions" in text
-    assert 'statistic           = "Sum"' in text
+    # The alarm must watch the aggregate metric in the right namespace, sum it,
+    # and route to the configured actions - all as arguments of this one alarm.
+    alarm = resource_block(_ec2_module_hcl(), "aws_cloudwatch_metric_alarm", "worker_restart_rate")
+    assert "WorkerRestartsTotal" in alarm
+    assert "Shifter/Workers/${var.name_prefix}" in alarm
+    assert "var.worker_health_alarm_actions" in alarm
+    assert '"Sum"' in alarm
 
 
 def test_worker_restart_alarm_threshold_variables() -> None:

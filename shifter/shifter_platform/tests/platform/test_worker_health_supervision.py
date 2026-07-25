@@ -17,6 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from _hcl import resource_block
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EC2_MODULE = REPO_ROOT / "platform" / "terraform" / "modules" / "portal" / "ec2"
@@ -134,18 +135,25 @@ def test_workflow_invokes_tracked_redeploy_script() -> None:
 
 def test_ec2_module_grants_putmetricdata_least_privilege() -> None:
     text = _ec2_module_hcl()
-    assert "cloudwatch:PutMetricData" in text
-    # Namespace-conditioned, not an unconditioned cloudwatch:* grant.
-    assert "cloudwatch:namespace" in text
     assert "cloudwatch:*" not in text
+
+    # Scope to the granting policy so the namespace condition is proven to sit
+    # on the PutMetricData grant itself. Asserting both substrings anywhere in
+    # the module stays green if the condition drifts to an unrelated policy,
+    # leaving PutMetricData unconditioned.
+    policy = resource_block(text, "aws_iam_role_policy", "cloudwatch_metrics")
+    assert "cloudwatch:PutMetricData" in policy
+    assert "cloudwatch:namespace" in policy
 
 
 def test_ec2_module_defines_unhealthy_workers_alarm() -> None:
-    text = _ec2_module_hcl()
-    assert "aws_cloudwatch_metric_alarm" in text
-    assert "UnhealthyWorkers" in text
-    assert METRIC_NAMESPACE in text
-    assert "var.worker_health_alarm_actions" in text
+    # Metric name, namespace and alarm actions must belong to this one alarm.
+    # Checked independently across the module they would still pass if the
+    # alarm watched a different metric or routed nowhere.
+    alarm = resource_block(_ec2_module_hcl(), "aws_cloudwatch_metric_alarm", "unhealthy_workers")
+    assert "UnhealthyWorkers" in alarm
+    assert METRIC_NAMESPACE in alarm
+    assert "var.worker_health_alarm_actions" in alarm
 
 
 def test_alarm_actions_variable_and_env_wiring() -> None:
