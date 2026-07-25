@@ -1818,6 +1818,8 @@ class TestGcpPlatformCoreContracts:
 
         identity_platform_section = module_main.split('resource "google_identity_platform_config" "platform" {', 1)[1]
         assert "disabled_user_signup   = false" in identity_platform_section
+        assert "multi_tenant {" in identity_platform_section
+        assert "allow_tenants = false" in identity_platform_section
         assert 'event_type   = "beforeCreate"' in identity_platform_section
         # The blocking function is optional because Domain Restricted Sharing can
         # block its allUsers invoker, so the trigger is count-gated.
