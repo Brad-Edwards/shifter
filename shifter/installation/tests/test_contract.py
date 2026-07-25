@@ -249,6 +249,32 @@ class TestBackendBundle:
         assert bundle.generated_outputs == ()
         assert bundle.capabilities == frozenset()
         assert bundle.settings_model is None
+        assert bundle.deploy is None
+        assert bundle.teardown is None
+
+    def test_typed_lifecycle_entrypoints_are_optional_and_structured(self):
+        deploy = CommandSpec(
+            argv=("python3", "scripts/bootstrap/deploy.py", "eks-deploy", "--config", "shifter.yaml"),
+            description="Deploy the selected backend bundle.",
+        )
+        teardown = CommandSpec(
+            argv=("python3", "scripts/bootstrap/deploy.py", "eks-teardown", "--config", "shifter.yaml"),
+            description="Tear down the selected backend bundle.",
+        )
+        bundle = _minimal_bundle(
+            deploy=deploy,
+            teardown=teardown,
+            required_tools=(RequiredTool(name="python3", purpose="run lifecycle"),),
+        )
+
+        assert bundle.deploy is deploy
+        assert bundle.teardown is teardown
+
+    def test_lifecycle_entrypoint_executable_must_be_declared(self):
+        with pytest.raises(ValidationError, match="not listed in required_tools"):
+            _minimal_bundle(
+                deploy=CommandSpec(argv=("python3", "deploy.py"), description="Deploy."),
+            )
 
     def test_full_bundle_parses(self):
         bundle = _minimal_bundle(

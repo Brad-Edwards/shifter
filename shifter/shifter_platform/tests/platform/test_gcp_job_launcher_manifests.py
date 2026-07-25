@@ -38,7 +38,14 @@ def _load_helm_documents() -> list[dict[str, Any]]:
         pytest.skip("helm is required to validate rendered chart manifests")
 
     rendered = subprocess.run(  # noqa: S603
-        [helm, "template", "shifter", str(CHART_DIR)],
+        [
+            helm,
+            "template",
+            "shifter",
+            str(CHART_DIR),
+            "-f",
+            str(CHART_DIR / "values-gcp-dev.yaml"),
+        ],
         check=True,
         capture_output=True,
         text=True,
@@ -446,6 +453,8 @@ def test_helm_admission_principal_tracks_launcher_identity_values() -> None:
             "template",
             "shifter",
             str(CHART_DIR),
+            "-f",
+            str(CHART_DIR / "values-gcp-dev.yaml"),
             "--set",
             "namespaces.platform=custom-platform",
             "--set",
@@ -455,7 +464,7 @@ def test_helm_admission_principal_tracks_launcher_identity_values() -> None:
             "--set",
             "serviceAccounts.provisioner.name=custom-provisioner",
             "--set",
-            "networkPolicy.kubernetesApiCidrs[0]=10.48.0.0/20",
+            "network.kubernetesApiCidrs[0]=10.48.0.0/20",
             "--set",
             "runtimeEnv.ENGINE_TASK_NAMESPACE=wrong-jobs",
             "--set",

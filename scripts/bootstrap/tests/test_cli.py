@@ -42,6 +42,18 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 ),
             }
         },
+        "attested_image_identities": {
+            "value": {
+                "platform": (
+                    f"us-central1-docker.pkg.dev/{project_id}/shifter-gcp-dev-portal/portal@sha256:" + ("1" * 64)
+                ),
+                "guacd": (f"us-central1-docker.pkg.dev/{project_id}/shifter-gcp-dev-guacd/guacd@sha256:" + ("2" * 64)),
+                "guacamoleClient": (
+                    f"us-central1-docker.pkg.dev/{project_id}/shifter-gcp-dev-guacamole-client/"
+                    "guacamole-client@sha256:" + ("3" * 64)
+                ),
+            }
+        },
         "assets_bucket_name": {"value": f"{project_id}-gcp-dev-assets"},
         "terraform_state_bucket_name": {"value": f"{project_id}-terraform-state"},
         "platform_events_topic_id": {"value": f"projects/{project_id}/topics/shifter-gcp-dev-events"},

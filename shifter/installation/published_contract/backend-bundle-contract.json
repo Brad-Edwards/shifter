@@ -398,6 +398,17 @@
         "title": "Contract Version",
         "type": "integer"
       },
+      "deploy": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CommandSpec"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
       "description": {
         "title": "Description",
         "type": "string"
@@ -484,6 +495,17 @@
         "type": "array",
         "uniqueItems": true
       },
+      "teardown": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CommandSpec"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
       "title": {
         "title": "Title",
         "type": "string"
@@ -522,9 +544,20 @@
         "task-runner"
       ],
       "contract_version": 1,
-      "description": "Shifter on AWS: ECS task execution, RDS, SQS, S3, Secrets Manager, and Cognito/OIDC identity, provisioned by the Terraform modules under platform/terraform (and the CloudFormation under platform/cloudformation) and deployed by the AWS workflow.",
+      "deploy": {
+        "argv": [
+          "python3",
+          "scripts/bootstrap/deploy.py",
+          "eks-deploy",
+          "--config",
+          "shifter.yaml"
+        ],
+        "description": "Deploy the AWS EKS bundle selected by the validated root config."
+      },
+      "description": "Shifter on AWS: platform workloads run on EKS through the shared Helm chart, while ECS remains the private range task transport alongside RDS, SQS, S3, Secrets Manager, and Cognito/OIDC.",
       "docs": [
         "docs/architecture/root-configured-backend-bundles.md",
+        "docs/technical/platform_infrastructure/aws-eks-bundle.md",
         "shifter/installation/README.md"
       ],
       "generated_outputs": [
@@ -582,7 +615,9 @@
       "name": "aws",
       "owned_files": {
         "docs": [
-          "docs/technical/dev/ci-cd.md"
+          "docs/technical/dev/ci-cd.md",
+          "docs/technical/platform_infrastructure/aws-eks-bundle.md",
+          "docs/how-to/aws-ecs-to-eks-migration.md"
         ],
         "examples": [
           "shifter/installation/examples/aws.yaml"
@@ -592,7 +627,9 @@
           "platform/terraform/environments",
           "platform/cloudformation"
         ],
-        "kubernetes": [],
+        "kubernetes": [
+          "platform/charts/shifter"
+        ],
         "scripts": [
           "scripts/bootstrap"
         ],
@@ -617,6 +654,11 @@
       "required_tools": [
         {
           "min_version": null,
+          "name": "python3",
+          "purpose": "run the explicit backend lifecycle entrypoint"
+        },
+        {
+          "min_version": null,
           "name": "uv",
           "purpose": "run the Shifter installation tooling (shifter-config validate)"
         },
@@ -628,12 +670,22 @@
         {
           "min_version": null,
           "name": "aws",
-          "purpose": "AWS CLI: authentication, Secrets Manager, and ECS deployment"
+          "purpose": "AWS CLI: authentication, EKS access, Secrets Manager, and ECS tasks"
         },
         {
           "min_version": null,
           "name": "docker",
           "purpose": "build the Shifter Platform container image"
+        },
+        {
+          "min_version": null,
+          "name": "helm",
+          "purpose": "validate and atomically roll out the shared Shifter chart"
+        },
+        {
+          "min_version": null,
+          "name": "kubectl",
+          "purpose": "validate bounded EKS access and inspect rollout health"
         }
       ],
       "settings_schema": {
@@ -657,6 +709,16 @@
         "prod",
         "proof"
       ],
+      "teardown": {
+        "argv": [
+          "python3",
+          "scripts/bootstrap/deploy.py",
+          "eks-teardown",
+          "--config",
+          "shifter.yaml"
+        ],
+        "description": "Tear down only the AWS EKS bundle selected by the validated root config."
+      },
       "title": "Amazon Web Services",
       "validation_checks": [
         {
@@ -691,6 +753,7 @@
         "task-runner"
       ],
       "contract_version": 1,
+      "deploy": null,
       "description": "Shifter on GCP: GKE workloads, Cloud SQL, Pub/Sub, GCS, Secret Manager, and Identity Platform identity, provisioned by the Terraform configuration under platform/terraform/gcp with Kubernetes overlays under platform/k8s/gcp and the shared Helm chart under platform/charts/shifter.",
       "docs": [
         "docs/architecture/root-configured-backend-bundles.md",
@@ -2168,6 +2231,7 @@
         "dev",
         "prod"
       ],
+      "teardown": null,
       "title": "Google Cloud Platform",
       "validation_checks": [
         {

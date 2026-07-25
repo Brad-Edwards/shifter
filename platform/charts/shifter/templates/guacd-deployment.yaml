@@ -25,10 +25,11 @@ spec:
           type: {{ .Values.security.pod.seccompProfile }}
       automountServiceAccountToken: false
       serviceAccountName: {{ .Values.serviceAccounts.workers.name }}
+      {{- include "shifter.podAntiAffinity" (dict "component" "guacd") | nindent 6 }}
       containers:
         - name: guacd
           image: {{ include "shifter.guacdImage" . }}
-          imagePullPolicy: {{ .Values.images.guacd.pullPolicy }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           {{- include "shifter.containerSecurityContextGuacd" . | nindent 10 }}
           volumeMounts:
             - name: tmp

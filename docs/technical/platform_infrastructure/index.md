@@ -2,6 +2,8 @@
 
 Cloud infrastructure and CI/CD for Shifter.
 
+- [AWS EKS backend bundle](aws-eks-bundle.md)
+
 ## AWS
 
 ### Directory Structure

@@ -7,6 +7,7 @@ import sys
 
 from account_recovery import account_recovery
 from aws_bootstrap import AWS_ENVIRONMENTS, BootstrapConfig, bootstrap_account
+from aws_eks import deploy_eks, teardown_eks
 from bootstrap_core import (
     HELP_AWS_PROFILE,
     HELP_DRY_RUN,
@@ -242,6 +243,8 @@ def _required_tools(command: str | None, cloud: str | None) -> set[str]:
         # GCP runners use gcloud + ADC (no AWS CLI); both clouds need gh + terraform.
         cloud_tools = {"gcloud"} if cloud == Cloud.GCP.value else {"aws"}
         return {"git", "gh", "terraform"} | cloud_tools
+    if command in {"eks-deploy", "eks-teardown"}:
+        return {"git", "aws", "terraform", "kubectl", "helm"}
     if command in {None, "bootstrap", "terraform", "full"}:
         return {"git", "aws", "terraform"}
     return {"git"}
@@ -401,6 +404,47 @@ Examples:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    eks_deploy_parser = subparsers.add_parser(
+        "eks-deploy",
+        help="Explicitly deploy backend: aws to EKS through the shared Helm chart",
+    )
+    eks_deploy_parser.add_argument("--config", default="shifter.yaml", help="Validated root installation config")
+    eks_deploy_parser.add_argument(
+        "--images",
+        default=".shifter/images.json",
+        help="JSON mapping of workloads to attested repository@sha256 identities",
+    )
+    eks_deploy_parser.add_argument(
+        "--backend-config",
+        default=os.environ.get("SHIFTER_BACKEND_CONFIG_PATH", ""),
+        help="Protected S3 backend config rendered outside the repository",
+    )
+    eks_deploy_parser.add_argument(
+        "--terraform-inputs",
+        default=os.environ.get("SHIFTER_EKS_TFVARS_PATH", ""),
+        help="Protected JSON var-file containing the EKS infrastructure/runtime projection",
+    )
+    eks_deploy_parser.add_argument("--profile", help=HELP_AWS_PROFILE)
+    eks_deploy_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+
+    eks_teardown_parser = subparsers.add_parser(
+        "eks-teardown",
+        help="Explicitly tear down only the root-configured AWS EKS bundle",
+    )
+    eks_teardown_parser.add_argument("--config", default="shifter.yaml", help="Validated root installation config")
+    eks_teardown_parser.add_argument(
+        "--backend-config",
+        default=os.environ.get("SHIFTER_BACKEND_CONFIG_PATH", ""),
+        help="Protected S3 backend config rendered outside the repository",
+    )
+    eks_teardown_parser.add_argument(
+        "--terraform-inputs",
+        default=os.environ.get("SHIFTER_EKS_TFVARS_PATH", ""),
+        help="Protected JSON var-file containing the isolated EKS root inputs",
+    )
+    eks_teardown_parser.add_argument("--profile", help=HELP_AWS_PROFILE)
+    eks_teardown_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+
     # Bootstrap command
     bootstrap_parser = subparsers.add_parser(
         "bootstrap", help="Bootstrap AWS account (S3 state bucket with native locking, GitHub OIDC, IAM)"
@@ -531,6 +575,27 @@ def main() -> None:
         # Recovery is not a deploy; it resolves the account itself and gates its
         # own destructive sweep. It does not run the deploy preflight_gate.
         account_recovery(args.env, args.profile, sweep=args.sweep, dry_run=args.dry_run)
+        return
+
+    if args.command == "eks-deploy":
+        deploy_eks(
+            args.config,
+            args.images,
+            backend_config_path=args.backend_config,
+            terraform_inputs_path=args.terraform_inputs,
+            aws_profile=args.profile,
+            dry_run=args.dry_run,
+        )
+        return
+
+    if args.command == "eks-teardown":
+        teardown_eks(
+            args.config,
+            backend_config_path=args.backend_config,
+            terraform_inputs_path=args.terraform_inputs,
+            aws_profile=args.profile,
+            dry_run=args.dry_run,
+        )
         return
 
     # Fail-safe gate: verify prerequisites and confirm the manual ones before any

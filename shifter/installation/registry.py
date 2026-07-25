@@ -206,9 +206,8 @@ _AWS_BUNDLE = BackendBundle(
     title="Amazon Web Services",
     maturity=BackendMaturity.STABLE,
     description=(
-        "Shifter on AWS: ECS task execution, RDS, SQS, S3, Secrets Manager, and Cognito/OIDC identity, "
-        "provisioned by the Terraform modules under platform/terraform (and the CloudFormation under "
-        "platform/cloudformation) and deployed by the AWS workflow."
+        "Shifter on AWS: platform workloads run on EKS through the shared Helm chart, while ECS remains "
+        "the private range task transport alongside RDS, SQS, S3, Secrets Manager, and Cognito/OIDC."
     ),
     # prod / dev are the OSS profiles; proof is the internal new-tenant readiness tier that
     # has its own Terraform root (platform/terraform/environments/proof) and aws-proof
@@ -217,11 +216,22 @@ _AWS_BUNDLE = BackendBundle(
     supported_profiles=frozenset({"prod", "dev", "proof"}),
     # Migrated by #1116 / GH #728: the closed operator-intent schema, no longer None.
     settings_model=AwsSettings,
+    deploy=CommandSpec(
+        argv=("python3", "scripts/bootstrap/deploy.py", "eks-deploy", "--config", "shifter.yaml"),
+        description="Deploy the AWS EKS bundle selected by the validated root config.",
+    ),
+    teardown=CommandSpec(
+        argv=("python3", "scripts/bootstrap/deploy.py", "eks-teardown", "--config", "shifter.yaml"),
+        description="Tear down only the AWS EKS bundle selected by the validated root config.",
+    ),
     required_tools=(
+        RequiredTool(name="python3", purpose="run the explicit backend lifecycle entrypoint"),
         RequiredTool(name="uv", purpose="run the Shifter installation tooling (shifter-config validate)"),
         RequiredTool(name="terraform", purpose="provision AWS infrastructure (platform/terraform)"),
-        RequiredTool(name="aws", purpose="AWS CLI: authentication, Secrets Manager, and ECS deployment"),
+        RequiredTool(name="aws", purpose="AWS CLI: authentication, EKS access, Secrets Manager, and ECS tasks"),
         RequiredTool(name="docker", purpose="build the Shifter Platform container image"),
+        RequiredTool(name="helm", purpose="validate and atomically roll out the shared Shifter chart"),
+        RequiredTool(name="kubectl", purpose="validate bounded EKS access and inspect rollout health"),
     ),
     required_secrets=(
         RequiredSecret(
@@ -252,12 +262,21 @@ _AWS_BUNDLE = BackendBundle(
     capabilities=_AWS_AND_GCP_CAPABILITIES,
     owned_files=OwnedFiles(
         infrastructure=("platform/terraform/modules", "platform/terraform/environments", "platform/cloudformation"),
+        kubernetes=("platform/charts/shifter",),
         scripts=("scripts/bootstrap",),
         workflows=(".github/workflows/deploy.yml",),
         examples=("shifter/installation/examples/aws.yaml",),
-        docs=("docs/technical/dev/ci-cd.md",),
+        docs=(
+            "docs/technical/dev/ci-cd.md",
+            "docs/technical/platform_infrastructure/aws-eks-bundle.md",
+            "docs/how-to/aws-ecs-to-eks-migration.md",
+        ),
     ),
-    docs=("docs/architecture/root-configured-backend-bundles.md", "shifter/installation/README.md"),
+    docs=(
+        "docs/architecture/root-configured-backend-bundles.md",
+        "docs/technical/platform_infrastructure/aws-eks-bundle.md",
+        "shifter/installation/README.md",
+    ),
 )
 
 # The GCP generated runtime env is authored by the GCP backend runtime-env renderer and

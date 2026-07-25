@@ -23,7 +23,7 @@ from ._base import (
 )
 from ._enums import BackendCapability, BackendMaturity
 from ._outputs import GeneratedOutput, HealthCheck, OwnedFiles, ValidationCheck
-from ._specs import RequiredSecret, RequiredTool
+from ._specs import CommandSpec, RequiredSecret, RequiredTool
 
 # A backend or profile identifier: lowercase letter, then lowercase letters/digits and
 # internal hyphens. Mirrors the DNS-label-safe style used elsewhere in this package.
@@ -52,6 +52,8 @@ class BackendBundle(_ContractModel):
     #: Validator for this backend's ``RootConfig.settings`` block. ``None`` means "any
     #: mapping" — the provisional ``aws``/``gcp`` registry entries until #1116/#1117.
     settings_model: type[BaseModel] | None = None
+    deploy: CommandSpec | None = None
+    teardown: CommandSpec | None = None
     required_tools: tuple[RequiredTool, ...] = ()
     required_secrets: tuple[RequiredSecret, ...] = ()
     generated_outputs: tuple[GeneratedOutput, ...] = ()
@@ -122,6 +124,11 @@ class BackendBundle(_ContractModel):
             if executable not in tool_names:
                 raise ValueError(
                     f"validation check {check.name!r} runs {executable!r}, which is not listed in required_tools"
+                )
+        for operation, command in (("deploy", self.deploy), ("teardown", self.teardown)):
+            if command is not None and command.argv[0] not in tool_names:
+                raise ValueError(
+                    f"{operation} entrypoint runs {command.argv[0]!r}, which is not listed in required_tools"
                 )
         # Named record collections are keys consumers build maps from — no duplicates.
         _check_unique((tool.name for tool in self.required_tools), field="required_tools name")
