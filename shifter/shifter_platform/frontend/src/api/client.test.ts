@@ -28,7 +28,7 @@ describe("apiFetch", () => {
     const fetchMock = mockFetch(201, { id: 1 });
     vi.stubGlobal("fetch", fetchMock);
 
-    await apiFetch("/risks/", { method: "POST", body: { title: "x" } });
+    await apiFetch("/example/", { method: "POST", body: { title: "x" } });
 
     const init = lastInit(fetchMock);
     expect(init.headers["X-CSRFToken"]).toBe("tok123");
@@ -44,7 +44,7 @@ describe("apiFetch", () => {
     // Simulate a plain-HTTP (non-secure) origin where randomUUID is undefined.
     Object.defineProperty(crypto, "randomUUID", { value: undefined, configurable: true });
     try {
-      await apiFetch("/risks/");
+      await apiFetch("/example/");
       expect(lastInit(fetchMock).headers["X-Request-ID"]).toBeTruthy();
     } finally {
       Object.defineProperty(crypto, "randomUUID", { value: original, configurable: true });
@@ -55,7 +55,7 @@ describe("apiFetch", () => {
     const fetchMock = mockFetch(200, { results: [] });
     vi.stubGlobal("fetch", fetchMock);
 
-    await apiFetch("/risks/");
+    await apiFetch("/example/");
 
     expect(lastInit(fetchMock).headers["X-CSRFToken"]).toBeUndefined();
   });
@@ -66,7 +66,7 @@ describe("apiFetch", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const error = await apiFetch("/risks/", { method: "POST", body: {} }).catch((e: unknown) => e);
+    const error = await apiFetch("/example/", { method: "POST", body: {} }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
     const apiError = error as ApiError;
     expect(apiError.status).toBe(400);
@@ -78,17 +78,17 @@ describe("apiFetch", () => {
   it("returns undefined on 204 No Content", async () => {
     const fetchMock = mockFetch(204);
     vi.stubGlobal("fetch", fetchMock);
-    await expect(apiFetch("/risks/1/", { method: "DELETE" })).resolves.toBeUndefined();
+    await expect(apiFetch("/example/1/", { method: "DELETE" })).resolves.toBeUndefined();
   });
 
   it("builds a query string and drops undefined params", async () => {
     const fetchMock = mockFetch(200, {});
     vi.stubGlobal("fetch", fetchMock);
 
-    await apiFetch("/risks/", { query: { severity: "high", page: 2, include_deleted: undefined } });
+    await apiFetch("/example/", { query: { severity: "high", page: 2, include_deleted: undefined } });
 
     const url = fetchMock.mock.calls[0][0] as string;
-    expect(url).toContain("/api/v1/risks/?");
+    expect(url).toContain("/api/v1/example/?");
     expect(url).toContain("severity=high");
     expect(url).toContain("page=2");
     expect(url).not.toContain("include_deleted");

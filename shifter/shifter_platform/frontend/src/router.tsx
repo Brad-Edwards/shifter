@@ -38,19 +38,14 @@ import { RangeDetailPage } from "@/features/mission-control/RangeDetailPage";
 import { RangeHistoryPage } from "@/features/mission-control/RangeHistoryPage";
 import { RangeLaunchPage } from "@/features/mission-control/RangeLaunchPage";
 import { TerminalPage } from "@/features/mission-control/TerminalPage";
-import { RiskDetailPage } from "@/features/risk-register/RiskDetailPage";
-import { RiskFormPage } from "@/features/risk-register/RiskFormPage";
-import { RiskListPage } from "@/features/risk-register/RiskListPage";
 import { ScenarioDetailPage } from "@/features/scenario-editor/ScenarioDetailPage";
 import { ScenarioFormPage } from "@/features/scenario-editor/ScenarioFormPage";
 import { ScenarioListPage } from "@/features/scenario-editor/ScenarioListPage";
 import { ScenarioYamlPage } from "@/features/scenario-editor/ScenarioYamlPage";
 
 // One platform router at the site root (#1369). The Django host serves the
-// shell for the SPA-owned page paths (root and /risk-register/*), so deep links
-// and refresh resolve to this client router. Risk Register is rehomed here as a
-// child of the platform router; its advisory access gate rides the route handle.
-const riskRegisterHandle: RouteHandle = { permissionPolicy: "risk_register_access" };
+// shell for the SPA-owned page paths, so deep links and refresh resolve to
+// this client router.
 // Mission Control (#1370) is gated the same way the "Operate" nav group is:
 // any authenticated principal, same as its legacy Django views.
 const missionControlHandle: RouteHandle = { permissionPolicy: "authenticated" };
@@ -81,16 +76,6 @@ export const router = createBrowserRouter(
       element: <RootLayout />,
       children: [
         { index: true, element: <HomePage /> },
-        {
-          path: "risk-register",
-          handle: riskRegisterHandle,
-          children: [
-            { index: true, element: <RiskListPage /> },
-            { path: "risks/create", element: <RiskFormPage mode="create" /> },
-            { path: "risks/:id", element: <RiskDetailPage /> },
-            { path: "risks/:id/edit", element: <RiskFormPage mode="edit" /> },
-          ],
-        },
         {
           // The F1 foundation chunk registered only the dashboard; the
           // live-access chunk added the per-instance terminal page; the

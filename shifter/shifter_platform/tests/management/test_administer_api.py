@@ -16,10 +16,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from management.models import UserProfile
-from risk_register.models import AuditLog
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 from shared.audit import AuditAction, AuditEntityType
+from shared.models import AuditLog
 
 pytestmark = pytest.mark.django_db
 
@@ -145,7 +145,7 @@ class TestAuthenticationChain:
     """The Administer views keep the canonical bearer-first, fail-closed chain."""
 
     def test_valid_token_principal_is_rejected(self, admin):
-        _token, raw = ApiToken.create_token(name="ci", created_by=admin, scopes=[scopes.RISK_READ])
+        _token, raw = ApiToken.create_token(name="ci", created_by=admin, scopes=[scopes.MISSION_CONTROL_RANGE_READ])
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
         # A valid platform token authenticates, then IsStaffSession rejects it:

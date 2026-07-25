@@ -31,13 +31,13 @@ from cms.services._ngfws import (
     _validate_ngfw_name,
     _validate_ngfw_user,
 )
-from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import RequestType, ResourceStatus
+from shared.models import AuditLog
 from shared.schemas.app import NGFWAppContext, NGFWAppRef
 
 pytestmark = pytest.mark.django_db

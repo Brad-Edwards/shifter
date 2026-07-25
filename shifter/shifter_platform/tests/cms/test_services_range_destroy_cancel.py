@@ -15,13 +15,13 @@ from cms import services
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from engine.models import Range as EngineRange
-from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import ResourceStatus
+from shared.models import AuditLog
 from tests.conftest import INVALID_RANGE_IDS, INVALID_USERS
 
 pytestmark = pytest.mark.django_db

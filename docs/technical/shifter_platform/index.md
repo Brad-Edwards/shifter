@@ -139,10 +139,3 @@ runner. Core ships no scenario adapters or answer material.
 - [Scenario-verification plugin guide](scenario-verification.md): public v1
   types, plugin factories, operator selection, execution, status/exit behavior,
   and report redaction.
-
-## Risk Register
-
-The `risk_register` app owns the Risk Register domain and is the first SPA
-cutover module (ADR-029).
-
-- [Risk Register technical documentation](risk_register): models, DRF API, authorization, audit, and the SPA integration.

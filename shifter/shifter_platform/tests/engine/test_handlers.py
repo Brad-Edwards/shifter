@@ -17,9 +17,9 @@ from django.utils import timezone
 
 from engine.handlers import process_event, process_range_event
 from engine.models import Range
-from risk_register.models import AuditLog
 from shared.audit import AuditEntityType
 from shared.enums import ResourceStatus
+from shared.models import AuditLog
 
 pytestmark = pytest.mark.django_db
 

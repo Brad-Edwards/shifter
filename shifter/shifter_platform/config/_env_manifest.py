@@ -27,6 +27,7 @@ class EnvBinding:
 
 
 _API_POLICY_FILE = "config/_api_token_settings.py"
+_AUDIT_SETTINGS_FILE = "config/_audit_settings.py"
 _DATABASE_SETTINGS_FILE = "config/_database_settings.py"
 _OIDC_SETTINGS_FILE = "config/_oidc_settings.py"
 _SETTINGS_FILE = "config/settings.py"
@@ -55,6 +56,14 @@ _EXPLICIT_BINDINGS = (
     # guardrail (#1523). Governs trusted X-Forwarded-For proxy hops for audit
     # source-IP attribution.
     EnvBinding(name="AUDIT_TRUSTED_PROXY_HOPS", default="1", source_file=_SETTINGS_FILE),
+    # Read via `_env_list(...)` (a helper, not a literal `os.environ.get`), so the
+    # AST walker cannot see it; declared explicitly per the same audit
+    # config-binding guardrail (#1374). Gates audit-log reads and FAILS CLOSED
+    # when unset, so it must be discoverable in the canonical manifest: it
+    # replaces the retired `RISK_REGISTER_ALLOWED_COGNITO_GROUPS`, and a
+    # deployment that carries only the old name starts cleanly but denies every
+    # audit read.
+    EnvBinding(name="AUDIT_LOG_ALLOWED_COGNITO_GROUPS", default="[]", source_file=_AUDIT_SETTINGS_FILE),
     EnvBinding(name="EMAIL_BACKEND", default=None, source_file="config/_email.py"),
     EnvBinding(name="ENVIRONMENT", default=None, source_file=_SETTINGS_FILE),
     EnvBinding(name="FIELD_ENCRYPTION_KEY", default=None, source_file=_SETTINGS_FILE),

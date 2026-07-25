@@ -91,17 +91,19 @@ class TestPublishedContract:
 
     def test_error_responses_reference_the_envelope(self, openapi_document: dict[str, Any]) -> None:
         # Only the statuses the shared exception handler guarantees are injected.
-        risks = openapi_document["paths"]["/api/v1/risks/"]["get"]
+        # (Risk Register's `/api/v1/risks/` was removed in #1374 Part B; any
+        # scoped, token-gated GET operation exercises the same envelope wiring.)
+        range_op = openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]
         for code in ("401", "403"):
-            schema = risks["responses"][code]["content"]["application/json"]["schema"]
+            schema = range_op["responses"][code]["content"]["application/json"]["schema"]
             assert schema["$ref"].endswith("/ApiError")
 
     def test_body_dependent_errors_are_not_injected_globally(self, openapi_document: dict[str, Any]) -> None:
         # 400/404 shapes vary per endpoint (some legacy views return non-envelope
         # errors), so they must not be blanket-injected onto every operation.
-        risks = openapi_document["paths"]["/api/v1/risks/"]["get"]
-        assert "400" not in risks["responses"]
-        assert "404" not in risks["responses"]
+        range_op = openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]
+        assert "400" not in range_op["responses"]
+        assert "404" not in range_op["responses"]
 
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.
@@ -110,7 +112,8 @@ class TestPublishedContract:
         assert "200" not in ngfw["responses"]
 
     def test_token_scopes_published_for_scoped_operations(self, openapi_document: dict[str, Any]) -> None:
-        assert openapi_document["paths"]["/api/v1/risks/"]["get"]["x-required-scopes"] == ["risk:read"]
+        range_op = openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]
+        assert range_op["x-required-scopes"] == ["mission_control:range:read"]
 
     def test_unscoped_operations_omit_scope_extension(self, openapi_document: dict[str, Any]) -> None:
         # Admin-only audit reads are not token-scoped; they must not advertise a scope.
@@ -121,12 +124,6 @@ class TestPublishedContract:
         detail = openapi_document["paths"]["/api/v1/cms/scenario-editor/scenarios/{scenario_id}/"]
         assert detail["get"]["x-required-scopes"] == ["cms:authoring:read"]
         assert detail["patch"]["x-required-scopes"] == ["cms:authoring:write"]
-
-    def test_comment_author_resolves_to_structured_component(self, openapi_document: dict[str, Any]) -> None:
-        schemas = openapi_document["components"]["schemas"]
-        assert "CommentAuthor" in schemas
-        author = schemas["Comment"]["properties"]["author"]
-        assert any("CommentAuthor" in ref.get("$ref", "") for ref in author.get("allOf", []))
 
     def test_both_auth_schemes_present(self, openapi_document: dict[str, Any]) -> None:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])
@@ -139,13 +136,16 @@ class TestLiveResponseParity:
     def test_unauthenticated_request_matches_published_401(self, openapi_document: dict[str, Any]) -> None:
         from rest_framework.test import APIClient
 
-        response = APIClient().get("/api/v1/risks/")
+        # Risk Register's `/api/v1/risks/` was removed in #1374 Part B; any
+        # scoped, token-gated GET operation exercises the same live-vs-published
+        # parity concern.
+        response = APIClient().get("/api/v1/mission-control/range/")
         assert response.status_code == 401
         # Live body is the canonical envelope the exception handler renders...
         body = response.json()
         assert {"code", "message"} <= set(body["error"])
         # ...and the contract publishes exactly that shape for 401 on this operation.
-        published = openapi_document["paths"]["/api/v1/risks/"]["get"]["responses"]["401"]
+        published = openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]["responses"]["401"]
         assert published["content"]["application/json"]["schema"]["$ref"].endswith("/ApiError")
 
 
@@ -310,8 +310,8 @@ class TestApiContractCommand:
 class TestPlatformAutoSchemaFallback:
     def test_resolved_permissions_falls_back_when_get_permissions_raises(self) -> None:
         class _Perm:
-            required_read_scope = "risk:read"
-            required_write_scope = "risk:write"
+            required_read_scope = "mission_control:range:read"
+            required_write_scope = "mission_control:range:write"
 
         class _View:
             permission_classes = [_Perm]

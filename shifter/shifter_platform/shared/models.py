@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 # ApiToken lives in the cohesive shared.api_tokens package but belongs to the
 # ``shared`` app; importing it here ensures Django discovers it and emits its
 # migration under shared/migrations/.
 from shared.api_tokens.models import ApiToken  # noqa: F401
+from shared.audit.vocabulary import AuditAction, AuditActorType, AuditEntityType
 
 
 class WebSocketNotification(models.Model):
@@ -292,3 +295,151 @@ class AcesParticipantRuntimeRecord(models.Model):
         self.payload = result.payload
         self.diagnostic_refs = result.diagnostic_refs
         super().save(*args, **kwargs)
+
+
+class AuditLog(models.Model):
+    """Record of state changes for auditing (#1374 rehome from risk_register).
+
+    Central audit log for all platform operations. Immutable - records cannot
+    be modified or deleted through the application. The concrete persistence
+    adapter (``shared.audit_adapter.DjangoAuditLogWriter``) is the only place
+    ``AuditLog.log()`` is called at runtime (#1523); emitters depend on the
+    neutral ``shared.audit`` port instead.
+    """
+
+    # The audit vocabulary is owned by ``shared.audit`` (ADR-001, #1523); the
+    # ORM field ``choices`` derive from it so there is one vocabulary and one
+    # event shape. Values/labels are identical to the historical nested enums,
+    # so no data migration is required.
+    entity_type = models.CharField(max_length=20, choices=AuditEntityType.choices)
+    entity_id = models.PositiveIntegerField()
+    action = models.CharField(max_length=20, choices=AuditAction.choices)
+
+    actor_type = models.CharField(max_length=10, choices=AuditActorType.choices)
+    actor_id = models.PositiveIntegerField(null=True, blank=True)
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+    previous_state = models.JSONField(null=True, blank=True)
+    new_state = models.JSONField(null=True, blank=True)
+    context = models.TextField(blank=True, help_text="Optional reason or notes")
+
+    # Request context for tracing
+    source_ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    request_id = models.CharField(max_length=64, blank=True, db_index=True)
+
+    class Meta:
+        """Model metadata."""
+
+        db_table = "shared_auditlog"
+        ordering = ["-timestamp"]
+        verbose_name = "Audit Log"
+        verbose_name_plural = "Audit Logs"
+        indexes = [
+            models.Index(fields=["entity_type", "entity_id"]),
+            models.Index(fields=["actor_type", "actor_id"]),
+            models.Index(fields=["timestamp"]),
+            models.Index(fields=["action"]),
+        ]
+
+    def __str__(self) -> str:
+        """Return a compact diagnostic representation."""
+        return f"{self.action} {self.entity_type} {self.entity_id} at {self.timestamp}"
+
+    @classmethod
+    def log(
+        cls,
+        entity_type: str,
+        entity_id: int,
+        action: str,
+        actor_type: str,
+        actor_id: int | None = None,
+        previous_state: dict[str, Any] | None = None,
+        new_state: dict[str, Any] | None = None,
+        context: str = "",
+        source_ip: str | None = None,
+        user_agent: str = "",
+        request_id: str = "",
+    ) -> AuditLog:
+        """Create an audit log entry."""
+        return cls.objects.create(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            action=action,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            previous_state=previous_state,
+            new_state=new_state,
+            context=context,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            request_id=request_id,
+        )
+
+
+# SonarCloud S1192: extracted duplicated string literal.
+_API_KEY_LABEL = "API Key"
+
+
+class APIKey(models.Model):
+    """Archival record of a retired risk-register API key (#1374 rehome).
+
+    .. deprecated:: PLAT-102
+    .. removed:: PLAT-106 (#1124)
+        The legacy ``rr_live_`` ``X-API-Key`` credential is retired: it no
+        longer authenticates, and there is no mint path. Superseded by the
+        platform-wide ``shared.api_tokens.ApiToken`` (scoped bearer tokens).
+        This model and its table are retained **archival-only** because
+        historical ``AuditLog`` entries reference retired keys by id; no
+        runtime authentication or key creation happens here. New integrations
+        use ``ApiToken``.
+
+    Moved from ``risk_register.models`` to ``shared.models`` in #1374 Part B,
+    after the risk-register ``Risk``/``Comment`` models (the only in-tree FKs
+    to this model) were deleted, so the move never creates a cross-app-label
+    foreign key.
+    """
+
+    name = models.CharField(max_length=100, help_text="Human-friendly name for this key")
+    prefix = models.CharField(max_length=8, unique=True, help_text="Key prefix for identification")
+    key_hash = models.CharField(max_length=64, help_text="SHA-256 hash of full key")
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_api_keys",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        """Model metadata."""
+
+        db_table = "shared_apikey"
+        ordering = ["-created_at"]
+        verbose_name = _API_KEY_LABEL
+        verbose_name_plural = "API Keys"
+        indexes = [
+            models.Index(fields=["prefix"]),
+            models.Index(fields=["created_by", "revoked_at"]),
+        ]
+
+    def __str__(self) -> str:
+        """Return a compact diagnostic representation."""
+        status = "active" if self.is_active else "revoked"
+        return f"{self.name} ({self.prefix}...) - {status}"
+
+    @property
+    def is_active(self) -> bool:
+        """Return True if key is not revoked and not expired."""
+        if self.revoked_at is not None:
+            return False
+        return not (self.expires_at is not None and self.expires_at < timezone.now())
+
+    @property
+    def display_key(self) -> str:
+        """Return prefix with ellipsis for display."""
+        return f"{self.prefix}..."

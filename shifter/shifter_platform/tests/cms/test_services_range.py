@@ -162,7 +162,7 @@ class TestCreateRangeBehavior:
         assert ri.agent_id == agent.id
 
     def test_records_an_audit_row(self, user, make_agent, hydratable_scenario):
-        from risk_register.models import AuditLog
+        from shared.models import AuditLog
 
         before = AuditLog.objects.count()
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": make_agent(user).id})
@@ -170,8 +170,8 @@ class TestCreateRangeBehavior:
 
     def test_marks_owned_range_failed_when_engine_dispatch_fails(self, user, make_agent, hydratable_scenario, settings):
         from engine.models import Range as EngineRange
-        from risk_register.models import AuditLog
         from shared.audit import AuditAction, AuditEntityType
+        from shared.models import AuditLog
 
         settings.CLOUD_PROVIDER = "aws"
         settings.LOCAL_PROVISIONER = None

@@ -646,7 +646,7 @@ repos:
         name: architecture (import linter)
         entry: bash -c 'cd shifter/shifter_platform && uv run lint-imports --config ../../.importlinter'
         language: system
-        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf|config|risk_register)/.*\.py$|\.importlinter$)
+        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf|config)/.*\.py$|\.importlinter$)
         pass_filenames: false
         verbose: true
 
@@ -844,7 +844,7 @@ repos:
           bash -c 'cd shifter/shifter_platform && source .venv/bin/activate &&
           TESTING=1 TEST_DB_BACKEND=sqlite DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing python
           -m pytest tests/
-          --ignore=tests/risk_register -m "not redis and not postgres" -q --cov=.
+          -m "not redis and not postgres" -q --cov=.
           --cov-report=html:../../coverage/shifter_platform
           --cov-report=xml:coverage.xml
           --cov-report=term-missing:skip-covered'

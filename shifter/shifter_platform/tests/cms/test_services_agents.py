@@ -140,8 +140,8 @@ class TestCreateAgent:
         assert persisted.user_id == user.id
 
     def test_passes_upload_method_through(self, user, windows_os):
-        from risk_register.models import AuditLog
         from shared.audit import AuditAction, AuditEntityType
+        from shared.models import AuditLog
 
         agent = services.create_agent(
             user,
