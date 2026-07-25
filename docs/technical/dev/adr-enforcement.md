@@ -25,6 +25,10 @@ The current enforcement stack has six parts:
    - `import-linter` for Python package contracts
    - `actionlint` for GitHub Actions workflows
    - `TFLint` for Terraform linting (including the `tflint-ruleset-google` plugin for GCP resources)
+     The CI initialization step supplies the job-scoped `github.token` as
+     `GITHUB_TOKEN`, so provider-plugin release lookups use the authenticated
+     GitHub API allowance instead of the shared runner IP's unauthenticated
+     rate limit.
    - `gitleaks` for new secret leakage detection
    - `helm lint` for Helm chart validation where files are templates rather than plain YAML
    - `kubeconform` for Kubernetes manifest schema validation
@@ -304,6 +308,13 @@ The first slice intentionally stays small:
   fail-closed on `pull_request` under the `deploy-workflow-runner-exposure`
   (ADR-003-R5) invariant, keeps `contents: read` only, and carries a
   `timeout-minutes` backstop (#1220).
+
+  `TestGcpPrivateControlPlaneAccess` keeps both GCP deploy credential setup
+  points on fleet Connect Gateway and rejects the direct
+  `get-gke-credentials` action. The self-hosted runner has no route to the
+  private RFC1918 GKE control-plane endpoint, so replacing either gateway
+  refresh with direct credentials would make the workload apply time out
+  after otherwise successful Terraform and image-build stages (#1850).
 
   The manual-deploy invariant (`TestManualDeployDispatch`, #730) asserts that
   environment deploys are a `workflow_dispatch` naming the `environment` input

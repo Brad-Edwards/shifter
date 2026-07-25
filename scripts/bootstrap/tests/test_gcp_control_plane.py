@@ -280,7 +280,7 @@ project_id = "shifter-gcp-dev"
 region = "us-central1"
 public_hostname = "portal.example.test"
 enable_managed_tls = true
-gke_master_authorized_cidrs = ["198.51.100.10/32"]
+gke_master_authorized_cidrs = []
 	"""
         )
         # The control-plane apply renders the range egress bridge from the root
@@ -341,7 +341,7 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
             'region = "us-central1"\n'
             'public_hostname = "portal.example.test"\n'
             "enable_managed_tls = true\n"
-            'gke_master_authorized_cidrs = ["198.51.100.10/32"]\n'
+            "gke_master_authorized_cidrs = []\n"
         )
         (mock_repo_root / "shifter.yaml").write_text("version: 1\nbackend: gcp\n")
 
@@ -551,12 +551,14 @@ gke_master_authorized_cidrs = []
             # `gke_master_authorized_cidrs` enforces — keep these in lockstep.
             (["0.0.0.0/0"], r"/0 range"),
             (["::/0"], r"/0 range"),
-            (["198.51.100.0/24", "0.0.0.0/0"], r"/0 range"),
+            (["10.42.0.0/16", "0.0.0.0/0"], r"/0 range"),
             (["203.0.113.10"], r"explicit /N prefix"),
             (["not-a-cidr"], r"explicit /N prefix"),
             (["not/a/cidr"], r"not a valid CIDR"),
             (["198.51.100.999/32"], r"not a valid CIDR"),
             (["198.51.100.0/33"], r"not a valid CIDR"),
+            (["198.51.100.10/32"], r"only RFC1918"),
+            (["2001:db8::/48"], r"only RFC1918"),
         ],
         ids=[
             "ipv4_world_open",
@@ -567,6 +569,8 @@ gke_master_authorized_cidrs = []
             "garbage_with_slashes",
             "bad_octet",
             "bad_prefix",
+            "public_ipv4",
+            "ipv6",
         ],
     )
     def test_validate_security_inputs_rejects_unsafe_authorized_cidrs(self, tmp_path, cidrs, expected_match):
@@ -577,8 +581,8 @@ gke_master_authorized_cidrs = []
         with pytest.raises(ValueError, match=expected_match):
             deploy.validate_gcp_control_plane_security_inputs(tf_dir)
 
-    def test_validate_security_inputs_accepts_specific_admin_cidrs(self, tmp_path):
-        """A non-empty allowlist of specific, well-formed v4/v6 CIDRs passes the preflight.
+    def test_validate_security_inputs_accepts_specific_private_cidrs(self, tmp_path):
+        """A non-empty allowlist of specific RFC1918 CIDRs passes the preflight.
 
         The validator is a side-effect-only contract (raise on bad input, return
         None on good input), so the assertions cover both halves: the documented
@@ -587,7 +591,7 @@ gke_master_authorized_cidrs = []
         CIDR loop would still be caught here, not just by the negative cases).
         """
         tf_dir = tmp_path / "gcp-dev"
-        cidrs = ["198.51.100.10/32", "203.0.113.0/24", "2001:db8::/48"]
+        cidrs = ["10.42.0.0/16", "172.20.1.0/24", "192.168.50.10/32"]
         self._write_secure_tfvars(tf_dir, cidrs)
 
         assert deploy.validate_gcp_control_plane_security_inputs(tf_dir) is None
@@ -1814,6 +1818,8 @@ class TestGcpPlatformCoreContracts:
 
         identity_platform_section = module_main.split('resource "google_identity_platform_config" "platform" {', 1)[1]
         assert "disabled_user_signup   = false" in identity_platform_section
+        assert "multi_tenant {" in identity_platform_section
+        assert "allow_tenants = false" in identity_platform_section
         assert 'event_type   = "beforeCreate"' in identity_platform_section
         # The blocking function is optional because Domain Restricted Sharing can
         # block its allUsers invoker, so the trigger is count-gated.

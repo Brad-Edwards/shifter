@@ -495,7 +495,7 @@ cat > platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars <<'EOF'
 project_id                  = "<your-gcp-project-id>"
 public_hostname             = "shifter.<your-domain>"
 enable_managed_tls          = true
-gke_master_authorized_cidrs = ["<your-operator-egress>/32"]
+gke_master_authorized_cidrs = []
 EOF
 ```
 

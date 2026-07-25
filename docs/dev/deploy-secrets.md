@@ -55,7 +55,7 @@ missing required secret fails the deploy up front rather than mid-run.
 | `TF_VARS_DEV_CORE` | `scripts/sync-deploy-secrets.sh --env dev` | yes | Core stack `local.auto.tfvars` payload (`budget_alert_email`). |
 | `TF_VARS_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev` | yes | Range stack `local.auto.tfvars` payload (`agent_s3_bucket`, `vm_series_ami_id`). |
 | `TF_VARS_DEV_PORTAL` | `scripts/sync-deploy-secrets.sh --env dev` | yes | Portal stack `local.auto.tfvars` payload (domain, email, buckets, capacity). |
-| `TF_VARS_DEV_EKS` | protected environment secret | yes for EKS | JSON var-file for the isolated EKS root, including cluster/edge inputs and the canonical non-secret runtime projection. Prod/proof use the matching environment suffix. |
+| `TF_VARS_DEV_EKS` | protected environment secret | yes for EKS | JSON var-file for the isolated EKS root, including cluster/edge inputs and the canonical non-secret runtime projection. Prod/proof use the matching environment suffix. The EKS job remains disabled until the matching repository variable (`AWS_EKS_DEV_ENABLED`, `AWS_EKS_PROOF_ENABLED`, or `AWS_EKS_PROD_ENABLED`) is set to `true` for a controlled migration or EKS-native standup. |
 | `SHIFTER_CONFIG_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev --stack config --shifter-config ./shifter.yaml` | yes | Deployment `shifter.yaml`; its `settings.range_egress` renders the range egress allowlist. |
 | `SMOKE_TEST_USER_EMAIL` | manual | no | Post-deploy smoke user. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | manual | no | Comma-separated emails elevated to Django `is_staff` on first sign-in. Shared across all environments including prod. |
@@ -119,7 +119,7 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `GCP_REGION` | variable | no | Default `us-central1`. |
 | `GCP_PUBLIC_HOSTNAME` | secret | yes | DNS name the platform serves on (for example, `shifter.your-domain.example`). |
 | `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN` | secret | yes | Identity Platform beforeCreate allow-list; the bootstrap operator must end with `@<this>` for sign-in to succeed. |
-| `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal, for example `["1.2.3.4/32"]`. Empty (`[]`) locks the GKE control-plane to private endpoints only. |
+| `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal containing only connected RFC1918 networks. Use `[]` for the normal Connect Gateway path; public operator egress CIDRs are invalid for the private endpoint. |
 | `GCP_SERVICE_ACCOUNT` | secret | yes | Workload-identity-federation service account for deploy. |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | yes | Workload identity provider resource id. |
 | `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | yes | First Identity Platform operator, elevated in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set to deliberately skip operator creation (the skip is logged). |
@@ -137,7 +137,8 @@ When Terraform outputs are not available yet, it uses
 The `cicd-github-oidc` module federates GitHub Actions into GCP with an
 **exact-subject** trust: the Workload Identity provider `attribute_condition`
 admits only this repository, an exact protected `assertion.ref`
-(`refs/heads/dev` / `refs/heads/main`), and an allow-listed `assertion.sub`; the
+(`refs/heads/dev` / `refs/heads/main`, plus `refs/heads/gcp-dev` only when
+paired with the exact `gcp-dev` Environment subject), and an allow-listed `assertion.sub`; the
 build service account is bound to those exact `principal://.../subject/<sub>`
 members (never a repository-wide `principalSet`). Applying the Terraform text is
 not the whole cutover - the live activation is a **fail-closed operator step with
@@ -157,9 +158,11 @@ readback**:
    workload-identity-pools providers describe` (confirm the exact
    `attributeCondition`) and the build SA's `get-iam-policy` (confirm the exact
    `principal://.../subject/<sub>` members, no `principalSet`).
-4. **Smoke it.** A protected-ref dispatch (from `dev`/`main`) federates; a
-   feature-branch or tag dispatch is denied at the pool. There is no repository
-   wildcard rollback path - an unlisted subject fails closed.
+4. **Smoke it.** A protected-ref dispatch from `dev`/`main` federates for the
+   shared callers, and the `gcp-dev` branch federates only for the `gcp-dev`
+   Environment deployment. A feature-branch or tag dispatch is denied at the
+   pool. There is no repository wildcard rollback path - an unlisted subject
+   fails closed.
 
 Adding or removing a trusted subject is a single edit to
 `local.federated_subjects` **and** the matching `assertion.sub ==` clause in the
@@ -664,7 +667,7 @@ cat > platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars <<EOF
 project_id                    = "your-gcp-project-id"
 public_hostname               = "shifter.your-domain.example"
 identity_allowed_email_domain = "your-domain.example"
-gke_master_authorized_cidrs   = ["<your-workstation-egress>/32"]
+gke_master_authorized_cidrs   = []
 EOF
 
 cd platform/terraform/gcp/environments/gcp-dev
