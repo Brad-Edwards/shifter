@@ -98,6 +98,7 @@ class TestParticipantChallengeListView:
         ]
         assert list(response.context["challenges_by_category"]) == ["Start Here", "Mission 1 — Boreas"]
 
+
 class TestAdminParticipantListView:
     """Tests for the admin_participant_list view."""
 
