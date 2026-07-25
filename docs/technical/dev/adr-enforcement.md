@@ -706,6 +706,18 @@ The first slice intentionally stays small:
   `shifter/shifter_platform/entrypoint-lib.sh` and
   `shifter/shifter_platform/tests/test_entrypoint_lib.sh`).
 
+- `check-portal-target-sg-sources`
+  Pre-commit hook AND CI step enforcing that portal target-service SG
+  ingress (Django:8000, Guacamole client:8080) sources only from a
+  security-group reference or `module.vpc.alb_ingress_subnet_cidrs`,
+  never the whole public tier. The rules it guards live in
+  `platform/terraform/modules/portal/composition/` since the dev/proof/prod
+  portal composition was deduplicated (#688); the scope follows them and
+  still covers the environment roots, so a root that adds its own rule
+  stays checked. `proof` is included — it was absent from the original
+  `dev|prod` regex despite deploying the same portal composition.
+  Enforces the #911 NET-2 / #933 segmentation invariant.
+
 - `check-tf-iam-role-naming`
   Pre-commit hook AND CI step enforcing the `shifter-*` IAM role naming
   seam, plus a set of GitHub OIDC invariants over

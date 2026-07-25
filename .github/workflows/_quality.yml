@@ -357,13 +357,17 @@ jobs:
       # #911 NET-2 / #933: the portal target-service SGs (Django:8000,
       # Guacamole client:8080) must source ingress only from a security-group
       # reference or the ALB-only alb_ingress_subnet_cidrs output, never the
-      # whole public tier (where CTFd lives). Guards the env-root SG rules so a
+      # whole public tier (where CTFd lives). Guards the portal SG rules so a
       # future edit cannot re-widen the source back to public_subnet_cidrs.
+      # The rules live in the shared composition module (#688); the env roots
+      # are still scanned so a root that adds its own rule stays covered.
       - name: Run check-portal-target-sg-sources
         run: |
           python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py \
-            platform/terraform/environments/dev/portal/main.tf \
-            platform/terraform/environments/prod/portal/main.tf
+            platform/terraform/modules/portal/composition/*.tf \
+            platform/terraform/environments/dev/portal/*.tf \
+            platform/terraform/environments/proof/portal/*.tf \
+            platform/terraform/environments/prod/portal/*.tf
 
       # Pin the behavior of the check_tf_* IAM/security checkers
       # themselves. The live-file invocations above only exercise the

@@ -222,6 +222,11 @@ modules:
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
+  - path: platform/terraform/modules/portal/composition
+    owner: "@Brad-Edwards"
+    contract: deferred
+    reason: "Contract-test rollout tracked in #1597."
+    tracking: "#1597"
   - path: platform/terraform/modules/portal/ctfd
     owner: "@Brad-Edwards"
     contract: deferred
