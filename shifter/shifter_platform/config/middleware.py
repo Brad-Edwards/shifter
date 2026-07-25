@@ -40,19 +40,20 @@ _CTF_ACCOUNT_ALWAYS_ALLOWED = frozenset(
 # expose future composition-root APIs.
 _CTF_ACCOUNT_SPA_ALLOWED = frozenset({"/api/v1/bootstrap/"})
 
-# Mission Control range-access endpoints a live participant legitimately needs to
-# reach their OWN range box: the Guacamole RDP/SSH URL bootstrap plus its
-# status/open polling (issue #1740). These self-authorize per user — the
+# Mission Control range-access surfaces a live participant legitimately needs to
+# reach their OWN range box: the terminal page plus the Guacamole RDP/SSH URL
+# bootstrap and its status/open polling (issue #1740). These self-authorize per user — the
 # underlying resolvers (engine.services.get_rdp_connection_info /
 # get_ssh_connection_info via Range.resolve_active_for_instance) only return a
 # box in the requester's own active, ready range, and the bootstrap
 # status/open lookups are owner-scoped — so admitting the path is safe. This is
 # ADMISSION ONLY: the endpoints still enforce authentication, CSRF, actor/scope,
 # request-shape, ready-range ownership, declared participant channel, and
-# owner-scoped bootstrap delivery. The prefix is deliberately narrow: NGFW,
+# owner-scoped bootstrap delivery. These seams are deliberately narrow: NGFW,
 # range lifecycle/history, credentials, uploads, agents, and scenarios stay
 # blocked. Any NEW route added under this prefix becomes reachable by temporary
 # accounts and therefore requires its own security review.
+_PARTICIPANT_MISSION_CONTROL_PAGES = frozenset({"/mission-control/terminal/"})
 _PARTICIPANT_MISSION_CONTROL_PREFIXES = ("/api/v1/mission-control/guacamole/",)
 
 
@@ -62,6 +63,7 @@ def _is_ctf_participant_surface(path: str) -> bool:
     return (
         ctf_surface
         or path.startswith("/api/v1/ctf/")
+        or path in _PARTICIPANT_MISSION_CONTROL_PAGES
         or path.startswith(_PARTICIPANT_MISSION_CONTROL_PREFIXES)
         or path in _CTF_ACCOUNT_SPA_ALLOWED
     )

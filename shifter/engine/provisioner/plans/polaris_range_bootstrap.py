@@ -34,10 +34,10 @@ from typing import Any
 
 from config import load_aws_polaris_agent_config
 
-from ._polaris_scripts import (
+from ._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+from ._polaris_scripts_aux import (
     FETCH_POLARIS_TESTS_SCRIPT,
     INSTALL_SPLICE_WATCHER_SCRIPT,
-    POLARIS_RANGE_BOOTSTRAP_SCRIPT,
     VERIFY_POLARIS_BOOTSTRAP_SCRIPT,
 )
 from ._polaris_scripts_aws import (
@@ -48,6 +48,7 @@ from ._polaris_scripts_aws import (
 )
 from ._polaris_scripts_gcp import (
     FETCH_POLARIS_TESTS_SCRIPT_GCS,
+    GCP_AGENT_COMPOSE_BLOCK,
     KALI_VERTEX_SHARD_SCRIPT,
 )
 from .base import SetupStep
@@ -59,7 +60,7 @@ from .base import SetupStep
 # per-range Terraform agent-role policy.
 _GCP_DEFAULT_MODEL = "claude-sonnet-4-6"
 _GCP_DEFAULT_SMALL_FAST_MODEL = "claude-haiku-4-5"
-_GCP_DEFAULT_VERTEX_REGION = "us-east5"
+_GCP_DEFAULT_VERTEX_REGION = "global"
 
 
 class PolarisRangeBootstrapPlan:
@@ -240,6 +241,7 @@ class PolarisRangeBootstrapPlan:
             # to before -- _aws_agent_context overrides both with real content.
             "aws_agent_setup_block": "",
             "aws_agent_compose_block": "",
+            "gcp_agent_compose_block": "",
         }
 
     @staticmethod
@@ -332,6 +334,7 @@ class PolarisRangeBootstrapPlan:
             "range_id": range_id,
             "vertex_project_id": project,
             "vertex_region": region,
+            "gcp_agent_compose_block": GCP_AGENT_COMPOSE_BLOCK,
             **PolarisRangeBootstrapPlan._vertex_models(instance),
         }
 

@@ -17,7 +17,6 @@ from django.db.models import Q
 from django.utils import timezone
 
 from ctf.enums import (
-    ChallengeCategory,
     ChallengeDifficulty,
     ChallengeVisibility,
     DecayFunction,
@@ -39,7 +38,7 @@ class CTFChallenge(CTFBaseModel):
         event: The event this challenge belongs to.
         name: Challenge display name.
         description: Challenge description and instructions.
-        category: Challenge category (web, crypto, etc.).
+        category: Organizer-authored category or mission name.
         points: Points awarded for solving.
         difficulty: Challenge difficulty level.
         flag_hash: Hashed flag value (bcrypt).
@@ -63,10 +62,9 @@ class CTFChallenge(CTFBaseModel):
         help_text="Challenge description and instructions (supports Markdown)",
     )
     category = models.CharField(
-        max_length=20,
-        choices=ChallengeCategory.choices(),
+        max_length=100,
         db_index=True,
-        help_text="Challenge category",
+        help_text="Organizer-authored category or mission name",
     )
     points = models.PositiveIntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(10000)],

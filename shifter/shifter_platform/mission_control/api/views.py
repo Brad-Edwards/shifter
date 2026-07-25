@@ -39,7 +39,6 @@ from mission_control.api.resources import (
     NGFWListView,
 )
 from mission_control.api.uploads import UploadCancelView, UploadCompleteView, UploadInitiateView
-from mission_control.views._guacamole import _get_guac_settings
 
 # Function-style handles for the Mission Control DRF views, used by unit tests
 # that exercise view behaviour directly. The ``/api/v1/mission-control/`` URLconf
@@ -98,7 +97,6 @@ __all__ = (
     "UploadCancelView",
     "UploadCompleteView",
     "UploadInitiateView",
-    "_get_guac_settings",
     "api_credential_create",
     "api_credential_delete",
     "api_ngfw_create",

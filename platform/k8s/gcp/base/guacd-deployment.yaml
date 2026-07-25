@@ -19,6 +19,8 @@ spec:
         app.kubernetes.io/component: guacd
     spec:
       securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: workers
@@ -38,6 +40,10 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # FreeRDP persists its server certificate store here. Keep the
+            # root filesystem read-only while making only that store writable.
+            - name: freerdp-config
+              mountPath: /home/guacd/.config/freerdp
           ports:
             - name: guacd
               containerPort: 4822
@@ -61,3 +67,6 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: freerdp-config
+          emptyDir:
+            sizeLimit: 16Mi

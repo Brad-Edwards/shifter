@@ -25,6 +25,7 @@ import { RangePage } from "@/features/ctf/RangePage";
 import { ScoreboardPage } from "@/features/ctf/ScoreboardPage";
 import { AccountPage } from "@/features/ctf/AccountPage";
 import { CtfWorkspaceLayout } from "@/features/ctf/CtfWorkspaceLayout";
+import { CtfTerminalPage } from "@/features/ctf/CtfTerminalPage";
 import { TeamPage } from "@/features/ctf/TeamPage";
 import { HomePage } from "@/features/home/HomePage";
 import { AgentsPage } from "@/features/mission-control/AgentsPage";
@@ -107,7 +108,7 @@ export const router = createBrowserRouter(
             { path: "ranges", element: <RangeHistoryPage /> },
             { path: "launch", element: <RangeLaunchPage /> },
             { path: "ranges/:requestId", element: <RangeDetailPage /> },
-            { path: "terminal/:instanceUuid", element: <TerminalPage /> },
+            { path: "terminal/:instanceUuid", element: <TerminalPage tmuxWheelScrolling /> },
             { path: "agents", element: <AgentsPage /> },
             { path: "ngfw", element: <NgfwListPage /> },
             { path: "ngfw/setup", element: <NgfwWizardPage /> },
@@ -148,6 +149,7 @@ export const router = createBrowserRouter(
             { path: "challenges", element: <ChallengesPage /> },
             { path: "challenges/:id", element: <ChallengeDetailPage /> },
             { path: "range", element: <RangePage /> },
+            { path: "terminal", element: <CtfTerminalPage /> },
             { path: "terminal/:instanceUuid", element: <TerminalPage /> },
             { path: "scoreboard", element: <ScoreboardPage /> },
             { path: "team", element: <TeamPage /> },

@@ -1,15 +1,21 @@
 """Context processors for mission_control app."""
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from django.conf import settings
 from django.http import HttpRequest
 
 from cms.services import get_active_range, get_scenario, has_ready_active_range
 from mission_control.utils import build_connection_urls
+from shared.enums import RangeSource
 from shared.schemas import InstanceContext, RangeContext
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +122,15 @@ def _needs_terminal_payload(request: HttpRequest) -> bool:
     return bool(match and match.view_name == _TERMINAL_VIEW_NAME)
 
 
+def _range_source_for_user(user: User) -> RangeSource:
+    """Select the product source whose active range should back the UI."""
+    from shared.auth import is_ctf_participant_only
+
+    if is_ctf_participant_only(user):
+        return RangeSource.CTF
+    return RangeSource.MISSION_CONTROL
+
+
 def _nav_active_range(request: HttpRequest) -> dict[str, Any]:
     """``nav``-tier context: the cheap ``has_active_range`` sidebar indicator only.
 
@@ -127,7 +142,7 @@ def _nav_active_range(request: HttpRequest) -> dict[str, Any]:
     user = cast(User, request.user)
     context = _empty_active_range_context()
     try:
-        context["has_active_range"] = has_ready_active_range(user)
+        context["has_active_range"] = has_ready_active_range(user, _range_source_for_user(user))
     except Exception:
         logger.exception("Error computing has_active_range for user_id=%s", user.id)
     return context
@@ -161,7 +176,7 @@ def _safe_active_range(request: HttpRequest) -> dict[str, Any]:
     user = cast(User, request.user)
     user_id = user.id
     try:
-        range_context = get_active_range(user)
+        range_context = get_active_range(user, _range_source_for_user(user))
     except Exception:
         logger.exception("Error in active_range context processor for user_id=%s", user_id)
         return _empty_active_range_context()
