@@ -12,14 +12,25 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EC2_MODULE = REPO_ROOT / "platform" / "terraform" / "modules" / "portal" / "ec2"
-EC2_MAIN_TF = EC2_MODULE / "main.tf"
 EC2_VARIABLES_TF = EC2_MODULE / "variables.tf"
 
 RESTART_METRIC = "WorkerRestarts"
 
 
+def _ec2_module_hcl() -> str:
+    """Concatenate every ``*.tf`` in the portal EC2 module.
+
+    Terraform evaluates all sibling files in a directory as one module, so
+    these structural invariants are properties of the module rather than of
+    any single file. Reading the whole directory keeps them working when the
+    module is reorganized across sibling files instead of silently passing on
+    a file that no longer holds the resource (#688).
+    """
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(EC2_MODULE.glob("*.tf")))
+
+
 def test_ec2_module_defines_worker_restart_metric_filter() -> None:
-    text = EC2_MAIN_TF.read_text(encoding="utf-8")
+    text = _ec2_module_hcl()
     assert "aws_cloudwatch_log_metric_filter" in text
     assert "worker_restarts" in text
     assert "worker_restarts_aggregate" in text
@@ -32,7 +43,7 @@ def test_ec2_module_defines_worker_restart_metric_filter() -> None:
 
 
 def test_ec2_module_defines_worker_restart_rate_alarm() -> None:
-    text = EC2_MAIN_TF.read_text(encoding="utf-8")
+    text = _ec2_module_hcl()
     assert "worker_restart_rate" in text
     assert "WorkerRestartsTotal" in text
     assert "Shifter/Workers/${var.name_prefix}" in text

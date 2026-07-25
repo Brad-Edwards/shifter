@@ -27,16 +27,29 @@ WORKER_HEALTH_DIR = EC2_MODULE / "worker-health"
 MONITOR_SCRIPT = WORKER_HEALTH_DIR / "shifter-worker-health.sh"
 MONITOR_SERVICE = WORKER_HEALTH_DIR / "shifter-worker-health.service"
 MONITOR_TIMER = WORKER_HEALTH_DIR / "shifter-worker-health.timer"
-EC2_MAIN_TF = EC2_MODULE / "main.tf"
 EC2_VARIABLES_TF = EC2_MODULE / "variables.tf"
-DEV_PORTAL_TF = REPO_ROOT / "platform" / "terraform" / "environments" / "dev" / "portal" / "main.tf"
-PROD_PORTAL_TF = REPO_ROOT / "platform" / "terraform" / "environments" / "prod" / "portal" / "main.tf"
+PORTAL_COMPOSITION = REPO_ROOT / "platform" / "terraform" / "modules" / "portal" / "composition"
+PORTAL_ENV_ROOTS = tuple(
+    REPO_ROOT / "platform" / "terraform" / "environments" / env / "portal" for env in ("dev", "proof", "prod")
+)
 
 MONITORED_CONTAINERS = ("worker-cms", "worker-engine", "worker-mc", "ctf-scheduler")
 METRIC_NAMESPACE = "Shifter/WorkerHealth"
 TIMER_UNIT = "shifter-worker-health.timer"
 SERVICE_UNIT = "shifter-worker-health.service"
 MONITOR_HOST_PATH = "/usr/local/bin/shifter-worker-health.sh"
+
+
+def _ec2_module_hcl() -> str:
+    """Concatenate every ``*.tf`` in the portal EC2 module.
+
+    Terraform evaluates all sibling files in a directory as one module, so
+    these structural invariants are properties of the module rather than of
+    any single file. Reading the whole directory keeps them working when the
+    module is reorganized across sibling files instead of silently passing on
+    a file that no longer holds the resource (#688).
+    """
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(EC2_MODULE.glob("*.tf")))
 
 
 def test_monitor_script_present_with_shebang() -> None:
@@ -74,7 +87,7 @@ def test_metric_is_scoped_per_environment() -> None:
     service = MONITOR_SERVICE.read_text(encoding="utf-8")
     assert "EnvironmentFile=-/etc/shifter-worker-health.env" in service
 
-    alarm_tf = EC2_MAIN_TF.read_text(encoding="utf-8")
+    alarm_tf = _ec2_module_hcl()
     assert "NamePrefix = var.name_prefix" in alarm_tf
 
 
@@ -120,7 +133,7 @@ def test_workflow_invokes_tracked_redeploy_script() -> None:
 
 
 def test_ec2_module_grants_putmetricdata_least_privilege() -> None:
-    text = EC2_MAIN_TF.read_text(encoding="utf-8")
+    text = _ec2_module_hcl()
     assert "cloudwatch:PutMetricData" in text
     # Namespace-conditioned, not an unconditioned cloudwatch:* grant.
     assert "cloudwatch:namespace" in text
@@ -128,7 +141,7 @@ def test_ec2_module_grants_putmetricdata_least_privilege() -> None:
 
 
 def test_ec2_module_defines_unhealthy_workers_alarm() -> None:
-    text = EC2_MAIN_TF.read_text(encoding="utf-8")
+    text = _ec2_module_hcl()
     assert "aws_cloudwatch_metric_alarm" in text
     assert "UnhealthyWorkers" in text
     assert METRIC_NAMESPACE in text
@@ -137,5 +150,15 @@ def test_ec2_module_defines_unhealthy_workers_alarm() -> None:
 
 def test_alarm_actions_variable_and_env_wiring() -> None:
     assert "worker_health_alarm_actions" in EC2_VARIABLES_TF.read_text(encoding="utf-8")
-    for env_main in (DEV_PORTAL_TF, PROD_PORTAL_TF):
-        assert "worker_health_alarm_actions" in env_main.read_text(encoding="utf-8")
+
+    # The dev/proof/prod portal roots share one composition module (#688), so
+    # the alarm-action wiring is asserted where it now lives. Checking the
+    # composition covers every environment at once rather than two of three.
+    composition = "\n".join(path.read_text(encoding="utf-8") for path in sorted(PORTAL_COMPOSITION.glob("*.tf")))
+    assert "worker_health_alarm_actions" in composition
+
+    # Each environment root must still supply the input that drives it, so an
+    # environment cannot silently lose alarm routing.
+    for root in PORTAL_ENV_ROOTS:
+        root_hcl = "\n".join(path.read_text(encoding="utf-8") for path in sorted(root.glob("*.tf")))
+        assert "alarm_email" in root_hcl

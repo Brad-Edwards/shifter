@@ -25,10 +25,21 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EC2_MODULE = REPO_ROOT / "platform" / "terraform" / "modules" / "portal" / "ec2"
 USER_DATA = EC2_MODULE / "user_data.sh"
-MAIN_TF = EC2_MODULE / "main.tf"
 
 SUCCESS_BANNER = "Shifter Platform bootstrap complete!"
 IMDS_ASG_TAG_PATH = "meta-data/tags/instance/aws:autoscaling:groupName"
+
+
+def _ec2_module_hcl() -> str:
+    """Concatenate every ``*.tf`` in the portal EC2 module.
+
+    Terraform evaluates all sibling files in a directory as one module, so
+    these structural invariants are properties of the module rather than of
+    any single file. Reading the whole directory keeps them working when the
+    module is reorganized across sibling files instead of silently passing on
+    a file that no longer holds the resource (#688).
+    """
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(EC2_MODULE.glob("*.tf")))
 
 
 def _user_data() -> str:
@@ -36,7 +47,7 @@ def _user_data() -> str:
 
 
 def _main_tf_compact() -> str:
-    return MAIN_TF.read_text(encoding="utf-8").replace(" ", "")
+    return _ec2_module_hcl().replace(" ", "")
 
 
 def _function_body(text: str, name: str) -> str:
@@ -140,7 +151,7 @@ def test_launch_hook_defaults_to_abandon() -> None:
 
 
 def test_lifecycle_iam_is_present_and_scoped() -> None:
-    text = MAIN_TF.read_text(encoding="utf-8")
+    text = _ec2_module_hcl()
     assert "autoscaling:CompleteLifecycleAction" in text
     assert "autoscaling:DescribeAutoScalingInstances" in text
     # CompleteLifecycleAction stays scoped to the ASG, not wildcarded.
