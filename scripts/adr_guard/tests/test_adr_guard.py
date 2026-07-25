@@ -3066,6 +3066,18 @@ class K8sDeploymentSecurityContextRobustnessTests(unittest.TestCase):
                 )
             )
 
+    def test_helm_values_matrix_covers_every_supported_provider_profile(self) -> None:
+        self.assertEqual(
+            set(ADR_GUARD.HELM_VALUES_FILES),
+            {
+                "platform/charts/shifter/values-aws-dev.yaml",
+                "platform/charts/shifter/values-aws-proof.yaml",
+                "platform/charts/shifter/values-aws-prod.yaml",
+                "platform/charts/shifter/values-gcp-dev.yaml",
+                "platform/charts/shifter/values-gcp-prod.yaml",
+            },
+        )
+
     def test_chart_violation_path_is_repo_relative(self) -> None:
         """Rendered-chart violations must use the values-file repo-relative
         path so existing exception globs in docs/adr/exceptions.yaml can

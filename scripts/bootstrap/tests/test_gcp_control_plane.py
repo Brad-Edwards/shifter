@@ -49,6 +49,18 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 ),
             }
         },
+        "attested_image_identities": {
+            "value": {
+                "platform": (
+                    f"us-central1-docker.pkg.dev/{project_id}/shifter-gcp-dev-portal/portal@sha256:" + ("1" * 64)
+                ),
+                "guacd": (f"us-central1-docker.pkg.dev/{project_id}/shifter-gcp-dev-guacd/guacd@sha256:" + ("2" * 64)),
+                "guacamoleClient": (
+                    f"us-central1-docker.pkg.dev/{project_id}/shifter-gcp-dev-guacamole-client/"
+                    "guacamole-client@sha256:" + ("3" * 64)
+                ),
+            }
+        },
         "assets_bucket_name": {"value": f"{project_id}-gcp-dev-assets"},
         "terraform_state_bucket_name": {"value": f"{project_id}-terraform-state"},
         "platform_events_topic_id": {"value": f"projects/{project_id}/topics/shifter-gcp-dev-events"},
@@ -977,18 +989,9 @@ class TestGdcControlPlaneHelmValues:
             values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]
             == "shiftergcpdev-ctf-scheduler@prod-rwctxzl6shxk.iam.gserviceaccount.com"
         )
-        assert values["images"]["portal"]["repository"] == (
-            "us-central1-docker.pkg.dev/prod-rwctxzl6shxk/shifter-gcp-dev-portal/portal"
-        )
-        assert values["images"]["guacd"]["repository"] == (
-            "us-central1-docker.pkg.dev/prod-rwctxzl6shxk/shifter-gcp-dev-guacd/guacd"
-        )
-        assert values["images"]["guacamoleClient"]["repository"] == (
-            "us-central1-docker.pkg.dev/prod-rwctxzl6shxk/shifter-gcp-dev-guacamole-client/guacamole-client"
-        )
-        assert values["images"]["portal"]["tag"] == PINNED_IMAGE_TAG
-        assert values["images"]["guacd"]["tag"] == PINNED_IMAGE_TAG
-        assert values["images"]["guacamoleClient"]["tag"] == PINNED_IMAGE_TAG
+        assert values["images"]["platform"].endswith("@sha256:" + ("1" * 64))
+        assert values["images"]["guacd"].endswith("@sha256:" + ("2" * 64))
+        assert values["images"]["guacamoleClient"].endswith("@sha256:" + ("3" * 64))
         assert (
             values["runtimeEnv"]["ENGINE_TASK_IMAGE"] == "us-central1-docker.pkg.dev/prod-rwctxzl6shxk/"
             "shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner:abc1234"
@@ -998,13 +1001,13 @@ class TestGdcControlPlaneHelmValues:
         assert values["services"]["guacamoleClient"]["backendConfig"]["enabled"] is True
         assert values["services"]["guacamoleClient"]["backendConfig"]["name"] == "guacamole-client"
         assert values["services"]["guacamoleClient"]["backendConfig"]["securityPolicyName"] == "shifter-gcp-dev-edge"
-        assert values["networkPolicy"] == {
+        assert values["network"] == {
             "enabled": True,
-            "gclbSourceRanges": [
+            "ingressSourceCidrs": [
                 "35.191.0.0/16",  # NOSONAR - Google Cloud Load Balancer range.
                 "130.211.0.0/22",  # NOSONAR - Google Cloud Load Balancer range.
             ],
-            "googleApiCidrs": [
+            "providerApiCidrs": [
                 "199.36.153.4/30",  # NOSONAR - restricted.googleapis.com VIP.
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
@@ -1013,6 +1016,7 @@ class TestGdcControlPlaneHelmValues:
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
             "rangeAccessCidrs": ["10.50.0.0/16"],
+            "rangeAccessPorts": [22, 3389],
         }
 
     def test_range_cluster_api_cidrs_from_control_plane_endpoint(self):
@@ -1029,8 +1033,8 @@ class TestGdcControlPlaneHelmValues:
             image_tag=PINNED_IMAGE_TAG,
         )
 
-        assert values["networkPolicy"]["rangeClusterApiCidrs"] == ["10.240.0.5/32"]
-        assert values["networkPolicy"]["rangeClusterApiPort"] == 6444
+        assert values["network"]["rangeClusterApiCidrs"] == ["10.240.0.5/32"]
+        assert values["network"]["rangeClusterApiPort"] == 6444
 
     def test_range_access_cidrs_from_range_network_cidr(self):
         """Participant range access (issue #1349): the portal/guacd egress allowlist
@@ -1039,7 +1043,7 @@ class TestGdcControlPlaneHelmValues:
         outputs = _sample_gcp_control_plane_outputs(config.project_id)
         values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
 
-        assert values["networkPolicy"]["rangeAccessCidrs"] == ["10.50.0.0/16"]
+        assert values["network"]["rangeAccessCidrs"] == ["10.50.0.0/16"]
 
     def test_range_access_cidrs_empty_when_range_network_cidr_absent(self):
         """No range network CIDR -> empty allowlist so the egress policy stays unrendered."""
@@ -1048,7 +1052,7 @@ class TestGdcControlPlaneHelmValues:
         outputs["range_network_cidr"] = {"value": ""}
         values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
 
-        assert values["networkPolicy"]["rangeAccessCidrs"] == []
+        assert values["network"]["rangeAccessCidrs"] == []
 
     def test_rejects_insecure_public_bootstrap_values(self):
         """The Helm values renderer must refuse public bare-IP debug deployments on GCP."""
@@ -1173,6 +1177,8 @@ class TestGdcControlPlaneHelmChart:
                 "--namespace",
                 "shifter-system",
                 "--values",
+                str(chart_dir / "values-gcp-dev.yaml"),
+                "--values",
                 str(values_path),
             ],
             stdout=subprocess.PIPE,
@@ -1203,7 +1209,7 @@ class TestGdcControlPlaneHelmChart:
         assert "199.36.153.4/30" in output
         assert "10.40.0.10/32" in output
         # Participant/operator range access egress (issue #1349): the Helm path
-        # must render the policy from networkPolicy.rangeAccessCidrs (fed by the
+        # must render the policy from network.rangeAccessCidrs (fed by the
         # range_network_cidr Terraform output), scoped to the participant channel
         # ports -- asserted at the rendered-manifest level so values->template
         # wiring drift is caught, mirroring the Kustomize renderer's own test.
@@ -1231,17 +1237,16 @@ class TestGdcControlPlaneHelmChart:
         if helm is None:
             pytest.skip("helm is required for chart render validation")
 
-        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
-        outputs = _sample_gcp_control_plane_outputs(config.project_id)
-        values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
         # Adversarial override: a caller tries to smuggle secrets through values.
-        values["guacamoleRuntimeSecret"] = {
-            "enabled": True,
-            "name": "guacamole-runtime",
-            "stringData": {
-                "POSTGRESQL_PASSWORD": "should-not-render",
-                "JSON_SECRET_KEY": "should-not-render",
-            },
+        values = {
+            "guacamoleRuntimeSecret": {
+                "enabled": True,
+                "name": "guacamole-runtime",
+                "stringData": {
+                    "POSTGRESQL_PASSWORD": "should-not-render",
+                    "JSON_SECRET_KEY": "should-not-render",
+                },
+            }
         }
         values_path = tmp_path / "values.json"
         values_path.write_text(json.dumps(values))
@@ -1256,6 +1261,8 @@ class TestGdcControlPlaneHelmChart:
                 "--namespace",
                 "shifter-system",
                 "--values",
+                str(chart_dir / "values-gcp-dev.yaml"),
+                "--values",
                 str(values_path),
             ],
             stdout=subprocess.PIPE,
@@ -1264,9 +1271,10 @@ class TestGdcControlPlaneHelmChart:
         )
         stdout, stderr = rendered.communicate()
 
-        assert rendered.returncode == 0, stderr
+        assert rendered.returncode != 0
         assert "kind: Secret" not in stdout
         assert "should-not-render" not in stdout
+        assert "should-not-render" not in stderr
         assert "POSTGRESQL_PASSWORD" not in stdout
         assert "JSON_SECRET_KEY" not in stdout
 

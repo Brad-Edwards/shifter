@@ -1,0 +1,79 @@
+terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+locals {
+  environment  = "prod"
+  cluster_name = "shifter-${local.environment}-eks"
+  secret_names = toset(["database", "django", "redis"])
+}
+
+module "eks" {
+  source = "../../../modules/portal/eks"
+
+  environment          = local.environment
+  aws_region           = var.aws_region
+  cluster_name         = local.cluster_name
+  deployment_role_arn  = var.deployment_role_arn
+  vpc_cidr             = var.vpc_cidr
+  availability_zones   = var.availability_zones
+  private_subnet_cidrs = var.private_subnet_cidrs
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  kubernetes_version   = var.kubernetes_version
+  node_instance_types  = var.node_instance_types
+  node_desired_size    = var.node_desired_size
+  node_min_size        = var.node_min_size
+  node_max_size        = var.node_max_size
+  domain_name          = var.domain_name
+  oidc_thumbprints     = var.oidc_thumbprints
+  secret_names         = local.secret_names
+  workload_identities = {
+    cni = {
+      namespace       = "kube-system"
+      service_account = "aws-node"
+      policy_arns     = ["arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"]
+      secret_names    = []
+    }
+    ingress = {
+      namespace       = "kube-system"
+      service_account = "aws-load-balancer-controller"
+      policy_arns     = [var.load_balancer_controller_policy_arn]
+      secret_names    = []
+    }
+    portal = {
+      namespace       = "shifter-platform"
+      service_account = "portal"
+      policy_arns     = []
+      secret_names    = local.secret_names
+    }
+    workers = {
+      namespace       = "shifter-platform"
+      service_account = "workers"
+      policy_arns     = []
+      secret_names    = local.secret_names
+    }
+    ctfScheduler = {
+      namespace       = "shifter-platform"
+      service_account = "ctf-scheduler"
+      policy_arns     = []
+      secret_names    = local.secret_names
+    }
+  }
+
+  tags = merge(var.tags, {
+    Environment = local.environment
+    ManagedBy   = "terraform"
+    Project     = "shifter"
+    Substrate   = "eks"
+  })
+}

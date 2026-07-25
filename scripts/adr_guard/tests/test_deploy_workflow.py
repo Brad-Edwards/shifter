@@ -223,6 +223,18 @@ class TestManualDeployDispatch(unittest.TestCase):
         # The Set environment step keys on the workflow_dispatch `environment`
         # input; the old branch-name `case` router (and prod path) are gone.
         self.assertIn('case "$ENVIRONMENT"', self.script)
+
+    def test_aws_platform_uses_the_explicit_eks_bundle_entrypoint(self):
+        platform = _load("_shifter-platform.yml")
+        job = platform["jobs"]["eks-deploy"]
+        rendered = str(job)
+
+        self.assertIn("scripts/bootstrap/deploy.py eks-deploy", rendered)
+        self.assertIn("SHIFTER_CONFIG_", rendered)
+        self.assertIn("needs.build.outputs.image_digest", rendered)
+        self.assertNotIn("github.ref", rendered)
+        self.assertIn("__legacy-disabled__", platform["jobs"]["plan"]["if"])
+        self.assertIn("__legacy-disabled__", platform["jobs"]["deploy"]["if"])
         self.assertNotIn("GITHUB_REF#refs/heads/", self.script)
         self.assertNotIn("aws-prod", self.script)
 
