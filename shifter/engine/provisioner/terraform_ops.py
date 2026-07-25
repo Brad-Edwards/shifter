@@ -135,6 +135,9 @@ class RangeOperation:
     ``backend`` is the #1666 per-operation ownership binding captured at
     operation start; on a provision failure the compensation destroy routes
     from it, never a re-read of the env selector.
+
+    ``operation_id`` is the ADR-043 canonical operation generation (#1834);
+    ``None`` on local-dev runs / commands not yet carrying it.
     """
 
     request_id: str
@@ -144,6 +147,7 @@ class RangeOperation:
     scenario_artifact: dict[str, Any] | None = None
     backend: str | None = None
     remote_access_capability: dict[str, object] | None = None
+    operation_id: str | None = None
 
 
 def _build_operation_variables(
@@ -225,6 +229,7 @@ def _dispatch_terraform_operation(kind: str, operation: RangeOperation) -> None:
             operation.range_spec,
             scenario_artifact=operation.scenario_artifact,
             remote_access_capability=operation.remote_access_capability,
+            operation_id=operation.operation_id,
         )
     elif kind == "destroy":
         _run_terraform_destroy(
@@ -235,6 +240,7 @@ def _dispatch_terraform_operation(kind: str, operation: RangeOperation) -> None:
             scenario_artifact=operation.scenario_artifact,
             backend=operation.backend,
             remote_access_capability=operation.remote_access_capability,
+            operation_id=operation.operation_id,
         )
     else:
         raise ValueError(f"Unknown operation: {kind}")
@@ -265,8 +271,13 @@ def _resolve_remote_access_capability(
     return capability.as_dict()
 
 
-def run_range_terraform(operation: str, request_id: str) -> None:
-    """Run Range Terraform operation (provision or destroy)."""
+def run_range_terraform(operation: str, request_id: str, *, operation_id: str | None = None) -> None:
+    """Run Range Terraform operation (provision or destroy).
+
+    ``operation_id`` is the ADR-043 canonical operation generation (#1834),
+    threaded onto the argv only on the remote/drainer dispatch path; ``None``
+    on local-dev runs.
+    """
     logger.info("run_range_terraform: starting operation=%s request_id=%s", operation, request_id)
 
     range_data = get_range_data_by_request_id(request_id)
@@ -299,6 +310,7 @@ def run_range_terraform(operation: str, request_id: str) -> None:
             scenario_artifact=scenario_artifact,
             backend=operation_backend,
             remote_access_capability=remote_access_capability,
+            operation_id=operation_id,
         )
         _dispatch_terraform_operation(operation, range_operation)
     except Exception as e:
@@ -323,6 +335,7 @@ def _run_terraform_provision(
     *,
     scenario_artifact: dict[str, Any] | None = None,
     remote_access_capability: dict[str, object] | None = None,
+    operation_id: str | None = None,
 ) -> None:
     """Run Terraform apply for range, then run instance setup."""
     publish_status_update(
@@ -427,6 +440,8 @@ def _run_terraform_provision(
         instances=instances_output,
         ngfw_instance_id=range_data.get("ngfw_instance_id"),
         vpn_access_binding=vpn_access_binding,
+        request_id=request_id,
+        operation_id=operation_id,
     )
 
     publish_ready(request_id=request_id, range_id=range_id, user_id=user_id)
@@ -454,6 +469,7 @@ def _run_terraform_destroy(
     scenario_artifact: dict[str, Any] | None = None,
     backend: str | None = None,
     remote_access_capability: dict[str, object] | None = None,
+    operation_id: str | None = None,
 ) -> None:
     """Run Terraform destroy for range.
 
@@ -486,7 +502,7 @@ def _run_terraform_destroy(
         range_terraform_runner.cleanup_range_state(request_id, backend)
     finally:
         if terraform_succeeded:
-            _post_destroy_cleanup(request_id, range_id)
+            _post_destroy_cleanup(request_id, range_id, operation_id=operation_id)
         _maybe_pause_user_ngfw(user_id, range_id)
 
     publish_destroyed(request_id=request_id, range_id=range_id, user_id=user_id)

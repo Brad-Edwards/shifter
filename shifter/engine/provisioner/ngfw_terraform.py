@@ -42,6 +42,12 @@ from provisioner_db_ngfw import get_ngfw_data_by_request_id
 
 logger = logging.getLogger(__name__)
 
+# ADR-043 (#1834): the provisioner argv's tf-op vocabulary ("up"/"destroy") is
+# internal dispatch plumbing, not the canonical operation vocabulary the
+# operation envelope closes over. Map back to the canonical name only for the
+# shadow operation-result append.
+_NGFW_TF_OP_TO_CANONICAL_OPERATION = {"up": "provision", "destroy": "deprovision"}
+
 
 def _run_ngfw_operation_for_provider(
     operation: str,
@@ -50,6 +56,8 @@ def _run_ngfw_operation_for_provider(
     app_id: str,
     app_spec: dict[str, Any],
     sls_region: str,
+    *,
+    operation_id: str | None = None,
 ) -> None:
     """Dispatch the requested NGFW operation to the configured cloud provider path."""
     provider = resolve_cloud_provider()
@@ -58,16 +66,16 @@ def _run_ngfw_operation_for_provider(
 
     if provider == "gcp":
         if operation == "up":
-            _run_gdc_provision(request_id, instance_id, app_id, app_spec, sls_region)
+            _run_gdc_provision(request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id)
         else:
-            _run_gdc_deprovision(request_id, instance_id, app_id)
+            _run_gdc_deprovision(request_id, instance_id, app_id, operation_id=operation_id)
         return
 
     if provider == "aws":
         if operation == "up":
-            _run_provision(request_id, instance_id, app_id, app_spec, sls_region)
+            _run_provision(request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id)
         else:
-            _run_deprovision(request_id, instance_id, app_id)
+            _run_deprovision(request_id, instance_id, app_id, operation_id=operation_id)
         return
 
     raise CloudProviderNotImplementedError(provider)
@@ -98,7 +106,7 @@ def _cleanup_failed_ngfw_provision(request_id: str, instance_id: str, app_spec: 
     raise CloudProviderNotImplementedError(provider)
 
 
-def run_ngfw_terraform(operation: str, request_id: str) -> None:
+def run_ngfw_terraform(operation: str, request_id: str, *, operation_id: str | None = None) -> None:
     """Run NGFW Terraform operation (provision or deprovision).
 
     This is the Terraform equivalent of run_ngfw_pulumi. It makes the same
@@ -107,6 +115,9 @@ def run_ngfw_terraform(operation: str, request_id: str) -> None:
     Args:
         operation: Either 'up' (provision) or 'destroy' (deprovision).
         request_id: UUID string of the Request.
+        operation_id: ADR-043 canonical operation generation (#1834), threaded
+            onto the argv only on the remote/drainer dispatch path; ``None`` on
+            local-dev runs.
 
     Raises:
         ValueError: If unknown operation or Request not found.
@@ -134,7 +145,9 @@ def run_ngfw_terraform(operation: str, request_id: str) -> None:
 
     try:
         sls_region = app_spec.get("sls_region", "americas")
-        _run_ngfw_operation_for_provider(operation, request_id, instance_id, app_id, app_spec, sls_region)
+        _run_ngfw_operation_for_provider(
+            operation, request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id
+        )
 
     except Exception as e:
         error_msg = str(e)[:1000]
@@ -147,7 +160,13 @@ def run_ngfw_terraform(operation: str, request_id: str) -> None:
                 logger.warning("Auto-cleanup failed: %s", cleanup_error)
 
         # Update DB and emit failure event
-        update_instance_state(request_id, STATUS_FAILED, error_message=error_msg)
+        update_instance_state(
+            request_id,
+            STATUS_FAILED,
+            operation_id=operation_id,
+            operation=_NGFW_TF_OP_TO_CANONICAL_OPERATION.get(operation),
+            error_message=error_msg,
+        )
         publish_ngfw_event(
             request_id=request_id,
             instance_id=instance_id,
@@ -190,17 +209,19 @@ def _short_circuit_local_dev_post_provision(
     app_id: str,
     output_data: dict[str, Any],
     update_instance_state: Callable[..., Any],
+    operation_id: str | None = None,
 ) -> None:
     """Mark a local-dev NGFW as ready-then-paused without touching the device.
 
     Local dev mode (presence of `DB_PASSWORD` in the env) bypasses the live
     PAN-OS SSH bring-up because it isn't reachable. We still emit the ready
     and paused state transitions so the platform UI reflects the expected
-    lifecycle.
+    lifecycle. ``operation_id`` will always be ``None`` here in practice (local
+    dev never carries it) but is threaded through for uniformity.
     """
     logger.info("LOCAL DEV MODE: Skipping post-infrastructure NGFW configuration")
     ready_state = {**output_data, **_build_provider_state(output_data)}
-    update_instance_state(request_id, STATUS_READY, **ready_state)
+    update_instance_state(request_id, STATUS_READY, operation_id=operation_id, operation="provision", **ready_state)
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
@@ -208,7 +229,7 @@ def _short_circuit_local_dev_post_provision(
         status=STATUS_READY,
     )
     logger.info("LOCAL DEV MODE: Setting NGFW status to paused")
-    update_instance_state(request_id, STATUS_PAUSED)
+    update_instance_state(request_id, STATUS_PAUSED, operation_id=operation_id, operation="provision")
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
@@ -325,6 +346,7 @@ def _run_pan_os_post_provision(
     app_id: str,
     output_data: dict[str, Any],
     sls_region: str,
+    operation_id: str | None = None,
 ) -> None:
     """Run shared PAN-OS VM-Series post-boot configuration for any provider."""
     if os.environ.get("DB_PASSWORD"):
@@ -334,6 +356,7 @@ def _run_pan_os_post_provision(
             app_id=app_id,
             output_data=output_data,
             update_instance_state=update_instance_state,
+            operation_id=operation_id,
         )
         return
 
@@ -351,7 +374,7 @@ def _run_pan_os_post_provision(
         **_build_provider_state(output_data),
         "serial_number": serial_number,
     }
-    update_instance_state(request_id, STATUS_PROVISIONING, **state)
+    update_instance_state(request_id, STATUS_PROVISIONING, operation_id=operation_id, operation="provision", **state)
     serial_number = _fetch_ngfw_license_and_certificate_serial(
         request_id=request_id,
         management_ip=management_ip,
@@ -359,7 +382,9 @@ def _run_pan_os_post_provision(
         serial_number=serial_number,
     )
 
-    update_instance_state(request_id, STATUS_READY, serial_number=serial_number)
+    update_instance_state(
+        request_id, STATUS_READY, operation_id=operation_id, operation="provision", serial_number=serial_number
+    )
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
@@ -391,10 +416,12 @@ def _run_provision(
     app_id: str,
     app_spec: dict[str, Any],
     sls_region: str,
+    *,
+    operation_id: str | None = None,
 ) -> None:
     """Run Terraform apply for NGFW, then run post-Terraform configuration."""
     # Update local DB and emit provisioning status event
-    update_instance_state(request_id, STATUS_PROVISIONING)
+    update_instance_state(request_id, STATUS_PROVISIONING, operation_id=operation_id, operation="provision")
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
@@ -426,6 +453,7 @@ def _run_provision(
         app_id=app_id,
         output_data=output_data,
         sls_region=sls_region,
+        operation_id=operation_id,
     )
 
 
@@ -435,11 +463,13 @@ def _run_gdc_provision(
     app_id: str,
     app_spec: dict[str, Any],
     sls_region: str,
+    *,
+    operation_id: str | None = None,
 ) -> None:
     """Create a Palo Alto VM-Series firewall on GDC VM Runtime, then configure PAN-OS."""
     import gdc_vmseries_ngfw
 
-    update_instance_state(request_id, STATUS_PROVISIONING)
+    update_instance_state(request_id, STATUS_PROVISIONING, operation_id=operation_id, operation="provision")
     publish_ngfw_event(
         request_id=request_id,
         instance_id=instance_id,
@@ -463,7 +493,9 @@ def _run_gdc_provision(
 
     # Persist the VM Runtime state before waiting on PAN-OS so failure cleanup has enough context.
     provisioning_state = {**output_data, **_build_provider_state(output_data)}
-    update_instance_state(request_id, STATUS_PROVISIONING, **provisioning_state)
+    update_instance_state(
+        request_id, STATUS_PROVISIONING, operation_id=operation_id, operation="provision", **provisioning_state
+    )
 
     _run_pan_os_post_provision(
         request_id=request_id,
@@ -471,4 +503,5 @@ def _run_gdc_provision(
         app_id=app_id,
         output_data=output_data,
         sls_region=sls_region,
+        operation_id=operation_id,
     )

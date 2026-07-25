@@ -115,7 +115,10 @@ class Command(BaseCommand):
         from engine.ecs import dispatch_provisioner_command
 
         try:
-            command = command_from_payload(row.payload)
+            # Carry the canonical operation_id onto the launched argv so the
+            # provisioner tags its input read and result appends with exactly the
+            # operation it is executing, never "latest by request" (ADR-043).
+            command = command_from_payload({**row.payload, "operation_id": str(row.operation_id)})
             # Lock the domain projection while validating the operation generation.
             # This linearizes a stale launch against a concurrent lifecycle transition:
             # either this generation is authorized first, or the newer generation wins

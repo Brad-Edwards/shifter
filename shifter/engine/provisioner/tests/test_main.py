@@ -648,6 +648,8 @@ class TestGdcProvisioning:
             instances=terraform_output["instances"],
             ngfw_instance_id=None,
             vpn_access_binding=None,
+            request_id="req-123",
+            operation_id=None,
         )
 
     def test_run_terraform_provision_threads_polaris_agent_role_arn_from_output(self, monkeypatch):

@@ -291,3 +291,82 @@ def test_failed_episode_can_retry_the_same_operation() -> None:
 
     assert second != first
     assert ProvisionerLaunchIntent.objects.count() == 2
+
+
+def test_enqueue_materializes_immutable_operation_input() -> None:
+    """The immutable operation-input projection is created with the intent,
+    keyed by the same operation_id, and carries a valid transport envelope."""
+    from engine.launch_intents import enqueue_provisioner_launch
+    from engine.models import OperationInput, ProvisionerLaunchIntent, Range
+    from shared.operation_envelope import validate_operation_envelope
+
+    request_id = "12121212-1212-1212-1212-121212121212"
+    _authorized_range(request_id)
+    ref = enqueue_provisioner_launch(["range", "provision", "--request-id", request_id])
+
+    intent = ProvisionerLaunchIntent.objects.get(intent_id=UUID(ref))
+    range_row = Range.objects.get(request__request_id=request_id)
+    op_input = OperationInput.objects.get()
+    assert op_input.operation_id == intent.operation_id == range_row.provisioner_operation_id
+    assert str(op_input.request_id) == request_id
+    assert op_input.resource == "range"
+    assert op_input.operation == "provision"
+    # Envelope validates and the input payload is a reference-only projection.
+    envelope = validate_operation_envelope(op_input.envelope)
+    assert envelope["operation_id"] == str(intent.operation_id)
+    assert "range_spec" in envelope["payload"]
+
+
+def test_operation_input_is_not_duplicated_on_idempotent_replay() -> None:
+    from engine.launch_intents import enqueue_provisioner_launch
+    from engine.models import OperationInput
+
+    request_id = "13131313-1313-1313-1313-131313131313"
+    _authorized_range(request_id)
+    command = ["range", "provision", "--request-id", request_id]
+    enqueue_provisioner_launch(command)
+    enqueue_provisioner_launch(command)  # replay: same operation generation
+
+    assert OperationInput.objects.count() == 1
+
+
+def test_new_operation_generation_materializes_a_new_input() -> None:
+    from engine.launch_intents import enqueue_provisioner_launch
+    from engine.models import OperationInput, Range
+
+    request_id = "14141414-1414-1414-1414-141414141414"
+    _authorized_range(request_id)
+    enqueue_provisioner_launch(["range", "provision", "--request-id", request_id])
+    range_row = Range.objects.get(request__request_id=request_id)
+    range_row.status = Range.Status.DESTROYING
+    range_row.save(update_fields=["status", "updated_at"])
+    enqueue_provisioner_launch(["range", "destroy", "--request-id", request_id])
+
+    # One immutable input per operation generation; the first is not mutated.
+    assert OperationInput.objects.count() == 2
+    assert set(OperationInput.objects.values_list("operation", flat=True)) == {"provision", "destroy"}
+
+
+def test_command_from_payload_round_trips_the_operation_id() -> None:
+    from engine.launch_intents import command_from_payload, validate_provisioner_command
+
+    operation_id = "15151515-1515-1515-1515-151515151515"
+    request_id = "16161616-1616-1616-1616-161616161616"
+    payload = {
+        "version": 1,
+        "resource": "range",
+        "operation": "provision",
+        "request_id": request_id,
+        "operation_id": operation_id,
+    }
+    command = command_from_payload(payload)
+    assert command == ["range", "provision", "--request-id", request_id, "--operation-id", operation_id]
+    assert validate_provisioner_command(command) == payload
+
+
+def test_validate_rejects_non_uuid_operation_id() -> None:
+    from engine.launch_intents import validate_provisioner_command
+
+    request_id = "17171717-1717-1717-1717-171717171717"
+    with pytest.raises(ValueError, match="operation_id must be a UUID"):
+        validate_provisioner_command(["range", "provision", "--request-id", request_id, "--operation-id", "nope"])
