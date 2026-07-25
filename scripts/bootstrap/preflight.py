@@ -160,7 +160,8 @@ def _shifter_config_secret(environment: str) -> str:
 
 # --- Declarative check spec ---------------------------------------------------
 
-_AWS_COMPONENT_STACKS = {"core": "CORE", "range": "RANGE", "portal": "PORTAL"}
+_AWS_COMPONENT_STACKS = {"core": "CORE", "range": "RANGE", "portal": "PORTAL", "eks": "EKS"}
+_AWS_DEFAULT_COMPONENTS = ("core", "range", "portal")
 _DOCS = "docs/dev/deploy-secrets.md"
 
 
@@ -180,7 +181,7 @@ def _aws_secret_checks(environment: str, component: str | None) -> list[SecretCh
             remediation=f"Set the {_aws_state_bucket_secret(environment)} secret (see {_DOCS}).",
         ),
     ]
-    components = [component] if component else list(_AWS_COMPONENT_STACKS)
+    components = [component] if component else list(_AWS_DEFAULT_COMPONENTS)
     for name in components:
         stack = _AWS_COMPONENT_STACKS.get(name)
         if stack is None:
@@ -193,11 +194,11 @@ def _aws_secret_checks(environment: str, component: str | None) -> list[SecretCh
                 remediation=f"Set the {_tf_vars_secret(environment, stack)} secret (see {_DOCS}).",
             )
         )
-        if name == "range":
+        if name in {"range", "eks"}:
             checks.append(
                 SecretCheck(
                     _shifter_config_secret(environment),
-                    "range shifter.yaml payload",
+                    f"{name} shifter.yaml payload",
                     required=True,
                     remediation=f"Set the {_shifter_config_secret(environment)} secret (see {_DOCS}).",
                 )

@@ -590,6 +590,14 @@ jobs:
       # deliberate full-deploy path for both concerns.
       platform_changes: ${{ needs.changes.outputs.shifter_platform == 'true' || github.event_name == 'workflow_dispatch' }}
       portal_image_changes: ${{ needs.changes.outputs.portal_image == 'true' || github.event_name == 'workflow_dispatch' }}
+      # Existing ECS tenants must opt into EKS only after the serialized
+      # migration prerequisites are ready. An unset variable is fail-safe false.
+      eks_enabled: >-
+        ${{
+          (needs.changes.outputs.aws_environment == 'dev' && vars.AWS_EKS_DEV_ENABLED == 'true') ||
+          (needs.changes.outputs.aws_environment == 'proof' && vars.AWS_EKS_PROOF_ENABLED == 'true') ||
+          (needs.changes.outputs.aws_environment == 'prod' && vars.AWS_EKS_PROD_ENABLED == 'true')
+        }}
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}

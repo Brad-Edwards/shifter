@@ -709,8 +709,8 @@ def validate_gcp_control_plane_security_inputs(tf_dir: Path) -> None:
     # platform/terraform/gcp/modules/platform-core/variables.tf::gke_master_authorized_cidrs):
     #   1. an explicit "/N" suffix is present (rejects bare IPs).
     #   2. the entry parses as a CIDR (rejects garbage / bad octets / bad prefixes).
-    #   3. the parsed prefix length is > 0 (rejects /0 from the parsed prefix
-    #      number, not from a string-suffix check).
+    #   3. the parsed network is IPv4 RFC1918 space. GKE rejects public
+    #      authorized networks when the endpoint is private.
     authorized_cidrs = settings["gke_master_authorized_cidrs"]
     for cidr in authorized_cidrs:
         if "/" not in cidr:
@@ -729,6 +729,16 @@ def validate_gcp_control_plane_security_inputs(tf_dir: Path) -> None:
                 f"GCP bootstrap rejected gke_master_authorized_cidrs entry {cidr!r}: a /0 range is world-open. "
                 "List specific RFC1918 admin networks instead, or leave the list empty and rely on the "
                 "IAM-authenticated DNS control-plane endpoint."
+            )
+        rfc1918_networks = (
+            ipaddress.ip_network("10.0.0.0/8"),
+            ipaddress.ip_network("172.16.0.0/12"),
+            ipaddress.ip_network("192.168.0.0/16"),
+        )
+        if network.version != 4 or not any(network.subnet_of(private) for private in rfc1918_networks):
+            raise ValueError(
+                f"GCP bootstrap rejected gke_master_authorized_cidrs entry {cidr!r}: the private GKE "
+                "endpoint accepts only RFC1918 IPv4 networks. Leave the list empty when using Connect Gateway."
             )
 
 

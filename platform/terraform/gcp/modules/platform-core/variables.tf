@@ -71,8 +71,16 @@ variable "gke_master_authorized_cidrs" {
       can(cidrhost(cidr, 0))
       && can(regex("/[0-9]+$", cidr))
       && tonumber(regex("/([0-9]+)$", cidr)[0]) > 0
+      && (
+        (can(regex("^10\\.", cidr)) && tonumber(regex("/([0-9]+)$", cidr)[0]) >= 8)
+        || (
+          can(regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.", cidr))
+          && tonumber(regex("/([0-9]+)$", cidr)[0]) >= 12
+        )
+        || (can(regex("^192\\.168\\.", cidr)) && tonumber(regex("/([0-9]+)$", cidr)[0]) >= 16)
+      )
     ])
-    error_message = "Every gke_master_authorized_cidrs entry must be a valid CIDR with an explicit /N suffix (e.g. 10.0.0.0/24) and may not be a /0 (world-open) range. The control-plane endpoint is private (enable_private_endpoint = true) and reached over the IAM-authenticated DNS endpoint, so the list is optional and defaults to empty (see ADR-008 and docs/architecture/gke-control-plane-access-preflight.md)."
+    error_message = "Every gke_master_authorized_cidrs entry must be a valid RFC1918 IPv4 CIDR with an explicit /N suffix contained within 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16. The control-plane endpoint is private (enable_private_endpoint = true) and reached over Connect Gateway, so public CIDRs are rejected and the list should normally be empty (see ADR-008 and docs/architecture/gke-control-plane-access-preflight.md)."
   }
 }
 

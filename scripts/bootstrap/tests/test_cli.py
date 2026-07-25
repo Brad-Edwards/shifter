@@ -384,7 +384,7 @@ class TestMainCLI:
             "gke_master_authorized_cidrs = []\n"
         )
         security_override = tf_dir / "security.auto.tfvars"
-        security_override.write_text('gke_master_authorized_cidrs = ["203.0.113.10/32"]\n')
+        security_override.write_text('gke_master_authorized_cidrs = ["10.42.0.0/16"]\n')
         shifter_config = mock_repo_root / "shifter.yaml"
         shifter_config.write_text("version: 1\nbackend: gcp\n")
         with (
