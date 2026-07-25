@@ -142,7 +142,8 @@ def test_ensure_is_idempotent_when_secret_exists(mocker):
     iam.create_service_account_key.assert_not_called()
 
 
-def test_ensure_copies_shared_key_without_minting_service_account_key(mocker):
+def test_ensure_copies_shared_key_without_minting_service_account_key(mocker, monkeypatch):
+    monkeypatch.setenv("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "shared-vertex-key")
     iam = SimpleNamespace(create_service_account_key=mocker.Mock())
     secrets = _secret_client(exists=False)
 
@@ -161,7 +162,6 @@ def test_ensure_copies_shared_key_without_minting_service_account_key(mocker):
         secret_client=secrets,
         google_exceptions=_EXCEPTIONS,
         project_id="proj",
-        shared_key_secret_id="shared-vertex-key",
     )
 
     assert ref == "projects/proj/secrets/shifter-range-42-vertex-key"
@@ -208,7 +208,8 @@ def test_delete_is_noop_when_secret_absent(mocker):
     iam.delete_service_account_key.assert_not_called()
 
 
-def test_delete_shared_key_mode_removes_only_range_secret(mocker):
+def test_delete_shared_key_mode_removes_only_range_secret(mocker, monkeypatch):
+    monkeypatch.setenv("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "shared-vertex-key")
     iam = SimpleNamespace(delete_service_account_key=mocker.Mock())
     secrets = _secret_client(exists=True)
     access_secret = mocker.spy(secrets, "access_secret_version")
@@ -220,7 +221,6 @@ def test_delete_shared_key_mode_removes_only_range_secret(mocker):
         secret_client=secrets,
         google_exceptions=_EXCEPTIONS,
         project_id="proj",
-        shared_key_secret_id="shared-vertex-key",
     )
 
     access_secret.assert_not_called()
