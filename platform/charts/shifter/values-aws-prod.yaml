@@ -1,0 +1,34 @@
+provider:
+  name: aws
+profile: prod
+
+deployment:
+  profile: prod
+
+capabilities:
+  gcpBackendConfig: false
+  gcpManagedTls: false
+  kubernetesJobLauncher: false
+
+images:
+  platform: 000000000000.dkr.ecr.us-east-1.amazonaws.com/shifter/platform@sha256:1111111111111111111111111111111111111111111111111111111111111111
+  guacd: 000000000000.dkr.ecr.us-east-1.amazonaws.com/shifter/guacd@sha256:2222222222222222222222222222222222222222222222222222222222222222
+  guacamoleClient: 000000000000.dkr.ecr.us-east-1.amazonaws.com/shifter/guacamole-client@sha256:3333333333333333333333333333333333333333333333333333333333333333
+
+portal:
+  replicas: 3
+
+workers:
+  cms:
+    replicas: 2
+  engine:
+    replicas: 2
+  mc:
+    replicas: 2
+
+guacd:
+  replicas: 2
+
+# Guacamole tokens remain task-local; scale guacd, not the client (#928).
+guacamoleClient:
+  replicas: 1

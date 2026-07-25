@@ -29,6 +29,12 @@ exactly as before the split.
 from ._aces import AcesContentDeliveryBinding, AcesImageMapping
 from ._capacity import CapacityDeclaration
 from ._launch import ProvisionerLaunchIntent, ProvisionerLaunchStatus
+from ._operation_io import (
+    OperationInput,
+    OperationResultDisposition,
+    OperationResultInbox,
+    OperationResultKind,
+)
 from ._outbox import OutboxStatus, RangeEventOutbox
 from ._range import Range
 from ._request import App, Instance, Instantiation, Request
@@ -41,6 +47,10 @@ __all__ = [
     "CapacityDeclaration",
     "Instance",
     "Instantiation",
+    "OperationInput",
+    "OperationResultDisposition",
+    "OperationResultInbox",
+    "OperationResultKind",
     "OutboxStatus",
     "ProvisionerLaunchIntent",
     "ProvisionerLaunchStatus",

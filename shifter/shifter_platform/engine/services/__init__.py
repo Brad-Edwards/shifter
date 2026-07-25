@@ -36,6 +36,7 @@ from ._capacity import (
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
+from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
 from ._queries import get_authoritative_range_status, get_ranges_for_ngfw, get_user_ready_range_instances
 from ._range import (
     cancel_range,
@@ -82,6 +83,7 @@ __all__ = (
     "VpnProfileConflict",
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
+    "apply_pending_operation_results",
     "cancel_range",
     "cancel_range_by_request",
     "connect_ngfw_terminal",
@@ -93,6 +95,7 @@ __all__ = (
     "destroy_range",
     "destroy_range_by_request",
     "disable_aces_image_mapping",
+    "evaluate_operation_result",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
     "get_openvpn_profile",

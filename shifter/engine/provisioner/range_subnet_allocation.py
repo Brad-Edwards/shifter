@@ -13,6 +13,7 @@ from typing import Any
 
 from config import load_range_network_config
 from provisioner_db import _update_range_config, mark_range_instances_destroyed
+from provisioner_db_appends import OperationRef
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +83,17 @@ def _release_subnet_allocations_best_effort(request_id: str) -> None:
         logger.warning("Failed to release subnet allocations: %s", e)
 
 
-def _post_destroy_cleanup(request_id: str, range_id: int) -> None:
-    """Mark range destroyed, release subnet allocations. Best-effort."""
+def _post_destroy_cleanup(request_id: str, range_id: int, *, operation_id: str | None = None) -> None:
+    """Mark range destroyed, release subnet allocations. Best-effort.
+
+    ``operation_id`` is the ADR-043 canonical operation generation (#1834);
+    threaded through to the shadow operation-result append inside
+    ``mark_range_instances_destroyed``. ``None`` on local-dev runs.
+    """
     try:
-        mark_range_instances_destroyed(range_id)
+        mark_range_instances_destroyed(
+            range_id, operation=OperationRef(request_id=request_id, operation_id=operation_id)
+        )
     except Exception:
         logger.exception("Failed to mark range %d as destroyed", range_id)
 

@@ -223,6 +223,80 @@ def test_update_instance_state_writes_ngfw_instance_and_app(monkeypatch: pytest.
     conn.commit.assert_called_once_with()
 
 
+def _make_ngfw_state_conn_mock() -> tuple[MagicMock, MagicMock]:
+    """Return (conn_mock, cursor_mock) shaped for update_instance_state's SELECT + UPDATEs."""
+    cursor_mock = MagicMock()
+    cursor_mock.fetchone.return_value = (10, {}, None)
+    conn_mock = MagicMock()
+    conn_mock.__enter__ = MagicMock(return_value=conn_mock)
+    conn_mock.__exit__ = MagicMock(return_value=False)
+    conn_mock.cursor.return_value.__enter__ = MagicMock(return_value=cursor_mock)
+    conn_mock.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    return conn_mock, cursor_mock
+
+
+def test_update_instance_state_appends_shadow_result_when_operation_id_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-043 Phase 2 (#1834): the shadow append fires only when operation_id is present."""
+    from ngfw_runtime import update_instance_state
+
+    conn_mock, cursor_mock = _make_ngfw_state_conn_mock()
+    monkeypatch.setattr("ngfw_runtime.get_db_connection", MagicMock(return_value=conn_mock))
+    mock_append = MagicMock()
+    monkeypatch.setattr("ngfw_runtime.append_operation_result", mock_append)
+
+    update_instance_state(
+        "ngfw-req",
+        "ready",
+        operation_id="op-1",
+        operation="start",
+        serial_number="12345",
+    )
+
+    mock_append.assert_called_once()
+    _args, kwargs = mock_append.call_args
+    assert kwargs["operation_id"] == "op-1"
+    assert kwargs["request_id"] == "ngfw-req"
+    assert kwargs["resource"] == "ngfw"
+    assert kwargs["operation"] == "start"
+    assert kwargs["result_kind"] == "RESOURCE_STATE"
+    assert kwargs["result_payload"] == {"status": "ready", "instance_id": 10, "app_id": None}
+    assert kwargs["cur"] is cursor_mock
+
+
+def test_update_instance_state_skips_shadow_append_when_operation_id_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """local-dev / not-yet-threaded callers never carry operation_id -- append is skipped."""
+    from ngfw_runtime import update_instance_state
+
+    conn_mock, _cursor_mock = _make_ngfw_state_conn_mock()
+    monkeypatch.setattr("ngfw_runtime.get_db_connection", MagicMock(return_value=conn_mock))
+    mock_append = MagicMock()
+    monkeypatch.setattr("ngfw_runtime.append_operation_result", mock_append)
+
+    update_instance_state("ngfw-req", "ready")
+
+    mock_append.assert_not_called()
+
+
+def test_update_instance_state_skips_shadow_append_when_operation_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """operation_id alone is not enough -- a missing canonical operation also skips the append."""
+    from ngfw_runtime import update_instance_state
+
+    conn_mock, _cursor_mock = _make_ngfw_state_conn_mock()
+    monkeypatch.setattr("ngfw_runtime.get_db_connection", MagicMock(return_value=conn_mock))
+    mock_append = MagicMock()
+    monkeypatch.setattr("ngfw_runtime.append_operation_result", mock_append)
+
+    update_instance_state("ngfw-req", "ready", operation_id="op-1")
+
+    mock_append.assert_not_called()
+
+
 def test_find_stale_routes_by_db_returns_destroyed_range_routes(monkeypatch: pytest.MonkeyPatch) -> None:
     from ngfw_runtime import find_stale_routes_by_db
 
@@ -319,7 +393,9 @@ def test_gcp_ngfw_operation_marks_failed_on_power_error(monkeypatch: pytest.Monk
     with pytest.raises(RuntimeError, match="power failed"):
         _run_gcp_ngfw_operation("start", "ngfw-req", "inst-uuid", "app-uuid", {"cloud_provider": "gcp"})
 
-    assert update_state.call_args_list[-1] == call("ngfw-req", "failed", error_message="power failed")
+    assert update_state.call_args_list[-1] == call(
+        "ngfw-req", "failed", operation_id=None, operation="start", error_message="power failed"
+    )
     assert publish_event.call_args_list[-1].kwargs["status"] == "failed"
 
 
@@ -350,6 +426,8 @@ def test_aws_ngfw_operation_marks_failed_when_plan_fails(monkeypatch: pytest.Mon
     assert update_state.call_args_list[-1] == call(
         "ngfw-req",
         "failed",
+        operation_id=None,
+        operation="stop",
         error_message="Operation stop failed",
     )
     assert publish_event.call_args_list[-1].kwargs["status"] == "failed"

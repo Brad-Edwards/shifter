@@ -20,6 +20,32 @@ GCP_GENERATED_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platfor
 GCP_SECRET_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platform-runtime-secrets.env")
 GCP_BACKEND_OWNER = "gcp backend"
 
+# Public settings and secret references that an AWS EKS deployment must project
+# into the shared chart. The EKS lifecycle validates this inventory before Helm
+# can mutate a release, so a new runtime consumer cannot silently disappear from
+# the provider renderer.
+AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
+    {
+        "AWS_REGION",
+        "ENGINE_TASK_CLUSTER",
+        "ENGINE_TASK_DEFINITION",
+        "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID",
+        "ENGINE_TASK_NETWORK_SUBNET_IDS",
+        "OIDC_AUTH_DOMAIN",
+        "OIDC_ISSUER_URL",
+        "OIDC_RP_CLIENT_ID",
+        "OIDC_SECRET_ID",
+        "QUEUE_CMS_CONSUMER_ID",
+        "QUEUE_CMS_PUBLISHER_ID",
+        "QUEUE_ENGINE_CONSUMER_ID",
+        "QUEUE_ENGINE_PUBLISHER_ID",
+        "QUEUE_MC_CONSUMER_ID",
+        "QUEUE_MC_PUBLISHER_ID",
+        "RANGE_EVENTS_TOPIC_ID",
+        "STORAGE_BUCKET_NAME",
+    }
+)
+
 GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "APP_SECRET_ID",

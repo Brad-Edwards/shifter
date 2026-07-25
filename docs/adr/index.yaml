@@ -437,7 +437,7 @@
       },
       {
         "id": "ADR-008-R7",
-        "description": "GCP application workload identities (portal, workers, CTF scheduler, and provisioner) must not receive project-level Secret Manager payload/admin or Cloud Storage object-admin roles. Static runtime access is bound on each named secret or bucket from the resource-owning module's outputs (portal/secrets `runtime_secret_ids`, portal/gcs `assets_bucket_name`), driven by a single canonical workload/resource matrix in `platform/terraform/gcp/modules/portal/iam/main.tf`. Dynamic provisioner-created secret lifecycle must be isolated by a dedicated project or broker because secret creation is authorized on the parent project before a resource-name condition can constrain the new secret ID; resource-name conditions remain appropriate for existing-secret access/update/delete. Repo-native Terraform guards and effective-permission tests must cover direct, binding/policy, local-map, and equivalent project custom-role shapes. The check is implemented in `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` and wired as the `check-tf-gcp-iam-resource-scope` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest + effective-permission oracle suite included in the `check_tf_*` checker tests. Until the dedicated boundary lands, the guard allowlists exactly two project-level residuals it cannot yet resource-scope — portal `roles/secretmanager.secretAccessor` (reads per-range `*-ssh`/`*-rdp-password` guest credentials) and provisioner `roles/secretmanager.admin` (per-range dynamic-secret create/version/access/delete + vertex-key setIamPolicy + operator GDC secret reads) — each carrying an expiry so the exception cannot outlive its review; the dedicated range-secret project / broker boundary that removes both is designed in #1586. Recorded by the architecture preflight for #1517.",
+        "description": "GCP application workload identities (portal, workers, CTF scheduler, and provisioner) must not receive project-level Secret Manager payload/admin, Cloud Storage object-admin, or service-account IAM-admin (`iam.serviceAccounts.create`/`delete`/`setIamPolicy`) roles, whether predefined or via an equivalent project-level custom role. Static runtime access is bound on each named secret or bucket from the resource-owning module's outputs (portal/secrets `runtime_secret_ids`, portal/gcs `assets_bucket_name`), driven by a single canonical workload/resource matrix in `platform/terraform/gcp/modules/portal/iam/main.tf`. Dynamic provisioner-created secret lifecycle must be isolated by a dedicated project or broker because secret creation is authorized on the parent project before a resource-name condition can constrain the new secret ID; resource-name conditions remain appropriate for existing-secret access/update/delete. Repo-native Terraform guards and effective-permission tests must cover direct, binding/policy, local-map, and equivalent project custom-role shapes. The check is implemented in `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` and wired as the `check-tf-gcp-iam-resource-scope` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest + effective-permission oracle suite included in the `check_tf_*` checker tests. Until the dedicated boundary lands, the guard allowlists exactly two project-level residuals it cannot yet resource-scope — portal `roles/secretmanager.secretAccessor` (reads per-range `*-ssh`/`*-rdp-password` guest credentials) and provisioner `roles/secretmanager.admin` (per-range dynamic-secret create/version/access/delete + vertex-key setIamPolicy + operator GDC secret reads) — each carrying an expiry so the exception cannot outlive its review; the dedicated range-secret project / broker boundary that removes both is designed in #1586. The provisioner's former project-level `iam.serviceAccounts.setIamPolicy` custom role (used to self-grant `serviceAccountUser` on dynamically created OpenVPN gateway service accounts, which GCP cannot resource-name-scope for setIamPolicy) is replaced by a pre-provisioned single-project gateway SA pool: Terraform pre-creates `sh-vpn-pool-<slot>` no-role service accounts and grants the provisioner `serviceAccountUser` on each specific member, and each active OpenVPN range reserves a slot via `Range.allocate_vpn_gateway_slot` bounded by `VPN_GATEWAY_POOL_SIZE` (must equal the Terraform `vpn_gateway_pool_size`). This removes all runtime service-account administration from the provisioner with no cross-project or org-policy dependency (single isolated tenant), so the guard also fails a project-level service-account IAM-admin custom role attached to a workload identity. Recorded by the architecture preflight for #1517.",
         "checks": []
       },
       {
@@ -2134,6 +2134,61 @@
       "shifter/shifter_platform/shared",
       "shifter/engine/provisioner/provisioner_db.py",
       "shifter/engine/provisioner/state_helpers.py"
+    ]
+  },
+  {
+    "id": "ADR-044",
+    "title": "Platform control-plane workloads use one backend-neutral Helm package",
+    "status": "accepted",
+    "scope": "platform_packaging",
+    "decision": "The Shifter Helm chart is the canonical control-plane workload package for supported Kubernetes backends. Root-selected backend bundles provision provider prerequisites and render validated identity, edge, network, image, runtime, and secret-reference values into the one chart. New AWS deployments use EKS plus Helm; existing ECS/ASG platform deployments remain a documented compatibility path with separate state and controlled cutover. Platform packaging, task delivery, range-substrate lifecycle, cloud backend selection, and user identity remain distinct concerns.",
+    "rules": [
+      {
+        "id": "ADR-044-R1",
+        "description": "platform/charts/shifter is the single canonical control-plane workload package for GKE and EKS. Backend-specific Terraform and bootstrap code may supply layered values and provider prerequisites, but must not fork the chart or create an ad hoc kubectl workload deployment path; raw GCP manifests remain supporting/parity evidence during migration.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R2",
+        "description": "The chart's neutral defaults must not emit provider-specific CRDs, annotations, ingress classes, load-balancer/API CIDRs, image roots, or credentials. Backend renderers project validated Terraform outputs and verified image digests into schema-validated values. Secret payloads are prohibited from Helm values/history and ConfigMaps and must flow through provider secret stores or Kubernetes Secrets using the existing hydration boundary.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R3",
+        "description": "For root-configured backend=aws deployments, EKS is the canonical platform compute without introducing an aws-eks backend. This does not by itself move the AWS provisioner task runner from private ECS tasks, replace ADR-039's AWS Terraform range-substrate adapter, or change Cognito/OIDC. GCP Job-launch RBAC/admission resources must not render on EKS unless a separately reviewed Kubernetes task-runner contract requires and tests them.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R4",
+        "description": "Every supported provider values render must preserve ADR-006 restricted Pod Security and default-deny network policy, least-privilege workload identity, private placement, HTTPS edge policy, exact attested OCI digests, atomic/waiting Helm rollout, and provider-appropriate health evidence. Branch names do not select deployments; CI validates bundle examples and owned artifacts through an explicit backend matrix while credentialed mutation remains explicitly invoked and protected.",
+        "checks": ["k8s-deployment-security-context", "k8s-network-policy-coverage"]
+      },
+      {
+        "id": "ADR-044-R5",
+        "description": "EKS infrastructure and legacy ECS/ASG infrastructure retain separate Terraform state and ownership. Compatibility migration must prevent both control planes from acting as concurrent active schedulers, queue consumers, outbox drainers, migration runners, or range launchers; cutover and rollback are explicit and must not rename, import, destroy, or silently adopt legacy resources.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1324",
+      "docs/architecture/aws-eks-helm-packaging-preflight-1324.md",
+      "docs/architecture/root-configured-backend-bundles.md",
+      "docs/architecture/branch-routing-provider-coupling-inventory.md",
+      "platform/charts/shifter/Chart.yaml",
+      "platform/charts/shifter/values.yaml",
+      "platform/charts/shifter/values.schema.json",
+      "platform/charts/shifter/values-aws-dev.yaml",
+      "platform/charts/shifter/values-aws-proof.yaml",
+      "platform/charts/shifter/values-aws-prod.yaml",
+      "platform/charts/shifter/tests/test_chart_contract.py",
+      "shifter/installation/contract",
+      "shifter/installation/registry.py",
+      "shifter/installation/runtime_inventory.py",
+      "scripts/bootstrap/deploy.py",
+      ".github/workflows/deploy.yml",
+      "scripts/adr_guard/adr_guard.py"
     ]
   }
 ]

@@ -6,6 +6,23 @@ This package validates the root Shifter installation config, `shifter.yaml`.
 backend bundle and provides deployment-level settings. The installation package
 is the authoritative parser for that file.
 
+## AWS EKS lifecycle
+
+The canonical AWS platform package is the shared Helm chart on EKS. After
+validating `backend: aws`, deploy through the typed bundle entrypoint:
+
+```console
+./scripts/bootstrap/deploy.py eks-deploy --config shifter.yaml \
+  --images .shifter/images.json --profile operator
+```
+
+The images JSON contains attested `repository@sha256:<digest>` identities, not
+tags. Teardown is explicit and scoped to the isolated EKS root:
+
+```console
+./scripts/bootstrap/deploy.py eks-teardown --config shifter.yaml --profile operator
+```
+
 ## Supported Backends
 
 | Backend | Profiles | Required secrets | Settings validation |
