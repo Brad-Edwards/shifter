@@ -49,7 +49,16 @@ def test_drainer_launches_canonical_command_and_marks_succeeded(settings) -> Non
 
     row.refresh_from_db()
     command = client.run_task.call_args.kwargs["overrides"]["containerOverrides"][0]["command"]
-    assert command == ["range", "provision", "--request-id", "11111111-1111-1111-1111-111111111111"]
+    # The launched argv carries the canonical operation_id so the provisioner
+    # tags its input read / result appends with exactly this operation (ADR-043).
+    assert command == [
+        "range",
+        "provision",
+        "--request-id",
+        "11111111-1111-1111-1111-111111111111",
+        "--operation-id",
+        str(row.operation_id),
+    ]
     assert row.status == "SUCCEEDED"
     assert row.task_ref == "arn:aws:ecs:region:account:task/job-1"
 

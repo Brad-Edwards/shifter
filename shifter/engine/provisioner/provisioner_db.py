@@ -26,6 +26,16 @@ from shared.remote_access import parse_openvpn_binding
 
 from config import has_ngfw_attachment_state
 from log_redact import safe_log_fingerprint
+
+# enqueue_event_outbox is called by the writers below and imported here so
+# events.py's provisioner_db.enqueue_event_outbox reference and the outbox tests
+# keep resolving after the append helpers moved to provisioner_db_appends.py.
+from provisioner_db_appends import (
+    OperationRef,
+    append_range_destroy_result,
+    append_range_provision_result,
+    enqueue_event_outbox,
+)
 from state_helpers import (
     _build_instance_state,
     _build_provisioned_instance_payload,
@@ -115,43 +125,6 @@ def _append_kwarg_assignment(assignments: list[Any], values: list[Any], key: str
         return
     assignments.append(sql.SQL("{} = %s").format(sql.Identifier(key)))
     values.append(value)
-
-
-def enqueue_event_outbox(event: dict[str, object], *, cur: psycopg.Cursor[tuple[object, ...]] | None = None) -> None:
-    """Insert an event into the transactional outbox for durable delivery.
-
-    When ``cur`` is provided the INSERT is executed on that cursor and the
-    caller owns the surrounding transaction/commit (atomic with the state
-    change).  When ``cur`` is None a new connection is opened, the row is
-    inserted, and the connection is committed immediately.
-
-    Uses ON CONFLICT (event_id) DO NOTHING so the call is idempotent.
-
-    Args:
-        event: Full event dict; must contain ``event_id`` and ``event_type``.
-        cur:   Optional psycopg cursor sharing the caller's transaction.
-
-    Raises:
-        Exception: Any DB error is re-raised — callers must learn when durable
-            recording fails.
-    """
-    _insert_sql = """
-        INSERT INTO engine_range_event_outbox
-            (event_id, event_type, payload, status, attempts, max_attempts,
-             next_attempt_at, created_at)
-        VALUES
-            (%s, %s, %s, 'PENDING', 0, 10, NOW(), NOW())
-        ON CONFLICT (event_id) DO NOTHING
-    """
-    params = (str(event["event_id"]), event["event_type"], json.dumps(event))
-
-    if cur is not None:
-        cur.execute(_insert_sql, params)
-    else:
-        with get_db_connection() as conn:
-            with conn.cursor() as _cur:
-                _cur.execute(_insert_sql, params)
-            conn.commit()
 
 
 def update_range_status(
@@ -265,6 +238,8 @@ def write_provisioned_state(
     ngfw_instance_id: int | None = None,
     vpn_access_binding: dict[str, object] | None = None,
     outbox_event: dict | None = None,
+    *,
+    operation: OperationRef | None = None,
 ) -> None:
     """Write provisioned infrastructure state directly to database.
 
@@ -276,6 +251,8 @@ def write_provisioned_state(
         vpn_access_binding: Closed non-secret OpenVPN result, if supported.
         outbox_event:    Optional event dict to insert into the outbox
                          atomically with the state writes.
+        operation:       ADR-043 operation identity for the shadow result append;
+                         ``None`` (or a ref without an operation_id) skips it.
     """
     if vpn_access_binding is not None:
         # Reject extensions (especially accidental credential/profile fields)
@@ -316,6 +293,15 @@ def write_provisioned_state(
             if outbox_event is not None:
                 enqueue_event_outbox(outbox_event, cur=cur)
 
+            append_range_provision_result(
+                cur,
+                operation,
+                range_id=range_id,
+                subnet_count=len(subnets),
+                instance_count=len(provisioned_instances),
+                ngfw_instance_id=ngfw_instance_id,
+            )
+
         conn.commit()
     logger.info(
         "Wrote provisioned state to DB: range_id=%s subnets=%d instances=%d",
@@ -325,8 +311,16 @@ def write_provisioned_state(
     )
 
 
-def mark_range_instances_destroyed(range_id: int) -> tuple[int, int]:
-    """Mark all engine_instance and engine_subnet records for a range as destroyed."""
+def mark_range_instances_destroyed(
+    range_id: int,
+    *,
+    operation: OperationRef | None = None,
+) -> tuple[int, int]:
+    """Mark all engine_instance and engine_subnet records for a range as destroyed.
+
+    ``operation`` is the ADR-043 operation identity for the shadow result append
+    (Phase 2, #1834); ``None`` (or a ref without an operation_id) skips it.
+    """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -376,6 +370,14 @@ def mark_range_instances_destroyed(range_id: int) -> tuple[int, int]:
             if cur.rowcount == 0:
                 raise ValueError(f"No mission_control_range record found for id={range_id}")
 
+            append_range_destroy_result(
+                cur,
+                operation,
+                range_id=range_id,
+                instance_count=instance_count,
+                subnet_count=subnet_count,
+            )
+
         conn.commit()
     logger.info(
         "Marked engine records as destroyed: range_id=%s instances=%d subnets=%d",
@@ -414,7 +416,8 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 rng.status,
                 rng.range_backend,
                 rng.instantiation_purpose,
-                rng.remote_access_capability
+                rng.remote_access_capability,
+                rng.vpn_gateway_pool_slot
             FROM engine_request r
             JOIN mission_control_range rng ON rng.request_id = r.id
             WHERE r.request_id = %s
@@ -471,4 +474,5 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
             "range_backend": row[6],
             "instantiation_purpose": row[7],
             "remote_access_capability": row[8],
+            "vpn_gateway_pool_slot": row[9],
         }

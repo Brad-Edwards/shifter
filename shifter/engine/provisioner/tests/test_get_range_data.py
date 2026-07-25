@@ -28,7 +28,8 @@ def _make_mock_cursor(range_row, ngfw_row=None):
 
 # Range query columns: request_id, range_id, user_id, range_config, subnet_index,
 # status, range_backend, instantiation_purpose (#1666 ownership binding),
-# remote_access_capability (#1695 trusted OpenVPN activation contract).
+# remote_access_capability (#1695 trusted OpenVPN activation contract),
+# vpn_gateway_pool_slot (ADR-008-R7 gateway SA pool).
 _RANGE_ROW_WITH_NGFW = (
     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  # request_id
     201,  # range_id
@@ -39,6 +40,7 @@ _RANGE_ROW_WITH_NGFW = (
     None,  # range_backend (legacy/non-GCP)
     None,  # instantiation_purpose
     None,  # remote_access_capability
+    None,  # vpn_gateway_pool_slot
 )
 
 _RANGE_ROW_NO_NGFW = (
@@ -51,6 +53,7 @@ _RANGE_ROW_NO_NGFW = (
     None,  # range_backend
     None,  # instantiation_purpose
     None,  # remote_access_capability
+    None,  # vpn_gateway_pool_slot
 )
 
 
@@ -222,7 +225,9 @@ class TestGetRangeDataNGFWLookup:
             "target_ref": "11111111-2222-3333-4444-555555555555",
             "teardown_at": "2026-07-20T12:00:00Z",
         }
-        row = (*_RANGE_ROW_NO_NGFW[:-1], capability)
+        # Override remote_access_capability (index 8), preserving the trailing
+        # vpn_gateway_pool_slot column (index 9).
+        row = (*_RANGE_ROW_NO_NGFW[:8], capability, _RANGE_ROW_NO_NGFW[9])
         mock_conn, _mock_cursor = _make_mock_cursor(row)
         monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
 

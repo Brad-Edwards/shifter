@@ -10,6 +10,19 @@ variable "name_prefix" {
   type = string
 }
 
+# ADR-008-R7: size of the pre-provisioned OpenVPN gateway service-account pool
+# (sh-vpn-pool-0 .. N-1). Bounds concurrent OpenVPN ranges and must match
+# VPN_GATEWAY_POOL_SIZE in the engine runtime env, which reserves slots into it.
+variable "vpn_gateway_pool_size" {
+  type    = number
+  default = 24
+
+  validation {
+    condition     = var.vpn_gateway_pool_size >= 0 && floor(var.vpn_gateway_pool_size) == var.vpn_gateway_pool_size
+    error_message = "vpn_gateway_pool_size must be a non-negative integer."
+  }
+}
+
 # ADR-008-R7: resource IDs handed in from the owning modules (portal/secrets,
 # portal/gcs, platform-core) so Secret Manager and Cloud Storage access can be
 # bound per named resource instead of at project scope. No secret inventory or

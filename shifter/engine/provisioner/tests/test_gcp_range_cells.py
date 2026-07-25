@@ -31,8 +31,19 @@ from gcp_range_cells import (
     destroy_range_cell,
     render_range_cell_plan,
 )
-from gcp_vpn_identity import gcp_vpn_gateway_service_account_email
+from gcp_vpn_identity import gcp_vpn_gateway_pool_service_account_email
 from state_helpers import _build_instance_state
+
+_TEST_VPN_GATEWAY_POOL_SLOT = 7
+
+
+@pytest.fixture(autouse=True)
+def _stub_range_data_for_pool_slot(monkeypatch):
+    """apply/destroy read the reserved gateway pool slot from the range row
+    (ADR-008-R7). Stub that DB read so the GCE backend tests stay DB-free."""
+    stub = MagicMock(return_value={"vpn_gateway_pool_slot": _TEST_VPN_GATEWAY_POOL_SLOT})
+    monkeypatch.setattr("gcp_range_cells.get_range_data_by_request_id", stub, raising=False)
+    monkeypatch.setattr("gcp_range_cell_destroy.get_range_data_by_request_id", stub, raising=False)
 
 
 class NotFound(Exception):
@@ -273,12 +284,16 @@ def test_render_range_cell_plan_private_google_access_adds_egress_hole():
 def test_render_range_cell_plan_private_google_access_adds_target_only_vpn_gateway():
     config = dataclasses.replace(_shared_vpc_config(), private_google_access=True)
 
-    plan = render_range_cell_plan("req-123", _variables(remote_access=True), config)
+    plan = render_range_cell_plan(
+        "req-123", _variables(remote_access=True), config, vpn_gateway_pool_slot=_TEST_VPN_GATEWAY_POOL_SLOT
+    )
 
     gateway = plan["vpn_gateway"]
     assert gateway["target_ref"] == _LINUX_UUID
     assert gateway["target_ip"] == "10.50.2.3"
-    assert gateway["service_account_email"] == gcp_vpn_gateway_service_account_email("test-project", 42, "req-123")
+    assert gateway["service_account_email"] == gcp_vpn_gateway_pool_service_account_email(
+        "test-project", _TEST_VPN_GATEWAY_POOL_SLOT
+    )
     assert gateway["private_ip"] not in plan["subnets"][0]["ip_assignments"].values()
     firewalls = {rule["name"]: rule for rule in plan["firewalls"]}
     vpn_sources = [ipaddress.ip_network(cidr) for cidr in firewalls["shifter-r-42-vpn-in"]["source_ranges"]]
@@ -301,7 +316,9 @@ def test_topology_without_capability_does_not_create_a_vpn_gateway():
 
 def test_gcp_gateway_result_stays_pending_until_external_service_probe():
     config = dataclasses.replace(_shared_vpc_config(), private_google_access=True)
-    plan = render_range_cell_plan("req-123", _variables(remote_access=True), config)
+    plan = render_range_cell_plan(
+        "req-123", _variables(remote_access=True), config, vpn_gateway_pool_slot=_TEST_VPN_GATEWAY_POOL_SLOT
+    )
     clients = _mock_clients(exists=True)
     clients.addresses.get.side_effect = None
     clients.addresses.get.return_value = object()
