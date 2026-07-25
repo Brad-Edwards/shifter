@@ -164,6 +164,7 @@
         "ctfScheduler",
         "guacamolePrune",
         "acesOperationRecordPrune",
+        "operationResultApplier",
         "outboxDrainer",
         "provisionerLauncher",
         "reconciler"
@@ -175,6 +176,7 @@
         "ctfScheduler": { "$ref": "#/$defs/scaledWorkload" },
         "guacamolePrune": { "$ref": "#/$defs/scaledWorkload" },
         "acesOperationRecordPrune": { "$ref": "#/$defs/scaledWorkload" },
+        "operationResultApplier": { "$ref": "#/$defs/scaledWorkload" },
         "outboxDrainer": { "$ref": "#/$defs/scaledWorkload" },
         "provisionerLauncher": { "$ref": "#/$defs/scaledWorkload" },
         "reconciler": { "$ref": "#/$defs/scaledWorkload" }
