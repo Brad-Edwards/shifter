@@ -110,11 +110,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Read-only ViewSet for audit log queries. Staff/superuser only.
+         * @description Read-only audit log queries for administrators.
          *
-         *     Provides list and detail views for querying audit logs. Supports
-         *     filtering by entity_type, entity_id, action, actor_type, actor_id, and
-         *     date range.
+         *     Provides list and detail views over the platform audit trail, filterable by
+         *     entity_type, entity_id, action, actor_type, actor_id, and date range.
+         *     Requires a staff or superuser session that is also a member of an allowed
+         *     audit Cognito group; API tokens are not accepted.
          */
         get: operations["audit_list"];
         put?: never;
@@ -133,11 +134,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Read-only ViewSet for audit log queries. Staff/superuser only.
+         * @description Read-only audit log queries for administrators.
          *
-         *     Provides list and detail views for querying audit logs. Supports
-         *     filtering by entity_type, entity_id, action, actor_type, actor_id, and
-         *     date range.
+         *     Provides list and detail views over the platform audit trail, filterable by
+         *     entity_type, entity_id, action, actor_type, actor_id, and date range.
+         *     Requires a staff or superuser session that is also a member of an allowed
+         *     audit Cognito group; API tokens are not accepted.
          */
         get: operations["audit_retrieve"];
         put?: never;

@@ -386,7 +386,7 @@
     "/api/v1/audit/": {
       "get": {
         "operationId": "audit_list",
-        "description": "Read-only ViewSet for audit log queries. Staff/superuser only.\n\nProvides list and detail views for querying audit logs. Supports\nfiltering by entity_type, entity_id, action, actor_type, actor_id, and\ndate range.",
+        "description": "Read-only audit log queries for administrators.\n\nProvides list and detail views over the platform audit trail, filterable by\nentity_type, entity_id, action, actor_type, actor_id, and date range.\nRequires a staff or superuser session that is also a member of an allowed\naudit Cognito group; API tokens are not accepted.",
         "parameters": [
           {
             "name": "ordering",
@@ -464,7 +464,7 @@
     "/api/v1/audit/{id}/": {
       "get": {
         "operationId": "audit_retrieve",
-        "description": "Read-only ViewSet for audit log queries. Staff/superuser only.\n\nProvides list and detail views for querying audit logs. Supports\nfiltering by entity_type, entity_id, action, actor_type, actor_id, and\ndate range.",
+        "description": "Read-only audit log queries for administrators.\n\nProvides list and detail views over the platform audit trail, filterable by\nentity_type, entity_id, action, actor_type, actor_id, and date range.\nRequires a staff or superuser session that is also a member of an allowed\naudit Cognito group; API tokens are not accepted.",
         "parameters": [
           {
             "in": "path",

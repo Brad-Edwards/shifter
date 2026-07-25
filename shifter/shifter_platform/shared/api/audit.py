@@ -63,15 +63,19 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
-    """Read-only ViewSet for audit log queries. Staff + Cognito group only.
+    """Read-only audit log queries for administrators.
 
-    Provides list and detail views for querying audit logs. Supports
-    filtering by entity_type, entity_id, action, actor_type, actor_id, and
-    date range. ``permission_classes`` lists both gates: DRF requires every
-    listed class to pass, so a session must satisfy the Cognito-group check
-    AND the staff/superuser check.
+    Provides list and detail views over the platform audit trail, filterable by
+    entity_type, entity_id, action, actor_type, actor_id, and date range.
+    Requires a staff or superuser session that is also a member of an allowed
+    audit Cognito group; API tokens are not accepted.
     """
 
+    # This docstring is the published OpenAPI description for /api/v1/audit/
+    # (drf-spectacular derives it), so it states the authorization requirement in
+    # caller-facing terms and leaves the mechanism here: DRF requires every class
+    # in `permission_classes` to pass, so the two gates below are ANDed, and
+    # `HasAuditLogCognitoGroup` fails closed when the allow-list is unconfigured.
     serializer_class = AuditLogSerializer
     permission_classes = [HasAuditLogCognitoGroup, IsStaffSessionAudited]
 
