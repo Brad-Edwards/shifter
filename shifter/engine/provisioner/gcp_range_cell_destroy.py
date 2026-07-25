@@ -15,6 +15,7 @@ from gcp_range_cell_credentials import (
 from gcp_range_cell_ops import _delete_resource
 from gcp_range_cell_plan import render_range_cell_plan
 from gcp_range_cell_types import RangeCellPlan, ResourceDict
+from provisioner_db import get_range_data_by_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,17 @@ def destroy_range_cell(
         logger.info("No GCE range variables provided for request %s; nothing to destroy", request_uuid)
         return
     resolved_config = config or load_gce_range_cell_config()
-    plan = render_range_cell_plan(request_uuid, variables, resolved_config, require_images=False)
+    # The gateway SA email is unused for teardown (resources are deleted by name),
+    # but the range's reserved pool slot (ADR-008-R7) is read so the plan renders
+    # consistently with provision. The row exists while the range is DESTROYING.
+    range_data = get_range_data_by_request_id(request_uuid)
+    plan = render_range_cell_plan(
+        request_uuid,
+        variables,
+        resolved_config,
+        require_images=False,
+        vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
+    )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()

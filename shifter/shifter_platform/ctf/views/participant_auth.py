@@ -29,16 +29,15 @@ def _ctf_login_rate_limited(request: HttpRequest, username: str) -> tuple[bool, 
     from shared.audit import get_client_ip
 
     window = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300))
-    maximum = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_MAX", 5))
+    account_maximum = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_MAX", 5))
+    source_maximum = int(getattr(settings, "CTF_LOGIN_SOURCE_RATE_LIMIT_MAX", 100))
     account_key = hashlib.sha256(username.strip().lower().encode()).hexdigest()[:24]
     source = str(get_client_ip(request) or "unknown")
     source_key = hashlib.sha256(source.encode()).hexdigest()[:24]
     cache = caches["launch_rate_limit"]
-    counts = (
-        consume_fixed_window(cache, f"ctf-login:account:{account_key}", window),
-        consume_fixed_window(cache, f"ctf-login:source:{source_key}", window),
-    )
-    return max(counts) > maximum, window
+    account_count = consume_fixed_window(cache, f"ctf-login:account:{account_key}", window)
+    source_count = consume_fixed_window(cache, f"ctf-login:source:{source_key}", window)
+    return account_count > account_maximum or source_count > source_maximum, window
 
 
 def _login_throttle_response(request: HttpRequest, username: str) -> HttpResponse | None:

@@ -15,6 +15,7 @@ from ._common import (
     _first_connection_value,
     _resolve_instance_connection_name,
     _resolve_instance_host,
+    _resolve_instance_ssh_host_public_key,
     _resolve_instance_ssh_key_secret_ref,
     _resolve_instance_ssh_username,
     _resolve_ngfw_management_ip,
@@ -230,6 +231,7 @@ def get_ssh_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
         "port": 22,
         "username": username,
         "private_key": ssh_key,
+        "host_public_key": _resolve_instance_ssh_host_public_key(instance),
         "connection_name": _resolve_instance_connection_name(instance),
         "os_type": os_type,
         "private_ip": host,
@@ -249,6 +251,7 @@ def connect_terminal(user: User, instance_uuid: str) -> SSHConnection:
         host=ssh_info["host"],
         username=ssh_info["username"],
         private_key=ssh_info["private_key"],
+        host_public_key=ssh_info["host_public_key"],
         port=ssh_info["port"],
         session_id=session_id,
     )

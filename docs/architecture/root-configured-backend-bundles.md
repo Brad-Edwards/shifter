@@ -27,6 +27,8 @@ The implementation lives in `shifter/installation/`:
 
 Contract publication guidance for issue #1323 lives in
 `docs/architecture/backend-bundle-contract-publication-preflight-1323.md`.
+Cross-backend Helm packaging and AWS EKS bundle constraints for issue #1324
+live in `docs/architecture/aws-eks-helm-packaging-preflight-1324.md`.
 GCP migration constraints for issue #729 live in
 `docs/architecture/gcp-backend-bundle-migration-preflight-729.md`.
 Backend-aware setup and doctor UX constraints for issue #727 live in

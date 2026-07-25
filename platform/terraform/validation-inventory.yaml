@@ -45,6 +45,12 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+  - id: aws-dev-eks
+    path: platform/terraform/environments/dev/eks
+    owner: "@Brad-Edwards"
+    toolchain: aws-1.13.3
+    providers:
+      - registry.terraform.io/hashicorp/aws
   - id: aws-dev-portal
     path: platform/terraform/environments/dev/portal
     owner: "@Brad-Edwards"
@@ -65,6 +71,12 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+  - id: aws-proof-eks
+    path: platform/terraform/environments/proof/eks
+    owner: "@Brad-Edwards"
+    toolchain: aws-1.13.3
+    providers:
+      - registry.terraform.io/hashicorp/aws
   - id: aws-proof-portal
     path: platform/terraform/environments/proof/portal
     owner: "@Brad-Edwards"
@@ -81,6 +93,12 @@ roots:
       - registry.terraform.io/hashicorp/aws
   - id: aws-prod-core
     path: platform/terraform/environments/prod
+    owner: "@Brad-Edwards"
+    toolchain: aws-1.13.3
+    providers:
+      - registry.terraform.io/hashicorp/aws
+  - id: aws-prod-eks
+    path: platform/terraform/environments/prod/eks
     owner: "@Brad-Edwards"
     toolchain: aws-1.13.3
     providers:
@@ -232,6 +250,11 @@ modules:
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
+  - path: platform/terraform/modules/portal/eks
+    owner: "@Brad-Edwards"
+    contract: terraform_test
+    test: tests/security.tftest.hcl
+    test_profile: aws-1.13.3
   - path: platform/terraform/modules/portal/messaging
     owner: "@Brad-Edwards"
     contract: deferred

@@ -193,11 +193,13 @@ Hosts the GKE cluster and shared services.
 | Component | Connectivity |
 |-----------|-------------|
 | GKE nodes | Private (no external IPs). Cloud NAT for outbound. |
-| GKE control plane | Public endpoint retained for bootstrap compatibility, restricted by authorized CIDRs. |
+| GKE control plane | Private endpoint; operator and CI access use Connect Gateway. |
 | Cloud SQL | Private Services Access (internal IP only) |
 | Memorystore | Private VPC connection |
 
-GKE uses VPC-native networking with secondary IP ranges for pods and services. The current GCP bootstrap path keeps the control-plane endpoint public so the operator can run `get-credentials` and Helm locally, but that endpoint must be restricted with `gke_master_authorized_cidrs`.
+GKE uses VPC-native networking with secondary IP ranges for pods and services.
+The control-plane endpoint is private; `gke_master_authorized_cidrs` is normally
+empty and accepts only connected RFC1918 networks when direct private access is required.
 
 The public application edge is separate from operator access:
 

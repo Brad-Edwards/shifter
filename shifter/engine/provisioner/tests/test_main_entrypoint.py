@@ -63,7 +63,7 @@ def test_range_provision_dispatches_terraform_up(monkeypatch) -> None:
     _run_main(monkeypatch, "range", "provision", "--request-id", "req-1")
 
     calls["configure_logging"].assert_called_once_with()
-    calls["run_range_terraform"].assert_called_once_with("up", "req-1")
+    calls["run_range_terraform"].assert_called_once_with("up", "req-1", operation_id=None)
 
 
 def test_range_destroy_dispatches_terraform_destroy(monkeypatch) -> None:
@@ -71,7 +71,17 @@ def test_range_destroy_dispatches_terraform_destroy(monkeypatch) -> None:
 
     _run_main(monkeypatch, "range", "destroy", "--request-id", "req-2")
 
-    calls["run_range_terraform"].assert_called_once_with("destroy", "req-2")
+    calls["run_range_terraform"].assert_called_once_with("destroy", "req-2", operation_id=None)
+
+
+def test_range_provision_threads_operation_id_when_present(monkeypatch) -> None:
+    """ADR-043 (#1834): --operation-id, when present, reaches run_range_terraform."""
+    calls = _install_entrypoint_fakes(monkeypatch)
+    operation_id = "11111111-1111-1111-1111-111111111111"
+
+    _run_main(monkeypatch, "range", "provision", "--request-id", "req-1", "--operation-id", operation_id)
+
+    calls["run_range_terraform"].assert_called_once_with("up", "req-1", operation_id=operation_id)
 
 
 def test_range_pause_dispatches_range_ops(monkeypatch) -> None:
@@ -95,7 +105,7 @@ def test_ngfw_provision_dispatches_terraform_up(monkeypatch) -> None:
 
     _run_main(monkeypatch, "ngfw", "provision", "--request-id", "ngfw-1")
 
-    calls["run_ngfw_terraform"].assert_called_once_with("up", "ngfw-1")
+    calls["run_ngfw_terraform"].assert_called_once_with("up", "ngfw-1", operation_id=None)
 
 
 def test_ngfw_deprovision_dispatches_terraform_destroy(monkeypatch) -> None:
@@ -103,7 +113,7 @@ def test_ngfw_deprovision_dispatches_terraform_destroy(monkeypatch) -> None:
 
     _run_main(monkeypatch, "ngfw", "deprovision", "--request-id", "ngfw-2")
 
-    calls["run_ngfw_terraform"].assert_called_once_with("destroy", "ngfw-2")
+    calls["run_ngfw_terraform"].assert_called_once_with("destroy", "ngfw-2", operation_id=None)
 
 
 def test_ngfw_start_dispatches_runtime_operation_with_ec2_instance(monkeypatch) -> None:
@@ -119,7 +129,7 @@ def test_ngfw_start_dispatches_runtime_operation_with_ec2_instance(monkeypatch) 
         "i-123",
     )
 
-    calls["run_ngfw_operation"].assert_called_once_with("start", "ngfw-3", ec2_instance_id="i-123")
+    calls["run_ngfw_operation"].assert_called_once_with("start", "ngfw-3", operation_id=None, ec2_instance_id="i-123")
 
 
 def test_ngfw_stop_dispatches_runtime_operation_without_optional_kwargs(monkeypatch) -> None:
@@ -127,4 +137,24 @@ def test_ngfw_stop_dispatches_runtime_operation_without_optional_kwargs(monkeypa
 
     _run_main(monkeypatch, "ngfw", "stop", "--request-id", "ngfw-4")
 
-    calls["run_ngfw_operation"].assert_called_once_with("stop", "ngfw-4")
+    calls["run_ngfw_operation"].assert_called_once_with("stop", "ngfw-4", operation_id=None)
+
+
+def test_ngfw_provision_threads_operation_id_when_present(monkeypatch) -> None:
+    """ADR-043 (#1834): --operation-id, when present, reaches run_ngfw_terraform."""
+    calls = _install_entrypoint_fakes(monkeypatch)
+    operation_id = "22222222-2222-2222-2222-222222222222"
+
+    _run_main(monkeypatch, "ngfw", "provision", "--request-id", "ngfw-1", "--operation-id", operation_id)
+
+    calls["run_ngfw_terraform"].assert_called_once_with("up", "ngfw-1", operation_id=operation_id)
+
+
+def test_ngfw_start_threads_operation_id_when_present(monkeypatch) -> None:
+    """ADR-043 (#1834): --operation-id, when present, reaches run_ngfw_operation."""
+    calls = _install_entrypoint_fakes(monkeypatch)
+    operation_id = "33333333-3333-3333-3333-333333333333"
+
+    _run_main(monkeypatch, "ngfw", "start", "--request-id", "ngfw-3", "--operation-id", operation_id)
+
+    calls["run_ngfw_operation"].assert_called_once_with("start", "ngfw-3", operation_id=operation_id)

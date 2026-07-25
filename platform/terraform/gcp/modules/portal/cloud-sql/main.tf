@@ -1,6 +1,14 @@
 resource "random_password" "db_password" {
   length  = 32
   special = true
+
+  # Rotation 1 repairs tenants whose write-only Cloud SQL user password
+  # drifted from the Terraform-managed Secret Manager payload. Increment this
+  # value for an intentional future rotation so the SQL user and secret
+  # version are updated together.
+  keepers = {
+    rotation = 1
+  }
 }
 
 resource "random_password" "guacamole_db_password" {
@@ -39,6 +47,13 @@ resource "google_sql_database_instance" "platform" {
     }
 
     user_labels = var.common_labels
+  }
+
+  # Cloud SQL may grow an auto-resized disk but cannot shrink it. Reconciling
+  # the configured floor after growth would otherwise plan a destructive
+  # replacement of the deletion-protected production database.
+  lifecycle {
+    ignore_changes = [settings[0].disk_size]
   }
 }
 

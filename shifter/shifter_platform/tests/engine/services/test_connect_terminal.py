@@ -76,6 +76,7 @@ class TestConnectTerminalOutputs:
             os_type="ubuntu",
             private_ip="10.200.0.110",
             cloud_provider="gcp",
+            gcp_host_public_key="ssh-ed25519 AAAATESTHOSTKEY shifter",
             provider_metadata={"gcp": {"vm_name": "vmrt-vm-1", "namespace": "range-42"}},
         )
         _active_range(user, instance)
@@ -84,6 +85,7 @@ class TestConnectTerminalOutputs:
         assert result.host == "10.200.0.110"
         assert result.username == "ubuntu"
         assert result.private_key == SSH_KEY_PEM
+        assert result.host_public_key == "ssh-ed25519 AAAATESTHOSTKEY shifter"
 
 
 class TestConnectTerminalInputValidation:

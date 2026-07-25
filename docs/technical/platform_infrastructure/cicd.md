@@ -86,6 +86,7 @@ The bootstrap path is security-gated and fails closed unless:
 
 - `public_hostname` is set
 - `enable_managed_tls = true`
-- `gke_master_authorized_cidrs` is non-empty
+- `gke_master_authorized_cidrs` is empty for Connect Gateway or contains only
+  connected RFC1918 networks
 
 `gdc-bootstrap` remains available for first-time bootstrap and controlled recovery, but it is not the normal deployment entrypoint.

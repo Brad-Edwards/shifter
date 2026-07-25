@@ -1,48 +1,52 @@
-"""Behavior tests for start_aces_range_provisioning() (ADR-031).
+"""Behavior tests for start_aces_range_provisioning() / start_aces_range_teardown() (ADR-031).
 
-The ACES-native dispatcher reuses the same request_id-keyed ECS mechanics as the
-cyberscript ``start_range_provisioning()``, differing only in the provisioner
-subcommand (``"aces-range"`` instead of ``"range"``) so the provisioner realizes
-a persisted ProvisioningSpec rather than a wrapped RangeSpec. Driven through the
-real dispatch with the ECS client mocked at the ``boto3`` boundary; the
-subcommand is asserted by the command line reaching ``boto3``.
+The ACES-native dispatcher reuses the same request_id-keyed launch-intent
+mechanics as the cyberscript ``start_range_provisioning()``/
+``start_range_teardown()``, differing only in the provisioner subcommand
+(``"aces-range"`` instead of ``"range"``) so the provisioner realizes a
+persisted ProvisioningSpec rather than a wrapped RangeSpec. After
+ADR-043-R2 (#1833) that dispatch no longer calls the provider TaskRunner
+synchronously; it persists a durable ``ProvisionerLaunchIntent`` (fenced on
+the authorizing Range) that the ``drain_provisioner_launch_outbox`` worker
+dispatches. These tests assert the observable intent (command payload,
+reserved task ref) and that nothing reaches the ``boto3`` ECS boundary. The
+provider dispatch contract is covered by
+``tests/engine/test_provisioner_launch_outbox.py`` and the enqueue fencing by
+``tests/engine/test_launch_intents.py``.
 """
 
-from contextlib import contextmanager
-from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from botocore.exceptions import ClientError
 
-from shared.cloud.exceptions import CloudTaskError
+from engine.models import ProvisionerLaunchIntent, Range
 
-from .conftest import TASK_ARN, make_ecs_client, run_task_command
+from .conftest import make_authorized_range
 
-
-@contextmanager
-def _boto3_client(client):
-    with patch("boto3.client", return_value=client):
-        yield
+pytestmark = pytest.mark.django_db(databases=["default"])
 
 
 class TestStartAcesRangeProvisioning:
-    def test_dispatches_aces_range_provision_command(self, aws_ecs_configured, ecs_client):
+    def test_enqueues_intent_and_returns_reserved_ref(self, aws_ecs_configured, ecs_client):
         from engine.ecs import start_aces_range_provisioning
 
         request_id = uuid4()
-        start_aces_range_provisioning(request_id)
-        assert run_task_command(ecs_client) == ["aces-range", "provision", "--request-id", str(request_id)]
+        make_authorized_range(request_id, status=Range.Status.PROVISIONING)
+        ref = start_aces_range_provisioning(request_id)
 
-    def test_returns_task_arn_on_success(self, aws_ecs_configured, ecs_client):
-        from engine.ecs import start_aces_range_provisioning
-
-        assert start_aces_range_provisioning(uuid4()) == TASK_ARN
+        intent = ProvisionerLaunchIntent.objects.get()
+        assert ref == intent.task_ref
+        assert intent.payload["resource"] == "aces-range"
+        assert intent.payload["operation"] == "provision"
+        ecs_client.run_task.assert_not_called()
 
     def test_returns_none_when_ecs_not_configured(self, aws_ecs_unconfigured, ecs_client):
         from engine.ecs import start_aces_range_provisioning
 
-        assert start_aces_range_provisioning(uuid4()) is None
+        request_id = uuid4()
+        make_authorized_range(request_id, status=Range.Status.PROVISIONING)
+        assert start_aces_range_provisioning(request_id) is None
+        assert not ProvisionerLaunchIntent.objects.exists()
         ecs_client.run_task.assert_not_called()
 
     def test_raises_type_error_on_non_uuid_request_id(self, aws_ecs_configured):
@@ -51,28 +55,26 @@ class TestStartAcesRangeProvisioning:
         with pytest.raises(TypeError):
             start_aces_range_provisioning("not-a-uuid")
 
-    def test_raises_cloud_task_error_on_task_failure(self, aws_ecs_configured):
-        from engine.ecs import start_aces_range_provisioning
-
-        client = make_ecs_client()
-        client.run_task.side_effect = ClientError(
-            {"Error": {"Code": "AccessDenied", "Message": "Task launch failed"}}, "RunTask"
-        )
-        range_id = uuid4()
-        with pytest.raises(CloudTaskError), _boto3_client(client):
-            start_aces_range_provisioning(range_id)
-
 
 class TestStartAcesRangeTeardown:
-    def test_dispatches_aces_range_destroy_command(self, aws_ecs_configured, ecs_client):
+    def test_enqueues_intent_and_returns_reserved_ref(self, aws_ecs_configured, ecs_client):
         from engine.ecs import start_aces_range_teardown
 
         request_id = uuid4()
-        start_aces_range_teardown(request_id)
-        assert run_task_command(ecs_client) == ["aces-range", "destroy", "--request-id", str(request_id)]
+        make_authorized_range(request_id, status=Range.Status.DESTROYING)
+        ref = start_aces_range_teardown(request_id)
+
+        intent = ProvisionerLaunchIntent.objects.get()
+        assert ref == intent.task_ref
+        assert intent.payload["resource"] == "aces-range"
+        assert intent.payload["operation"] == "destroy"
+        ecs_client.run_task.assert_not_called()
 
     def test_returns_none_when_ecs_not_configured(self, aws_ecs_unconfigured, ecs_client):
         from engine.ecs import start_aces_range_teardown
 
-        assert start_aces_range_teardown(uuid4()) is None
+        request_id = uuid4()
+        make_authorized_range(request_id, status=Range.Status.DESTROYING)
+        assert start_aces_range_teardown(request_id) is None
+        assert not ProvisionerLaunchIntent.objects.exists()
         ecs_client.run_task.assert_not_called()

@@ -25,6 +25,10 @@ The current enforcement stack has six parts:
    - `import-linter` for Python package contracts
    - `actionlint` for GitHub Actions workflows
    - `TFLint` for Terraform linting (including the `tflint-ruleset-google` plugin for GCP resources)
+     The CI initialization step supplies the job-scoped `github.token` as
+     `GITHUB_TOKEN`, so provider-plugin release lookups use the authenticated
+     GitHub API allowance instead of the shared runner IP's unauthenticated
+     rate limit.
    - `gitleaks` for new secret leakage detection
    - `helm lint` for Helm chart validation where files are templates rather than plain YAML
    - `kubeconform` for Kubernetes manifest schema validation
@@ -304,6 +308,13 @@ The first slice intentionally stays small:
   fail-closed on `pull_request` under the `deploy-workflow-runner-exposure`
   (ADR-003-R5) invariant, keeps `contents: read` only, and carries a
   `timeout-minutes` backstop (#1220).
+
+  `TestGcpPrivateControlPlaneAccess` keeps both GCP deploy credential setup
+  points on fleet Connect Gateway and rejects the direct
+  `get-gke-credentials` action. The self-hosted runner has no route to the
+  private RFC1918 GKE control-plane endpoint, so replacing either gateway
+  refresh with direct credentials would make the workload apply time out
+  after otherwise successful Terraform and image-build stages (#1850).
 
   The manual-deploy invariant (`TestManualDeployDispatch`, #730) asserts that
   environment deploys are a `workflow_dispatch` naming the `environment` input
@@ -669,12 +680,23 @@ The first slice intentionally stays small:
   service; unconditioned wildcard `kms:Decrypt` is too broad.
   Existence is gated on `secretsmanager:GetSecretValue` (not file
   layout) so unrelated roles that happen to live in the same file
-  are not forced to acquire unnecessary KMS grants. Currently scoped
-  via the pre-commit `files:` regex (and the matching CI invocation
-  list) to `platform/terraform/modules/engine-provisioner/iam.tf`,
-  `platform/terraform/modules/portal/ec2/main.tf`, and
-  `platform/terraform/modules/guacamole/iam.tf`; expand both when a
-  new module starts reading portal Secrets Manager secrets. The
+  are not forced to acquire unnecessary KMS grants. Scoped via the
+  pre-commit `files:` regex (and the matching CI invocation list) to
+  every `.tf` in `platform/terraform/modules/engine-provisioner/`,
+  `platform/terraform/modules/portal/ec2/`, and
+  `platform/terraform/modules/guacamole/`; expand both when a new
+  module starts reading portal Secrets Manager secrets. These are
+  module-directory globs rather than three individual filenames
+  (#1846): the previous list scanned only `iam.tf` / `main.tf`, so a
+  role defined elsewhere in those modules was never checked -
+  `guacamole/rds_kms.tf` defines one.
+
+  Because the role/grant pairing is evaluated **within a single
+  file** (cross-file aggregation is deliberately out of scope; see
+  the checker's module docstring), each role must stay in the same
+  file as its `secretsmanager` and `kms:Decrypt` policies. Splitting
+  them across siblings leaves the check passing while verifying
+  nothing. The
   check is implemented in
   `scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py`
   and tested in
@@ -692,6 +714,27 @@ The first slice intentionally stays small:
   that swallowed the fetch failure; see
   `shifter/shifter_platform/entrypoint-lib.sh` and
   `shifter/shifter_platform/tests/test_entrypoint_lib.sh`).
+
+- `check-portal-target-sg-sources`
+  Pre-commit hook AND CI step enforcing that portal target-service SG
+  ingress (Django:8000, Guacamole client:8080) sources only from a
+  security-group reference or `module.vpc.alb_ingress_subnet_cidrs`,
+  never the whole public tier where standalone public workloads live.
+  Scoped to the `dev`, `proof` and `prod` portal roots. `proof` was
+  absent from the original `dev|prod` regex and CI list despite
+  deploying the same portal composition, so the #911 NET-2 / #933
+  invariant went unenforced there (#1846). Enforces ADR-004-R11.
+
+- `check-tf-iam-ec2-scope`
+  Pre-commit hook AND CI step rejecting mutable EC2 instance lifecycle
+  actions (`TerminateInstances`, `StopInstances`, `StartInstances`,
+  `ModifyInstanceAttribute`, `ModifyInstanceMetadataOptions`) on a
+  wildcard resource, and requiring the Shifter ownership resource-tag
+  conditions. Previously it ran in pre-commit and as a unit test in CI,
+  but never against the live Terraform, unlike its `check-tf-iam-elb-scope`
+  and `check-tf-iam-ssm-scope` siblings; a commit that bypassed pre-commit
+  could land the regression (#1846). The live CI invocation was added to
+  close that gap.
 
 ## Local Usage
 

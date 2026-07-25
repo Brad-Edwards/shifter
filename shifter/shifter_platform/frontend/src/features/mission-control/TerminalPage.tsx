@@ -50,8 +50,17 @@ function ConnectionBadge({ state }: Readonly<{ state: TerminalConnectionState }>
   );
 }
 
-export function TerminalPage() {
-  const { instanceUuid } = useParams<{ instanceUuid: string }>();
+export interface TerminalPageProps {
+  instanceUuid?: string;
+  tmuxWheelScrolling?: boolean;
+}
+
+export function TerminalPage({
+  instanceUuid: explicitInstanceUuid,
+  tmuxWheelScrolling = false,
+}: Readonly<TerminalPageProps> = {}) {
+  const { instanceUuid: routeInstanceUuid } = useParams<{ instanceUuid: string }>();
+  const instanceUuid = explicitInstanceUuid ?? routeInstanceUuid;
   const [reconnectKey, setReconnectKey] = useState(0);
   const { state, closeInfo, onConnectionStateChange } = useTerminalConnectionState();
 
@@ -98,7 +107,12 @@ export function TerminalPage() {
       ) : null}
 
       <Card className="overflow-hidden p-2">
-        <Terminal key={reconnectKey} instanceUuid={instanceUuid} onConnectionStateChange={onConnectionStateChange} />
+        <Terminal
+          key={reconnectKey}
+          instanceUuid={instanceUuid}
+          tmuxWheelScrolling={tmuxWheelScrolling}
+          onConnectionStateChange={onConnectionStateChange}
+        />
       </Card>
     </>
   );
