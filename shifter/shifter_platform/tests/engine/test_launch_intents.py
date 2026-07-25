@@ -164,6 +164,62 @@ def test_gcp_public_dispatch_enqueues_without_launching(settings) -> None:
     assert ref.startswith(f"{settings.ENGINE_TASK_CLUSTER}/pulumi-provisioner-")
 
 
+@pytest.mark.parametrize("provider", ["aws", "gcp"])
+def test_public_dispatch_enqueues_the_same_intent_on_both_providers(settings, provider: str) -> None:
+    """AWS and GCP share the single launch-intent contract (ADR-043-R2, #1833):
+    the public dispatch entrypoint persists exactly one ``ProvisionerLaunchIntent``
+    and returns its reserved ref without ever launching the provider TaskRunner,
+    regardless of which provider is configured."""
+    from engine.ecs import start_range_provisioning
+    from engine.models import ProvisionerLaunchIntent
+
+    settings.CLOUD_PROVIDER = provider
+    settings.LOCAL_PROVISIONER = None
+    settings.ENGINE_TASK_CLUSTER = "shifter-jobs"
+    settings.ENGINE_TASK_DEFINITION = "registry.example/provisioner:sha"
+    if provider == "aws":
+        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
+        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
+    request_id = UUID("99999999-9999-9999-9999-999999999999")
+    _authorized_range(str(request_id))
+
+    ref = start_range_provisioning(request_id)
+
+    intent = ProvisionerLaunchIntent.objects.get()
+    assert ref == intent.task_ref
+    assert intent.payload["resource"] == "range"
+    assert intent.payload["operation"] == "provision"
+    assert intent.payload["request_id"] == str(request_id)
+
+
+@pytest.mark.parametrize("provider", ["aws", "gcp"])
+def test_public_dispatch_fails_closed_when_domain_state_forbids_operation(settings, provider: str) -> None:
+    """Fail-closed authorization (ADR-043-R2): the dispatch entrypoint enqueues
+    nothing and raises when current domain state does not authorize the operation.
+    The happy-path dispatch tests all build the row in an authorizing status, so
+    this exercises the ``authorize_provisioner_payload`` rejection branch they
+    never hit — deleting that check would now fail a test, on both providers."""
+    from engine.ecs import start_range_provisioning
+    from engine.models import ProvisionerLaunchIntent, Range
+
+    settings.CLOUD_PROVIDER = provider
+    settings.LOCAL_PROVISIONER = None
+    settings.ENGINE_TASK_CLUSTER = "shifter-jobs"
+    settings.ENGINE_TASK_DEFINITION = "registry.example/provisioner:sha"
+    if provider == "aws":
+        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
+        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
+    request_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    request_uuid = UUID(request_id)
+    _authorized_range(request_id)
+    # READY is not a provision-authorizing status; the operation must fail closed.
+    Range.objects.filter(request__request_id=request_id).update(status=Range.Status.READY)
+
+    with pytest.raises(ValueError):
+        start_range_provisioning(request_uuid)
+    assert not ProvisionerLaunchIntent.objects.exists()
+
+
 def test_gcp_public_dispatch_does_not_enqueue_with_incomplete_task_config(settings) -> None:
     from engine.ecs import start_range_provisioning
     from engine.models import ProvisionerLaunchIntent

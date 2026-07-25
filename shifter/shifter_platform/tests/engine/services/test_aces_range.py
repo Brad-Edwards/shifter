@@ -5,12 +5,10 @@ ProvisioningPlan is persisted as a ``Request`` + ``Range`` keyed by ``request_id
 (in the reused ``range_config`` column, self-describing via its ``kind`` -- no
 cyberscript envelope, no Shifter-owned spec), an ``operation_receipt`` sidecar is
 written, and the provisioner ``aces-range`` provision task is dispatched. ECS is
-unconfigured so dispatch is a no-op needing no boundary mock; the failure test
-mocks the ECS client at the ``boto3`` boundary. The cyberscript ``create_range()``
-body is untouched (ADR-031-R2).
+unconfigured so dispatch is a no-op needing no boundary mock. The cyberscript
+``create_range()`` body is untouched (ADR-031-R2).
 """
 
-from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -21,7 +19,6 @@ from engine.models import AcesContentDeliveryBinding, Range
 from engine.services import AcesRangeRef, create_aces_range
 from shared.aces.content_delivery import DeliveryBinding
 from shared.aces.runtime_target import ACES_PROVISIONING_PLAN_KIND, serialize_provisioning_plan
-from shared.cloud.exceptions import CloudTaskError
 from shared.models import AcesOperationRecord
 
 pytestmark = pytest.mark.django_db
@@ -218,23 +215,7 @@ class TestCreateAcesRangeDeliveryBindings:
         assert row.install_policy == "executable"
 
 
-@pytest.mark.django_db
-class TestCreateAcesRangeDispatchFailure:
-    def test_marks_range_failed_when_dispatch_fails(self, user, settings):
-        settings.CLOUD_PROVIDER = "aws"
-        settings.LOCAL_PROVISIONER = None
-        settings.ENGINE_TASK_CLUSTER = "test-cluster"
-        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
-        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
-        ecs_client = MagicMock()
-        ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
-
-        request_id = uuid4()
-        compiled_plan = make_compiled_plan()
-        with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
-            create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=compiled_plan)
-
-        range_obj = Range.objects.get(request__request_id=request_id)
-        assert range_obj.status == Range.Status.FAILED
-        assert range_obj.error_message == "Provisioning dispatch failed"
+# The old synchronous "provider dispatch failed -> range FAILED" path no
+# longer exists: dispatch enqueues a launch intent and the drainer owns
+# provider-dispatch failure (DLQ -> FAILED), covered by
+# tests/engine/test_provisioner_launch_outbox.py (ADR-043-R2, #1833).
