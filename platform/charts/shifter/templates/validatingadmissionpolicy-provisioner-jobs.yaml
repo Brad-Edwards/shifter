@@ -1,3 +1,4 @@
+{{- if .Values.capabilities.kubernetesJobLauncher }}
 # Issue #1177 — defense in depth at the Kubernetes admission boundary.
 #
 # RBAC cannot express "create Jobs, but not Jobs that run as the privileged
@@ -178,3 +179,4 @@ spec:
     namespaceSelector:
       matchLabels:
         kubernetes.io/metadata.name: {{ .Values.namespaces.jobs }}
+{{- end }}

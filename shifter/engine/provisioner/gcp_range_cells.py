@@ -36,6 +36,7 @@ from gcp_range_cell_types import (
     SubnetPlan,
 )
 from log_redact import safe_log_fingerprint
+from provisioner_db import get_range_data_by_request_id
 from utils.crypto import generate_ssh_host_keypair
 
 __all__ = [
@@ -351,8 +352,15 @@ def apply_range_cell(
     """Create or reconcile a live-fire GCE range cell and return provisioner outputs."""
     resolved_config = config or load_gce_range_cell_config()
     # Validate the closed contract and scenario binding before constructing any
-    # provider or secret client, let alone mutating a cloud resource.
-    plan = render_range_cell_plan(request_uuid, variables, resolved_config)
+    # provider or secret client, let alone mutating a cloud resource. The gateway
+    # VM runs as the range's reserved pool identity (ADR-008-R7).
+    range_data = get_range_data_by_request_id(request_uuid)
+    plan = render_range_cell_plan(
+        request_uuid,
+        variables,
+        resolved_config,
+        vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
+    )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()

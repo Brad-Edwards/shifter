@@ -10,9 +10,17 @@ from django.db import transaction
 from django.db.models import Model, QuerySet
 from django.utils import timezone
 
-from engine.models import Instance, ProvisionerLaunchIntent, ProvisionerLaunchStatus, Range, Request
+from engine.models import (
+    Instance,
+    OperationInput,
+    ProvisionerLaunchIntent,
+    ProvisionerLaunchStatus,
+    Range,
+    Request,
+)
 from shared.cloud import PROVISIONER_CONTAINER_NAME
 from shared.cloud.gcp.base import build_idempotent_job_name
+from shared.operation_envelope import build_operation_envelope
 
 _OPERATIONS = {
     "range": {"provision", "destroy", "pause", "resume"},
@@ -62,14 +70,35 @@ def _legacy_range_payload(command: list[str]) -> dict[str, object] | None:
     }
 
 
+def _split_operation_id(command: list[str]) -> tuple[list[str], str | None]:
+    """Split an optional trailing ``--operation-id <uuid>`` correlation pair.
+
+    The generation fence (``operation_id``) is carried on the launched argv so the
+    provisioner tags its input read and result appends with exactly the operation
+    it is executing, never "latest by request" (ADR-043). It is optional so the
+    engine can validate the canonical command before the id is minted, and add it
+    only when reconstructing the dispatch argv from a persisted intent.
+    """
+    if len(command) >= 2 and command[-2] == "--operation-id":
+        try:
+            operation_id = str(UUID(command[-1]))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("operation_id must be a UUID") from exc
+        return command[:-2], operation_id
+    return command, None
+
+
 def validate_provisioner_command(command: list[str]) -> dict[str, object]:
     """Return a versioned, secret-free payload for one canonical CLI command."""
     if not isinstance(command, list) or any(not isinstance(part, str) for part in command):
         raise ValueError("provisioner command must be a list of strings")
-    payload = _request_payload(command) or _legacy_range_payload(command)
-    if payload is not None:
-        return payload
-    raise ValueError("command does not match a canonical provisioner launch shape")
+    base, operation_id = _split_operation_id(command)
+    payload = _request_payload(base) or _legacy_range_payload(base)
+    if payload is None:
+        raise ValueError("command does not match a canonical provisioner launch shape")
+    if operation_id is not None:
+        payload["operation_id"] = operation_id
+    return payload
 
 
 def command_from_payload(payload: dict[str, object]) -> list[str]:
@@ -89,6 +118,8 @@ def command_from_payload(payload: dict[str, object]) -> list[str]:
             "--user-id",
             str(payload.get("user_id")),
         ]
+    if payload.get("operation_id"):
+        command = [*command, "--operation-id", str(payload["operation_id"])]
     if validate_provisioner_command(command) != payload:
         raise ValueError("provisioner launch intent payload is not canonical")
     return command
@@ -331,6 +362,51 @@ def fail_current_provisioner_operation(
     return True
 
 
+def _operation_input_payload(target: Range | Instance) -> dict[str, object]:
+    """Compose the immutable operation-input projection from engine-owned models.
+
+    A reference-only projection of the existing persisted contracts, not an ORM
+    dump. Phase-2 shadow: fuller per-family completeness lands with each family's
+    cutover (#1835-#1838), when the provisioner begins consuming this input.
+    """
+    if isinstance(target, Range):
+        return {"range_spec": target.range_config or {}}
+    return {"role": str(target.role), "os_type": str(target.os_type)}
+
+
+def _materialize_operation_input(payload: dict[str, object], operation_id: UUID) -> None:
+    """Persist the immutable operation input keyed by ``operation_id``.
+
+    Runs inside the launch-intent transaction so the input and intent commit
+    atomically (ADR-043). The provisioner reads exactly this row by
+    ``operation_id``. Immutable: created once per operation generation.
+    """
+    target = _lock_operation_target(payload)
+    request = getattr(target, "request", None)
+    request_id = getattr(request, "request_id", None)
+    if request_id is None:
+        # Deprecated legacy range with no linked request: no request-keyed input
+        # projection to materialize in shadow. Skip rather than fabricate one.
+        return
+    resource = str(payload["resource"])
+    operation = str(payload["operation"])
+    envelope = build_operation_envelope(
+        operation_id=operation_id,
+        request_id=request_id,
+        resource=resource,
+        operation=operation,
+        payload=_operation_input_payload(target),
+    )
+    OperationInput.objects.create(
+        operation_id=operation_id,
+        request_id=request_id,
+        resource=resource,
+        operation=operation,
+        contract_version=envelope["contract_version"],
+        envelope=envelope,
+    )
+
+
 def enqueue_provisioner_launch(command: list[str]) -> str:
     """Persist one durable intent per authorized operation and return its UUID."""
     payload = validate_provisioner_command(command)
@@ -357,6 +433,7 @@ def enqueue_provisioner_launch(command: list[str]) -> str:
             task_ref=task_ref,
             next_attempt_at=timezone.now(),
         )
+        _materialize_operation_input(payload, operation_id)
         return str(row.intent_id)
 
 

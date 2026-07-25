@@ -1565,6 +1565,9 @@ HELM_CHART_DIR = "platform/charts/shifter"
 # pre-commit hook's input set so the guard validates the same chart-rendered
 # output devs already lint locally.
 HELM_VALUES_FILES = (
+    "platform/charts/shifter/values-aws-dev.yaml",
+    "platform/charts/shifter/values-aws-proof.yaml",
+    "platform/charts/shifter/values-aws-prod.yaml",
     "platform/charts/shifter/values-gcp-dev.yaml",
     "platform/charts/shifter/values-gcp-prod.yaml",
 )

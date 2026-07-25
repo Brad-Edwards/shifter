@@ -31,6 +31,7 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 import aws_bootstrap as _aws_bootstrap
+import aws_eks as _aws_eks
 import bootstrap_core as _bootstrap_core
 import cli as _cli
 import gcp_control_plane as _gcp_control_plane
@@ -42,6 +43,7 @@ import walkthrough as _walkthrough
 
 _OWNING_MODULES: tuple[ModuleType, ...] = (
     _aws_bootstrap,
+    _aws_eks,
     _gdc_cluster,
     _gcp_control_plane,
     _preflight,

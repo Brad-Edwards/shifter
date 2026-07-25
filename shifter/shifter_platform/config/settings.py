@@ -436,6 +436,13 @@ RANGE_RECONCILE_STALE_SECONDS: int = int(os.environ.get("RANGE_RECONCILE_STALE_S
 # Maximum RangeInstance rows the reconciler processes per run (bounded batch).
 RANGE_RECONCILE_BATCH_SIZE: int = int(os.environ.get("RANGE_RECONCILE_BATCH_SIZE", "100"))
 
+# ADR-008-R7: size of the pre-provisioned GCP OpenVPN gateway service-account
+# pool. Each active range that requests OpenVPN reserves one slot
+# (Range.allocate_vpn_gateway_slot -> sh-vpn-pool-<slot>); this bounds concurrent
+# OpenVPN ranges and MUST match the Terraform `vpn_gateway_pool_size` that
+# pre-creates the pool SAs. Single isolated tenant / single project.
+VPN_GATEWAY_POOL_SIZE: int = int(os.environ.get("VPN_GATEWAY_POOL_SIZE", "24"))
+
 # ------------------------------------------------------------------------------
 # CTF Configuration
 # ------------------------------------------------------------------------------

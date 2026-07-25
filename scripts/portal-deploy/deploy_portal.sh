@@ -276,14 +276,14 @@ run_containers() {
   # (issue #931). DOCKER_STOP_TIMEOUT must stay below the ASG termination drain.
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
-  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
+  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
   # Force-remove so a redeploy is idempotent. `docker stop` above does the
   # graceful drain (#931); a plain `docker rm` then fails for any container
   # still running (e.g. one the stop did not fully stop / a restart-policy
   # race), the failure is swallowed by `|| true`, and the subsequent
   # `docker run --name <x>` aborts with "name already in use". `-f` removes
   # regardless of state so the new containers always get their names.
-  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
+  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
@@ -303,6 +303,9 @@ run_containers() {
   docker run -d --name worker-provisioner-launcher --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-provisioner-launcher-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py drain_provisioner_launch_outbox --loop --interval 10
+  docker run -d --name worker-operation-result-applier --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/worker-operation-result-applier-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py apply_operation_results --loop --interval 10
   docker run -d --name ctf-scheduler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_ctf_scheduler
