@@ -262,9 +262,9 @@ jobs:
       - name: Run check-tf-kms-secrets-grant
         run: |
           python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py \
-            platform/terraform/modules/engine-provisioner/iam.tf \
-            platform/terraform/modules/portal/ec2/main.tf \
-            platform/terraform/modules/guacamole/iam.tf
+            platform/terraform/modules/engine-provisioner/*.tf \
+            platform/terraform/modules/portal/ec2/*.tf \
+            platform/terraform/modules/guacamole/*.tf
 
       # Issues #46/#1755: action/resource-aware ELBv2 scoping for GWLB and
       # request-owned VPN NLB resources, including creation-time listener tags.
@@ -283,6 +283,14 @@ jobs:
       - name: Run check-tf-iam-ssm-scope
         run: |
           python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
+            platform/terraform/modules/engine-provisioner/iam.tf
+
+      # Issue #1846: this checker previously ran only in pre-commit and as a
+      # unit test in CI, unlike its elb/ssm siblings above, so a commit that
+      # bypassed pre-commit could land an EC2 lifecycle IAM regression.
+      - name: Run check-tf-iam-ec2-scope
+        run: |
+          python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py \
             platform/terraform/modules/engine-provisioner/iam.tf
 
       - name: Run check-tf-iam-role-naming
@@ -363,6 +371,7 @@ jobs:
         run: |
           python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py \
             platform/terraform/environments/dev/portal/main.tf \
+            platform/terraform/environments/proof/portal/main.tf \
             platform/terraform/environments/prod/portal/main.tf
 
       # Pin the behavior of the check_tf_* IAM/security checkers
@@ -1349,7 +1358,7 @@ jobs:
       # PostgreSQL backend now lives in the dedicated shifter-platform-tests-postgres
       # job (#1524); this SQLite job carries no PostgreSQL service or DB_* bundle.
       redis:
-        image: redis:7
+        image: redis:7.4.9
         ports:
           - 6379:6379
         options: >-
