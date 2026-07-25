@@ -41,21 +41,14 @@ SPECTACULAR_SETTINGS = {
     # SPA consumer has not landed (CTF, pending #1372) are dropped from schema
     # generation; runtime routing is unaffected. See shared.api.schema.
     "PREPROCESSING_HOOKS": ["shared.api.schema.exclude_unpublished_endpoints"],
-    # Stable component name for the Mission Control range ``status`` enum
-    # (shared.enums.ResourceStatus) so it doesn't hash-suffix on unrelated
-    # schema churn (StatusD12Enum), producing unstable, hash-dependent TS
-    # types. Pin it to a stable name.
-    #
-    # The sibling ``"StatusEnum": "risk_register.models.Status"`` override this
-    # used to collide-disambiguate against was removed here as the minimum
-    # fix to keep OpenAPI generation green after Risk Register's removal
-    # (#1374 Part B): drf-spectacular's ``ENUM_NAME_OVERRIDES`` loader treats a
-    # dangling override string as a hard schema-generation error (not just a
-    # warning) once ``risk_register.models.Status`` no longer imports, and
-    # ``shared.api.contract.generate_openapi_document()`` fails on any such
-    # error. There is no longer a naming collision to disambiguate now that no
-    # Risk Register endpoint remains in the schema.
+    # Stable component names for enums that would otherwise collide. Both the
+    # Risk Register ``status`` (risk_register.models.Status) and the Mission
+    # Control range ``status`` (shared.enums.ResourceStatus) auto-name to
+    # "StatusEnum"; without overrides drf-spectacular hash-suffixes BOTH
+    # (StatusE68Enum / StatusD12Enum), churning the Risk Register type name and
+    # producing unstable, hash-dependent TS types. Pin each to a stable name.
     "ENUM_NAME_OVERRIDES": {
+        "StatusEnum": "risk_register.models.Status",
         "ResourceStatusEnum": "mission_control.api.serializers.RESOURCE_STATUS_VALUES",
     },
 }

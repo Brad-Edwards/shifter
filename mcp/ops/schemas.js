@@ -62,3 +62,28 @@ export const SecretIdSchema = z
 export const ArnSchema = z
   .string()
   .regex(/^arn:aws[\w:*/.-]+$/, "Must be a valid ARN");
+
+// --- Risk Register ---
+
+export const SeveritySchema = z
+  .enum(["critical", "high", "medium", "low"])
+  .describe("Risk severity: critical, high, medium, or low");
+
+export const StatusSchema = z
+  .enum(["open", "acknowledged", "mitigating", "resolved", "closed"])
+  .describe(
+    "Risk lifecycle status: open, acknowledged, mitigating, resolved, or closed"
+  );
+
+export const StrideSchema = z
+  .array(z.enum(["S", "T", "R", "I", "D", "E"]))
+  .describe(
+    "STRIDE threat categories: S=Spoofing, T=Tampering, R=Repudiation, I=Information Disclosure, D=Denial of Service, E=Elevation of Privilege"
+  );
+
+export const ScoreSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(5)
+  .describe("Score from 1 (lowest) to 5 (highest)");

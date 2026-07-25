@@ -50,6 +50,13 @@
       "requirement": "GEN-001",
       "user_docs": ["how-to/aws-ecs-to-eks-migration.md"],
       "technical_docs": ["technical/platform_infrastructure/aws-eks-bundle.md"]
+    },
+    {
+      "id": "risk-register",
+      "title": "Risk Register",
+      "requirement": "GEN-001",
+      "user_docs": ["features/risk-register.md"],
+      "technical_docs": ["technical/shifter_platform/risk_register.md"]
     }
   ]
 }

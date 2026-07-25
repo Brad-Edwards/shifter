@@ -250,14 +250,11 @@ not reinvent them.
 
 Ordered by DRF maturity (least backend work first) and blast radius.
 
-1. **Risk Register.** Most mature DRF surface at the time: a `DefaultRouter`
-   with `RiskViewSet` (`ModelViewSet`), `AuditLogViewSet`, nested
-   `CommentViewSet` and real serializers (`risk_register/api/`). Smallest,
-   self-contained module. It was the target of #1301 / #1302, and became the
-   natural first cutover and the reference implementation for the client
-   conventions above. The Risk Register module and its backing `risk_register`
-   app were later removed by #1374; this entry records the migration-order
-   decision as made, not the module's current existence.
+1. **Risk Register.** Most mature DRF surface: a `DefaultRouter` with
+   `RiskViewSet` (`ModelViewSet`), `AuditLogViewSet`, nested `CommentViewSet`
+   and real serializers (`risk_register/api/`). Smallest, self-contained module.
+   It is already the target of #1301 / #1302, so it is the natural first cutover
+   and the reference implementation for the client conventions above.
 2. **Mission Control.** Class-based DRF views for ranges, agents, scenarios,
    uploads, Guacamole, NGFW, credentials (`mission_control/api/`). Exercises the
    hardest flows (websockets, Guacamole, uploads, long-running lifecycle), so it
@@ -378,27 +375,22 @@ import-linter graph and ADR checks are Python-only). Landing the stack requires:
 
 ## Platform shell mount and route ownership (#1369)
 
-> The Risk Register mentions in this section describe the platform shell as
-> landed by #1369. The Risk Register module, its `/risk-register/*` routes,
-> and `RISK_REGISTER_SPA_ENABLED` were subsequently removed by #1374; see
-> `docs/architecture/remove-risk-register-audit-rehome-preflight-1374.md`.
-
 The platform shell (#1369) generalizes the first Risk Register SPA into one
 shell and fixes the route-ownership model that later Phase 2 modules extend:
 
 - **One router, one bundle, one basename.** The single Vite bundle mounts one
   `createBrowserRouter` at basename `/`. There are no per-module routers,
-  fetch clients, or error classes (ADR-013 / ADR-029). The Risk Register was
+  fetch clients, or error classes (ADR-013 / ADR-029). The Risk Register is
   rehomed as a child of this router (`/risk-register/*`); the module-specific
-  SPA host and basename introduced in #1302 were retired.
+  SPA host and basename introduced in #1302 are retired.
 - **SPA host + prefix + flag + legacy fallback.** A single flag-gated host view
   (`shared.spa_host.platform_spa_host`) serves the shell for the SPA-owned page
   paths: the site root `/` (home/dashboard) and `/risk-register/*`. The root is
   wired as an *exact* match (no global catch-all), so `/privacy/`, `/login/`,
   and other Django routes are untouched. Rollout is the reversible, non-secret
   `PLATFORM_SPA_ENABLED` setting, read per request; the legacy Django pages
-  stay in place for rollback. `RISK_REGISTER_SPA_ENABLED` was honoured for
-  the Risk Register paths during that transition.
+  stay in place for rollback. `RISK_REGISTER_SPA_ENABLED` remains honoured for
+  the Risk Register paths during the transition.
 - **Navigation is one shared contract.** Primary nav, mode switching,
   breadcrumbs, and contextual subnav render from `frontend/src/app/nav.ts`
   (UX-003 minimum fields plus the #1368 presentation fields). Adding a surface

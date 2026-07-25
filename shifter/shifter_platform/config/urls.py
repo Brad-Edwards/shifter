@@ -98,6 +98,7 @@ urlpatterns = [
     path("dashboard/", dashboard_router, name="dashboard_router"),
     path("logout/", logout_view, name="logout"),
     path("mission-control/", include("mission_control.urls")),
+    path("risk-register/", include("risk_register.urls")),
     path("scenario-editor/", include("cms.scenario_editor.urls")),
     # ACES image registry SPA pages (#1566): greenfield, SPA-only, gated on the
     # platform SPA shell + SHIFTER_ACES_NATIVE_PROVISIONING. The base path plus a

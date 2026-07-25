@@ -5,7 +5,7 @@
  * primary side navigation, mode switching, breadcrumbs, and contextual subnav
  * all derive from these entries. Adding a surface adds one entry here rather
  * than editing shell components (the navigation extensibility seam). The
- * per-surface issues (#1370–#1373) register their entries into this contract.
+ * per-surface issues (#1370–#1374) register their entries into this contract.
  *
  * Each entry carries the UX-003 minimum contract (`surface`, `audience`,
  * `routeName`, `permissionPolicy`, `ownerApp`, `purpose`) plus the #1368
@@ -28,7 +28,7 @@ export type UxMode = "participant" | "operator";
 
 export type NavAudience = "participant" | "organizer" | "both" | "system";
 
-export type NavGroupName = "Participate" | "Operate" | "Author" | "Administer";
+export type NavGroupName = "Participate" | "Operate" | "Author" | "Govern" | "Administer";
 
 /**
  * Advisory permission policy keys. The shell maps each to bootstrap flags in
@@ -36,6 +36,7 @@ export type NavGroupName = "Participate" | "Operate" | "Author" | "Administer";
  */
 export type PermissionPolicy =
   | "authenticated"
+  | "risk_register_access"
   | "threat_research"
   | "ctf_organizer"
   | "ctf_participant"
@@ -56,6 +57,7 @@ export type NavIconKey =
   | "terminal"
   | "settings"
   | "file-code"
+  | "shield-alert"
   | "user-cog"
   | "circle-dollar-sign";
 
@@ -244,6 +246,14 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   ),
   makeGroup(
+    "Govern",
+    "operator",
+    { audience: "organizer", permissionPolicy: "risk_register_access", ownerApp: "risk_register" },
+    [
+      { surface: "Risk Register", routeName: "risk_register:risk_list", purpose: "List current and historical risks.", routePath: "/risk-register", iconKey: "shield-alert" },
+    ],
+  ),
+  makeGroup(
     "Administer",
     "operator",
     { audience: "organizer", permissionPolicy: "staff", ownerApp: "management" },
@@ -297,6 +307,8 @@ export function permissionAllows(policy: PermissionPolicy, bootstrap: Bootstrap)
   switch (policy) {
     case "authenticated":
       return bootstrap.principal.is_authenticated;
+    case "risk_register_access":
+      return bootstrap.permissions.can_access_risk_register;
     case "threat_research":
       return bootstrap.permissions.can_access_threat_research;
     case "ctf_organizer":

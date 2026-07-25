@@ -16,6 +16,7 @@ __all__ = [
     "CTF_WORKSPACE_SPA_ENABLED",
     "MISSION_CONTROL_SPA_ENABLED",
     "PLATFORM_SPA_ENABLED",
+    "RISK_REGISTER_SPA_ENABLED",
     "SCENARIO_EDITOR_SPA_ENABLED",
 ]
 
@@ -30,12 +31,23 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return os.environ.get(name, str(default)).lower() == "true"
 
 
+# SPA cutover rollout flag (issue #1302, ADR-029). When enabled, the Risk
+# Register GET page paths under /risk-register/ are served by the React SPA
+# host view instead of the Django templates; the legacy POST action URLs stay
+# Django-handled for old tabs and rollback. When disabled (the default), the
+# portal renders the existing Django Risk Register templates unchanged.
+# Non-secret boolean; absent env means disabled. Flipping it is reversible.
+RISK_REGISTER_SPA_ENABLED = _env_bool("RISK_REGISTER_SPA_ENABLED", False)
+
 # Platform SPA cutover rollout flag (issue #1369, ADR-013 / ADR-029). When
-# enabled, the platform-wide React shell (home/dashboard and global navigation)
-# is served by the SPA host view instead of the legacy Django pages; the legacy
-# routes/templates stay in place for rollback. When disabled (the default), the
-# portal renders the existing Django pages unchanged. Non-secret boolean;
-# flipping it is reversible. This is the single control for the SPA shell.
+# enabled, the platform-wide React shell (home/dashboard, global navigation, and
+# the Risk Register routes rehomed under the unified router) is served by the
+# SPA host view instead of the legacy Django pages; the legacy routes/templates
+# stay in place for rollback. When disabled (the default), the portal renders
+# the existing Django pages unchanged. Non-secret boolean; flipping it is
+# reversible. This is the single control for the SPA shell; the older
+# RISK_REGISTER_SPA_ENABLED flag is still honoured for the Risk Register paths
+# so an in-flight deploy toggled on it keeps working during the transition.
 PLATFORM_SPA_ENABLED = _env_bool("PLATFORM_SPA_ENABLED", False)
 
 # Mission Control SPA cutover rollout flag (issue #1370, ADR-013 / ADR-029).

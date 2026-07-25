@@ -2,17 +2,10 @@
 
 This is the single source of truth for the audit action / entity / actor
 vocabulary. Emitters across every layer reference these enums; the
-``shared.AuditLog`` ORM model derives its field ``choices`` from them so
+``risk_register.AuditLog`` ORM model derives its field ``choices`` from them so
 there is exactly one vocabulary and one event shape (ADR-001, #1523). Values and
 human labels are stable — historical ``AuditLog`` rows and migrations depend on
 them — so new members are added, never renamed or re-valued.
-
-``RISK`` and ``COMMENT`` were retired from :class:`AuditEntityType` (#1374):
-the Risk Register feature that emitted them is being removed, so no new code
-may write those values. Historical rows already carrying ``"risk"`` /
-``"comment"`` remain valid and readable; the audit read API declares
-``entity_type`` as a plain string rather than a closed enum for exactly this
-reason (see ``shared.api.audit.AuditLogSerializer``).
 """
 
 from __future__ import annotations
@@ -59,14 +52,11 @@ class AuditAction(models.TextChoices):
 
 
 class AuditEntityType(models.TextChoices):
-    """Types of entity an audit event can be recorded against.
+    """Types of entity an audit event can be recorded against."""
 
-    ``RISK`` and ``COMMENT`` are retired (#1374): the Risk Register feature is
-    being removed, so new code must not emit those values. ``APIKEY`` stays —
-    the platform API-token audit trail and historical retired-key rows still
-    need it.
-    """
-
+    # Risk Register entities
+    RISK = "risk", "Risk"
+    COMMENT = "comment", "Comment"
     APIKEY = "apikey", API_KEY_LABEL
     # Platform entities
     RANGE = "range", "Range"

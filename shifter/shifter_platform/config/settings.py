@@ -26,7 +26,6 @@ load_dotenv()
 # the wildcard *is* the contract (Django's official split-settings
 # pattern uses ``from .base import *``).
 from config._api_token_settings import *  # NOSONAR  # noqa: E402
-from config._audit_settings import *  # NOSONAR  # noqa: E402
 from config._browser_security import *  # NOSONAR  # noqa: E402
 from config._cache_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
@@ -140,6 +139,7 @@ INSTALLED_APPS = [
     # GCP SendGrid/Mailgun email backends (AWS uses django-ses); see config/_email.py.
     "anymail",
     "mission_control.apps.MissionControlConfig",
+    "risk_register.apps.RiskRegisterConfig",
     "engine.apps.EngineConfig",
     "cms.apps.CMSConfig",
     "management.apps.ManagementConfig",

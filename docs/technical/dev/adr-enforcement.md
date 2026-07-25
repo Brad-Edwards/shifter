@@ -37,16 +37,6 @@ There is also agent-specific wiring:
 - `.claude/skills/adr-check/SKILL.md` provides a default workflow for ADR conformance work.
 - `.claude/skills/architecture-review/SKILL.md` provides a repo-specific architecture review checklist.
 - `AGENTS.md` gives Codex a repo-local policy file, including Ground Control project context for the `/implement` workflow. The GC project pointer (and matching `.ground-control.yaml` `project:` field) names the `shifter` project (id `df4e718f-1f67-46f8-a375-3ba53fabc9c4`) with `CTF-*`, `PLAT-*`, `GEN-*` UID prefixes by subsystem; an earlier draft incorrectly pointed both at `aphelion` (a separate, unrelated project).
-- `.ground-control.yaml` `workflow.completion_command` records this repo's full
-  completion gate for the `/implement` skill, so it stops prompting for one:
-  `adr_guard --all --level ci`; `ruff check .` / `ruff format --check .` plus
-  `lint-imports` from `shifter/shifter_platform`; the backend pytest suite on
-  both the sqlite and `TEST_DB_BACKEND=postgres` lanes; `vale` on changed
-  Markdown; frontend `typecheck` + `eslint` + `vitest` under
-  `shifter/shifter_platform/frontend`; `node --test` in `mcp/ops`; and
-  `makemigrations --check --dry-run`. `workflow.lint_command` stays the single
-  fast local gate; `completion_command` is the full gate set checked before a
-  change is declared done.
 
 Review controls:
 
@@ -104,7 +94,7 @@ The first slice intentionally stays small:
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
-  domain (`engine`, `cms`, `management`, `ctf`), presentation
+  domain (`engine`, `cms`, `management`, `ctf`, `risk_register`), presentation
   (`mission_control`), support/contracts (`shared`), or support/composition
   (`config`) layer. Service-package imports may use only the public facade (for
   example `cms.services`); private split-package submodules such as

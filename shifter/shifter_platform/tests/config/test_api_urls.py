@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from django.test import Client
-from django.urls import Resolver404, resolve, reverse
+from django.urls import resolve, reverse
 from rest_framework.test import APIClient
 
 
@@ -19,18 +18,11 @@ def test_api_v1_schema_routes_are_namespaced() -> None:
     assert docs_match.namespace == "v1"
 
 
-def test_risks_api_is_gone() -> None:
-    # Risk Register was removed in #1374 Part B: the route is unroutable at
-    # the URLconf level, not merely 404-at-runtime.
-    with pytest.raises(Resolver404):
-        resolve("/api/v1/risks/")
+def test_existing_risk_register_api_stays_under_v1_namespace() -> None:
+    match = resolve("/api/v1/risks/")
 
-
-@pytest.mark.django_db
-def test_risks_api_returns_404_not_access_denied() -> None:
-    # Removed risk routes must resolve to a plain 404, not an access-denied
-    # response implying a hidden product still exists.
-    assert Client().get("/api/v1/risks/").status_code == 404
+    assert match.namespace == "v1"
+    assert match.url_name == "risk-list"
 
 
 @pytest.mark.django_db
@@ -46,7 +38,7 @@ def test_openapi_schema_is_authenticated_and_served(django_user_model) -> None:
     assert response.status_code == 200
     schema = response.content.decode()
     assert "openapi:" in schema
-    assert "/api/v1/risks/" not in schema
+    assert "/api/v1/risks/" in schema
     assert "ApiTokenAuth" in schema
 
 

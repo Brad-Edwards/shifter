@@ -13,14 +13,11 @@ from shared.api_tokens import scopes
 
 
 class TestKnownScopes:
-    def test_risk_scopes_are_removed(self):
-        # Risk Register was removed in #1374 Part B; its scopes must not
-        # survive in the registry, and the constants themselves are gone so
-        # new code cannot reference them.
-        assert "risk:read" not in scopes.KNOWN_SCOPES
-        assert "risk:write" not in scopes.KNOWN_SCOPES
-        assert not hasattr(scopes, "RISK_READ")
-        assert not hasattr(scopes, "RISK_WRITE")
+    def test_risk_scopes_are_enforced_today(self):
+        assert scopes.RISK_READ == "risk:read"
+        assert scopes.RISK_WRITE == "risk:write"
+        assert scopes.RISK_READ in scopes.KNOWN_SCOPES
+        assert scopes.RISK_WRITE in scopes.KNOWN_SCOPES
 
     def test_migration_scopes_are_registered(self):
         # Mission Control scopes are enforced by PLAT-106 issue #1120; CTF/CMS
@@ -55,14 +52,8 @@ class TestKnownScopes:
 
 class TestValidateScopes:
     def test_normalizes_dedupes_and_sorts(self):
-        result = scopes.validate_scopes(
-            [
-                scopes.MISSION_CONTROL_RANGE_WRITE,
-                scopes.MISSION_CONTROL_RANGE_READ,
-                scopes.MISSION_CONTROL_RANGE_WRITE,
-            ]
-        )
-        assert result == [scopes.MISSION_CONTROL_RANGE_READ, scopes.MISSION_CONTROL_RANGE_WRITE]
+        result = scopes.validate_scopes(["risk:write", "risk:read", "risk:write"])
+        assert result == ["risk:read", "risk:write"]
 
     def test_rejects_empty_selection(self):
         with pytest.raises(scopes.InvalidScopeError):
@@ -70,47 +61,29 @@ class TestValidateScopes:
 
     def test_rejects_unknown_scope(self):
         with pytest.raises(scopes.InvalidScopeError):
-            scopes.validate_scopes([scopes.MISSION_CONTROL_RANGE_READ, "totally:bogus"])
-
-    def test_rejects_a_retired_risk_scope(self):
-        # A scope that was known before #1374 Part B (Risk Register removal)
-        # is unknown now, not silently tolerated at mint time.
-        with pytest.raises(scopes.InvalidScopeError):
-            scopes.validate_scopes(["risk:read"])
+            scopes.validate_scopes(["risk:read", "totally:bogus"])
 
     def test_rejects_wildcard(self):
         with pytest.raises(scopes.InvalidScopeError):
             scopes.validate_scopes(["*"])
         with pytest.raises(scopes.InvalidScopeError):
-            scopes.validate_scopes(["mission_control:*"])
+            scopes.validate_scopes(["risk:*"])
 
     def test_rejects_blank_entries(self):
         with pytest.raises(scopes.InvalidScopeError):
-            scopes.validate_scopes([scopes.MISSION_CONTROL_RANGE_READ, "  "])
+            scopes.validate_scopes(["risk:read", "  "])
 
 
 class TestHasScope:
     def test_granted_scope_is_present(self):
-        granted = [scopes.MISSION_CONTROL_RANGE_READ, scopes.MISSION_CONTROL_RANGE_WRITE]
-        assert scopes.has_scope(granted, scopes.MISSION_CONTROL_RANGE_READ) is True
+        assert scopes.has_scope(["risk:read", "risk:write"], "risk:read") is True
 
     def test_missing_scope_is_denied(self):
-        assert scopes.has_scope([scopes.MISSION_CONTROL_RANGE_READ], scopes.MISSION_CONTROL_RANGE_WRITE) is False
+        assert scopes.has_scope(["risk:read"], "risk:write") is False
 
     def test_no_wildcard_expansion(self):
         # Holding a broad-looking string must not satisfy a specific scope.
-        assert scopes.has_scope(["mission_control:*"], scopes.MISSION_CONTROL_RANGE_READ) is False
+        assert scopes.has_scope(["risk:*"], "risk:read") is False
 
     def test_empty_grant_denies(self):
-        assert scopes.has_scope([], scopes.MISSION_CONTROL_RANGE_READ) is False
-
-    def test_a_retired_stored_risk_scope_is_tolerated_not_raised(self):
-        # A persisted ApiToken row minted before #1374 Part B may still carry a
-        # retired `risk:read`/`risk:write` string in its stored `scopes` list
-        # (nothing rewrites historical rows). Membership-checking that stored
-        # value against a still-known required scope must fail closed (the
-        # token becomes unusable, which is correct) rather than raise —
-        # `has_scope` is a plain set-membership check with no registry lookup,
-        # so an unknown stored scope never reaches `KNOWN_SCOPES` at all.
-        stored_scopes = ["risk:read"]
-        assert scopes.has_scope(stored_scopes, scopes.MISSION_CONTROL_RANGE_READ) is False
+        assert scopes.has_scope([], "risk:read") is False

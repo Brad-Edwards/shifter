@@ -29,7 +29,5 @@ urlpatterns = [
         name="administer-grant-organizer",
     ),
     path("administer/", include("management.api.urls")),
-    # Shared, cross-domain routes (currently just the audit read endpoint,
-    # rehomed from risk_register in #1374).
-    path("", include("shared.api.urls")),
+    path("", include("risk_register.api.urls")),
 ]
