@@ -26,7 +26,9 @@ Current scope:
 Security posture:
 
 - GKE nodes are private-only.
-- The GKE control-plane endpoint remains public for now because bootstrap still runs `get-credentials` and Helm from the operator machine, but access is restricted with `master_authorized_networks_config`.
+- The GKE control-plane endpoint is private. Bootstrap and CI reach it through
+  the IAM-authenticated fleet Connect Gateway; optional authorized networks
+  are limited to connected RFC1918 ranges.
 - GKE Binary Authorization is enabled (`PROJECT_SINGLETON_POLICY_ENFORCE`) so cluster admission enforces the project's Binary Authorization policy.
 - The public application edge is protected with a baseline Cloud Armor policy.
 - The GDC workstation and cluster hosts are expected to be private-only and accessed through IAP by bootstrap.

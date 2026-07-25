@@ -518,11 +518,14 @@ jobs:
           subject-name: ${{ env.GUACAMOLE_CLIENT_IMAGE_ROOT }}
           subject-digest: ${{ steps.build-guacamole-client.outputs.digest }}
           push-to-registry: false
-      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395
-        with:
-          cluster_name: ${{ env.GKE_CLUSTER_NAME }}
-          location: ${{ env.GKE_CLUSTER_LOCATION }}
-          project_id: ${{ env.PROJECT_ID }}
+      - name: Restore Connect Gateway kubectl context
+        # Image build actions may alter process environment, so refresh the
+        # IAM-authenticated gateway context before applying workloads. Never
+        # replace this with direct private-endpoint credentials: the runner has
+        # no route to the RFC1918 control-plane address.
+        run: |
+          gcloud container fleet memberships get-credentials "${GKE_CLUSTER_NAME}" \
+            --location "${GKE_CLUSTER_LOCATION}" --project "${PROJECT_ID}"
       - name: Render generated runtime env
         env:
           # ENGINE_TASK_IMAGE is pinned to the verified provisioner @sha256

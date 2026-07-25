@@ -71,9 +71,12 @@ Security layers any change in this area must satisfy:
 - Bootstrap policy gate: `validate_gcp_control_plane_security_inputs` accepts
   an empty list and rejects malformed, public, IPv6, or world-open entries
   before Terraform apply.
-- CI workflow path: `.github/workflows/_gcp-dev.yml` continues to run
-  Terraform validation and deploys from the same environment root consumed by
-  bootstrap.
+- CI workflow path: `.github/workflows/_gcp-dev.yml` runs Terraform validation
+  and deploys from the same environment root consumed by bootstrap. Both its
+  initial credential setup and its post-build refresh use
+  `gcloud container fleet memberships get-credentials`; direct
+  private-endpoint credentials are forbidden because the runner has no route
+  to the control-plane RFC1918 address.
 - Secret handling: CIDR allowlists are not secrets and must not be routed
   through Secret Manager, GitHub secrets, kube manifests, or runtime env
   files.
