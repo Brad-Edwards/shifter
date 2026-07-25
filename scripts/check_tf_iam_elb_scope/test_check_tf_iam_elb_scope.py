@@ -430,7 +430,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
         )
 
     def test_current_engine_provisioner_policy_scopes_mutable_elb_actions(self) -> None:
-        path = Path("platform/terraform/modules/engine-provisioner/iam.tf")
+        path = Path("platform/terraform/modules/engine-provisioner/iam_gwlb.tf")
 
         # Without this assertion, renaming or removing the gwlb policy block
         # would make check_file return [] (resource not found) and this test
@@ -444,7 +444,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_current_policy_requires_listener_attributes_readback(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/engine-provisioner/iam_gwlb.tf"
         ).read_text()
         required = '          "elasticloadbalancing:DescribeListenerAttributes",\n'
         self.assertEqual(source.count(required), 1)
@@ -465,7 +465,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_describe_policy_rejects_wildcard_action(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/engine-provisioner/iam_gwlb.tf"
         ).read_text()
         for action in (
             "DescribeLoadBalancers",
@@ -580,7 +580,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_vpn_resource_allowlist_rejects_required_arn_plus_wildcard(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/engine-provisioner/iam_gwlb.tf"
         ).read_text()
         exact = (
             'Action   = "elasticloadbalancing:CreateLoadBalancer"\n'
@@ -606,7 +606,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_vpn_action_allowlist_rejects_required_action_plus_wildcard(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/engine-provisioner/iam_gwlb.tf"
         ).read_text()
         exact = 'Action   = "elasticloadbalancing:CreateLoadBalancer"'
         broadened = (
@@ -628,7 +628,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_vpn_addtags_condition_rejects_required_values_plus_extra(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/engine-provisioner/iam_gwlb.tf"
         ).read_text()
         marker = '"CreateListener"\n            ]'
         marker_at = source.rfind(marker)
@@ -653,7 +653,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_vpn_create_listener_requires_parent_nlb_resource_tags(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/engine-provisioner/iam_gwlb.tf"
         ).read_text()
         exact = '            "elasticloadbalancing:ResourceTag/ManagedBy"           = "terraform"\n'
         listener_at = source.index('Action   = "elasticloadbalancing:CreateListener"')
@@ -746,3 +746,44 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CheckTfIamElbScopeCanonicalPathTest(unittest.TestCase):
+    """Sibling-file invocation must not fail closed on every unrelated file.
+
+    Splitting the engine-provisioner IAM monolith into sibling files (#688)
+    means this checker is handed files that legitimately do not define
+    aws_iam_policy.gwlb. Those must be skipped, while the policy's canonical
+    home still fails closed if the policy is deleted.
+    """
+
+    def test_sibling_file_without_gwlb_policy_is_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write_named(
+                Path(tmp),
+                "iam_ssm.tf",
+                """
+                resource "aws_iam_role_policy" "ssm_run_command" {
+                  role = aws_iam_role.ecs_task.id
+                }
+                """,
+            )
+            self.assertEqual(check_file(path), [])
+
+    def test_canonical_file_missing_gwlb_policy_still_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            path = (
+                repo_root / "platform/terraform/modules/engine-provisioner/iam_gwlb.tf"
+            )
+            path.parent.mkdir(parents=True)
+            path.write_text('resource "aws_iam_role" "unrelated" {}\n')
+            reasons = [v.reason for v in check_file(path, repo_root=repo_root)]
+            self.assertTrue(
+                any("aws_iam_policy.gwlb is required" in r for r in reasons), reasons
+            )
+
+    def test_live_gwlb_policy_file_passes(self) -> None:
+        path = Path("platform/terraform/modules/engine-provisioner/iam_gwlb.tf")
+        self.assertIn('resource "aws_iam_policy" "gwlb"', path.read_text())
+        self.assertEqual(check_file(path), [])

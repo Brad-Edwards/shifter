@@ -198,7 +198,7 @@ class CheckTfIamSsmScopeTest(unittest.TestCase):
             self.assertEqual(check_file(tf), [])
 
     def test_current_engine_provisioner_policy_scopes_ssm_run_command(self) -> None:
-        path = Path("platform/terraform/modules/engine-provisioner/iam.tf")
+        path = Path("platform/terraform/modules/engine-provisioner/iam_ssm.tf")
 
         self.assertEqual(check_file(path), [])
 

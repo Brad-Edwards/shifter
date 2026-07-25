@@ -33,6 +33,16 @@ from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Canonical home of each checked managed policy. The "policy is required"
+# assertion fires only on these paths, so the checker can be invoked across a
+# module's sibling files without every unrelated file counting as a violation,
+# while deleting the policy from its owning file still fails the build (#688).
+CANONICAL_POLICY_PATHS: dict[str, Path] = {
+    "gwlb": Path("platform/terraform/modules/engine-provisioner/iam_gwlb.tf"),
+}
+
 MUTABLE_EXISTING_ELB_ACTIONS: set[str] = {
     "elasticloadbalancing:DeleteLoadBalancer",
     "elasticloadbalancing:DeleteTargetGroup",
@@ -644,13 +654,26 @@ def _check_vpn_listener_tags(path: Path, lines: list[str]) -> list[Violation]:
     ]
 
 
-def check_file(path: Path, resource_name: str = "gwlb") -> list[Violation]:
+def check_file(
+    path: Path,
+    resource_name: str = "gwlb",
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> list[Violation]:
     lines = path.read_text().splitlines()
     if path.name == "vpn.tf":
         return _check_vpn_listener_tags(path, lines)
     policy = _extract_policy_body(lines, resource_name)
     if policy is None:
-        return [Violation(path, 1, f"aws_iam_policy.{resource_name} is required")]
+        # Fail closed only on the policy's canonical home. The engine-provisioner
+        # IAM surface is split across sibling files (#688), so this checker is
+        # legitimately handed files that do not define this policy; treating
+        # those as violations would make directory-wide invocation impossible
+        # and push the hook back onto a brittle single-filename regex.
+        canonical = CANONICAL_POLICY_PATHS.get(resource_name)
+        if canonical is None or path.resolve() == (repo_root / canonical).resolve():
+            return [Violation(path, 1, f"aws_iam_policy.{resource_name} is required")]
+        return []
 
     policy_start_line, policy_lines = policy
     violations: list[Violation] = []

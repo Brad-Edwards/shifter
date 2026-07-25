@@ -122,7 +122,7 @@ class CheckTfIamEc2ScopeTest(unittest.TestCase):
         self.assertTrue(any("must not use Resource=*" in reason for reason in reasons))
 
     def test_current_engine_provisioner_policy_scopes_mutable_lifecycle_actions(self) -> None:
-        path = Path("platform/terraform/modules/engine-provisioner/iam.tf")
+        path = Path("platform/terraform/modules/engine-provisioner/iam_ec2_provisioning.tf")
 
         # Without this assertion, renaming or removing the ec2_provisioning policy
         # block would make check_file return [] (resource not found) and this test

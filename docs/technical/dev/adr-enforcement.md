@@ -669,12 +669,25 @@ The first slice intentionally stays small:
   service; unconditioned wildcard `kms:Decrypt` is too broad.
   Existence is gated on `secretsmanager:GetSecretValue` (not file
   layout) so unrelated roles that happen to live in the same file
-  are not forced to acquire unnecessary KMS grants. Currently scoped
-  via the pre-commit `files:` regex (and the matching CI invocation
-  list) to `platform/terraform/modules/engine-provisioner/iam.tf`,
-  `platform/terraform/modules/portal/ec2/main.tf`, and
-  `platform/terraform/modules/guacamole/iam.tf`; expand both when a
-  new module starts reading portal Secrets Manager secrets. The
+  are not forced to acquire unnecessary KMS grants. Scoped via the
+  pre-commit `files:` regex (and the matching CI invocation list) to
+  every `.tf` in `platform/terraform/modules/engine-provisioner/`,
+  `platform/terraform/modules/portal/ec2/`, and
+  `platform/terraform/modules/guacamole/`; expand both when a new
+  module starts reading portal Secrets Manager secrets. These are
+  module-directory globs rather than individual filenames (#688) so
+  that reorganizing a module's files cannot silently drop it out of
+  coverage — an exact-filename regex stops matching after a split and
+  the hook then passes by never running.
+
+  Because the role/grant pairing is evaluated **within a single
+  file** (cross-file aggregation is deliberately out of scope; see
+  the checker's module docstring), each IAM role must stay in the
+  same file as its `secretsmanager` and `kms:Decrypt` policies. This
+  is a real constraint on how these modules may be split: separating
+  a role from its grant leaves the check passing while verifying
+  nothing, which is a security regression rather than successful
+  decomposition. The
   check is implemented in
   `scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py`
   and tested in

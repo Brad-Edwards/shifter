@@ -484,7 +484,7 @@ class CheckTfKmsSecretsGrantTest(unittest.TestCase):
         # execution role (which has secretsmanager:GetSecretValue via
         # ecs_execution_secrets) must have a Secrets Manager kms:Decrypt
         # grant attached.
-        path = Path("platform/terraform/modules/engine-provisioner/iam.tf")
+        path = Path("platform/terraform/modules/engine-provisioner/iam_execution.tf")
         self.assertEqual(check_file(path), [])
 
     def test_live_portal_ec2_main_tf_has_kms_grant(self) -> None:

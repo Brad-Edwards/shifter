@@ -262,9 +262,9 @@ jobs:
       - name: Run check-tf-kms-secrets-grant
         run: |
           python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py \
-            platform/terraform/modules/engine-provisioner/iam.tf \
-            platform/terraform/modules/portal/ec2/main.tf \
-            platform/terraform/modules/guacamole/iam.tf
+            platform/terraform/modules/engine-provisioner/*.tf \
+            platform/terraform/modules/portal/ec2/*.tf \
+            platform/terraform/modules/guacamole/*.tf
 
       # Issues #46/#1755: action/resource-aware ELBv2 scoping for GWLB and
       # request-owned VPN NLB resources, including creation-time listener tags.
@@ -272,7 +272,7 @@ jobs:
       - name: Run check-tf-iam-elb-scope
         run: |
           python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
-            platform/terraform/modules/engine-provisioner/iam.tf \
+            platform/terraform/modules/engine-provisioner/*.tf \
             shifter/engine/provisioner/terraform/modules/range/vpn.tf
 
       # Issue #1179: SSM Run Command IAM scoping on the engine provisioner
@@ -283,7 +283,7 @@ jobs:
       - name: Run check-tf-iam-ssm-scope
         run: |
           python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
-            platform/terraform/modules/engine-provisioner/iam.tf
+            platform/terraform/modules/engine-provisioner/*.tf
 
       - name: Run check-tf-iam-role-naming
         run: |

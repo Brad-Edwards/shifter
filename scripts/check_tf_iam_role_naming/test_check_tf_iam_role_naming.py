@@ -440,7 +440,7 @@ class CheckTfVpnGatewayIdentityPolicyTest(unittest.TestCase):
 
     def _canonical_mutation(self, exact: str, broadened: str) -> list[str]:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/engine-provisioner/iam_role_management.tf"
         ).read_text()
         self.assertEqual(source.count(exact), 1)
         return self._iam(source.replace(exact, broadened))
@@ -468,7 +468,7 @@ class CheckTfVpnGatewayIdentityPolicyTest(unittest.TestCase):
     def test_canonical_identity_policy_resource_is_required(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            tf = repo_root / "platform/terraform/modules/engine-provisioner/iam.tf"
+            tf = repo_root / "platform/terraform/modules/engine-provisioner/iam_role_management.tf"
             tf.parent.mkdir(parents=True)
             tf.write_text('resource "aws_iam_role" "task" {}\n')
             reasons = [v.reason for v in check_file(tf, repo_root=repo_root)]
@@ -633,7 +633,7 @@ class CheckTfVpnGatewayIdentityPolicyTest(unittest.TestCase):
         self.assertTrue(any("must not mutate" in reason for reason in reasons), reasons)
 
     def test_current_vpn_gateway_identity_policy_passes(self) -> None:
-        path = Path("platform/terraform/modules/engine-provisioner/iam.tf")
+        path = Path("platform/terraform/modules/engine-provisioner/iam_role_management.tf")
         self.assertIn(
             'resource "aws_iam_role_policy" "vpn_gateway_role_management"',
             path.read_text(),

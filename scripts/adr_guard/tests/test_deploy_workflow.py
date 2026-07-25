@@ -288,7 +288,8 @@ class TestChangeFilterCoverage(unittest.TestCase):
         self.assertPathInFilter("platform/terraform/modules/range/main.tf", "range")
         self.assertPathInFilter("platform/terraform/modules/ecr/main.tf", "core")
         self.assertPathInFilter(
-            "platform/terraform/modules/engine-provisioner/iam.tf", "shifter_engine"
+            "platform/terraform/modules/engine-provisioner/iam_task.tf",
+            "shifter_engine",
         )
         self.assertPathInFilter("platform/terraform/environments/dev/main.tf", "core")
 

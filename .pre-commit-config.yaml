@@ -221,19 +221,19 @@ repos:
         name: AWS EC2 lifecycle IAM scoping (engine provisioner)
         entry: python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py
         language: system
-        files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
+        files: ^platform/terraform/modules/engine-provisioner/.+\.tf$
 
       - id: check-tf-iam-elb-scope
         name: AWS ELBv2 (GWLB/VPN NLB) IAM scoping (engine provisioner)
         entry: python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py
         language: system
-        files: ^(platform/terraform/modules/engine-provisioner/iam|shifter/engine/provisioner/terraform/modules/range/vpn)\.tf$
+        files: ^(platform/terraform/modules/engine-provisioner/.+|shifter/engine/provisioner/terraform/modules/range/vpn)\.tf$
 
       - id: check-tf-iam-ssm-scope
         name: AWS SSM Run Command IAM scoping (engine provisioner)
         entry: python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py
         language: system
-        files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
+        files: ^platform/terraform/modules/engine-provisioner/.+\.tf$
 
       - id: check-tf-iam-role-naming
         name: AWS IAM role naming seam (shifter-* prefix)
@@ -317,22 +317,26 @@ repos:
       # Secrets Manager values.
       - id: check-tf-kms-secrets-grant
         name: Secrets Manager kms:Decrypt grant (portal CMK readers)
-        # Pass the full scoped file list (pass_filenames=false) instead
-        # of just the changed files, so cross-file aggregation works:
-        # the checker can detect a policy in `policies.tf` attached to a
-        # role defined in `roles.tf` even when only one of the two
-        # changed. The `files:` regex still gates whether the hook
-        # runs (on any change to the scoped files); the explicit list
-        # is what gets handed to the checker.
+        # Pass the full scoped file list (pass_filenames=false) instead of
+        # just the changed files, so every role is re-checked whenever any
+        # scoped file changes. The `files:` regex gates whether the hook runs;
+        # the glob list is what gets handed to the checker.
+        #
+        # The checker pairs a role with its kms:Decrypt grant *within a single
+        # file* (see its module docstring - cross-file aggregation is
+        # deliberately out of scope). Each role must therefore keep its
+        # secretsmanager and kms:Decrypt policies in the same file as the role
+        # itself; splitting them across siblings would make this check pass
+        # without verifying anything (#688).
         entry: >-
           bash -c '
           python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py
-          platform/terraform/modules/engine-provisioner/iam.tf
-          platform/terraform/modules/portal/ec2/main.tf
-          platform/terraform/modules/guacamole/iam.tf
+          platform/terraform/modules/engine-provisioner/*.tf
+          platform/terraform/modules/portal/ec2/*.tf
+          platform/terraform/modules/guacamole/*.tf
           '
         language: system
-        files: ^(platform/terraform/modules/engine-provisioner/iam\.tf|platform/terraform/modules/portal/ec2/main\.tf|platform/terraform/modules/guacamole/iam\.tf)$
+        files: ^platform/terraform/modules/(engine-provisioner|portal/ec2|guacamole)/.+\.tf$
         pass_filenames: false
 
       # ADR-008-R7 / issue #1517: GCP application workload identities (portal,

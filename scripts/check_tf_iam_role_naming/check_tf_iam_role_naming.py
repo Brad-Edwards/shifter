@@ -14,8 +14,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GITHUB_OIDC_CANONICAL_PATH = Path("platform/terraform/global/iam/github-oidc.tf")
+# Canonical home of aws_iam_role_policy.vpn_gateway_role_management. The
+# fail-closed guard below only fires on this exact path, so it must track the
+# file the policy actually lives in; pointing it at a file that no longer
+# exists silently converts the guard to fail-open (#688).
 ENGINE_PROVISIONER_IAM_CANONICAL_PATH = Path(
-    "platform/terraform/modules/engine-provisioner/iam.tf"
+    "platform/terraform/modules/engine-provisioner/iam_role_management.tf"
 )
 
 IAM_MODULE_GLOBS: tuple[str, ...] = (
