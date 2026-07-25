@@ -305,6 +305,13 @@ The first slice intentionally stays small:
   (ADR-003-R5) invariant, keeps `contents: read` only, and carries a
   `timeout-minutes` backstop (#1220).
 
+  `TestGcpPrivateControlPlaneAccess` keeps both GCP deploy credential setup
+  points on fleet Connect Gateway and rejects the direct
+  `get-gke-credentials` action. The self-hosted runner has no route to the
+  private RFC1918 GKE control-plane endpoint, so replacing either gateway
+  refresh with direct credentials would make the workload apply time out
+  after otherwise successful Terraform and image-build stages (#1850).
+
   The manual-deploy invariant (`TestManualDeployDispatch`, #730) asserts that
   environment deploys are a `workflow_dispatch` naming the `environment` input
   (a closed `choice` of `aws-dev` / `aws-proof` / `gcp-dev`), that the `Set
