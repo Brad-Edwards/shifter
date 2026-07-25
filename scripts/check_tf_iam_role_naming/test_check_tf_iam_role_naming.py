@@ -7,7 +7,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from .check_tf_iam_role_naming import check_file
+from .check_tf_iam_role_naming import check_file, check_github_oidc_module
 
 
 def _write(tmp_path: Path, name: str, body: str) -> Path:
@@ -53,7 +53,7 @@ class CheckTfIamRoleNamingTest(unittest.TestCase):
 
     def test_github_oidc_legacy_patterns_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(
+            _write(
                 Path(tmp),
                 "github-oidc.tf",
                 """
@@ -66,7 +66,8 @@ class CheckTfIamRoleNamingTest(unittest.TestCase):
                 }
                 """,
             )
-            reasons = [v.reason for v in check_file(tf)]
+            # iam_scoped content is asserted over the whole module (#688).
+            reasons = [v.reason for v in check_github_oidc_module(oidc_dir=Path(tmp))]
         self.assertTrue(any("legacy dev-portal" in reason for reason in reasons))
 
     def test_github_oidc_too_many_attachments_rejected(self) -> None:
@@ -80,8 +81,9 @@ class CheckTfIamRoleNamingTest(unittest.TestCase):
                 """
                 for n in range(7)
             )
-            tf = _write(Path(tmp), "github-oidc.tf", attachments)
-            reasons = [v.reason for v in check_file(tf)]
+            _write(Path(tmp), "github-oidc.tf", attachments)
+            # The cap is a module-wide property (#688), not a per-file one.
+            reasons = [v.reason for v in check_github_oidc_module(oidc_dir=Path(tmp))]
         self.assertTrue(any("at most" in reason for reason in reasons))
 
     def test_github_oidc_attachments_within_cap_pass(self) -> None:
@@ -325,7 +327,10 @@ class CheckTfVpnGatewayBoundaryTest(unittest.TestCase):
     def test_canonical_boundary_resource_is_required(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            tf = repo_root / "platform/terraform/global/iam/github-oidc.tf"
+            tf = (
+                repo_root
+                / "platform/terraform/global/iam/iam_permissions_boundary.tf"
+            )
             tf.parent.mkdir(parents=True)
             tf.write_text('resource "aws_iam_role" "github_actions" {}\n')
             reasons = [v.reason for v in check_file(tf, repo_root=repo_root)]
@@ -376,7 +381,9 @@ class CheckTfVpnGatewayBoundaryTest(unittest.TestCase):
         )
 
     def test_boundary_tamper_deny_rejects_approved_actions_plus_extra(self) -> None:
-        source = Path("platform/terraform/global/iam/github-oidc.tf").read_text()
+        source = Path(
+            "platform/terraform/global/iam/iam_permissions_boundary.tf"
+        ).read_text()
         exact = (
             '        Sid    = "DenyVpnGatewayBoundaryTamper"\n'
             '        Effect = "Deny"\n'
@@ -646,3 +653,49 @@ class CheckTfVpnGatewayIdentityPolicyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CheckGithubOidcModuleAggregationTest(unittest.TestCase):
+    """Module-wide OIDC assertions must survive a sibling-file split (#688).
+
+    The attachment cap bounds the AWS 10-managed-policy-per-role hard limit. It
+    is a property of the role, so spreading attachments across sibling files
+    must not let each file pass individually while the role exceeds the cap.
+    """
+
+    _ALLOWLIST_SATISFYING = (
+        'resource "aws_iam_policy" "security" {\n'
+        "  # AmazonSSMManagedInstanceCore AmazonECSTaskExecutionRolePolicy\n"
+        "  # AWSLambdaBasicExecutionRole AmazonRDSEnhancedMonitoringRole\n"
+        '  # role/shifter-*\n'
+        "}\n"
+    )
+
+    def _attachments(self, count: int, start: int = 0) -> str:
+        return "".join(
+            f'resource "aws_iam_role_policy_attachment" "a{i}" {{\n}}\n'
+            for i in range(start, start + count)
+        )
+
+    def test_attachments_split_across_siblings_still_exceed_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "github-oidc.tf").write_text(self._ALLOWLIST_SATISFYING)
+            # Neither file alone exceeds the cap; together they do.
+            (d / "iam_attachments.tf").write_text(self._attachments(4))
+            (d / "iam_attachments_extra.tf").write_text(self._attachments(4, start=4))
+            reasons = [v.reason for v in check_github_oidc_module(oidc_dir=d)]
+            self.assertTrue(
+                any("at most" in r and "managed policies" in r for r in reasons),
+                reasons,
+            )
+
+    def test_module_within_cap_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "github-oidc.tf").write_text(self._ALLOWLIST_SATISFYING)
+            (d / "iam_attachments.tf").write_text(self._attachments(5))
+            self.assertEqual(check_github_oidc_module(oidc_dir=d), [])
+
+    def test_live_global_iam_module_passes(self) -> None:
+        self.assertEqual(check_github_oidc_module(), [])

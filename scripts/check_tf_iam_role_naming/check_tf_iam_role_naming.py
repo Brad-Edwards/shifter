@@ -13,7 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-GITHUB_OIDC_CANONICAL_PATH = Path("platform/terraform/global/iam/github-oidc.tf")
+GITHUB_OIDC_DIR = Path("platform/terraform/global/iam")
+GITHUB_OIDC_CANONICAL_PATH = GITHUB_OIDC_DIR / "github-oidc.tf"
+# The CI permissions boundary lives beside the OIDC roles rather than in
+# github-oidc.tf itself (#688). Its fail-closed guard must track the file that
+# actually declares aws_iam_policy.ci_role_permissions_boundary.
+CI_BOUNDARY_CANONICAL_PATH = GITHUB_OIDC_DIR / "iam_permissions_boundary.tf"
 # Canonical home of aws_iam_role_policy.vpn_gateway_role_management. The
 # fail-closed guard below only fires on this exact path, so it must track the
 # file the policy actually lives in; pointing it at a file that no longer
@@ -385,7 +390,7 @@ def check_github_oidc_vpn_gateway_boundary(
         path,
         lines,
         CI_BOUNDARY_RE,
-        canonical_path=GITHUB_OIDC_CANONICAL_PATH,
+        canonical_path=CI_BOUNDARY_CANONICAL_PATH,
         resource_label="VPN gateway boundary aws_iam_policy.ci_role_permissions_boundary",
         repo_root=repo_root,
     )
@@ -651,15 +656,61 @@ def check_file(path: Path, *, repo_root: Path = REPO_ROOT) -> list[Violation]:
     violations.extend(
         check_vpn_gateway_identity_policy(path, lines, repo_root=repo_root)
     )
-    if path.name == "github-oidc.tf":
-        violations.extend(check_github_oidc_iam_scoped(path, text))
-        violations.extend(check_github_oidc_attachment_cap(path, lines))
+    if _is_github_oidc_file(path, repo_root=repo_root):
+        # Per-resource checks: each is a no-op when its resource is absent, so
+        # they follow the resource to whichever sibling file now declares it.
+        # The module-wide assertions (allowlist content, attachment cap) are
+        # NOT here - see check_github_oidc_module (#688).
         violations.extend(check_github_oidc_policy_doc_size(path, lines))
         violations.extend(check_github_oidc_image_role_trust(path, lines))
         violations.extend(check_github_oidc_image_passrole_scope(path, lines))
         violations.extend(
             check_github_oidc_vpn_gateway_boundary(path, lines, repo_root=repo_root)
         )
+    return violations
+
+
+def _is_github_oidc_file(path: Path, *, repo_root: Path = REPO_ROOT) -> bool:
+    """True for any .tf in the global IAM module.
+
+    Keyed on the directory rather than the literal `github-oidc.tf` filename so
+    that splitting the module across sibling files cannot drop a file out of
+    coverage (#688).
+    """
+    if path.suffix != ".tf":
+        return False
+    if path.name == GITHUB_OIDC_CANONICAL_PATH.name:
+        return True
+    try:
+        return path.resolve().parent == (repo_root / GITHUB_OIDC_DIR).resolve()
+    except OSError:
+        return False
+
+
+def check_github_oidc_module(
+    repo_root: Path = REPO_ROOT, *, oidc_dir: Path | None = None
+) -> list[Violation]:
+    """Assertions that hold over the global IAM module as a whole.
+
+    The managed-policy allowlist content and the AWS managed-policy attachment
+    cap are properties of the *role*, not of any one file. Evaluating them per
+    file would let a split satisfy each file individually while the module as a
+    whole violates them - e.g. five attachments in one sibling and two in
+    another each stay under the cap while the role exceeds the AWS limit (#688).
+
+    Sibling files are concatenated in sorted order so the result is
+    deterministic regardless of filesystem iteration order.
+    """
+    directory = oidc_dir if oidc_dir is not None else repo_root / GITHUB_OIDC_DIR
+    if not directory.is_dir():
+        return []
+    files = sorted(directory.glob("*.tf"))
+    if not files:
+        return []
+    text = "\n".join(path.read_text(encoding="utf-8") for path in files)
+    anchor = directory / GITHUB_OIDC_CANONICAL_PATH.name
+    violations = check_github_oidc_iam_scoped(anchor, text)
+    violations.extend(check_github_oidc_attachment_cap(anchor, text.splitlines()))
     return violations
 
 
@@ -670,9 +721,7 @@ def iter_target_files(repo_root: Path, argv: list[str]) -> list[Path]:
     files: list[Path] = []
     for pattern in IAM_MODULE_GLOBS:
         files.extend(sorted(repo_root.glob(pattern)))
-    oidc = repo_root / "platform/terraform/global/iam/github-oidc.tf"
-    if oidc.exists():
-        files.append(oidc)
+    files.extend(sorted((repo_root / GITHUB_OIDC_DIR).glob("*.tf")))
     return sorted(set(files))
 
 
@@ -684,6 +733,9 @@ def main(argv: list[str] | None = None) -> int:
         if not path.is_file():
             continue
         violations.extend(check_file(path, repo_root=repo_root))
+    # Module-wide OIDC assertions run once regardless of which files were
+    # passed, so a commit touching only one sibling still re-checks the cap.
+    violations.extend(check_github_oidc_module(repo_root))
     if violations:
         for violation in violations:
             print(violation)

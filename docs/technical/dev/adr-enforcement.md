@@ -706,6 +706,38 @@ The first slice intentionally stays small:
   `shifter/shifter_platform/entrypoint-lib.sh` and
   `shifter/shifter_platform/tests/test_entrypoint_lib.sh`).
 
+- `check-tf-iam-role-naming`
+  Pre-commit hook AND CI step enforcing the `shifter-*` IAM role naming
+  seam, plus a set of GitHub OIDC invariants over
+  `platform/terraform/global/iam/`. That module is split across sibling
+  files by concern (#688), and the checks are scoped by what they
+  actually assert:
+
+  - **Per-resource, directory-scoped.** Managed-policy document size,
+    base-image role OIDC trust, base-image `iam:PassRole` scope, and the
+    CI permissions-boundary VPN delegation each run on every `.tf` in the
+    module. Each is a no-op when its resource is absent, so a check
+    follows its resource to whichever sibling file declares it. The
+    permissions-boundary check still fails closed on its canonical path
+    (`iam_permissions_boundary.tf`) so the policy cannot simply be
+    deleted.
+  - **Module-wide.** The managed-policy attachment cap and the
+    `iam_scoped` allowlist content are properties of the *role*, not of
+    any single file, so they are evaluated once over all sibling files
+    concatenated in sorted order (`check_github_oidc_module`). Evaluating
+    the cap per file would let a split satisfy each file individually
+    while the role exceeds AWS's hard 10-managed-policy limit — five
+    attachments in one sibling and three in another each stay under the
+    cap while the role does not. The aggregate check runs on every
+    invocation regardless of which files were passed, so a commit
+    touching one sibling still re-checks the whole module.
+
+  Implemented in
+  `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` and
+  tested in the adjacent `test_check_tf_iam_role_naming.py`, including a
+  regression test that splits attachments across two sibling files so
+  that neither exceeds the cap alone. Enforces ADR-004-R19/R22/R25.
+
 ## Local Usage
 
 Run the fast profile on the full repo:
