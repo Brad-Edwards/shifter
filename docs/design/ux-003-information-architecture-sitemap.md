@@ -15,8 +15,10 @@ contract rather than duplicating app-local navigation schemas.
 ## Purpose
 
 This document defines the platform-wide information architecture for Shifter.
-It covers CTF, Mission Control, Scenario Editor, Risk Register, and
-Documentation as one product instead of five unrelated Django apps.
+It covers CTF, Mission Control, Scenario Editor, and Documentation as one
+product instead of four unrelated Django apps. (Risk Register was covered
+here as a fifth surface until it was removed in #1374; see ADR-013 in
+`docs/adr/index.yaml`.)
 
 This is not a visual design system, wireframe set, route migration plan, or
 template implementation. Later implementation work should treat this document as
@@ -32,7 +34,6 @@ Primary source files:
 - `shifter/shifter_platform/ctf/urls.py`
 - `shifter/shifter_platform/mission_control/urls.py`
 - `shifter/shifter_platform/cms/scenario_editor/urls.py`
-- `shifter/shifter_platform/risk_register/urls.py`
 - `shifter/shifter_platform/documentation/urls.py`
 - `shifter/shifter_platform/templates/partials/icon_sidebar.html`
 - `shifter/shifter_platform/templates/partials/ctf_participant_sidebar.html`
@@ -190,25 +191,14 @@ to staff or Threat Research users by the existing shared access policy.
 | Toggle staff-only | `/scenario-editor/<scenario_id>/toggle-staff-only/` | Organizer | Change scenario visibility. |
 | Export scenario | `/scenario-editor/<scenario_id>/export/` | Organizer | Download a scenario definition. |
 
-### Risk Register
+### Risk Register (removed)
 
-Risk Register is an organizer and self-hosting surface for platform risk,
-exceptions, mitigations, and audit-oriented status. Programmatic access uses
-the platform `ApiToken` (scoped bearer tokens); the legacy risk-register API
-key and its UI were retired (PLAT-106 / #1124).
-
-| Current page | Route | Primary user | Primary purpose |
-| --- | --- | --- | --- |
-| Risk list | `/risk-register/` | Organizer | List current and historical risks. |
-| Risk detail | `/risk-register/risks/<risk_id>/` | Organizer | Inspect one risk, comments, and status. |
-| Create risk | `/risk-register/risks/create/` | Organizer | Record a risk. |
-| Edit risk | `/risk-register/risks/<risk_id>/edit/` | Organizer | Change risk details. |
-| Delete risk | `/risk-register/risks/<risk_id>/delete/` | Organizer | Soft-delete a risk. |
-| Restore risk | `/risk-register/risks/<risk_id>/restore/` | Organizer | Restore a deleted risk. |
-| Close risk | `/risk-register/risks/<risk_id>/close/` | Organizer | Mark a risk closed. |
-| Reopen risk | `/risk-register/risks/<risk_id>/reopen/` | Organizer | Reopen a closed risk. |
-| Add comment | `/risk-register/risks/<risk_id>/comments/add/` | Organizer | Add risk discussion or review notes. |
-| Delete comment | `/risk-register/risks/<risk_id>/comments/<comment_id>/delete/` | Organizer | Remove a risk comment. |
+Risk Register was an organizer and self-hosting surface for platform risk,
+exceptions, mitigations, and audit-oriented status, previously served under
+`/risk-register/` (risk list, detail, create, edit, delete, restore, close,
+reopen, and comment routes). The `risk_register` app, its routes, and its API
+were removed by #1374; the routes in this row now 404. See
+`docs/architecture/remove-risk-register-audit-rehome-preflight-1374.md`.
 
 ### Documentation
 

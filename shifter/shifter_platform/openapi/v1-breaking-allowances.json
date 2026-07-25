@@ -1,0 +1,132 @@
+[
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "106a6ac3973a",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "e0d0e8b6f560",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "5ebc87217d93",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/{id}/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "78f609c2c1e3",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/{id}/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "9fb4425a737a",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/{id}/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "e244416c1cb0",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/{id}/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "db1ab0256b52",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/{id}/restore/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "39d6258b6d51",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/{risk_pk}/comments/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "6974ba8343b5",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/{risk_pk}/comments/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "11e2e58443c6",
+    "id": "api-path-removed-without-deprecation",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/risks/{risk_pk}/comments/{id}/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "api path removed without deprecation"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "82493b374f67",
+    "id": "response-required-property-removed",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/bootstrap/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "removed the required property `feature_flags/risk_register_spa` from the response with the `200` status"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "ad5bbd932aba",
+    "id": "response-required-property-removed",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/bootstrap/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "removed the required property `permissions/can_access_risk_register` from the response with the `200` status"
+  },
+  {
+    "expires_on": "2026-10-25",
+    "fingerprint": "fdd382808660",
+    "id": "response-required-property-removed",
+    "issue": "#1374",
+    "owner": "@Brad-Edwards",
+    "path": "/api/v1/dashboard/summary/",
+    "reason": "#1374 removes the Risk Register, an internal-only pilot (#1302) that was never a published consumer contract. The only consumer was this repository's own SPA, which is updated in the same change; the endpoints and response properties have no external caller to break. Retaining them as deprecated stubs would keep a removed product in the public contract, which the issue explicitly rejects.",
+    "text": "removed the required property `risk_register` from the response with the `200` status"
+  }
+]

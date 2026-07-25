@@ -196,5 +196,6 @@ and rotate by issuing a replacement, updating the client, and revoking the old
 token after overlap. Create/revoke are audited via `shared.api_tokens` →
 `AuditLog`; the raw token is shown once and never logged.
 
-The legacy `risk_register.APIKey` is a compatibility surface only: every key
-must carry an explicit `expires_at`, and new integrations use `ApiToken`.
+The legacy `shared.models.APIKey` (rehomed from the removed `risk_register` app
+in #1374) is an archival compatibility surface only: every key must carry an
+explicit `expires_at`, and new integrations use `ApiToken`.

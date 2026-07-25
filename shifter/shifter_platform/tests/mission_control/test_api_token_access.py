@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import UUID
@@ -12,7 +13,7 @@ from rest_framework.test import APIClient
 from cms.assets.upload_token import generate_upload_token
 from mission_control.models import GuacamoleBootstrapRequest
 from shared.api_tokens import scopes
-from shared.api_tokens.models import ApiToken
+from shared.api_tokens.models import TOKEN_PREFIX, ApiToken, _hash_secret
 
 pytestmark = pytest.mark.django_db
 
@@ -41,6 +42,26 @@ def _bearer(client: APIClient, raw: str) -> APIClient:
 def _token(user, *granted_scopes: str) -> str:
     _, raw = ApiToken.create_token(name="mission-control", created_by=user, scopes=list(granted_scopes))
     return raw
+
+
+def _token_with_raw_scopes(user, raw_scopes: list[str]) -> str:
+    """Build a token carrying ``raw_scopes`` verbatim, bypassing registry validation.
+
+    Mirrors a persisted row minted before a scope was retired from the
+    registry (e.g. a pre-#1374 token still carrying ``risk:read``):
+    ``ApiToken.create_token`` would reject such a scope at mint time today,
+    but a historical row can still carry it, and this simulates that row
+    directly.
+    """
+    secret = secrets.token_urlsafe(32)
+    token = ApiToken.objects.create(
+        name="legacy",
+        token_id=secrets.token_urlsafe(8),
+        verifier_hash=_hash_secret(secret),
+        scopes=raw_scopes,
+        created_by=user,
+    )
+    return f"{TOKEN_PREFIX}{token.token_id}.{secret}"
 
 
 def _upload_token(user) -> str:
@@ -73,6 +94,18 @@ class TestRangeTokenAccess:
 
     def test_token_without_range_read_scope_is_forbidden(self, client, user):
         raw = _token(user, scopes.MISSION_CONTROL_UPLOAD_WRITE)
+
+        response = _bearer(client, raw).get(RANGE_URL)
+
+        assert response.status_code == 403
+
+    def test_token_with_retired_risk_scope_fails_closed_not_500(self, client, user):
+        # A token persisted before #1374 Part B may still carry a retired
+        # `risk:read` scope string (nothing rewrites historical rows). It must
+        # authenticate (the credential itself is still valid) and then be
+        # denied by the scope check like any other unmatched scope — never a
+        # 500 from raising on the unrecognized value.
+        raw = _token_with_raw_scopes(user, ["risk:read"])
 
         response = _bearer(client, raw).get(RANGE_URL)
 

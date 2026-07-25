@@ -1,7 +1,7 @@
 """Central scope registry for platform API tokens (PLAT-102 / PLAT-106).
 
 Scopes are additive HTTP-boundary admission checks of the form
-``<resource>:<operation>`` (for example ``risk:read``). They restrict what a
+``<resource>:<operation>`` (for example ``mission_control:range:read``). They restrict what a
 programmatic token may call; they do **not** replace service-layer ownership,
 role, or state authorization, which still runs after a token is admitted.
 
@@ -14,11 +14,6 @@ registry is the single extension point.
 from __future__ import annotations
 
 from collections.abc import Iterable
-
-# --- Enforced today -----------------------------------------------------------
-# Risk register API (the surface PLAT-102 proves end-to-end).
-RISK_READ = "risk:read"
-RISK_WRITE = "risk:write"
 
 # --- Mission Control API (PLAT-106 / issue #1120) -----------------------------
 # Wired by subsurface instead of overloading a single coarse Mission Control
@@ -44,8 +39,6 @@ CMS_AUTHORING_WRITE = "cms:authoring:write"
 
 KNOWN_SCOPES: frozenset[str] = frozenset(
     {
-        RISK_READ,
-        RISK_WRITE,
         MISSION_CONTROL_RANGE_READ,
         MISSION_CONTROL_RANGE_WRITE,
         MISSION_CONTROL_UPLOAD_WRITE,

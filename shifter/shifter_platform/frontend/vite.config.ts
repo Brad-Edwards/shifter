@@ -6,8 +6,8 @@ import { defineConfig } from "vitest/config";
 
 // The SPA is served by Django/WhiteNoise from STATIC_ROOT under /static/spa/.
 // Vite emits a content-hashed single bundle plus a build manifest; the Django
-// SPA host view (risk_register.spa_views) resolves the entry through the
-// WhiteNoise staticfiles manifest. See docs/architecture/spa-cutover-architecture-1300.md.
+// SPA host view (shared.spa_host) resolves the entry through the WhiteNoise
+// staticfiles manifest. See docs/architecture/spa-cutover-architecture-1300.md.
 export default defineConfig({
   base: "/static/spa/",
   plugins: [react(), tailwindcss()],
@@ -30,9 +30,9 @@ export default defineConfig({
   },
   server: {
     // Dev-only: proxy the API to the Django/Daphne backend so cookies and CSRF
-    // behave same-origin during `npm run dev`. The SPA-owned page paths (root
-    // and /risk-register/*) are client-routed by Vite's SPA fallback and must
-    // NOT be proxied, or the client router never resolves them in dev (#1369).
+    // behave same-origin during `npm run dev`. The SPA-owned page paths are
+    // client-routed by Vite's SPA fallback and must NOT be proxied, or the
+    // client router never resolves them in dev (#1369).
     proxy: {
       "/api": "http://localhost:8000",
     },

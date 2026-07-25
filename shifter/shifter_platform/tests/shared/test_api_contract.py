@@ -9,6 +9,7 @@ the boundary-mock policy.
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -91,17 +92,19 @@ class TestPublishedContract:
 
     def test_error_responses_reference_the_envelope(self, openapi_document: dict[str, Any]) -> None:
         # Only the statuses the shared exception handler guarantees are injected.
-        risks = openapi_document["paths"]["/api/v1/risks/"]["get"]
+        # (Risk Register's `/api/v1/risks/` was removed in #1374 Part B; any
+        # scoped, token-gated GET operation exercises the same envelope wiring.)
+        range_op = openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]
         for code in ("401", "403"):
-            schema = risks["responses"][code]["content"]["application/json"]["schema"]
+            schema = range_op["responses"][code]["content"]["application/json"]["schema"]
             assert schema["$ref"].endswith("/ApiError")
 
     def test_body_dependent_errors_are_not_injected_globally(self, openapi_document: dict[str, Any]) -> None:
         # 400/404 shapes vary per endpoint (some legacy views return non-envelope
         # errors), so they must not be blanket-injected onto every operation.
-        risks = openapi_document["paths"]["/api/v1/risks/"]["get"]
-        assert "400" not in risks["responses"]
-        assert "404" not in risks["responses"]
+        range_op = openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]
+        assert "400" not in range_op["responses"]
+        assert "404" not in range_op["responses"]
 
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.
@@ -110,7 +113,8 @@ class TestPublishedContract:
         assert "200" not in ngfw["responses"]
 
     def test_token_scopes_published_for_scoped_operations(self, openapi_document: dict[str, Any]) -> None:
-        assert openapi_document["paths"]["/api/v1/risks/"]["get"]["x-required-scopes"] == ["risk:read"]
+        range_op = openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]
+        assert range_op["x-required-scopes"] == ["mission_control:range:read"]
 
     def test_unscoped_operations_omit_scope_extension(self, openapi_document: dict[str, Any]) -> None:
         # Admin-only audit reads are not token-scoped; they must not advertise a scope.
@@ -121,12 +125,6 @@ class TestPublishedContract:
         detail = openapi_document["paths"]["/api/v1/cms/scenario-editor/scenarios/{scenario_id}/"]
         assert detail["get"]["x-required-scopes"] == ["cms:authoring:read"]
         assert detail["patch"]["x-required-scopes"] == ["cms:authoring:write"]
-
-    def test_comment_author_resolves_to_structured_component(self, openapi_document: dict[str, Any]) -> None:
-        schemas = openapi_document["components"]["schemas"]
-        assert "CommentAuthor" in schemas
-        author = schemas["Comment"]["properties"]["author"]
-        assert any("CommentAuthor" in ref.get("$ref", "") for ref in author.get("allOf", []))
 
     def test_both_auth_schemes_present(self, openapi_document: dict[str, Any]) -> None:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])
@@ -139,13 +137,16 @@ class TestLiveResponseParity:
     def test_unauthenticated_request_matches_published_401(self, openapi_document: dict[str, Any]) -> None:
         from rest_framework.test import APIClient
 
-        response = APIClient().get("/api/v1/risks/")
+        # Risk Register's `/api/v1/risks/` was removed in #1374 Part B; any
+        # scoped, token-gated GET operation exercises the same live-vs-published
+        # parity concern.
+        response = APIClient().get("/api/v1/mission-control/range/")
         assert response.status_code == 401
         # Live body is the canonical envelope the exception handler renders...
         body = response.json()
         assert {"code", "message"} <= set(body["error"])
         # ...and the contract publishes exactly that shape for 401 on this operation.
-        published = openapi_document["paths"]["/api/v1/risks/"]["get"]["responses"]["401"]
+        published = openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]["responses"]["401"]
         assert published["content"]["application/json"]["schema"]["$ref"].endswith("/ApiError")
 
 
@@ -310,8 +311,8 @@ class TestApiContractCommand:
 class TestPlatformAutoSchemaFallback:
     def test_resolved_permissions_falls_back_when_get_permissions_raises(self) -> None:
         class _Perm:
-            required_read_scope = "risk:read"
-            required_write_scope = "risk:write"
+            required_read_scope = "mission_control:range:read"
+            required_write_scope = "mission_control:range:write"
 
         class _View:
             permission_classes = [_Perm]
@@ -323,3 +324,109 @@ class TestPlatformAutoSchemaFallback:
         schema.view = _View()
         resolved = schema._resolved_permissions()
         assert any(isinstance(permission, _Perm) for permission in resolved)
+
+
+class TestBreakingChangeAllowances:
+    """ADR-040-R5: reviewed, exact allowances for never-published-surface removals.
+
+    The gate must keep its teeth. Each test drives a way the allowance mechanism
+    could be subverted and asserts the gate still fails, so a future edit that
+    loosens matching, drops expiry enforcement, or lets an undeclared break
+    through goes red here.
+    """
+
+    BREAK = {
+        "id": "api-path-removed-without-deprecation",
+        "text": "api path removed without deprecation",
+        "level": 3,
+        "path": "/api/v1/risks/",
+        "fingerprint": "106a6ac3973a",
+    }
+
+    @staticmethod
+    def _oasdiff(monkeypatch: pytest.MonkeyPatch, breaks: list[dict[str, Any]]) -> None:
+        """Mock only the oasdiff subprocess boundary, per the boundary-mock policy."""
+        monkeypatch.setattr(
+            contract.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=json.dumps(breaks), stderr=""),
+        )
+
+    def _allowance(self, **overrides: Any) -> dict[str, Any]:
+        entry = {
+            "fingerprint": self.BREAK["fingerprint"],
+            "id": self.BREAK["id"],
+            "path": self.BREAK["path"],
+            "issue": "#1374",
+            "owner": "@Brad-Edwards",
+            "reason": "internal-only pilot removal",
+            "expires_on": "2099-01-01",
+        }
+        entry.update(overrides)
+        return entry
+
+    def test_declared_break_is_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, detail = contract.check_breaking_changes("{}", "{}", [self._allowance()])
+        assert ok
+        assert "covered by reviewed ADR-040-R5 allowances" in detail
+
+    def test_undeclared_break_still_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        other = {**self.BREAK, "path": "/api/v1/ranges/", "fingerprint": "ffffffffffff"}
+        self._oasdiff(monkeypatch, [self.BREAK, other])
+        ok, detail = contract.check_breaking_changes("{}", "{}", [self._allowance()])
+        assert not ok
+        assert "/api/v1/ranges/" in detail
+        assert "no ADR-040-R5 allowance" in detail
+
+    def test_wrong_fingerprint_does_not_match(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, _detail = contract.check_breaking_changes("{}", "{}", [self._allowance(fingerprint="deadbeefcafe")])
+        assert not ok
+
+    def test_wrong_path_does_not_match(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, _detail = contract.check_breaking_changes("{}", "{}", [self._allowance(path="/api/v1/other/")])
+        assert not ok
+
+    def test_expired_allowance_fails_even_when_it_matches(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, detail = contract.check_breaking_changes(
+            "{}", "{}", [self._allowance(expires_on="2020-01-01")], today=date(2026, 7, 25)
+        )
+        assert not ok
+        assert "Expired" in detail
+
+    def test_spent_allowance_reports_but_does_not_fail(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Once the base branch catches up the break disappears; that must not
+        fail unrelated pull requests, but it must be visible so it gets deleted."""
+        monkeypatch.setattr(
+            contract.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        )
+        ok, _detail = contract.check_breaking_changes("{}", "{}", [self._allowance()])
+        assert ok
+
+    def test_no_allowances_means_any_break_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._oasdiff(monkeypatch, [self.BREAK])
+        ok, _detail = contract.check_breaking_changes("{}", "{}", [])
+        assert not ok
+
+    def test_unparseable_oasdiff_output_fails_closed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            contract.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout="not json", stderr="boom"),
+        )
+        ok, detail = contract.check_breaking_changes("{}", "{}", [self._allowance()])
+        assert not ok
+        assert "boom" in detail
+
+    def test_committed_allowance_file_is_reviewable(self) -> None:
+        """Every committed allowance carries the review metadata the ADR requires."""
+        entries = contract._load_allowances()
+        for entry in entries:
+            assert entry["fingerprint"] and entry["id"] and entry["path"]
+            assert entry["issue"] and entry["owner"] and entry["reason"]
+            assert date.fromisoformat(entry["expires_on"]) > date(2026, 7, 25)
