@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from shared.operation_results import ResultStep
+
 from events import (
     STATUS_DESTROYED,
     STATUS_FAILED,
@@ -19,8 +21,21 @@ from events import (
     STATUS_RESUMING,
 )
 from plans.ngfw_stop import NGFWStopPlan
+from provisioner_db_appends import OperationRef, append_operation_step_result
 
 logger = logging.getLogger(__name__)
+
+# ADR-043 phase 4 (#1836): an NGFW power change performed for a Range pause or
+# resume is a subordinate step of that Range generation, keyed by
+# (owning range operation, reported status).
+_CASCADE_STEP_BY_STATUS = {
+    ("pause", STATUS_PAUSING): ResultStep.RANGE_NGFW_CASCADE_PAUSING,
+    ("pause", STATUS_PAUSED): ResultStep.RANGE_NGFW_CASCADE_PAUSED,
+    ("pause", STATUS_FAILED): ResultStep.RANGE_NGFW_CASCADE_FAILED,
+    ("resume", STATUS_RESUMING): ResultStep.RANGE_NGFW_CASCADE_RESUMING,
+    ("resume", STATUS_READY): ResultStep.RANGE_NGFW_CASCADE_READY,
+    ("resume", STATUS_FAILED): ResultStep.RANGE_NGFW_CASCADE_FAILED,
+}
 
 NGFW_START_MAX_RETRIES = 3
 NGFW_START_RETRY_DELAYS = (10, 30, 60)
@@ -153,47 +168,53 @@ def should_pause_ngfw(ngfw_instance_id: int, exclude_range_id: int) -> bool:
     return True
 
 
-def _update_ngfw_status(ngfw_instance_id: int, status: str) -> None:
-    """Update NGFW Instance and App status in database.
+def _update_ngfw_status(
+    ngfw_instance_id: int,
+    status: str,
+    *,
+    instance_uuid: str | None = None,
+    ref: OperationRef | None = None,
+    operation: str | None = None,
+) -> None:
+    """Report an NGFW cascade transition to the Engine result inbox.
+
+    ADR-043 phase 4 (#1836): this no longer writes ``engine_instance`` /
+    ``engine_app``. The cascade is a *subordinate* result of the owning Range
+    operation, so it is reported under that generation; the applier re-checks the
+    Range-to-NGFW attachment and whether another attached range still needs the
+    NGFW before applying it. ``should_pause_ngfw`` remains a pre-cloud
+    compatibility check, not authorization.
 
     Args:
-        ngfw_instance_id: DB ID of the NGFW Instance.
-        status: New status value (e.g., "pausing", "paused", "resuming").
+        ngfw_instance_id: DB id of the NGFW Instance (logging correlation only —
+            never identity for the write).
+        status: New status value ("pausing", "paused", "resuming", "ready", "failed").
+        instance_uuid: UUID of the NGFW Instance; the applier's identity key.
+        ref: Identity of the owning Range operation generation.
+        operation: The owning range operation ("pause" or "resume").
     """
-    # Late-bound call to ``range_ops.get_db_connection`` so test patches
-    # applied at the package level still apply here.
-    import range_ops as _pkg
+    step = _CASCADE_STEP_BY_STATUS.get((operation, status))
+    if step is None:
+        raise ValueError(f"no cascade result step declared for {operation}:{status}")
+    if instance_uuid is None:
+        raise ValueError("NGFW cascade result requires the instance UUID")
 
-    with _pkg.get_db_connection() as conn, conn.cursor() as cur:
-        # Update instance status
-        cur.execute(
-            """
-            UPDATE engine_instance
-            SET status = %s, updated_at = NOW()
-            WHERE id = %s
-            """,
-            (status, ngfw_instance_id),
-        )
-
-        # Update app status if exists
-        cur.execute(
-            """
-            UPDATE engine_app
-            SET status = %s, updated_at = NOW()
-            WHERE instance_id = %s
-            """,
-            (status, ngfw_instance_id),
-        )
-        conn.commit()
-
+    append_operation_step_result(
+        ref,
+        resource="range",
+        operation=str(operation),
+        step=step,
+        result_payload={"ngfw_instance_uuid": str(instance_uuid), "status": status},
+    )
     logger.debug(
-        "_update_ngfw_status: updated ngfw_instance_id=%s status=%s",
+        "_update_ngfw_status: reported ngfw_instance_id=%s status=%s step=%s",
         ngfw_instance_id,
         status,
+        step,
     )
 
 
-def pause_ngfw_for_range(request_id: str) -> None:
+def pause_ngfw_for_range(request_id: str, *, ref: OperationRef | None = None) -> None:
     """Pause NGFW if no other ranges need it.
 
     Called after a range is paused. Checks if any other ranges are using
@@ -229,16 +250,8 @@ def pause_ngfw_for_range(request_id: str) -> None:
         logger.info("pause_ngfw_for_range: other ranges need NGFW, skipping")
         return
 
-    # Update status to pausing
-    _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], STATUS_PAUSING)
-
-    # Publish event
-    _pkg.publish_ngfw_event(
-        request_id=ngfw_info["ngfw_request_id"],
-        instance_id=ngfw_info["instance_uuid"],
-        app_id=ngfw_info["app_id"],
-        status=STATUS_PAUSING,
-    )
+    # Report the cascade transition; the applier owns the write and the event.
+    _report_cascade(_pkg, ngfw_info, STATUS_PAUSING, ref=ref, operation="pause")
 
     # Execute stop plan
     executor = _pkg.AWSExecutor()
@@ -258,25 +271,10 @@ def pause_ngfw_for_range(request_id: str) -> None:
     if not result.success:
         error_msg = result.error or "NGFW stop failed"
         logger.error("pause_ngfw_for_range: %s", error_msg)
-        _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], STATUS_FAILED)
-        _pkg.publish_ngfw_event(
-            request_id=ngfw_info["ngfw_request_id"],
-            instance_id=ngfw_info["instance_uuid"],
-            app_id=ngfw_info["app_id"],
-            status=STATUS_FAILED,
-        )
+        _report_cascade(_pkg, ngfw_info, STATUS_FAILED, ref=ref, operation="pause")
         raise RuntimeError(error_msg)
 
-    # Update status to paused
-    _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], STATUS_PAUSED)
-
-    # Publish success event
-    _pkg.publish_ngfw_event(
-        request_id=ngfw_info["ngfw_request_id"],
-        instance_id=ngfw_info["instance_uuid"],
-        app_id=ngfw_info["app_id"],
-        status=STATUS_PAUSED,
-    )
+    _report_cascade(_pkg, ngfw_info, STATUS_PAUSED, ref=ref, operation="pause")
 
     logger.info(
         "pause_ngfw_for_range: NGFW paused ec2=%s request_id=%s",
@@ -300,22 +298,34 @@ def _wait_for_ngfw_pause_to_complete(ngfw_info: dict[str, Any]) -> None:
     logger.info("ensure_ngfw_running: NGFW is now paused, proceeding to resume")
 
 
-def _publish_ngfw_status(ngfw_info: dict[str, Any], status: str) -> None:
-    """Persist `status` and emit the matching event for an NGFW lifecycle transition."""
+def _report_cascade(
+    _pkg,
+    ngfw_info: dict[str, Any],
+    status: str,
+    *,
+    ref: OperationRef | None,
+    operation: str,
+) -> None:
+    """Report one NGFW cascade transition under the owning Range generation."""
+    _pkg._update_ngfw_status(
+        ngfw_info["ngfw_instance_id"],
+        status,
+        instance_uuid=ngfw_info["instance_uuid"],
+        ref=ref,
+        operation=operation,
+    )
+
+
+def _publish_ngfw_status(ngfw_info: dict[str, Any], status: str, *, ref: OperationRef | None = None) -> None:
+    """Report an NGFW lifecycle transition for a Range resume cascade."""
     # Late-bound calls to package-level names so test patches applied at
     # the package level still apply here.
     import range_ops as _pkg
 
-    _pkg._update_ngfw_status(ngfw_info["ngfw_instance_id"], status)
-    _pkg.publish_ngfw_event(
-        request_id=ngfw_info["ngfw_request_id"],
-        instance_id=ngfw_info["instance_uuid"],
-        app_id=ngfw_info["app_id"],
-        status=status,
-    )
+    _report_cascade(_pkg, ngfw_info, status, ref=ref, operation="resume")
 
 
-def _run_ngfw_start_with_retry(ngfw_info: dict[str, Any], request_id: str) -> None:
+def _run_ngfw_start_with_retry(ngfw_info: dict[str, Any], request_id: str, *, ref: OperationRef | None = None) -> None:
     """Run NGFWStartPlan with bounded retries; raise RuntimeError on permanent failure.
 
     Returns early without raising if a parallel resume marks the NGFW ready
@@ -345,7 +355,7 @@ def _run_ngfw_start_with_retry(ngfw_info: dict[str, Any], request_id: str) -> No
         if attempt == NGFW_START_MAX_RETRIES - 1:
             error_msg = result.error or "NGFW start failed"
             logger.error("ensure_ngfw_running: %s", error_msg)
-            _publish_ngfw_status(ngfw_info, STATUS_FAILED)
+            _publish_ngfw_status(ngfw_info, STATUS_FAILED, ref=ref)
             raise RuntimeError(error_msg)
 
         delay = NGFW_START_RETRY_DELAYS[attempt]
@@ -368,7 +378,7 @@ def _run_ngfw_start_with_retry(ngfw_info: dict[str, Any], request_id: str) -> No
             return
 
 
-def ensure_ngfw_running(request_id: str) -> None:
+def ensure_ngfw_running(request_id: str, *, ref: OperationRef | None = None) -> None:
     """Ensure NGFW is running before resuming range instances.
 
     Checks if the range's attached NGFW is paused and resumes it if needed.
@@ -407,9 +417,9 @@ def ensure_ngfw_running(request_id: str) -> None:
     if status not in (STATUS_PAUSED, STATUS_PAUSING, STATUS_RESUMING):
         return
 
-    _publish_ngfw_status(ngfw_info, STATUS_RESUMING)
-    _run_ngfw_start_with_retry(ngfw_info, request_id)
-    _publish_ngfw_status(ngfw_info, STATUS_READY)
+    _publish_ngfw_status(ngfw_info, STATUS_RESUMING, ref=ref)
+    _run_ngfw_start_with_retry(ngfw_info, request_id, ref=ref)
+    _publish_ngfw_status(ngfw_info, STATUS_READY, ref=ref)
     logger.info(
         "ensure_ngfw_running: NGFW resumed ec2=%s request_id=%s",
         ngfw_info["ec2_instance_id"],

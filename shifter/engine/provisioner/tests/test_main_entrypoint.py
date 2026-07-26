@@ -89,7 +89,7 @@ def test_range_pause_dispatches_range_ops(monkeypatch) -> None:
 
     _run_main(monkeypatch, "range", "pause", "--request-id", "req-3")
 
-    calls["run_range_pause"].assert_called_once_with("req-3")
+    calls["run_range_pause"].assert_called_once_with("req-3", operation_id=None)
 
 
 def test_range_resume_dispatches_range_ops(monkeypatch) -> None:
@@ -97,7 +97,31 @@ def test_range_resume_dispatches_range_ops(monkeypatch) -> None:
 
     _run_main(monkeypatch, "range", "resume", "--request-id", "req-4")
 
-    calls["run_range_resume"].assert_called_once_with("req-4")
+    calls["run_range_resume"].assert_called_once_with("req-4", operation_id=None)
+
+
+def test_range_pause_threads_operation_id_when_present(monkeypatch) -> None:
+    """ADR-043 phase 4 (#1836): the generation must reach the pause path.
+
+    Without it the provisioner appends no result and the applier -- now the
+    authoritative writer for this family -- would never see the outcome.
+    """
+    calls = _install_entrypoint_fakes(monkeypatch)
+    operation_id = "22222222-2222-2222-2222-222222222222"
+
+    _run_main(monkeypatch, "range", "pause", "--request-id", "req-3", "--operation-id", operation_id)
+
+    calls["run_range_pause"].assert_called_once_with("req-3", operation_id=operation_id)
+
+
+def test_range_resume_threads_operation_id_when_present(monkeypatch) -> None:
+    """ADR-043 phase 4 (#1836): the generation must reach the resume path."""
+    calls = _install_entrypoint_fakes(monkeypatch)
+    operation_id = "33333333-3333-3333-3333-333333333333"
+
+    _run_main(monkeypatch, "range", "resume", "--request-id", "req-4", "--operation-id", operation_id)
+
+    calls["run_range_resume"].assert_called_once_with("req-4", operation_id=operation_id)
 
 
 def test_ngfw_provision_dispatches_terraform_up(monkeypatch) -> None:

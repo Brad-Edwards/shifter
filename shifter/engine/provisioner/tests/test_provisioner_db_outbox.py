@@ -370,6 +370,7 @@ class TestAppendOperationResult:
             "OPERATION",
             "CONTRACT_VERSION",
             "RESULT_KIND",
+            "RESULT_STEP",
             "RESULT_IDENTITY",
             "PAYLOAD_DIGEST",
             "ENVELOPE",
@@ -398,6 +399,7 @@ class TestAppendOperationResult:
             "provision",
             "1",
             "TERMINAL_SUCCESS",
+            "",
             f"{self.OPERATION_ID}:TERMINAL_SUCCESS",
             expected_digest,
             json.dumps(expected_envelope),
@@ -421,7 +423,7 @@ class TestAppendOperationResult:
         )
 
         params = cursor_mock.execute.call_args[0][1]
-        assert params[6] == f"{self.OPERATION_ID}:RESOURCE_STATE"
+        assert params[7] == f"{self.OPERATION_ID}:RESOURCE_STATE"
 
     def test_caller_cursor_path_skips_own_connection_and_uses_savepoint(self, monkeypatch):
         """When cur is provided, no new connection opens and the append rides a SAVEPOINT."""
@@ -473,15 +475,10 @@ class TestAppendOperationResult:
 
     def test_replay_with_identical_digest_is_a_harmless_no_op(self, monkeypatch):
         """Same result_identity + same payload digest: no warning, no raise."""
-        from shared.operation_envelope import canonical_payload_digest
-
         from provisioner_db_appends import append_operation_result
 
-        payload = {"status": "ready"}
-        digest = canonical_payload_digest(payload)
         caller_cursor = MagicMock()
         caller_cursor.rowcount = 0  # ON CONFLICT DO NOTHING: zero rows inserted
-        caller_cursor.fetchone.return_value = (digest,)
         mock_warning = MagicMock()
         monkeypatch.setattr("provisioner_db_appends.logger.warning", mock_warning)
 
@@ -491,36 +488,62 @@ class TestAppendOperationResult:
             resource="range",
             operation="provision",
             result_kind="TERMINAL_SUCCESS",
-            result_payload=payload,
+            result_payload={"status": "ready"},
             cur=caller_cursor,
         )
 
         mock_warning.assert_not_called()
-        assert caller_cursor.execute.call_count == 2  # INSERT + SELECT digest
+        assert caller_cursor.execute.call_count == 1
 
-    def test_conflicting_digest_logs_a_fixed_reason_code_and_does_not_raise(self, monkeypatch):
-        """Same result_identity, different payload digest: logged WARNING, never raised."""
+    def test_append_never_reads_the_inbox_back(self, monkeypatch):
+        """The provisioner holds INSERT only on the inbox (engine migration 0036).
+
+        The append previously issued a SELECT to tell a harmless replay from a
+        conflicting one, which raises under real grants and was then swallowed --
+        so conflicts were undetectable AND every conflict cost an exception. The
+        digest now rides in result_identity instead, so no read is needed:
+        identical replays collapse via ON CONFLICT and conflicting ones land as a
+        distinct row for the applier (which may read) to disposition.
+        """
         from provisioner_db_appends import append_operation_result
 
         caller_cursor = MagicMock()
-        caller_cursor.rowcount = 0  # ON CONFLICT DO NOTHING: zero rows inserted
-        caller_cursor.fetchone.return_value = ("sha256:" + "0" * 64,)
-        mock_warning = MagicMock()
-        monkeypatch.setattr("provisioner_db_appends.logger.warning", mock_warning)
+        caller_cursor.rowcount = 0
 
-        # Should not raise -- shadow appends are best-effort; direct SQL stays authoritative.
         append_operation_result(
             operation_id=self.OPERATION_ID,
             request_id=self.REQUEST_ID,
             resource="range",
             operation="provision",
             result_kind="TERMINAL_SUCCESS",
-            result_payload={"status": "ready", "different": True},
+            result_payload={"status": "ready"},
             cur=caller_cursor,
         )
 
-        mock_warning.assert_called_once()
-        assert mock_warning.call_args[0][1] == "operation_result_inbox_conflict"
+        for call in caller_cursor.execute.call_args_list:
+            assert "SELECT" not in call[0][0].upper()
+        caller_cursor.fetchone.assert_not_called()
+
+    def test_conflicting_payload_gets_a_distinct_identity_on_the_authoritative_path(self, monkeypatch):
+        """Two different payloads for one step must not collapse onto one identity."""
+        from shared.operation_results import ResultStep
+
+        from provisioner_db_appends import OperationRef, append_operation_step_result
+
+        identities = []
+        for uuid in ("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"):
+            caller_cursor = MagicMock()
+            append_operation_step_result(
+                OperationRef(request_id=self.REQUEST_ID, operation_id=self.OPERATION_ID),
+                resource="range",
+                operation="pause",
+                step=ResultStep.RANGE_INSTANCES_PAUSED,
+                result_payload={"instances": [{"instance_uuid": uuid, "status": "paused"}]},
+                cur=caller_cursor,
+            )
+            identities.append(caller_cursor.execute.call_args[0][1][7])
+
+        assert identities[0] != identities[1]
 
     def test_unexpected_error_is_logged_and_swallowed_not_raised(self, monkeypatch):
         """A shadow-append failure must never fail an authoritative provisioning operation."""

@@ -1,11 +1,38 @@
 """Tests for provider-aware range lifecycle behavior in range_ops.py."""
 
+import json
 from unittest.mock import patch
 
 import pytest
+from shared.operation_results import ResultStep
 
 from events import EVENT_TYPE_STATUS_UPDATED
 from range_ops import get_range_instance_ids, run_range_pause, run_range_resume
+
+_OPERATION_ID = "44444444-4444-4444-4444-444444444444"
+
+
+def _assert_terminal_failure_reported(mock_cursor, *, operation: str) -> None:
+    """Assert the operation reported a terminal failure to the result inbox.
+
+    ADR-043 phase 4 (#1836): the applier is the authoritative writer, so a failed
+    pause/resume must surface as a closed terminal-failure result rather than a
+    direct status write. Asserted at the psycopg boundary (ADR-019) rather than
+    by patching the append helper. Only the authored reason code travels; the
+    free-text diagnostic stays bounded inside the payload.
+    """
+    appends = [
+        call
+        for call in mock_cursor.execute.call_args_list
+        if "engine_operation_result_inbox" in str(call.args[0]).lower()
+    ]
+    assert len(appends) == 1, "expected exactly one terminal-failure result append"
+    params = appends[0].args[1]
+    assert params[2] == "range"
+    assert params[3] == operation
+    assert params[6] == ResultStep.RANGE_TERMINAL_FAILED
+    payload = json.loads(params[9])["payload"]
+    assert payload["reason_code"] == "cloud_operation_failed"
 
 
 def _assert_status_outbox_event(mock_update_range, *, expected_status: str) -> None:
@@ -117,8 +144,20 @@ class TestGcpRangeLifecycle:
         mock_update_instances,
         mock_pause_ngfw,
         mock_update_range,
+        mock_psycopg_connect,
+        monkeypatch,
     ):
-        request_id = "req-123"
+        for key, value in {
+            "DB_HOST": "test-db",
+            "DB_USER": "shifter_app",
+            "DB_NAME": "shifter",
+            "DB_PASSWORD": "local-dev-password",
+            "CLOUD_REGION": "us-east-2",
+        }.items():
+            monkeypatch.setenv(key, value)
+        _connect, _conn, _cursor = mock_psycopg_connect
+
+        request_id = "77777777-7777-4777-8777-777777777777"
         vm_state = {
             "cloud_provider": "gcp",
             "asset_type": "vm_runtime_vm",
@@ -162,15 +201,15 @@ class TestGcpRangeLifecycle:
         ]
 
         with pytest.raises(RuntimeError, match="Failed to pause 2/2 instances"):
-            run_range_pause(request_id)
+            run_range_pause(request_id, operation_id=_OPERATION_ID)
 
         mock_update_instances.assert_not_called()
         mock_pause_ngfw.assert_not_called()
-        # Phase 1: status + outbox_event commit atomically; no separate publish call
-        mock_update_range.assert_called_once()
-        assert mock_update_range.call_args.args == (42, "failed")
-        assert mock_update_range.call_args.kwargs["error_message"] == "Failed to pause 2/2 instances"
-        _assert_status_outbox_event(mock_update_range, expected_status="failed")
+        # ADR-043 phase 4 (#1836): the provisioner no longer writes the range's
+        # failed status or enqueues its own event -- it reports a terminal
+        # failure result and the applier performs both.
+        mock_update_range.assert_not_called()
+        _assert_terminal_failure_reported(_cursor, operation="pause")
 
     @patch("range_ops.update_range_status")
     @patch("range_ops.ensure_ngfw_running")
@@ -184,8 +223,20 @@ class TestGcpRangeLifecycle:
         mock_update_instances,
         mock_ensure_ngfw,
         mock_update_range,
+        mock_psycopg_connect,
+        monkeypatch,
     ):
-        request_id = "req-123"
+        for key, value in {
+            "DB_HOST": "test-db",
+            "DB_USER": "shifter_app",
+            "DB_NAME": "shifter",
+            "DB_PASSWORD": "local-dev-password",
+            "CLOUD_REGION": "us-east-2",
+        }.items():
+            monkeypatch.setenv(key, value)
+        _connect, _conn, _cursor = mock_psycopg_connect
+
+        request_id = "77777777-7777-4777-8777-777777777777"
         vm_state = {
             "cloud_provider": "gcp",
             "asset_type": "vm_runtime_vm",
@@ -229,12 +280,10 @@ class TestGcpRangeLifecycle:
         ]
 
         with pytest.raises(RuntimeError, match="Failed to resume 2/2 instances"):
-            run_range_resume(request_id)
+            run_range_resume(request_id, operation_id=_OPERATION_ID)
 
-        mock_ensure_ngfw.assert_called_once_with(request_id)
+        assert mock_ensure_ngfw.call_args.args == (request_id,)
         mock_update_instances.assert_not_called()
-        # Phase 1: status + outbox_event commit atomically; no separate publish call
-        mock_update_range.assert_called_once()
-        assert mock_update_range.call_args.args == (42, "failed")
-        assert mock_update_range.call_args.kwargs["error_message"] == "Failed to resume 2/2 instances"
-        _assert_status_outbox_event(mock_update_range, expected_status="failed")
+        # ADR-043 phase 4 (#1836): reported, not written directly.
+        mock_update_range.assert_not_called()
+        _assert_terminal_failure_reported(_cursor, operation="resume")

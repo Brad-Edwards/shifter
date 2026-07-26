@@ -186,6 +186,7 @@ def audit_log_system_event(
     state: StateChange | None = None,
     context: str = "",
     request_id: str = "",
+    strict: bool = False,
 ) -> bool:
     """Record system-initiated audit event.
 
@@ -200,6 +201,10 @@ def audit_log_system_event(
         state: Before/after entity state (see :class:`StateChange`)
         context: Additional context
         request_id: Optional request ID for correlation
+        strict: When True, re-raise on persistence failure instead of swallowing
+            it, so a caller holding an open transaction rolls back the mutation
+            the audit row describes. Required where the audit row is the safety
+            control rather than a convenience (ADR-043-R3).
 
     Returns:
         True when the event was persisted; False on non-strict failure.
@@ -218,7 +223,8 @@ def audit_log_system_event(
             new_state=state.new,
             context=full_context,
             request_id=request_id,
-        )
+        ),
+        strict=strict,
     )
 
 
