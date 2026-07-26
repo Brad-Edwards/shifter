@@ -14,9 +14,9 @@ from ctf.exceptions import CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag, CTFParticipant, CTFScheduledTask, CTFSpareRange
 from ctf.services import update_event
 from ctf.services.challenge import add_flag, remove_flag, update_challenge, update_flag, verify_flag
-from risk_register.models import AuditLog
 from shared.audit import AuditAction
 from shared.enums import RangeSource
+from shared.models import AuditLog
 
 
 @pytest.mark.django_db

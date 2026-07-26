@@ -10,11 +10,11 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.test import Client, override_settings
 
-from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
+from shared.models import AuditLog
 
 pytestmark = pytest.mark.django_db
 

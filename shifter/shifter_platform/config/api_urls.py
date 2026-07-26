@@ -29,5 +29,5 @@ urlpatterns = [
         name="administer-grant-organizer",
     ),
     path("administer/", include("management.api.urls")),
-    path("", include("risk_register.api.urls")),
+    path("", include("shared.api.urls")),
 ]

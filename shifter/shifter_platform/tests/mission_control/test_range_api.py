@@ -19,10 +19,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from engine.models import Range
-from risk_register.models import AuditLog
 from shared.aces.contracts import SHIFTER_BACKEND_PROFILE
 from shared.audit import AuditAction
-from shared.models import AcesOperationRecord, AcesParticipantRuntimeRecord
+from shared.models import AcesOperationRecord, AcesParticipantRuntimeRecord, AuditLog
 from shared.schemas.aces_operation import canonical_aces_payload_digest
 from shared.schemas.aces_participant_runtime import (
     canonical_aces_payload_digest as canonical_participant_payload_digest,

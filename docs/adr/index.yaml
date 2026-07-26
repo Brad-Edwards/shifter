@@ -700,7 +700,7 @@
     "title": "Unified platform information architecture uses a shared navigation contract",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter treats CTF, Mission Control, Scenario Editor, Risk Register, and Documentation as one platform information architecture. Future navigation implementation must use a shared, role-aware navigation contract derived from the maintained IA and taxonomy artifacts rather than duplicating app-local navigation schemas.",
+    "decision": "Shifter treats CTF, Mission Control, Scenario Editor, and Documentation as one platform information architecture. Future navigation implementation must use a shared, role-aware navigation contract derived from the maintained IA and taxonomy artifacts rather than duplicating app-local navigation schemas.",
     "rules": [
       {
         "id": "ADR-013-R1",
@@ -709,7 +709,7 @@
       },
       {
         "id": "ADR-013-R2",
-        "description": "Future navigation data must be centralized behind the shared platform boundary instead of being duplicated independently by CTF, Mission Control, Scenario Editor, Risk Register, and Documentation.",
+        "description": "Future navigation data must be centralized behind the shared platform boundary instead of being duplicated independently by CTF, Mission Control, Scenario Editor, and Documentation.",
         "checks": []
       },
       {
@@ -792,7 +792,7 @@
       "shifter/installation/contract.py",
       "shifter/installation/errors.py",
       "shifter/shifter_platform/shared/auth.py",
-      "shifter/shifter_platform/risk_register/services.py",
+      "shifter/shifter_platform/shared/audit",
       "shifter/shifter_platform/config/dev_auth.py",
       "shifter/shifter_platform/config/settings.py",
       "shifter/shifter_platform/shared/log_sanitize.py"
@@ -1131,38 +1131,15 @@
   {
     "id": "ADR-023",
     "title": "Agent risk audit findings use canonical internal identity and sanitized public tracking",
-    "status": "accepted",
+    "status": "deprecated",
     "scope": "repository",
-    "decision": "Repeatable agent-driven risk audits treat the Risk Register as the canonical internal store for detailed findings and GitHub issues as sanitized tracking proxies only. A tracked risk has one opaque persisted `risk_key`; same-risk matching is based on a versioned structural tuple, not titles, prose, GitHub issue numbers, or database primary keys. Public GitHub issue content is generated from a sanitized summary policy and must not copy Risk Register detail, exploit evidence, raw scanner output, internal topology, live cloud identifiers, or secrets. Risk Register writes, GitHub issue creation/update, severity or confidence promotion, and lifecycle changes require an explicit human review gate. Productized writes reuse the Risk Register API/service/audit path, Cognito group authorization, and exact `shared.api_tokens` `risk:read` / `risk:write` scopes; operator MCP runs may use `mcp/ops` named DB tools only with the MCP policy/audit evidence surface called out explicitly.",
-    "rules": [
-      {
-        "id": "ADR-023-R1",
-        "description": "Risk Register entries are the internal source of truth for detailed agent risk-audit findings. GitHub issues are sanitized tracking proxies and may carry only coarse component, broad risk class, high-level mitigation objective, review/status labels, and an opaque `Risk-Key`; they must not carry exploit steps, proof-of-concept commands, secrets, raw logs, scanner output, internal endpoints/topology, or live cloud identifiers.",
-        "checks": []
-      },
-      {
-        "id": "ADR-023-R2",
-        "description": "Same-risk matching uses an opaque persisted `risk_key` plus a versioned normalized tuple covering component scope, asset class, risk kind, control failure, actor vector, precondition class, and impact class. Future implementation must add explicit structured Risk Register metadata or link tables when needed; it must not hide machine identity, dedupe fingerprints, confidence, last-seen state, or GitHub links in free-form descriptions or comments.",
-        "checks": []
-      },
-      {
-        "id": "ADR-023-R3",
-        "description": "Risk-audit automation may analyze the repository and propose Risk Register or GitHub updates, but writes, issue creation/update, severity or confidence promotion, and lifecycle changes require a human review gate. Product/API mutations reuse the existing Risk Register auth, serializer, service, and audit paths; operator MCP direct-table workflows must rely on `.shifter.yaml`, `mcp/ops/policy.js`, and `mcp/ops/audit.js` as their evidence surface.",
-        "checks": []
-      }
-    ],
+    "decision": "Deprecated by ADR-045. The product and its agent-finding workflow were removed completely; this record imposes no active runtime, API, data, scope, MCP, or tracking requirements.",
+    "rules": [],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": [],
     "evidence": [
-      "docs/architecture/agent-risk-audit-preflight-163.md",
-      "shifter/shifter_platform/risk_register/models.py",
-      "shifter/shifter_platform/risk_register/api/serializers.py",
-      "shifter/shifter_platform/risk_register/api/views.py",
-      "shifter/shifter_platform/risk_register/services.py",
-      "shifter/shifter_platform/shared/api_tokens",
-      "mcp/ops/index.js",
-      "mcp/ops/policy.js",
-      "mcp/ops/audit.js"
+      "docs/architecture/risk-register-removal-preflight-1374.md",
+      "docs/adr/index.yaml"
     ]
   },
   {
@@ -1344,7 +1321,7 @@
     "title": "SPA cutover frontend stack, deployment, and API boundary",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. The client runtime uses React Router v7 in library/data-router mode for route and URL state, and TanStack Query v5 over a single typed fetch client for server state, caching, invalidation, idempotent GET retry, and mutation no-retry policy. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. The cutover is phased per module in order: Risk Register, Mission Control, CTF, Scenario Editor, Docs. Legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md; the first module's runtime-library defaults and Risk Register workspace boundary are in docs/design/spa-risk-register-workspace-1301.md. Governing issues: #1300, #1301, #1302.",
+    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. The client runtime uses React Router v7 in library/data-router mode for route and URL state, and TanStack Query v5 over a single typed fetch client for server state, caching, invalidation, idempotent GET retry, and mutation no-retry policy. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. Migration is phased per module and legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md. Governing issue: #1300.",
     "rules": [
       {
         "id": "ADR-029-R1",
@@ -1372,8 +1349,6 @@
     "evidence": [
       "docs/architecture/spa-cutover-architecture-1300.md",
       "docs/design/spa-design-system-foundation-1299.md",
-      "docs/design/spa-risk-register-workspace-1301.md",
-      "docs/architecture/spa-risk-register-implementation-preflight-1302.md",
       "docs/design/design-system/README.md"
     ]
   },
@@ -1921,7 +1896,7 @@
     "title": "The versioned platform API is published from DRF with fail-closed compatibility gates",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "The canonical DRF /api/v1/ surface is published as deterministic committed OpenAPI JSON generated from runtime URL routing, serializers, permissions, and drf-spectacular annotations. Runtime DRF remains the authoring source and the committed artifact is the downstream consumer contract; frontend and other generated types derive from that artifact. Schema generation fails on warnings or graceful fallbacks, drift compares runtime generation with the artifact, and breaking-change analysis compares the proposal with a trusted base-branch artifact or immutable major snapshot that the same change cannot rewrite. Backward-compatible additions remain in v1; consumer-breaking changes require a parallel /api/v2/, aligned major metadata, and a machine-verifiable migration note while v1 remains available for its migration window. Authentication, application scopes, CSRF conditions, pagination, and the shared sanitized error envelope are represented from their existing canonical implementations rather than duplicated in schema-only policy.",
+    "decision": "The canonical DRF /api/v1/ surface is published as deterministic committed OpenAPI JSON generated from runtime URL routing, serializers, permissions, and drf-spectacular annotations. Runtime DRF remains the authoring source and the committed artifact is the downstream consumer contract; frontend and other generated types derive from that artifact. Schema generation fails on warnings or graceful fallbacks, drift compares runtime generation with the artifact, and breaking-change analysis compares the proposal with a trusted base-branch artifact or immutable major snapshot that the same change cannot rewrite. Backward-compatible evolution remains in v1; ordinary consumer-breaking changes require a parallel /api/v2/, aligned major metadata, and a machine-verifiable migration note while v1 remains available for its migration window. A separately accepted ADR may retire a complete product surface without preserving that product under another API major. Authentication, application scopes, CSRF conditions, pagination, and the shared sanitized error envelope are represented from their existing canonical implementations rather than duplicated in schema-only policy.",
     "rules": [
       {
         "id": "ADR-040-R1",
@@ -1930,12 +1905,12 @@
       },
       {
         "id": "ADR-040-R2",
-        "description": "CI MUST fail on runtime-to-artifact drift and on consumer-breaking differences from a trusted base-branch artifact or immutable per-major snapshot. The compatibility oracle cannot be refreshed by the same proposed change; compatibility semantics live in a pinned OpenAPI-aware checker or package-local code rather than workflow YAML/shell. A break requires a parallel URL major, aligned NamespaceVersioning/settings/schema metadata, and a machine-verifiable migration note; a label, commit message, info.version-only edit, or overwritten baseline is insufficient.",
+        "description": "CI MUST fail on runtime-to-artifact drift and on consumer-breaking differences from a trusted base-branch artifact or immutable per-major snapshot unless a separately accepted ADR explicitly retires the complete affected product surface. The compatibility oracle cannot be refreshed by the same proposed change; compatibility semantics live in a pinned OpenAPI-aware checker or package-local code rather than workflow YAML/shell. An ordinary break requires a parallel URL major, aligned NamespaceVersioning/settings/schema metadata, and a machine-verifiable migration note; a label, commit message, info.version-only edit, or overwritten baseline is insufficient.",
         "checks": []
       },
       {
         "id": "ADR-040-R3",
-        "description": "Within /api/v1/, additions are limited to new independent operations, optional request inputs, optional response object fields, wider accepted requests, and non-semantic documentation. Removed/renamed wire elements; newly required or narrowed inputs; wider, optional, nullable, or new closed-union response possibilities; changed status/media/pagination/error/operation-id semantics; tightened auth/role/scope; and behavior-changing defaults are breaking and require /api/v2/ plus migration evidence.",
+        "description": "Within /api/v1/, additions are limited to new independent operations, optional request inputs, optional response object fields, wider accepted requests, and non-semantic documentation. Removed/renamed wire elements; newly required or narrowed inputs; wider, optional, nullable, or new closed-union response possibilities; changed status/media/pagination/error/operation-id semantics; tightened auth/role/scope; and behavior-changing defaults are breaking and require /api/v2/ plus migration evidence, except when a separately accepted ADR removes the complete product surface rather than evolving it.",
         "checks": []
       },
       {
@@ -2189,6 +2164,52 @@
       "scripts/bootstrap/deploy.py",
       ".github/workflows/deploy.yml",
       "scripts/adr_guard/adr_guard.py"
+    ]
+  },
+  {
+    "id": "ADR-045",
+    "title": "Risk Register is removed and durable audit logging belongs to shared",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The Risk Register product is removed completely. Its Django app, data model, routes, templates, SPA workspace, navigation, permissions, token scopes, settings, MCP tools, and feature documentation are not retained under aliases, flags, compatibility endpoints, or a new API major. The cross-cutting audit capability that other platform domains already use is rehomed to shared: shared owns the durable model and table, writer, archive command, read-only admin, health state, and staff-session-only read API. Upgrade migration preserves existing audit rows while deleting the retired product tables; clean installs create only the shared audit table.",
+    "rules": [
+      {
+        "id": "ADR-045-R1",
+        "description": "No Risk Register runtime surface remains. Code, configuration, schemas, scopes, routes, navigation, templates, frontend modules, MCP registrations, and product documentation must not expose or alias the removed feature.",
+        "checks": []
+      },
+      {
+        "id": "ADR-045-R2",
+        "description": "The durable audit store, writer, archive command, health state, read-only admin, and read API are owned by shared. Feature code emits through shared.audit and must not depend on a retired-app compatibility facade.",
+        "checks": ["layer-imports"]
+      },
+      {
+        "id": "ADR-045-R3",
+        "description": "The audit read API is list/retrieve only and requires a staff or superuser Django session. API tokens have no audit-read scope, and denied reads are audited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-045-R4",
+        "description": "Database upgrades rename the existing audit table in place and preserve all audit rows; clean installs create the shared audit table directly. Retired product tables are dropped and no compatibility views or aliases are created.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "pre-commit", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1374",
+      "docs/architecture/risk-register-removal-preflight-1374.md",
+      "docs/architecture/audit-system-architecture.md",
+      "shifter/shifter_platform/shared/models.py",
+      "shifter/shifter_platform/shared/audit",
+      "shifter/shifter_platform/shared/audit_adapter.py",
+      "shifter/shifter_platform/shared/api/audit.py",
+      "shifter/shifter_platform/shared/migrations/0006_rehome_audit_log.py",
+      "shifter/shifter_platform/openapi/v1.retirements.json",
+      "shifter/shifter_platform/tests/shared/test_removed_feature_surface.py",
+      "shifter/shifter_platform/tests/shared/test_audit_migration.py",
+      "shifter/shifter_platform/tests/shared/test_audit_policy.py",
+      "shifter/shifter_platform/tests/shared/test_audit_store.py"
     ]
   }
 ]

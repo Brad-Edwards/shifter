@@ -1,7 +1,6 @@
 """Mission Control URL configuration.
 
-Rollout-flag aware (issue #1370, ADR-013 / ADR-029), mirroring
-``risk_register.urls``. When the SPA shell is enabled, the GET page paths
+Rollout-flag aware (issue #1370, ADR-013 / ADR-029). When the SPA shell is enabled, the GET page paths
 (dashboard, agents, terminal, settings, help, walkthrough, NGFW pages,
 credential pages) are served by the platform SPA host view (the Mission
 Control routes rehomed under the unified client router); when off (the

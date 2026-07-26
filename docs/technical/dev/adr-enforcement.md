@@ -48,6 +48,11 @@ Review controls:
 - `.github/CODEOWNERS` requires review on guardrail files and shared/public architecture seams.
 - `.github/pull_request_template.md` requires an ADR impact section on PRs.
 - `.github/copilot-instructions.md` now points GitHub Copilot toward the same ADR enforcement model.
+- `.ground-control.yaml` binds synchronized `/implement` runs to the root
+  `make test` completion boundary. The companion `make policy` target runs the
+  full ADR guard, import-linter contracts, diff whitespace validation, and Vale
+  against Markdown changed from `origin/dev`; `tools/install-vale.sh` supplies
+  the pinned local Vale binary when it is not already installed.
 - `.github/workflows/_gcp-dev.yml` now pins `platform/k8s/gcp/overlays/gcp-dev/kustomization.yaml` image `newTag` values to `${SHORT_SHA}` before `kubectl apply -k`, preventing mutable `:latest` restarts from drifting to a different image than the commit being deployed.
 
 Deploy-time enforcement (ADR-035):
@@ -99,7 +104,7 @@ The first slice intentionally stays small:
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
-  domain (`engine`, `cms`, `management`, `ctf`, `risk_register`), presentation
+  domain (`engine`, `cms`, `management`, `ctf`), presentation
   (`mission_control`), support/contracts (`shared`), or support/composition
   (`config`) layer. Service-package imports may use only the public facade (for
   example `cms.services`); private split-package submodules such as

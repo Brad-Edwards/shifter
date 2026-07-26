@@ -85,7 +85,7 @@ CMS range services, the same path Mission Control uses to launch a range.
   row keyed on participant + old range + strategy; resumption after a partial failure is
   data-driven (recorded replacement id and the live old-range status), so retries never
   duplicate the replacement or the audit row. The old range is always destroyed; there
-  is no disposition/forensics-retention choice. Recovery writes one `risk_register` audit
+  is no disposition/forensics-retention choice. Recovery writes one shared audit
   row.
 - `spares.py`: `provision_event_spares(event_id, target_count, *, operator=None)` tops up
   an event's prewarmed spare-range pool (`CTFEvent.spare_range_count`), each spare owned by

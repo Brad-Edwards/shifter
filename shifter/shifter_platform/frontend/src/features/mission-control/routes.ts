@@ -6,8 +6,7 @@
  * paths exactly, trailing slash included, so a client-router deep link or
  * refresh resolves the same page the Django host would have served (the
  * backend's catch-all serves the SPA shell for any non-excluded
- * `/mission-control/*` path once both SPA flags are on). Unlike Risk Register
- * (SPA-native, no legacy counterpart), these paths are not free to change
+ * `/mission-control/*` path once both SPA flags are on). These paths are not free to change
  * shape independently of the backend.
  */
 export const MISSION_CONTROL_BASE = "/mission-control";

@@ -56,7 +56,6 @@ quality_units:
       - cms
       - management
       - ctf
-      - risk_register
       - mission_control
       - shared
       - config
@@ -392,6 +391,7 @@ exclusions:
       - version.txt
       - sonar-project.properties
       - package-lock.json
+      - tools/install-vale.sh
 
   - type: config
     reason: >-
