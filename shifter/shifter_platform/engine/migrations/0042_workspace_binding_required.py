@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
             name="workspace_id",
             field=models.IntegerField(
                 db_index=True,
-                help_text="Workspace this range is scoped to (soft reference; see ADR-046).",
+                help_text="Workspace scope (soft reference; ADR-046).",
             ),
         ),
     ]
