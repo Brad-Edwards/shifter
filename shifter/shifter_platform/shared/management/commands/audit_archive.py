@@ -9,7 +9,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from risk_register.models import AuditLog
+from shared.models import AuditLog
 
 
 class Command(BaseCommand):
@@ -209,8 +209,9 @@ class Command(BaseCommand):
         archived_count = 0
         deleted_count = 0
         batch_num = 0
+        offset = 0
         while True:
-            batch = list(queryset.order_by("timestamp")[:batch_size])
+            batch = list(queryset.order_by("timestamp", "id")[offset : offset + batch_size])
             if not batch:
                 break
             batch_num += 1
@@ -226,6 +227,8 @@ class Command(BaseCommand):
             deleted_count += deleted
             if not ok:
                 break
+            if no_delete:
+                offset += len(batch)
 
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS("Archive complete:"))

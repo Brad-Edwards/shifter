@@ -94,7 +94,7 @@ The first slice intentionally stays small:
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
-  domain (`engine`, `cms`, `management`, `ctf`, `risk_register`), presentation
+  domain (`engine`, `cms`, `management`, `ctf`), presentation
   (`mission_control`), support/contracts (`shared`), or support/composition
   (`config`) layer. Service-package imports may use only the public facade (for
   example `cms.services`); private split-package submodules such as

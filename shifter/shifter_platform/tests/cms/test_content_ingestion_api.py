@@ -17,10 +17,10 @@ from rest_framework.test import APIClient
 
 from cms.models import AcesPackageSource
 from cms.scenarios.pack_validation import PackDigestError, pack_digest
-from risk_register.models import AuditLog
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 from shared.audit import AuditAction, AuditEntityType
+from shared.models import AuditLog
 
 pytestmark = pytest.mark.django_db
 

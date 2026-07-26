@@ -1,7 +1,7 @@
 """URL configuration for Scenario Editor.
 
 Rollout-flag aware (issue #1371, ADR-013 / ADR-029), mirroring
-``mission_control.urls`` and ``risk_register.urls``. When the SPA shell is
+``mission_control.urls``. When the SPA shell is
 enabled, the GET page paths (list, create, YAML create, detail, edit, YAML
 editor) are served by the platform SPA host view (the Scenario Editor routes
 rehomed under the unified client router); when off (the default), the classic
@@ -45,8 +45,8 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 def _page(django_view: Callable[..., HttpResponse] | None) -> Callable[..., HttpResponse]:
     """Return a view that serves the SPA shell for a page path, else the Django page.
 
-    The shell takeover is **method-aware**: unlike Risk Register / Mission
-    Control (whose page paths are GET-only, with mutations on separate action
+    The shell takeover is **method-aware**: unlike Mission Control (whose page
+    paths are GET-only, with mutations on separate action
     URLs), several Scenario Editor page paths are handled by Django form views
     that own BOTH page rendering (GET) AND the form submission (POST) on the same
     URL (create, create/yaml, edit, editor). Serving the ``@require_safe`` SPA

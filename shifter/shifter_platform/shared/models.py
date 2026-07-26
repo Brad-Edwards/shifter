@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from django.conf import settings
 from django.db import models
@@ -11,6 +12,7 @@ from django.db import models
 # ``shared`` app; importing it here ensures Django discovers it and emits its
 # migration under shared/migrations/.
 from shared.api_tokens.models import ApiToken  # noqa: F401
+from shared.audit import AuditAction, AuditActorType, AuditEntityType
 
 
 class WebSocketNotification(models.Model):
@@ -292,3 +294,65 @@ class AcesParticipantRuntimeRecord(models.Model):
         self.payload = result.payload
         self.diagnostic_refs = result.diagnostic_refs
         super().save(*args, **kwargs)
+
+
+class AuditLog(models.Model):
+    """Immutable durable record of a platform audit event."""
+
+    entity_type = models.CharField(max_length=20, choices=AuditEntityType.choices)
+    entity_id = models.PositiveIntegerField()
+    action = models.CharField(max_length=20, choices=AuditAction.choices)
+    actor_type = models.CharField(max_length=10, choices=AuditActorType.choices)
+    actor_id = models.PositiveIntegerField(null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    previous_state = models.JSONField(null=True, blank=True)
+    new_state = models.JSONField(null=True, blank=True)
+    context = models.TextField(blank=True, help_text="Optional reason or notes")
+    source_ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    request_id = models.CharField(max_length=64, blank=True, db_index=True)
+
+    class Meta:
+        db_table = "shared_auditlog"
+        ordering = ["-timestamp"]
+        verbose_name = "Audit Log"
+        verbose_name_plural = "Audit Logs"
+        indexes = [
+            models.Index(fields=["entity_type", "entity_id"], name="shared_audit_entity_idx"),
+            models.Index(fields=["actor_type", "actor_id"], name="shared_audit_actor_idx"),
+            models.Index(fields=["timestamp"], name="shared_audit_timestamp_idx"),
+            models.Index(fields=["action"], name="shared_audit_action_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.action} {self.entity_type} {self.entity_id} at {self.timestamp}"
+
+    @classmethod
+    def log(
+        cls,
+        entity_type: str,
+        entity_id: int,
+        action: str,
+        actor_type: str,
+        actor_id: int | None = None,
+        previous_state: dict[str, Any] | None = None,
+        new_state: dict[str, Any] | None = None,
+        context: str = "",
+        source_ip: str | None = None,
+        user_agent: str = "",
+        request_id: str = "",
+    ) -> AuditLog:
+        """Persist an audit event."""
+        return cls.objects.create(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            action=action,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            previous_state=previous_state,
+            new_state=new_state,
+            context=context,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            request_id=request_id,
+        )
