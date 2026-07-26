@@ -21,6 +21,11 @@ from cms.models import App, AppType, Instance, InstanceType, RangeInstance, Requ
 from cms.signals import range_status_changed
 from shared.enums import RangeSource, RequestType, ResourceStatus
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -49,6 +54,7 @@ def _range_instance(
     user, *, range_id=None, request=None, status=ResourceStatus.PENDING.value, scenario_id="basic", range_source=None
 ):
     kwargs = {
+        "workspace_id": _WORKSPACE_ID,
         "user_id": user.id,
         "range_id": range_id,
         "request": request,
@@ -61,7 +67,9 @@ def _range_instance(
 
 
 def _request(user) -> Request:
-    return Request.objects.create(request_id=uuid4(), request_type=RequestType.RANGE.value, user=user)
+    return Request.objects.create(
+        workspace_id=_WORKSPACE_ID, request_id=uuid4(), request_type=RequestType.RANGE.value, user=user
+    )
 
 
 @pytest.fixture

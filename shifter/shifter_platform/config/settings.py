@@ -144,6 +144,7 @@ INSTALLED_APPS = [
     "management.apps.ManagementConfig",
     "shared.apps.SharedConfig",
     "ctf.apps.CtfConfig",
+    "workspaces.apps.WorkspacesConfig",
 ]
 
 if AUTH_PROVIDER == "oidc":

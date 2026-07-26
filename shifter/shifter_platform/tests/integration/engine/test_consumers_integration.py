@@ -18,6 +18,11 @@ from engine.models import Range, Request
 from mission_control.consumers import RangeStatusConsumer
 from shared.enums import RequestType, WebSocketCloseCode
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 User = get_user_model()
 
 
@@ -55,6 +60,7 @@ def engine_request(db, user):
 def cms_request(db, user, engine_request):
     """Create a CMS Request linked to Engine Request."""
     return CMSRequest.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request_id=engine_request.request_id,
         request_type=RequestType.RANGE.value,
         user=user,
@@ -66,6 +72,7 @@ def range_ready_with_cms(db, user, engine_request, cms_request):
     """Create Engine Range with corresponding CMS RangeInstance."""
     # Create Engine Range
     engine_range = Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
         uuid=uuid.uuid4(),
         user=user,
         request=engine_request,
@@ -83,6 +90,7 @@ def range_ready_with_cms(db, user, engine_request, cms_request):
 
     # Create CMS RangeInstance (linked via request_id)
     cms_range = RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=cms_request,
         scenario_id="test_scenario",
         user_id=user.id,
@@ -208,6 +216,7 @@ class TestRangeModelLookupIntegration:
     def test_range_found_by_request_id(self, user, engine_request):
         """Range can be found via request_id relationship."""
         range_obj = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             request=engine_request,
@@ -230,6 +239,7 @@ class TestRangeModelLookupIntegration:
     def test_range_status_reflects_database_updates(self, user, engine_request):
         """Range status changes are visible in subsequent queries."""
         range_obj = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             request=engine_request,
@@ -258,6 +268,7 @@ class TestRangeInstanceLookupIntegration:
     def test_range_instance_found_via_request_id(self, user, cms_request):
         """RangeInstance can be found via request_id."""
         RangeInstance.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=cms_request,
             scenario_id="test_scenario",
             user_id=user.id,
@@ -275,6 +286,7 @@ class TestRangeInstanceLookupIntegration:
     def test_range_instance_not_found_for_other_user(self, user, other_user, cms_request):
         """RangeInstance not found when queried by non-owner."""
         RangeInstance.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=cms_request,
             scenario_id="test_scenario",
             user_id=user.id,
@@ -302,6 +314,7 @@ class TestStatusSynchronizationIntegration:
         """Engine and CMS ranges can be correlated via shared request_id."""
         # Create Engine Range
         engine_range = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             request=engine_request,
@@ -311,6 +324,7 @@ class TestStatusSynchronizationIntegration:
 
         # Create CMS RangeInstance
         RangeInstance.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=cms_request,
             scenario_id="test_scenario",
             user_id=user.id,

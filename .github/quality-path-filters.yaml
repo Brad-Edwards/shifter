@@ -59,6 +59,7 @@ quality_units:
       - mission_control
       - shared
       - config
+      - workspaces
     sonar: true
     responsibilities:
       lint: [shifter-platform-lint, shifter-platform-lint-js]

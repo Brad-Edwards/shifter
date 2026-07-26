@@ -29,6 +29,11 @@ from shared.enums import ResourceStatus
 from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
 from shared.operation_results import ResultStep, build_result_identity, result_kind_for
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 
@@ -58,6 +63,7 @@ class _Fixture:
                 status=ResourceStatus.READY.value,
             )
         self.range = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=self.request,
             user=self.user,
             status=status,
@@ -248,6 +254,7 @@ class TestNgfwCascadeOwnership:
     def test_cascade_pause_is_refused_while_another_range_needs_the_ngfw(self):
         fx = _Fixture(with_ngfw=True)
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=Request.objects.create(request_id=uuid4(), request_type="range", user=fx.user),
             user=fx.user,
             status=ResourceStatus.READY.value,
@@ -299,6 +306,7 @@ class TestInstanceResultsCannotReachTheNgfw:
     def test_a_shared_ngfw_is_not_moved_by_another_ranges_instance_result(self):
         fx = _Fixture(with_ngfw=True)
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=Request.objects.create(request_id=uuid4(), request_type="range", user=fx.user),
             user=fx.user,
             status=ResourceStatus.READY.value,

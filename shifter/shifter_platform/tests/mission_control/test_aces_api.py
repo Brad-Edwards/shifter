@@ -26,6 +26,11 @@ from shared.schemas.aces_participant_runtime import (
     canonical_aces_payload_digest as canonical_participant_payload_digest,
 )
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 _CONTRACT_VERSION = {
@@ -69,8 +74,12 @@ def client():
 
 def _owned_range(user):
     """Create a RangeInstance + Request owned by ``user``; return the request_id."""
-    request = Request.objects.create(request_id=uuid4(), request_type=RequestType.RANGE.value, user=user)
-    RangeInstance.objects.create(scenario_id="basic", user_id=user.id, status="ready", request=request)
+    request = Request.objects.create(
+        workspace_id=_WORKSPACE_ID, request_id=uuid4(), request_type=RequestType.RANGE.value, user=user
+    )
+    RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID, scenario_id="basic", user_id=user.id, status="ready", request=request
+    )
     return request.request_id
 
 

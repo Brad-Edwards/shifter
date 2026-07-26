@@ -26,7 +26,7 @@ from engine.ecs import start_aces_range_provisioning
 from shared.aces.content_delivery import DeliveryBinding
 from shared.enums import RequestType
 
-from ._range_backend_binding import backend_binding_fields, verify_existing_binding
+from ._range_backend_binding import backend_binding_fields, require_workspace_binding, verify_existing_binding
 
 if TYPE_CHECKING:
     from shared.range_instantiation_policy import BackendAdmission
@@ -49,6 +49,7 @@ def create_aces_range(
     request_id: str | UUID,
     user_id: int,
     compiled_plan: dict[str, Any],
+    workspace_id: int,
     backend_admission: BackendAdmission | None = None,
     delivery_bindings: tuple[DeliveryBinding, ...] = (),
 ) -> AcesRangeRef:
@@ -68,6 +69,11 @@ def create_aces_range(
     is persisted as the write-once #1666 ownership binding in the same transaction
     as the Range, before dispatch; ``None`` on non-GCP providers.
 
+    ``workspace_id`` is the trusted #1325 tenancy scope resolved and authorized by
+    the CMS launch facade and carried the same way. It is **required** and
+    persisted in the same transaction, so a range is never visible -- briefly or
+    durably -- without its scope (ADR-046-R3).
+
     ``delivery_bindings`` are the #1564 byte-free ``DeliveryBinding`` identities
     that ride beside the plan; each is persisted as one
     ``engine.models.AcesContentDeliveryBinding`` row in the same transaction as
@@ -78,6 +84,7 @@ def create_aces_range(
     # the ``engine`` app does not define models before the app registry is ready.
     from engine.models import AcesContentDeliveryBinding, Range, Request
 
+    require_workspace_binding(workspace_id)
     request_uuid = request_id if isinstance(request_id, UUID) else UUID(str(request_id))
 
     existing = Range.objects.filter(request__request_id=request_uuid).first()
@@ -101,6 +108,7 @@ def create_aces_range(
             status=Range.Status.PROVISIONING,
             subnet_index=subnet_index,
             range_config=compiled_plan,
+            workspace_id=workspace_id,
             **binding_fields,
         )
         AcesContentDeliveryBinding.objects.bulk_create(

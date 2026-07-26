@@ -1,4 +1,4 @@
-"""Behavior tests for create_aces_range() (ADR-031, ADR-032, ACES-native path).
+"""Behavior tests for _create_aces_range() (ADR-031, ADR-032, ACES-native path).
 
 Drives the real engine service against a real database: the serialized ACES
 ProvisioningPlan is persisted as a ``Request`` + ``Range`` keyed by ``request_id``
@@ -20,6 +20,18 @@ from engine.services import AcesRangeRef, create_aces_range
 from shared.aces.content_delivery import DeliveryBinding
 from shared.aces.runtime_target import ACES_PROVISIONING_PLAN_KIND, serialize_provisioning_plan
 from shared.models import AcesOperationRecord
+
+# Opaque #1325 workspace scope binding. engine.services requires one on every
+# range create (ADR-046-R3); these suites do not exercise tenancy, so a fixed
+# scalar stands in for the value the CMS launch facade would resolve.
+_WORKSPACE_ID = 1
+
+
+def _create_aces_range(**kwargs):
+    """Call the real seam with the workspace binding these suites do not vary."""
+    kwargs.setdefault("workspace_id", _WORKSPACE_ID)
+    return create_aces_range(**kwargs)
+
 
 pytestmark = pytest.mark.django_db
 
@@ -67,7 +79,7 @@ class TestCreateAcesRange:
 
     def test_returns_accepted_ref(self, user):
         request_id = uuid4()
-        result = create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
+        result = _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
         assert isinstance(result, AcesRangeRef)
         assert result.request_id == str(request_id)
         assert result.accepted is True
@@ -77,7 +89,7 @@ class TestCreateAcesRange:
     def test_persists_range_with_serialized_plan_and_request(self, user):
         request_id = uuid4()
         plan = make_compiled_plan()
-        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan)
+        _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan)
 
         range_obj = Range.objects.get()
         assert range_obj.user == user
@@ -94,7 +106,7 @@ class TestCreateAcesRange:
 
     def test_writes_operation_receipt_sidecar(self, user):
         request_id = uuid4()
-        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
+        _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
 
         receipt = AcesOperationRecord.objects.get(
             request_id=request_id, record_kind=AcesOperationRecord.RecordKind.OPERATION_RECEIPT
@@ -105,8 +117,8 @@ class TestCreateAcesRange:
     def test_idempotent_on_request_id(self, user):
         request_id = uuid4()
         plan = make_compiled_plan()
-        first = create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan)
-        second = create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan)
+        first = _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan)
+        second = _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan)
 
         assert second.range_id == first.range_id
         assert Range.objects.count() == 1
@@ -136,7 +148,7 @@ class TestCreateAcesRangeDeliveryBindings:
     def test_persists_one_row_per_binding(self, user):
         request_id = uuid4()
         binding = self.make_binding()
-        create_aces_range(
+        _create_aces_range(
             request_id=request_id,
             user_id=user.id,
             compiled_plan=make_compiled_plan(),
@@ -155,7 +167,7 @@ class TestCreateAcesRangeDeliveryBindings:
 
     def test_no_bindings_persists_none(self, user):
         request_id = uuid4()
-        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
+        _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
 
         range_obj = Range.objects.get(request__request_id=request_id)
         assert AcesContentDeliveryBinding.objects.filter(range=range_obj).count() == 0
@@ -164,8 +176,8 @@ class TestCreateAcesRangeDeliveryBindings:
         request_id = uuid4()
         plan = make_compiled_plan()
         binding = self.make_binding()
-        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, delivery_bindings=(binding,))
-        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, delivery_bindings=(binding,))
+        _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, delivery_bindings=(binding,))
+        _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, delivery_bindings=(binding,))
 
         range_obj = Range.objects.get(request__request_id=request_id)
         assert AcesContentDeliveryBinding.objects.filter(range=range_obj).count() == 1
@@ -174,7 +186,7 @@ class TestCreateAcesRangeDeliveryBindings:
         request_id = uuid4()
         first = self.make_binding("provision.node.attacker#file")
         second = self.make_binding("provision.node.victim#file")
-        create_aces_range(
+        _create_aces_range(
             request_id=request_id,
             user_id=user.id,
             compiled_plan=make_compiled_plan(),
@@ -200,7 +212,7 @@ class TestCreateAcesRangeDeliveryBindings:
             payload_kind="file",
             install_policy="executable",
         )
-        create_aces_range(
+        _create_aces_range(
             request_id=request_id,
             user_id=user.id,
             compiled_plan=make_compiled_plan(),

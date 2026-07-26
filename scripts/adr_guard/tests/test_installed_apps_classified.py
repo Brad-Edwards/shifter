@@ -23,6 +23,8 @@ EXPECTED_PACKAGES = {
     "mission_control",
     "ctf",
     "config",
+    # ADR-046: organization/workspace tenancy domain (#1325).
+    "workspaces",
 }
 
 _CLASSIFICATION_YAML = """\

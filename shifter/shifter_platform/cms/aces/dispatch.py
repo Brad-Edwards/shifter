@@ -54,10 +54,18 @@ class CmsAcesDispatchPort:
     object storage, and hands the engine the byte-free delivery bindings to persist
     beside the plan (ADR-032-R3). ``None`` only in tests / plans that carry no
     source-backed content.
+
+    ``workspace_id`` is the trusted #1325 tenancy scope resolved and authorized by
+    the CMS launch facade. It rides beside the plan for the same reason
+    ``backend_admission`` does: Engine persists it, and never resolves or
+    authorizes a workspace itself (ADR-046-R1/R3).
     """
 
     user_id: int
     request_id: str
+    # Required: the port cannot realize a range without a tenancy scope, and a
+    # nullable field here would just push the failure into the Engine boundary.
+    workspace_id: int
     backend_admission: BackendAdmission | None = None
     pack_root: Path | None = None
 
@@ -69,6 +77,7 @@ class CmsAcesDispatchPort:
             compiled_plan=compiled_plan,
             backend_admission=self.backend_admission,
             delivery_bindings=delivery_bindings,
+            workspace_id=self.workspace_id,
         )
         return ShifterDispatchResult(
             request_id=ref.request_id, accepted=ref.accepted, status=ref.status, range_id=ref.range_id

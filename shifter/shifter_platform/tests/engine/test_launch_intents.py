@@ -6,6 +6,11 @@ from uuid import UUID
 
 import pytest
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db(databases=["default"])
 
 
@@ -16,7 +21,7 @@ def _authorized_range(request_id: str) -> None:
 
     user = get_user_model().objects.create_user(username=f"{request_id}@example.com")
     request = Request.objects.create(request_id=request_id, request_type="range", user=user)
-    Range.objects.create(request=request, user=user, status=Range.Status.PROVISIONING)
+    Range.objects.create(workspace_id=_WORKSPACE_ID, request=request, user=user, status=Range.Status.PROVISIONING)
 
 
 def test_enqueue_stores_only_validated_non_secret_intent() -> None:

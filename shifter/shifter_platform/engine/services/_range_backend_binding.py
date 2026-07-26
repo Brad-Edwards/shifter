@@ -20,6 +20,19 @@ if TYPE_CHECKING:
     from shared.range_instantiation_policy import BackendAdmission
 
 
+def require_workspace_binding(workspace_id: int | None) -> None:
+    """Refuse to create a range with no tenancy scope (#1325, ADR-046-R3).
+
+    The binding is supplied by the trusted CMS launch facade, like
+    ``BackendAdmission`` above. Accepting ``None`` here would let a new or
+    refactored caller persist an unscoped range indistinguishable from a legacy
+    pre-#1325 row -- the ambiguity the non-null scope columns and this guard
+    exist to remove.
+    """
+    if workspace_id is None:
+        raise EngineError("A range cannot be created without a workspace binding")
+
+
 def backend_binding_fields(backend_admission: BackendAdmission | None) -> dict[str, str]:
     """Map an admitted ``BackendAdmission`` to the write-once Range binding columns.
 

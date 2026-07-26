@@ -18,6 +18,11 @@ from shared.enums import RangeSource, RequestType, ResourceStatus
 from shared.models import AuditLog
 from tests.engine.services.conftest import boto3_secrets, make_secrets_client
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 URL = "/api/v1/ctf/range/vpn-profile/"
@@ -57,11 +62,13 @@ def _active_range_participant(participant_user, ctf_participant):
     set_active_ctf_event(participant_user, ctf_participant.event_id)
     request_id = uuid4()
     cms_request = CmsRequest.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request_id=request_id,
         request_type=RequestType.RANGE.value,
         user=participant_user,
     )
     cms_range = RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=cms_request,
         scenario_id="basic",
         user_id=participant_user.id,
@@ -82,6 +89,7 @@ def _active_range_participant(participant_user, ctf_participant):
         status=Range.Status.READY,
     )
     Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=engine_request,
         user=participant_user,
         status=Range.Status.READY,

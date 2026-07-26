@@ -26,6 +26,11 @@ from engine.models import (
 from engine.services import apply_pending_operation_results, evaluate_operation_result
 from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 
@@ -49,6 +54,7 @@ def _seed(
     user = get_user_model().objects.create_user(username=f"{request_id}@example.com")
     request = Request.objects.create(request_id=request_id, request_type="range", user=user)
     Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=request,
         user=user,
         status=Range.Status.PROVISIONING,
