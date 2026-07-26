@@ -132,3 +132,37 @@ def assess_declared_capacity(event_id: UUID, *, source: str) -> dict[str, Any] |
         safe_log_value(summary["outcome"]),
     )
     return summary
+
+
+def admit_range(event_id: UUID, draw_key: UUID) -> dict[str, Any] | None:
+    """Draw one range's share of the event budget; never raises.
+
+    Returns a bounded summary, or ``None`` when the layer has no opinion (no
+    budget on record, or the draw itself failed). Callers treat ``None`` as
+    "proceed" so a capacity bookkeeping problem can never be the reason a range
+    fails to provision.
+    """
+    from ctf.bridges import cms_admit_range_capacity
+
+    try:
+        result = cms_admit_range_capacity(event_id, draw_key)
+    except Exception:
+        logger.exception("Failed to admit range capacity for event %s", safe_log_value(event_id))
+        return None
+    if result is None:
+        return None
+    return {
+        "outcome": result.outcome.value,
+        "blocking": result.blocking,
+        "reason_codes": sorted({verdict.reason_code.value for verdict in result.verdicts}),
+    }
+
+
+def release_range(draw_key: UUID) -> None:
+    """Return a range's capacity draw on teardown; never raises."""
+    from ctf.bridges import cms_release_range_capacity
+
+    try:
+        cms_release_range_capacity(draw_key)
+    except Exception:
+        logger.exception("Failed to release range capacity draw")

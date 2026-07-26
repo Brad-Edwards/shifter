@@ -33,6 +33,7 @@ from cms.models import AgentConfig, RangeInstance
 from cms.scenarios.images import project_scenario_images
 from cms.signals import range_status_changed as range_status_changed
 from engine.services import EventCapacitySignal as EngineEventCapacitySignal
+from engine.services import admit_range_capacity as engine_admit_range_capacity
 from engine.services import assess_declared_event_capacity as engine_assess_declared_event_capacity
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
 from engine.services import create_range as engine_create_range
@@ -49,6 +50,7 @@ from engine.services import (
     record_capacity_declaration as engine_record_capacity_declaration,
 )
 from engine.services import release_capacity_reservations as engine_release_capacity_reservations
+from engine.services import release_range_capacity as engine_release_range_capacity
 from engine.services import resume_range as engine_resume_range
 from shared.audit import (
     AuditEvent,
@@ -174,6 +176,7 @@ __all__ = (
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request_id",
+    "engine_admit_range_capacity",
     "engine_assess_declared_event_capacity",
     "engine_cancel_range_by_request",
     "engine_create_range",
@@ -186,6 +189,7 @@ __all__ = (
     "engine_reassign_range_owner",
     "engine_record_capacity_declaration",
     "engine_release_capacity_reservations",
+    "engine_release_range_capacity",
     "engine_resume_range",
     "expire_due_ranges",
     "extend_mission_control_range",

@@ -117,6 +117,30 @@ def cms_project_scenario_images(scenario_id: str) -> dict[str, Any]:
     return cms_services.project_scenario_images(scenario_id).as_hint()
 
 
+def cms_admit_range_capacity(event_ref: UUID, draw_key: UUID) -> object:
+    """Draw one range's share from the event's capacity budget (PLAT-201).
+
+    Pure database work in the engine -- no provider call -- so this is safe to
+    run on the range-creation path. ``draw_key`` is the stable identity of the
+    thing being provisioned (participant or spare), which is known before the
+    range exists and makes a retried creation idempotent.
+    """
+    import cms.services as cms_services
+
+    return cms_services.engine_admit_range_capacity(event_ref, draw_key=draw_key)
+
+
+def cms_release_range_capacity(draw_key: UUID) -> int:
+    """Return a range's capacity draw to its event budget (PLAT-201).
+
+    Must run on every teardown path: a draw that outlives its range leaks
+    capacity and eventually refuses an event that would have fit.
+    """
+    import cms.services as cms_services
+
+    return cms_services.engine_release_range_capacity(draw_key)
+
+
 def cms_create_range(
     user: User,
     scenario: str,

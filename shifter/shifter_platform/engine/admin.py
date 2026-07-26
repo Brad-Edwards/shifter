@@ -5,6 +5,7 @@ from django.contrib import admin
 from engine.models import (
     CapacityAssessment,
     CapacityDeclaration,
+    CapacityDraw,
     CapacityReservation,
     Range,
     SubnetAllocation,
@@ -97,6 +98,9 @@ class CapacityReservationAdmin(admin.ModelAdmin):
         "partition_name",
         "metric_name",
         "amount",
+        "consumed",
+        "unit_amount",
+        "enforcement",
         "window_start",
         "window_end",
         "released_at",
@@ -107,4 +111,26 @@ class CapacityReservationAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         """Reservations are created by assessment, never by hand."""
+        return False
+
+
+@admin.register(CapacityDraw)
+class CapacityDrawAdmin(admin.ModelAdmin):
+    """Operator visibility for per-range capacity draws (PLAT-201).
+
+    Read-only. This is the ledger that shows where an event's budget actually
+    went, and it is what an operator reads when a budget looks exhausted.
+    """
+
+    list_display = ("event_ref", "draw_key", "request_id", "amount", "created_at", "released_at")
+    list_filter = ("released_at", "created_at")
+    search_fields = ("event_ref", "draw_key", "request_id")
+    readonly_fields = [f.name for f in CapacityDraw._meta.fields]
+
+    def has_add_permission(self, request):
+        """Draws are created by admission, never by hand."""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """The ledger is not hand-editable."""
         return False

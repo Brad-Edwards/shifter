@@ -33,6 +33,11 @@ from ._capacity import (
     latest_capacity_declaration,
     record_capacity_declaration,
 )
+from ._capacity_admit import (
+    admit_range_capacity,
+    reconcile_capacity_budgets,
+    release_range_capacity,
+)
 from ._capacity_plan import (
     assess_declared_event_capacity,
     assess_event_capacity,
@@ -88,6 +93,7 @@ __all__ = (
     "VpnProfileConflict",
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
+    "admit_range_capacity",
     "apply_pending_operation_results",
     "assess_declared_event_capacity",
     "assess_event_capacity",
@@ -121,10 +127,12 @@ __all__ = (
     "project_aces_operation_status",
     "range_owner_reassignment_available_by_request",
     "reassign_range_owner_by_request",
+    "reconcile_capacity_budgets",
     "record_aces_operation_status",
     "record_aces_runtime_snapshot",
     "record_capacity_declaration",
     "release_capacity_reservations",
+    "release_range_capacity",
     "resume_range",
     "run_guest_probe",
     "start_ngfw",

@@ -271,6 +271,7 @@ def _persist_reservations(
     specs: Mapping[str, CapacityMetricSpec],
     start: datetime,
     end: datetime,
+    ranges: int = 1,
 ) -> None:
     """Commit this event's share of each declared metric for the window."""
     from engine.models import CapacityReservation
@@ -283,6 +284,12 @@ def _persist_reservations(
                 partition_name=partition_name,
                 metric_name=metric_name,
                 amount=float(amount),
+                # What one range draws when admitted, and the enforcement mode
+                # in force when the budget was sized -- both pinned here so a
+                # later draw reads the policy that produced the budget rather
+                # than re-deriving it against drifted configuration.
+                unit_amount=_unit_amount(specs[metric_name], ranges),
+                enforcement=specs[metric_name].enforcement.value,
                 window_start=start,
                 window_end=end,
             )
@@ -290,6 +297,17 @@ def _persist_reservations(
             if metric_name in specs
         ]
     )
+
+
+def _unit_amount(spec: CapacityMetricSpec, ranges: int) -> float:
+    """Return the share of a metric one range consumes.
+
+    Derived from the same declared shape that produced the budget, so the
+    per-range draw and the event total stay consistent.
+    """
+    if spec.per_range_cost:
+        return float(spec.per_range_cost)
+    return 0.0
 
 
 def _record_unassessable(

@@ -28,7 +28,7 @@ exactly as before the split.
 
 from ._aces import AcesContentDeliveryBinding, AcesImageMapping
 from ._capacity import CapacityDeclaration
-from ._capacity_assessment import CapacityAssessment, CapacityReservation
+from ._capacity_assessment import CapacityAssessment, CapacityDraw, CapacityReservation
 from ._launch import ProvisionerLaunchIntent, ProvisionerLaunchStatus
 from ._operation_io import (
     OperationInput,
@@ -47,6 +47,7 @@ __all__ = [
     "App",
     "CapacityAssessment",
     "CapacityDeclaration",
+    "CapacityDraw",
     "CapacityReservation",
     "Instance",
     "Instantiation",

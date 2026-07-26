@@ -43,6 +43,10 @@ _SPARE_USER_EMAIL_DOMAIN = "ctf-spare.invalid"
 # a top-up replaces them.
 _ACTIVE_SPARE_STATUSES = (SpareRangeStatus.PROVISIONING.value, SpareRangeStatus.READY.value)
 
+# Fixed namespace so a spare's capacity draw key is derived deterministically
+# from its managed user and never collides with a participant id.
+_SPARE_DRAW_NAMESPACE = UUID("6f9d1f5e-0f3a-4d33-9a2f-2f1c9c4a7b10")
+
 
 def create_managed_spare_user() -> User:
     """Create a dedicated, inactive system user to own one pooled spare range.
@@ -107,6 +111,18 @@ def _get_event(event_id: UUID) -> CTFEvent:
         ) from None
 
 
+def _spare_draw_key(spare_user: User) -> UUID:
+    """Return the stable capacity draw key for one spare.
+
+    The managed spare user is created once per spare and never reused, so its
+    id is a stable identity for the draw. It is hashed into a UUID because the
+    ledger key is a UUID column shared with participant-scoped draws.
+    """
+    from uuid import uuid5
+
+    return uuid5(_SPARE_DRAW_NAMESPACE, str(spare_user.pk))
+
+
 def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
     """Create one managed spare user + CMS range, recording a CTFSpareRange row.
 
@@ -121,6 +137,25 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
     agents_by_os = event.range_config.get("agents_by_os", {}) if event.range_config else {}
     ngfw_enabled = event.range_config.get("ngfw_enabled", False) if event.range_config else False
 
+    # PLAT-201: a spare occupies a range slot like any other, so it draws from
+    # the same event budget. Keyed on the managed spare user, which is stable
+    # for this spare and known before the range exists.
+    from ctf.services.range.capacity import admit_range, release_range
+
+    draw_key = _spare_draw_key(spare_user)
+    admission = admit_range(event.pk, draw_key)
+    if admission is not None and admission["blocking"]:
+        logger.warning(
+            "provision_event_spares: capacity refused a spare for event=%s codes=%s",
+            safe_log_value(event.pk),
+            admission["reason_codes"],
+        )
+        return CTFSpareRange.objects.create(
+            event=event,
+            owner_user=spare_user,
+            status=SpareRangeStatus.FAILED.value,
+        )
+
     try:
         result = cms_create_range(
             user=spare_user,
@@ -134,6 +169,8 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
             "provision_event_spares: range provisioning failed for event=%s",
             safe_log_value(event.pk),
         )
+        # No range came up, so the draw must go back.
+        release_range(draw_key)
         return CTFSpareRange.objects.create(
             event=event,
             owner_user=spare_user,
