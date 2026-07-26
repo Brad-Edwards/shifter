@@ -39,18 +39,13 @@ from provisioner_db_ngfw import get_user_ngfw_data
 logger = logging.getLogger(__name__)
 
 
-# S107: each parameter carries a distinct part of the reported result --
-# identity, generation, step, status, normalized state, diagnostic. Collapsing
-# them into a parameter object would obscure the call sites, which are the
-# thing a reader needs to check against the step contract.
-def update_instance_state(  # NOSONAR
+def update_instance_state(
     request_id: str,
     status: str,
     *,
     step: str,
     operation_id: str | None = None,
     operation: str | None = None,
-    instance_uuid: str | None = None,
     ngfw_state: dict[str, Any] | None = None,
     error_message: str | None = None,
 ) -> None:
@@ -73,8 +68,6 @@ def update_instance_state(  # NOSONAR
         operation_id: ADR-043 canonical generation; absent on local-dev runs, in
             which case nothing is appended.
         operation: The owning operation (provision/deprovision/start/stop).
-        instance_uuid: UUID of the NGFW Instance; resolved from the request when
-            not supplied.
         ngfw_state: Normalized NGFW state to carry alongside the status.
         error_message: Bounded diagnostic, carried only on a failure step.
     """
@@ -85,16 +78,13 @@ def update_instance_state(  # NOSONAR
         )
         return
 
-    if instance_uuid is None:
-        instance_uuid = _resolve_ngfw_instance_uuid(request_id)
-
     if step == ResultStep.NGFW_TERMINAL_FAILED:
         payload: dict[str, Any] = {
             "reason_code": "cloud_operation_failed",
             "diagnostic": (error_message or "")[:512],
         }
     else:
-        payload = {"ngfw_instance_uuid": str(instance_uuid), "status": status}
+        payload = {"ngfw_instance_uuid": _resolve_ngfw_instance_uuid(request_id), "status": status}
         if ngfw_state:
             payload["ngfw_state"] = {k: v for k, v in ngfw_state.items() if k in NGFW_STATE_KEYS}
 

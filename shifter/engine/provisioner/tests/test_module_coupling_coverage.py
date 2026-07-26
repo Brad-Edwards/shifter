@@ -282,6 +282,10 @@ def test_update_instance_state_carries_only_normalized_ngfw_state(
 
     mock_append = MagicMock()
     monkeypatch.setattr("ngfw_runtime.append_operation_step_result", mock_append)
+    monkeypatch.setattr(
+        "ngfw_runtime._resolve_ngfw_instance_uuid",
+        MagicMock(return_value="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+    )
 
     update_instance_state(
         "ngfw-req",
@@ -289,7 +293,6 @@ def test_update_instance_state_carries_only_normalized_ngfw_state(
         step=ResultStep.NGFW_PROVISION_INFRA,
         operation_id="op-1",
         operation="provision",
-        instance_uuid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         ngfw_state={"cloud_provider": "aws", "ssh_key_secret_arn": "arn:secret", "raw_tf": {"x": 1}},
     )
 

@@ -80,7 +80,6 @@ def _publish_ngfw_runtime_status(
         step=_runtime_step(str(reporting_operation), status),
         operation_id=operation_id,
         operation=reporting_operation,
-        instance_uuid=instance_uuid,
     )
 
 
@@ -115,7 +114,6 @@ def _run_gcp_ngfw_operation(
             step=ResultStep.NGFW_TERMINAL_FAILED,
             operation_id=operation_id,
             operation=owning_operation or operation,
-            instance_uuid=instance_uuid,
             error_message=str(e),
         )
         raise
@@ -187,7 +185,6 @@ def _run_aws_ngfw_operation(
             step=ResultStep.NGFW_TERMINAL_FAILED,
             operation_id=operation_id,
             operation=owning_operation or operation,
-            instance_uuid=instance_uuid,
             error_message=error_msg,
         )
         raise

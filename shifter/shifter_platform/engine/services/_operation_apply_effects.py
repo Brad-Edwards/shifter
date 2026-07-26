@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from django.utils import timezone
 
-from shared.audit import StateChange, audit_log_system_event
+from shared.audit import AuditActorType, AuditEvent, audit_log
 from shared.enums import ResourceStatus
 
 if TYPE_CHECKING:
@@ -38,6 +38,11 @@ def _audit(
 ) -> None:
     """Write the transition's audit row strictly, inside the caller's transaction.
 
+    Builds the event and calls ``audit_log(..., strict=True)`` directly rather
+    than going through ``audit_log_system_event``: the shared helper is
+    best-effort by contract, and here the audit row is the control -- if it
+    cannot be written the transition must not survive (ADR-043-R3).
+
     ``entity_id`` is 0 for UUID-identified entities (NGFW): ``AuditLog.entity_id``
     is a PositiveIntegerField, so passing a UUID there raises and loses the row.
     The UUIDs go in the state instead — the same convention ``engine.handlers``
@@ -45,14 +50,19 @@ def _audit(
     """
     from engine.handlers._audit import _status_to_action
 
-    audit_log_system_event(
-        entity_type=entity_type,
-        entity_id=entity_id,
-        action=_status_to_action(new),
-        source=_AUDIT_SOURCE,
-        state=StateChange(previous=previous or {}, new={"status": new, **(detail or {})}),
-        context=context,
-        request_id=request_id,
+    full_context = f"[{_AUDIT_SOURCE}] {context}" if context else f"[{_AUDIT_SOURCE}]"
+    audit_log(
+        AuditEvent(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            action=_status_to_action(new),
+            actor_type=AuditActorType.SYSTEM,
+            actor_id=None,
+            previous_state=previous or {},
+            new_state={"status": new, **(detail or {})},
+            context=full_context,
+            request_id=request_id,
+        ),
         strict=True,
     )
 

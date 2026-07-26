@@ -177,9 +177,7 @@ def audit_log_from_request(
     )
 
 
-# S107: every parameter is load-bearing for an audit row; `strict` is the one
-# addition, and the alternative (a parameter object) would churn every caller.
-def audit_log_system_event(  # NOSONAR
+def audit_log_system_event(
     entity_type: str,
     entity_id: int,
     action: str,
@@ -188,7 +186,6 @@ def audit_log_system_event(  # NOSONAR
     state: StateChange | None = None,
     context: str = "",
     request_id: str = "",
-    strict: bool = False,
 ) -> bool:
     """Record system-initiated audit event.
 
@@ -203,10 +200,6 @@ def audit_log_system_event(  # NOSONAR
         state: Before/after entity state (see :class:`StateChange`)
         context: Additional context
         request_id: Optional request ID for correlation
-        strict: When True, re-raise on persistence failure instead of swallowing
-            it, so a caller holding an open transaction rolls back the mutation
-            the audit row describes. Required where the audit row is the safety
-            control rather than a convenience (ADR-043-R3).
 
     Returns:
         True when the event was persisted; False on non-strict failure.
@@ -225,8 +218,7 @@ def audit_log_system_event(  # NOSONAR
             new_state=state.new,
             context=full_context,
             request_id=request_id,
-        ),
-        strict=strict,
+        )
     )
 
 
