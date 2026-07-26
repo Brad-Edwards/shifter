@@ -21,6 +21,9 @@ from engine.models import Range
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
 from shared.aces.runtime_target import ACES_PROVISIONING_PLAN_KIND, serialize_provisioning_plan
 
+# Opaque #1325 workspace scope binding; this suite does not exercise tenancy.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -94,12 +97,12 @@ class TestCmsAcesDispatchPort:
         settings.ENGINE_ECS_CLUSTER_ARN = ""
 
     def test_satisfies_dispatch_port_protocol(self, user):
-        port = CmsAcesDispatchPort(user_id=user.id, request_id=str(uuid4()))
+        port = CmsAcesDispatchPort(user_id=user.id, workspace_id=_WORKSPACE_ID, request_id=str(uuid4()))
         assert isinstance(port, ShifterProvisioningDispatchPort)
 
     def test_realize_returns_accepted_result(self, user):
         request_id = uuid4()
-        port = CmsAcesDispatchPort(user_id=user.id, request_id=str(request_id))
+        port = CmsAcesDispatchPort(user_id=user.id, workspace_id=_WORKSPACE_ID, request_id=str(request_id))
 
         result = port.realize(make_compiled_plan())
 
@@ -111,7 +114,7 @@ class TestCmsAcesDispatchPort:
 
     def test_realize_persists_range_with_serialized_plan(self, user):
         request_id = uuid4()
-        port = CmsAcesDispatchPort(user_id=user.id, request_id=str(request_id))
+        port = CmsAcesDispatchPort(user_id=user.id, workspace_id=_WORKSPACE_ID, request_id=str(request_id))
 
         result = port.realize(make_compiled_plan())
 
@@ -148,7 +151,9 @@ class TestCmsAcesDispatchPort:
         monkeypatch.setattr(prep, "prepare_content_delivery", mock_prepare)
 
         request_id = uuid4()
-        port = CmsAcesDispatchPort(user_id=user.id, request_id=str(request_id), pack_root=tmp_path)
+        port = CmsAcesDispatchPort(
+            user_id=user.id, workspace_id=_WORKSPACE_ID, request_id=str(request_id), pack_root=tmp_path
+        )
         compiled_plan = _compiled_plan_with_source_backed_content()
         result = port.realize(compiled_plan)
 

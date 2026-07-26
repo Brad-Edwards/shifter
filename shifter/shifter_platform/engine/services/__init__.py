@@ -51,6 +51,7 @@ from ._range_by_request import (
     destroy_range_by_request,
     range_owner_reassignment_available_by_request,
     reassign_range_owner_by_request,
+    rebind_range_workspace_by_request,
 )
 from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
 from ._terminal import (
@@ -114,6 +115,7 @@ __all__ = (
     "project_aces_operation_status",
     "range_owner_reassignment_available_by_request",
     "reassign_range_owner_by_request",
+    "rebind_range_workspace_by_request",
     "record_aces_operation_status",
     "record_aces_runtime_snapshot",
     "record_capacity_declaration",

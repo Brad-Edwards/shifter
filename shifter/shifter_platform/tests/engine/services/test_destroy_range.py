@@ -18,6 +18,11 @@ from engine.models import ProvisionerLaunchIntent, Range
 from shared.enums import ResourceStatus
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
+# Opaque #1325 workspace scope binding. engine.services requires one on every
+# range create (ADR-046-R3); these suites do not exercise tenancy, so a fixed
+# scalar stands in for the value the CMS launch facade would resolve.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -65,7 +70,7 @@ class TestDestroyRange:
             destroy_range("not-a-ref")
 
     def test_destroyable_range_returns_true_and_sets_destroying(self, user):
-        range_obj = Range.objects.create(user=user, status=Range.Status.READY)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.READY)
         assert destroy_range(_ref(range_id=range_obj.id, user_id=user.id)) is True
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.DESTROYING
@@ -75,7 +80,7 @@ class TestDestroyRange:
         # destroy records the teardown intent's launch ref without touching the
         # provisioning intent's ref, and nothing reaches the boto3 ECS boundary.
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         range_obj = Range.objects.get()
         Range.objects.filter(id=range_obj.id).update(status=Range.Status.READY)
         provisioning_arn = range_obj.provisioning_task_arn
@@ -96,13 +101,13 @@ class TestDestroyRange:
     # tests/engine/test_provisioner_launch_outbox.py (ADR-043-R2, #1833).
 
     def test_idempotent_when_already_destroying(self, user):
-        range_obj = Range.objects.create(user=user, status=Range.Status.DESTROYING)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.DESTROYING)
         assert destroy_range(_ref(range_id=range_obj.id, user_id=user.id)) is True
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.DESTROYING
 
     def test_returns_false_when_already_destroyed(self, user):
-        range_obj = Range.objects.create(user=user, status=Range.Status.DESTROYED)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.DESTROYED)
         assert destroy_range(_ref(range_id=range_obj.id, user_id=user.id)) is False
 
     def test_returns_false_when_not_found(self, user):
@@ -110,7 +115,7 @@ class TestDestroyRange:
 
     def test_destroys_via_request_id_when_range_id_none(self, user):
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         ref = RangeRef(
             request_id=spec.request_id,
             range_id=None,
@@ -121,7 +126,7 @@ class TestDestroyRange:
         assert Range.objects.get(request__request_id=spec.request_id).status == Range.Status.DESTROYING
 
     def test_logs_status_change(self, user, caplog):
-        range_obj = Range.objects.create(user=user, status=Range.Status.READY)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.READY)
         with caplog.at_level(logging.INFO, logger="engine"):
             destroy_range(_ref(range_id=range_obj.id, user_id=user.id))
         assert "DESTROYING" in caplog.text
@@ -137,7 +142,7 @@ class TestDestroyRange:
 class TestDestroyRangeByRequest:
     def test_returns_true_and_sets_destroying(self, user):
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         assert destroy_range_by_request(spec.request_id) is True
         assert Range.objects.get(request__request_id=spec.request_id).status == Range.Status.DESTROYING
 
@@ -146,7 +151,7 @@ class TestDestroyRangeByRequest:
         # destroy records the teardown intent's launch ref without touching the
         # provisioning intent's ref, and nothing reaches the boto3 ECS boundary.
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         range_obj = Range.objects.get(request__request_id=spec.request_id)
         Range.objects.filter(id=range_obj.id).update(status=Range.Status.READY)
         provisioning_arn = range_obj.provisioning_task_arn
@@ -168,14 +173,14 @@ class TestDestroyRangeByRequest:
 
     def test_idempotent_for_already_destroying(self, user):
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         Range.objects.filter(request__request_id=spec.request_id).update(status=Range.Status.DESTROYING)
         assert destroy_range_by_request(spec.request_id) is True
         assert Range.objects.get(request__request_id=spec.request_id).status == Range.Status.DESTROYING
 
     def test_returns_false_when_already_destroyed(self, user):
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         Range.objects.filter(request__request_id=spec.request_id).update(status=Range.Status.DESTROYED)
         assert destroy_range_by_request(spec.request_id) is False
 

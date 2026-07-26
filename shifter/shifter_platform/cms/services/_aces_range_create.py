@@ -39,6 +39,7 @@ from cms.services._range_create import (
     _validate_create_range_user,
     create_range,
 )
+from cms.services._range_workspace import resolve_launch_workspace
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -81,7 +82,8 @@ def _dispatch_aces_package(
     request_id: UUID,
     user: User,
     source: AcesPackageSource,
-    backend_admission: BackendAdmission | None = None,
+    backend_admission: BackendAdmission | None,
+    workspace_id: int,
 ) -> None:
     """Resolve, verify, load, plan, and dispatch one registered ACES pack.
 
@@ -90,19 +92,22 @@ def _dispatch_aces_package(
     launch resolver (#1567). Both paths end in the same digest-verified,
     canonical-launch tail (:func:`_launch_pack`). ``backend_admission`` (the
     trusted #1348 result) is threaded to the dispatch port so the Engine binds
-    the #1666 ownership fields at create.
+    the #1666 ownership fields at create; ``workspace_id`` (the trusted #1325
+    tenancy scope) rides the same way so the ACES path scopes ranges exactly like
+    the cyberscript path (ADR-046-R3).
     """
     if source.source_kind == _OBJECT_SOURCE_KIND:
-        _dispatch_object_aces_package(request_id, user, source, backend_admission)
+        _dispatch_object_aces_package(request_id, user, source, backend_admission, workspace_id)
     else:
-        _dispatch_repo_aces_package(request_id, user, source, backend_admission)
+        _dispatch_repo_aces_package(request_id, user, source, backend_admission, workspace_id)
 
 
 def _dispatch_repo_aces_package(
     request_id: UUID,
     user: User,
     source: AcesPackageSource,
-    backend_admission: BackendAdmission | None = None,
+    backend_admission: BackendAdmission | None,
+    workspace_id: int,
 ) -> None:
     """Resolve a repo pack under ``ACES_PACKAGE_ROOT``, verify its digest, launch."""
     from cms.scenarios.pack_validation import PackDigestError, verify_pack_digest
@@ -118,14 +123,15 @@ def _dispatch_repo_aces_package(
         raise CMSError("ACES pack content identity could not be verified") from exc
     if not digest_matches:
         raise CMSError("ACES pack content digest no longer matches registration")
-    _launch_pack(request_id, user, pack_root, backend_admission)
+    _launch_pack(request_id, user, pack_root, backend_admission, workspace_id)
 
 
 def _dispatch_object_aces_package(
     request_id: UUID,
     user: User,
     source: AcesPackageSource,
-    backend_admission: BackendAdmission | None = None,
+    backend_admission: BackendAdmission | None,
+    workspace_id: int,
 ) -> None:
     """Stage an object-backed pack, bind its identity + digest, then launch.
 
@@ -173,7 +179,7 @@ def _dispatch_object_aces_package(
                 raise CMSError("ACES pack content identity could not be verified") from exc
             if not digest_matches:
                 raise CMSError("ACES pack content digest no longer matches registration")
-            _launch_pack(request_id, user, pack_root, backend_admission)
+            _launch_pack(request_id, user, pack_root, backend_admission, workspace_id)
     except AcesPackageError as exc:
         raise CMSError(f"ACES object package could not be resolved: {exc}") from exc
 
@@ -189,7 +195,8 @@ def _launch_pack(
     request_id: UUID,
     user: User,
     pack_root: Path,
-    backend_admission: BackendAdmission | None = None,
+    backend_admission: BackendAdmission | None,
+    workspace_id: int,
 ) -> None:
     """Select the single SDL entry, dispatch through the port, assert acceptance."""
     from cms.aces.dispatch import CmsAcesDispatchPort
@@ -205,6 +212,7 @@ def _launch_pack(
         request_id=str(request_id),
         backend_admission=backend_admission,
         pack_root=pack_root,
+        workspace_id=workspace_id,
     )
     try:
         result = launch_aces_package(scenario_path=scenario_path, port=port)
@@ -281,16 +289,20 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
             request=cms_request,
             scenario_id=scenario,
             user_id=user.id,
+            # Inherit the request's authorized scope rather than re-resolving it,
+            # so the two projections can never disagree (ADR-046-R3).
+            workspace_id=cms_request.workspace_id,
             range_source=range_source.value,
             range_spec=None,
             expires_at=lease.expires_at,
             maximum_expires_at=lease.maximum_expires_at,
         )
 
-    request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
+    workspace_id = resolve_launch_workspace(user)
+    request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist, workspace_id)
 
     try:
-        _dispatch_aces_package(request_id, user, source, backend_admission)
+        _dispatch_aces_package(request_id, user, source, backend_admission, workspace_id)
     except Exception:
         _set_range_instance_status(range_instance, ResourceStatus.FAILED)
         raise

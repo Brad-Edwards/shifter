@@ -32,6 +32,7 @@ graph TB
 | **Shifter Engine** | `engine` | Infrastructure lifecycle. Range provisioning, NGFW operations. |
 | **Shifter CMS** | `cms` | User content. Assets, credentials, scenario catalog. |
 | **Shifter Management** | `management` | Platform administration. Audit logging, user management. |
+| **[Workspaces](workspaces)** | `workspaces` | Organization/workspace tenancy above range ownership. |
 
 ## Model Ownership
 
@@ -40,6 +41,7 @@ graph TB
 | **CMS** | `Credential`, `CredentialType`, `AgentConfig`, `OperatingSystem`, `Instance`, `App`, `Subnet`, `InstanceType`, `AppType`, `Request`, `RangeInstance` |
 | **Engine** | `Request`, `Range`, `Instance`, `App`, `Subnet` |
 | **Management** | `UserProfile`, `ActivityLog` |
+| **Workspaces** | `Organization`, `Workspace`, `WorkspaceMembership` |
 
 Both CMS and Engine have Instance/App/Subnet models serving different purposes:
 - **CMS**: Asset definitions (types, catalog entries) and user content tracking

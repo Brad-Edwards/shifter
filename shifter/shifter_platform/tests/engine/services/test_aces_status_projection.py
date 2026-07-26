@@ -14,6 +14,11 @@ from shared.enums import ResourceStatus
 from shared.messages.events import EVENT_TYPE_STATUS_UPDATED
 from shared.models import AcesOperationRecord
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 TS = datetime(2026, 7, 5, 3, 0, tzinfo=UTC)
 
 # The full envelope of keys a range.status.updated event may carry. The event
@@ -38,7 +43,7 @@ def user(django_user_model):
 def _make_range(user, *, status=Range.Status.PROVISIONING):
     request_id = uuid4()
     request = Request.objects.create(request_id=request_id, request_type="range", user=user)
-    range_obj = Range.objects.create(user=user, request=request, status=status)
+    range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, request=request, status=status)
     return request_id, range_obj
 
 

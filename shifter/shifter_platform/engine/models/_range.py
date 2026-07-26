@@ -52,6 +52,10 @@ class Range(models.Model):
         blank=True,
         help_text="User ID from CMS (may differ from Django user.id)",
     )
+    # Soft reference to workspaces.Workspace (ADR-046-R3, #1325): a scalar, not a
+    # cross-layer FK (ADR-001-R2), supplied by the trusted CMS launch path. Non-null
+    # with no default -- unlike the backend binding below, NULL is not a sentinel.
+    workspace_id = models.IntegerField(db_index=True, help_text="Workspace scope (soft reference; ADR-046).")
     ngfw_instance = models.ForeignKey(
         "Instance",
         on_delete=models.SET_NULL,

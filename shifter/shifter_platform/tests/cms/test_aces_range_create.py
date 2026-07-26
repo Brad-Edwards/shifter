@@ -65,7 +65,7 @@ def test_launch_persists_bookkeeping_and_dispatches(user, native_on, monkeypatch
     seen = {}
     monkeypatch.setattr(
         _DISPATCH,
-        lambda request_id, u, source, backend_admission=None: seen.update(
+        lambda request_id, u, source, backend_admission=None, workspace_id=None: seen.update(
             ref=source.package_ref,
             digest=source.package_digest,
         ),
@@ -196,7 +196,9 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
     monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
     captured = {}
 
-    def fake_create_aces_range(*, request_id, user_id, compiled_plan, backend_admission=None, delivery_bindings=()):
+    def fake_create_aces_range(
+        *, request_id, user_id, compiled_plan, backend_admission=None, delivery_bindings=(), workspace_id=None
+    ):
         captured["kind"] = compiled_plan.get("kind")
         captured["request_id"] = request_id
         captured["delivery_bindings"] = delivery_bindings
@@ -299,7 +301,9 @@ class TestObjectPackageLaunch:
         _patch_object_stage(monkeypatch, root)
         captured = {}
 
-        def fake_create_aces_range(*, request_id, user_id, compiled_plan, backend_admission=None, delivery_bindings=()):
+        def fake_create_aces_range(
+            *, request_id, user_id, compiled_plan, backend_admission=None, delivery_bindings=(), workspace_id=None
+        ):
             captured["kind"] = compiled_plan.get("kind")
             return AcesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
 

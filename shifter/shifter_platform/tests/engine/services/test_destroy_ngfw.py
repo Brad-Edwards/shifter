@@ -15,6 +15,11 @@ from engine.models import Instance, ProvisionerLaunchIntent, Range, Request
 from engine.services import EngineError, destroy_ngfw
 from shared.enums import RequestType, ResourceStatus
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -41,7 +46,7 @@ def _ngfw_for(request):
 
 
 def _attach_range(user, ngfw, *, status):
-    return Range.objects.create(user=user, status=status, ngfw_instance=ngfw)
+    return Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=status, ngfw_instance=ngfw)
 
 
 class TestDestroyNGFW:

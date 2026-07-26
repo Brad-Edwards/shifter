@@ -28,6 +28,11 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 User = get_user_model()
 
 # Exact per-page query budgets. Bump deliberately (with justification) when a
@@ -77,11 +82,13 @@ def active_range(db, user):
     from shared.enums import RequestType
 
     request = CMSRequest.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request_id=uuid.uuid4(),
         request_type=RequestType.RANGE.value,
         user=user,
     )
     return RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=request,
         scenario_id="test_scenario",
         user_id=user.id,

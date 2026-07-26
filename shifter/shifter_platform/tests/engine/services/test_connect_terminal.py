@@ -15,6 +15,11 @@ from engine.models import Range
 
 from .conftest import SSH_KEY_PEM, boto3_secrets, make_secrets_client
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -35,7 +40,7 @@ def _instance(uuid, *, os_type=None, **extra):
 
 
 def _active_range(user, instance, *, status=Range.Status.READY):
-    return Range.objects.create(user=user, status=status, provisioned_instances=[instance])
+    return Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=status, provisioned_instances=[instance])
 
 
 class TestConnectTerminalOutputs:
@@ -55,6 +60,7 @@ class TestConnectTerminalOutputs:
         settings.CLOUD_PROVIDER = "aws"
         # Two instances in the range; the requested uuid is the one connected to.
         range_obj = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             user=user,
             status=Range.Status.READY,
             provisioned_instances=[
