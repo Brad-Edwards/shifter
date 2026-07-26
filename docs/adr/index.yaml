@@ -1179,8 +1179,8 @@
       },
       {
         "id": "ADR-024-R2",
-        "description": "Every legacy migration surface tracked for ACES cutover must map to exactly one category in docs/architecture/aces-migration-parity-inventory.yaml: ACES SDL, ACES schema/profile gap, Shifter backend responsibility, validation gate, or archive/delete. Inventory rows cite canonical owners and must not become a second runtime schema, parser, status taxonomy, or exception envelope.",
-        "checks": []
+        "description": "Every legacy migration surface tracked for ACES cutover must map to exactly one category in docs/architecture/aces-migration-parity-inventory.yaml: ACES SDL, ACES schema/profile gap, Shifter backend responsibility, validation gate, or archive/delete. Inventory rows cite canonical owners and must not become a second runtime schema, parser, status taxonomy, or exception envelope. The aces-parity-inventory-row-schema adr_guard check enforces this as a global repository invariant: every row must carry all row_schema.required_fields, its category must be a member of the top-level categories list, its surface must be a member of the top-level surfaces list, its next_issue_kind must be a member of row_schema.next_issue_kinds, row ids must be unique, and a missing or malformed categories/surfaces/row_schema header block fails closed instead of silently passing.",
+        "checks": ["aces-parity-inventory-row-schema"]
       },
       {
         "id": "ADR-024-R3",
