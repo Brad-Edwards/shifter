@@ -252,16 +252,14 @@ def _normalize_boolean_schema(
     Returns the ``(old, new)`` mapping pair to keep diffing, or ``None`` when the comparison
     is already resolved (a break was recorded, or the change is a compatible widening).
     """
+    normalized: tuple[Mapping[str, Any], Mapping[str, Any]] | None = None
     if new is False and old is not False:
         changes.append(f"{path}: now rejects all values")
-        return None
-    if new is True or old is False:
-        return None
-
-    normalized_old = {} if old is True else old
-    if not isinstance(normalized_old, Mapping) or not isinstance(new, Mapping):
-        return None
-    return normalized_old, new
+    elif new is not True and old is not False:
+        normalized_old = {} if old is True else old
+        if isinstance(normalized_old, Mapping) and isinstance(new, Mapping):
+            normalized = normalized_old, new
+    return normalized
 
 
 def _diff_schema(old: object, new: object, defs: _Defs, path: str, changes: list[str], depth: int = 0) -> None:
