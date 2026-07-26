@@ -71,7 +71,7 @@ class Migration(migrations.Migration):
     """Revoke the ACES family's domain-table read capability from the provisioner."""
 
     dependencies = [
-        ("engine", "0039_revoke_ngfw_app_grants_from_provisioner"),
+        ("engine", "0042_workspace_binding_required"),
     ]
 
     operations = [

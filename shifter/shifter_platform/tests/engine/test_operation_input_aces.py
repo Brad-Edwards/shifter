@@ -21,6 +21,11 @@ from engine.models import AcesContentDeliveryBinding, AcesImageMapping, Instance
 from shared.aces.operation_input import candidate_key, parse_aces_operation_input
 from shared.enums import ResourceStatus
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 _SHA = "b" * 64
@@ -58,6 +63,7 @@ class _AcesRange:
         self.user = get_user_model().objects.create_user(username=f"{self.request_id}@example.com")
         self.request = Request.objects.create(request_id=self.request_id, request_type="range", user=self.user)
         self.range = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=self.request,
             user=self.user,
             status=status,

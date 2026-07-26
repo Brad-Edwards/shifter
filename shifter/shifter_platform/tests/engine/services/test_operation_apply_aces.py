@@ -27,6 +27,11 @@ from shared.models import AcesOperationRecord
 from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
 from shared.operation_results import ResultStep, build_result_identity, result_kind_for
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 
@@ -40,6 +45,7 @@ class _Fixture:
         self.user = get_user_model().objects.create_user(username=f"{self.request_id}@example.com")
         self.request = Request.objects.create(request_id=self.request_id, request_type="range", user=self.user)
         self.range = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=self.request,
             user=self.user,
             status=status,
