@@ -41,6 +41,7 @@ There is also agent-specific wiring:
 - `.claude/skills/adr-check/SKILL.md` provides a default workflow for ADR conformance work.
 - `.claude/skills/architecture-review/SKILL.md` provides a repo-specific architecture review checklist.
 - `AGENTS.md` gives Codex a repo-local policy file, including Ground Control project context for the `/implement` workflow. The GC project pointer (and matching `.ground-control.yaml` `project:` field) names the `shifter` project (id `df4e718f-1f67-46f8-a375-3ba53fabc9c4`) with `CTF-*`, `PLAT-*`, `GEN-*` UID prefixes by subsystem; an earlier draft incorrectly pointed both at `aphelion` (a separate, unrelated project).
+- `.ground-control.yaml` is validated as a whole by the Ground Control context reader, so an unrecognized key fails the entire file closed rather than being ignored: the reader returns `invalid_ground_control_yaml`, and `/implement` loses the project, SonarCloud, and plan-rules context along with the offending block. The `routing:` block accepts only `enabled`, `default_provider`, and `stages`. Routing is advisory under ADR-036, annotating a stage's capability tier for telemetry without selecting an executor, so a stale routing key is worth deleting rather than reinterpreting.
 
 Review controls:
 
