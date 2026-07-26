@@ -146,10 +146,10 @@ if __name__ == "__main__":
         elif args.operation == "pause":
             from range_ops import run_range_pause
 
-            run_range_pause(request_id)
+            run_range_pause(request_id, operation_id=args.operation_id)
         elif args.operation == "resume":
             from range_ops import run_range_resume
 
-            run_range_resume(request_id)
+            run_range_resume(request_id, operation_id=args.operation_id)
 
         logger.info("Completed range %s for request_id=%s", args.operation, request_id)

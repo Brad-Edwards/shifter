@@ -10,6 +10,8 @@ import time
 from collections.abc import Callable
 from typing import Any, cast
 
+from shared.operation_results import ResultStep
+
 import terraform_runner
 from cloud.exceptions import CloudProviderNotImplementedError
 from config import resolve_cloud_provider
@@ -18,7 +20,6 @@ from events import (
     STATUS_PAUSED,
     STATUS_PROVISIONING,
     STATUS_READY,
-    publish_ngfw_event,
 )
 from executors.ngfw_executor import NGFWExecutor
 from log_redact import safe_log_fingerprint, safe_log_value
@@ -65,14 +66,14 @@ def _run_ngfw_operation_for_provider(
         if operation == "up":
             _run_gdc_provision(request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id)
         else:
-            _run_gdc_deprovision(request_id, instance_id, app_id, operation_id=operation_id)
+            _run_gdc_deprovision(request_id, operation_id=operation_id)
         return
 
     if provider == "aws":
         if operation == "up":
             _run_provision(request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id)
         else:
-            _run_deprovision(request_id, instance_id, app_id, operation_id=operation_id)
+            _run_deprovision(request_id, instance_id, operation_id=operation_id)
         return
 
     raise CloudProviderNotImplementedError(provider)
@@ -155,15 +156,10 @@ def run_ngfw_terraform(operation: str, request_id: str, *, operation_id: str | N
         update_instance_state(
             request_id,
             STATUS_FAILED,
+            step=ResultStep.NGFW_TERMINAL_FAILED,
             operation_id=operation_id,
             operation=_NGFW_TF_OP_TO_CANONICAL_OPERATION.get(operation),
             error_message=error_msg,
-        )
-        publish_ngfw_event(
-            request_id=request_id,
-            instance_id=instance_id,
-            app_id=app_id,
-            status=STATUS_FAILED,
         )
         raise
 
@@ -197,8 +193,6 @@ def _build_ngfw_ssh_executor_from_output(output_data: dict[str, Any]) -> tuple[s
 def _short_circuit_local_dev_post_provision(
     *,
     request_id: str,
-    instance_id: str,
-    app_id: str,
     output_data: dict[str, Any],
     update_instance_state: Callable[..., Any],
     operation_id: str | None = None,
@@ -211,21 +205,22 @@ def _short_circuit_local_dev_post_provision(
     lifecycle.
     """
     logger.info("LOCAL DEV MODE: Skipping post-infrastructure NGFW configuration")
-    ready_state = {**output_data, **_build_provider_state(output_data)}
-    update_instance_state(request_id, STATUS_READY, operation_id=operation_id, operation="provision", **ready_state)
-    publish_ngfw_event(
-        request_id=request_id,
-        instance_id=instance_id,
-        app_id=app_id,
-        status=STATUS_READY,
+    ready_state = _build_provider_state(output_data)
+    update_instance_state(
+        request_id,
+        STATUS_READY,
+        step=ResultStep.NGFW_PROVISION_READY,
+        operation_id=operation_id,
+        operation="provision",
+        ngfw_state=ready_state,
     )
     logger.info("LOCAL DEV MODE: Setting NGFW status to paused")
-    update_instance_state(request_id, STATUS_PAUSED, operation_id=operation_id, operation="provision")
-    publish_ngfw_event(
-        request_id=request_id,
-        instance_id=instance_id,
-        app_id=app_id,
-        status=STATUS_PAUSED,
+    update_instance_state(
+        request_id,
+        STATUS_PAUSED,
+        step=ResultStep.NGFW_PROVISION_AUTOSTOP,
+        operation_id=operation_id,
+        operation="provision",
     )
 
 
@@ -317,11 +312,16 @@ def _fetch_ngfw_license_and_certificate_serial(
     return cert_serial or serial_number
 
 
-def _auto_stop_ngfw(request_id: str) -> None:
-    """Auto-stop the NGFW after readiness, without failing provisioning."""
+def _auto_stop_ngfw(request_id: str, *, operation_id: str | None = None) -> None:
+    """Auto-stop the NGFW after readiness, without failing provisioning.
+
+    The power-off is a step of the *provision* generation (ADR-043 phase 4
+    preflight): it must not mint a second `stop` generation, so the owning
+    operation is passed through explicitly.
+    """
     logger.info("Auto-stopping NGFW: request_id=%s", request_id)
     try:
-        run_ngfw_operation("stop", request_id)
+        run_ngfw_operation("stop", request_id, operation_id=operation_id, owning_operation="provision")
         logger.info("Auto-stop completed: request_id=%s", request_id)
     except Exception:
         logger.exception(
@@ -334,7 +334,6 @@ def _run_pan_os_post_provision(
     *,
     request_id: str,
     instance_id: str,
-    app_id: str,
     output_data: dict[str, Any],
     sls_region: str,
     operation_id: str | None = None,
@@ -343,8 +342,6 @@ def _run_pan_os_post_provision(
     if os.environ.get("DB_PASSWORD"):
         _short_circuit_local_dev_post_provision(
             request_id=request_id,
-            instance_id=instance_id,
-            app_id=app_id,
             output_data=output_data,
             update_instance_state=update_instance_state,
             operation_id=operation_id,
@@ -360,12 +357,14 @@ def _run_pan_os_post_provision(
         sls_region=sls_region,
     )
 
-    state = {
-        **output_data,
-        **_build_provider_state(output_data),
-        "serial_number": serial_number,
-    }
-    update_instance_state(request_id, STATUS_PROVISIONING, operation_id=operation_id, operation="provision", **state)
+    update_instance_state(
+        request_id,
+        STATUS_PROVISIONING,
+        step=ResultStep.NGFW_PROVISION_INFRA,
+        operation_id=operation_id,
+        operation="provision",
+        ngfw_state=_build_provider_state(output_data),
+    )
     serial_number = _fetch_ngfw_license_and_certificate_serial(
         request_id=request_id,
         management_ip=management_ip,
@@ -374,14 +373,11 @@ def _run_pan_os_post_provision(
     )
 
     update_instance_state(
-        request_id, STATUS_READY, operation_id=operation_id, operation="provision", serial_number=serial_number
-    )
-    publish_ngfw_event(
-        request_id=request_id,
-        instance_id=instance_id,
-        app_id=app_id,
-        status=STATUS_READY,
-        serial_number=serial_number,
+        request_id,
+        STATUS_READY,
+        step=ResultStep.NGFW_PROVISION_READY,
+        operation_id=operation_id,
+        operation="provision",
     )
     bootstrap_cleanup_error = None
     try:
@@ -395,7 +391,7 @@ def _run_pan_os_post_provision(
         safe_log_value(request_id),
     )
 
-    _auto_stop_ngfw(request_id)
+    _auto_stop_ngfw(request_id, operation_id=operation_id)
 
     if bootstrap_cleanup_error:
         raise RuntimeError("NGFW bootstrap object cleanup failed") from bootstrap_cleanup_error
@@ -412,12 +408,12 @@ def _run_provision(
 ) -> None:
     """Run Terraform apply for NGFW, then run post-Terraform configuration."""
     # Update local DB and emit provisioning status event
-    update_instance_state(request_id, STATUS_PROVISIONING, operation_id=operation_id, operation="provision")
-    publish_ngfw_event(
-        request_id=request_id,
-        instance_id=instance_id,
-        app_id=app_id,
-        status=STATUS_PROVISIONING,
+    update_instance_state(
+        request_id,
+        STATUS_PROVISIONING,
+        step=ResultStep.NGFW_PROVISION_REQUESTED,
+        operation_id=operation_id,
+        operation="provision",
     )
 
     logger.info("Running terraform apply for NGFW...")
@@ -441,7 +437,6 @@ def _run_provision(
     _run_pan_os_post_provision(
         request_id=request_id,
         instance_id=instance_id,
-        app_id=app_id,
         output_data=output_data,
         sls_region=sls_region,
         operation_id=operation_id,
@@ -460,12 +455,12 @@ def _run_gdc_provision(
     """Create a Palo Alto VM-Series firewall on GDC VM Runtime, then configure PAN-OS."""
     import gdc_vmseries_ngfw
 
-    update_instance_state(request_id, STATUS_PROVISIONING, operation_id=operation_id, operation="provision")
-    publish_ngfw_event(
-        request_id=request_id,
-        instance_id=instance_id,
-        app_id=app_id,
-        status=STATUS_PROVISIONING,
+    update_instance_state(
+        request_id,
+        STATUS_PROVISIONING,
+        step=ResultStep.NGFW_PROVISION_REQUESTED,
+        operation_id=operation_id,
+        operation="provision",
     )
 
     logger.info("Running GDC VM Runtime provisioning for Palo Alto VM-Series...")
@@ -483,15 +478,18 @@ def _run_gdc_provision(
     )
 
     # Persist the VM Runtime state before waiting on PAN-OS so failure cleanup has enough context.
-    provisioning_state = {**output_data, **_build_provider_state(output_data)}
     update_instance_state(
-        request_id, STATUS_PROVISIONING, operation_id=operation_id, operation="provision", **provisioning_state
+        request_id,
+        STATUS_PROVISIONING,
+        step=ResultStep.NGFW_PROVISION_INFRA,
+        operation_id=operation_id,
+        operation="provision",
+        ngfw_state=_build_provider_state(output_data),
     )
 
     _run_pan_os_post_provision(
         request_id=request_id,
         instance_id=instance_id,
-        app_id=app_id,
         output_data=output_data,
         sls_region=sls_region,
         operation_id=operation_id,

@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from shared.operation_results import ResultStep
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -1555,7 +1556,7 @@ class TestGdcProvisioning:
             ),
         )
         mock_update = MagicMock()
-        monkeypatch.setattr("ngfw_runtime.update_instance_state", mock_update)
+        monkeypatch.setattr("ngfw_runtime.update_ngfw_attachment_state", mock_update)
 
         attachment_record = {
             "range_id": 42,
@@ -1566,18 +1567,18 @@ class TestGdcProvisioning:
 
         _record_ngfw_range_attachment(
             ngfw_request_id="ngfw-req-1",
-            ngfw_status="ready",
             attachment_record=attachment_record,
         )
         _remove_ngfw_range_attachment(
             ngfw_request_id="ngfw-req-1",
-            ngfw_status="ready",
             range_id=42,
         )
 
-        assert mock_update.call_args_list[0].args[:2] == ("ngfw-req-1", "ready")
-        assert mock_update.call_args_list[0].kwargs["attached_ranges"] == [{"range_id": 10}, attachment_record]
-        assert mock_update.call_args_list[1].kwargs["attached_ranges"] == [{"range_id": 10}]
+        # Attachment bookkeeping writes only the Instance state now -- no status,
+        # and nothing on engine_app.
+        assert mock_update.call_args_list[0].args[0] == "ngfw-req-1"
+        assert mock_update.call_args_list[0].args[1] == [{"range_id": 10}, attachment_record]
+        assert mock_update.call_args_list[1].args[1] == [{"range_id": 10}]
 
 
 class TestPollForSerialAndCert:
@@ -1797,10 +1798,8 @@ class TestNgfwRuntimeOperations:
             ),
         )
         mock_update = MagicMock()
-        mock_publish = MagicMock()
         mock_power = MagicMock()
         monkeypatch.setattr("ngfw_runtime_ops.update_instance_state", mock_update)
-        monkeypatch.setattr("ngfw_runtime_ops.publish_ngfw_event", mock_publish)
         monkeypatch.setattr("gdc_vmseries_ngfw.run_power_operation", mock_power)
 
         run_ngfw_operation("start", "ngfw-req-1")
@@ -1808,4 +1807,7 @@ class TestNgfwRuntimeOperations:
         mock_power.assert_called_once_with("start", state)
         assert mock_update.call_args_list[0].args[:2] == ("ngfw-req-1", "resuming")
         assert mock_update.call_args_list[1].args[:2] == ("ngfw-req-1", "ready")
-        assert [call.kwargs["status"] for call in mock_publish.call_args_list] == ["resuming", "ready"]
+        assert [c.kwargs["step"] for c in mock_update.call_args_list] == [
+            ResultStep.NGFW_POWER_STARTING,
+            ResultStep.NGFW_TERMINAL_READY,
+        ]

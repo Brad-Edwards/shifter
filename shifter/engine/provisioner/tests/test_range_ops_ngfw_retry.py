@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from provisioner_db_appends import OperationRef
 from range_ops import NGFW_START_MAX_RETRIES, ensure_ngfw_running, pause_ngfw_for_range
 
 # ---------------------------------------------------------------------------
@@ -19,11 +20,27 @@ SAMPLE_NGFW_INFO = {
     "ngfw_instance_id": 1,
     "ngfw_request_id": "ngfw-req-uuid",
     "ec2_instance_id": "i-ngfw123",
-    "instance_uuid": "ngfw-inst-uuid",
+    "instance_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "status": "paused",
     "app_id": "ngfw-app-uuid",
     "range_id": 42,
 }
+
+
+def _assert_cascade_reported(mock_update_status, status: str, *, operation: str) -> None:
+    """Assert an NGFW cascade transition was reported under the owning generation.
+
+    ADR-043 phase 4 (#1836): the cascade no longer writes engine_instance /
+    engine_app. It reports a subordinate result of the owning Range operation,
+    keyed by the NGFW's UUID -- never its integer primary key.
+    """
+    matching = [
+        call
+        for call in mock_update_status.call_args_list
+        if call.args[1] == status and call.kwargs.get("operation") == operation
+    ]
+    assert matching, f"no cascade result reported for {operation}:{status}"
+    assert matching[0].kwargs["instance_uuid"] == SAMPLE_NGFW_INFO["instance_uuid"]
 
 
 @pytest.fixture
@@ -93,7 +110,7 @@ class TestEnsureNgfwRunningRetries:
         assert mocks["orch"].orchestrate.call_count == NGFW_START_MAX_RETRIES
         assert mocks["time"].sleep.call_count == 2
         # Status should end up as ready, not failed
-        mocks["update_status"].assert_any_call(1, "ready")
+        _assert_cascade_reported(mocks["update_status"], "ready", operation="resume")
 
     def test_fails_after_max_retries(self, _mock_ngfw_deps):
         """RuntimeError is raised after all retry attempts are exhausted."""
@@ -116,14 +133,10 @@ class TestEnsureNgfwRunningRetries:
         # time.sleep called for 2 inter-attempt delays (not after the last)
         assert mocks["time"].sleep.call_count == 2
         # Status should be set to failed
-        mocks["update_status"].assert_any_call(1, "failed")
-        # Failed event published
-        mocks["publish"].assert_any_call(
-            request_id="ngfw-req-uuid",
-            instance_id="ngfw-inst-uuid",
-            app_id="ngfw-app-uuid",
-            status="failed",
-        )
+        _assert_cascade_reported(mocks["update_status"], "failed", operation="resume")
+        # ADR-043 phase 4 (#1836): the provisioner no longer publishes NGFW
+        # events; the applier emits the notification with the domain write.
+        mocks["publish"].assert_not_called()
 
     def test_pausing_waits_for_paused_then_resumes(self, _mock_ngfw_deps):
         """When NGFW is pausing, wait_for_stopped is called before resuming."""
@@ -144,7 +157,7 @@ class TestEnsureNgfwRunningRetries:
         # wait_for_stopped was called with the EC2 instance ID
         mock_executor.wait_for_stopped.assert_called_once_with("i-ngfw123")
         # Status ends up ready
-        mocks["update_status"].assert_any_call(1, "ready")
+        _assert_cascade_reported(mocks["update_status"], "ready", operation="resume")
 
     def test_pausing_wait_fails_raises_error(self, _mock_ngfw_deps):
         """When NGFW is pausing and wait_for_stopped fails, RuntimeError is raised."""
@@ -203,7 +216,7 @@ def test_pause_ngfw_for_range_happy_path(mock_psycopg_connect, monkeypatch, mock
         1,
         "ngfw-req-uuid",
         "i-ngfw123",
-        "ngfw-inst-uuid",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "ready",
         "ngfw-app-uuid",
         42,
@@ -214,20 +227,27 @@ def test_pause_ngfw_for_range_happy_path(mock_psycopg_connect, monkeypatch, mock
     # return without error, so the real stop orchestration reports success.
     mocker.patch("boto3.Session")
 
-    pause_ngfw_for_range("req-uuid-123")
+    pause_ngfw_for_range(
+        "req-uuid-123",
+        ref=OperationRef(
+            request_id="66666666-6666-4666-8666-666666666666",
+            operation_id="55555555-5555-4555-8555-555555555555",
+        ),
+    )
 
-    # The NGFW instance status is driven pausing -> paused in the database.
-    instance_status_writes = [
-        call.args[1][0]
-        for call in mock_cursor.execute.call_args_list
-        if "UPDATE engine_instance" in _executed_sql(call)
+    # ADR-043 phase 4 (#1836): the cascade writes no domain state and enqueues
+    # no event of its own. Both are the applier's job now.
+    assert not [call for call in mock_cursor.execute.call_args_list if "UPDATE engine_instance" in _executed_sql(call)]
+    assert not [call for call in mock_cursor.execute.call_args_list if "UPDATE engine_app" in _executed_sql(call)]
+    assert not [
+        call for call in mock_cursor.execute.call_args_list if "engine_range_event_outbox" in _executed_sql(call)
     ]
-    assert instance_status_writes == ["pausing", "paused"]
 
-    # The same transitions are published to the durable event outbox.
-    published = [
-        json.loads(call.args[1][2])["status"]
+    # The pausing -> paused transitions are reported to the result inbox instead,
+    # in order, under the owning range generation.
+    reported = [
+        json.loads(call.args[1][9])["payload"]["status"]
         for call in mock_cursor.execute.call_args_list
-        if "engine_range_event_outbox" in _executed_sql(call)
+        if "engine_operation_result_inbox" in _executed_sql(call)
     ]
-    assert published == ["pausing", "paused"]
+    assert reported == ["pausing", "paused"]

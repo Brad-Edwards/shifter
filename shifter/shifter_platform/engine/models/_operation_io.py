@@ -36,6 +36,8 @@ class OperationResultDisposition(models.TextChoices):
     REJECTED_VERSION = "REJECTED_VERSION", "Rejected: unsupported contract version"
     REJECTED_CONFLICT = "REJECTED_CONFLICT", "Rejected: conflicting replay"
     REJECTED_INVALID = "REJECTED_INVALID", "Rejected: invalid payload"
+    REJECTED_ORDERING = "REJECTED_ORDERING", "Rejected: illegal step order for the operation"
+    APPLIED = "APPLIED", "Applied to domain state"
 
 
 class OperationInput(models.Model):
@@ -78,6 +80,11 @@ class OperationResultInbox(models.Model):
     operation = models.CharField(max_length=32)
     contract_version = models.CharField(max_length=16)
     result_kind = models.CharField(max_length=32, choices=OperationResultKind.choices)
+    # Closed per-operation step key (``shared.operation_results.ResultStep``).
+    # One operation emits several results of the same kind, so the step — not the
+    # kind — is what orders them and what a conflicting replay collides on. Blank
+    # on pre-cutover shadow rows, which the authoritative applier will not apply.
+    result_step = models.CharField(max_length=48, blank=True, default="", db_index=True)
     result_identity = models.CharField(max_length=255, unique=True)
     # "sha256:" prefix + 64 hex characters
     payload_digest = models.CharField(max_length=71)

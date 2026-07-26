@@ -30,6 +30,8 @@ from shared.operation_envelope import (
     validate_operation_envelope,
 )
 
+from ._operation_apply_domain import apply_validated_result
+
 # engine.models is imported lazily inside functions below (app-registry load
 # order); this block is type-check-only.
 if TYPE_CHECKING:
@@ -125,6 +127,16 @@ def apply_pending_operation_results(*, batch_size: int = 50) -> int:
         )
         for row in rows:
             disposition, detail = evaluate_operation_result(row)
+            if disposition == OperationResultDisposition.VALIDATED:
+                # Admissible: hand to the authoritative apply, which locks the
+                # target and commits domain state, audit, and notification inside
+                # this same transaction.
+                disposition, detail = apply_validated_result(row)
+                if not disposition:
+                    # Deliberately deferred: an earlier result of the same
+                    # operation generation is still pending, so this one stays
+                    # PENDING for a later pass rather than jumping ahead of it.
+                    continue
             row.disposition = disposition
             row.disposition_detail = detail
             row.applied_at = timezone.now()

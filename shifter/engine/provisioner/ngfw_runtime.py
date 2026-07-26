@@ -17,6 +17,7 @@ from typing import Any
 
 import psycopg
 from psycopg import sql
+from shared.operation_results import NGFW_STATE_KEYS, ResultStep
 
 from events import (
     STATUS_DESTROYED,
@@ -32,7 +33,7 @@ from orchestrators.setup_orchestrator import SetupOrchestrator
 from plans.base import DynamicPlan, SetupPlan
 from plans.ngfw_configure_subnets import NGFWConfigureSubnetsPlan, NGFWRemoveSubnetsPlan
 from provisioner_db import get_db_connection
-from provisioner_db_appends import append_operation_result
+from provisioner_db_appends import OperationRef, append_operation_step_result
 from provisioner_db_ngfw import get_user_ngfw_data
 
 logger = logging.getLogger(__name__)
@@ -42,26 +43,96 @@ def update_instance_state(
     request_id: str,
     status: str,
     *,
+    step: str,
     operation_id: str | None = None,
     operation: str | None = None,
-    **state_updates: Any,
+    ngfw_state: dict[str, Any] | None = None,
+    error_message: str | None = None,
 ) -> None:
-    """Update NGFW Instance and App status/state in Engine database.
+    """Report an NGFW lifecycle transition to the Engine result inbox.
 
-    ``operation_id``/``operation`` are ADR-043 shadow-append inputs (Phase 2,
-    #1834): when ``operation_id`` is ``None`` (local dev / not-yet-threaded
-    caller) the shadow append to the operation result inbox is skipped
-    entirely; the direct SQL writes below remain the sole authoritative write
-    either way.
+    ADR-043 phase 4 (#1836): this no longer writes ``engine_instance`` or
+    ``engine_app``. The Engine applier is the authoritative writer; this reports a
+    closed, per-step result under the operation generation that authorized the
+    work.
+
+    ``**state_updates`` is gone deliberately. The old signature let any caller
+    merge arbitrary keys -- including raw Terraform output -- into the persisted
+    state. Only the normalized provider-neutral fields
+    (``shared.operation_results.NGFW_STATE_KEYS``) travel now.
+
+    Args:
+        request_id: UUID string of the NGFW's Request.
+        status: The reported status.
+        step: The closed ``ResultStep`` this observation corresponds to.
+        operation_id: ADR-043 canonical generation; absent on local-dev runs, in
+            which case nothing is appended.
+        operation: The owning operation (provision/deprovision/start/stop).
+        ngfw_state: Normalized NGFW state to carry alongside the status.
+        error_message: Bounded diagnostic, carried only on a failure step.
+    """
+    if operation_id is None or operation is None:
+        logger.debug(
+            "update_instance_state: no operation generation, skipping result append request_id=%s",
+            request_id,
+        )
+        return
+
+    if step == ResultStep.NGFW_TERMINAL_FAILED:
+        payload: dict[str, Any] = {
+            "reason_code": "cloud_operation_failed",
+            "diagnostic": (error_message or "")[:512],
+        }
+    else:
+        payload = {"ngfw_instance_uuid": _resolve_ngfw_instance_uuid(request_id), "status": status}
+        if ngfw_state:
+            payload["ngfw_state"] = {k: v for k, v in ngfw_state.items() if k in NGFW_STATE_KEYS}
+
+    append_operation_step_result(
+        OperationRef(request_id=request_id, operation_id=operation_id),
+        resource="ngfw",
+        operation=operation,
+        step=step,
+        result_payload=payload,
+    )
+
+
+def _resolve_ngfw_instance_uuid(request_id: str) -> str:
+    """Return the UUID of the NGFW Instance for this request."""
+    with get_db_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT i.uuid
+            FROM engine_request r
+            JOIN engine_instance i ON i.request_id = r.id
+            WHERE r.request_id = %s
+              AND i.role = 'ngfw'
+            """,
+            (request_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise ValueError(f"NGFW instance not found for request: {request_id}")
+        return str(row[0])
+
+
+def update_ngfw_attachment_state(request_id: str, attached_ranges: list[dict[str, Any]]) -> None:
+    """Merge the range-attachment list into the NGFW Instance state.
+
+    Attachment bookkeeping is not a lifecycle transition: it records which ranges
+    currently use a shared NGFW. It therefore stays a direct write (it carries no
+    operation generation) but is now scoped to ``engine_instance.state`` only.
+    The previous path routed through ``update_instance_state`` and re-wrote the
+    NGFW's *current* status onto both the Instance and its App -- a no-op status
+    write whose only real effect was to require an ``engine_app`` UPDATE grant.
     """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT i.id, i.state, a.id
+                SELECT i.id, i.state
                 FROM engine_request r
                 JOIN engine_instance i ON i.request_id = r.id
-                LEFT JOIN engine_app a ON a.instance_id = i.id
                 WHERE r.request_id = %s
                   AND i.role = 'ngfw'
                 """,
@@ -70,68 +141,17 @@ def update_instance_state(
             row = cur.fetchone()
             if not row:
                 raise ValueError(f"NGFW instance not found for request: {request_id}")
-
             instance_id = row[0]
-            current_state = row[1] if row[1] else {}
-            app_id = row[2]
-
-            if state_updates:
-                current_state.update(state_updates)
-
-            if status == STATUS_DESTROYED:
-                cur.execute(
-                    """
-                    UPDATE engine_instance
-                    SET status = %s, state = %s, updated_at = NOW(), destroyed_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (status, json.dumps(current_state), instance_id),
-                )
-            else:
-                cur.execute(
-                    """
-                    UPDATE engine_instance
-                    SET status = %s, state = %s, updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (status, json.dumps(current_state), instance_id),
-                )
-
-            if app_id:
-                if status == STATUS_DESTROYED:
-                    cur.execute(
-                        """
-                        UPDATE engine_app
-                        SET status = %s, updated_at = NOW(), destroyed_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (status, app_id),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        UPDATE engine_app
-                        SET status = %s, updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (status, app_id),
-                    )
-
-            if operation_id is not None and operation is not None:
-                append_operation_result(
-                    operation_id=operation_id,
-                    request_id=request_id,
-                    resource="ngfw",
-                    operation=operation,
-                    result_kind="RESOURCE_STATE",
-                    result_payload={
-                        "status": status,
-                        "instance_id": instance_id,
-                        "app_id": app_id,
-                    },
-                    cur=cur,
-                )
-
+            state = row[1] if row[1] else {}
+            state["attached_ranges"] = attached_ranges
+            cur.execute(
+                """
+                UPDATE engine_instance
+                SET state = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                (json.dumps(state), instance_id),
+            )
         conn.commit()
 
 
