@@ -232,6 +232,17 @@ class CapacityAssessmentResult:
         return worst_outcome(verdict.outcome for verdict in self.verdicts)
 
     @property
+    def measured(self) -> bool:
+        """Whether any metric actually produced a verdict.
+
+        ``worst_outcome(())`` is ``ADMITTED``, which is right for "every metric
+        fit" and wrong for "no metric was ever assessed". Callers that build a
+        result from a possibly-empty verdict set check this before treating
+        ``outcome`` as an answer.
+        """
+        return bool(self.verdicts)
+
+    @property
     def blocking(self) -> bool:
         """Whether this assessment must stop the launch.
 

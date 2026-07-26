@@ -337,3 +337,41 @@ class TestPartitionRef:
         )
 
         assert other != _partition()
+
+
+class TestEmptyVerdictSafety:
+    """An assessment that produced no verdicts must not read as admitted.
+
+    ``worst_outcome(())`` is ADMITTED, which is correct for "every metric
+    passed" but dangerous for "we never got a verdict". The result object
+    distinguishes the two so an unassessable event cannot look like a fitting
+    one (regression guard for the undeclared-partition path).
+    """
+
+    def test_result_with_no_verdicts_is_not_treated_as_measured(self):
+        result = CapacityAssessmentResult(
+            partition=_partition(),
+            policy_version="v1",
+            observed_at=OBSERVED_AT,
+            verdicts=(),
+        )
+
+        assert result.measured is False
+
+    def test_result_with_verdicts_is_measured(self):
+        result = CapacityAssessmentResult(
+            partition=_partition(),
+            policy_version="v1",
+            observed_at=OBSERVED_AT,
+            verdicts=(
+                MetricVerdict(
+                    metric_name="ec2_vcpu",
+                    outcome=CapacityOutcome.ADMITTED,
+                    reason_code=CapacityReasonCode.AVAILABLE,
+                    enforcement=EnforcementMode.ADVISORY,
+                    observed_at=OBSERVED_AT,
+                ),
+            ),
+        )
+
+        assert result.measured is True

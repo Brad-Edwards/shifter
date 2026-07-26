@@ -316,3 +316,81 @@ class TestStalenessIsRealNotSynthetic:
 
         assert result.observation is not None
         assert result.observation.is_stale(now=OBSERVED_AT, freshness_seconds=900) is True
+
+
+class TestDefaultClientFactory:
+    """The real boto3 factory is thin, but its credential wiring must be right."""
+
+    def test_builds_a_client_without_credentials(self, monkeypatch):
+        from shared.cloud.aws import capacity_inventory as mod
+
+        seen = {}
+
+        class FakeBoto:
+            @staticmethod
+            def client(service, **kwargs):
+                seen["service"] = service
+                seen["kwargs"] = kwargs
+                return "client"
+
+        monkeypatch.setitem(__import__("sys").modules, "boto3", FakeBoto)
+
+        assert mod._default_client_factory("sts", region="us-east-2") == "client"
+        assert seen["service"] == "sts"
+        assert "aws_access_key_id" not in seen["kwargs"]
+        assert seen["kwargs"]["region_name"] == "us-east-2"
+
+    def test_assumed_credentials_are_passed_through(self, monkeypatch):
+        from shared.cloud.aws import capacity_inventory as mod
+
+        seen = {}
+
+        class FakeBoto:
+            @staticmethod
+            def client(service, **kwargs):
+                seen.update(kwargs)
+                return "client"
+
+        monkeypatch.setitem(__import__("sys").modules, "boto3", FakeBoto)
+
+        mod._default_client_factory(
+            "cloudwatch",
+            region="us-west-2",
+            credentials={
+                "AccessKeyId": "AKIAFAKE",
+                "SecretAccessKey": "fake-secret",
+                "SessionToken": "fake-token",
+            },
+        )
+
+        assert seen["aws_access_key_id"] == "AKIAFAKE"
+        assert seen["aws_session_token"] == "fake-token"
+
+    def test_client_config_bounds_timeouts(self):
+        """Capacity reads sit on the pre-spinup path and must fail fast."""
+        from shared.cloud.aws.capacity_inventory import _client_config
+
+        config = _client_config()
+
+        assert config.connect_timeout == 2
+        assert config.read_timeout == 5
+
+
+class TestCoordinateHelpers:
+    def test_missing_provider_ref_yields_empty_coordinates(self):
+        from shared.cloud.aws.capacity_inventory import _limit_coordinates, _usage_coordinates
+
+        spec = _spec(provider_ref=None)
+
+        assert _limit_coordinates(spec) == ("", "", "")
+        assert _usage_coordinates(spec) == ("", "", "")
+
+    def test_limit_ref_without_a_separator_is_incomplete(self):
+        """A malformed catalog ref must not become a half-formed API call."""
+        factory = RecordingFactory()
+        spec = _spec(provider_ref=ProviderMetricRef(limit_ref="ec2", usage_ref="AWS/Usage/ResourceCount"))
+
+        result = _inventory(factory).observe(spec, _partition())
+
+        assert result.observation is None
+        assert factory.quotas.calls == []

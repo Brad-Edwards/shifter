@@ -154,3 +154,82 @@ class TestFailureHandling:
             _inventory(client).observe(_spec(), _partition())
 
         assert "shifter-secret-1234" not in caplog.text
+
+
+class FakeInterval:
+    def __init__(self, end_time):
+        self.end_time = end_time
+
+
+class FakeTypedValue:
+    def __init__(self, int64_value=None, double_value=None):
+        self.int64_value = int64_value
+        self.double_value = double_value
+
+
+class FakePoint:
+    def __init__(self, value, end_time):
+        self.value = value
+        self.interval = FakeInterval(end_time)
+
+
+class FakeProtobufSeries:
+    """Shaped like a real Cloud Monitoring ``TimeSeries``."""
+
+    def __init__(self, points):
+        self.points = points
+
+
+class TestProtobufSeriesShape:
+    """The real API returns protobufs, not the flat shape the other tests use."""
+
+    def test_int64_point_is_read(self):
+        series = FakeProtobufSeries([FakePoint(FakeTypedValue(int64_value=64), OBSERVED_AT)])
+        client = FakeMonitoringClient(limit_series=[series], usage_series=[series])
+
+        result = _inventory(client).observe(_spec(), _partition())
+
+        assert result.observation is not None
+        assert result.observation.limit == 64.0
+
+    def test_double_point_is_read(self):
+        series = FakeProtobufSeries([FakePoint(FakeTypedValue(double_value=12.5), OBSERVED_AT)])
+        client = FakeMonitoringClient(limit_series=[series], usage_series=[series])
+
+        result = _inventory(client).observe(_spec(), _partition())
+
+        assert result.observation is not None
+        assert result.observation.usage == 12.5
+
+    def test_series_without_points_is_unmeasured(self):
+        client = FakeMonitoringClient(limit_series=[FakeProtobufSeries([])])
+
+        result = _inventory(client).observe(_spec(), _partition())
+
+        assert result.observation is None
+
+    def test_point_without_a_timestamp_is_unmeasured(self):
+        series = FakeProtobufSeries([FakePoint(FakeTypedValue(int64_value=8), None)])
+        client = FakeMonitoringClient(limit_series=[series], usage_series=[series])
+
+        result = _inventory(client).observe(_spec(), _partition())
+
+        assert result.observation is None
+
+    def test_negative_point_is_rejected(self):
+        """A negative limit is malformed, not a very small quota."""
+        series = FakeProtobufSeries([FakePoint(FakeTypedValue(double_value=-3.0), OBSERVED_AT)])
+        client = FakeMonitoringClient(limit_series=[series], usage_series=[series])
+
+        result = _inventory(client).observe(_spec(), _partition())
+
+        assert result.observation is None
+
+    def test_non_list_response_is_unmeasured(self):
+        class OddClient:
+            def list_time_series(self, *, metric_type, project, region):
+                return "not-a-list"
+
+        result = _inventory(OddClient()).observe(_spec(), _partition())
+
+        assert result.observation is None

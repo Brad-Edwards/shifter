@@ -359,20 +359,36 @@ def _record_unassessable(
     Still persisted, because "we could not assess this event" is exactly the
     thing an operator needs to see afterwards.
     """
-    result = CapacityAssessmentResult(
-        partition=replace(_UNKNOWN_PARTITION, name=partition_name),
-        policy_version=policy_version,
-        observed_at=now,
-        verdicts=tuple(
+    verdicts = tuple(
+        MetricVerdict(
+            metric_name=metric_name,
+            outcome=CapacityOutcome.INDETERMINATE,
+            reason_code=reason_code,
+            enforcement=EnforcementMode.ADVISORY,
+            observed_at=None,
+        )
+        for metric_name in sorted(demand)
+    )
+    if not verdicts:
+        # An unassessable event with no costed metrics would otherwise fold to an
+        # empty verdict set, and an empty set is ADMITTED. "We could not assess
+        # this" must never read as "there is room", so emit the verdict
+        # explicitly rather than relying on the demand map being non-empty.
+        verdicts = (
             MetricVerdict(
-                metric_name=metric_name,
+                metric_name="",
                 outcome=CapacityOutcome.INDETERMINATE,
                 reason_code=reason_code,
                 enforcement=EnforcementMode.ADVISORY,
                 observed_at=None,
-            )
-            for metric_name in sorted(demand)
-        ),
+            ),
+        )
+
+    result = CapacityAssessmentResult(
+        partition=replace(_UNKNOWN_PARTITION, name=partition_name),
+        policy_version=policy_version,
+        observed_at=now,
+        verdicts=verdicts,
     )
     _persist_assessment(event_ref, result)
     return result
