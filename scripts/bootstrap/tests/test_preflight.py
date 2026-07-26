@@ -112,6 +112,7 @@ class TestRunPreflightAwsCi:
             preflight._tf_vars_secret(environment, "CORE"): "x=1",
             preflight._tf_vars_secret(environment, "RANGE"): "x=1",
             preflight._tf_vars_secret(environment, "PORTAL"): "x=1",
+            preflight._tf_vars_secret(environment, "EKS"): "{}",
             preflight._shifter_config_secret(environment): "settings: {}",
         }
 
@@ -127,6 +128,19 @@ class TestRunPreflightAwsCi:
         }
         report = preflight.run_preflight(Cloud.AWS, Mode.CI, "dev", component="core", env=env)
         assert report.ok
+
+    def test_eks_component_requires_inputs_and_root_config(self):
+        env = {
+            preflight._aws_role_secret("dev"): "arn",
+            preflight._aws_state_bucket_secret("dev"): "bucket",
+        }
+        report = preflight.run_preflight(Cloud.AWS, Mode.CI, "dev", component="eks", env=env)
+        failures = {result.name for result in report.failures}
+        assert failures == {"eks tfvars payload", "eks shifter.yaml payload"}
+
+        env[preflight._tf_vars_secret("dev", "EKS")] = "{}"
+        env[preflight._shifter_config_secret("dev")] = "settings: {}"
+        assert preflight.run_preflight(Cloud.AWS, Mode.CI, "dev", component="eks", env=env).ok
 
     def test_prod_uses_unsuffixed_role_and_bucket(self):
         report = preflight.run_preflight(Cloud.AWS, Mode.CI, "prod", component="core", env=self._aws_env("prod"))
@@ -175,7 +189,7 @@ class TestRunPreflightLocal:
         (tf_dir / "terraform.tfvars").write_text(
             'public_hostname = "gcp.example.test"\n'
             "enable_managed_tls = true\n"
-            'gke_master_authorized_cidrs = ["203.0.113.10/32"]\n'
+            'gke_master_authorized_cidrs = ["10.42.0.0/16"]\n'
         )
         report = preflight.run_preflight(
             Cloud.GCP, Mode.LOCAL, "gcp-dev", env={}, repo_root=tmp_path, tool_exists=lambda n: "/bin/x"

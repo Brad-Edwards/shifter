@@ -391,6 +391,7 @@ exclusions:
       - version.txt
       - sonar-project.properties
       - package-lock.json
+      - tools/install-vale.sh
 
   - type: config
     reason: >-

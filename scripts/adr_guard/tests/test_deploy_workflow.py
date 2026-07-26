@@ -381,6 +381,24 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
         self.assertNotIn("scenario-smoketest-tests", self.jobs)
 
 
+class TestTflintPluginAuthentication(unittest.TestCase):
+    """#1850: TFLint plugin downloads use the job-scoped GitHub token."""
+
+    def test_tflint_init_avoids_unauthenticated_api_rate_limit(self):
+        quality = _load("_quality.yml")
+        jobs = ADR_GUARD._dw_jobs(quality, "_quality.yml")
+        terraform_lint = jobs["terraform-lint"]
+        init_step = next(
+            step
+            for step in terraform_lint.get("steps", [])
+            if step.get("name") == "Init TFLint"
+        )
+        self.assertEqual(
+            init_step.get("env", {}).get("GITHUB_TOKEN"),
+            "${{ github.token }}",
+        )
+
+
 class TestGithubEnvironmentBinding(unittest.TestCase):
     """#935 / ADR-003-R5: mutating deploy jobs bind a GitHub Environment."""
 
@@ -403,6 +421,22 @@ class TestGithubEnvironmentBinding(unittest.TestCase):
                     "${{ inputs.github_environment }}",
                     f"{name}:{jid} must bind the github_environment input (ADR-003-R5)",
                 )
+
+
+class TestGcpPrivateControlPlaneAccess(unittest.TestCase):
+    """#1850: every GCP deploy credential refresh stays on Connect Gateway."""
+
+    def test_gcp_deploy_never_reverts_to_direct_endpoint_credentials(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("google-github-actions/get-gke-credentials@", workflow)
+        self.assertGreaterEqual(
+            workflow.count("gcloud container fleet memberships get-credentials"),
+            2,
+            "GCP deploy must configure Connect Gateway before bootstrap work and "
+            "refresh it before applying workloads",
+        )
 
 
 class TestProvisionerDeployTestGate(unittest.TestCase):

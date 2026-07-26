@@ -25,6 +25,10 @@ The current enforcement stack has six parts:
    - `import-linter` for Python package contracts
    - `actionlint` for GitHub Actions workflows
    - `TFLint` for Terraform linting (including the `tflint-ruleset-google` plugin for GCP resources)
+     The CI initialization step supplies the job-scoped `github.token` as
+     `GITHUB_TOKEN`, so provider-plugin release lookups use the authenticated
+     GitHub API allowance instead of the shared runner IP's unauthenticated
+     rate limit.
    - `gitleaks` for new secret leakage detection
    - `helm lint` for Helm chart validation where files are templates rather than plain YAML
    - `kubeconform` for Kubernetes manifest schema validation
@@ -43,6 +47,11 @@ Review controls:
 - `.github/CODEOWNERS` requires review on guardrail files and shared/public architecture seams.
 - `.github/pull_request_template.md` requires an ADR impact section on PRs.
 - `.github/copilot-instructions.md` now points GitHub Copilot toward the same ADR enforcement model.
+- `.ground-control.yaml` binds synchronized `/implement` runs to the root
+  `make test` completion boundary. The companion `make policy` target runs the
+  full ADR guard, import-linter contracts, diff whitespace validation, and Vale
+  against Markdown changed from `origin/dev`; `tools/install-vale.sh` supplies
+  the pinned local Vale binary when it is not already installed.
 - `.github/workflows/_gcp-dev.yml` now pins `platform/k8s/gcp/overlays/gcp-dev/kustomization.yaml` image `newTag` values to `${SHORT_SHA}` before `kubectl apply -k`, preventing mutable `:latest` restarts from drifting to a different image than the commit being deployed.
 
 Deploy-time enforcement (ADR-035):
@@ -304,6 +313,13 @@ The first slice intentionally stays small:
   fail-closed on `pull_request` under the `deploy-workflow-runner-exposure`
   (ADR-003-R5) invariant, keeps `contents: read` only, and carries a
   `timeout-minutes` backstop (#1220).
+
+  `TestGcpPrivateControlPlaneAccess` keeps both GCP deploy credential setup
+  points on fleet Connect Gateway and rejects the direct
+  `get-gke-credentials` action. The self-hosted runner has no route to the
+  private RFC1918 GKE control-plane endpoint, so replacing either gateway
+  refresh with direct credentials would make the workload apply time out
+  after otherwise successful Terraform and image-build stages (#1850).
 
   The manual-deploy invariant (`TestManualDeployDispatch`, #730) asserts that
   environment deploys are a `workflow_dispatch` naming the `environment` input

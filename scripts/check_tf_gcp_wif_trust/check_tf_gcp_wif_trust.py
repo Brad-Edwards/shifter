@@ -54,6 +54,11 @@ SUBJECT_EQ_RE = re.compile(r"assertion\.sub\s*==\s*'([^']+)'")
 # local (ADR-037-R7). Match the equality FORM, not the bare token, so the
 # attribute_mapping (`"attribute.ref" = "assertion.ref"`) cannot false-pass it.
 REF_EQ_RE = re.compile(r"assertion\.ref\s*==")
+GCP_DEV_REF_EQ_RE = re.compile(r"assertion\.ref\s*==\s*'refs/heads/gcp-dev'")
+GCP_DEV_SUBJECT_REF_PAIR_RE = re.compile(
+    r"assertion\.ref\s*==\s*'refs/heads/gcp-dev'\s*&&\s*"
+    r"assertion\.sub\s*==\s*'[^']*:environment:gcp-dev'"
+)
 FEDERATED_LIST_RE = re.compile(r"federated_subjects\s*=\s*\[(.*?)\]", re.DOTALL)
 DOUBLE_QUOTED_RE = re.compile(r'"([^"]+)"')
 # The invariant checks scope to the attribute_condition VALUE, not the whole
@@ -187,6 +192,19 @@ def check_provider_condition(
                     "WIF provider attribute_condition must pin an exact "
                     "assertion.sub with a literal `assertion.sub ==` clause "
                     "(ADR-004-R23, #1690)",
+                )
+            )
+        gcp_dev_refs = GCP_DEV_REF_EQ_RE.findall(condition)
+        if gcp_dev_refs and (
+            len(gcp_dev_refs) != 1 or len(GCP_DEV_SUBJECT_REF_PAIR_RE.findall(condition)) != 1
+        ):
+            violations.append(
+                Violation(
+                    path,
+                    line_no,
+                    "refs/heads/gcp-dev must be admitted exactly once and paired "
+                    "directly with the exact gcp-dev Environment subject "
+                    "(ADR-004-R23)",
                 )
             )
     return violations

@@ -10,6 +10,17 @@ generated_for: "issues-1230-1237"
 related_adr: docs/architecture/aces-migration-adr.md
 related_triage: docs/architecture/aces-cyberscript-issue-triage.md
 
+governance:
+  requirement: PLAT-007
+  adr: ADR-024
+  policy: >-
+    New scenario capabilities outside the current CyberScript vocabulary must
+    be recorded in this inventory or in the ACES SDL/profile backlog before
+    the workaround is relied on for event or range production use. An issue
+    label, milestone, or prose TODO is not sufficient reliance evidence.
+    Current CyberScript and CMS scenario paths remain authoritative for
+    production use until ACES parity and cutover gates pass.
+
 categories:
   - ACES SDL
   - ACES schema/profile gap
@@ -613,3 +624,66 @@ rows:
       docs/architecture/aces-participant-runtime-manifest-cutover-rollback-1291.md),
       without weakening current Mission Control, import, scope, terminal,
       Guacamole, or secret-scanning gates.
+
+  - id: aces.composition-vocabulary
+    surface: scenario
+    legacy_source: no current CyberScript scenario field authors per-host multi-container composition intent
+    legacy_field: authored multi-container-per-host composition intent (currently absent from CyberScript scenario vocabulary)
+    category: ACES schema/profile gap
+    aces_target: ACES SDL/profile term for authored multi-container-per-host composition intent
+    shifter_owner: shared.aces.composition_envelope
+    validation_evidence: shifter/shifter_platform/shared/aces/composition_envelope.py; shifter/shifter_platform/tests/shared/aces/test_composition_realization_e2e.py
+    next_issue_kind: design-only
+    candidate_issue_title: Define ACES authored multi-container-per-host composition vocabulary
+    notes: >-
+      Multiple containers on one host is authored workload/composition meaning,
+      not a backend image or bake optimization, and not multiple infrastructure
+      nodes. See polaris.image-realization for the backend-realization
+      counterpart: image selection and container realization stay keyed by
+      authored/compiled identity and must never sniff a Polaris scenario id.
+      Per PLAT-007, this row records the missing ACES SDL/profile vocabulary; a
+      workaround must not be relied on for event or range production use until
+      the gap is closed through the normal Shifter path.
+
+  - id: aces.network-state-gating
+    surface: CTF
+    legacy_source: no current CyberScript scenario field authors state-transition-to-network-effect intent
+    legacy_field: authored state-transition-to-network-effect intent (currently absent from CyberScript scenario vocabulary)
+    category: ACES schema/profile gap
+    aces_target: ACES profile term for authored state-transition-to-network-effect intent
+    shifter_owner: shared.aces.network_family
+    validation_evidence: shifter/shifter_platform/shared/aces/network_family.py
+    next_issue_kind: design-only
+    candidate_issue_title: Define ACES authored network-state-gating profile term
+    notes: >-
+      Do not conflate CTF answer validation or challenge release with network
+      ACL realization. Shifter CTF services retain scoring, flag validation,
+      release, and abuse-control authority; see ctf.flag-validation for that
+      boundary. If authored state transitions need network effects, the
+      transition meaning belongs in an ACES profile, and the backend may
+      realize only validated, compiled network intent. Flag values must never
+      enter plans, firewall names, diagnostics, logs, or provider state. Per
+      PLAT-007, this row records the missing ACES SDL/profile vocabulary; a
+      workaround must not be relied on for event or range production use until
+      the gap is closed through the normal Shifter path.
+
+  - id: aces.agentic-run-parameters
+    surface: participant-runtime
+    legacy_source: no current CyberScript scenario field authors per-range agentic-tool run parameters
+    legacy_field: per-range agentic-tool run/participant-runtime parameters (currently absent from CyberScript scenario vocabulary)
+    category: ACES schema/profile gap
+    aces_target: ACES experiment/participant-runtime profile for non-secret authored run parameters
+    shifter_owner: config/_aces_settings.py
+    validation_evidence: shifter/shifter_platform/config/_aces_settings.py
+    next_issue_kind: design-only
+    candidate_issue_title: Define ACES participant-runtime profile for agentic-tool run parameters
+    notes: >-
+      Separate non-secret authored run/participant-runtime parameters from
+      provider credentials, model tokens, prompts, commands, and operator
+      policy, which stay behind existing config and secret-delivery
+      boundaries. Missing portable semantics belong in an ACES
+      experiment/participant-runtime profile and must not become SDL, catalog
+      provenance, sidecar payload, process argv, or logs. Per PLAT-007, this
+      row records the missing ACES SDL/profile vocabulary; a workaround must
+      not be relied on for event or range production use until the gap is
+      closed through the normal Shifter path.

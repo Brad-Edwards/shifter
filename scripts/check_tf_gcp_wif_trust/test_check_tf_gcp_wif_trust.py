@@ -127,6 +127,30 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
             any("must equal local.federated_subjects" in r for r in reasons)
         )
 
+    def test_unpaired_gcp_dev_ref_is_rejected(self) -> None:
+        widened = GOOD_MODULE.replace(
+            "(${local.ref_condition})",
+            "(assertion.ref == 'refs/heads/gcp-dev' || ${local.ref_condition})",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", widened)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("paired directly" in reason for reason in reasons))
+
+    def test_gcp_dev_ref_paired_with_environment_subject_passes(self) -> None:
+        paired = GOOD_MODULE.replace(
+            "(${local.ref_condition}) &&",
+            "((assertion.ref == 'refs/heads/gcp-dev' && "
+            "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev') "
+            "|| ((${local.ref_condition}) &&",
+        ).replace(
+            "'repo:Brad-Edwards/shifter:ref:refs/heads/dev'))",
+            "'repo:Brad-Edwards/shifter:ref:refs/heads/dev')))",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", paired)
+            self.assertEqual(check_file(tf), [])
+
     def test_prose_mentioning_ckv_gcp_125_does_not_false_positive(self) -> None:
         # Non-false-positive counterpart to the waiver-rejection test: a comment
         # that NAMES the rule (not a checkov:skip directive) must not trip the

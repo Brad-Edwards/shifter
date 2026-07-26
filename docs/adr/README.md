@@ -121,7 +121,10 @@ Current mechanisms:
   `github_repo` value is the canonical GitHub target for agent issue,
   PR, CI, and traceability operations. The optional `routing` block opts
   the repository into per-step `/implement` routing while keeping the
-  workflow's gate contract in `.gc/plan-rules.md`.
+  workflow's gate contract in `.gc/plan-rules.md`. The configured
+  completion boundary is the root `make test` target; `make policy`
+  composes the existing ADR, import, diff, and changed-document checks
+  required by the synchronized pre-PR gate.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can

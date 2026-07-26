@@ -83,6 +83,12 @@ resource "google_identity_platform_config" "platform" {
     }
   }
 
+  # The API always returns this default block. Managing it explicitly prevents
+  # every deployment from planning an otherwise meaningless in-place update.
+  multi_tenant {
+    allow_tenants = false
+  }
+
   dynamic "blocking_functions" {
     for_each = local.enable_blocking_function ? [1] : []
     content {

@@ -136,15 +136,18 @@ def _setup_attacker_role(
         failure_prefix="Kali setup failed",
     )
     if set_local_password:
-        _set_local_password_or_raise(
-            orchestrator,
-            execution,
-            ctx,
-            instance_data,
-            platform="linux",
-            failure_prefix="Kali RDP password push failed",
-            target_container=local_password_target_container,
-        )
+        try:
+            _set_local_password_or_raise(
+                orchestrator,
+                execution,
+                ctx,
+                instance_data,
+                platform="linux",
+                failure_prefix="Kali RDP password push failed",
+                target_container=local_password_target_container,
+            )
+        except SetupError as exc:
+            logger.warning("Kali RDP password push non-fatal skip for %s: %s", execution.target, exc)
     else:
         logger.info("Kali local password push deferred for %s", execution.target)
     logger.info("Kali setup complete for %s", execution.target)
@@ -171,15 +174,18 @@ def _set_attacker_container_password_after_bootstrap(
             agent_presigned_url="",
             ssh_user=ssh_user,
         )
-        _set_local_password_or_raise(
-            orchestrator,
-            execution,
-            ctx,
-            instance_data,
-            platform="linux",
-            failure_prefix=f"{container_name} RDP password push failed",
-            target_container=container_name,
-        )
+        try:
+            _set_local_password_or_raise(
+                orchestrator,
+                execution,
+                ctx,
+                instance_data,
+                platform="linux",
+                failure_prefix=f"{container_name} RDP password push failed",
+                target_container=container_name,
+            )
+        except SetupError as exc:
+            logger.warning("%s RDP password push non-fatal skip: %s", container_name, exc)
     finally:
         execution.close()
 

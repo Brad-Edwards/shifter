@@ -6639,6 +6639,185 @@ def check_aces_parity_inventory_path_integrity(repo_root: Path, files: list[str]
     return violations
 
 
+_PARITY_ROW_SCHEMA_CHECK = "aces-parity-inventory-row-schema"
+_PARITY_ROW_SCHEMA_RULE_ID = "ADR-024-R2"
+# The row fields ADR-024-R2 makes invariant. `row_schema.required_fields` lives
+# inside the very file this check validates, so the file must not be able to
+# weaken its own contract: shrinking the declaration to `[id]` would otherwise
+# let rows omit `category` / `surface` / `next_issue_kind` entirely, and the
+# closed-set membership checks skip absent values by design. These four are
+# therefore enforced from the constant, not from the declaration.
+_PARITY_MANDATORY_ROW_FIELDS: tuple[str, ...] = ("id", "category", "surface", "next_issue_kind")
+
+
+def _parity_row_schema_violation(message: str) -> Violation:
+    return Violation(_PARITY_ROW_SCHEMA_CHECK, _PARITY_ROW_SCHEMA_RULE_ID, _PARITY_INVENTORY_PATH, message)
+
+
+def _non_empty_string_list(value: object) -> list[str] | None:
+    """Return the list if it is a non-empty list of non-empty strings, else None."""
+    if not isinstance(value, list) or not value:
+        return None
+    if not all(isinstance(item, str) and item for item in value):
+        return None
+    return value
+
+
+def _parity_header_list(data: dict, key: str) -> tuple[list[str] | None, list[Violation]]:
+    """Validate one closed-set header (``categories`` / ``surfaces``): non-empty list of strings."""
+    value = _non_empty_string_list(data.get(key))
+    if value is None:
+        return None, [_parity_row_schema_violation(f"parity inventory {key!r} header is missing or malformed")]
+    return value, []
+
+
+def _parity_row_schema_definition(data: dict) -> tuple[list[str] | None, list[str] | None, list[Violation]]:
+    """Validate the ``row_schema`` header: ``required_fields`` and ``next_issue_kinds``."""
+    row_schema = data.get("row_schema")
+    if not isinstance(row_schema, dict):
+        violation = _parity_row_schema_violation("parity inventory 'row_schema' header is missing or malformed")
+        return None, None, [violation]
+    violations: list[Violation] = []
+    required_fields = _non_empty_string_list(row_schema.get("required_fields"))
+    if required_fields is None:
+        violations.append(
+            _parity_row_schema_violation("parity inventory 'row_schema.required_fields' is missing or malformed")
+        )
+    else:
+        missing_mandatory = [field for field in _PARITY_MANDATORY_ROW_FIELDS if field not in required_fields]
+        if missing_mandatory:
+            violations.append(
+                _parity_row_schema_violation(
+                    "parity inventory 'row_schema.required_fields' must declare every field ADR-024-R2 makes "
+                    f"invariant; missing {missing_mandatory}"
+                )
+            )
+    next_issue_kinds = _non_empty_string_list(row_schema.get("next_issue_kinds"))
+    if next_issue_kinds is None:
+        violations.append(
+            _parity_row_schema_violation("parity inventory 'row_schema.next_issue_kinds' is missing or malformed")
+        )
+    return required_fields, next_issue_kinds, violations
+
+
+def _parity_row_id(row: dict, index: int, seen_ids: dict[str, int]) -> tuple[str, list[Violation]]:
+    """Validate one row's ``id``: non-empty string, unique across the file."""
+    row_id = row.get("id")
+    if not isinstance(row_id, str) or not row_id:
+        return f"<index {index}>", [
+            _parity_row_schema_violation(f"row at index {index} must have a non-empty string 'id'")
+        ]
+    if row_id in seen_ids:
+        return row_id, [
+            _parity_row_schema_violation(f"row id {row_id!r} is duplicated (also at index {seen_ids[row_id]})")
+        ]
+    seen_ids[row_id] = index
+    return row_id, []
+
+
+def _parity_row_required_fields(row: dict, row_id: str, required_fields: list[str] | None) -> list[Violation]:
+    """Every required row field (other than ``id``, validated separately) must be present and non-empty.
+
+    The enforced set is the union of the file's declaration and
+    ``_PARITY_MANDATORY_ROW_FIELDS``, so a shrunken, malformed, or missing
+    ``required_fields`` header cannot let a row drop an ADR-024-R2 invariant
+    field. The header itself is reported separately by
+    ``_parity_row_schema_definition``.
+    """
+    declared = required_fields or []
+    enforced = list(dict.fromkeys([*declared, *_PARITY_MANDATORY_ROW_FIELDS]))
+    violations: list[Violation] = []
+    for field in enforced:
+        if field == "id":
+            continue  # already validated independently of the closed-set headers
+        if field not in row or row[field] in (None, ""):
+            violations.append(_parity_row_schema_violation(f"row {row_id!r} is missing required field {field!r}"))
+    return violations
+
+
+def _parity_row_closed_set_membership(row: dict, row_id: str, field: str, allowed: list[str] | None) -> list[Violation]:
+    """One row field must be a member of its closed set, when both the header and the field value are present.
+
+    A wholly absent field is reported once by ``_parity_row_required_fields``;
+    re-checking a missing value against the closed set would double-report the
+    same defect under two messages, so this is skipped when the value is empty.
+    """
+    if allowed is None:
+        return []
+    value = row.get(field)
+    if value in (None, "") or value in allowed:
+        return []
+    return [_parity_row_schema_violation(f"row {row_id!r} field {field!r} {value!r} is not one of {allowed}")]
+
+
+def check_aces_parity_inventory_row_schema(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Every parity-inventory row must map to exactly one closed-set category (ADR-024-R2).
+
+    Global invariant over ``docs/architecture/aces-migration-parity-inventory.yaml``:
+    every row must carry all ``row_schema.required_fields``, its ``category`` must
+    be a member of the top-level ``categories`` list, its ``surface`` must be a
+    member of the top-level ``surfaces`` list, its ``next_issue_kind`` must be a
+    member of ``row_schema.next_issue_kinds``, and row ``id`` values must be
+    unique across the file. A missing or malformed ``categories``, ``surfaces``,
+    or ``row_schema`` header block is a violation rather than a silent pass.
+    Runs regardless of the changed-file set for the same reason as the sibling
+    ``aces-parity-inventory-path-integrity`` check: the closed sets and rows can
+    drift without the file that changed. Treats the YAML as untrusted static
+    input: only ``yaml.safe_load`` is used, and inventory text never reaches a
+    shell, subprocess, or command-line argument.
+    """
+    del files  # global repository invariant, not scoped to the changed-file set
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        return [
+            _parity_row_schema_violation(
+                "PyYAML is required to validate the ACES parity inventory; "
+                "install pyyaml in the runtime environment"
+            )
+        ]
+
+    path = repo_root / _PARITY_INVENTORY_PATH
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return [_parity_row_schema_violation("parity inventory is missing or unreadable")]
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return [_parity_row_schema_violation("parity inventory is not valid YAML")]
+
+    if not isinstance(data, dict):
+        return [_parity_row_schema_violation("parity inventory root must be a mapping")]
+
+    violations: list[Violation] = []
+    categories, category_header_violations = _parity_header_list(data, "categories")
+    surfaces, surface_header_violations = _parity_header_list(data, "surfaces")
+    required_fields, next_issue_kinds, schema_header_violations = _parity_row_schema_definition(data)
+    violations.extend(category_header_violations)
+    violations.extend(surface_header_violations)
+    violations.extend(schema_header_violations)
+
+    rows = data.get("rows")
+    if not isinstance(rows, list):
+        violations.append(_parity_row_schema_violation("parity inventory 'rows' must be a list"))
+        return violations
+
+    seen_ids: dict[str, int] = {}
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            violations.append(_parity_row_schema_violation(f"row at index {index} must be a mapping"))
+            continue
+        row_id, id_violations = _parity_row_id(row, index, seen_ids)
+        violations.extend(id_violations)
+        violations.extend(_parity_row_required_fields(row, row_id, required_fields))
+        violations.extend(_parity_row_closed_set_membership(row, row_id, "category", categories))
+        violations.extend(_parity_row_closed_set_membership(row, row_id, "surface", surfaces))
+        violations.extend(_parity_row_closed_set_membership(row, row_id, "next_issue_kind", next_issue_kinds))
+
+    return violations
+
+
 # --------------------------------------------------------------------------- #
 # Production-path quality-ownership conformance (#1530, GEN-002, ADR-004-R24)
 #
@@ -7069,6 +7248,7 @@ CHECKS = {
     "published-contract-snapshots-immutable": check_published_contract_snapshots_immutable,
     "no-agent-attribution": check_no_agent_attribution,
     "aces-parity-inventory-path-integrity": check_aces_parity_inventory_path_integrity,
+    "aces-parity-inventory-row-schema": check_aces_parity_inventory_row_schema,
     "quality-path-ownership": check_quality_path_ownership,
 }
 CHECK_LEVELS = {
@@ -7099,6 +7279,7 @@ CHECK_LEVELS = {
         "documentation-coverage",
         "published-contract-snapshots-immutable",
         "no-agent-attribution",
+        "aces-parity-inventory-row-schema",
         "quality-path-ownership",
     ],
     "ci": [
@@ -7130,6 +7311,7 @@ CHECK_LEVELS = {
         "published-contract-snapshots-immutable",
         "no-agent-attribution",
         "aces-parity-inventory-path-integrity",
+        "aces-parity-inventory-row-schema",
         "quality-path-ownership",
     ],
     "all": list(CHECKS),
