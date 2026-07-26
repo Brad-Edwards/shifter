@@ -20,6 +20,7 @@ than a fabricated one -- consistent with the rest of the capacity layer, where
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,18 +76,18 @@ def project_scenario_images(scenario_id: str) -> ScenarioImageProjection:
         return ScenarioImageProjection()
 
     assets = getattr(template, "assets", None)
-    if assets:
-        return _project_ctf_assets(assets)
-
     instances = getattr(template, "instances", None)
-    if instances:
-        return _project_legacy_instances(instances)
+    if assets:
+        projection = _project_ctf_assets(assets)
+    elif instances:
+        projection = _project_legacy_instances(instances)
+    else:
+        logger.warning("capacity: scenario carried no recognizable node shape for image projection")
+        projection = ScenarioImageProjection()
+    return projection
 
-    logger.warning("capacity: scenario carried no recognizable node shape for image projection")
-    return ScenarioImageProjection()
 
-
-def _project_legacy_instances(instances: Any) -> ScenarioImageProjection:
+def _project_legacy_instances(instances: Iterable[object]) -> ScenarioImageProjection:
     """Project legacy CyberScript instances; every instance is per-range.
 
     A custom ``ami_key`` is a distinct image to pre-bake, so it becomes the
@@ -105,7 +106,7 @@ def _project_legacy_instances(instances: Any) -> ScenarioImageProjection:
     return ScenarioImageProjection(per_range=_to_counts(tally), resolved=bool(tally))
 
 
-def _project_ctf_assets(assets: Any) -> ScenarioImageProjection:
+def _project_ctf_assets(assets: Iterable[object]) -> ScenarioImageProjection:
     """Project CTF assets, splitting per-participant from event-shared."""
     per_range: dict[tuple[str, str, str], int] = {}
     shared: dict[tuple[str, str, str], int] = {}

@@ -17,6 +17,7 @@ from shared.log_sanitize import safe_log_value
 if TYPE_CHECKING:
     from uuid import UUID
 
+
 logger = logging.getLogger(__name__)
 
 

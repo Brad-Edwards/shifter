@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from shared.capacity.contract import (
     CapacityAssessmentResult,
+    CapacityInventoryPort,
     CapacityMetricSpec,
     CapacityOutcome,
     CapacityReasonCode,
@@ -28,6 +29,7 @@ from shared.capacity.demand import CapacityDemand, ImageCount, build_demand
 __all__ = [
     "CapacityAssessmentResult",
     "CapacityDemand",
+    "CapacityInventoryPort",
     "CapacityMetricSpec",
     "CapacityOutcome",
     "CapacityReasonCode",

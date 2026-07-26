@@ -78,10 +78,10 @@ class TestCatalogBinding:
 
     def test_structurally_invalid_catalog_fails_closed(self, monkeypatch):
         """A metric pointing at an undeclared partition must stop the boot."""
-        broken = {"partitions": [], "metrics": CATALOG["metrics"]}
+        broken = json.dumps({"partitions": [], "metrics": CATALOG["metrics"]})
 
         with pytest.raises(ImproperlyConfigured):
-            _reload(monkeypatch, CAPACITY_PLANNING_CATALOG=json.dumps(broken))
+            _reload(monkeypatch, CAPACITY_PLANNING_CATALOG=broken)
 
 
 class TestOperationalDefaults:

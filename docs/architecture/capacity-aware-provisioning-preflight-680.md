@@ -1,7 +1,7 @@
 # Capacity-Aware Provisioning Preflight — Issue 680
 
-**Requirement:** PLAT-201  
-**Status:** pre-implementation guidance  
+**Requirement:** PLAT-201
+**Status:** pre-implementation guidance
 **Scope:** capacity admission for event-driven range provisioning; this is not an implementation plan.
 
 ## Boundary decision

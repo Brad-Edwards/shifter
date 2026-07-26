@@ -25,6 +25,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol, runtime_checkable
 
 
 class CapacityOutcome(StrEnum):
@@ -308,3 +309,15 @@ def _indeterminate(
         enforcement=spec.enforcement,
         observed_at=observed_at,
     )
+
+
+@runtime_checkable
+class CapacityInventoryPort(Protocol):
+    """The read-only observation seam capacity policy depends on.
+
+    Declared here rather than in ``shared.cloud`` so the Engine can name the
+    dependency it actually has without importing a provider package, and so a
+    test double is a first-class implementation rather than an untyped stand-in.
+    """
+
+    def observe(self, spec: CapacityMetricSpec, partition: PartitionRef) -> ObservationResult: ...

@@ -5,10 +5,16 @@
 <html lang="en">
     <head>
         <title>{% trans "Range Capacity Assessment" %}</title>
+        <link rel="icon" href="data:,">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 600px;
+                margin: 0 auto;
+            }
+        </style>
     </head>
-    <body style="font-family: Arial, sans-serif;
-                 max-width: 600px;
-                 margin: 0 auto">
+    <body>
         <h2>
             {% if blocking %}
                 {% trans "Range Capacity Refused" %}
@@ -18,9 +24,13 @@
         </h2>
         <p>
             {% if blocking %}
-                {% blocktrans %}Range provisioning was refused before any range started, because the declared capacity for this event exceeds the capacity available to it:{% endblocktrans %}
+                {% blocktrans %}Range provisioning was refused before any range started,
+                because the declared capacity for this event exceeds the capacity
+                available to it:{% endblocktrans %}
             {% else %}
-                {% blocktrans %}Range provisioning is proceeding, but the declared capacity for this event is close to or beyond the capacity available to it:{% endblocktrans %}
+                {% blocktrans %}Range provisioning is proceeding, but the declared capacity
+                for this event is close to or beyond the capacity available to
+                it:{% endblocktrans %}
             {% endif %}
             <strong>{{ event.name }}</strong>.
         </p>
@@ -31,7 +41,9 @@
             {% for code in reason_codes %}<li>{{ code }}</li>{% endfor %}
         </ul>
         <p>
-            {% blocktrans %}Contact your platform operator to review capacity for this event. Operators can see the detailed assessment in the platform admin.{% endblocktrans %}
+            {% blocktrans %}Contact your platform operator to review capacity for this
+            event. Operators can see the detailed assessment in the platform
+            admin.{% endblocktrans %}
         </p>
     </body>
 </html>

@@ -21,7 +21,7 @@ import os
 
 from django.core.exceptions import ImproperlyConfigured
 
-from shared.capacity.catalog import CapacityCatalogError, load_catalog_json
+from shared.capacity.catalog import CapacityCatalog, CapacityCatalogError, load_catalog_json
 
 __all__ = [
     "CAPACITY_INVENTORY_ROLE_NAME",
@@ -51,7 +51,7 @@ CAPACITY_PLANNING_METRICS_NAMESPACE = os.environ.get(
 ).strip()
 
 
-def _load_catalog():
+def _load_catalog() -> CapacityCatalog:
     """Parse the declared catalog, failing closed on malformed configuration."""
     try:
         return load_catalog_json(os.environ.get("CAPACITY_PLANNING_CATALOG", ""))

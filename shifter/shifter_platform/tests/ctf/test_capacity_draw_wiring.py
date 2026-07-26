@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from ctf.exceptions import CTFRangeError
+
 pytestmark = pytest.mark.django_db
 
 
@@ -44,13 +46,12 @@ class TestParticipantPath:
 
         monkeypatch.setattr("ctf.bridges.cms_create_range", _record_create)
 
-        with pytest.raises(Exception):
+        with pytest.raises(CTFRangeError):
             provision_participant_range(participant.pk)
 
         assert order == ["admit", "create"]
 
     def test_blocking_draw_refuses_without_creating_a_range(self, ctf_event_active, participant_user, monkeypatch):
-        from ctf.exceptions import CTFRangeError
         from ctf.models import CTFParticipant
         from ctf.services.range.provision import provision_participant_range
 
@@ -91,7 +92,7 @@ class TestParticipantPath:
             lambda event_id, draw_key: seen.append(draw_key) or _summary("rejected", blocking=True),
         )
 
-        with pytest.raises(Exception):
+        with pytest.raises(CTFRangeError):
             provision_participant_range(participant.pk)
 
         assert seen == [participant.pk]
@@ -117,7 +118,7 @@ class TestParticipantPath:
 
         monkeypatch.setattr("ctf.bridges.cms_create_range", _boom)
 
-        with pytest.raises(Exception):
+        with pytest.raises(CTFRangeError):
             provision_participant_range(participant.pk)
 
         assert released == [participant.pk]

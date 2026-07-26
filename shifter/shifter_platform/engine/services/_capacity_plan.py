@@ -18,7 +18,7 @@ not be withheld from the next event.
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -27,24 +27,48 @@ from django.db import transaction
 
 from shared.capacity import (
     CapacityAssessmentResult,
+    CapacityDemand,
+    CapacityInventoryPort,
     CapacityOutcome,
     CapacityReasonCode,
     EnforcementMode,
+    ImageCount,
     MetricVerdict,
+    ObservationResult,
     PartitionRef,
+    build_demand,
     evaluate_metric,
 )
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from shared.capacity import CapacityMetricSpec, ObservationResult
+    from engine.models import CapacityAssessment, CapacityDeclaration
+    from shared.capacity import CapacityMetricSpec
     from shared.capacity.catalog import CapacityCatalog
 
 logger = logging.getLogger(__name__)
 
 #: Window assumed when a declaration carries no explicit consumption window.
 _DEFAULT_WINDOW_HOURS = 8
+
+
+@dataclass(frozen=True)
+class EventCapacityRequest:
+    """One event's ask: how much of what, in which partition, over which window.
+
+    Bundled rather than passed as loose arguments so the call site reads as a
+    single question and the assessment signature stays stable as the demand
+    shape grows.
+    """
+
+    event_ref: UUID
+    partition_name: str
+    demand: Mapping[str, float]
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+
 
 _UNKNOWN_PARTITION = PartitionRef(
     name="",
@@ -56,14 +80,10 @@ _UNKNOWN_PARTITION = PartitionRef(
 
 
 def assess_event_capacity(
+    request: EventCapacityRequest,
     *,
-    event_ref: UUID,
-    partition_name: str,
-    demand: Mapping[str, float],
-    window_start: datetime | None,
-    window_end: datetime | None,
     catalog: CapacityCatalog,
-    inventory: Any,
+    inventory: CapacityInventoryPort,
     now: datetime,
 ) -> CapacityAssessmentResult:
     """Assess ``demand`` for ``event_ref`` against ``partition_name`` and reserve.
@@ -73,10 +93,18 @@ def assess_event_capacity(
     provider or configuration problem: those degrade to ``INDETERMINATE`` so a
     capacity read cannot break the pre-spinup path.
     """
+    event_ref = request.event_ref
+    partition_name = request.partition_name
+    demand = request.demand
+
     partition = catalog.partitions.get(partition_name)
     if partition is None:
         # An undeclared partition is a deployment gap, not free headroom.
-        logger.warning("capacity: no declared partition '%s' for event %s", partition_name, event_ref)
+        logger.warning(
+            "capacity: no declared partition '%s' for event %s",
+            safe_log_value(partition_name),
+            safe_log_value(event_ref),
+        )
         return _record_unassessable(
             event_ref=event_ref,
             partition_name=partition_name,
@@ -86,7 +114,7 @@ def assess_event_capacity(
             reason_code=CapacityReasonCode.METRIC_UNSUPPORTED,
         )
 
-    start, end = _resolve_window(window_start, window_end, now)
+    start, end = _resolve_window(request.window_start, request.window_end, now)
     specs = {spec.name: spec for spec in catalog.metrics_for(partition_name)}
 
     # Phase 1 -- observe. Strictly outside any transaction.
@@ -110,7 +138,7 @@ def assess_event_capacity(
             if metric_name in specs
         )
         verdicts += tuple(
-            _unsupported_verdict(metric_name, now) for metric_name in sorted(demand) if metric_name not in specs
+            _unsupported_verdict(metric_name) for metric_name in sorted(demand) if metric_name not in specs
         )
 
         result = CapacityAssessmentResult(
@@ -150,7 +178,11 @@ def release_capacity_reservations(
     return queryset.update(released_at=now or timezone.now())
 
 
-def _observe(inventory: Any, spec: CapacityMetricSpec | None, partition: PartitionRef) -> ObservationResult | None:
+def _observe(
+    inventory: CapacityInventoryPort,
+    spec: CapacityMetricSpec | None,
+    partition: PartitionRef,
+) -> ObservationResult | None:
     """Read one metric, converting any adapter failure into an unmeasured result."""
     if spec is None:
         return None
@@ -159,7 +191,11 @@ def _observe(inventory: Any, spec: CapacityMetricSpec | None, partition: Partiti
     except Exception:
         # Adapters are contractually non-raising; this is the belt-and-braces
         # path so a misbehaving adapter cannot break provisioning.
-        logger.warning("capacity: inventory raised for metric %s in %s", spec.name, partition.name)
+        logger.warning(
+            "capacity: inventory raised for metric %s in %s",
+            safe_log_value(spec.name),
+            safe_log_value(partition.name),
+        )
         return None
 
 
@@ -193,7 +229,7 @@ def _verdict_for(
     return evaluate_metric(spec, demand=demanded, observation=observation, now=now)
 
 
-def _unsupported_verdict(metric_name: str, now: datetime) -> MetricVerdict:
+def _unsupported_verdict(metric_name: str) -> MetricVerdict:
     """Verdict for demand naming a metric the catalog does not declare."""
     return MetricVerdict(
         metric_name=metric_name,
@@ -237,7 +273,7 @@ def _committed_reservation(partition_name: str, metric_name: str, start: datetim
     return float(total or 0.0)
 
 
-def _persist_assessment(event_ref: UUID, result: CapacityAssessmentResult) -> Any:
+def _persist_assessment(event_ref: UUID, result: CapacityAssessmentResult) -> CapacityAssessment:
     """Append the immutable assessment snapshot.
 
     Verdicts are serialized as bounded codes only -- no limit, usage, account,
@@ -264,14 +300,13 @@ def _persist_assessment(event_ref: UUID, result: CapacityAssessmentResult) -> An
 
 
 def _persist_reservations(
-    assessment: Any,
+    assessment: CapacityAssessment,
     event_ref: UUID,
     partition_name: str,
     demand: Mapping[str, float],
     specs: Mapping[str, CapacityMetricSpec],
     start: datetime,
     end: datetime,
-    ranges: int = 1,
 ) -> None:
     """Commit this event's share of each declared metric for the window."""
     from engine.models import CapacityReservation
@@ -288,7 +323,7 @@ def _persist_reservations(
                 # in force when the budget was sized -- both pinned here so a
                 # later draw reads the policy that produced the budget rather
                 # than re-deriving it against drifted configuration.
-                unit_amount=_unit_amount(specs[metric_name], ranges),
+                unit_amount=_unit_amount(specs[metric_name]),
                 enforcement=specs[metric_name].enforcement.value,
                 window_start=start,
                 window_end=end,
@@ -299,7 +334,7 @@ def _persist_reservations(
     )
 
 
-def _unit_amount(spec: CapacityMetricSpec, ranges: int) -> float:
+def _unit_amount(spec: CapacityMetricSpec) -> float:
     """Return the share of a metric one range consumes.
 
     Derived from the same declared shape that produced the budget, so the
@@ -348,7 +383,7 @@ def assess_declared_event_capacity(
     *,
     partition_name: str | None = None,
     catalog: CapacityCatalog | None = None,
-    inventory: Any = None,
+    inventory: CapacityInventoryPort | None = None,
     now: datetime | None = None,
 ) -> CapacityAssessmentResult | None:
     """Assess an event's newest capacity declaration.
@@ -388,15 +423,17 @@ def assess_declared_event_capacity(
             inventory = get_capacity_inventory()
         except Exception:
             # No adapter for this backend: unmeasurable, never assumed-available.
-            logger.warning("capacity: no inventory adapter available for event %s", event_ref)
+            logger.warning("capacity: no inventory adapter available for event %s", safe_log_value(event_ref))
             inventory = _NullInventory()
 
     return assess_event_capacity(
-        event_ref=event_ref,
-        partition_name=target,
-        demand=demand.amounts,
-        window_start=declaration.window_start,
-        window_end=declaration.window_end,
+        EventCapacityRequest(
+            event_ref=event_ref,
+            partition_name=target,
+            demand=demand.amounts,
+            window_start=declaration.window_start,
+            window_end=declaration.window_end,
+        ),
         catalog=resolved_catalog,
         inventory=inventory,
         now=now or timezone.now(),
@@ -406,16 +443,18 @@ def assess_declared_event_capacity(
 class _NullInventory:
     """Inventory used when no adapter exists: everything is unmeasurable."""
 
-    def observe(self, spec: CapacityMetricSpec, partition: PartitionRef) -> Any:
-        from shared.capacity import ObservationResult
-
+    @staticmethod
+    def observe(_spec: CapacityMetricSpec, _partition: PartitionRef) -> ObservationResult:
+        """Report every metric as unsupported; the signature matches the port."""
         return ObservationResult(reason_code=CapacityReasonCode.METRIC_UNSUPPORTED)
 
 
-def _demand_from_declaration(declaration: Any, catalog: CapacityCatalog, partition_name: str) -> Any:
+def _demand_from_declaration(
+    declaration: CapacityDeclaration,
+    catalog: CapacityCatalog,
+    partition_name: str,
+) -> CapacityDemand:
     """Scale a declaration's shape into per-metric demand for one partition."""
-    from shared.capacity import build_demand
-
     specs = catalog.metrics_for(partition_name)
     hints = declaration.resource_hints if isinstance(declaration.resource_hints, dict) else {}
     agents_by_os = hints.get("agents_by_os")
@@ -429,7 +468,8 @@ def _demand_from_declaration(declaration: Any, catalog: CapacityCatalog, partiti
             if isinstance(value, int) and not isinstance(value, bool) and value > 0
         )
 
-    images = hints.get("images") if isinstance(hints.get("images"), dict) else {}
+    raw_images = hints.get("images")
+    images: dict[str, Any] = raw_images if isinstance(raw_images, dict) else {}
     return build_demand(
         partition_name=partition_name,
         expected_concurrent_ranges=max(0, int(declaration.expected_concurrent_ranges or 0)),
@@ -441,15 +481,13 @@ def _demand_from_declaration(declaration: Any, catalog: CapacityCatalog, partiti
     )
 
 
-def _image_counts(entries: Any) -> tuple[Any, ...]:
+def _image_counts(entries: object) -> tuple[ImageCount, ...]:
     """Rebuild image counts from the declaration's JSON hint.
 
     The hint is server-derived but still travels through a ``JSONField``, so
     each entry is shape-checked before use; a malformed entry is dropped rather
     than trusted into a pre-bake number.
     """
-    from shared.capacity import ImageCount
-
     if not isinstance(entries, list):
         return ()
     counts = []

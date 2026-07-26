@@ -1,6 +1,8 @@
 """Engine admin configuration."""
 
 from django.contrib import admin
+from django.db.models import Model
+from django.http import HttpRequest
 
 from engine.models import (
     CapacityAssessment,
@@ -80,11 +82,11 @@ class CapacityAssessmentAdmin(admin.ModelAdmin):
     search_fields = ("event_ref", "partition_name", "policy_version")
     readonly_fields = [f.name for f in CapacityAssessment._meta.fields]
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         """Assessments are written by the engine, never by hand."""
         return False
 
-    def has_change_permission(self, request, obj=None):
+    def has_change_permission(self, request: HttpRequest, obj: Model | None = None) -> bool:
         """Assessments are immutable history."""
         return False
 
@@ -109,7 +111,7 @@ class CapacityReservationAdmin(admin.ModelAdmin):
     search_fields = ("event_ref", "partition_name", "metric_name")
     readonly_fields = [f.name for f in CapacityReservation._meta.fields]
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         """Reservations are created by assessment, never by hand."""
         return False
 
@@ -127,10 +129,10 @@ class CapacityDrawAdmin(admin.ModelAdmin):
     search_fields = ("event_ref", "draw_key", "request_id")
     readonly_fields = [f.name for f in CapacityDraw._meta.fields]
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         """Draws are created by admission, never by hand."""
         return False
 
-    def has_change_permission(self, request, obj=None):
+    def has_change_permission(self, request: HttpRequest, obj: Model | None = None) -> bool:
         """The ledger is not hand-editable."""
         return False

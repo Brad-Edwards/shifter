@@ -19,8 +19,8 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 from hashlib import sha256
-from typing import Any
 
 from shared.capacity.contract import (
     CapacityMetricSpec,
@@ -66,7 +66,7 @@ class CapacityCatalog:
         return self._metrics.get(partition_name, ())
 
 
-def load_catalog(payload: Mapping[str, Any]) -> CapacityCatalog:
+def load_catalog(payload: Mapping[str, object]) -> CapacityCatalog:
     """Parse and validate a capacity catalog payload.
 
     Raises :class:`CapacityCatalogError` on any structural problem: unknown
@@ -100,14 +100,14 @@ def load_catalog_json(raw: str) -> CapacityCatalog:
     return load_catalog(decoded)
 
 
-def _reject_unknown_keys(mapping: Mapping[str, Any], allowed: Sequence[str], what: str) -> None:
+def _reject_unknown_keys(mapping: Mapping[str, object], allowed: Sequence[str], what: str) -> None:
     """Fail when ``mapping`` carries a key outside ``allowed``."""
     unknown = sorted(set(mapping) - set(allowed))
     if unknown:
         raise CapacityCatalogError(f"unknown {what} key(s): {', '.join(unknown)}")
 
 
-def _require_str(mapping: Mapping[str, Any], key: str, what: str) -> str:
+def _require_str(mapping: Mapping[str, object], key: str, what: str) -> str:
     """Return a required non-empty string field."""
     value = mapping.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -115,7 +115,7 @@ def _require_str(mapping: Mapping[str, Any], key: str, what: str) -> str:
     return value.strip()
 
 
-def _parse_partitions(raw: Any) -> dict[str, PartitionRef]:
+def _parse_partitions(raw: object) -> dict[str, PartitionRef]:
     """Parse the declared partition allowlist."""
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
         raise CapacityCatalogError("catalog 'partitions' must be a list")
@@ -148,7 +148,7 @@ def _parse_partitions(raw: Any) -> dict[str, PartitionRef]:
 
 
 def _parse_metrics(
-    raw: Any,
+    raw: object,
     partitions: Mapping[str, PartitionRef],
 ) -> dict[str, tuple[CapacityMetricSpec, ...]]:
     """Parse metric catalog entries, binding each to a declared partition."""
@@ -187,16 +187,16 @@ def _parse_metrics(
     return {name: tuple(specs) for name, specs in by_partition.items()}
 
 
-def _parse_enum(value: Any, enum_cls: type, what: str) -> Any:
+def _parse_enum[EnumT: StrEnum](value: object, enum_cls: type[EnumT], what: str) -> EnumT:
     """Coerce ``value`` into ``enum_cls``, rejecting anything outside it."""
     try:
-        return enum_cls(value)
+        return enum_cls(str(value))
     except ValueError as exc:
         allowed = ", ".join(sorted(member.value for member in enum_cls))
         raise CapacityCatalogError(f"metric field '{what}' must be one of: {allowed}") from exc
 
 
-def _parse_positive_int(value: Any) -> int:
+def _parse_positive_int(value: object) -> int:
     """Return a strictly positive integer, rejecting zero, negatives, and non-ints."""
     if isinstance(value, bool) or not isinstance(value, int):
         raise CapacityCatalogError("metric field 'freshness_seconds' must be a positive integer")
@@ -205,7 +205,7 @@ def _parse_positive_int(value: Any) -> int:
     return value
 
 
-def _parse_ratio(value: Any) -> float:
+def _parse_ratio(value: object) -> float:
     """Return a safety-margin ratio in [0, 1).
 
     One or more would reserve the entire limit, making every assessment fail
@@ -220,7 +220,7 @@ def _parse_ratio(value: Any) -> float:
     return ratio
 
 
-def _parse_cost(value: Any, what: str) -> float:
+def _parse_cost(value: object, what: str) -> float:
     """Return a non-negative cost coefficient.
 
     A negative cost would subtract from demand and could admit an event that
@@ -234,7 +234,7 @@ def _parse_cost(value: Any, what: str) -> float:
     return cost
 
 
-def _parse_provider_ref(value: Any) -> ProviderMetricRef | None:
+def _parse_provider_ref(value: object) -> ProviderMetricRef | None:
     """Parse optional provider coordinates for a metric."""
     if value is None:
         return None

@@ -15,7 +15,7 @@ import pytest
 from django.db import transaction
 
 from engine.models import CapacityAssessment, CapacityReservation
-from engine.services import assess_event_capacity, release_capacity_reservations
+from engine.services import EventCapacityRequest, assess_event_capacity, release_capacity_reservations
 from shared.capacity import (
     CapacityOutcome,
     CapacityReasonCode,
@@ -115,11 +115,13 @@ def _assess(
     window_end=WINDOW_END,
 ):
     return assess_event_capacity(
-        event_ref=event_ref or uuid4(),
-        partition_name=partition,
-        demand={"ec2_vcpu": demand},
-        window_start=window_start,
-        window_end=window_end,
+        EventCapacityRequest(
+            event_ref=event_ref or uuid4(),
+            partition_name=partition,
+            demand={"ec2_vcpu": demand},
+            window_start=window_start,
+            window_end=window_end,
+        ),
         catalog=catalog or _catalog(),
         inventory=inventory or FakeInventory(),
         now=NOW,

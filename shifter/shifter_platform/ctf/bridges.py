@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
     from django.contrib.auth.models import User
 
+    from shared.capacity import CapacityAssessmentResult
     from shared.remote_access import OpenVpnProfile
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,7 @@ def cms_declare_event_capacity(
     cms_services.engine_record_capacity_declaration(signal)
 
 
-def cms_assess_event_capacity(event_ref: UUID) -> object | None:
+def cms_assess_event_capacity(event_ref: UUID) -> CapacityAssessmentResult | None:
     """Ask the engine whether an event's declared capacity fits (PLAT-201).
 
     Best-effort consumer contract mirroring the declaration bridge: capacity
@@ -117,7 +118,7 @@ def cms_project_scenario_images(scenario_id: str) -> dict[str, Any]:
     return cms_services.project_scenario_images(scenario_id).as_hint()
 
 
-def cms_admit_range_capacity(event_ref: UUID, draw_key: UUID) -> object:
+def cms_admit_range_capacity(event_ref: UUID, draw_key: UUID) -> CapacityAssessmentResult:
     """Draw one range's share from the event's capacity budget (PLAT-201).
 
     Pure database work in the engine -- no provider call -- so this is safe to

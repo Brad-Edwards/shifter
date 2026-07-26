@@ -113,16 +113,7 @@ def provision_event_ranges_throttled(
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    from ctf.services.range.capacity import assess_declared_capacity, declare_event_capacity
-
-    # CTF-908: declare the wave size before the first range spins up.
-    declare_event_capacity(event_id, source="spin_up_ranges")
-    # PLAT-201: assess that declared wave against observed headroom while there
-    # is still time to act. An enforcing over-limit metric refuses here rather
-    # than letting the event discover the shortfall mid-spinup; every other
-    # outcome (advisory warning, indeterminate) proceeds with the summary
-    # attached to the result.
-    capacity = assess_declared_capacity(event_id, source="spin_up_ranges")
+    capacity = _declare_and_assess(event_id)
     if capacity is not None and capacity["blocking"]:
         return _capacity_refused_result(event_id, capacity)
     logger.info(
@@ -201,6 +192,20 @@ def provision_event_ranges_throttled(
         "interrupted": interrupted,
         "capacity": capacity,
     }
+
+
+def _declare_and_assess(event_id: UUID) -> dict[str, Any] | None:
+    """Declare the wave size, then assess it against observed headroom.
+
+    CTF-908 declares before the first range spins up; PLAT-201 assesses that
+    declaration while there is still time to act, so an enforcing over-limit
+    metric refuses here rather than letting the event discover the shortfall
+    mid-spinup.
+    """
+    from ctf.services.range.capacity import assess_declared_capacity, declare_event_capacity
+
+    declare_event_capacity(event_id, source="spin_up_ranges")
+    return assess_declared_capacity(event_id, source="spin_up_ranges")
 
 
 def _capacity_refused_result(event_id: UUID, capacity: dict[str, Any]) -> dict[str, Any]:

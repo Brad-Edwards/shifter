@@ -39,6 +39,7 @@ from ._capacity_admit import (
     release_range_capacity,
 )
 from ._capacity_plan import (
+    EventCapacityRequest,
     assess_declared_event_capacity,
     assess_event_capacity,
     release_capacity_reservations,
@@ -83,6 +84,7 @@ __all__ = (
     "AcesImageMappingView",
     "AcesRangeRef",
     "EngineError",
+    "EventCapacityRequest",
     "EventCapacitySignal",
     "GuestProbeError",
     "GuestProbeRequest",

@@ -23,6 +23,7 @@ account's quota surface.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -35,11 +36,16 @@ from shared.capacity import (
     MetricObservation,
     ObservationResult,
 )
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from shared.capacity import CapacityMetricSpec, PartitionRef
 
 logger = logging.getLogger(__name__)
+
+#: Builds a provider client for one service/region, optionally from assumed
+#: credentials. Named so adapters and tests share one shape.
+ClientFactory = Callable[..., Any]
 
 # Capacity reads sit on the pre-spinup path, so a stalled endpoint must fail
 # fast rather than hold up an event's provisioning window (the #929 precedent).
@@ -67,12 +73,34 @@ def _default_client_factory(service: str, *, region: str, credentials: dict[str,
     """Build a boto3 client, optionally from assumed-role credentials."""
     import boto3
 
-    kwargs: dict[str, Any] = {"region_name": region, "config": _client_config()}
+    kwargs: dict[str, object] = {"region_name": region, "config": _client_config()}
     if credentials is not None:
         kwargs["aws_access_key_id"] = credentials["AccessKeyId"]
         kwargs["aws_secret_access_key"] = credentials["SecretAccessKey"]
         kwargs["aws_session_token"] = credentials["SessionToken"]
     return boto3.client(service, **kwargs)
+
+
+def _limit_coordinates(spec: CapacityMetricSpec) -> tuple[str, str, str]:
+    """Split a metric's AWS limit reference into (service code, sep, quota code)."""
+    ref = spec.provider_ref.limit_ref if spec.provider_ref else ""
+    return ref.partition("/")
+
+
+def _usage_coordinates(spec: CapacityMetricSpec) -> tuple[str, str, str]:
+    """Split a metric's AWS usage reference into (namespace, sep, metric name)."""
+    ref = spec.provider_ref.usage_ref if spec.provider_ref else ""
+    return ref.rpartition("/")
+
+
+def _first_series(response: object) -> dict[str, object] | None:
+    """Return the first CloudWatch metric-data result, or ``None`` if malformed."""
+    if not isinstance(response, dict):
+        return None
+    results = response.get("MetricDataResults")
+    if not isinstance(results, list) or not results or not isinstance(results[0], dict):
+        return None
+    return results[0]
 
 
 def _coerce_positive_float(value: object) -> float | None:
@@ -94,7 +122,7 @@ class AWSCapacityInventory:
 
     def __init__(
         self,
-        client_factory: Any = None,
+        client_factory: ClientFactory | None = None,
         home_account: str | None = None,
     ) -> None:
         self._client_factory = client_factory or _default_client_factory
@@ -115,8 +143,8 @@ class AWSCapacityInventory:
             # Bounded: the role ARN and provider error are deliberately omitted.
             logger.warning(
                 "capacity: could not assume read role for partition %s metric %s",
-                partition.name,
-                spec.name,
+                safe_log_value(partition.name),
+                safe_log_value(spec.name),
             )
             return ObservationResult(reason_code=CapacityReasonCode.MEASUREMENT_UNAVAILABLE)
 
@@ -157,22 +185,21 @@ class AWSCapacityInventory:
         credentials: dict[str, str] | None,
     ) -> float | None:
         """Read the quota limit, returning ``None`` when it cannot be established."""
-        assert spec.provider_ref is not None  # guarded by observe()
-        service_code, _, quota_code = spec.provider_ref.limit_ref.partition("/")
+        service_code, _, quota_code = _limit_coordinates(spec)
         if not service_code or not quota_code:
             return None
         try:
             client = self._client_factory("service-quotas", region=partition.region, credentials=credentials)
             response = client.get_service_quota(ServiceCode=service_code, QuotaCode=quota_code)
         except Exception:
-            logger.warning("capacity: quota read failed for metric %s in %s", spec.name, partition.name)
+            logger.warning(
+                "capacity: quota read failed for metric %s in %s",
+                safe_log_value(spec.name),
+                safe_log_value(partition.name),
+            )
             return None
-        if not isinstance(response, dict):
-            return None
-        quota = response.get("Quota")
-        if not isinstance(quota, dict):
-            return None
-        return _coerce_positive_float(quota.get("Value"))
+        quota = response.get("Quota") if isinstance(response, dict) else None
+        return _coerce_positive_float(quota.get("Value")) if isinstance(quota, dict) else None
 
     def _read_usage(
         self,
@@ -185,20 +212,23 @@ class AWSCapacityInventory:
         Returns ``None`` when no datapoint exists -- an unexercised metric is
         unmeasured, not idle.
         """
-        assert spec.provider_ref is not None  # guarded by observe()
-        namespace, _, metric_name = spec.provider_ref.usage_ref.rpartition("/")
+        namespace, _, metric_name = _usage_coordinates(spec)
         if not namespace or not metric_name:
             return None
         try:
             client = self._client_factory("cloudwatch", region=partition.region, credentials=credentials)
             response = client.get_metric_data(**self._usage_query(namespace, metric_name))
         except Exception:
-            logger.warning("capacity: usage read failed for metric %s in %s", spec.name, partition.name)
+            logger.warning(
+                "capacity: usage read failed for metric %s in %s",
+                safe_log_value(spec.name),
+                safe_log_value(partition.name),
+            )
             return None
         return self._first_datapoint(response)
 
     @staticmethod
-    def _usage_query(namespace: str, metric_name: str) -> dict[str, Any]:
+    def _usage_query(namespace: str, metric_name: str) -> dict[str, object]:
         """Build the CloudWatch GetMetricData request for one usage metric."""
         from django.utils import timezone
 
@@ -222,23 +252,21 @@ class AWSCapacityInventory:
 
     @staticmethod
     def _first_datapoint(response: object) -> tuple[float, datetime] | None:
-        """Extract the newest (value, timestamp) pair, validating the shape."""
-        if not isinstance(response, dict):
+        """Extract the newest (value, timestamp) pair, validating the shape.
+
+        Single exit: every shape failure funnels to the same ``None``, which is
+        what "we did not measure this" means to the caller.
+        """
+        series = _first_series(response)
+        if series is None:
             return None
-        results = response.get("MetricDataResults")
-        if not isinstance(results, list) or not results:
-            return None
-        first = results[0]
-        if not isinstance(first, dict):
-            return None
-        values = first.get("Values")
-        timestamps = first.get("Timestamps")
-        if not isinstance(values, list) or not isinstance(timestamps, list):
-            return None
-        if not values or not timestamps:
-            return None
-        value = _coerce_positive_float(values[0])
-        stamp = timestamps[0]
-        if value is None or not isinstance(stamp, datetime):
-            return None
-        return value, stamp
+
+        values = series.get("Values")
+        timestamps = series.get("Timestamps")
+        datapoint = None
+        if isinstance(values, list) and isinstance(timestamps, list) and values and timestamps:
+            value = _coerce_positive_float(values[0])
+            stamp = timestamps[0]
+            if value is not None and isinstance(stamp, datetime):
+                datapoint = (value, stamp)
+        return datapoint

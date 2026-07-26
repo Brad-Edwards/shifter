@@ -12,6 +12,7 @@ rationale.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from uuid import UUID
 
 from ctf.enums import NotificationStatus, NotificationType
@@ -178,7 +179,7 @@ def notify_organizer_event_end(event_id: UUID) -> None:
     )
 
 
-def notify_organizer_capacity_outcome(event_id: UUID, capacity: dict) -> None:
+def notify_organizer_capacity_outcome(event_id: UUID, capacity: Mapping[str, object]) -> None:
     """Notify the organizer that capacity assessment warned or refused (PLAT-201).
 
     Carries the bounded outcome and reason codes only. Observed quota limits,
@@ -205,7 +206,8 @@ def notify_organizer_capacity_outcome(event_id: UUID, capacity: dict) -> None:
 
     blocking = bool(capacity.get("blocking"))
     outcome = str(capacity.get("outcome", "unknown"))
-    reason_codes = list(capacity.get("reason_codes") or [])
+    raw_codes = capacity.get("reason_codes")
+    reason_codes = [str(code) for code in raw_codes] if isinstance(raw_codes, (list, tuple)) else []
 
     html_content, text_content, custom_subject = _n._render_email(
         "capacity_outcome",

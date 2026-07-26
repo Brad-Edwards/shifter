@@ -46,6 +46,7 @@ from shared.capacity import (
     MetricVerdict,
     PartitionRef,
 )
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from engine.models import CapacityReservation
@@ -86,7 +87,7 @@ def admit_range_capacity(
             .order_by("metric_name")
         )
         if not budgets:
-            return _no_opinion(event_ref, moment)
+            return _no_opinion(moment)
 
         verdicts = tuple(_draw_one(budget, draw_key=draw_key, now=moment) for budget in budgets)
         partition = _partition_of(budgets[0])
@@ -165,30 +166,33 @@ def _draw_one(budget: CapacityReservation, *, draw_key: UUID, now: datetime) -> 
 
     enforcement = _enforcement_of(budget)
 
-    existing = CapacityDraw.objects.filter(
+    already_drawn = CapacityDraw.objects.filter(
         reservation=budget,
         draw_key=draw_key,
         released_at__isnull=True,
-    ).first()
-    if existing is not None:
-        # Already drawn for this request: report the same answer rather than
+    ).exists()
+    if already_drawn:
+        # Already drawn for this key: report the same answer rather than
         # charging the budget twice for one range.
         return _verdict(budget, CapacityOutcome.ADMITTED, CapacityReasonCode.AVAILABLE, enforcement, now)
 
     amount = float(budget.unit_amount or 0.0)
-    if amount > budget.available:
-        if enforcement is EnforcementMode.ENFORCING:
-            # A refused range must not hold budget it will never use.
-            return _verdict(budget, CapacityOutcome.REJECTED, CapacityReasonCode.EXCEEDS_HEADROOM, enforcement, now)
+    fits = amount <= budget.available
+    if not fits and enforcement is EnforcementMode.ENFORCING:
+        # A refused range must not hold budget it will never use.
+        return _verdict(budget, CapacityOutcome.REJECTED, CapacityReasonCode.EXCEEDS_HEADROOM, enforcement, now)
+
+    if fits:
+        outcome, reason = CapacityOutcome.ADMITTED, CapacityReasonCode.AVAILABLE
+    else:
         # Advisory proceeds, but the draw is still booked (capped at the
         # committed total by the database constraint) so the overage is visible
         # in the ledger rather than silently unaccounted.
         amount = max(0.0, budget.available)
-        _book(budget, draw_key=draw_key, amount=amount)
-        return _verdict(budget, CapacityOutcome.WARNING, CapacityReasonCode.EXCEEDS_HEADROOM, enforcement, now)
+        outcome, reason = CapacityOutcome.WARNING, CapacityReasonCode.EXCEEDS_HEADROOM
 
     _book(budget, draw_key=draw_key, amount=amount)
-    return _verdict(budget, CapacityOutcome.ADMITTED, CapacityReasonCode.AVAILABLE, enforcement, now)
+    return _verdict(budget, outcome, reason, enforcement, now)
 
 
 def _book(budget: CapacityReservation, *, draw_key: UUID, amount: float) -> None:
@@ -208,7 +212,7 @@ def _book(budget: CapacityReservation, *, draw_key: UUID, amount: float) -> None
     except IntegrityError:
         # A concurrent retry won the unique index, or the check constraint
         # refused an over-draw. Either way this range is already accounted for.
-        logger.info("capacity: draw for key %s was already booked", draw_key)
+        logger.info("capacity: draw for key %s was already booked", safe_log_value(draw_key))
 
 
 def _clamped_consumed(reservation_id: int, amount: float) -> float:
@@ -255,7 +259,7 @@ def _verdict(
     )
 
 
-def _no_opinion(event_ref: UUID, now: datetime) -> CapacityAssessmentResult:
+def _no_opinion(now: datetime) -> CapacityAssessmentResult:
     """Result for an event with no live budget: indeterminate, never blocking."""
     return CapacityAssessmentResult(
         partition=PartitionRef(name="", provider="", account="", region="", backend=""),

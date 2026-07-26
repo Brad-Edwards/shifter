@@ -8,6 +8,8 @@ admission behaviour without anyone noticing.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from shared.capacity import EnforcementMode, MeasurementSource
@@ -129,18 +131,24 @@ class TestStrictValidation:
 
     @pytest.mark.parametrize("ratio", [-0.1, 1.0, 1.5, "nope"])
     def test_out_of_range_safety_margin_is_rejected(self, ratio):
+        payload = _with_metric({"safety_margin_ratio": ratio})
+
         with pytest.raises(CapacityCatalogError):
-            load_catalog(_with_metric({"safety_margin_ratio": ratio}))
+            load_catalog(payload)
 
     @pytest.mark.parametrize("freshness", [0, -1, "soon"])
     def test_non_positive_freshness_is_rejected(self, freshness):
+        payload = _with_metric({"freshness_seconds": freshness})
+
         with pytest.raises(CapacityCatalogError):
-            load_catalog(_with_metric({"freshness_seconds": freshness}))
+            load_catalog(payload)
 
     def test_metric_referencing_undeclared_partition_is_rejected(self):
         """Metrics may only target allowlisted partitions."""
+        payload = _with_metric({"partition": "not-declared"})
+
         with pytest.raises(CapacityCatalogError):
-            load_catalog(_with_metric({"partition": "not-declared"}))
+            load_catalog(payload)
 
     def test_duplicate_partition_name_is_rejected(self):
         payload = {"partitions": [VALID["partitions"][0], VALID["partitions"][0]], "metrics": []}
@@ -161,8 +169,10 @@ class TestStrictValidation:
             load_catalog(payload)
 
     def test_unknown_measurement_source_is_rejected(self):
+        payload = _with_metric({"source": "vibes"})
+
         with pytest.raises(CapacityCatalogError):
-            load_catalog(_with_metric({"source": "vibes"}))
+            load_catalog(payload)
 
     def test_non_mapping_payload_is_rejected(self):
         with pytest.raises(CapacityCatalogError):
@@ -187,8 +197,10 @@ class TestCostCoefficients:
 
     @pytest.mark.parametrize("cost", [-1, "free"])
     def test_invalid_cost_is_rejected(self, cost):
+        payload = _with_metric({"per_range_cost": cost})
+
         with pytest.raises(CapacityCatalogError):
-            load_catalog(_with_metric({"per_range_cost": cost}))
+            load_catalog(payload)
 
     def test_cost_change_changes_the_policy_version(self):
         """Costs affect admission, so they must be pinned into the version."""
@@ -199,7 +211,10 @@ class TestPolicyVersion:
     """Assessments pin the policy version that produced them."""
 
     def test_version_is_stable_for_identical_catalogs(self):
-        assert load_catalog(VALID).policy_version == load_catalog(VALID).policy_version
+        """A second parse of an equal payload yields the same version."""
+        duplicate = json.loads(json.dumps(VALID))
+
+        assert load_catalog(duplicate).policy_version == load_catalog(VALID).policy_version
 
     def test_version_changes_when_enforcement_changes(self):
         stricter = _with_metric({"enforcement": "enforcing"}, index=0)

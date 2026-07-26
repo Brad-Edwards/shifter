@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from shared.capacity import (
     CapacityReasonCode,
@@ -25,11 +25,18 @@ from shared.capacity import (
     MetricObservation,
     ObservationResult,
 )
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from shared.capacity import CapacityMetricSpec, PartitionRef
 
 logger = logging.getLogger(__name__)
+
+
+class MonitoringClient(Protocol):
+    """The Cloud Monitoring surface this adapter depends on."""
+
+    def list_time_series(self, *, metric_type: str, project: str, region: str) -> list[Any]: ...
 
 
 class _DefaultMonitoringClient:
@@ -39,7 +46,8 @@ class _DefaultMonitoringClient:
     require the Google libraries at import time.
     """
 
-    def list_time_series(self, *, metric_type: str, project: str, region: str) -> list[Any]:
+    @staticmethod
+    def list_time_series(*, metric_type: str, project: str, region: str) -> list[Any]:
         from shared.cloud.gcp.base import import_google_module
 
         monitoring = import_google_module("google.cloud.monitoring_v3")
@@ -52,39 +60,42 @@ class _DefaultMonitoringClient:
         return list(client.list_time_series(request=request))
 
 
-def _series_point(series: Any) -> tuple[float, datetime] | None:
+def _protobuf_point(series: object) -> tuple[object, object]:
+    """Read (value, timestamp) from a real ``TimeSeries`` protobuf."""
+    points = getattr(series, "points", None)
+    if not points:
+        return None, None
+    point = points[0]
+    typed = getattr(point, "value", None)
+    value = getattr(typed, "int64_value", None) or getattr(typed, "double_value", None)
+    interval = getattr(point, "interval", None)
+    end_time = getattr(interval, "end_time", None)
+    return value, end_time if isinstance(end_time, datetime) else None
+
+
+def _series_point(series: object) -> tuple[float, datetime] | None:
     """Extract (value, timestamp) from one time series, validating the shape.
 
     Accepts both the lightweight shape used by the adapter's tests and the real
     ``TimeSeries`` protobuf, whose newest point carries the value in a typed
-    union and the timestamp on its interval.
+    union and the timestamp on its interval. Single exit: every shape failure
+    yields the same ``None``, meaning "not measured".
     """
     value = getattr(series, "value", None)
     when = getattr(series, "when", None)
-
     if value is None or when is None:
-        points = getattr(series, "points", None)
-        if not points:
-            return None
-        point = points[0]
-        typed = getattr(point, "value", None)
-        value = getattr(typed, "int64_value", None) or getattr(typed, "double_value", None)
-        interval = getattr(point, "interval", None)
-        end_time = getattr(interval, "end_time", None)
-        when = end_time.replace(tzinfo=end_time.tzinfo) if isinstance(end_time, datetime) else None
+        value, when = _protobuf_point(series)
 
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not isinstance(when, datetime):
         return None
     numeric = float(value)
-    if numeric < 0 or not isinstance(when, datetime):
-        return None
-    return numeric, when
+    return (numeric, when) if numeric >= 0 else None
 
 
 class GCPCapacityInventory:
     """Read-only capacity observations from GCP Cloud Monitoring."""
 
-    def __init__(self, monitoring_client: Any = None) -> None:
+    def __init__(self, monitoring_client: MonitoringClient | None = None) -> None:
         self._client = monitoring_client or _DefaultMonitoringClient()
 
     def observe(self, spec: CapacityMetricSpec, partition: PartitionRef) -> ObservationResult:
@@ -129,7 +140,11 @@ class GCPCapacityInventory:
             )
         except Exception:
             # Bounded: the project id and provider error text are omitted.
-            logger.warning("capacity: monitoring read failed for metric %s in %s", spec.name, partition.name)
+            logger.warning(
+                "capacity: monitoring read failed for metric %s in %s",
+                safe_log_value(spec.name),
+                safe_log_value(partition.name),
+            )
             return None
         if not isinstance(series, list) or not series:
             return None
