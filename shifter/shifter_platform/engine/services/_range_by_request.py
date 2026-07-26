@@ -126,6 +126,32 @@ def cancel_range_by_request(request_id: UUID) -> bool:
     return accepted
 
 
+def rebind_range_workspace_by_request(request_id: UUID, workspace_id: int) -> bool:
+    """Move the Engine range for ``request_id`` into ``workspace_id`` (#1325).
+
+    The Engine half of the explicit rehoming operation in ADR-046-R3. CMS owns
+    the decision -- it authorizes the move and updates its own two projections --
+    and calls this so the Engine range's scope moves with them instead of being
+    left pointing at the previous tenant. Engine still never resolves or
+    authorizes a workspace itself (ADR-046-R1).
+
+    Returns:
+        True if a range existed for ``request_id`` and now carries the binding.
+    """
+    from engine.models import Range
+
+    updated = Range.objects.filter(request__request_id=request_id).update(workspace_id=workspace_id)
+    if not updated:
+        logger.warning("rebind_range_workspace_by_request: no range for request_id=%s", request_id)
+        return False
+    logger.info(
+        "rebind_range_workspace_by_request: request_id=%s rebound to workspace_id=%s",
+        request_id,
+        workspace_id,
+    )
+    return True
+
+
 def reassign_range_owner_by_request(request_id: UUID, new_user: User) -> bool:
     """Reassign the ``Range``/``Request`` owner for ``request_id`` to ``new_user``.
 

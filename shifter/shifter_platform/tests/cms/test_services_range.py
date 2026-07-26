@@ -18,6 +18,9 @@ from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from tests.conftest import INVALID_RANGE_IDS, INVALID_USERS
 
+# Opaque #1325 workspace scope binding; this suite does not exercise tenancy.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -29,7 +32,14 @@ def user(db):
 
 
 def _range_instance(user, *, range_id=None, scenario_id="basic", status="provisioning", agent=None, range_source=None):
-    kwargs = {"scenario_id": scenario_id, "user_id": user.id, "range_id": range_id, "status": status, "agent": agent}
+    kwargs = {
+        "scenario_id": scenario_id,
+        "user_id": user.id,
+        "range_id": range_id,
+        "status": status,
+        "agent": agent,
+        "workspace_id": _WORKSPACE_ID,
+    }
     if range_source is not None:
         kwargs["range_source"] = range_source
     return RangeInstance.objects.create(**kwargs)
@@ -476,6 +486,7 @@ class TestActiveRangeConstraintBackstop:
 
         def _persist(cms_request):
             return RangeInstance.objects.create(
+                workspace_id=_WORKSPACE_ID,
                 request=cms_request,
                 scenario_id="basic",
                 user_id=user.id,
@@ -483,14 +494,14 @@ class TestActiveRangeConstraintBackstop:
             )
 
         # First reservation takes the (user, MISSION_CONTROL) slot.
-        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist)
+        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist, _WORKSPACE_ID)
         requests_before = Request.objects.filter(user=user).count()
 
         # A second reservation collides on the active-range constraint; the named
         # violation is translated to the authored CMSError and the whole atomic
         # rolls back, so no orphan Request is left behind.
         with pytest.raises(CMSError, match="already have an active range"):
-            _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist)
+            _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist, _WORKSPACE_ID)
 
         assert Request.objects.filter(user=user).count() == requests_before
         assert RangeInstance.objects.filter(user_id=user.id).count() == 1

@@ -16,6 +16,11 @@ from django.contrib.auth import get_user_model
 
 from cms.services import get_range_target_instances
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 User = get_user_model()
 
 _ATTACKER = {
@@ -55,6 +60,7 @@ def _ready_range(user, provisioned_instances):
     from engine.models import Range as EngineRange
 
     return EngineRange.objects.create(
+        workspace_id=_WORKSPACE_ID,
         user=user,
         status=EngineRange.Status.READY,
         provisioned_instances=provisioned_instances,

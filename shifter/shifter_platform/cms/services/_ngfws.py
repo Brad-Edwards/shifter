@@ -233,12 +233,19 @@ def _provision_ngfw_request_records(user: User, name: str) -> tuple[UUID, Reques
 
     from cms.models import App, AppType, Instance, InstanceType, Request
     from shared.enums import RequestType
+    from workspaces.services import resolve_personal_workspace
 
     request_id = uuid4()
+    # The request container records who asked, so it carries the requester's
+    # workspace scope like any other CMS request (ADR-046-R3). This does NOT
+    # scope the NGFW itself: the Instance/App rows below stay unscoped, because
+    # NGFW instances and platform network infrastructure remain deployment-global
+    # (ADR-046-R7).
     request = Request.objects.create(
         request_id=request_id,
         request_type=RequestType.NGFW.value,
         user=user,
+        workspace_id=resolve_personal_workspace(user).workspace_id,
     )
     logger.info("create_ngfw: created Request id=%s for user_id=%s", request_id, user.id)
 

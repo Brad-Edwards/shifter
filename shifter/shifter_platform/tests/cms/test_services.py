@@ -19,6 +19,11 @@ from shared.constants import USER_CANNOT_BE_NONE
 from shared.enums import RequestType, ResourceStatus
 from shared.schemas import RangeContext
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -43,13 +48,16 @@ def user(db):
 
 
 def _request(user) -> Request:
-    return Request.objects.create(request_id=uuid4(), request_type=RequestType.RANGE.value, user=user)
+    return Request.objects.create(
+        workspace_id=_WORKSPACE_ID, request_id=uuid4(), request_type=RequestType.RANGE.value, user=user
+    )
 
 
 def _range_instance(
     user, *, range_id, status=ResourceStatus.READY.value, scenario_id="basic", range_spec=None, request=None
 ):
     return RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID,
         user_id=user.id,
         range_id=range_id,
         status=status,
@@ -64,7 +72,10 @@ def _engine_range(user, *, provisioned_instances):
     from engine.models import Range as EngineRange
 
     return EngineRange.objects.create(
-        user=user, status=EngineRange.Status.READY, provisioned_instances=provisioned_instances
+        workspace_id=_WORKSPACE_ID,
+        user=user,
+        status=EngineRange.Status.READY,
+        provisioned_instances=provisioned_instances,
     )
 
 

@@ -26,6 +26,11 @@ import cms.scenarios.hydrator as _hydrator
 from cms.models import AgentConfig, OperatingSystem, Scenario
 from cms.scenarios.registry import load_scenario_template as _GENUINE_LOAD_SCENARIO
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 User = get_user_model()
 
 
@@ -189,6 +194,7 @@ def range_ssh_instance(db):
             },
         }
         rng = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             user=user,
             status=status or Range.Status.READY,
             provisioned_instances=[instance],
@@ -228,6 +234,7 @@ def range_rdp_instance(db):
             "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:1:secret:rdp",
         }
         rng = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             user=user,
             status=status or Range.Status.READY,
             provisioned_instances=[instance],
@@ -271,7 +278,9 @@ def cms_ngfw_app(db):
 
         _ensure_ngfw_catalog()
         resolved_status = status or ResourceStatus.READY.value
-        request = Request.objects.create(request_id=uuid4(), request_type=RequestType.NGFW.value, user=user)
+        request = Request.objects.create(
+            workspace_id=_WORKSPACE_ID, request_id=uuid4(), request_type=RequestType.NGFW.value, user=user
+        )
         instance = Instance.objects.create(
             request=request,
             name=name,
@@ -350,6 +359,8 @@ def make_ngfw(db):
 
         request = None
         if with_request:
+            # engine.models.Request (imported above) carries no workspace scope;
+            # tenancy lives on the CMS request and the engine Range.
             request = Request.objects.create(
                 request_id=uuid4(),
                 request_type=RequestType.NGFW.value,

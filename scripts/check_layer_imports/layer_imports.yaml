@@ -26,6 +26,10 @@ classification:
     - cms
     - management
     - ctf
+    # ADR-046: organization/workspace tenancy. Owns Organization, Workspace, and
+    # WorkspaceMembership; other layers reach it only via workspaces.services and
+    # carry scalar workspace_id references rather than cross-layer ForeignKeys.
+    - workspaces
   # Owns HTTP/WebSocket presentation orchestration. May use `shared` and
   # explicitly allowed public domain service facades; never domain models.
   presentation:
@@ -46,10 +50,17 @@ allowed:
     - shared
     - management.services
 
+  # ADR-046: the tenancy domain is self-contained. It resolves and authorizes
+  # workspaces from an already-authenticated Django user and must not reach into
+  # another domain to do it.
+  workspaces:
+    - shared
+
   cms:
     - shared
     - management.services
     - engine.services
+    - workspaces.services
 
   management:
     - shared

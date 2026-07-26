@@ -2211,5 +2211,64 @@
       "shifter/shifter_platform/tests/shared/test_audit_policy.py",
       "shifter/shifter_platform/tests/shared/test_audit_store.py"
     ]
+  },
+  {
+    "id": "ADR-046",
+    "title": "Organization/workspace tenancy is a domain boundary above range ownership",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Organizations own workspaces; a workspace owns its user memberships and role codes; a range remains owned by its existing user/request identity and is additionally bound to exactly one workspace. The bounded workspaces domain is the sole owner of Organization, Workspace, and WorkspaceMembership persistence and authorization. It does not reuse Django auth groups, UserProfile, CTF teams/events, SPA navigation workspaces, Terraform workspaces, or cloud tenancy as the membership model. Engine and CMS retain their own range/request persistence under ADR-001: they carry a validated opaque workspace_id rather than a cross-layer ForeignKey or a second workspace model. Existing user-owned ranges are placed in the owning user's personal workspace, which is itself owned by a personal organization, so single-user installs retain the same owner, lifecycle, admission, access, and visible behavior. Identity-provider group/claim integration is a future, verified adapter into this domain, not a direct role authority in this data model.",
+    "rules": [
+      {
+        "id": "ADR-046-R1",
+        "description": "Organization, Workspace, and WorkspaceMembership are owned by one classified domain app and exposed to other layers only through its public service facade. The models may relate to Django auth.User, but no other domain may import them or add a cross-layer ForeignKey. Do not duplicate the schema in management, CMS, Engine, CTF, shared, frontend state, provider tags, or JSON blobs.",
+        "checks": ["layer-imports", "cross-layer-model-imports"]
+      },
+      {
+        "id": "ADR-046-R2",
+        "description": "A workspace belongs to exactly one organization and has at most one membership per user. Membership role is a closed domain value; its operation-to-role policy is owned by the workspace authorization service. Workspace membership does not replace Range.user, cms.Request.user, CMS range provenance, CTF participant/event/team membership, API-token scope, or per-range remote-access checks. A workspace role grants no implicit SSH, RDP, VPN, Guacamole, or CTF-event access to another user's range.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R3",
+        "description": "The trusted launch/reassignment path resolves and authorizes workspace scope once through the workspace service and persists the resulting internal workspace_id as an immutable scope binding on CMS request intent, the CMS RangeInstance projection, and Engine Range. These are scalar references rather than cross-layer FKs; no caller may trust a supplied internal ID, mutate only one projection, infer scope from a user/group, or silently rehome a range. A future explicit rehoming operation must validate the target membership and update all ownership projections transactionally.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R4",
+        "description": "The compatibility default is per user, never a deployment-global organization or workspace: every migrated user-owned range is bound to that user's personal workspace and an owner membership. The migration must fail loudly on conflicting or unresolvable Engine/CMS ownership evidence rather than choosing an arbitrary tenant, and current per-user active-range, lifecycle, terminal, VPN, CTF, and API behavior remains unchanged until a separately reviewed scoping policy changes it.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R5",
+        "description": "OIDC/Identity Platform claims may be considered only after the existing issuer, audience, authorized-party, subject, and verified-email gates bind the Django user. Provider group names are external evidence, not workspace IDs or role strings; any later mapping is allowlisted/configured at the identity adapter, provenance-aware, auditable, revocable, and cannot let a self-mutable claim or Django auth.Group create workspace authority.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R6",
+        "description": "Future organization/workspace APIs use the canonical /api/v1 DRF authentication, exact API-token scope registry, serializer validation, shared error envelope, request correlation, audit facade, and sanitized logging. Role/membership mutations and sensitive range rehoming are transactional and audit-strict. External IDs, claims, tokens, emails, membership lists, and database errors must not leak through logs, events, command argv, or public error bodies.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R7",
+        "description": "Tenancy scopes principals and range ownership, not platform configuration or catalog. The following remain deployment-global and MUST NOT acquire an organization or workspace binding as an implicit consequence of this layer: the scenario catalog and ACES package sources; the agent, operating-system, instance-type, and app catalogs; NGFW instances and platform network/infrastructure; cloud provider, range-backend, and deployment settings including the environment manifest; identity-provider configuration (issuer, audience, allowlists) and the API-token scope registry; the durable audit store; feature flags; and CTF events, teams, and participants, which stay a separate membership model. Scoping any of these to a workspace is a separate decision requiring its own ADR, because each carries platform-operator authority rather than tenant authority; a workspace-level policy surface (for example the #1171 zero-egress posture) is added by an explicit decision on that surface, never by inheritance from this rule.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1325",
+      "docs/architecture/organization-workspace-preflight-1325.md",
+      "scripts/check_layer_imports/layer_imports.yaml",
+      "shifter/shifter_platform/management/management/commands/check_model_fks.py",
+      "shifter/shifter_platform/cms/models/provisioning.py",
+      "shifter/shifter_platform/cms/models/range.py",
+      "shifter/shifter_platform/engine/models/_range.py",
+      "shifter/shifter_platform/config/oidc.py",
+      "shifter/shifter_platform/config/identity_platform.py",
+      "shifter/shifter_platform/shared/api/errors.py",
+      "shifter/shifter_platform/shared/audit"
+    ]
   }
 ]

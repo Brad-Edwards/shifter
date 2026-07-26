@@ -61,23 +61,30 @@ _ACTIVE_RANGE_MESSAGE = "You already have an active range. Please destroy it bef
 
 def _engine_create_range_call(
     request_spec: RequestSpec,
-    backend_admission: BackendAdmission | None = None,
-    remote_access_capability: dict[str, object] | None = None,
+    backend_admission: BackendAdmission | None,
+    remote_access_capability: dict[str, object] | None,
+    workspace_id: int,
 ) -> RangeRef:
     """Late-bound call to ``cms.services.engine_create_range`` so test patches apply.
 
     ``backend_admission`` is the trusted #1348 admission result carried beside the
     RequestSpec (never inside it); the Engine persists the backend/purpose binding
-    from it at create (#1666).
+    from it at create (#1666). ``workspace_id`` is the trusted #1325 tenancy
+    scope and travels the same way (ADR-046-R3).
     """
     from cms import services as _cs
 
     if remote_access_capability is None:
-        return _cs.engine_create_range(request_spec, backend_admission=backend_admission)
+        return _cs.engine_create_range(
+            request_spec,
+            backend_admission=backend_admission,
+            workspace_id=workspace_id,
+        )
     return _cs.engine_create_range(
         request_spec,
         backend_admission=backend_admission,
         remote_access_capability=remote_access_capability,
+        workspace_id=workspace_id,
     )
 
 
@@ -147,6 +154,7 @@ def _reserve_active_range_slot(
     user: User,
     range_source: RangeSource,
     persist_instance: Callable[[Request], RangeInstance],
+    workspace_id: int,
 ) -> tuple[UUID, Request, RangeInstance]:
     """Atomically reserve the single active-range slot for ``(user, range_source)``.
 
@@ -163,7 +171,7 @@ def _reserve_active_range_slot(
     """
     try:
         with transaction.atomic():
-            request_id, cms_request = _create_cms_request(user)
+            request_id, cms_request = _create_cms_request(user, workspace_id)
             range_instance = persist_instance(cms_request)
             _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
     except IntegrityError as exc:
@@ -178,12 +186,26 @@ def _reserve_active_range_slot(
     return request_id, cms_request, range_instance
 
 
+def _resolve_launch_workspace(user: User) -> int:
+    """Resolve the workspace scope a launch by ``user`` belongs to (ADR-046-R3).
+
+    #1325 resolves the launcher's personal workspace, which preserves current
+    single-user behavior exactly while giving every new range a real tenancy
+    binding. #1327 replaces this with workspace selection and admission; the
+    resolution stays here at the CMS facade rather than moving into a view or
+    the provisioner, so there is one place scope is decided.
+    """
+    from workspaces.services import resolve_personal_workspace
+
+    return resolve_personal_workspace(user).workspace_id
+
+
 def _lookup_agents_by_os(user: User, agents_by_os: dict[str, int]) -> dict[str, AgentConfig]:
     """Resolve each agent ID to an AgentConfig owned by the user."""
     return {os_type: _get_agent_call(user, aid) for os_type, aid in agents_by_os.items()}
 
 
-def _create_cms_request(user: User) -> tuple[UUID, Request]:
+def _create_cms_request(user: User, workspace_id: int) -> tuple[UUID, Request]:
     """Create the CMS Request row and return (request_id, cms_request)."""
     from uuid import uuid4
 
@@ -195,6 +217,7 @@ def _create_cms_request(user: User) -> tuple[UUID, Request]:
         request_id=request_id,
         request_type=RequestType.RANGE.value,
         user=user,
+        workspace_id=workspace_id,
     )
     logger.info(
         "create_range: created CMS Request id=%s for user_id=%s",
@@ -208,13 +231,17 @@ def _dispatch_engine_range(
     request_id: UUID,
     user: User,
     range_spec: RangeSpec,
-    backend_admission: BackendAdmission | None = None,
-    remote_access_capability: dict[str, object] | None = None,
+    backend_admission: BackendAdmission | None,
+    remote_access_capability: dict[str, object] | None,
+    workspace_id: int,
 ) -> None:
     """Dispatch range provisioning to engine for an already-owned CMS request.
 
     ``backend_admission`` (the trusted #1348 result) is carried beside the
     RequestSpec so the Engine persists the #1666 ownership binding at create.
+    ``workspace_id`` is the trusted #1325 tenancy scope, carried the same way
+    (beside, never inside, the spec) so Engine persists it in the range's create
+    transaction without CMS reaching into Engine's models (ADR-046-R3).
     """
     from shared.schemas import RequestSpec
 
@@ -223,7 +250,7 @@ def _dispatch_engine_range(
         user_id=user.id,
         items=[range_spec],
     )
-    _engine_create_range_call(request_spec, backend_admission, remote_access_capability)
+    _engine_create_range_call(request_spec, backend_admission, remote_access_capability, workspace_id)
 
 
 def _build_remote_access_capability(
@@ -282,6 +309,9 @@ def _persist_range_instance_record(
         request=cms_request,
         scenario_id=scenario,
         user_id=user.id,
+        # The projection inherits the request's authorized scope rather than
+        # re-resolving it, so the two can never disagree (ADR-046-R3).
+        workspace_id=cms_request.workspace_id,
         agent=first_agent,
         range_source=range_source.value,
         range_spec=wrap_persisted_spec("range_spec", range_spec),
@@ -446,7 +476,10 @@ def create_range(
                 range_source,
             )
 
-        request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
+        workspace_id = _resolve_launch_workspace(user)
+        request_id, _cms_request, range_instance = _reserve_active_range_slot(
+            user, range_source, _persist, workspace_id
+        )
         try:
             _dispatch_engine_range(
                 request_id,
@@ -454,6 +487,7 @@ def create_range(
                 range_spec,
                 backend_admission,
                 remote_access_capability,
+                workspace_id,
             )
         except Exception:
             _set_range_instance_status(range_instance, ResourceStatus.FAILED)

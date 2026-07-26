@@ -52,6 +52,19 @@ class Range(models.Model):
         blank=True,
         help_text="User ID from CMS (may differ from Django user.id)",
     )
+    # Soft reference to workspaces.Workspace (ADR-046-R3, #1325). Supplied by the
+    # trusted CMS launch path beside the RequestSpec -- the same shape as the
+    # #1666 backend binding -- and persisted in the range's create transaction.
+    # A scalar rather than a ForeignKey because cross-layer FKs are prohibited
+    # (ADR-001-R2). Non-null with no default: a range with no tenancy scope is
+    # not a reachable state. Unlike range_backend/instantiation_purpose above,
+    # NULL is NOT a sentinel here -- the column was introduced nullable only so
+    # the validated backfill could run, then made mandatory (engine migration
+    # 0042), and engine.services refuses a create with no binding.
+    workspace_id = models.IntegerField(
+        db_index=True,
+        help_text="Workspace this range is scoped to (soft reference; see ADR-046).",
+    )
     ngfw_instance = models.ForeignKey(
         "Instance",
         on_delete=models.SET_NULL,

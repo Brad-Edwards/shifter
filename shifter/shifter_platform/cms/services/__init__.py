@@ -43,6 +43,7 @@ from engine.services import (
     range_owner_reassignment_available_by_request as engine_range_owner_reassignment_available,
 )
 from engine.services import reassign_range_owner_by_request as engine_reassign_range_owner
+from engine.services import rebind_range_workspace_by_request as engine_rebind_range_workspace
 from engine.services import (
     record_capacity_declaration as engine_record_capacity_declaration,
 )
@@ -180,6 +181,7 @@ __all__ = (
     "engine_pause_range",
     "engine_range_owner_reassignment_available",
     "engine_reassign_range_owner",
+    "engine_rebind_range_workspace",
     "engine_record_capacity_declaration",
     "engine_resume_range",
     "expire_due_ranges",

@@ -24,6 +24,11 @@ from engine.services import (
 from shared.enums import RequestType, ResourceStatus
 from shared.schemas import RangeRef
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 User = get_user_model()
 
 
@@ -78,6 +83,7 @@ def request_obj(db, user):
 def range_ready(db, user, request_obj):
     """Create a ready range with provisioned instances."""
     return Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
         uuid=uuid.uuid4(),
         user=user,
         request=request_obj,
@@ -113,6 +119,7 @@ def range_ready(db, user, request_obj):
 def range_pending(db, user, request_obj):
     """Create a pending range."""
     return Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
         uuid=uuid.uuid4(),
         user=user,
         request=request_obj,
@@ -125,6 +132,7 @@ def range_pending(db, user, request_obj):
 def range_provisioning(db, user):
     """Create a provisioning range without request (legacy pattern)."""
     return Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
         uuid=uuid.uuid4(),
         user=user,
         status=Range.Status.PROVISIONING,
@@ -220,6 +228,7 @@ class TestDestroyRangeIntegration:
     def test_returns_false_for_already_destroyed(self, user, request_obj):
         """destroy_range returns False when already destroyed."""
         range_obj = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             request=request_obj,
@@ -240,6 +249,7 @@ class TestDestroyRangeIntegration:
     def test_returns_true_for_already_destroying(self, user, request_obj):
         """destroy_range is idempotent when already destroying."""
         range_obj = Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             request=request_obj,
@@ -362,6 +372,7 @@ class TestSubnetAllocationIntegration:
     def test_allocates_next_index_after_existing(self, user):
         """allocate_subnet_index returns next available index."""
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             status=Range.Status.READY,
@@ -374,6 +385,7 @@ class TestSubnetAllocationIntegration:
     def test_reuses_index_from_destroyed_range(self, user):
         """allocate_subnet_index reuses index from DESTROYED range."""
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             status=Range.Status.DESTROYED,
@@ -386,6 +398,7 @@ class TestSubnetAllocationIntegration:
     def test_reuses_index_from_failed_range(self, user):
         """allocate_subnet_index reuses index from FAILED range."""
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             status=Range.Status.FAILED,
@@ -398,12 +411,14 @@ class TestSubnetAllocationIntegration:
     def test_fills_gap_in_indices(self, user):
         """allocate_subnet_index fills gaps in index sequence."""
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             status=Range.Status.READY,
             subnet_index=1,
         )
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             status=Range.Status.READY,
@@ -427,25 +442,51 @@ class TestVpnGatewaySlotAllocationIntegration:
         assert Range.allocate_vpn_gateway_slot() == 0
 
     def test_allocates_next_free_slot(self, user):
-        Range.objects.create(uuid=uuid.uuid4(), user=user, status=Range.Status.READY, vpn_gateway_pool_slot=0)
+        Range.objects.create(
+            workspace_id=_WORKSPACE_ID, uuid=uuid.uuid4(), user=user, status=Range.Status.READY, vpn_gateway_pool_slot=0
+        )
         assert Range.allocate_vpn_gateway_slot() == 1
 
     def test_reuses_slot_from_destroyed_range(self, user):
-        Range.objects.create(uuid=uuid.uuid4(), user=user, status=Range.Status.DESTROYED, vpn_gateway_pool_slot=0)
+        Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
+            uuid=uuid.uuid4(),
+            user=user,
+            status=Range.Status.DESTROYED,
+            vpn_gateway_pool_slot=0,
+        )
         assert Range.allocate_vpn_gateway_slot() == 0
 
     def test_reuses_slot_from_failed_range(self, user):
-        Range.objects.create(uuid=uuid.uuid4(), user=user, status=Range.Status.FAILED, vpn_gateway_pool_slot=0)
+        Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
+            uuid=uuid.uuid4(),
+            user=user,
+            status=Range.Status.FAILED,
+            vpn_gateway_pool_slot=0,
+        )
         assert Range.allocate_vpn_gateway_slot() == 0
 
     def test_ignores_ranges_without_a_slot(self, user):
-        Range.objects.create(uuid=uuid.uuid4(), user=user, status=Range.Status.READY, vpn_gateway_pool_slot=None)
+        Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
+            uuid=uuid.uuid4(),
+            user=user,
+            status=Range.Status.READY,
+            vpn_gateway_pool_slot=None,
+        )
         assert Range.allocate_vpn_gateway_slot() == 0
 
     @override_settings(VPN_GATEWAY_POOL_SIZE=2)
     def test_raises_when_pool_exhausted(self, user):
         for slot in range(2):
-            Range.objects.create(uuid=uuid.uuid4(), user=user, status=Range.Status.READY, vpn_gateway_pool_slot=slot)
+            Range.objects.create(
+                workspace_id=_WORKSPACE_ID,
+                uuid=uuid.uuid4(),
+                user=user,
+                status=Range.Status.READY,
+                vpn_gateway_pool_slot=slot,
+            )
         with pytest.raises(ValueError, match="pool exhausted"):
             Range.allocate_vpn_gateway_slot()
 
@@ -482,6 +523,7 @@ class TestGetActiveForUserIntegration:
     def test_excludes_destroyed_range(self, user):
         """get_active_for_user excludes DESTROYED ranges."""
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             status=Range.Status.DESTROYED,
@@ -494,6 +536,7 @@ class TestGetActiveForUserIntegration:
     def test_excludes_failed_range(self, user):
         """get_active_for_user excludes FAILED ranges."""
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             status=Range.Status.FAILED,
@@ -506,6 +549,7 @@ class TestGetActiveForUserIntegration:
     def test_excludes_destroying_range(self, user):
         """get_active_for_user excludes DESTROYING ranges."""
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             status=Range.Status.DESTROYING,
@@ -595,6 +639,7 @@ class TestGetRdpConnectionInfoIntegration:
     def test_returns_ubuntu_rdp_credentials(self, user, request_obj):
         """get_rdp_connection_info returns per-instance credentials for Ubuntu (#762)."""
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             uuid=uuid.uuid4(),
             user=user,
             request=request_obj,

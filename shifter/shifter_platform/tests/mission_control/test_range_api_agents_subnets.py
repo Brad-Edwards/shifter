@@ -15,6 +15,11 @@ from django.urls import reverse
 
 from engine.models import Range
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 
@@ -65,7 +70,7 @@ class TestSubnetIndexAllocation:
         return django_user_model.objects.create_user(username="subnet@example.com", email="subnet@example.com")
 
     def _range(self, user, *, subnet_index, status=Range.Status.READY):
-        return Range.objects.create(user=user, subnet_index=subnet_index, status=status)
+        return Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, subnet_index=subnet_index, status=status)
 
     def test_first_allocation_returns_one(self, user):
         assert Range.allocate_subnet_index() == 1
