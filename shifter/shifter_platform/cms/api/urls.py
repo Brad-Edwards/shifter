@@ -51,6 +51,11 @@ urlpatterns = [
         name="scenario-editor-scenario-export",
     ),
     path(
+        "scenario-editor/scenarios/<slug:scenario_id>/realizability/",
+        views.ScenarioRealizabilityView.as_view(),
+        name="scenario-editor-scenario-realizability",
+    ),
+    path(
         "scenario-editor/scenarios/<slug:scenario_id>/",
         views.ScenarioResourceView.as_view(),
         name="scenario-editor-scenario-detail",

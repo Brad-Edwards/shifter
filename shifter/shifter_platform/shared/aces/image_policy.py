@@ -9,6 +9,16 @@ access so they are trivially testable and live in exactly one place. Passthrough
 of an already-concrete image ref and fail-loud on no match are the backend
 realization policy (applied by the provider-specific builder), because "already
 concrete" is provider-specific.
+
+The rules live in ``shared.aces`` rather than the provisioner because two
+deployables must apply them identically (#1581): the provisioner resolves images
+at realization, and Scenario Editor realizability assessment resolves them in
+the portal to report a missing image-supply gap *before* an author publishes. A
+second copy in the portal could drift and let the editor call a pack realizable
+that realization would then reject, so both execute this one module. It must
+stay dependency-light -- the provisioner image copies ``shifter_platform/shared``
+onto ``PYTHONPATH`` without the portal's dependencies, and ``shared.aces`` is
+deliberately inert on import -- so this module imports stdlib only.
 """
 
 from __future__ import annotations
@@ -31,6 +41,25 @@ class ResolvedImage:
 #: Authored version sentinels meaning "unpinned / any" (aces-sdl defaults an
 #: omitted ``source.version`` to ``"*"``; a bare-string source yields no version).
 _UNPINNED_VERSIONS = frozenset({"", "*"})
+
+#: Substrings that mark an authored ``source.name`` as an already-concrete provider
+#: image reference, eligible for passthrough when no registry mapping matches.
+#: Keyed by registry provider because "already concrete" is provider-specific; an
+#: unmodelled provider resolves to no markers and therefore never claims concrete,
+#: so a new adapter must declare its own syntax rather than inherit GCE's.
+_CONCRETE_REF_MARKERS: dict[str, tuple[str, ...]] = {
+    "gce": ("projects/", "global/images/", "/images/family/", "https://"),
+}
+
+
+def is_concrete_image_ref(name: str, *, provider: str) -> bool:
+    """Return whether ``name`` is already a concrete image ref for ``provider``.
+
+    Realization passes such a reference straight through when the registry has no
+    mapping for it. Editor realizability assessment applies the same rule so it
+    does not report a missing-mapping gap for a pack that would in fact launch.
+    """
+    return any(marker in name for marker in _CONCRETE_REF_MARKERS.get(provider, ()))
 
 
 def resolve_from_candidates(candidates: Sequence[dict[str, Any]], *, version: str | None) -> ResolvedImage | None:
