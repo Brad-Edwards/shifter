@@ -15,7 +15,6 @@ Detailed guides for each Shifter feature.
 
 ## Governance
 
-- [Risk Register](risk-register) - Track security risks with severity, status, comments, and audit history
 
 ## Advanced Features
 

@@ -386,7 +386,7 @@
     "/api/v1/audit/": {
       "get": {
         "operationId": "audit_list",
-        "description": "Read-only ViewSet for audit log queries. Admin only.\n\nProvides list and detail views for querying audit logs.\nSupports filtering by entity_type, entity_id, action, actor_type,\nactor_id, and date range.",
+        "description": "List and retrieve audit events with the existing filter surface.",
         "parameters": [
           {
             "name": "ordering",
@@ -420,9 +420,6 @@
           "audit"
         ],
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -464,7 +461,7 @@
     "/api/v1/audit/{id}/": {
       "get": {
         "operationId": "audit_retrieve",
-        "description": "Read-only ViewSet for audit log queries. Admin only.\n\nProvides list and detail views for querying audit logs.\nSupports filtering by entity_type, entity_id, action, actor_type,\nactor_id, and date range.",
+        "description": "List and retrieve audit events with the existing filter surface.",
         "parameters": [
           {
             "in": "path",
@@ -480,9 +477,6 @@
           "audit"
         ],
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -10459,726 +10453,6 @@
           "mission_control:upload:write"
         ]
       }
-    },
-    "/api/v1/risks/": {
-      "get": {
-        "operationId": "risks_list",
-        "description": "ViewSet for Risk CRUD operations.\n\nAccepts a staff/superuser session or a platform API token scoped\n``risk:read`` (safe methods) / ``risk:write`` (mutations).",
-        "parameters": [
-          {
-            "name": "ordering",
-            "required": false,
-            "in": "query",
-            "description": "Which field to use when ordering the results.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "description": "A page number within the paginated result set.",
-            "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "name": "search",
-            "required": false,
-            "in": "query",
-            "description": "A search term.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaginatedRiskList"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:read"
-        ]
-      },
-      "post": {
-        "operationId": "risks_create",
-        "description": "Create a new risk with audit logging.",
-        "tags": [
-          "risks"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RiskCreate"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/RiskCreate"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/RiskCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RiskCreate"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:write"
-        ]
-      }
-    },
-    "/api/v1/risks/{id}/": {
-      "get": {
-        "operationId": "risks_retrieve",
-        "description": "ViewSet for Risk CRUD operations.\n\nAccepts a staff/superuser session or a platform API token scoped\n``risk:read`` (safe methods) / ``risk:write`` (mutations).",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "A unique integer value identifying this risk.",
-            "required": true
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Risk"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:read"
-        ]
-      },
-      "put": {
-        "operationId": "risks_update",
-        "description": "Update a risk with audit logging.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "A unique integer value identifying this risk.",
-            "required": true
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RiskUpdate"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/RiskUpdate"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/RiskUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RiskUpdate"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:write"
-        ]
-      },
-      "patch": {
-        "operationId": "risks_partial_update",
-        "description": "ViewSet for Risk CRUD operations.\n\nAccepts a staff/superuser session or a platform API token scoped\n``risk:read`` (safe methods) / ``risk:write`` (mutations).",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "A unique integer value identifying this risk.",
-            "required": true
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedRiskUpdate"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedRiskUpdate"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedRiskUpdate"
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RiskUpdate"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:write"
-        ]
-      },
-      "delete": {
-        "operationId": "risks_destroy",
-        "description": "Soft-delete a risk.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "A unique integer value identifying this risk.",
-            "required": true
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No response body"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:write"
-        ]
-      }
-    },
-    "/api/v1/risks/{id}/restore/": {
-      "post": {
-        "operationId": "risks_restore_create",
-        "description": "Restore a soft-deleted risk.\n\nBypasses ``self.get_object()`` (which uses the active-only\nSoftDeleteManager and would 404 a deleted risk) and looks the\ntarget up via ``Risk.all_objects`` directly. Object-level\npermission checks are still enforced explicitly because we lose\nthe ``check_object_permissions()`` call that ``self.get_object()``\nwould have run on our behalf.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "A unique integer value identifying this risk.",
-            "required": true
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Risk"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Risk"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Risk"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Risk"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:write"
-        ]
-      }
-    },
-    "/api/v1/risks/{risk_pk}/comments/": {
-      "get": {
-        "operationId": "risks_comments_list",
-        "description": "List comments for a risk.\n\nWith ``?include_deleted=true`` the parent ``Risk`` is also looked\nup via ``all_objects`` so comment history on a soft-deleted risk\nis reachable; default-active for both parent and children\notherwise.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "risk_pk",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Comment"
-                  }
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:read"
-        ]
-      },
-      "post": {
-        "operationId": "risks_comments_create",
-        "description": "Create a comment on a risk.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "risk_pk",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Comment"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Comment"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Comment"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Comment"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:write"
-        ]
-      }
-    },
-    "/api/v1/risks/{risk_pk}/comments/{id}/": {
-      "delete": {
-        "operationId": "risks_comments_destroy",
-        "description": "Soft-delete a comment.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          },
-          {
-            "in": "path",
-            "name": "risk_pk",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "risks"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No response body"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "risk:write"
-        ]
-      }
     }
   },
   "components": {
@@ -11945,18 +11219,14 @@
       },
       "AuditLog": {
         "type": "object",
-        "description": "Serializer for AuditLog model (read-only).",
+        "description": "Read-only audit-event representation.",
         "properties": {
           "id": {
             "type": "integer",
             "readOnly": true
           },
           "entity_type": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/EntityTypeEnum"
-              }
-            ],
+            "type": "string",
             "readOnly": true
           },
           "entity_id": {
@@ -11964,11 +11234,7 @@
             "readOnly": true
           },
           "action": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AuditLogActionEnum"
-              }
-            ],
+            "type": "string",
             "readOnly": true
           },
           "actor_type": {
@@ -12031,35 +11297,6 @@
           "timestamp",
           "user_agent"
         ]
-      },
-      "AuditLogActionEnum": {
-        "enum": [
-          "create",
-          "update",
-          "delete",
-          "restore",
-          "close",
-          "reopen",
-          "login",
-          "logout",
-          "login_failed",
-          "access_denied",
-          "role_sync",
-          "connect",
-          "disconnect",
-          "download",
-          "provision",
-          "deprovision",
-          "ready",
-          "failed",
-          "pause",
-          "resume",
-          "cancel",
-          "recover",
-          "spare_provision"
-        ],
-        "type": "string",
-        "description": "* `create` - Create\n* `update` - Update\n* `delete` - Delete\n* `restore` - Restore\n* `close` - Close\n* `reopen` - Reopen\n* `login` - Login\n* `logout` - Logout\n* `login_failed` - Login Failed\n* `access_denied` - Access Denied\n* `role_sync` - Role Sync\n* `connect` - Connect\n* `disconnect` - Disconnect\n* `download` - Download\n* `provision` - Provision\n* `deprovision` - Deprovision\n* `ready` - Ready\n* `failed` - Failed\n* `pause` - Pause\n* `resume` - Resume\n* `cancel` - Cancel\n* `recover` - Recover\n* `spare_provision` - Spare Provision"
       },
       "Award": {
         "type": "object",
@@ -12159,9 +11396,6 @@
         "type": "object",
         "description": "Server-owned feature flags surfaced to the SPA (no secret values).",
         "properties": {
-          "risk_register_spa": {
-            "type": "boolean"
-          },
           "platform_spa": {
             "type": "boolean"
           },
@@ -12187,7 +11421,6 @@
           "ctf_workspace_spa",
           "mission_control_spa",
           "platform_spa",
-          "risk_register_spa",
           "scenario_editor_spa"
         ]
       },
@@ -12215,9 +11448,6 @@
         "type": "object",
         "description": "Advisory authorization flags mirroring the template context processors.",
         "properties": {
-          "can_access_risk_register": {
-            "type": "boolean"
-          },
           "can_access_threat_research": {
             "type": "boolean"
           },
@@ -12238,7 +11468,6 @@
           }
         },
         "required": [
-          "can_access_risk_register",
           "can_access_threat_research",
           "can_change_users",
           "can_delete_users",
@@ -12819,69 +12048,6 @@
         "type": "string",
         "description": "* `defer` - defer\n* `cancel` - cancel"
       },
-      "Comment": {
-        "type": "object",
-        "description": "Serializer for Comment model.",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "risk_id": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "content": {
-            "type": "string"
-          },
-          "author": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CommentAuthor"
-              }
-            ],
-            "readOnly": true
-          },
-          "parent_comment_id": {
-            "type": "integer",
-            "readOnly": true,
-            "nullable": true
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "author",
-          "content",
-          "created_at",
-          "id",
-          "parent_comment_id",
-          "risk_id"
-        ]
-      },
-      "CommentAuthor": {
-        "type": "object",
-        "description": "Serializer for comment author info.",
-        "properties": {
-          "type": {
-            "type": "string"
-          },
-          "id": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "type"
-        ]
-      },
       "ConnectionUrl": {
         "type": "object",
         "description": "One entry from ``mission_control.utils.build_connection_urls``.",
@@ -13090,23 +12256,6 @@
           "status"
         ]
       },
-      "DashboardRiskRegister": {
-        "type": "object",
-        "description": "Risk-register load summary, gated by advisory access.",
-        "properties": {
-          "accessible": {
-            "type": "boolean"
-          },
-          "open_count": {
-            "type": "integer",
-            "nullable": true
-          }
-        },
-        "required": [
-          "accessible",
-          "open_count"
-        ]
-      },
       "DashboardSummary": {
         "type": "object",
         "description": "Top-level dashboard summary payload.",
@@ -13116,15 +12265,11 @@
           },
           "active_event": {
             "$ref": "#/components/schemas/DashboardEvent"
-          },
-          "risk_register": {
-            "$ref": "#/components/schemas/DashboardRiskRegister"
           }
         },
         "required": [
           "active_event",
-          "active_range",
-          "risk_register"
+          "active_range"
         ]
       },
       "DefaultEnum": {
@@ -13198,25 +12343,6 @@
             "default": ""
           }
         }
-      },
-      "EntityTypeEnum": {
-        "enum": [
-          "risk",
-          "comment",
-          "apikey",
-          "range",
-          "credential",
-          "agent",
-          "user",
-          "session",
-          "ngfw",
-          "config",
-          "experiment",
-          "scenario",
-          "script"
-        ],
-        "type": "string",
-        "description": "* `risk` - Risk\n* `comment` - Comment\n* `apikey` - API Key\n* `range` - Range\n* `credential` - Credential\n* `agent` - Agent\n* `user` - User\n* `session` - Session\n* `ngfw` - NGFW\n* `config` - Configuration\n* `experiment` - Experiment\n* `scenario` - Scenario\n* `script` - Script"
       },
       "EventDetail": {
         "type": "object",
@@ -14692,37 +13818,6 @@
           }
         }
       },
-      "PaginatedRiskList": {
-        "type": "object",
-        "required": [
-          "count",
-          "results"
-        ],
-        "properties": {
-          "count": {
-            "type": "integer",
-            "example": 123
-          },
-          "next": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri",
-            "example": "http://api.example.org/accounts/?page=4"
-          },
-          "previous": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri",
-            "example": "http://api.example.org/accounts/?page=2"
-          },
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Risk"
-            }
-          }
-        }
-      },
       "ParticipantAnnouncement": {
         "type": "object",
         "description": "One sent announcement on the participant surface (CTF-803).",
@@ -15820,56 +14915,6 @@
           }
         }
       },
-      "PatchedRiskUpdate": {
-        "type": "object",
-        "description": "Serializer for updating risks.",
-        "properties": {
-          "title": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "description": {
-            "type": "string"
-          },
-          "severity": {
-            "$ref": "#/components/schemas/SeverityEnum"
-          },
-          "status": {
-            "$ref": "#/components/schemas/StatusEnum"
-          },
-          "stride_categories": {
-            "description": "List of STRIDE category codes (S, T, R, I, D, E)"
-          },
-          "likelihood_score": {
-            "type": "integer",
-            "maximum": 9223372036854775807,
-            "minimum": 0,
-            "format": "int64",
-            "nullable": true,
-            "description": "1-5 scale"
-          },
-          "impact_score": {
-            "type": "integer",
-            "maximum": 9223372036854775807,
-            "minimum": 0,
-            "format": "int64",
-            "nullable": true,
-            "description": "1-5 scale"
-          },
-          "attack_vector": {
-            "type": "string"
-          },
-          "affected_assets": {
-            "type": "string"
-          },
-          "mitigation_status": {
-            "type": "string"
-          },
-          "resolution_reason": {
-            "type": "string"
-          }
-        }
-      },
       "PatchedScenarioMetadataUpdate": {
         "type": "object",
         "description": "Metadata (availability/audience) update; both fields optional for PATCH.",
@@ -16544,197 +15589,6 @@
         "type": "string",
         "description": "* `pending` - pending\n* `provisioning` - provisioning\n* `ready` - ready\n* `pausing` - pausing\n* `paused` - paused\n* `resuming` - resuming\n* `destroying` - destroying\n* `destroyed` - destroyed\n* `failed` - failed"
       },
-      "Risk": {
-        "type": "object",
-        "description": "Serializer for Risk model.",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "description": {
-            "type": "string"
-          },
-          "severity": {
-            "$ref": "#/components/schemas/SeverityEnum"
-          },
-          "status": {
-            "$ref": "#/components/schemas/StatusEnum"
-          },
-          "stride_categories": {
-            "description": "List of STRIDE category codes (S, T, R, I, D, E)"
-          },
-          "likelihood_score": {
-            "type": "integer",
-            "maximum": 9223372036854775807,
-            "minimum": 0,
-            "format": "int64",
-            "nullable": true,
-            "description": "1-5 scale"
-          },
-          "impact_score": {
-            "type": "integer",
-            "maximum": 9223372036854775807,
-            "minimum": 0,
-            "format": "int64",
-            "nullable": true,
-            "description": "1-5 scale"
-          },
-          "risk_score": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "attack_vector": {
-            "type": "string"
-          },
-          "affected_assets": {
-            "type": "string"
-          },
-          "mitigation_status": {
-            "type": "string"
-          },
-          "resolution_reason": {
-            "type": "string"
-          },
-          "comment_count": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "is_deleted": {
-            "type": "boolean",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "comment_count",
-          "created_at",
-          "description",
-          "id",
-          "is_deleted",
-          "risk_score",
-          "title",
-          "updated_at"
-        ]
-      },
-      "RiskCreate": {
-        "type": "object",
-        "description": "Serializer for creating risks.",
-        "properties": {
-          "title": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "description": {
-            "type": "string"
-          },
-          "severity": {
-            "$ref": "#/components/schemas/SeverityEnum"
-          },
-          "status": {
-            "$ref": "#/components/schemas/StatusEnum"
-          },
-          "stride_categories": {
-            "description": "List of STRIDE category codes (S, T, R, I, D, E)"
-          },
-          "likelihood_score": {
-            "type": "integer",
-            "maximum": 9223372036854775807,
-            "minimum": 0,
-            "format": "int64",
-            "nullable": true,
-            "description": "1-5 scale"
-          },
-          "impact_score": {
-            "type": "integer",
-            "maximum": 9223372036854775807,
-            "minimum": 0,
-            "format": "int64",
-            "nullable": true,
-            "description": "1-5 scale"
-          },
-          "attack_vector": {
-            "type": "string"
-          },
-          "affected_assets": {
-            "type": "string"
-          },
-          "mitigation_status": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "description",
-          "title"
-        ]
-      },
-      "RiskUpdate": {
-        "type": "object",
-        "description": "Serializer for updating risks.",
-        "properties": {
-          "title": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "description": {
-            "type": "string"
-          },
-          "severity": {
-            "$ref": "#/components/schemas/SeverityEnum"
-          },
-          "status": {
-            "$ref": "#/components/schemas/StatusEnum"
-          },
-          "stride_categories": {
-            "description": "List of STRIDE category codes (S, T, R, I, D, E)"
-          },
-          "likelihood_score": {
-            "type": "integer",
-            "maximum": 9223372036854775807,
-            "minimum": 0,
-            "format": "int64",
-            "nullable": true,
-            "description": "1-5 scale"
-          },
-          "impact_score": {
-            "type": "integer",
-            "maximum": 9223372036854775807,
-            "minimum": 0,
-            "format": "int64",
-            "nullable": true,
-            "description": "1-5 scale"
-          },
-          "attack_vector": {
-            "type": "string"
-          },
-          "affected_assets": {
-            "type": "string"
-          },
-          "mitigation_status": {
-            "type": "string"
-          },
-          "resolution_reason": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "description",
-          "title"
-        ]
-      },
       "ScenarioClone": {
         "type": "object",
         "description": "Clone request body.",
@@ -17244,16 +16098,6 @@
           "is_active"
         ]
       },
-      "SeverityEnum": {
-        "enum": [
-          "critical",
-          "high",
-          "medium",
-          "low"
-        ],
-        "type": "string",
-        "description": "* `critical` - Critical\n* `high` - High\n* `medium` - Medium\n* `low` - Low"
-      },
       "SparePoolRequest": {
         "type": "object",
         "description": "Organizer spare-pool top-up request body (``count`` bounded non-negative).",
@@ -17293,17 +16137,6 @@
           "existing",
           "target_count"
         ]
-      },
-      "StatusEnum": {
-        "enum": [
-          "open",
-          "acknowledged",
-          "mitigating",
-          "resolved",
-          "closed"
-        ],
-        "type": "string",
-        "description": "* `open` - Open\n* `acknowledged` - Acknowledged\n* `mitigating` - Mitigating\n* `resolved` - Resolved\n* `closed` - Closed"
       },
       "SubmissionListItem": {
         "type": "object",

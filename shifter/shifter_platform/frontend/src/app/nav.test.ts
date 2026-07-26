@@ -16,17 +16,17 @@ function bootstrap(overrides: Partial<Bootstrap> = {}): Bootstrap {
   };
 }
 
-const RR_ENTRY: NavEntry = {
-  surface: "Risk Register",
+const STAFF_ENTRY: NavEntry = {
+  surface: "Users",
   audience: "organizer",
-  routeName: "risk_register:risk_list",
-  permissionPolicy: "risk_register_access",
-  ownerApp: "risk_register",
-  purpose: "risks",
+  routeName: "administer:users",
+  permissionPolicy: "staff",
+  ownerApp: "management",
+  purpose: "users",
   mode: "operator",
-  group: "Govern",
-  routePath: "/risk-register",
-  iconKey: "shield-alert",
+  group: "Administer",
+  routePath: "/administer",
+  iconKey: "user-cog",
 };
 
 describe("permissionAllows", () => {
@@ -34,14 +34,12 @@ describe("permissionAllows", () => {
     const bs = bootstrap({
       permissions: {
         ...STAFF_BOOTSTRAP.permissions,
-        can_access_risk_register: true,
         can_access_threat_research: false,
         is_ctf_organizer: true,
         is_ctf_participant: false,
       },
     });
     expect(permissionAllows("authenticated", bs)).toBe(true);
-    expect(permissionAllows("risk_register_access", bs)).toBe(true);
     expect(permissionAllows("threat_research", bs)).toBe(false);
     expect(permissionAllows("ctf_organizer", bs)).toBe(true);
     expect(permissionAllows("ctf_participant", bs)).toBe(false);
@@ -52,22 +50,22 @@ describe("permissionAllows", () => {
 describe("isNavEntryVisible", () => {
   it("hides an entry when its advisory permission is denied", () => {
     const bs = bootstrap({
-      permissions: { ...STAFF_BOOTSTRAP.permissions, can_access_risk_register: false },
+      principal: { ...STAFF_BOOTSTRAP.principal, is_staff: false },
     });
-    expect(isNavEntryVisible(RR_ENTRY, bs)).toBe(false);
+    expect(isNavEntryVisible(STAFF_ENTRY, bs)).toBe(false);
   });
 
   it("hides an entry when its feature flag is off", () => {
-    const gated: NavEntry = { ...RR_ENTRY, featureFlag: "risk_register_spa" };
+    const gated: NavEntry = { ...STAFF_ENTRY, featureFlag: "administer_spa" };
     const bs = bootstrap({
       feature_flags: {
         ...STAFF_BOOTSTRAP.feature_flags,
-        risk_register_spa: false,
         platform_spa: true,
         mission_control_spa: true,
         scenario_editor_spa: false,
         ctf_workspace_spa: false,
         aces_native_provisioning: false,
+        administer_spa: false,
       },
     });
     expect(isNavEntryVisible(gated, bs)).toBe(false);
@@ -79,7 +77,6 @@ describe("visibleNavGroups", () => {
     const bs = bootstrap({
       permissions: {
         ...STAFF_BOOTSTRAP.permissions,
-        can_access_risk_register: true,
         can_access_threat_research: false,
         is_ctf_organizer: false,
         is_ctf_participant: false,
@@ -88,7 +85,7 @@ describe("visibleNavGroups", () => {
     const groups = visibleNavGroups("operator", bs);
     const names = groups.map((g) => g.group);
     expect(names).toContain("Operate");
-    expect(names).toContain("Govern");
+    expect(names).toContain("Administer");
     // No threat-research access -> Author (Scenarios) is hidden and its group drops.
     expect(names).not.toContain("Author");
     // No participant mode groups leak into operator mode.
@@ -99,7 +96,6 @@ describe("visibleNavGroups", () => {
     const bs = bootstrap({
       permissions: {
         ...STAFF_BOOTSTRAP.permissions,
-        can_access_risk_register: false,
         can_access_threat_research: false,
         is_ctf_organizer: false,
         is_ctf_participant: true,

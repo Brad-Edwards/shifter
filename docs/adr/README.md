@@ -121,7 +121,10 @@ Current mechanisms:
   `github_repo` value is the canonical GitHub target for agent issue,
   PR, CI, and traceability operations. The optional `routing` block opts
   the repository into per-step `/implement` routing while keeping the
-  workflow's gate contract in `.gc/plan-rules.md`.
+  workflow's gate contract in `.gc/plan-rules.md`. The configured
+  completion boundary is the root `make test` target; `make policy`
+  composes the existing ADR, import, diff, and changed-document checks
+  required by the synchronized pre-PR gate.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can
@@ -347,7 +350,7 @@ entries. Completed so far:
   `compute_stats`. `management` was added to the `enable_log_propagation` fixture
   so its service logs are observable by `caplog`.
 
-- `shared` + `risk_register`: the cloud-storage adapter suites
+- `shared`: the cloud-storage adapter suites
   (`shared/cloud/test_aws_storage`, `test_gcp_storage`) drive the real
   `AWSObjectStorage` / `GCPObjectStorage` (including their real `_get_client`
   region/endpoint/client resolution) and mock only the SDK boundary—
@@ -361,11 +364,11 @@ entries. Completed so far:
   `IntegrityError` race-fallback test is dropped because the unique constraint
   exactly matches the `get_or_create` lookup, so the fallback is reachable only
   via a genuine multi-connection race or by mocking the first-party manager.
-  `risk_register/test_audit_services` drives the real audit functions against
+  `shared/test_audit_store` drives the real audit functions against
   real `AuditLog` rows (asserting the persisted row) instead of patching
   `AuditLog.log`, with the swallow path exercised via a real non-JSON payload
-  fault. With these, the `shared` and `risk_register` areas carry no remaining
-  ADR-019 baseline entries.
+  fault. With these, the `shared` area carries no remaining ADR-019 baseline
+  entries.
 
 - `mission_control` Guacamole connection-URL endpoints
   (`test_guacamole_ssh`, `test_api_instance_ssh_url`, `test_api_ngfw_ssh_url`,

@@ -1,0 +1,26 @@
+{
+  "api_major": "v1",
+  "adr": "ADR-045",
+  "issue": 1374,
+  "paths": [
+    "/api/v1/risks/",
+    "/api/v1/risks/{id}/",
+    "/api/v1/risks/{id}/restore/",
+    "/api/v1/risks/{risk_pk}/comments/",
+    "/api/v1/risks/{risk_pk}/comments/{id}/"
+  ],
+  "response_schema_properties": [
+    {
+      "schema": "BootstrapFeatureFlags",
+      "property": "risk_register_spa"
+    },
+    {
+      "schema": "BootstrapPermissions",
+      "property": "can_access_risk_register"
+    },
+    {
+      "schema": "DashboardSummary",
+      "property": "risk_register"
+    }
+  ]
+}

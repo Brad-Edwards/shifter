@@ -24,7 +24,6 @@ const mockApi = vi.mocked(apiFetch);
 const SUMMARY: DashboardSummary = {
   active_range: { present: true, status: "running" },
   active_event: { present: false, name: null },
-  risk_register: { accessible: true, open_count: 3 },
 };
 
 function renderHome(bootstrap: Bootstrap = STAFF_BOOTSTRAP) {
@@ -54,8 +53,6 @@ describe("HomePage (operator)", () => {
     renderHome();
     expect(await screen.findByText("Running")).toBeInTheDocument();
     expect(screen.getByText("No active event")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Risk Register/ })).toHaveAttribute("href", "/risk-register");
   });
 
   it("surfaces a safe error state with the request id", async () => {

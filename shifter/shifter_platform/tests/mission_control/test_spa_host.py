@@ -1,6 +1,6 @@
 """Tests for the flag-gated Mission Control SPA host view + routing (#1370).
 
-Mirrors ``tests/risk_register/test_spa_host.py``. The Mission Control carve-out
+The Mission Control carve-out
 requires BOTH ``PLATFORM_SPA_ENABLED`` and ``MISSION_CONTROL_SPA_ENABLED`` (the
 per-surface extension of the platform flag pattern); either flag alone must not
 enable the SPA shell for Mission Control pages. Legacy POST action URLs and the

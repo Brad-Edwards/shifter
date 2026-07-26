@@ -1,7 +1,7 @@
 """ACES sidecar writes are not Shifter lifecycle audit rows (#1277).
 
-Shifter lifecycle audit remains ``risk_register.AuditLog`` written through
-``risk_register.services.audit_log``. ACES operation records (receipts, status,
+Shifter lifecycle audit remains ``shared.AuditLog`` written through
+``shared.audit``. ACES operation records (receipts, status,
 runtime snapshots) live in the ``AcesOperationRecord`` sidecar and are evidence
 references, not audit rows -- persisting one must not create an ``AuditLog`` row
 or stash an ACES payload in ``AuditLog.new_state``.
@@ -14,9 +14,8 @@ from uuid import uuid4
 
 import pytest
 
-from risk_register.models import AuditLog
 from shared.aces.operations import AcesOperationRecordWrite, persist_aces_operation_record
-from shared.models import AcesOperationRecord
+from shared.models import AcesOperationRecord, AuditLog
 from shared.schemas.aces_operation import canonical_aces_payload_digest
 
 SOURCE_TS = datetime(2026, 7, 5, 3, 0, tzinfo=UTC)

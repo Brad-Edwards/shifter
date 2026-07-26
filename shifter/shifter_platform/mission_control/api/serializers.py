@@ -14,7 +14,7 @@ AGENT_TYPE_CHOICES = ("xdr", "xdr_collector", "cloud_identity_engine")
 # Single source for the range-status choice set, shared by every serializer that
 # exposes a ``status`` field AND referenced by ``ENUM_NAME_OVERRIDES`` in
 # ``config._drf_settings`` so drf-spectacular names this enum ``ResourceStatusEnum``
-# (stable) instead of a hash-suffixed collision name against the Risk Register
+# (stable) instead of a hash-suffixed collision name
 # ``status`` enum. Keep the field ``choices`` and the override pointing at THIS list.
 RESOURCE_STATUS_VALUES = [s.value for s in ResourceStatus]
 

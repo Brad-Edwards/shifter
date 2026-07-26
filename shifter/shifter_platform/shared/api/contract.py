@@ -45,6 +45,51 @@ def artifact_path(major: str = API_MAJOR) -> Path:
     return ARTIFACT_DIR / f"{major}.json"
 
 
+def retirement_path(major: str = API_MAJOR) -> Path:
+    """Return the accepted whole-feature retirement metadata for an API major."""
+    return ARTIFACT_DIR / f"{major}.retirements.json"
+
+
+def apply_accepted_retirements(base_text: str, current_text: str, major: str = API_MAJOR) -> str:
+    """Project accepted whole-feature retirements out of the trusted baseline.
+
+    Ordinary breaking changes still go through oasdiff unchanged. This narrow
+    projection exists for the ADR-040 carve-out where a separately accepted ADR
+    removes a complete product instead of preserving it under another API
+    major. Every path and response property is exact and must be absent from the
+    current runtime contract; metadata cannot waive unrelated changes or hide a
+    reintroduced surface.
+    """
+    path = retirement_path(major)
+    if not path.exists():
+        return base_text
+
+    retirement = json.loads(path.read_text(encoding="utf-8"))
+    if retirement.get("api_major") != major or not retirement.get("adr"):
+        raise RuntimeError(f"Invalid API retirement metadata: {path}")
+
+    base: dict[str, Any] = json.loads(base_text)
+    current: dict[str, Any] = json.loads(current_text)
+
+    for retired_path in retirement.get("paths", []):
+        if retired_path in current.get("paths", {}):
+            raise RuntimeError(f"Retired API path was reintroduced: {retired_path}")
+        base.get("paths", {}).pop(retired_path, None)
+
+    for retired_property in retirement.get("response_schema_properties", []):
+        schema_name = retired_property["schema"]
+        property_name = retired_property["property"]
+        current_schema = current.get("components", {}).get("schemas", {}).get(schema_name, {})
+        if property_name in current_schema.get("properties", {}):
+            raise RuntimeError(f"Retired API response property was reintroduced: {schema_name}.{property_name}")
+        base_schema = base.get("components", {}).get("schemas", {}).get(schema_name, {})
+        base_schema.get("properties", {}).pop(property_name, None)
+        if property_name in base_schema.get("required", []):
+            base_schema["required"].remove(property_name)
+
+    return _canonicalize(base)
+
+
 def generate_openapi_document() -> str:
     """Return the canonical committed-artifact text for the ``/api/v1/`` surface.
 
@@ -165,8 +210,9 @@ def check_breaking_changes(base_text: str, current_text: str) -> tuple[bool, str
 
     Returns ``(is_compatible, detail)``. ``oasdiff breaking --fail-on ERR`` exits
     non-zero when it finds a breaking change; the OpenAPI-aware semantics live in
-    oasdiff, not in this wrapper. A breaking change to ``/api/v1/`` must instead
-    ship as a parallel ``/api/v2/`` with a migration note (ADR-040).
+    oasdiff, not in this wrapper. An ordinary breaking change to ``/api/v1/``
+    must ship as a parallel ``/api/v2/`` with a migration note; a complete
+    product retirement requires accepted retirement metadata (ADR-040).
     """
     binary = shutil.which(_OASDIFF_BIN) or _OASDIFF_BIN
     with tempfile.TemporaryDirectory() as tmp:
@@ -201,4 +247,6 @@ def check_breaking_against(base_ref: str, major: str = API_MAJOR) -> tuple[bool,
     path = artifact_path(major)
     if not path.exists():
         return False, f"Committed artifact is missing: {path}. Run `manage.py api_contract`."
-    return check_breaking_changes(base_text, path.read_text(encoding="utf-8"))
+    current_text = path.read_text(encoding="utf-8")
+    projected_base = apply_accepted_retirements(base_text, current_text, major)
+    return check_breaking_changes(projected_base, current_text)

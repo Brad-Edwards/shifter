@@ -30,6 +30,12 @@ _POLARIS_KALI = {
     "name": "kali",
     "participant_access_channels": ["ssh", "rdp"],
 }
+_AWS_POLARIS_KALI = {
+    **_ATTACKER,
+    "name": "kali",
+    "cloud_provider": "aws",
+    "participant_access_channels": None,
+}
 _DC = {
     "name": "dc01",
     "role": "dc",
@@ -62,6 +68,11 @@ class TestGetRangeTargetInstances:
         """POLARIS-style range: the declared Kali workstation is the user target."""
         _ready_range(user, [_POLARIS_KALI, _DC])
         assert get_range_target_instances(user.id) == [_POLARIS_KALI]
+
+    def test_aws_open_access_returns_attacker_seat(self, user):
+        """AWS POLARIS state exposes the Kali seat when no closed binding exists."""
+        _ready_range(user, [_AWS_POLARIS_KALI, _DC])
+        assert get_range_target_instances(user.id) == [_AWS_POLARIS_KALI]
 
     def test_legacy_multi_node_hides_attacker_and_shows_targets(self, user):
         """Legacy rows without access channels keep the non-attacker heuristic."""
