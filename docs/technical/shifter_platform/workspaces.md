@@ -59,11 +59,11 @@ scope moves with the CMS projections.
 
 All three return a frozen `WorkspaceAuthorization` (workspace id, public UUID,
 organization id, role) and never an ORM instance. Denials raise
-`WorkspaceAuthorizationError` with a single message: "workspace does not exist",
-"you are not a member", and "your role does not permit this" are deliberately
+`WorkspaceAuthorizationError` with a single message. A missing workspace, a
+non-membership, and a role that does not permit the operation are deliberately
 indistinguishable, because the difference is a tenant-enumeration oracle.
 
-Membership mutation — invite, add, remove, change role — is not part of this
+Membership mutation—invite, add, remove, change role—is not part of this
 interface yet. It lands with issue #1326 along with the last-owner invariant
 that must guard it.
 
@@ -75,8 +75,7 @@ that must guard it.
 convention, because cross-layer ForeignKeys are prohibited.
 
 The CMS range-create facade resolves and authorizes the scope once, then carries
-it beside the `RequestSpec` — the same shape as the `backend_admission` binding —
-so Engine persists it in the range's create transaction. Engine never resolves
+it beside the `RequestSpec`—the same shape as the `backend_admission` binding—so Engine persists it in the range's create transaction. Engine never resolves
 or authorizes a workspace itself.
 
 `Range.user`, `cms.Request.user`, and `cms.RangeInstance.user_id` remain the
@@ -85,8 +84,8 @@ grants no SSH, RDP, VPN, Guacamole, or CTF access to another member's range.**
 
 Reassigning a range's owner requires the new owner to be a member of the range's
 workspace, so a range is never left scoped to a tenant its owner cannot reach.
-For a handover that legitimately crosses tenants — a pre-provisioned CTF spare
-range being given to a participant — the caller asks for it explicitly with
+For a handover that legitimately crosses tenants—a pre-provisioned CTF spare
+range being given to a participant—the caller asks for it explicitly with
 `reassign_range_owner(..., rehome=True)`, and the range's scope moves to the new
 owner across all three projections inside the reassignment transaction.
 Rehoming is never implicit.
@@ -149,7 +148,7 @@ workspace binding as a side effect of this layer (ADR-046-R7):
 
 Each of these carries platform-operator authority rather than tenant authority,
 so scoping any of them to a workspace needs its own decision. A workspace-level
-policy surface — the zero-egress range posture in issue #1171, for example — is
+policy surface—the zero-egress range posture in issue #1171, for example—is
 added by an explicit decision on that surface, never inherited from here.
 
 ## Identity provider integration
@@ -157,7 +156,7 @@ added by an explicit decision on that surface, never inherited from here.
 Not implemented. The integration point is decided: provider group and claim
 mapping happens *after* the existing `config.oidc` / `config.identity_platform`
 adapters have verified issuer, audience, authorized party, subject, and verified
-email and bound the Django user — the same position `config.organizer_authority`
+email and bound the Django user—the same position `config.organizer_authority`
 occupies for CTF organizer authority. Any future mapping must be an allowlisted,
 deployment-configured adapter with membership provenance, revocation, and strict
 audit, writing through the workspace service. A provider group name is external

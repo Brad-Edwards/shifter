@@ -104,9 +104,12 @@ The first slice intentionally stays small:
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
-  domain (`engine`, `cms`, `management`, `ctf`), presentation
+  domain (`engine`, `cms`, `management`, `ctf`, `workspaces`), presentation
   (`mission_control`), support/contracts (`shared`), or support/composition
-  (`config`) layer. Service-package imports may use only the public facade (for
+  (`config`) layer. `workspaces` is the organization/workspace tenancy domain
+  added by ADR-046 (#1325); other layers reach it only through
+  `workspaces.services` and carry a scalar `workspace_id` rather than a
+  cross-layer ForeignKey. Service-package imports may use only the public facade (for
   example `cms.services`); private split-package submodules such as
   `cms.services._range_pause` are not cross-layer seams. This covers both the
   dotted form (`import cms.services._range_pause`) and the
