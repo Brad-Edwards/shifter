@@ -209,6 +209,7 @@ class NotificationType(StrEnum):
     EVENT_RESULTS = "event_results"
     PROVISION_FAILURE = "provision_failure"
     RANGE_READY = "range_ready"
+    CAPACITY_WARNING = "capacity_warning"
 
     def __str__(self) -> str:
         """Return the string value for database storage."""

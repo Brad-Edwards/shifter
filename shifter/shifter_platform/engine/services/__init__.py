@@ -33,6 +33,17 @@ from ._capacity import (
     latest_capacity_declaration,
     record_capacity_declaration,
 )
+from ._capacity_admit import (
+    admit_range_capacity,
+    reconcile_capacity_budgets,
+    release_range_capacity,
+)
+from ._capacity_plan import (
+    EventCapacityRequest,
+    assess_declared_event_capacity,
+    assess_event_capacity,
+    release_capacity_reservations,
+)
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
@@ -74,6 +85,7 @@ __all__ = (
     "AcesImageMappingView",
     "AcesRangeRef",
     "EngineError",
+    "EventCapacityRequest",
     "EventCapacitySignal",
     "GuestProbeError",
     "GuestProbeRequest",
@@ -84,7 +96,10 @@ __all__ = (
     "VpnProfileConflict",
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
+    "admit_range_capacity",
     "apply_pending_operation_results",
+    "assess_declared_event_capacity",
+    "assess_event_capacity",
     "cancel_range",
     "cancel_range_by_request",
     "connect_ngfw_terminal",
@@ -116,9 +131,12 @@ __all__ = (
     "range_owner_reassignment_available_by_request",
     "reassign_range_owner_by_request",
     "rebind_range_workspace_by_request",
+    "reconcile_capacity_budgets",
     "record_aces_operation_status",
     "record_aces_runtime_snapshot",
     "record_capacity_declaration",
+    "release_capacity_reservations",
+    "release_range_capacity",
     "resume_range",
     "run_guest_probe",
     "start_ngfw",

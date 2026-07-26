@@ -248,6 +248,14 @@ The first slice intentionally stays small:
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
 
+- `makemigrations --check --dry-run`
+  Fails when a model or field-choices change ships without its migration. Runs
+  as the `missing-migrations-shifter-platform` pre-commit hook as well as in the
+  Quality workflow. Adding a `TextChoices` member alters the field, so enum
+  additions need a migration too. The hook exists because the CI check sits
+  behind the test gate, which is skipped when an earlier job fails -- so a
+  missing migration could reach review unnoticed (#680).
+
 - `actionlint`
   Lints GitHub Actions workflows beyond plain YAML validation.
   This includes the GCP deploy workflow's Terraform state-backend hardening
