@@ -177,7 +177,7 @@ def audit_log_from_request(
     )
 
 
-def audit_log_system_event(
+def audit_log_system_event(  # NOSONAR: adds one optional emission control to an existing shared signature
     entity_type: str,
     entity_id: int,
     action: str,

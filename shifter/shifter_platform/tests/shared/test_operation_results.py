@@ -43,12 +43,9 @@ class TestStepVocabularyIsClosed:
 
     def test_step_from_another_operation_is_rejected(self):
         # A resume step must not be accepted under a pause operation.
+        payload = {"instances": [_instance_outcome(status="ready")]}
         with pytest.raises(OperationResultError):
-            parse_result_payload(
-                *RANGE_PAUSE,
-                step=ResultStep.RANGE_INSTANCES_READY,
-                payload={"instances": [_instance_outcome(status="ready")]},
-            )
+            parse_result_payload(*RANGE_PAUSE, step=ResultStep.RANGE_INSTANCES_READY, payload=payload)
 
 
 class TestPayloadParserIsClosed:
@@ -63,12 +60,9 @@ class TestPayloadParserIsClosed:
         assert parsed["instances"][0]["instance_uuid"] == INSTANCE_UUID
 
     def test_unknown_key_is_rejected(self):
+        payload = {"instances": [_instance_outcome()], "state": {"arbitrary": "merge"}}
         with pytest.raises(OperationResultError):
-            parse_result_payload(
-                *RANGE_PAUSE,
-                step=ResultStep.RANGE_INSTANCES_PAUSED,
-                payload={"instances": [_instance_outcome()], "state": {"arbitrary": "merge"}},
-            )
+            parse_result_payload(*RANGE_PAUSE, step=ResultStep.RANGE_INSTANCES_PAUSED, payload=payload)
 
     def test_engine_integer_primary_key_is_not_accepted_as_identity(self):
         with pytest.raises(OperationResultError):
@@ -79,38 +73,25 @@ class TestPayloadParserIsClosed:
             )
 
     def test_instance_uuid_must_be_a_uuid(self):
+        payload = {"instances": [_instance_outcome(uuid="not-a-uuid")]}
         with pytest.raises(OperationResultError):
-            parse_result_payload(
-                *RANGE_PAUSE,
-                step=ResultStep.RANGE_INSTANCES_PAUSED,
-                payload={"instances": [_instance_outcome(uuid="not-a-uuid")]},
-            )
+            parse_result_payload(*RANGE_PAUSE, step=ResultStep.RANGE_INSTANCES_PAUSED, payload=payload)
 
     def test_status_must_be_in_the_shared_vocabulary(self):
+        payload = {"instances": [_instance_outcome(status="halted")]}
         with pytest.raises(OperationResultError):
-            parse_result_payload(
-                *RANGE_PAUSE,
-                step=ResultStep.RANGE_INSTANCES_PAUSED,
-                payload={"instances": [_instance_outcome(status="halted")]},
-            )
+            parse_result_payload(*RANGE_PAUSE, step=ResultStep.RANGE_INSTANCES_PAUSED, payload=payload)
 
     def test_status_must_match_the_step_it_reports(self):
         # The pause step reports paused instances; a ready instance is incoherent.
+        payload = {"instances": [_instance_outcome(status="ready")]}
         with pytest.raises(OperationResultError):
-            parse_result_payload(
-                *RANGE_PAUSE,
-                step=ResultStep.RANGE_INSTANCES_PAUSED,
-                payload={"instances": [_instance_outcome(status="ready")]},
-            )
+            parse_result_payload(*RANGE_PAUSE, step=ResultStep.RANGE_INSTANCES_PAUSED, payload=payload)
 
     def test_instance_outcomes_are_bounded(self):
-        too_many = [_instance_outcome(uuid=f"00000000-0000-4000-8000-{i:012d}") for i in range(257)]
+        payload = {"instances": [_instance_outcome(uuid=f"00000000-0000-4000-8000-{i:012d}") for i in range(257)]}
         with pytest.raises(OperationResultError):
-            parse_result_payload(
-                *RANGE_PAUSE,
-                step=ResultStep.RANGE_INSTANCES_PAUSED,
-                payload={"instances": too_many},
-            )
+            parse_result_payload(*RANGE_PAUSE, step=ResultStep.RANGE_INSTANCES_PAUSED, payload=payload)
 
     def test_failure_payload_requires_a_closed_reason_code(self):
         with pytest.raises(OperationResultError):

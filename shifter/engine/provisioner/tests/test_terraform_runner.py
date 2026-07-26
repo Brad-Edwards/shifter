@@ -257,9 +257,9 @@ class TestNgfwTerraformOrchestrationHelpers:
         _run_ngfw_operation_for_provider("destroy", "req-2", "inst-2", "app-2", app_spec, "europe")
 
         mock_aws_provision.assert_called_once_with("req-1", "inst-1", "app-1", app_spec, "americas", operation_id=None)
-        mock_aws_deprovision.assert_called_once_with("req-1", "inst-1", "app-1", operation_id=None)
+        mock_aws_deprovision.assert_called_once_with("req-1", "inst-1", operation_id=None)
         mock_gdc_provision.assert_called_once_with("req-2", "inst-2", "app-2", app_spec, "europe", operation_id=None)
-        mock_gdc_deprovision.assert_called_once_with("req-2", "inst-2", "app-2", operation_id=None)
+        mock_gdc_deprovision.assert_called_once_with("req-2", operation_id=None)
 
         with pytest.raises(ValueError, match="Unknown operation"):
             _run_ngfw_operation_for_provider("rotate", "req-3", "inst-3", "app-3", app_spec, "americas")
@@ -388,8 +388,6 @@ class TestNgfwTerraformOrchestrationHelpers:
         update_instance_state = MagicMock()
         _short_circuit_local_dev_post_provision(
             request_id="req-1",
-            instance_id="inst-1",
-            app_id="app-1",
             output_data={"cloud_provider": "gcp", "route_next_hop_ip": "10.0.0.1"},
             update_instance_state=update_instance_state,
         )
@@ -590,7 +588,7 @@ class TestNgfwTerraformCleanupHelpers:
         monkeypatch.setattr("ngfw_terraform_cleanup.update_instance_state", mock_update_instance_state)
         monkeypatch.setitem(sys.modules, "gdc_vmseries_ngfw", fake_gdc)
 
-        _run_gdc_deprovision("req-1", "inst-1", "app-1")
+        _run_gdc_deprovision("req-1")
 
         mock_update_instance_state.assert_has_calls(
             [
@@ -647,7 +645,7 @@ class TestNgfwTerraformCleanupHelpers:
         mock_update_instance_state = MagicMock()
         monkeypatch.setattr("ngfw_terraform_cleanup.update_instance_state", mock_update_instance_state)
 
-        _run_deprovision("req-1", "inst-1", "app-1")
+        _run_deprovision("req-1", "inst-1")
 
         mock_deactivate_license.assert_called_once_with(current_state)
         destroy_variables = mock_destroy_ngfw.call_args.kwargs["variables"]

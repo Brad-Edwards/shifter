@@ -97,7 +97,6 @@ def _build_ngfw_range_attachment_record(
 def _record_ngfw_range_attachment(
     *,
     ngfw_request_id: str,
-    ngfw_status: str,
     attachment_record: dict[str, Any],
 ) -> None:
     """Merge the current range attachment into the NGFW instance state."""
@@ -118,7 +117,6 @@ def _record_ngfw_range_attachment(
 def _remove_ngfw_range_attachment(
     *,
     ngfw_request_id: str,
-    ngfw_status: str,
     range_id: int,
 ) -> None:
     """Remove a range attachment from the NGFW instance state."""

@@ -66,14 +66,14 @@ def _run_ngfw_operation_for_provider(
         if operation == "up":
             _run_gdc_provision(request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id)
         else:
-            _run_gdc_deprovision(request_id, instance_id, app_id, operation_id=operation_id)
+            _run_gdc_deprovision(request_id, operation_id=operation_id)
         return
 
     if provider == "aws":
         if operation == "up":
             _run_provision(request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id)
         else:
-            _run_deprovision(request_id, instance_id, app_id, operation_id=operation_id)
+            _run_deprovision(request_id, instance_id, operation_id=operation_id)
         return
 
     raise CloudProviderNotImplementedError(provider)
@@ -193,8 +193,6 @@ def _build_ngfw_ssh_executor_from_output(output_data: dict[str, Any]) -> tuple[s
 def _short_circuit_local_dev_post_provision(
     *,
     request_id: str,
-    instance_id: str,
-    app_id: str,
     output_data: dict[str, Any],
     update_instance_state: Callable[..., Any],
     operation_id: str | None = None,
@@ -345,8 +343,6 @@ def _run_pan_os_post_provision(
     if os.environ.get("DB_PASSWORD"):
         _short_circuit_local_dev_post_provision(
             request_id=request_id,
-            instance_id=instance_id,
-            app_id=app_id,
             output_data=output_data,
             update_instance_state=update_instance_state,
             operation_id=operation_id,

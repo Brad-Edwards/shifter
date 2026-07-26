@@ -1567,12 +1567,10 @@ class TestGdcProvisioning:
 
         _record_ngfw_range_attachment(
             ngfw_request_id="ngfw-req-1",
-            ngfw_status="ready",
             attachment_record=attachment_record,
         )
         _remove_ngfw_range_attachment(
             ngfw_request_id="ngfw-req-1",
-            ngfw_status="ready",
             range_id=42,
         )
 

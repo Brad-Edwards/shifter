@@ -104,6 +104,10 @@ _RESOURCE_STATE = "RESOURCE_STATE"
 _TERMINAL_SUCCESS = "TERMINAL_SUCCESS"
 _TERMINAL_FAILURE = "TERMINAL_FAILURE"
 
+# Field label used in every parser error, so a caller can tell which contract
+# rejected the value.
+_PAYLOAD_FIELD = "result payload"
+
 # Bounded per ADR-043: results carry summaries, never snapshots.
 MAX_INSTANCE_OUTCOMES = 256
 MAX_DIAGNOSTIC_CHARS = 512
@@ -146,14 +150,17 @@ class _StepSpec:
 
 
 def _progress(rank: int, shape: _Shape, status: ResourceStatus) -> _StepSpec:
+    """Declare a non-terminal progress step."""
     return _StepSpec(rank=rank, result_kind=_RESOURCE_STATE, shape=shape, status=status)
 
 
 def _success(rank: int, shape: _Shape, status: ResourceStatus) -> _StepSpec:
+    """Declare a terminal-success step."""
     return _StepSpec(rank=rank, result_kind=_TERMINAL_SUCCESS, shape=shape, status=status, terminal=True)
 
 
 def _failure(rank: int) -> _StepSpec:
+    """Declare a terminal-failure step."""
     return _StepSpec(rank=rank, result_kind=_TERMINAL_FAILURE, shape=_Shape.FAILURE, status=None, terminal=True)
 
 
@@ -315,12 +322,14 @@ def build_result_identity(*, operation_id: str | UUID, step: ResultStep | str, d
 
 
 def _require_dict(value: object, field: str) -> dict[str, Any]:
+    """Return ``value`` if it is a mapping, else fail closed."""
     if not isinstance(value, dict):
         raise OperationResultError(f"{field} must be an object")
     return value
 
 
 def _require_exact_keys(value: dict[str, Any], allowed: frozenset[str], field: str) -> None:
+    """Fail closed unless ``value`` carries exactly ``allowed``."""
     actual = frozenset(value)
     unexpected = sorted(actual - allowed)
     if unexpected:
@@ -331,6 +340,7 @@ def _require_exact_keys(value: dict[str, Any], allowed: frozenset[str], field: s
 
 
 def _require_uuid(value: object, field: str) -> str:
+    """Return the canonical UUID string, else fail closed."""
     if not isinstance(value, str):
         raise OperationResultError(f"{field} must be a UUID string")
     try:
@@ -340,6 +350,7 @@ def _require_uuid(value: object, field: str) -> str:
 
 
 def _require_status(value: object, expected: ResourceStatus | None, field: str) -> str:
+    """Return a known status, optionally pinned to the one the step reports."""
     if not isinstance(value, str):
         raise OperationResultError(f"{field} must be a status string")
     try:
@@ -352,7 +363,8 @@ def _require_status(value: object, expected: ResourceStatus | None, field: str) 
 
 
 def _parse_instances(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
-    _require_exact_keys(payload, frozenset({"instances"}), "result payload")
+    """Parse a bounded set of per-instance outcomes."""
+    _require_exact_keys(payload, frozenset({"instances"}), _PAYLOAD_FIELD)
     raw = payload["instances"]
     if not isinstance(raw, list):
         raise OperationResultError("result payload instances must be a list")
@@ -372,6 +384,7 @@ def _parse_instances(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]
 
 
 def _parse_ngfw_state(value: object) -> dict[str, Any]:
+    """Parse the normalized, provider-neutral NGFW state block."""
     state = _require_dict(value, "result payload ngfw_state")
     unexpected = sorted(frozenset(state) - NGFW_STATE_KEYS)
     if unexpected:
@@ -380,6 +393,7 @@ def _parse_ngfw_state(value: object) -> dict[str, Any]:
 
 
 def _parse_ngfw(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
+    """Parse an NGFW transition result, with optional normalized state."""
     required = frozenset({"ngfw_instance_uuid", "status"})
     unexpected = sorted(frozenset(payload) - (required | {"ngfw_state"}))
     if unexpected:
@@ -397,12 +411,14 @@ def _parse_ngfw(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
 
 
 def _parse_range_terminal(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
-    _require_exact_keys(payload, frozenset({"status"}), "result payload")
+    """Parse a range operation's terminal status result."""
+    _require_exact_keys(payload, frozenset({"status"}), _PAYLOAD_FIELD)
     return {"status": _require_status(payload["status"], spec.status, "result payload status")}
 
 
 def _parse_failure(payload: dict[str, Any], _spec_unused: _StepSpec) -> dict[str, Any]:
-    _require_exact_keys(payload, frozenset({"reason_code", "diagnostic"}), "result payload")
+    """Parse a terminal failure: authored reason code plus bounded diagnostic."""
+    _require_exact_keys(payload, frozenset({"reason_code", "diagnostic"}), _PAYLOAD_FIELD)
     reason_code = payload["reason_code"]
     if not isinstance(reason_code, str) or reason_code not in REASON_CODES:
         raise OperationResultError(f"result payload reason_code must be one of: {', '.join(sorted(REASON_CODES))}")
@@ -437,5 +453,5 @@ def parse_result_payload(
     failure reason.
     """
     spec = _spec(resource, operation, step)
-    obj = _require_dict(payload, "result payload")
+    obj = _require_dict(payload, _PAYLOAD_FIELD)
     return _PARSERS[spec.shape](obj, spec)

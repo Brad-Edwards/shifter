@@ -19,12 +19,12 @@ operation generation has exactly one authoritative path, and it is this one.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-from uuid import uuid4
+from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID
 
 from django.utils import timezone
 
-from shared.audit import AuditEntityType, StateChange, audit_log_system_event
+from shared.audit import AuditEntityType
 from shared.enums import ResourceStatus
 from shared.operation_envelope import OperationEnvelopeError, validate_operation_envelope
 from shared.operation_results import (
@@ -37,13 +37,20 @@ from shared.operation_results import (
     step_follows,
 )
 
+from ._operation_apply_effects import (
+    _audit,
+    _enqueue_ngfw_status_event,
+    _enqueue_range_status_event,
+    _save_status,
+    _terminal_timestamps,
+)
+
 if TYPE_CHECKING:
     from engine.models import Instance, OperationResultInbox, Range
 
 logger = logging.getLogger(__name__)
 
 _RANGE_RESOURCES = frozenset({"range", "aces-range"})
-_AUDIT_SOURCE = "engine.services.operation_apply"
 
 # Statuses on another attached range that keep a shared NGFW running. The
 # provisioner's ``should_pause_ngfw`` is a pre-cloud compatibility check; this
@@ -51,7 +58,7 @@ _AUDIT_SOURCE = "engine.services.operation_apply"
 _NGFW_KEEP_ALIVE_STATUSES = (ResourceStatus.READY.value, ResourceStatus.RESUMING.value)
 
 
-def _discriminator_mismatch(row: OperationResultInbox, envelope: dict) -> str:
+def _discriminator_mismatch(row: OperationResultInbox, envelope: dict[str, Any]) -> str:
     """Return a reason when a flattened inbox column disagrees with the envelope.
 
     The flattened columns are what the applier queries and locks on, so a row
@@ -113,7 +120,7 @@ def _has_earlier_pending_sibling(row: OperationResultInbox) -> bool:
     )
 
 
-def _lock_range(operation_id) -> Range | None:
+def _lock_range(operation_id: UUID | str) -> Range | None:
     """Lock and return the Range that currently owns this operation generation.
 
     No ``select_related`` here on purpose: ``Range.ngfw_instance`` is nullable, and
@@ -126,7 +133,7 @@ def _lock_range(operation_id) -> Range | None:
     return Range.objects.select_for_update().filter(provisioner_operation_id=operation_id).first()
 
 
-def _lock_ngfw_instance(operation_id) -> Instance | None:
+def _lock_ngfw_instance(operation_id: UUID | str) -> Instance | None:
     """Lock and return the NGFW Instance that currently owns this generation."""
     from engine.models import Instance
 
@@ -144,105 +151,7 @@ def _lock_instance_by_pk(pk: int) -> Instance | None:
     return Instance.objects.select_for_update().filter(pk=pk).first()
 
 
-def _audit(
-    entity_type: str,
-    entity_id: int,
-    new: str,
-    *,
-    request_id: str,
-    previous: dict | None = None,
-    detail: dict | None = None,
-    context: str = "",
-) -> None:
-    """Write the transition's audit row strictly, inside the caller's transaction.
-
-    ``entity_id`` is 0 for UUID-identified entities (NGFW): ``AuditLog.entity_id``
-    is a PositiveIntegerField, so passing a UUID there raises and loses the row.
-    The UUIDs go in the state instead — the same convention ``engine.handlers``
-    already uses.
-    """
-    from engine.handlers._audit import _status_to_action
-
-    audit_log_system_event(
-        entity_type=entity_type,
-        entity_id=entity_id,
-        action=_status_to_action(new),
-        source=_AUDIT_SOURCE,
-        state=StateChange(previous=previous or {}, new={"status": new, **(detail or {})}),
-        context=context,
-        request_id=request_id,
-        strict=True,
-    )
-
-
-def _enqueue_range_status_event(range_obj: Range, new_status: str, error_message: str) -> None:
-    """Enqueue the ADR-025 range status notification for an applied transition."""
-    from engine.models import RangeEventOutbox
-    from shared.messages.events import EVENT_TYPE_STATUS_UPDATED
-
-    event_id = uuid4()
-    related_request = range_obj.request
-    RangeEventOutbox.objects.create(
-        event_id=event_id,
-        event_type=EVENT_TYPE_STATUS_UPDATED,
-        payload={
-            "event_type": EVENT_TYPE_STATUS_UPDATED,
-            "event_id": str(event_id),
-            "timestamp": timezone.now().isoformat(),
-            "request_id": str(related_request.request_id) if related_request is not None else "",
-            "range_id": range_obj.id,
-            "user_id": range_obj.user_id,
-            "new_status": new_status,
-            "error_message": error_message,
-        },
-        next_attempt_at=timezone.now(),
-    )
-
-
-def _enqueue_ngfw_status_event(ngfw: Instance, app, new_status: str, request_id: str) -> None:
-    """Enqueue the NGFW lifecycle notification for an applied transition.
-
-    The provisioner used to write this row itself (``events.publish_ngfw_event``).
-    After cutover the notification belongs to the applier, committed in the same
-    transaction as the state it describes, so a consumer can never observe an
-    event for a transition that rolled back. Same notification-only shape as
-    before: identifiers and status, no state.
-    """
-    from engine.models import RangeEventOutbox
-    from shared.messages.events import EVENT_TYPE_NGFW
-
-    event_id = uuid4()
-    RangeEventOutbox.objects.create(
-        event_id=event_id,
-        event_type=EVENT_TYPE_NGFW,
-        payload={
-            "event_type": EVENT_TYPE_NGFW,
-            "event_id": str(event_id),
-            "timestamp": timezone.now().isoformat(),
-            "request_id": request_id,
-            "instance_id": str(ngfw.uuid),
-            "app_id": str(app.uuid) if app is not None else None,
-            "status": new_status,
-        },
-        next_attempt_at=timezone.now(),
-    )
-
-
-def _save_status(obj, new_status: str, extra_fields: dict | None = None) -> str:
-    """Set status (+ timestamps) on a locked row and return the previous status."""
-    previous = obj.status
-    now = timezone.now()
-    obj.status = new_status
-    obj.updated_at = now
-    update_fields = ["status", "updated_at"]
-    for field, value in (extra_fields or {}).items():
-        setattr(obj, field, value)
-        update_fields.append(field)
-    obj.save(update_fields=update_fields)
-    return previous
-
-
-def _apply_instances(range_obj: Range, payload: dict, request_id: str) -> str:
+def _apply_instances(range_obj: Range, payload: dict[str, Any], request_id: str) -> str:
     """Apply a bounded set of instance outcomes belonging to this Range's request.
 
     Locked in primary-key order, and matched against the closed UUID set the
@@ -288,7 +197,7 @@ def _apply_instances(range_obj: Range, payload: dict, request_id: str) -> str:
     return f"{len(rows)} instance(s)"
 
 
-def _resolve_cascade_ngfw(range_obj: Range, payload: dict) -> Instance:
+def _resolve_cascade_ngfw(range_obj: Range, payload: dict[str, Any]) -> Instance:
     """Resolve the NGFW a Range operation may cascade to, or refuse.
 
     Ownership runs through ``Range.ngfw_instance`` — never through a
@@ -339,18 +248,11 @@ def _apply_ngfw(ngfw: Instance, new_status: str, request_id: str) -> None:
     _enqueue_ngfw_status_event(ngfw, apps[0] if apps else None, new_status, request_id)
 
 
-def _terminal_timestamps(new_status: str) -> dict:
-    """Return the timestamp columns a terminal status also sets."""
-    if new_status == ResourceStatus.DESTROYED.value:
-        return {"destroyed_at": timezone.now()}
-    return {}
-
-
 class _NotApplicable(Exception):
     """A validated result that must not mutate this domain state."""
 
 
-def _apply_range_terminal(range_obj: Range, payload: dict, request_id: str) -> str:
+def _apply_range_terminal(range_obj: Range, payload: dict[str, Any], request_id: str) -> str:
     """Apply the terminal status of a Range pause/resume."""
     new_status = payload["status"]
     extra = {}
@@ -364,7 +266,7 @@ def _apply_range_terminal(range_obj: Range, payload: dict, request_id: str) -> s
     return f"range -> {new_status}"
 
 
-def _apply_failure(target, payload: dict, request_id: str, is_range: bool) -> str:
+def _apply_failure(target: Range | Instance, payload: dict[str, Any], request_id: str, is_range: bool) -> str:
     """Apply a terminal failure, carrying only the authored reason code."""
     from engine.launch_intents import clear_provisioner_operation_after_failure
 
@@ -374,7 +276,7 @@ def _apply_failure(target, payload: dict, request_id: str, is_range: bool) -> st
     now = timezone.now()
     target.status = new_status
     target.updated_at = now
-    target.error_message = context
+    target.error_message = context  # type: ignore[union-attr]  # both models carry it
     update_fields = ["status", "updated_at", "error_message"]
     update_fields.extend(clear_provisioner_operation_after_failure(target))
     target.save(update_fields=update_fields)
@@ -399,11 +301,11 @@ def _apply_failure(target, payload: dict, request_id: str, is_range: bool) -> st
             context=context,
         )
     if is_range:
-        _enqueue_range_status_event(target, new_status, context)
+        _enqueue_range_status_event(cast("Range", target), new_status, context)
     return f"{'range' if is_range else 'ngfw'} -> failed ({context})"
 
 
-def _lock_operation_target(row: OperationResultInbox):
+def _lock_operation_target(row: OperationResultInbox) -> Range | Instance | None:
     """Lock the domain row that owns this operation generation, or return None.
 
     Locking happens BEFORE any conflict or ordering decision. All results for one
@@ -416,13 +318,13 @@ def _lock_operation_target(row: OperationResultInbox):
     return _lock_ngfw_instance(row.operation_id)
 
 
-def _dispatch(row: OperationResultInbox, step: ResultStep, payload: dict, target) -> str:
+def _dispatch(row: OperationResultInbox, step: ResultStep, payload: dict[str, Any], target: Range | Instance) -> str:
     """Route one validated result to its domain write. Caller holds the lock."""
     is_range_resource = row.resource in _RANGE_RESOURCES
     request_id = str(row.request_id)
 
     if is_range_resource:
-        range_obj = target
+        range_obj = cast("Range", target)
         if step in (ResultStep.RANGE_INSTANCES_PAUSED, ResultStep.RANGE_INSTANCES_READY):
             return _apply_instances(range_obj, payload, request_id)
         if step is ResultStep.RANGE_TERMINAL_FAILED:
@@ -439,7 +341,7 @@ def _dispatch(row: OperationResultInbox, step: ResultStep, payload: dict, target
         _apply_ngfw(ngfw, new_status, request_id)
         return f"ngfw cascade -> {new_status}"
 
-    ngfw = target
+    ngfw = cast("Instance", target)
     if step is ResultStep.NGFW_TERMINAL_FAILED:
         return _apply_failure(ngfw, payload, request_id, is_range=False)
     if str(ngfw.uuid) != payload["ngfw_instance_uuid"]:

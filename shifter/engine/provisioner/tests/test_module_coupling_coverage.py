@@ -597,7 +597,7 @@ def test_range_ngfw_helpers_use_direct_runtime_and_db_modules(monkeypatch: pytes
     configure_subnets.assert_called_once()
     record_attachment.assert_called_once()
     remove_subnets.assert_called_once_with(7, [{"name": "attack"}], 42)
-    remove_attachment.assert_called_once_with(ngfw_request_id="ngfw-req", ngfw_status="ready", range_id=42)
+    remove_attachment.assert_called_once_with(ngfw_request_id="ngfw-req", range_id=42)
 
     monkeypatch.setattr("terraform_ngfw_range.user_has_active_ranges", MagicMock(return_value=False))
     _maybe_pause_user_ngfw(7, 42)

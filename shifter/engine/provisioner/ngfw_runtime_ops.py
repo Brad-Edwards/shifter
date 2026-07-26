@@ -66,7 +66,6 @@ def _runtime_step(owning_operation: str, status: str) -> ResultStep:
 def _publish_ngfw_runtime_status(
     request_id: str,
     instance_uuid: str,
-    app_id: str,
     status: str,
     *,
     operation_id: str | None = None,
@@ -102,7 +101,6 @@ def _run_gcp_ngfw_operation(
     _publish_ngfw_runtime_status(
         request_id,
         instance_uuid,
-        app_id,
         in_progress_status,
         operation_id=operation_id,
         operation=operation,
@@ -125,7 +123,6 @@ def _run_gcp_ngfw_operation(
     _publish_ngfw_runtime_status(
         request_id,
         instance_uuid,
-        app_id,
         success_status,
         operation_id=operation_id,
         operation=operation,
@@ -162,7 +159,6 @@ def _run_aws_ngfw_operation(
     _publish_ngfw_runtime_status(
         request_id,
         instance_uuid,
-        app_id,
         in_progress_status,
         operation_id=operation_id,
         operation=operation,
@@ -201,7 +197,6 @@ def _run_aws_ngfw_operation(
     _publish_ngfw_runtime_status(
         request_id,
         instance_uuid,
-        app_id,
         success_status,
         operation_id=operation_id,
         operation=operation,

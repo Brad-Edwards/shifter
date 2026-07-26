@@ -80,8 +80,6 @@ def _deactivate_vmseries_license(
 
 def _run_gdc_deprovision(
     request_id: str,
-    instance_id: str,
-    app_id: str,
     *,
     operation_id: str | None = None,
 ) -> None:
@@ -165,7 +163,6 @@ def _deactivate_aws_vmseries_license(current_state: dict[str, Any]) -> None:
 def _run_deprovision(
     request_id: str,
     instance_id: str,
-    app_id: str,
     *,
     operation_id: str | None = None,
 ) -> None:
