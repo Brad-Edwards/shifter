@@ -79,8 +79,8 @@ Pain points:
 
 - Status is split across event pages, range pages, terminal access, and
   operational documentation.
-- Event urgency makes ambiguous states expensive. "Provisioning", "available",
-  "running", and "unhealthy" need specific operator meaning.
+- Event urgency makes ambiguous states expensive. `Provisioning`, `available`,
+  `running`, and `unhealthy` need specific operator meaning.
 - Visual identity matters because the UI is projected or screen-shared in front
   of customers. Branding residue or noisy decoration distracts from the demo.
 
@@ -133,8 +133,8 @@ Pain points:
 - Scenario readiness, participant readiness, and range readiness are related but
   not presented as one teaching workflow.
 - Difficulty metadata is useful only when it maps to observable learner tasks.
-- Trainers need documentation that distinguishes "how to run the event" from
-  "how to solve the exercise".
+- Trainers need documentation that distinguishes `how to run the event` from
+  `how to solve the exercise`.
 
 ### persona-oss-contributor-evaluator
 
@@ -156,7 +156,7 @@ Primary goals:
 Pain points:
 
 - OSS evaluators are sensitive to unclear mental models. If CTF, Mission
-  Control, Scenario Editor, Risk Register, and Documentation feel unrelated,
+  Control, Scenario Editor, and Documentation feel unrelated,
   the system looks larger than it is.
 - Contribution confidence depends on naming. Product surfaces, backend
   concepts, and repo paths should line up.
@@ -238,20 +238,6 @@ Jobs:
   required resources to be visible without opening every file.
 - When I contribute a scenario, I want the editor's language to match repository
   concepts so I can move between UI and code.
-
-### surface-risk-register
-
-Personas served: `persona-self-hosting-oss-adopter`,
-`persona-oss-contributor-evaluator`, `persona-panw-consultant-demo-operator`.
-
-Jobs:
-
-- When I operate Shifter, I want risks, exceptions, and mitigations visible
-  enough to support deployment decisions.
-- When a risk affects a demo, training, or self-hosted deployment, I want to
-  know ownership, status, and next review date.
-- When I evaluate the OSS project, I want security posture to be direct and
-  credible, not hidden behind marketing language.
 
 ### surface-documentation
 
@@ -370,8 +356,7 @@ Future issues can cite these stable anchors:
   `persona-conference-ctf-attendee`, `persona-internal-trainer`,
   `persona-oss-contributor-evaluator`, `persona-self-hosting-oss-adopter`.
 - Surfaces: `surface-ctf`, `surface-mission-control`,
-  `surface-scenario-editor`, `surface-risk-register`,
-  `surface-documentation`.
+  `surface-scenario-editor`, `surface-documentation`.
 - Pain points: `pain-fragmented-operational-state`,
   `pain-mixed-skill-onboarding`, `pain-surface-vocabulary-drift`,
   `pain-branding-and-visual-noise`, `pain-docs-not-role-routed`,

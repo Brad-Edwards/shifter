@@ -6033,7 +6033,7 @@ class AcesParityInventoryPathIntegrityTests(unittest.TestCase):
             self._write_inventory(
                 repo,
                 self._row(
-                    "engine.Range.provisioned_instances; cms.RangeInstance.range_spec; risk_register.AuditLog",
+                    "engine.Range.provisioned_instances; cms.RangeInstance.range_spec; shared.AuditLog",
                     self.NEUTRAL,
                 ),
             )

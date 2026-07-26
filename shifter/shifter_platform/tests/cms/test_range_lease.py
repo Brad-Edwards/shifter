@@ -75,8 +75,8 @@ def test_lease_builder_rejects_invalid_deadlines_and_sources():
 
 def test_extend_mission_control_range_advances_one_bounded_increment():
     from cms.services._range_lease import extend_mission_control_range
-    from risk_register.models import AuditLog
     from shared.audit import AuditAction, AuditActorType
+    from shared.models import AuditLog
 
     user = User.objects.create_user(username="lease-owner@example.com")
     now = timezone.now()
@@ -225,8 +225,8 @@ def test_expire_due_ranges_uses_canonical_destroy_and_system_audit():
     from cms.services._range_lease import expire_due_ranges
     from engine.models import Range as EngineRange
     from engine.models import Request as EngineRequest
-    from risk_register.models import AuditLog
     from shared.audit import AuditAction, AuditActorType
+    from shared.models import AuditLog
 
     user = User.objects.create_user(username="lease-cleanup@example.com")
     now = timezone.now()
