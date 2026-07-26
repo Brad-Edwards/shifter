@@ -206,10 +206,10 @@ rows:
     category: Shifter backend responsibility
     aces_target: Shifter ACES registry entry after parity
     shifter_owner: cms.scenarios.templates
-    validation_evidence: scripts/polaris-aws-range/polaris_provision.py
+    validation_evidence: shifter/shifter_platform/tests/cms/test_scenario_hydrator.py; scripts/polaris-aws-range/polaris_provision.py
     next_issue_kind: implementation-candidate
     candidate_issue_title: Add a portal/engine ACES launch path for Polaris
-    notes: The normal Shifter launch path remains the cutover gate for Polaris.
+    notes: The normal Shifter launch path remains the cutover gate for Polaris. Shifter-path evidence leads the standalone script; TestHydratePolarisPortalTemplate drives the shipped template through registry, loader, hydrator, and the persisted-spec envelope.
 
   - id: polaris.smoketests
     surface: Polaris
