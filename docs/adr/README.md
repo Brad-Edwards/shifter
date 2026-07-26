@@ -124,7 +124,12 @@ Current mechanisms:
   workflow's gate contract in `.gc/plan-rules.md`. The configured
   completion boundary is the root `make test` target; `make policy`
   composes the existing ADR, import, diff, and changed-document checks
-  required by the synchronized pre-PR gate.
+  required by the synchronized pre-PR gate. The `routing` block accepts
+  only `enabled`, `default_provider`, and `stages`; a stale
+  `default_fallback` key, valid when the block was first written and
+  later removed upstream without a migration, was dropped in #1581. See
+  `docs/technical/dev/adr-enforcement.md` for how whole-file validation
+  makes an unrecognized key fail closed.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can

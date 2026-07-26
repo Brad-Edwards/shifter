@@ -6,12 +6,16 @@ workflow:
   # consumed by the synchronized /implement workflow.
   completion_command: make test
   lint_command: python3 scripts/adr_guard/adr_guard.py --all --level ci
+  codex_review:
+    pre_push_cap: 1
+  test_quality_review:
+    pre_push_cap: 1
   review_disposition:
-    enabled: true
+    enabled: false
     mode: shadow
-    max_auto_overrides: 1
+    max_auto_overrides: 0
     judge:
-      enabled: true
+      enabled: false
 sonarcloud:
   project_key: Brad-Edwards_shifter
   organization: brad-edwards

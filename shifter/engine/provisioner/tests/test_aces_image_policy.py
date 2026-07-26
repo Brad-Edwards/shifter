@@ -1,9 +1,16 @@
-"""Tests for the pure ACES image resolver (ADR-032-R2).
+"""The provisioner resolves ACES images through the shared policy (ADR-032-R2, #1581).
 
-Exercises the matching rules in isolation (no DB): exact (name, version) match,
-unpinned (``*``/blank) -> any-version default row, and -- critically -- that a
-PINNED version never silently falls back to the any-version row (authored
-specificity is honored; no substitution, matching aces-sdl + the reference).
+The matching rules moved to ``shared.aces.image_policy`` so the portal's Scenario
+Editor realizability assessment and the separately deployed provisioner resolve
+images identically -- a second copy could drift and let the editor call a pack
+realizable that realization would then reject.
+
+The full rule matrix is owned by the platform suite
+(``shifter_platform/tests/shared/aces/test_image_policy.py``), beside the module.
+What is pinned *here* is the cross-deployable guarantee that suite cannot give:
+the shared policy imports and behaves correctly inside the provisioner's own
+import environment, which ships ``shifter_platform/shared`` on ``PYTHONPATH``
+without the portal's dependencies.
 """
 
 import sys
@@ -11,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from aces_image_resolver import ResolvedImage, resolve_from_candidates
+from shared.aces.image_policy import ResolvedImage, resolve_from_candidates
 
 
 def _candidate(version: str, image_ref: str, **extra) -> dict:
@@ -24,7 +31,7 @@ def _candidate(version: str, image_ref: str, **extra) -> dict:
     }
 
 
-class TestResolveFromCandidates:
+class TestSharedPolicyInProvisionerEnvironment:
     def test_exact_version_match(self):
         resolved = resolve_from_candidates([_candidate("1.0", "img-v1"), _candidate("", "img-any")], version="1.0")
         assert isinstance(resolved, ResolvedImage) and resolved.image_ref == "img-v1"
@@ -38,24 +45,8 @@ class TestResolveFromCandidates:
         resolved = resolve_from_candidates([_candidate("", "img-any")], version="*")
         assert resolved is not None and resolved.image_ref == "img-any"
 
-    def test_unpinned_star_ignores_versioned_rows_without_default(self):
-        # Author unpinned (*), but only a versioned row exists (no blank default).
-        # No default to serve -> None (caller fails loud; we do not guess a version).
-        assert resolve_from_candidates([_candidate("2.0", "img-v2")], version="*") is None
-
-    def test_exact_preferred_when_both_present(self):
-        resolved = resolve_from_candidates([_candidate("", "img-any"), _candidate("2.0", "img-exact")], version="2.0")
-        assert resolved is not None and resolved.image_ref == "img-exact"
-
     def test_no_match_returns_none(self):
         assert resolve_from_candidates([_candidate("1.0", "img")], version="2.0") is None
-
-    def test_empty_candidates_returns_none(self):
-        assert resolve_from_candidates([], version="1.0") is None
-
-    def test_version_none_uses_any_version_default(self):
-        resolved = resolve_from_candidates([_candidate("", "img-any")], version=None)
-        assert resolved is not None and resolved.image_ref == "img-any"
 
     def test_carries_machine_and_disk_defaults(self):
         resolved = resolve_from_candidates(
@@ -66,8 +57,3 @@ class TestResolveFromCandidates:
         assert resolved.machine_type == "e2-medium"
         assert resolved.disk_size_gb == 40
         assert resolved.disk_type == "pd-ssd"
-
-    def test_blank_machine_and_disk_normalize_to_none(self):
-        resolved = resolve_from_candidates([_candidate("1.0", "img", machine_type="", disk_type="")], version="1.0")
-        assert resolved is not None
-        assert resolved.machine_type is None and resolved.disk_type is None
