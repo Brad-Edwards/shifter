@@ -114,9 +114,9 @@ if __name__ == "__main__":
         logger.info("Starting ACES range %s for request_id=%s", args.operation, args.request_id)
         logger.info(_ENVIRONMENT_LOG, os.environ.get("ENVIRONMENT", "unknown"))
         if args.operation == "provision":
-            run_aces_range_provision(args.request_id)
+            run_aces_range_provision(args.request_id, operation_id=args.operation_id)
         else:
-            run_aces_range_destroy(args.request_id)
+            run_aces_range_destroy(args.request_id, operation_id=args.operation_id)
         logger.info("Completed ACES range %s for request_id=%s", args.operation, args.request_id)
 
     elif args.resource == "ngfw":

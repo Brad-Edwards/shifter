@@ -1,8 +1,9 @@
-"""Closed operation-result contract for the pause/resume + NGFW family.
+"""Closed operation-result contract for the pause/resume, NGFW, and ACES families.
 
-ADR-043 phase 4 (#1836). ``shared.operation_envelope`` owns the *transport*
-shape; this module owns the bounded, operation-specific ``payload`` that rides
-inside it, plus the two things the transport deliberately does not model:
+ADR-043 phase 4 (#1836) and phase 5 (#1837). ``shared.operation_envelope`` owns
+the *transport* shape; this module owns the bounded, operation-specific
+``payload`` that rides inside it, plus the two things the transport
+deliberately does not model:
 
 * **Step identity.** ``f"{operation_id}:{result_kind}"`` cannot identify a result
   when one operation emits several ``RESOURCE_STATE`` results — a range pause
@@ -36,11 +37,15 @@ from uuid import UUID
 from cyberscript.enums import ResourceStatus
 from cyberscript.exceptions import ValidationError as OperationResultError
 
+from shared.aces.status import ACES_OPERATION_STATES, ACES_STATE_RUNNING, ACES_STATE_SUCCEEDED
+
 __all__ = [
     "MAX_DIAGNOSTIC_CHARS",
     "MAX_INSTANCE_OUTCOMES",
+    "MAX_SNAPSHOT_RESOURCES",
     "NGFW_STATE_KEYS",
     "REASON_CODES",
+    "SNAPSHOT_ENTRY_KEYS",
     "OperationResultError",
     "ResultStep",
     "build_result_identity",
@@ -48,6 +53,7 @@ __all__ = [
     "is_terminal_step",
     "latest_step",
     "parse_result_payload",
+    "range_status_for",
     "result_kind_for",
     "step_follows",
     "steps_for",
@@ -87,6 +93,16 @@ class ResultStep(StrEnum):
     NGFW_TERMINAL_PAUSED = "ngfw_terminal_paused"
     NGFW_TERMINAL_DESTROYED = "ngfw_terminal_destroyed"
     NGFW_TERMINAL_FAILED = "ngfw_terminal_failed"
+    # aces-range provision/destroy (phase 5). The ACES operation vocabulary is
+    # coarse (running/succeeded/failed) and carries no lifecycle direction, so
+    # the step -- not the reported state -- is what distinguishes and orders a
+    # provision observation from a destroy one.
+    ACES_PROVISION_RUNNING = "aces_provision_running"
+    ACES_PROVISION_SNAPSHOT = "aces_provision_snapshot"
+    ACES_DESTROY_RUNNING = "aces_destroy_running"
+    ACES_TERMINAL_READY = "aces_terminal_ready"
+    ACES_TERMINAL_DESTROYED = "aces_terminal_destroyed"
+    ACES_TERMINAL_FAILED = "aces_terminal_failed"
 
 
 class _Shape(StrEnum):
@@ -96,6 +112,8 @@ class _Shape(StrEnum):
     NGFW = "ngfw"
     RANGE_TERMINAL = "range_terminal"
     FAILURE = "failure"
+    ACES_OPERATION = "aces_operation"
+    ACES_SNAPSHOT = "aces_snapshot"
 
 
 # Result kinds mirror ``engine.models.OperationResultKind`` without importing
@@ -111,6 +129,16 @@ _PAYLOAD_FIELD = "result payload"
 # Bounded per ADR-043: results carry summaries, never snapshots.
 MAX_INSTANCE_OUTCOMES = 256
 MAX_DIAGNOSTIC_CHARS = 512
+# The ACES runtime snapshot is already byte-bounded by ``aces_snapshot`` before
+# it is published; this is the transport-side count bound so an oversized
+# topology fails at the wire rather than at the sidecar's size validator.
+MAX_SNAPSHOT_RESOURCES = 512
+
+# Exactly the bounded fields ``aces_snapshot.snapshot_resources`` emits. ACES
+# addresses are compiled handles carrying no authored values or infrastructure
+# detail, which is what makes the snapshot safe for the redacted sidecar; an IP,
+# hostname, or provider id appearing here would defeat that.
+SNAPSHOT_ENTRY_KEYS = frozenset({"address", "resource_type", "status"})
 
 # Closed failure vocabulary. An authored code, never an exception string.
 REASON_CODES = frozenset(
@@ -140,13 +168,22 @@ NGFW_STATE_KEYS = frozenset(
 
 @dataclass(frozen=True)
 class _StepSpec:
-    """Declared properties of one step within one ``(resource, operation)``."""
+    """Declared properties of one step within one ``(resource, operation)``.
+
+    ``status`` carries two meanings depending on the shape. For the families
+    whose payload reports a ``ResourceStatus`` directly it *pins* that reported
+    value. For the ACES shapes -- whose payload reports a coarse ACES operation
+    state instead -- it is the range status the step projects, or ``None`` when
+    the step is evidence only and must not move lifecycle state. ``aces_state``
+    is what pins the ACES payload.
+    """
 
     rank: int
     result_kind: str
     shape: _Shape
     status: ResourceStatus | None
     terminal: bool = False
+    aces_state: str | None = None
 
 
 def _progress(rank: int, shape: _Shape, status: ResourceStatus) -> _StepSpec:
@@ -162,6 +199,34 @@ def _success(rank: int, shape: _Shape, status: ResourceStatus) -> _StepSpec:
 def _failure(rank: int) -> _StepSpec:
     """Declare a terminal-failure step."""
     return _StepSpec(rank=rank, result_kind=_TERMINAL_FAILURE, shape=_Shape.FAILURE, status=None, terminal=True)
+
+
+def _aces_progress(rank: int, aces_state: str, status: ResourceStatus | None) -> _StepSpec:
+    """Declare a non-terminal ACES observation, optionally projecting a range status."""
+    return _StepSpec(
+        rank=rank, result_kind=_RESOURCE_STATE, shape=_Shape.ACES_OPERATION, status=status, aces_state=aces_state
+    )
+
+
+def _aces_success(rank: int, status: ResourceStatus) -> _StepSpec:
+    """Declare an ACES terminal-success observation."""
+    return _StepSpec(
+        rank=rank,
+        result_kind=_TERMINAL_SUCCESS,
+        shape=_Shape.ACES_OPERATION,
+        status=status,
+        terminal=True,
+        aces_state=ACES_STATE_SUCCEEDED,
+    )
+
+
+def _aces_snapshot(rank: int) -> _StepSpec:
+    """Declare the bounded runtime-snapshot evidence step.
+
+    Evidence only: ``status=None`` keeps it out of the lifecycle write path, so
+    a snapshot can never produce an audit row or a range event.
+    """
+    return _StepSpec(rank=rank, result_kind=_RESOURCE_STATE, shape=_Shape.ACES_SNAPSHOT, status=None)
 
 
 _RANGE_PAUSE_STEPS: dict[ResultStep, _StepSpec] = {
@@ -209,14 +274,35 @@ _NGFW_STOP_STEPS: dict[ResultStep, _StepSpec] = {
     ResultStep.NGFW_TERMINAL_FAILED: _failure(20),
 }
 
-# ``aces-range`` shares the range lifecycle contract; the applier resolves the
-# target differently, the result shape is the same.
+# ACES provision reports one running observation, then bounded topology
+# evidence, then its terminal state. Provision-running projects PROVISIONING
+# because the pre-cutover path published that range status at start; destroy
+# has no equivalent published start event, so its running observation is
+# sidecar evidence and projects nothing.
+_ACES_PROVISION_STEPS: dict[ResultStep, _StepSpec] = {
+    ResultStep.ACES_PROVISION_RUNNING: _aces_progress(10, ACES_STATE_RUNNING, ResourceStatus.PROVISIONING),
+    ResultStep.ACES_PROVISION_SNAPSHOT: _aces_snapshot(20),
+    ResultStep.ACES_TERMINAL_READY: _aces_success(30, ResourceStatus.READY),
+    ResultStep.ACES_TERMINAL_FAILED: _failure(30),
+}
+
+_ACES_DESTROY_STEPS: dict[ResultStep, _StepSpec] = {
+    ResultStep.ACES_DESTROY_RUNNING: _aces_progress(10, ACES_STATE_RUNNING, None),
+    ResultStep.ACES_TERMINAL_DESTROYED: _aces_success(20, ResourceStatus.DESTROYED),
+    ResultStep.ACES_TERMINAL_FAILED: _failure(20),
+}
+
+# ``aces-range`` pause/resume share the range lifecycle contract; the applier
+# resolves the target differently, the result shape is the same. Provision and
+# destroy do not: they report ACES operation observations, not instance sets.
 
 _CONTRACT: dict[tuple[str, str], dict[ResultStep, _StepSpec]] = {
     ("range", "pause"): _RANGE_PAUSE_STEPS,
     ("range", "resume"): _RANGE_RESUME_STEPS,
     ("aces-range", "pause"): _RANGE_PAUSE_STEPS,
     ("aces-range", "resume"): _RANGE_RESUME_STEPS,
+    ("aces-range", "provision"): _ACES_PROVISION_STEPS,
+    ("aces-range", "destroy"): _ACES_DESTROY_STEPS,
     ("ngfw", "provision"): _NGFW_PROVISION_STEPS,
     ("ngfw", "deprovision"): _NGFW_DEPROVISION_STEPS,
     ("ngfw", "start"): _NGFW_START_STEPS,
@@ -268,6 +354,17 @@ def result_kind_for(resource: str, operation: str, *, step: ResultStep | str) ->
 def is_terminal_step(resource: str, operation: str, *, step: ResultStep | str) -> bool:
     """Return True when the step terminates its operation generation."""
     return _spec(resource, operation, step).terminal
+
+
+def range_status_for(resource: str, operation: str, *, step: ResultStep | str) -> str | None:
+    """Return the range status a step projects, or None when it is evidence only.
+
+    The applier uses this to decide whether a result moves lifecycle state at
+    all. ``None`` means persist the evidence and stop: no status write, no audit
+    row, no range event.
+    """
+    status = _spec(resource, operation, step).status
+    return status.value if status is not None else None
 
 
 def step_follows(
@@ -430,11 +527,67 @@ def _parse_failure(payload: dict[str, Any], _spec_unused: _StepSpec) -> dict[str
     return {"reason_code": reason_code, "diagnostic": diagnostic}
 
 
+def _parse_aces_operation(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
+    """Parse an ACES operation observation, with an optional bounded reason.
+
+    ``aces_status`` is pinned to the step's declared state: the ACES vocabulary
+    is coarse and direction-free, so an unpinned body would let a late
+    ``running`` result be recorded under a terminal step (or the reverse).
+    """
+    required = frozenset({"aces_status"})
+    unexpected = sorted(frozenset(payload) - (required | {"status_reason"}))
+    if unexpected:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} has unexpected field(s): {', '.join(unexpected)}")
+    missing = sorted(required - frozenset(payload))
+    if missing:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} is missing field(s): {', '.join(missing)}")
+
+    state = payload["aces_status"]
+    if not isinstance(state, str) or state not in ACES_OPERATION_STATES:
+        raise OperationResultError(
+            f"{_PAYLOAD_FIELD} aces_status must be one of: {', '.join(sorted(ACES_OPERATION_STATES))}"
+        )
+    if spec.aces_state is not None and state != spec.aces_state:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} aces_status must be '{spec.aces_state}' for this step")
+
+    parsed: dict[str, Any] = {"aces_status": state}
+    if "status_reason" in payload:
+        reason = payload["status_reason"]
+        if not isinstance(reason, str):
+            raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason must be a string")
+        if len(reason) > MAX_DIAGNOSTIC_CHARS:
+            raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason exceeds {MAX_DIAGNOSTIC_CHARS} characters")
+        parsed["status_reason"] = reason
+    return parsed
+
+
+def _parse_aces_snapshot(payload: dict[str, Any], _spec_unused: _StepSpec) -> dict[str, Any]:
+    """Parse the bounded ACES runtime-snapshot evidence."""
+    _require_exact_keys(payload, frozenset({"resources"}), _PAYLOAD_FIELD)
+    raw = payload["resources"]
+    if not isinstance(raw, list):
+        raise OperationResultError(f"{_PAYLOAD_FIELD} resources must be a list")
+    if len(raw) > MAX_SNAPSHOT_RESOURCES:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} carries more than {MAX_SNAPSHOT_RESOURCES} snapshot resources")
+    resources = []
+    for index, item in enumerate(raw):
+        field = f"{_PAYLOAD_FIELD} resources[{index}]"
+        entry = _require_dict(item, field)
+        _require_exact_keys(entry, SNAPSHOT_ENTRY_KEYS, field)
+        for key in sorted(SNAPSHOT_ENTRY_KEYS):
+            if not isinstance(entry[key], str) or not entry[key]:
+                raise OperationResultError(f"{field} {key} must be a non-empty string")
+        resources.append({key: entry[key] for key in sorted(SNAPSHOT_ENTRY_KEYS)})
+    return {"resources": resources}
+
+
 _PARSERS = {
     _Shape.INSTANCES: _parse_instances,
     _Shape.NGFW: _parse_ngfw,
     _Shape.RANGE_TERMINAL: _parse_range_terminal,
     _Shape.FAILURE: _parse_failure,
+    _Shape.ACES_OPERATION: _parse_aces_operation,
+    _Shape.ACES_SNAPSHOT: _parse_aces_snapshot,
 }
 
 

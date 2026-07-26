@@ -1,7 +1,7 @@
 """Provisioner_db append helpers for the async-processing tables.
 
 Split out of ``provisioner_db.py`` (Sonar S104), following the same convention as
-``provisioner_db_ngfw.py`` / ``provisioner_db_aces.py``. Owns the transactional,
+``provisioner_db_ngfw.py``. Owns the transactional,
 optional-cursor append helpers for the two async-processing tables the provisioner
 writes to:
 
