@@ -11,7 +11,7 @@ Shifter does.
 |---|---|
 | [Getting started](getting-started/index.md) | You are new and want the quickstart and core concepts. |
 | [How-to guides](how-to/index.md) | You want step-by-step guides such as running your first demo. |
-| [Features](features/index.md) | You need details on agents, ranges, the terminal, credentials, NGFW, CTF, or the risk register. |
+| [Features](features/index.md) | You need details on agents, ranges, the terminal, credentials, NGFW, or CTF. |
 | [Scenarios](scenarios/index.md) | You are running a specific scenario such as the AD attack lab, an NGFW range, or TechVault. |
 | [Reference](reference/index.md) | You need the FAQ or support pointers. |
 

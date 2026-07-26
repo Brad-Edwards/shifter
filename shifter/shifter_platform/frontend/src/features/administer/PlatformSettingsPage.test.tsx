@@ -6,7 +6,7 @@ vi.mock("@/app/bootstrap-context", () => ({
   useBootstrapContext: () => ({
     principal: { id: 1, username: "root", display_name: "Root", is_authenticated: true, is_staff: true, is_superuser: true },
     permissions: {},
-    feature_flags: { administer_spa: true, platform_spa: true, risk_register_spa: false },
+    feature_flags: { administer_spa: true, platform_spa: true },
   }),
 }));
 
@@ -17,8 +17,7 @@ describe("PlatformSettingsPage", () => {
     render(<PlatformSettingsPage />);
     expect(screen.getByText("Managed by deployment")).toBeInTheDocument();
     expect(screen.getByText("Administer spa")).toBeInTheDocument();
-    expect(screen.getAllByText("Enabled").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Disabled").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Enabled")).toHaveLength(2);
   });
 
   it("has no axe violations", async () => {

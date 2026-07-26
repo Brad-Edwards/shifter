@@ -91,17 +91,17 @@ class TestPublishedContract:
 
     def test_error_responses_reference_the_envelope(self, openapi_document: dict[str, Any]) -> None:
         # Only the statuses the shared exception handler guarantees are injected.
-        risks = openapi_document["paths"]["/api/v1/risks/"]["get"]
+        audit = openapi_document["paths"]["/api/v1/audit/"]["get"]
         for code in ("401", "403"):
-            schema = risks["responses"][code]["content"]["application/json"]["schema"]
+            schema = audit["responses"][code]["content"]["application/json"]["schema"]
             assert schema["$ref"].endswith("/ApiError")
 
     def test_body_dependent_errors_are_not_injected_globally(self, openapi_document: dict[str, Any]) -> None:
         # 400/404 shapes vary per endpoint (some legacy views return non-envelope
         # errors), so they must not be blanket-injected onto every operation.
-        risks = openapi_document["paths"]["/api/v1/risks/"]["get"]
-        assert "400" not in risks["responses"]
-        assert "404" not in risks["responses"]
+        audit = openapi_document["paths"]["/api/v1/audit/"]["get"]
+        assert "400" not in audit["responses"]
+        assert "404" not in audit["responses"]
 
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.
@@ -110,7 +110,9 @@ class TestPublishedContract:
         assert "200" not in ngfw["responses"]
 
     def test_token_scopes_published_for_scoped_operations(self, openapi_document: dict[str, Any]) -> None:
-        assert openapi_document["paths"]["/api/v1/risks/"]["get"]["x-required-scopes"] == ["risk:read"]
+        assert openapi_document["paths"]["/api/v1/mission-control/range/"]["get"]["x-required-scopes"] == [
+            "mission_control:range:read"
+        ]
 
     def test_unscoped_operations_omit_scope_extension(self, openapi_document: dict[str, Any]) -> None:
         # Admin-only audit reads are not token-scoped; they must not advertise a scope.
@@ -121,12 +123,6 @@ class TestPublishedContract:
         detail = openapi_document["paths"]["/api/v1/cms/scenario-editor/scenarios/{scenario_id}/"]
         assert detail["get"]["x-required-scopes"] == ["cms:authoring:read"]
         assert detail["patch"]["x-required-scopes"] == ["cms:authoring:write"]
-
-    def test_comment_author_resolves_to_structured_component(self, openapi_document: dict[str, Any]) -> None:
-        schemas = openapi_document["components"]["schemas"]
-        assert "CommentAuthor" in schemas
-        author = schemas["Comment"]["properties"]["author"]
-        assert any("CommentAuthor" in ref.get("$ref", "") for ref in author.get("allOf", []))
 
     def test_both_auth_schemes_present(self, openapi_document: dict[str, Any]) -> None:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])
@@ -139,13 +135,14 @@ class TestLiveResponseParity:
     def test_unauthenticated_request_matches_published_401(self, openapi_document: dict[str, Any]) -> None:
         from rest_framework.test import APIClient
 
-        response = APIClient().get("/api/v1/risks/")
+        path = "/api/v1/mission-control/range/"
+        response = APIClient().get(path)
         assert response.status_code == 401
         # Live body is the canonical envelope the exception handler renders...
         body = response.json()
         assert {"code", "message"} <= set(body["error"])
         # ...and the contract publishes exactly that shape for 401 on this operation.
-        published = openapi_document["paths"]["/api/v1/risks/"]["get"]["responses"]["401"]
+        published = openapi_document["paths"][path]["get"]["responses"]["401"]
         assert published["content"]["application/json"]["schema"]["$ref"].endswith("/ApiError")
 
 
@@ -159,6 +156,70 @@ class TestLiveResponseParity:
 
 
 class TestBreakingChangeGate:
+    def test_accepted_feature_retirement_projects_only_exact_elements(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        metadata = tmp_path / "v1.retirements.json"
+        metadata.write_text(
+            json.dumps(
+                {
+                    "api_major": "v1",
+                    "adr": "ADR-045",
+                    "paths": ["/api/v1/retired/"],
+                    "response_schema_properties": [{"schema": "Bootstrap", "property": "retired"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(contract, "retirement_path", lambda major=contract.API_MAJOR: metadata)
+        base = {
+            "paths": {"/api/v1/retired/": {}, "/api/v1/kept/": {}},
+            "components": {
+                "schemas": {
+                    "Bootstrap": {
+                        "properties": {"retired": {"type": "boolean"}, "kept": {"type": "boolean"}},
+                        "required": ["kept", "retired"],
+                    }
+                }
+            },
+        }
+        current = {
+            "paths": {"/api/v1/kept/": {}},
+            "components": {
+                "schemas": {
+                    "Bootstrap": {
+                        "properties": {"kept": {"type": "boolean"}},
+                        "required": ["kept"],
+                    }
+                }
+            },
+        }
+
+        projected = json.loads(contract.apply_accepted_retirements(json.dumps(base), json.dumps(current)))
+
+        assert projected == current
+
+    def test_accepted_feature_retirement_rejects_reintroduction(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        metadata = tmp_path / "v1.retirements.json"
+        metadata.write_text(
+            json.dumps(
+                {
+                    "api_major": "v1",
+                    "adr": "ADR-045",
+                    "paths": ["/api/v1/retired/"],
+                    "response_schema_properties": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(contract, "retirement_path", lambda major=contract.API_MAJOR: metadata)
+        document = json.dumps({"paths": {"/api/v1/retired/": {}}})
+
+        with pytest.raises(RuntimeError, match="reintroduced"):
+            contract.apply_accepted_retirements(document, document)
+
     def test_breaking_change_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             contract.subprocess,
@@ -310,8 +371,8 @@ class TestApiContractCommand:
 class TestPlatformAutoSchemaFallback:
     def test_resolved_permissions_falls_back_when_get_permissions_raises(self) -> None:
         class _Perm:
-            required_read_scope = "risk:read"
-            required_write_scope = "risk:write"
+            required_read_scope = "mission_control:range:read"
+            required_write_scope = "mission_control:range:write"
 
         class _View:
             permission_classes = [_Perm]

@@ -140,9 +140,10 @@ runner. Core ships no scenario adapters or answer material.
   types, plugin factories, operator selection, execution, status/exit behavior,
   and report redaction.
 
-## Risk Register
+## Audit logging
 
-The `risk_register` app owns the Risk Register domain and is the first SPA
-cutover module (ADR-029).
+The shared platform layer owns the durable audit store and writer. Audit rows
+are visible through Django admin and the staff-session-only `/api/v1/audit/`
+read API.
 
-- [Risk Register technical documentation](risk_register): models, DRF API, authorization, audit, and the SPA integration.
+- [Audit system architecture](../../architecture/audit-system-architecture.md)

@@ -108,8 +108,34 @@ def test_dc_setup_uses_agent_asset_helper(monkeypatch: pytest.MonkeyPatch) -> No
     )
 
 
-def test_attacker_container_password_uses_guest_execution_context(monkeypatch: pytest.MonkeyPatch) -> None:
-    from instance_setup import _set_attacker_container_password_after_bootstrap
+def test_attacker_role_password_failure_is_non_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+    from instance_setup import SetupError, _setup_attacker_role
+
+    execution = SimpleNamespace(target="i-kali", document_name="AWS-RunShellScript")
+    plan = MagicMock()
+    run_setup_plan = MagicMock()
+    set_password = MagicMock(side_effect=SetupError("transient password transport failure"))
+    monkeypatch.setattr("instance_setup.LinuxBootstrapPlan", MagicMock(return_value=plan))
+    monkeypatch.setattr("instance_setup._run_setup_plan", run_setup_plan)
+    monkeypatch.setattr("instance_setup._set_local_password_or_raise", set_password)
+
+    _setup_attacker_role(
+        orchestrator=object(),
+        execution=execution,
+        ctx=SimpleNamespace(ssh_user="kali"),
+        instance_data={"hostname": "kali"},
+    )
+
+    run_setup_plan.assert_called_once()
+    set_password.assert_called_once()
+
+
+@pytest.mark.parametrize("password_error", [None, "transient password transport failure"])
+def test_attacker_container_password_uses_guest_execution_context(
+    monkeypatch: pytest.MonkeyPatch,
+    password_error: str | None,
+) -> None:
+    from instance_setup import SetupError, _set_attacker_container_password_after_bootstrap
 
     execution = SimpleNamespace(
         executor=object(),
@@ -120,7 +146,7 @@ def test_attacker_container_password_uses_guest_execution_context(monkeypatch: p
         close=MagicMock(),
     )
     orchestrator = object()
-    set_password = MagicMock()
+    set_password = MagicMock(side_effect=SetupError(password_error) if password_error else None)
     monkeypatch.setattr("instance_setup.build_guest_execution_context", MagicMock(return_value=execution))
     monkeypatch.setattr("instance_setup.SetupOrchestrator", MagicMock(return_value=orchestrator))
     monkeypatch.setattr("instance_setup._set_local_password_or_raise", set_password)

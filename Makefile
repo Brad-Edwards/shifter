@@ -27,7 +27,7 @@ PLATFORM_ENV := TESTING=1 DJANGO_DEBUG=true TEST_DB_BACKEND=sqlite DJANGO_SECRET
 .DEFAULT_GOAL := help
 .PHONY: help test test-platform test-platform-postgres test-platform-redis \
         test-provisioner test-packer test-installation test-bootstrap \
-        test-check-layer-imports test-js
+        test-check-layer-imports test-js policy
 
 help: ## Show this help
 	@echo "Shifter test entrypoint (clean-checkout; matches CI). Targets:"
@@ -70,3 +70,15 @@ test-check-layer-imports: ## Layer-import checker suite
 
 test-js: ## Platform JavaScript (Jest) suite with coverage
 	cd shifter/shifter_platform && npm ci && npm run test:coverage
+
+policy: ## Run repository architecture, import, diff, and changed-doc policy
+	python3 scripts/adr_guard/adr_guard.py --all --level ci
+	cd shifter/shifter_platform && uv run lint-imports --config ../../.importlinter
+	git diff --check
+	@if ! command -v vale >/dev/null 2>&1 && [ ! -x .tools/vale/current/vale ]; then \
+	  bash tools/install-vale.sh; \
+	fi
+	@vale_bin="$$(command -v vale 2>/dev/null || true)"; \
+	if [ -z "$$vale_bin" ]; then vale_bin=".tools/vale/current/vale"; fi; \
+	git diff --name-only --diff-filter=d -z origin/dev...HEAD -- '*.md' | \
+	  xargs -0 -r "$$vale_bin"

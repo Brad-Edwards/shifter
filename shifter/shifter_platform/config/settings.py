@@ -139,7 +139,6 @@ INSTALLED_APPS = [
     # GCP SendGrid/Mailgun email backends (AWS uses django-ses); see config/_email.py.
     "anymail",
     "mission_control.apps.MissionControlConfig",
-    "risk_register.apps.RiskRegisterConfig",
     "engine.apps.EngineConfig",
     "cms.apps.CMSConfig",
     "management.apps.ManagementConfig",
