@@ -24,6 +24,11 @@ from django.test import RequestFactory
 from shared.auth import CTF_PARTICIPANT_GROUP
 from shared.enums import RangeSource, RequestType, ResourceStatus
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -79,8 +84,11 @@ def _seed_range(
     from cms.models import RangeInstance
     from cms.models import Request as CMSRequest
 
-    request = CMSRequest.objects.create(request_id=uuid4(), request_type=RequestType.RANGE.value, user=user)
+    request = CMSRequest.objects.create(
+        workspace_id=_WORKSPACE_ID, request_id=uuid4(), request_type=RequestType.RANGE.value, user=user
+    )
     range_instance = RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=request,
         scenario_id=scenario_id,
         user_id=user.id,
@@ -93,6 +101,7 @@ def _seed_range(
         from engine.models import Range as EngineRange
 
         EngineRange.objects.create(
+            workspace_id=_WORKSPACE_ID,
             id=range_id,
             user=user,
             status="ready",

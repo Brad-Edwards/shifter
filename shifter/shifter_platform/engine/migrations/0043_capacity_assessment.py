@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('engine', '0039_revoke_ngfw_app_grants_from_provisioner'),
+        ('engine', '0042_workspace_binding_required'),
     ]
 
     operations = [

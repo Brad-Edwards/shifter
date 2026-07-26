@@ -43,13 +43,14 @@ ALL_LAYERS = [
     "mission_control",
     "ctf",
     "config",
+    "workspaces",
 ]
 
 # Regex to match imports from our layers (including indented imports in functions)
 # Captures the full module path (e.g., "shared.exceptions" from "from shared.exceptions import X")
 IMPORT_PATTERN = re.compile(
     r"^\s*(?:from|import)\s+"
-    r"((?:shared|engine|cms|management|mission_control|ctf|config)(?:\.\w+)*)",
+    r"((?:shared|engine|cms|management|mission_control|ctf|config|workspaces)(?:\.\w+)*)",
     re.MULTILINE,
 )
 

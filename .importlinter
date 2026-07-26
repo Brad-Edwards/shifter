@@ -7,6 +7,7 @@ root_packages =
     shared
     ctf
     config
+    workspaces
 include_external_packages = True
 
 [importlinter:contract:engine-forbidden]
@@ -28,6 +29,22 @@ source_modules =
 forbidden_modules =
     mission_control
     ctf
+allow_indirect_imports = True
+
+# ADR-046: the tenancy domain owns Organization/Workspace/WorkspaceMembership and
+# authorizes from an already-authenticated Django user. It must not depend on any
+# other product domain; consumers depend on it, never the reverse.
+[importlinter:contract:workspaces-forbidden]
+name = Workspaces stays isolated from other app layers
+type = forbidden
+source_modules =
+    workspaces
+forbidden_modules =
+    engine
+    cms
+    mission_control
+    ctf
+    management
 allow_indirect_imports = True
 
 [importlinter:contract:management-forbidden]
@@ -78,6 +95,7 @@ forbidden_modules =
     management.models
     mission_control.models
     ctf.models
+    workspaces.models
 allow_indirect_imports = True
 
 # ADR-031-R1: the ACES SDL tooling (aces-sdl) may be imported only within

@@ -11,6 +11,11 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db(databases=["default"])
 
 
@@ -22,7 +27,7 @@ def _intent(request_id: str = "11111111-1111-1111-1111-111111111111"):
 
     user = get_user_model().objects.create_user(username=f"launcher-{request_id}@example.com")
     request = Request.objects.create(request_id=request_id, request_type="range", user=user)
-    Range.objects.create(request=request, user=user, status=Range.Status.PROVISIONING)
+    Range.objects.create(workspace_id=_WORKSPACE_ID, request=request, user=user, status=Range.Status.PROVISIONING)
 
     ref = enqueue_provisioner_launch(["range", "provision", "--request-id", request_id])
     return ProvisionerLaunchIntent.objects.get(intent_id=ref)
@@ -82,9 +87,16 @@ def test_drainer_retries_failure_without_leaking_error_details(settings) -> None
 
 
 def test_succeeded_intent_is_not_launched_twice(settings) -> None:
+    """A settled intent is skipped and left exactly as it was.
+
+    Not re-launching is only half the guarantee: a drain that skipped the launch
+    but still reset attempts or cleared the task reference would corrupt the
+    settled row's history while passing a launch-only assertion.
+    """
     row = _intent()
     row.status = "SUCCEEDED"
     row.save(update_fields=["status"])
+    expected_status, expected_attempts, expected_task_ref = row.status, row.attempts, row.task_ref
     _configure_aws(settings)
     client = MagicMock()
 
@@ -92,6 +104,10 @@ def test_succeeded_intent_is_not_launched_twice(settings) -> None:
         call_command("drain_provisioner_launch_outbox", stdout=StringIO())
 
     client.run_task.assert_not_called()
+    row.refresh_from_db()
+    assert row.status == expected_status
+    assert row.attempts == expected_attempts
+    assert row.task_ref == expected_task_ref
 
 
 def test_expired_running_claim_recovers_with_same_task_identity(settings) -> None:

@@ -8,6 +8,11 @@ from uuid import uuid4
 
 import pytest
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 
 @pytest.fixture
 def scheduled_task():
@@ -147,6 +152,7 @@ def test_legacy_cleanup_task_routes_through_shared_lease_reconciler(scheduled_ta
     user = get_user_model().objects.create_user(username="legacy-lease-cleanup@example.com")
     request_id = uuid4()
     cms_request = CMSRequest.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request_id=request_id,
         request_type=RequestType.RANGE.value,
         user=user,
@@ -157,12 +163,14 @@ def test_legacy_cleanup_task_routes_through_shared_lease_reconciler(scheduled_ta
         user=user,
     )
     engine_range = EngineRange.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=engine_request,
         user=user,
         status=ResourceStatus.READY.value,
     )
     now = timezone.now()
     instance = RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID,
         user_id=user.id,
         request=cms_request,
         status=ResourceStatus.READY.value,

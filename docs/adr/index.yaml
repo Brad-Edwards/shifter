@@ -2460,40 +2460,105 @@
   },
   {
     "id": "ADR-046",
+    "title": "Organization/workspace tenancy is a domain boundary above range ownership",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Organizations own workspaces; a workspace owns its user memberships and role codes; a range remains owned by its existing user/request identity and is additionally bound to exactly one workspace. The bounded workspaces domain is the sole owner of Organization, Workspace, and WorkspaceMembership persistence and authorization. It does not reuse Django auth groups, UserProfile, CTF teams/events, SPA navigation workspaces, Terraform workspaces, or cloud tenancy as the membership model. Engine and CMS retain their own range/request persistence under ADR-001: they carry a validated opaque workspace_id rather than a cross-layer ForeignKey or a second workspace model. Existing user-owned ranges are placed in the owning user's personal workspace, which is itself owned by a personal organization, so single-user installs retain the same owner, lifecycle, admission, access, and visible behavior. Identity-provider group/claim integration is a future, verified adapter into this domain, not a direct role authority in this data model.",
+    "rules": [
+      {
+        "id": "ADR-046-R1",
+        "description": "Organization, Workspace, and WorkspaceMembership are owned by one classified domain app and exposed to other layers only through its public service facade. The models may relate to Django auth.User, but no other domain may import them or add a cross-layer ForeignKey. Do not duplicate the schema in management, CMS, Engine, CTF, shared, frontend state, provider tags, or JSON blobs.",
+        "checks": [
+          "layer-imports",
+          "cross-layer-model-imports"
+        ]
+      },
+      {
+        "id": "ADR-046-R2",
+        "description": "A workspace belongs to exactly one organization and has at most one membership per user. Membership role is a closed domain value; its operation-to-role policy is owned by the workspace authorization service. Workspace membership does not replace Range.user, cms.Request.user, CMS range provenance, CTF participant/event/team membership, API-token scope, or per-range remote-access checks. A workspace role grants no implicit SSH, RDP, VPN, Guacamole, or CTF-event access to another user's range.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R3",
+        "description": "The trusted launch/reassignment path resolves and authorizes workspace scope once through the workspace service and persists the resulting internal workspace_id as an immutable scope binding on CMS request intent, the CMS RangeInstance projection, and Engine Range. These are scalar references rather than cross-layer FKs; no caller may trust a supplied internal ID, mutate only one projection, infer scope from a user/group, or silently rehome a range. A future explicit rehoming operation must validate the target membership and update all ownership projections transactionally.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R4",
+        "description": "The compatibility default is per user, never a deployment-global organization or workspace: every migrated user-owned range is bound to that user's personal workspace and an owner membership. The migration must fail loudly on conflicting or unresolvable Engine/CMS ownership evidence rather than choosing an arbitrary tenant, and current per-user active-range, lifecycle, terminal, VPN, CTF, and API behavior remains unchanged until a separately reviewed scoping policy changes it.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R5",
+        "description": "OIDC/Identity Platform claims may be considered only after the existing issuer, audience, authorized-party, subject, and verified-email gates bind the Django user. Provider group names are external evidence, not workspace IDs or role strings; any later mapping is allowlisted/configured at the identity adapter, provenance-aware, auditable, revocable, and cannot let a self-mutable claim or Django auth.Group create workspace authority.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R6",
+        "description": "Future organization/workspace APIs use the canonical /api/v1 DRF authentication, exact API-token scope registry, serializer validation, shared error envelope, request correlation, audit facade, and sanitized logging. Role/membership mutations and sensitive range rehoming are transactional and audit-strict. External IDs, claims, tokens, emails, membership lists, and database errors must not leak through logs, events, command argv, or public error bodies.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R7",
+        "description": "Tenancy scopes principals and range ownership, not platform configuration or catalog. The following remain deployment-global and MUST NOT acquire an organization or workspace binding as an implicit consequence of this layer: the scenario catalog and ACES package sources; the agent, operating-system, instance-type, and app catalogs; NGFW instances and platform network/infrastructure; cloud provider, range-backend, and deployment settings including the environment manifest; identity-provider configuration (issuer, audience, allowlists) and the API-token scope registry; the durable audit store; feature flags; and CTF events, teams, and participants, which stay a separate membership model. Scoping any of these to a workspace is a separate decision requiring its own ADR, because each carries platform-operator authority rather than tenant authority; a workspace-level policy surface (for example the #1171 zero-egress posture) is added by an explicit decision on that surface, never by inheritance from this rule.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1325",
+      "docs/architecture/organization-workspace-preflight-1325.md",
+      "scripts/check_layer_imports/layer_imports.yaml",
+      "shifter/shifter_platform/management/management/commands/check_model_fks.py",
+      "shifter/shifter_platform/cms/models/provisioning.py",
+      "shifter/shifter_platform/cms/models/range.py",
+      "shifter/shifter_platform/engine/models/_range.py",
+      "shifter/shifter_platform/config/oidc.py",
+      "shifter/shifter_platform/config/identity_platform.py",
+      "shifter/shifter_platform/shared/api/errors.py",
+      "shifter/shifter_platform/shared/audit"
+    ]
+  },
+  {
+    "id": "ADR-047",
     "title": "Capacity-aware provisioning is an Engine-owned admission layer over a deployment-declared catalog",
     "status": "accepted",
     "scope": "shifter_platform",
     "decision": "Event provisioning is admitted against observed provider headroom before spinup rather than discovering a shortfall mid-wave. CTF declares event intent (CTF-908), CMS keeps authenticated range creation, scenario hydration, and backend admission, and the Engine owns capacity assessment, durable reservation, and the admission decision; the provisioner realizes an already-admitted request and never makes a second, divergent decision. A declaration is intent, not an allocation: engine_capacity_declaration stays append-only, while engine_capacity_assessment is an immutable snapshot pinned to the partition, the catalog policy version, and the time the underlying readings were taken, and engine_capacity_reservation is the durable commitment that makes overlapping events account for one another. Partitions and metrics exist only because a deployment declared them in the capacity catalog (CAPACITY_PLANNING_CATALOG), which is parsed strictly and fails closed at the composition root; a partition is never inferred from an event name, scenario, organizer hint, or mutable global provider setting. Provider limits and usage are read through a read-only CAPACITY_INVENTORY backend capability under shared.cloud, outside any database transaction because provider state cannot be locked, and the transaction that follows re-reads committed overlapping reservations before writing its own. Per-metric freshness limits and safety margins carry the residual race. Enforcement is per metric and defaults to advisory: an over-limit advisory metric emits an operator warning and audit record and provisioning proceeds, while an enforcing metric refuses before dispatch. An unreadable, stale, or unsupported measurement is INDETERMINATE and is never converted to zero usage or to sufficient headroom. Raw quota limits, usage figures, account identifiers, and provider payloads stay inside the adapter and the operator-only assessment record; product surfaces carry bounded reason codes only. Assessment and admission are separate operations: assessment reads providers, decides, and sizes an event capacity budget once per wave, while admission draws one range's share from that budget on every event-scoped creation path using only the database. Welding them together would make each range re-reserve the whole event. Draws are idempotent on a stable pre-creation key (participant or spare identity), are refused before a range is created rather than after, are returned on failed creation and on teardown, and are bounded by database check constraints so a concurrent draw cannot exceed the committed budget. Budgets expire at the end of their window and the reconciler releases their open draws, because a ledger trusted indefinitely diverges from provider reality and a leaked draw refuses an event that would have fit.",
     "rules": [
       {
-        "id": "ADR-046-R1",
+        "id": "ADR-047-R1",
         "description": "The Engine owns capacity assessment, reservation, and the admission decision. CTF and CMS reach it only through the existing ctf.bridges -> cms.services -> engine.services seam, and the provisioner must not reproduce capacity policy or re-decide an admitted request.",
         "checks": [
           "layer-imports"
         ]
       },
       {
-        "id": "ADR-046-R2",
+        "id": "ADR-047-R2",
         "description": "Target partitions and metrics come from the deployment-declared capacity catalog and are validated at the composition root. Unknown keys, out-of-range safety margins or costs, non-positive freshness limits, unknown enum values, duplicate names, and metrics targeting an undeclared partition are configuration errors that fail closed; they must never be defaulted, clamped, or partially loaded.",
         "checks": []
       },
       {
-        "id": "ADR-046-R3",
+        "id": "ADR-047-R3",
         "description": "An unsupported, unavailable, or stale capacity measurement is INDETERMINATE. It must never be recorded or treated as admitted, as zero usage, or as available headroom, and the least-permissive verdict across metrics is the assessment outcome.",
         "checks": []
       },
       {
-        "id": "ADR-046-R4",
+        "id": "ADR-047-R4",
         "description": "Provider capacity reads happen outside any database transaction and through a read-only capability. Capacity-read identities are least-privilege and per partition; cross-account reads use explicitly enumerated role ARNs with no account wildcard, and the portal, scheduler, worker, and provisioner identities are not widened to inspect headroom.",
         "checks": []
       },
       {
-        "id": "ADR-046-R5",
+        "id": "ADR-047-R5",
         "description": "Enforcement is per metric and defaults to advisory. A rejected assessment reserves no capacity. Raw quota limits, usage figures, account identifiers, provider responses, and policy blobs must not appear in verdicts, audit free text, logs, task arguments, task environment, notifications, or API error details; product surfaces carry bounded reason codes only.",
         "checks": []
       },
       {
-        "id": "ADR-046-R6",
+        "id": "ADR-047-R6",
         "description": "Capacity assessment (provider reads, decision, budget sizing) and capacity admission (per-range draw-down) are separate operations. Admission performs no provider I/O, is idempotent on a stable identity known before the range exists, refuses before creation rather than after, and returns its draw on failed creation and on teardown. Consumption is bounded by database constraints rather than a read-then-write check alone, and budgets plus their open draws are released when their window ends.",
         "checks": []
       }

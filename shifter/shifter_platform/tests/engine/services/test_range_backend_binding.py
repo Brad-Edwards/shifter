@@ -24,6 +24,18 @@ from shared.range_instantiation_policy import (
 # Import the ACES plan builder from the sibling behavior test to avoid duplication.
 from tests.engine.services.test_aces_range import make_compiled_plan
 
+# Opaque #1325 workspace scope binding. engine.services requires one on every
+# range create (ADR-046-R3); these suites do not exercise tenancy, so a fixed
+# scalar stands in for the value the CMS launch facade would resolve.
+_WORKSPACE_ID = 1
+
+
+def _create_aces_range(**kwargs):
+    """Call the real seam with the workspace binding these suites do not vary."""
+    kwargs.setdefault("workspace_id", _WORKSPACE_ID)
+    return create_aces_range(**kwargs)
+
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -45,7 +57,7 @@ class TestCreateBindsOwnershipWriteOnce:
     def test_admission_persists_backend_and_purpose(self, user):
         admission = evaluate_gcp_backend_admission("gce", None, InstantiationPurpose.LIVE_FIRE)
         request_id = uuid4()
-        create_aces_range(
+        _create_aces_range(
             request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan(), backend_admission=admission
         )
         rng = Range.objects.get(request__request_id=request_id)
@@ -54,7 +66,7 @@ class TestCreateBindsOwnershipWriteOnce:
 
     def test_no_admission_leaves_binding_null(self, user):
         request_id = uuid4()
-        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
+        _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
         rng = Range.objects.get(request__request_id=request_id)
         assert rng.range_backend is None
         assert rng.instantiation_purpose is None
@@ -62,11 +74,11 @@ class TestCreateBindsOwnershipWriteOnce:
     def test_idempotent_same_binding_is_accepted(self, user):
         admission = evaluate_gcp_backend_admission("gce", None, InstantiationPurpose.LIVE_FIRE)
         request_id = uuid4()
-        create_aces_range(
+        _create_aces_range(
             request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan(), backend_admission=admission
         )
         # Re-drive with the same binding: idempotent reuse, no error.
-        ref = create_aces_range(
+        ref = _create_aces_range(
             request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan(), backend_admission=admission
         )
         assert ref.accepted is True
@@ -74,13 +86,13 @@ class TestCreateBindsOwnershipWriteOnce:
     def test_idempotent_different_binding_is_conflict(self, user):
         admission = evaluate_gcp_backend_admission("gce", None, InstantiationPurpose.LIVE_FIRE)
         request_id = uuid4()
-        create_aces_range(
+        _create_aces_range(
             request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan(), backend_admission=admission
         )
         conflicting = BackendAdmission(True, "gdc", InstantiationPurpose.NON_USER_VALIDATION, "", "")
         plan = make_compiled_plan()
         with pytest.raises(EngineError, match="conflict"):
-            create_aces_range(
+            _create_aces_range(
                 request_id=request_id,
                 user_id=user.id,
                 compiled_plan=plan,
@@ -90,7 +102,7 @@ class TestCreateBindsOwnershipWriteOnce:
 
 class TestOperatorBackfill:
     def test_backfill_sets_binding_then_refuses_overwrite(self, user):
-        legacy = Range.objects.create(user=user, status=Range.Status.READY)
+        legacy = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.READY)
         range_id = str(legacy.id)
         assert legacy.range_backend is None
 
@@ -104,7 +116,7 @@ class TestOperatorBackfill:
             call_command("backfill_range_backend_binding", "--range-id", range_id, "--backend", "gce")
 
     def test_backfill_rejects_unknown_backend(self, user):
-        legacy = Range.objects.create(user=user, status=Range.Status.READY)
+        legacy = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.READY)
         range_id = str(legacy.id)
         with pytest.raises(CommandError):
             call_command("backfill_range_backend_binding", "--range-id", range_id, "--backend", "bogus")

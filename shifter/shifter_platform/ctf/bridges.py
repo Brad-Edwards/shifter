@@ -277,7 +277,10 @@ def cms_reassign_range_owner(range_instance_id: int, new_user: User) -> None:
     """Reassign an existing range's ownership via CMS (#1018 spare recovery)."""
     import cms.services as cms_services
 
-    cms_services.reassign_range_owner(range_instance_id, new_user)
+    # A spare range is pre-provisioned outside the participant's tenancy, so the
+    # handover legitimately crosses workspaces and carries the range's scope with
+    # it (#1325, ADR-046-R3).
+    cms_services.reassign_range_owner(range_instance_id, new_user, rehome=True)
 
 
 def cms_range_owner_reassignment_available(range_instance_id: int) -> bool:

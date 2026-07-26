@@ -17,6 +17,11 @@ from engine import create_range, pause_range
 from engine.models import Range
 from shared.schemas import InstanceSpec, RangeSpec, RequestSpec, SubnetSpec
 
+# Opaque #1325 workspace scope binding. engine.services requires one on every
+# range create (ADR-046-R3); these suites do not exercise tenancy, so a fixed
+# scalar stands in for the value the CMS launch facade would resolve.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -72,7 +77,7 @@ def request_id_in_status(user):
 
     def _make(status):
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         Range.objects.filter(request__request_id=spec.request_id).update(status=status)
         return spec.request_id
 
