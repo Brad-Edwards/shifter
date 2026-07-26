@@ -18,8 +18,9 @@ sonarcloud:
   project_key: Brad-Edwards_shifter
   organization: brad-edwards
 routing:
+  # Only `enabled`, `default_provider`, and `stages` are accepted here. An
+  # unrecognized key fails the whole file closed and blocks /implement.
   enabled: true
   default_provider: claude
-  default_fallback: parent
 rules:
   plan_rules: .gc/plan-rules.md
