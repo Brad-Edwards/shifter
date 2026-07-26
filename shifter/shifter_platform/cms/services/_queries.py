@@ -78,6 +78,13 @@ def get_range_target_instances(user_id: int) -> list[dict[str, str]]:
     declared_targets = [inst for inst in instances if _has_participant_access_channel(inst)]
     if declared_targets:
         return declared_targets
+    # Current AWS state explicitly records an open participant-access binding
+    # as ``None``. In attacker-workstation scenarios such as POLARIS, expose
+    # that seat rather than the DC the participant attacks over the network.
+    # Legacy rows omit the key entirely and retain the non-attacker heuristic.
+    aws_attacker_seats = [inst for inst in instances if _is_aws_open_access_attacker(inst)]
+    if aws_attacker_seats:
+        return aws_attacker_seats
     targets = [inst for inst in instances if inst.get("role") != "attacker"]
     return targets if targets else instances
 
@@ -88,3 +95,13 @@ def _has_participant_access_channel(instance: dict[str, object]) -> bool:
     if not isinstance(channels, list | tuple | set):
         return False
     return any(isinstance(channel, str) and channel.strip() for channel in channels)
+
+
+def _is_aws_open_access_attacker(instance: dict[str, object]) -> bool:
+    """Return whether current AWS state exposes an attacker seat without a closed binding."""
+    return (
+        instance.get("cloud_provider") == "aws"
+        and "participant_access_channels" in instance
+        and instance["participant_access_channels"] is None
+        and instance.get("role") == "attacker"
+    )
