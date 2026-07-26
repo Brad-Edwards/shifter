@@ -33,6 +33,11 @@ from ._capacity import (
     latest_capacity_declaration,
     record_capacity_declaration,
 )
+from ._capacity_plan import (
+    assess_declared_event_capacity,
+    assess_event_capacity,
+    release_capacity_reservations,
+)
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
@@ -84,6 +89,8 @@ __all__ = (
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
     "apply_pending_operation_results",
+    "assess_declared_event_capacity",
+    "assess_event_capacity",
     "cancel_range",
     "cancel_range_by_request",
     "connect_ngfw_terminal",
@@ -117,6 +124,7 @@ __all__ = (
     "record_aces_operation_status",
     "record_aces_runtime_snapshot",
     "record_capacity_declaration",
+    "release_capacity_reservations",
     "resume_range",
     "run_guest_probe",
     "start_ngfw",

@@ -171,12 +171,36 @@ def provision_event_spares(event_id: UUID, target_count: int, *, operator: User 
     Raises:
         CTFNotFoundError: If the event does not exist.
     """
-    from ctf.services.range.capacity import declare_event_capacity
+    from ctf.services.range.capacity import assess_declared_capacity, declare_event_capacity
 
-    declare_event_capacity(event_id, source="spare_pool")
     event = _get_event(event_id)
     event.spare_range_count = target_count
     event.save(update_fields=["spare_range_count", "updated_at"])
+    # Declare AFTER persisting the new target: the declaration's
+    # expected_concurrent_ranges is roster + spare pool, so declaring first
+    # published the previous pool size and understated the peak by exactly the
+    # change (PLAT-201 preflight). Still before any spare spins up.
+    declare_event_capacity(event_id, source="spare_pool")
+    # PLAT-201: growing the spare pool raises peak concurrent ranges, so a
+    # top-up is a capacity-relevant change and gets the same admission check as
+    # a participant wave.
+    capacity = assess_declared_capacity(event_id, source="spare_pool")
+    if capacity is not None and capacity["blocking"]:
+        logger.warning(
+            "provision_event_spares: capacity refused top-up for event=%s codes=%s",
+            safe_log_value(event_id),
+            capacity["reason_codes"],
+        )
+        return {
+            "event_id": str(event.pk),
+            "target_count": target_count,
+            "existing": CTFSpareRange.objects.filter(event=event, status__in=_ACTIVE_SPARE_STATUSES).count(),
+            "created": 0,
+            # Bounded codes only. The partition name is deployment topology and
+            # stays on the operator-only assessment record (PLAT-201 preflight).
+            "capacity_reason_codes": capacity["reason_codes"],
+            "refused": True,
+        }
 
     existing = CTFSpareRange.objects.filter(event=event, status__in=_ACTIVE_SPARE_STATUSES).count()
     to_create = max(0, target_count - existing)

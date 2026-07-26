@@ -37,6 +37,10 @@ def build_event_capacity_signal(event: CTFEvent) -> dict[str, Any]:
         "ngfw_enabled": bool(range_config.get("ngfw_enabled", False)),
         "team_mode": event.team_mode,
     }
+    # PLAT-201: the per-range image shape, resolved through CMS (which owns
+    # scenario hydration) so the engine never re-parses scenario content or
+    # builds a parallel AMI mapping. Server-derived, never organizer-supplied.
+    resource_hints["images"] = _project_images(event.scenario_id)
     organizer_hints = event.capacity_hints or {}
     if organizer_hints:
         resource_hints["organizer"] = organizer_hints
@@ -49,6 +53,22 @@ def build_event_capacity_signal(event: CTFEvent) -> dict[str, Any]:
         "window_end": event.get_cleanup_time(),
         "resource_hints": resource_hints,
     }
+
+
+def _project_images(scenario_id: str) -> dict[str, Any]:
+    """Resolve the scenario's per-range image shape; never raises.
+
+    An unresolvable scenario yields an explicitly unresolved projection rather
+    than an empty-looking one, so a downstream pre-bake number is never derived
+    from a scenario nobody could read.
+    """
+    try:
+        from ctf.bridges import cms_project_scenario_images
+
+        return cms_project_scenario_images(scenario_id)
+    except Exception:
+        logger.exception("Failed to project scenario images for capacity declaration")
+        return {"resolved": False, "per_range": [], "shared": []}
 
 
 def declare_event_capacity(event_id: UUID, *, source: str) -> bool:
@@ -72,3 +92,43 @@ def declare_event_capacity(event_id: UUID, *, source: str) -> bool:
         return False
     logger.info("Declared capacity for event %s (%s)", safe_log_value(event_id), safe_log_value(source))
     return True
+
+
+def assess_declared_capacity(event_id: UUID, *, source: str) -> dict[str, Any] | None:
+    """Assess the event's declared capacity against observed headroom; never raises.
+
+    Returns a bounded, safe summary for the caller's result payload -- outcome,
+    whether it blocks, and the per-metric reason codes. Raw quota limits, usage
+    figures, and account identifiers never appear here: those stay in the
+    operator-only assessment record and metric stream.
+
+    ``None`` means "no opinion" (the layer is disabled, no declaration exists,
+    or the assessment itself failed) and callers proceed exactly as before.
+    """
+    from ctf.bridges import cms_assess_event_capacity
+
+    try:
+        result = cms_assess_event_capacity(event_id)
+    except Exception:
+        logger.exception(
+            "Failed to assess capacity for event %s (%s)",
+            safe_log_value(event_id),
+            safe_log_value(source),
+        )
+        return None
+    if result is None:
+        return None
+
+    summary = {
+        "outcome": result.outcome.value,
+        "blocking": result.blocking,
+        "partition": result.partition.name,
+        "reason_codes": sorted({verdict.reason_code.value for verdict in result.verdicts}),
+    }
+    logger.info(
+        "Capacity assessment for event %s (%s): %s",
+        safe_log_value(event_id),
+        safe_log_value(source),
+        safe_log_value(summary["outcome"]),
+    )
+    return summary

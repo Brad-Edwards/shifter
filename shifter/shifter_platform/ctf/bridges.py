@@ -93,6 +93,30 @@ def cms_declare_event_capacity(
     cms_services.engine_record_capacity_declaration(signal)
 
 
+def cms_assess_event_capacity(event_ref: UUID) -> object | None:
+    """Ask the engine whether an event's declared capacity fits (PLAT-201).
+
+    Best-effort consumer contract mirroring the declaration bridge: capacity
+    admission informs provisioning, and a failure to assess must never be the
+    reason an event cannot spin up. Returns the engine's assessment result, or
+    ``None`` when the layer is disabled or no declaration exists.
+    """
+    import cms.services as cms_services
+
+    return cms_services.engine_assess_declared_event_capacity(event_ref)
+
+
+def cms_project_scenario_images(scenario_id: str) -> dict[str, Any]:
+    """Resolve a scenario's per-range image shape for capacity planning (PLAT-201).
+
+    CMS owns scenario hydration, so the projection is resolved there and reaches
+    CTF through the public service facade rather than a direct module import.
+    """
+    import cms.services as cms_services
+
+    return cms_services.project_scenario_images(scenario_id).as_hint()
+
+
 def cms_create_range(
     user: User,
     scenario: str,
