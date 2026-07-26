@@ -193,6 +193,8 @@ def _update_ngfw_status(
         ref: Identity of the owning Range operation generation.
         operation: The owning range operation ("pause" or "resume").
     """
+    if operation is None:
+        raise ValueError("NGFW cascade result requires the owning range operation")
     step = _CASCADE_STEP_BY_STATUS.get((operation, status))
     if step is None:
         raise ValueError(f"no cascade result step declared for {operation}:{status}")

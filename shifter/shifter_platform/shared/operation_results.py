@@ -225,7 +225,7 @@ def _steps(resource: str, operation: str) -> dict[ResultStep, _StepSpec]:
         raise OperationResultError(f"no result contract for resource '{resource}' operation '{operation}'") from None
 
 
-def _spec(resource: str, operation: str, step: object) -> _StepSpec:
+def _spec(resource: str, operation: str, step: ResultStep | str) -> _StepSpec:
     """Return the spec for a step declared on this pair, or fail closed."""
     table = _steps(resource, operation)
     try:
