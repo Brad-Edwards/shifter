@@ -148,4 +148,3 @@ observability only; they are not the capacity planner or reservation store.
   provider clients, exception trees, or background workflows;
 - exposing raw headroom, quota limits, infrastructure topology, or provider
   diagnostics to participants or unprivileged organizers.
-
