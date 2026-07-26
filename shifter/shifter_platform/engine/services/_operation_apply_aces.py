@@ -28,6 +28,7 @@ Two things this deliberately does NOT do:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from django.utils import timezone
@@ -46,6 +47,11 @@ logger = logging.getLogger(__name__)
 
 # Steps whose evidence is a runtime snapshot rather than an operation status.
 _SNAPSHOT_STEPS = frozenset({ResultStep.ACES_PROVISION_SNAPSHOT})
+
+#: The shared terminal-failure writer owned by ``_operation_apply_domain``.
+#: Passed in rather than imported so this module does not depend back on its
+#: dispatcher: ``(target, payload, request_id, *, is_range) -> detail``.
+ApplyFailure = Callable[..., str]
 
 
 def _sidecar_payload(row: OperationResultInbox, **extra: Any) -> dict[str, Any]:
@@ -105,12 +111,21 @@ def _apply_lifecycle(range_obj: Range, new_status: str, request_id: str) -> str:
     return f"aces range -> {new_status}"
 
 
+def _apply_observation(row: OperationResultInbox, step: ResultStep, payload: dict[str, Any], range_obj: Range) -> str:
+    """Record an ACES observation and apply the range status it projects, if any."""
+    _persist_operation_status(row, payload["aces_status"], payload.get("status_reason"))
+    new_status = range_status_for(row.resource, row.operation, step=step)
+    if new_status is None:
+        return f"aces {payload['aces_status']} (evidence only)"
+    return _apply_lifecycle(range_obj, new_status, str(row.request_id))
+
+
 def apply_aces_result(
     row: OperationResultInbox,
     step: ResultStep,
     payload: dict[str, Any],
     range_obj: Range,
-    apply_failure,
+    apply_failure: ApplyFailure,
 ) -> str:
     """Apply one admitted ACES provision/destroy result. Caller holds the lock.
 
@@ -119,8 +134,6 @@ def apply_aces_result(
     (authored reason code onto the row, generation cleared, audit, notification)
     and is not reimplemented here.
     """
-    request_id = str(row.request_id)
-
     if step in _SNAPSHOT_STEPS:
         # Bounded evidence only: no status write, no audit row, no range event.
         _persist_runtime_snapshot(row, payload["resources"])
@@ -130,10 +143,6 @@ def apply_aces_result(
         # The sidecar still records the failed observation; only the closed
         # reason code travels as its reason, never the bounded diagnostic.
         _persist_operation_status(row, ACES_STATE_FAILED, payload["reason_code"])
-        return apply_failure(range_obj, payload, request_id, is_range=True)
+        return apply_failure(range_obj, payload, str(row.request_id), is_range=True)
 
-    _persist_operation_status(row, payload["aces_status"], payload.get("status_reason"))
-    new_status = range_status_for(row.resource, row.operation, step=step)
-    if new_status is None:
-        return f"aces {payload['aces_status']} (evidence only)"
-    return _apply_lifecycle(range_obj, new_status, request_id)
+    return _apply_observation(row, step, payload, range_obj)

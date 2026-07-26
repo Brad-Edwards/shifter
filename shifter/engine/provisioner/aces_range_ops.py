@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from shared.aces.operation_input import AcesOperationInput, image_lookup_key
 from shared.operation_results import MAX_DIAGNOSTIC_CHARS, ResultStep
@@ -110,7 +111,7 @@ def _require_generation(request_id: str, operation_id: str | None, operation: st
     return OperationRef(request_id=request_id, operation_id=operation_id), operation_id
 
 
-def _report(ref: OperationRef, operation: str, step: ResultStep, payload: dict) -> None:
+def _report(ref: OperationRef, operation: str, step: ResultStep, payload: dict[str, Any]) -> None:
     """Append one closed result for this operation generation."""
     append_operation_step_result(ref, resource=_RESOURCE, operation=operation, step=step, result_payload=payload)
 

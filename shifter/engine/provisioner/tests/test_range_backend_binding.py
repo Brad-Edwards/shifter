@@ -95,15 +95,15 @@ class TestLegacyBackendFromOperationInput:
 
     @pytest.mark.parametrize(("backend", "expected"), [("gce", "gce"), ("gdc", "gdc"), (None, None)])
     def test_normalized_outcome_is_passed_through(self, monkeypatch, backend, expected):
-        import terraform_ops
+        import range_backend_resolution
 
-        monkeypatch.setattr(terraform_ops, "get_operation_input", lambda **kwargs: self._validated(backend))
-        assert terraform_ops._legacy_backend_from_operation_input(_OPERATION_ID, "req-1") == expected
+        monkeypatch.setattr(range_backend_resolution, "get_operation_input", lambda **kwargs: self._validated(backend))
+        assert range_backend_resolution._legacy_backend_from_operation_input(_OPERATION_ID, "req-1") == expected
 
     def test_the_exact_generation_is_requested(self, monkeypatch):
         # Never "latest by request": a retry must resolve the backend its own
         # generation was authorized with.
-        import terraform_ops
+        import range_backend_resolution
 
         seen = {}
 
@@ -111,8 +111,8 @@ class TestLegacyBackendFromOperationInput:
             seen.update(kwargs)
             return self._validated("gce")
 
-        monkeypatch.setattr(terraform_ops, "get_operation_input", _capture)
-        terraform_ops._legacy_backend_from_operation_input(_OPERATION_ID, "req-1")
+        monkeypatch.setattr(range_backend_resolution, "get_operation_input", _capture)
+        range_backend_resolution._legacy_backend_from_operation_input(_OPERATION_ID, "req-1")
         # Both halves of the compound identity are bound, not just the operation.
         assert seen == {
             "operation_id": _OPERATION_ID,
@@ -122,61 +122,66 @@ class TestLegacyBackendFromOperationInput:
         }
 
     def test_no_generation_resolves_to_none(self, monkeypatch):
-        import terraform_ops
+        import range_backend_resolution
 
-        monkeypatch.setattr(terraform_ops, "get_operation_input", MagicMock(side_effect=AssertionError))
-        assert terraform_ops._legacy_backend_from_operation_input(None, "req-1") is None
+        monkeypatch.setattr(range_backend_resolution, "get_operation_input", MagicMock(side_effect=AssertionError))
+        assert range_backend_resolution._legacy_backend_from_operation_input(None, "req-1") is None
 
     def test_an_unreadable_input_fails_closed_rather_than_guessing(self, monkeypatch):
-        import terraform_ops
+        import range_backend_resolution
         from provisioner_db_operation_input import OperationInputError
 
-        monkeypatch.setattr(terraform_ops, "get_operation_input", MagicMock(side_effect=OperationInputError("gone")))
-        assert terraform_ops._legacy_backend_from_operation_input(_OPERATION_ID, "req-1") is None
+        monkeypatch.setattr(
+            range_backend_resolution, "get_operation_input", MagicMock(side_effect=OperationInputError("gone"))
+        )
+        assert range_backend_resolution._legacy_backend_from_operation_input(_OPERATION_ID, "req-1") is None
 
     def test_an_input_for_another_request_fails_closed(self, monkeypatch):
         # The reader refuses the mismatch; teardown must then deny rather than
         # route this range from another request's backend evidence.
-        import terraform_ops
+        import range_backend_resolution
         from provisioner_db_operation_input import OperationInputError
 
         monkeypatch.setattr(
-            terraform_ops,
+            range_backend_resolution,
             "get_operation_input",
             MagicMock(side_effect=OperationInputError("operation input belongs to a different request")),
         )
-        assert terraform_ops._legacy_backend_from_operation_input(_OPERATION_ID, "req-other") is None
+        assert range_backend_resolution._legacy_backend_from_operation_input(_OPERATION_ID, "req-other") is None
 
 
 class TestResolveOperationBackend:
     """_resolve_operation_backend prefers the persisted binding and fails closed on legacy ambiguity."""
 
     def test_persisted_binding_wins_without_legacy_resolution(self, monkeypatch):
-        import terraform_ops
+        import range_backend_resolution
 
         # A persisted binding returns immediately; the input read must never be
         # consulted, and neither must the env-selector path.
-        monkeypatch.setattr(terraform_ops, "get_operation_input", MagicMock(side_effect=AssertionError))
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", MagicMock(side_effect=AssertionError))
-        result = terraform_ops._resolve_operation_backend({"range_backend": "gdc"}, "destroy", _OPERATION_ID)
+        monkeypatch.setattr(range_backend_resolution, "get_operation_input", MagicMock(side_effect=AssertionError))
+        monkeypatch.setattr(range_backend_resolution, "resolve_cloud_provider", MagicMock(side_effect=AssertionError))
+        result = range_backend_resolution.resolve_operation_backend({"range_backend": "gdc"}, "destroy", _OPERATION_ID)
         assert result == "gdc"
 
     def test_non_gcp_returns_none(self, monkeypatch):
-        import terraform_ops
+        import range_backend_resolution
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "aws")
-        assert terraform_ops._resolve_operation_backend({"range_backend": None}, "destroy", _OPERATION_ID) is None
+        monkeypatch.setattr(range_backend_resolution, "resolve_cloud_provider", lambda: "aws")
+        assert (
+            range_backend_resolution.resolve_operation_backend({"range_backend": None}, "destroy", _OPERATION_ID)
+            is None
+        )
 
     def test_legacy_destroy_without_evidence_fails_closed(self, monkeypatch):
         from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE
 
-        import terraform_ops
+        import range_backend_resolution
         from cloud.exceptions import CloudError
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "gcp")
-        monkeypatch.setattr(terraform_ops, "_legacy_backend_from_operation_input", lambda oid, rid: None)
+        monkeypatch.setattr(range_backend_resolution, "resolve_cloud_provider", lambda: "gcp")
+        monkeypatch.setattr(range_backend_resolution, "_legacy_backend_from_operation_input", lambda oid, rid: None)
         with pytest.raises(CloudError) as exc:
-            terraform_ops._resolve_operation_backend(
+            range_backend_resolution.resolve_operation_backend(
                 {"range_backend": None, "request_id": "req-1"}, "destroy", _OPERATION_ID
             )
         assert exc.value.code == PREREQUISITE_DENIAL_CODE
@@ -186,29 +191,31 @@ class TestResolveOperationBackend:
         # it must deny rather than fall back to the mutable env selector (#1666).
         from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE
 
-        import terraform_ops
+        import range_backend_resolution
         from cloud.exceptions import CloudError
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "gcp")
+        monkeypatch.setattr(range_backend_resolution, "resolve_cloud_provider", lambda: "gcp")
         with pytest.raises(CloudError) as exc:
-            terraform_ops._resolve_operation_backend({"range_backend": None, "request_id": "req-1"}, "destroy", None)
+            range_backend_resolution.resolve_operation_backend(
+                {"range_backend": None, "request_id": "req-1"}, "destroy", None
+            )
         assert exc.value.code == PREREQUISITE_DENIAL_CODE
 
     def test_legacy_destroy_resolves_from_evidence(self, monkeypatch):
-        import terraform_ops
+        import range_backend_resolution
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "gcp")
-        monkeypatch.setattr(terraform_ops, "_legacy_backend_from_operation_input", lambda oid, rid: "gdc")
-        result = terraform_ops._resolve_operation_backend(
+        monkeypatch.setattr(range_backend_resolution, "resolve_cloud_provider", lambda: "gcp")
+        monkeypatch.setattr(range_backend_resolution, "_legacy_backend_from_operation_input", lambda oid, rid: "gdc")
+        result = range_backend_resolution.resolve_operation_backend(
             {"range_backend": None, "request_id": "req-1"}, "destroy", _OPERATION_ID
         )
         assert result == "gdc"
 
     def test_provision_with_null_binding_falls_back_to_env(self, monkeypatch):
         """A fresh provision has no resources to disambiguate; it must not fail closed."""
-        import terraform_ops
+        import range_backend_resolution
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "gcp")
+        monkeypatch.setattr(range_backend_resolution, "resolve_cloud_provider", lambda: "gcp")
         # The input read must not even be consulted on the provision path.
-        monkeypatch.setattr(terraform_ops, "get_operation_input", MagicMock(side_effect=AssertionError))
-        assert terraform_ops._resolve_operation_backend({"range_backend": None}, "up", _OPERATION_ID) is None
+        monkeypatch.setattr(range_backend_resolution, "get_operation_input", MagicMock(side_effect=AssertionError))
+        assert range_backend_resolution.resolve_operation_backend({"range_backend": None}, "up", _OPERATION_ID) is None

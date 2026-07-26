@@ -133,14 +133,16 @@ class TestDiscriminatorsAreChecked:
     def test_a_row_for_another_resource_is_refused(self, monkeypatch):
         import provisioner_db_operation_input as reader
 
+        row = _row(resource="range")
         with pytest.raises(reader.OperationInputError):
-            _read(monkeypatch, _row(resource="range"))
+            _read(monkeypatch, row)
 
     def test_a_row_for_another_operation_is_refused(self, monkeypatch):
         import provisioner_db_operation_input as reader
 
+        row = _row(operation="destroy")
         with pytest.raises(reader.OperationInputError):
-            _read(monkeypatch, _row(operation="destroy"))
+            _read(monkeypatch, row)
 
     def test_a_column_disagreeing_with_the_envelope_is_refused(self, monkeypatch):
         # The flattened columns are what the query selected on; a row whose
@@ -162,8 +164,9 @@ class TestDiscriminatorsAreChecked:
     def test_a_malformed_envelope_is_refused(self, monkeypatch):
         import provisioner_db_operation_input as reader
 
+        row = _row({"not": "an envelope"})
         with pytest.raises(reader.OperationInputError):
-            _read(monkeypatch, _row({"not": "an envelope"}))
+            _read(monkeypatch, row)
 
 
 class TestAcesProjection:
@@ -202,8 +205,9 @@ class TestRequestIdentityBinding:
     def test_a_mismatched_command_request_is_refused(self, monkeypatch):
         import provisioner_db_operation_input as reader
 
+        row = _row()
         with pytest.raises(reader.OperationInputError):
-            _read(monkeypatch, _row(), request_id="99999999-9999-9999-9999-999999999999")
+            _read(monkeypatch, row, request_id="99999999-9999-9999-9999-999999999999")
 
     def test_the_aces_consumer_refuses_a_mismatched_request(self, monkeypatch):
         import provisioner_db_operation_input as reader

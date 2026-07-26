@@ -29,7 +29,6 @@ reused from ``cyberscript``; callers do not add a parallel exception hierarchy.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -37,7 +36,24 @@ from uuid import UUID
 from cyberscript.enums import ResourceStatus
 from cyberscript.exceptions import ValidationError as OperationResultError
 
-from shared.aces.status import ACES_OPERATION_STATES, ACES_STATE_RUNNING, ACES_STATE_SUCCEEDED
+from shared.aces.status import ACES_STATE_RUNNING
+from shared.operation_result_payloads import (
+    MAX_DIAGNOSTIC_CHARS,
+    MAX_INSTANCE_OUTCOMES,
+    MAX_SNAPSHOT_RESOURCES,
+    NGFW_STATE_KEYS,
+    PARSERS,
+    REASON_CODES,
+    SNAPSHOT_ENTRY_KEYS,
+    Shape,
+    StepSpec,
+    aces_progress,
+    aces_snapshot,
+    aces_success,
+    failure,
+    progress,
+    success,
+)
 
 __all__ = [
     "MAX_DIAGNOSTIC_CHARS",
@@ -105,173 +121,49 @@ class ResultStep(StrEnum):
     ACES_TERMINAL_FAILED = "aces_terminal_failed"
 
 
-class _Shape(StrEnum):
-    """Which closed payload parser a step uses."""
-
-    INSTANCES = "instances"
-    NGFW = "ngfw"
-    RANGE_TERMINAL = "range_terminal"
-    FAILURE = "failure"
-    ACES_OPERATION = "aces_operation"
-    ACES_SNAPSHOT = "aces_snapshot"
-
-
-# Result kinds mirror ``engine.models.OperationResultKind`` without importing
-# Django; the applier cross-checks the stored kind against this table.
-_RESOURCE_STATE = "RESOURCE_STATE"
-_TERMINAL_SUCCESS = "TERMINAL_SUCCESS"
-_TERMINAL_FAILURE = "TERMINAL_FAILURE"
-
-# Field label used in every parser error, so a caller can tell which contract
-# rejected the value.
-_PAYLOAD_FIELD = "result payload"
-
-# Bounded per ADR-043: results carry summaries, never snapshots.
-MAX_INSTANCE_OUTCOMES = 256
-MAX_DIAGNOSTIC_CHARS = 512
-# The ACES runtime snapshot is already byte-bounded by ``aces_snapshot`` before
-# it is published; this is the transport-side count bound so an oversized
-# topology fails at the wire rather than at the sidecar's size validator.
-MAX_SNAPSHOT_RESOURCES = 512
-
-# Exactly the bounded fields ``aces_snapshot.snapshot_resources`` emits. ACES
-# addresses are compiled handles carrying no authored values or infrastructure
-# detail, which is what makes the snapshot safe for the redacted sidecar; an IP,
-# hostname, or provider id appearing here would defeat that.
-SNAPSHOT_ENTRY_KEYS = frozenset({"address", "resource_type", "status"})
-
-# Closed failure vocabulary. An authored code, never an exception string.
-REASON_CODES = frozenset(
-    {
-        "cloud_operation_failed",
-        "cloud_timeout",
-        "dependency_unavailable",
-        "invalid_state",
-        "internal_error",
-    }
-)
-
-# The provider-neutral NGFW state already shaped by
-# ``ngfw_terraform_state._build_provider_state``. Raw Terraform output is not
-# transported; only these normalized fields are.
-NGFW_STATE_KEYS = frozenset(
-    {
-        "cloud_provider",
-        "route_next_hop_ip",
-        "attachment_mode",
-        "data_attachment_id",
-        "attached_ranges",
-        "provider_metadata",
-    }
-)
-
-
-@dataclass(frozen=True)
-class _StepSpec:
-    """Declared properties of one step within one ``(resource, operation)``.
-
-    ``status`` carries two meanings depending on the shape. For the families
-    whose payload reports a ``ResourceStatus`` directly it *pins* that reported
-    value. For the ACES shapes -- whose payload reports a coarse ACES operation
-    state instead -- it is the range status the step projects, or ``None`` when
-    the step is evidence only and must not move lifecycle state. ``aces_state``
-    is what pins the ACES payload.
-    """
-
-    rank: int
-    result_kind: str
-    shape: _Shape
-    status: ResourceStatus | None
-    terminal: bool = False
-    aces_state: str | None = None
-
-
-def _progress(rank: int, shape: _Shape, status: ResourceStatus) -> _StepSpec:
-    """Declare a non-terminal progress step."""
-    return _StepSpec(rank=rank, result_kind=_RESOURCE_STATE, shape=shape, status=status)
-
-
-def _success(rank: int, shape: _Shape, status: ResourceStatus) -> _StepSpec:
-    """Declare a terminal-success step."""
-    return _StepSpec(rank=rank, result_kind=_TERMINAL_SUCCESS, shape=shape, status=status, terminal=True)
-
-
-def _failure(rank: int) -> _StepSpec:
-    """Declare a terminal-failure step."""
-    return _StepSpec(rank=rank, result_kind=_TERMINAL_FAILURE, shape=_Shape.FAILURE, status=None, terminal=True)
-
-
-def _aces_progress(rank: int, aces_state: str, status: ResourceStatus | None) -> _StepSpec:
-    """Declare a non-terminal ACES observation, optionally projecting a range status."""
-    return _StepSpec(
-        rank=rank, result_kind=_RESOURCE_STATE, shape=_Shape.ACES_OPERATION, status=status, aces_state=aces_state
-    )
-
-
-def _aces_success(rank: int, status: ResourceStatus) -> _StepSpec:
-    """Declare an ACES terminal-success observation."""
-    return _StepSpec(
-        rank=rank,
-        result_kind=_TERMINAL_SUCCESS,
-        shape=_Shape.ACES_OPERATION,
-        status=status,
-        terminal=True,
-        aces_state=ACES_STATE_SUCCEEDED,
-    )
-
-
-def _aces_snapshot(rank: int) -> _StepSpec:
-    """Declare the bounded runtime-snapshot evidence step.
-
-    Evidence only: ``status=None`` keeps it out of the lifecycle write path, so
-    a snapshot can never produce an audit row or a range event.
-    """
-    return _StepSpec(rank=rank, result_kind=_RESOURCE_STATE, shape=_Shape.ACES_SNAPSHOT, status=None)
-
-
-_RANGE_PAUSE_STEPS: dict[ResultStep, _StepSpec] = {
-    ResultStep.RANGE_INSTANCES_PAUSED: _progress(10, _Shape.INSTANCES, ResourceStatus.PAUSED),
-    ResultStep.RANGE_NGFW_CASCADE_PAUSING: _progress(20, _Shape.NGFW, ResourceStatus.PAUSING),
-    ResultStep.RANGE_NGFW_CASCADE_PAUSED: _progress(30, _Shape.NGFW, ResourceStatus.PAUSED),
-    ResultStep.RANGE_NGFW_CASCADE_FAILED: _progress(30, _Shape.NGFW, ResourceStatus.FAILED),
-    ResultStep.RANGE_TERMINAL_PAUSED: _success(40, _Shape.RANGE_TERMINAL, ResourceStatus.PAUSED),
-    ResultStep.RANGE_TERMINAL_FAILED: _failure(40),
+_RANGE_PAUSE_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.RANGE_INSTANCES_PAUSED: progress(10, Shape.INSTANCES, ResourceStatus.PAUSED),
+    ResultStep.RANGE_NGFW_CASCADE_PAUSING: progress(20, Shape.NGFW, ResourceStatus.PAUSING),
+    ResultStep.RANGE_NGFW_CASCADE_PAUSED: progress(30, Shape.NGFW, ResourceStatus.PAUSED),
+    ResultStep.RANGE_NGFW_CASCADE_FAILED: progress(30, Shape.NGFW, ResourceStatus.FAILED),
+    ResultStep.RANGE_TERMINAL_PAUSED: success(40, Shape.RANGE_TERMINAL, ResourceStatus.PAUSED),
+    ResultStep.RANGE_TERMINAL_FAILED: failure(40),
 }
 
-_RANGE_RESUME_STEPS: dict[ResultStep, _StepSpec] = {
-    ResultStep.RANGE_NGFW_CASCADE_RESUMING: _progress(10, _Shape.NGFW, ResourceStatus.RESUMING),
-    ResultStep.RANGE_NGFW_CASCADE_READY: _progress(20, _Shape.NGFW, ResourceStatus.READY),
-    ResultStep.RANGE_NGFW_CASCADE_FAILED: _progress(20, _Shape.NGFW, ResourceStatus.FAILED),
-    ResultStep.RANGE_INSTANCES_READY: _progress(30, _Shape.INSTANCES, ResourceStatus.READY),
-    ResultStep.RANGE_TERMINAL_READY: _success(40, _Shape.RANGE_TERMINAL, ResourceStatus.READY),
-    ResultStep.RANGE_TERMINAL_FAILED: _failure(40),
+_RANGE_RESUME_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.RANGE_NGFW_CASCADE_RESUMING: progress(10, Shape.NGFW, ResourceStatus.RESUMING),
+    ResultStep.RANGE_NGFW_CASCADE_READY: progress(20, Shape.NGFW, ResourceStatus.READY),
+    ResultStep.RANGE_NGFW_CASCADE_FAILED: progress(20, Shape.NGFW, ResourceStatus.FAILED),
+    ResultStep.RANGE_INSTANCES_READY: progress(30, Shape.INSTANCES, ResourceStatus.READY),
+    ResultStep.RANGE_TERMINAL_READY: success(40, Shape.RANGE_TERMINAL, ResourceStatus.READY),
+    ResultStep.RANGE_TERMINAL_FAILED: failure(40),
 }
 
-_NGFW_PROVISION_STEPS: dict[ResultStep, _StepSpec] = {
-    ResultStep.NGFW_PROVISION_REQUESTED: _progress(10, _Shape.NGFW, ResourceStatus.PROVISIONING),
-    ResultStep.NGFW_PROVISION_INFRA: _progress(20, _Shape.NGFW, ResourceStatus.PROVISIONING),
-    ResultStep.NGFW_PROVISION_READY: _progress(30, _Shape.NGFW, ResourceStatus.READY),
+_NGFW_PROVISION_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.NGFW_PROVISION_REQUESTED: progress(10, Shape.NGFW, ResourceStatus.PROVISIONING),
+    ResultStep.NGFW_PROVISION_INFRA: progress(20, Shape.NGFW, ResourceStatus.PROVISIONING),
+    ResultStep.NGFW_PROVISION_READY: progress(30, Shape.NGFW, ResourceStatus.READY),
     # Provisioning ends paused: the NGFW is auto-stopped once it is ready.
-    ResultStep.NGFW_PROVISION_AUTOSTOP: _success(40, _Shape.NGFW, ResourceStatus.PAUSED),
-    ResultStep.NGFW_TERMINAL_FAILED: _failure(40),
+    ResultStep.NGFW_PROVISION_AUTOSTOP: success(40, Shape.NGFW, ResourceStatus.PAUSED),
+    ResultStep.NGFW_TERMINAL_FAILED: failure(40),
 }
 
-_NGFW_DEPROVISION_STEPS: dict[ResultStep, _StepSpec] = {
-    ResultStep.NGFW_DEPROVISION_DESTROYING: _progress(10, _Shape.NGFW, ResourceStatus.DESTROYING),
-    ResultStep.NGFW_TERMINAL_DESTROYED: _success(20, _Shape.NGFW, ResourceStatus.DESTROYED),
-    ResultStep.NGFW_TERMINAL_FAILED: _failure(20),
+_NGFW_DEPROVISION_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.NGFW_DEPROVISION_DESTROYING: progress(10, Shape.NGFW, ResourceStatus.DESTROYING),
+    ResultStep.NGFW_TERMINAL_DESTROYED: success(20, Shape.NGFW, ResourceStatus.DESTROYED),
+    ResultStep.NGFW_TERMINAL_FAILED: failure(20),
 }
 
-_NGFW_START_STEPS: dict[ResultStep, _StepSpec] = {
-    ResultStep.NGFW_POWER_STARTING: _progress(10, _Shape.NGFW, ResourceStatus.RESUMING),
-    ResultStep.NGFW_TERMINAL_READY: _success(20, _Shape.NGFW, ResourceStatus.READY),
-    ResultStep.NGFW_TERMINAL_FAILED: _failure(20),
+_NGFW_START_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.NGFW_POWER_STARTING: progress(10, Shape.NGFW, ResourceStatus.RESUMING),
+    ResultStep.NGFW_TERMINAL_READY: success(20, Shape.NGFW, ResourceStatus.READY),
+    ResultStep.NGFW_TERMINAL_FAILED: failure(20),
 }
 
-_NGFW_STOP_STEPS: dict[ResultStep, _StepSpec] = {
-    ResultStep.NGFW_POWER_STOPPING: _progress(10, _Shape.NGFW, ResourceStatus.PAUSING),
-    ResultStep.NGFW_TERMINAL_PAUSED: _success(20, _Shape.NGFW, ResourceStatus.PAUSED),
-    ResultStep.NGFW_TERMINAL_FAILED: _failure(20),
+_NGFW_STOP_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.NGFW_POWER_STOPPING: progress(10, Shape.NGFW, ResourceStatus.PAUSING),
+    ResultStep.NGFW_TERMINAL_PAUSED: success(20, Shape.NGFW, ResourceStatus.PAUSED),
+    ResultStep.NGFW_TERMINAL_FAILED: failure(20),
 }
 
 # ACES provision reports one running observation, then bounded topology
@@ -279,24 +171,24 @@ _NGFW_STOP_STEPS: dict[ResultStep, _StepSpec] = {
 # because the pre-cutover path published that range status at start; destroy
 # has no equivalent published start event, so its running observation is
 # sidecar evidence and projects nothing.
-_ACES_PROVISION_STEPS: dict[ResultStep, _StepSpec] = {
-    ResultStep.ACES_PROVISION_RUNNING: _aces_progress(10, ACES_STATE_RUNNING, ResourceStatus.PROVISIONING),
-    ResultStep.ACES_PROVISION_SNAPSHOT: _aces_snapshot(20),
-    ResultStep.ACES_TERMINAL_READY: _aces_success(30, ResourceStatus.READY),
-    ResultStep.ACES_TERMINAL_FAILED: _failure(30),
+_ACES_PROVISION_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.ACES_PROVISION_RUNNING: aces_progress(10, ACES_STATE_RUNNING, ResourceStatus.PROVISIONING),
+    ResultStep.ACES_PROVISION_SNAPSHOT: aces_snapshot(20),
+    ResultStep.ACES_TERMINAL_READY: aces_success(30, ResourceStatus.READY),
+    ResultStep.ACES_TERMINAL_FAILED: failure(30),
 }
 
-_ACES_DESTROY_STEPS: dict[ResultStep, _StepSpec] = {
-    ResultStep.ACES_DESTROY_RUNNING: _aces_progress(10, ACES_STATE_RUNNING, None),
-    ResultStep.ACES_TERMINAL_DESTROYED: _aces_success(20, ResourceStatus.DESTROYED),
-    ResultStep.ACES_TERMINAL_FAILED: _failure(20),
+_ACES_DESTROY_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.ACES_DESTROY_RUNNING: aces_progress(10, ACES_STATE_RUNNING, None),
+    ResultStep.ACES_TERMINAL_DESTROYED: aces_success(20, ResourceStatus.DESTROYED),
+    ResultStep.ACES_TERMINAL_FAILED: failure(20),
 }
 
 # ``aces-range`` pause/resume share the range lifecycle contract; the applier
 # resolves the target differently, the result shape is the same. Provision and
 # destroy do not: they report ACES operation observations, not instance sets.
 
-_CONTRACT: dict[tuple[str, str], dict[ResultStep, _StepSpec]] = {
+_CONTRACT: dict[tuple[str, str], dict[ResultStep, StepSpec]] = {
     ("range", "pause"): _RANGE_PAUSE_STEPS,
     ("range", "resume"): _RANGE_RESUME_STEPS,
     ("aces-range", "pause"): _RANGE_PAUSE_STEPS,
@@ -310,7 +202,7 @@ _CONTRACT: dict[tuple[str, str], dict[ResultStep, _StepSpec]] = {
 }
 
 
-def _steps(resource: str, operation: str) -> dict[ResultStep, _StepSpec]:
+def _steps(resource: str, operation: str) -> dict[ResultStep, StepSpec]:
     """Return the declared step table for a pair, or fail closed."""
     try:
         return _CONTRACT[(resource, operation)]
@@ -318,7 +210,7 @@ def _steps(resource: str, operation: str) -> dict[ResultStep, _StepSpec]:
         raise OperationResultError(f"no result contract for resource '{resource}' operation '{operation}'") from None
 
 
-def _spec(resource: str, operation: str, step: ResultStep | str) -> _StepSpec:
+def _spec(resource: str, operation: str, step: ResultStep | str) -> StepSpec:
     """Return the spec for a step declared on this pair, or fail closed."""
     table = _steps(resource, operation)
     try:
@@ -418,179 +310,6 @@ def build_result_identity(*, operation_id: str | UUID, step: ResultStep | str, d
     return f"{operation_id}:{ResultStep(step)}:{digest}"
 
 
-def _require_dict(value: object, field: str) -> dict[str, Any]:
-    """Return ``value`` if it is a mapping, else fail closed."""
-    if not isinstance(value, dict):
-        raise OperationResultError(f"{field} must be an object")
-    return value
-
-
-def _require_exact_keys(value: dict[str, Any], allowed: frozenset[str], field: str) -> None:
-    """Fail closed unless ``value`` carries exactly ``allowed``."""
-    actual = frozenset(value)
-    unexpected = sorted(actual - allowed)
-    if unexpected:
-        raise OperationResultError(f"{field} has unexpected field(s): {', '.join(unexpected)}")
-    missing = sorted(allowed - actual)
-    if missing:
-        raise OperationResultError(f"{field} is missing field(s): {', '.join(missing)}")
-
-
-def _require_uuid(value: object, field: str) -> str:
-    """Return the canonical UUID string, else fail closed."""
-    if not isinstance(value, str):
-        raise OperationResultError(f"{field} must be a UUID string")
-    try:
-        return str(UUID(value))
-    except (ValueError, AttributeError, TypeError) as exc:
-        raise OperationResultError(f"{field} must be a valid UUID") from exc
-
-
-def _require_status(value: object, expected: ResourceStatus | None, field: str) -> str:
-    """Return a known status, optionally pinned to the one the step reports."""
-    if not isinstance(value, str):
-        raise OperationResultError(f"{field} must be a status string")
-    try:
-        status = ResourceStatus(value)
-    except ValueError:
-        raise OperationResultError(f"{field} is not a known resource status") from None
-    if expected is not None and status != expected:
-        raise OperationResultError(f"{field} must be '{expected.value}' for this step, got '{status.value}'")
-    return status.value
-
-
-def _parse_instances(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
-    """Parse a bounded set of per-instance outcomes."""
-    _require_exact_keys(payload, frozenset({"instances"}), _PAYLOAD_FIELD)
-    raw = payload["instances"]
-    if not isinstance(raw, list):
-        raise OperationResultError("result payload instances must be a list")
-    if len(raw) > MAX_INSTANCE_OUTCOMES:
-        raise OperationResultError(f"result payload carries more than {MAX_INSTANCE_OUTCOMES} instance outcomes")
-    outcomes = []
-    for index, item in enumerate(raw):
-        entry = _require_dict(item, f"result payload instances[{index}]")
-        _require_exact_keys(entry, frozenset({"instance_uuid", "status"}), f"result payload instances[{index}]")
-        outcomes.append(
-            {
-                "instance_uuid": _require_uuid(entry["instance_uuid"], f"result payload instances[{index}] uuid"),
-                "status": _require_status(entry["status"], spec.status, f"result payload instances[{index}] status"),
-            }
-        )
-    return {"instances": outcomes}
-
-
-def _parse_ngfw_state(value: object) -> dict[str, Any]:
-    """Parse the normalized, provider-neutral NGFW state block."""
-    state = _require_dict(value, "result payload ngfw_state")
-    unexpected = sorted(frozenset(state) - NGFW_STATE_KEYS)
-    if unexpected:
-        raise OperationResultError(f"result payload ngfw_state has unexpected field(s): {', '.join(unexpected)}")
-    return dict(state)
-
-
-def _parse_ngfw(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
-    """Parse an NGFW transition result, with optional normalized state."""
-    required = frozenset({"ngfw_instance_uuid", "status"})
-    unexpected = sorted(frozenset(payload) - (required | {"ngfw_state"}))
-    if unexpected:
-        raise OperationResultError(f"result payload has unexpected field(s): {', '.join(unexpected)}")
-    missing = sorted(required - frozenset(payload))
-    if missing:
-        raise OperationResultError(f"result payload is missing field(s): {', '.join(missing)}")
-    parsed: dict[str, Any] = {
-        "ngfw_instance_uuid": _require_uuid(payload["ngfw_instance_uuid"], "result payload ngfw_instance_uuid"),
-        "status": _require_status(payload["status"], spec.status, "result payload status"),
-    }
-    if "ngfw_state" in payload:
-        parsed["ngfw_state"] = _parse_ngfw_state(payload["ngfw_state"])
-    return parsed
-
-
-def _parse_range_terminal(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
-    """Parse a range operation's terminal status result."""
-    _require_exact_keys(payload, frozenset({"status"}), _PAYLOAD_FIELD)
-    return {"status": _require_status(payload["status"], spec.status, "result payload status")}
-
-
-def _parse_failure(payload: dict[str, Any], _spec_unused: _StepSpec) -> dict[str, Any]:
-    """Parse a terminal failure: authored reason code plus bounded diagnostic."""
-    _require_exact_keys(payload, frozenset({"reason_code", "diagnostic"}), _PAYLOAD_FIELD)
-    reason_code = payload["reason_code"]
-    if not isinstance(reason_code, str) or reason_code not in REASON_CODES:
-        raise OperationResultError(f"result payload reason_code must be one of: {', '.join(sorted(REASON_CODES))}")
-    diagnostic = payload["diagnostic"]
-    if not isinstance(diagnostic, str):
-        raise OperationResultError("result payload diagnostic must be a string")
-    if len(diagnostic) > MAX_DIAGNOSTIC_CHARS:
-        raise OperationResultError(f"result payload diagnostic exceeds {MAX_DIAGNOSTIC_CHARS} characters")
-    return {"reason_code": reason_code, "diagnostic": diagnostic}
-
-
-def _parse_aces_operation(payload: dict[str, Any], spec: _StepSpec) -> dict[str, Any]:
-    """Parse an ACES operation observation, with an optional bounded reason.
-
-    ``aces_status`` is pinned to the step's declared state: the ACES vocabulary
-    is coarse and direction-free, so an unpinned body would let a late
-    ``running`` result be recorded under a terminal step (or the reverse).
-    """
-    required = frozenset({"aces_status"})
-    unexpected = sorted(frozenset(payload) - (required | {"status_reason"}))
-    if unexpected:
-        raise OperationResultError(f"{_PAYLOAD_FIELD} has unexpected field(s): {', '.join(unexpected)}")
-    missing = sorted(required - frozenset(payload))
-    if missing:
-        raise OperationResultError(f"{_PAYLOAD_FIELD} is missing field(s): {', '.join(missing)}")
-
-    state = payload["aces_status"]
-    if not isinstance(state, str) or state not in ACES_OPERATION_STATES:
-        raise OperationResultError(
-            f"{_PAYLOAD_FIELD} aces_status must be one of: {', '.join(sorted(ACES_OPERATION_STATES))}"
-        )
-    if spec.aces_state is not None and state != spec.aces_state:
-        raise OperationResultError(f"{_PAYLOAD_FIELD} aces_status must be '{spec.aces_state}' for this step")
-
-    parsed: dict[str, Any] = {"aces_status": state}
-    if "status_reason" in payload:
-        reason = payload["status_reason"]
-        if not isinstance(reason, str):
-            raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason must be a string")
-        if len(reason) > MAX_DIAGNOSTIC_CHARS:
-            raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason exceeds {MAX_DIAGNOSTIC_CHARS} characters")
-        parsed["status_reason"] = reason
-    return parsed
-
-
-def _parse_aces_snapshot(payload: dict[str, Any], _spec_unused: _StepSpec) -> dict[str, Any]:
-    """Parse the bounded ACES runtime-snapshot evidence."""
-    _require_exact_keys(payload, frozenset({"resources"}), _PAYLOAD_FIELD)
-    raw = payload["resources"]
-    if not isinstance(raw, list):
-        raise OperationResultError(f"{_PAYLOAD_FIELD} resources must be a list")
-    if len(raw) > MAX_SNAPSHOT_RESOURCES:
-        raise OperationResultError(f"{_PAYLOAD_FIELD} carries more than {MAX_SNAPSHOT_RESOURCES} snapshot resources")
-    resources = []
-    for index, item in enumerate(raw):
-        field = f"{_PAYLOAD_FIELD} resources[{index}]"
-        entry = _require_dict(item, field)
-        _require_exact_keys(entry, SNAPSHOT_ENTRY_KEYS, field)
-        for key in sorted(SNAPSHOT_ENTRY_KEYS):
-            if not isinstance(entry[key], str) or not entry[key]:
-                raise OperationResultError(f"{field} {key} must be a non-empty string")
-        resources.append({key: entry[key] for key in sorted(SNAPSHOT_ENTRY_KEYS)})
-    return {"resources": resources}
-
-
-_PARSERS = {
-    _Shape.INSTANCES: _parse_instances,
-    _Shape.NGFW: _parse_ngfw,
-    _Shape.RANGE_TERMINAL: _parse_range_terminal,
-    _Shape.FAILURE: _parse_failure,
-    _Shape.ACES_OPERATION: _parse_aces_operation,
-    _Shape.ACES_SNAPSHOT: _parse_aces_snapshot,
-}
-
-
 def parse_result_payload(
     resource: str,
     operation: str,
@@ -606,5 +325,6 @@ def parse_result_payload(
     failure reason.
     """
     spec = _spec(resource, operation, step)
-    obj = _require_dict(payload, _PAYLOAD_FIELD)
-    return _PARSERS[spec.shape](obj, spec)
+    if not isinstance(payload, dict):
+        raise OperationResultError("result payload must be an object")
+    return PARSERS[spec.shape](payload, spec)
