@@ -47,8 +47,10 @@ def test_best_effort_failure_returns_false_and_marks_health_degraded():
 
 
 def test_strict_failure_reraises_after_marking_health_degraded():
+    event = _unserializable_event()
+
     with pytest.raises(TypeError):
-        audit_log(_unserializable_event(), strict=True)
+        audit_log(event, strict=True)
 
     snapshot = get_audit_health_snapshot()
     assert snapshot.degraded is True

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import logging
 
+from django.db.models import QuerySet
 from rest_framework import permissions, serializers, viewsets
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.request import Request
+from rest_framework.views import APIView
 
 from shared.api_tokens.models import ApiToken
 from shared.audit import AuditAction, AuditEntityType, audit_log_from_request
@@ -23,6 +26,8 @@ class AuditLogSerializer(serializers.ModelSerializer):
     action = serializers.CharField(read_only=True)
 
     class Meta:
+        """Bind the serializer to the immutable audit model."""
+
         model = AuditLog
         fields = [
             "id",
@@ -47,7 +52,7 @@ class IsStaffAuditSession(permissions.BasePermission):
 
     message = "This action requires a staff session."
 
-    def has_permission(self, request, view) -> bool:
+    def has_permission(self, request: Request, view: APIView) -> bool:
         user = getattr(request, "user", None)
         allowed = bool(
             not isinstance(getattr(request, "auth", None), ApiToken)
@@ -76,7 +81,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsStaffAuditSession]
     serializer_class = AuditLogSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> QuerySet[AuditLog]:
         queryset = AuditLog.objects.all()
         filters = {
             "entity_type": "entity_type",

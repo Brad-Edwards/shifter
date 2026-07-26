@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from django.conf import settings
 from django.db import models
@@ -313,6 +312,8 @@ class AuditLog(models.Model):
     request_id = models.CharField(max_length=64, blank=True, db_index=True)
 
     class Meta:
+        """Keep the shared audit table stable and queryable."""
+
         db_table = "shared_auditlog"
         ordering = ["-timestamp"]
         verbose_name = "Audit Log"
@@ -326,33 +327,3 @@ class AuditLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.action} {self.entity_type} {self.entity_id} at {self.timestamp}"
-
-    @classmethod
-    def log(
-        cls,
-        entity_type: str,
-        entity_id: int,
-        action: str,
-        actor_type: str,
-        actor_id: int | None = None,
-        previous_state: dict[str, Any] | None = None,
-        new_state: dict[str, Any] | None = None,
-        context: str = "",
-        source_ip: str | None = None,
-        user_agent: str = "",
-        request_id: str = "",
-    ) -> AuditLog:
-        """Persist an audit event."""
-        return cls.objects.create(
-            entity_type=entity_type,
-            entity_id=entity_id,
-            action=action,
-            actor_type=actor_type,
-            actor_id=actor_id,
-            previous_state=previous_state,
-            new_state=new_state,
-            context=context,
-            source_ip=source_ip,
-            user_agent=user_agent,
-            request_id=request_id,
-        )

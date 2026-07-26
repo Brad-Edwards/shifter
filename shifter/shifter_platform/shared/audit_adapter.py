@@ -12,7 +12,7 @@ class DjangoAuditLogWriter:
     @staticmethod
     def write(event: AuditEvent) -> None:
         """Map an audit event onto a durable row."""
-        AuditLog.log(
+        AuditLog.objects.create(
             entity_type=event.entity_type,
             entity_id=event.entity_id,
             action=event.action,

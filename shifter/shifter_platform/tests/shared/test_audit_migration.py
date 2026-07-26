@@ -18,7 +18,7 @@ MIGRATION = importlib.import_module("shared.migrations.0006_rehome_audit_log")
 
 
 def test_upgrade_path_renames_table_and_preserves_rows():
-    row = AuditLog.log(
+    row = AuditLog.objects.create(
         entity_type=AuditEntityType.RANGE,
         entity_id=71,
         action=AuditAction.PROVISION,

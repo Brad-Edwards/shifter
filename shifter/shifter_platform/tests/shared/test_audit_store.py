@@ -65,7 +65,7 @@ def test_writer_persists_to_shared_audit_table():
 
 
 def test_staff_session_can_read_audit_rows(client, staff_user):
-    AuditLog.log(
+    AuditLog.objects.create(
         entity_type=AuditEntityType.RANGE,
         entity_id=7,
         action=AuditAction.PROVISION,
@@ -110,14 +110,14 @@ def test_anonymous_cannot_read_audit_rows(client):
 
 
 def test_audit_read_filters_are_preserved(client, staff_user):
-    AuditLog.log(
+    AuditLog.objects.create(
         entity_type=AuditEntityType.RANGE,
         entity_id=7,
         action=AuditAction.PROVISION,
         actor_type=AuditActorType.SYSTEM,
         request_id="keep",
     )
-    AuditLog.log(
+    AuditLog.objects.create(
         entity_type=AuditEntityType.USER,
         entity_id=8,
         action=AuditAction.UPDATE,
@@ -133,7 +133,7 @@ def test_audit_read_filters_are_preserved(client, staff_user):
 
 
 def test_audit_archive_command_remains_available(capsys):
-    row = AuditLog.log(
+    row = AuditLog.objects.create(
         entity_type=AuditEntityType.RANGE,
         entity_id=7,
         action=AuditAction.PROVISION,
@@ -148,7 +148,7 @@ def test_audit_archive_command_remains_available(capsys):
 
 @pytest.mark.parametrize("no_delete", [False, True])
 def test_audit_archive_uploads_each_row_once(monkeypatch, no_delete):
-    row = AuditLog.log(
+    row = AuditLog.objects.create(
         entity_type=AuditEntityType.RANGE,
         entity_id=9,
         action=AuditAction.PROVISION,
@@ -196,7 +196,7 @@ def test_audit_admin_rejects_real_add_change_and_delete_requests(client, django_
         email="audit-admin@example.com",
         password="pw",
     )
-    row = AuditLog.log(
+    row = AuditLog.objects.create(
         entity_type=AuditEntityType.RANGE,
         entity_id=17,
         action=AuditAction.PROVISION,
