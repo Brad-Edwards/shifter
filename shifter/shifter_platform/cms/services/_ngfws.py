@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import UUID
 
 from cms.exceptions import CMSError
+from cms.services._ngfw_provisioning import _provision_ngfw_request_records
 from shared.audit import AuditAction, AuditActorType, AuditEntityType
 from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
 from shared.enums import ResourceStatus
@@ -225,50 +226,6 @@ def _reject_existing_active_ngfw(user: User) -> None:
             existing_ngfw.id,
         )
         raise CMSError("You already have an active NGFW. Please destroy it before creating a new one.")
-
-
-def _provision_ngfw_request_records(user: User, name: str) -> tuple[UUID, Request, Instance, App]:
-    """Create the Request / Instance / App rows that own an NGFW provisioning."""
-    from uuid import uuid4
-
-    from cms.models import App, AppType, Instance, InstanceType, Request
-    from shared.enums import RequestType
-    from workspaces.services import resolve_personal_workspace
-
-    request_id = uuid4()
-    # The request container records who asked, so it carries the requester's
-    # workspace scope like any other CMS request (ADR-046-R3). This does NOT
-    # scope the NGFW itself: the Instance/App rows below stay unscoped, because
-    # NGFW instances and platform network infrastructure remain deployment-global
-    # (ADR-046-R7).
-    request = Request.objects.create(
-        request_id=request_id,
-        request_type=RequestType.NGFW.value,
-        user=user,
-        workspace_id=resolve_personal_workspace(user).workspace_id,
-    )
-    logger.info("create_ngfw: created Request id=%s for user_id=%s", request_id, user.id)
-
-    instance_type = InstanceType.objects.get(slug="panw-ngfw")
-    app_type = AppType.objects.get(slug="panw-ngfw")
-
-    instance = Instance.objects.create(
-        request=request,
-        name=name,
-        instance_type=instance_type,
-        status=ResourceStatus.PENDING.value,
-    )
-    logger.info("create_ngfw: created Instance id=%s for user_id=%s", instance.id, user.id)
-
-    app = App.objects.create(
-        name=name,
-        app_type=app_type,
-        instance=instance,
-        status=ResourceStatus.PENDING.value,
-    )
-    logger.info("create_ngfw: created App id=%s for instance_id=%s", app.id, instance.id)
-
-    return request_id, request, instance, app
 
 
 def _set_cms_ngfw_status(instance: Instance, app: App, status: ResourceStatus) -> None:

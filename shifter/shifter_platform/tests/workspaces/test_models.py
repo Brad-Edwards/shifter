@@ -11,6 +11,7 @@ import uuid
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from workspaces.models import Organization, Workspace, WorkspaceMembership
@@ -90,9 +91,11 @@ def test_a_user_has_at_most_one_personal_workspace():
     user = _user()
     _workspace(name="Personal", personal_for_user=user)
 
+    second_organization = _organization("Second personal")
+
     with pytest.raises(IntegrityError), transaction.atomic():
         Workspace.objects.create(
-            organization=_organization("Second personal"),
+            organization=second_organization,
             name="Personal again",
             personal_for_user=user,
         )
@@ -134,7 +137,7 @@ def test_membership_role_is_a_closed_vocabulary():
     workspace = _workspace()
     membership = WorkspaceMembership(workspace=workspace, user=_user(), role="superuser")
 
-    with pytest.raises(Exception):  # noqa: B017 - full_clean raises ValidationError
+    with pytest.raises(ValidationError, match="role"):
         membership.full_clean()
 
 

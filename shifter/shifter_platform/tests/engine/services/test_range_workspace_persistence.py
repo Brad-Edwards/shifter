@@ -94,7 +94,9 @@ def test_two_aces_ranges_with_different_scopes_do_not_collapse_to_one(user):
 def test_create_aces_range_refuses_a_missing_workspace_and_persists_nothing(user):
     request_id = uuid4()
 
+    plan = _aces_plan()
+
     with pytest.raises(EngineError):
-        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=_aces_plan(), workspace_id=None)
+        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, workspace_id=None)
 
     assert not Range.objects.filter(request__request_id=request_id).exists()

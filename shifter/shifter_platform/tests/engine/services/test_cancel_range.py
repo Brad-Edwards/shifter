@@ -73,9 +73,10 @@ class TestCancelRange:
             cancel_range("not-a-ref")
 
     def test_pydantic_rejects_negative_range_id(self):
+        request_id = uuid4()
         with pytest.raises(ValueError):
             RangeRef(
-                request_id=uuid4(),
+                request_id=request_id,
                 range_id=-1,
                 user_id=1,
                 status=ResourceStatus.PENDING,

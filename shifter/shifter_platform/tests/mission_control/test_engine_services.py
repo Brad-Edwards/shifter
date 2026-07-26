@@ -122,8 +122,9 @@ class TestCreateRange:
     def test_propagates_subnet_exhaustion(self, user, monkeypatch):
         monkeypatch.setattr(Range, "SUBNET_INDEX_MAX", 1)
         create_range(_request_spec(user.id), workspace_id=_WORKSPACE_ID)  # consumes index 1
+        exhausting_spec = _request_spec(user.id)
         with pytest.raises(ValueError, match="No subnet indices available"):
-            create_range(_request_spec(user.id), workspace_id=_WORKSPACE_ID)
+            create_range(exhausting_spec, workspace_id=_WORKSPACE_ID)
 
     def test_raises_on_none_request(self):
         with pytest.raises(TypeError):

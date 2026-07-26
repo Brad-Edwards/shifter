@@ -34,12 +34,12 @@ from cms.services._range_create import (
     _assert_scenario_launchable,
     _audit_log_call,
     _reserve_active_range_slot,
-    _resolve_launch_workspace,
     _set_range_instance_status,
     _validate_create_range_scenario,
     _validate_create_range_user,
     create_range,
 )
+from cms.services._range_workspace import resolve_launch_workspace
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -298,7 +298,7 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
             maximum_expires_at=lease.maximum_expires_at,
         )
 
-    workspace_id = _resolve_launch_workspace(user)
+    workspace_id = resolve_launch_workspace(user)
     request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist, workspace_id)
 
     try:

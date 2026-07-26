@@ -29,6 +29,7 @@ from cms.services._range_create_validation import (
     _validate_create_range_scenario,
     _validate_create_range_user,
 )
+from cms.services._range_workspace import resolve_launch_workspace
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -184,20 +185,6 @@ def _reserve_active_range_slot(
             raise CMSError(_ACTIVE_RANGE_MESSAGE) from exc
         raise
     return request_id, cms_request, range_instance
-
-
-def _resolve_launch_workspace(user: User) -> int:
-    """Resolve the workspace scope a launch by ``user`` belongs to (ADR-046-R3).
-
-    #1325 resolves the launcher's personal workspace, which preserves current
-    single-user behavior exactly while giving every new range a real tenancy
-    binding. #1327 replaces this with workspace selection and admission; the
-    resolution stays here at the CMS facade rather than moving into a view or
-    the provisioner, so there is one place scope is decided.
-    """
-    from workspaces.services import resolve_personal_workspace
-
-    return resolve_personal_workspace(user).workspace_id
 
 
 def _lookup_agents_by_os(user: User, agents_by_os: dict[str, int]) -> dict[str, AgentConfig]:
@@ -476,7 +463,7 @@ def create_range(
                 range_source,
             )
 
-        workspace_id = _resolve_launch_workspace(user)
+        workspace_id = resolve_launch_workspace(user)
         request_id, _cms_request, range_instance = _reserve_active_range_slot(
             user, range_source, _persist, workspace_id
         )

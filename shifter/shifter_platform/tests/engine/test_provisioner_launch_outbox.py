@@ -96,7 +96,7 @@ def test_succeeded_intent_is_not_launched_twice(settings) -> None:
     row = _intent()
     row.status = "SUCCEEDED"
     row.save(update_fields=["status"])
-    before = (row.status, row.attempts, row.task_ref)
+    expected_status, expected_attempts, expected_task_ref = row.status, row.attempts, row.task_ref
     _configure_aws(settings)
     client = MagicMock()
 
@@ -105,7 +105,9 @@ def test_succeeded_intent_is_not_launched_twice(settings) -> None:
 
     client.run_task.assert_not_called()
     row.refresh_from_db()
-    assert (row.status, row.attempts, row.task_ref) == before
+    assert row.status == expected_status
+    assert row.attempts == expected_attempts
+    assert row.task_ref == expected_task_ref
 
 
 def test_expired_running_claim_recovers_with_same_task_identity(settings) -> None:
