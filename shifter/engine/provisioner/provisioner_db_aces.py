@@ -111,8 +111,9 @@ def get_aces_image_candidates(provider: str, source_name: str) -> list[dict[str,
     """Return enabled ACES image mappings for (provider, source_name) (ADR-032-R2).
 
     The tenant-managed image registry the provisioner resolves against at
-    realization. Returns the candidate rows for a source name; the pure resolver
-    (``aces_image_resolver``) applies the exact-version / any-version rules.
+    realization. Returns the candidate rows for a source name; the pure shared
+    policy (``shared.aces.image_policy``) applies the exact-version /
+    any-version rules.
     """
     with get_db_connection() as conn, conn.cursor() as cur:
         cur.execute(

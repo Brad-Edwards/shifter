@@ -20,6 +20,5 @@ sonarcloud:
 routing:
   enabled: true
   default_provider: claude
-  default_fallback: parent
 rules:
   plan_rules: .gc/plan-rules.md

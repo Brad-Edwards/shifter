@@ -34,6 +34,7 @@ from cms.api.serializers import (
     ScenarioExportSerializer,
     ScenarioMetadataStateSerializer,
     ScenarioMetadataUpdateSerializer,
+    ScenarioRealizabilitySerializer,
     ScenarioUpdateSerializer,
     YAMLContentSerializer,
     YAMLValidationResultSerializer,
@@ -42,6 +43,7 @@ from cms.exceptions import CMSError
 from cms.scenario_editor import services as scenario_services
 from cms.scenario_editor.services import ScenarioEditorError
 from cms.scenarios import catalog_presentation
+from cms.scenarios import realizability as scenario_realizability
 from cms.scenarios.catalog_presentation import scenario_source
 from cms.scenarios.registry import get_catalog_entry, get_scenario_detail
 from cms.services import PackRegistrationRequest, register_pack
@@ -388,6 +390,30 @@ class ScenarioCloneView(APIView):
             {"scenario_id": scenario.scenario_id, "name": scenario.name},
             status=status.HTTP_201_CREATED,
         )
+
+
+class ScenarioRealizabilityView(APIView):
+    """Report whether the selected backend can realize an ACES scenario (ADR-034-R3)."""
+
+    permission_classes = CMS_READ_PERMISSIONS
+
+    @extend_schema(responses=ScenarioRealizabilitySerializer)
+    def get(self, request: Request, scenario_id: str) -> Response:
+        """Return the bounded realizability assessment, or 404 for an unknown scenario.
+
+        A non-realizable or indeterminate result is a successful response with
+        gaps -- the author needs to read them. Only an unknown scenario is an
+        error.
+        """
+        result = scenario_realizability.get_scenario_realizability(scenario_id)
+        if result is None:
+            return api_error_response(
+                code="not_found",
+                message="Scenario not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                request=request,
+            )
+        return Response(ScenarioRealizabilitySerializer(result).data)
 
 
 class ScenarioMetadataView(APIView):

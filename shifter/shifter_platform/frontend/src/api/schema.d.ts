@@ -338,6 +338,29 @@ export interface paths {
         patch: operations["cms_scenario_editor_scenarios_metadata_partial_update"];
         trace?: never;
     };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Return the bounded realizability assessment, or 404 for an unknown scenario.
+         *
+         *     A non-realizable or indeterminate result is a successful response with
+         *     gaps -- the author needs to read them. Only an unknown scenario is an
+         *     error.
+         */
+        get: operations["cms_scenario_editor_scenarios_realizability_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
         parameters: {
             query?: never;
@@ -4153,6 +4176,19 @@ export interface components {
             readonly value: number;
             readonly challenge_id: string;
         };
+        /**
+         * @description One bounded reason the backend cannot realize a scenario (ADR-034-R3).
+         *
+         *     ``code`` is the stable identifier clients switch on; ``message`` is prose for
+         *     the author and must never be parsed. Nothing here carries authored payloads,
+         *     parameter or account values, provider detail, or filesystem paths.
+         */
+        RealizabilityGap: {
+            readonly code: string;
+            readonly address: string;
+            readonly category: string;
+            readonly message: string;
+        };
         /** @description Confirmation returned after resetting and resending a participant invite. */
         ResendInviteResult: {
             readonly success: boolean;
@@ -4372,6 +4408,21 @@ export interface components {
             readonly scenario_id: string;
             readonly enabled: boolean;
             readonly staff_only: boolean;
+        };
+        /**
+         * @description Backend realizability assessment for one catalog entry (ADR-034-R3).
+         *
+         *     Serializes the projection from ``cms.scenarios.realizability``. A negative
+         *     assessment is a successful response with ``outcome`` set and ``gaps``
+         *     populated -- non-realizability is a domain answer, not an HTTP error.
+         *     ``indeterminate`` means the assessment could not be completed and must never
+         *     be rendered as realizable.
+         */
+        ScenarioRealizability: {
+            readonly scenario_id: string;
+            readonly target_id: string;
+            readonly outcome: string;
+            readonly gaps: components["schemas"]["RealizabilityGap"][];
         };
         /** @description A single scenario subnet, mirroring ``schema.SubnetConfig``. */
         ScenarioSubnet: {
@@ -5468,6 +5519,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScenarioMetadataState"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_realizability_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioRealizability"];
                 };
             };
             /** @description Authentication failed. */

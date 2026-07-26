@@ -231,3 +231,33 @@ class YAMLValidationResultSerializer(serializers.Serializer):
     valid = serializers.BooleanField(read_only=True)
     errors = serializers.ListField(child=serializers.CharField(), read_only=True)
     definition = serializers.DictField(read_only=True, allow_null=True)
+
+
+class RealizabilityGapSerializer(serializers.Serializer):
+    """One bounded reason the backend cannot realize a scenario (ADR-034-R3).
+
+    ``code`` is the stable identifier clients switch on; ``message`` is prose for
+    the author and must never be parsed. Nothing here carries authored payloads,
+    parameter or account values, provider detail, or filesystem paths.
+    """
+
+    code = serializers.CharField(read_only=True)
+    address = serializers.CharField(read_only=True)
+    category = serializers.CharField(read_only=True)
+    message = serializers.CharField(read_only=True)
+
+
+class ScenarioRealizabilitySerializer(serializers.Serializer):
+    """Backend realizability assessment for one catalog entry (ADR-034-R3).
+
+    Serializes the projection from ``cms.scenarios.realizability``. A negative
+    assessment is a successful response with ``outcome`` set and ``gaps``
+    populated -- non-realizability is a domain answer, not an HTTP error.
+    ``indeterminate`` means the assessment could not be completed and must never
+    be rendered as realizable.
+    """
+
+    scenario_id = serializers.CharField(read_only=True)
+    target_id = serializers.CharField(read_only=True, allow_blank=True)
+    outcome = serializers.CharField(read_only=True)
+    gaps = RealizabilityGapSerializer(many=True, read_only=True)

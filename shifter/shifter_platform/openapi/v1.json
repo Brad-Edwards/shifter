@@ -1466,6 +1466,68 @@
         ]
       }
     },
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/": {
+      "get": {
+        "operationId": "cms_scenario_editor_scenarios_realizability_retrieve",
+        "description": "Return the bounded realizability assessment, or 404 for an unknown scenario.\n\nA non-realizable or indeterminate result is a successful response with\ngaps -- the author needs to read them. Only an unknown scenario is an\nerror.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioRealizability"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      }
+    },
     "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
       "post": {
         "operationId": "cms_scenario_editor_scenarios_from_yaml_create",
@@ -16506,6 +16568,34 @@
           "value"
         ]
       },
+      "RealizabilityGap": {
+        "type": "object",
+        "description": "One bounded reason the backend cannot realize a scenario (ADR-034-R3).\n\n``code`` is the stable identifier clients switch on; ``message`` is prose for\nthe author and must never be parsed. Nothing here carries authored payloads,\nparameter or account values, provider detail, or filesystem paths.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "readOnly": true
+          },
+          "address": {
+            "type": "string",
+            "readOnly": true
+          },
+          "category": {
+            "type": "string",
+            "readOnly": true
+          },
+          "message": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "address",
+          "category",
+          "code",
+          "message"
+        ]
+      },
       "ResendInviteResult": {
         "type": "object",
         "description": "Confirmation returned after resetting and resending a participant invite.",
@@ -17083,6 +17173,37 @@
           "enabled",
           "scenario_id",
           "staff_only"
+        ]
+      },
+      "ScenarioRealizability": {
+        "type": "object",
+        "description": "Backend realizability assessment for one catalog entry (ADR-034-R3).\n\nSerializes the projection from ``cms.scenarios.realizability``. A negative\nassessment is a successful response with ``outcome`` set and ``gaps``\npopulated -- non-realizability is a domain answer, not an HTTP error.\n``indeterminate`` means the assessment could not be completed and must never\nbe rendered as realizable.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "target_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "outcome": {
+            "type": "string",
+            "readOnly": true
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RealizabilityGap"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "gaps",
+          "outcome",
+          "scenario_id",
+          "target_id"
         ]
       },
       "ScenarioSubnet": {

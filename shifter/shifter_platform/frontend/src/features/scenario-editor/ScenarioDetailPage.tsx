@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { EnabledBadge, SourceBadge, StaffOnlyBadge } from "./badges";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { downloadTextFile } from "./format";
+import { RealizabilityPanel } from "./RealizabilityPanel";
 import { scenarioEditPath, scenarioListPath, scenarioYamlEditPath } from "./routes";
 
 function Field({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
@@ -289,6 +290,9 @@ export function ScenarioDetailPage() {
 
       <OverviewCard scenario={scenario} />
       <AcesCard scenario={scenario} />
+      {/* ACES packs only: realizability is a backend-manifest question, and a
+          legacy scenario was never checked by the ACES ledger (ADR-034-R3). */}
+      <RealizabilityPanel scenarioId={scenarioId} enabled={Boolean(scenario.aces)} />
       <InstancesCard scenario={scenario} />
       <SubnetsCard scenario={scenario} />
 

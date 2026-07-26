@@ -29,7 +29,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from aces_image_resolver import resolve_from_candidates
+from shared.aces.image_policy import is_concrete_image_ref, resolve_from_candidates
+
 from config import GCERangeImageProfile
 
 if TYPE_CHECKING:
@@ -40,9 +41,8 @@ _DEFAULT_DISK_SIZE_GB = 30
 _DEFAULT_DISK_TYPE = "pd-balanced"
 _MIB_ALIGN = 256
 
-# Substrings that mark ``source.name`` as an already-concrete GCE image reference
-# (a full/partial self-link or family URL), eligible for passthrough.
-_CONCRETE_GCE_REF_MARKERS = ("projects/", "global/images/", "/images/family/", "https://")
+#: Registry provider key this builder realizes against.
+_GCE_PROVIDER = "gce"
 
 
 class AcesGceImageError(RuntimeError):
@@ -121,5 +121,9 @@ def _machine_type_from_resources(node: AcesPlanNode) -> str | None:
 
 
 def _is_concrete_gce_ref(name: str) -> bool:
-    """Return True when ``name`` is already a concrete GCE image ref (passthrough)."""
-    return any(marker in name for marker in _CONCRETE_GCE_REF_MARKERS)
+    """Return True when ``name`` is already a concrete GCE image ref (passthrough).
+
+    Delegates to the shared policy so editor realizability assessment and
+    realization apply one rule (#1581).
+    """
+    return is_concrete_image_ref(name, provider=_GCE_PROVIDER)

@@ -121,7 +121,16 @@ Current mechanisms:
   `github_repo` value is the canonical GitHub target for agent issue,
   PR, CI, and traceability operations. The optional `routing` block opts
   the repository into per-step `/implement` routing while keeping the
-  workflow's gate contract in `.gc/plan-rules.md`.
+  workflow's gate contract in `.gc/plan-rules.md`. Ground Control
+  validates `routing` strictly against exactly three keys — `enabled`,
+  `default_provider`, and `stages` — and rejects the whole file on any
+  other key. A `default_fallback` key was accepted when this block was
+  first written and was later removed upstream without a migration, so
+  it was dropped here (#1581); the value had no effect on either side by
+  then, and leaving it in place failed every `/implement` run in this
+  repository at configuration load. Routing stays advisory in all
+  modes: it annotates a capability tier for telemetry and never selects
+  which agent executes a step.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can
