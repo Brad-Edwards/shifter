@@ -434,7 +434,7 @@ class TestPhase4EffectivePrivileges:
 
 
 @pytest.mark.postgres
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestApplyRunsOnPostgres:
     """Exercise the locking path on the real backend.
 

@@ -450,7 +450,6 @@ class TestNgfwTerraformOrchestrationHelpers:
         mock_post_provision.assert_called_once_with(
             request_id="req-1",
             instance_id="inst-1",
-            app_id="app-1",
             output_data=mock_apply_ngfw.return_value,
             sls_region="americas",
             operation_id=None,
@@ -486,7 +485,6 @@ class TestNgfwTerraformOrchestrationHelpers:
         mock_post_provision.assert_called_once_with(
             request_id="req-1",
             instance_id="inst-1",
-            app_id="app-1",
             output_data=output_data,
             sls_region="americas",
             operation_id=None,
@@ -716,7 +714,6 @@ class TestRunPanOsPostProvision:
             _run_pan_os_post_provision(
                 request_id="req-1",
                 instance_id="inst-1",
-                app_id="app-1",
                 output_data={
                     "management_ip": "10.1.1.10",
                     "dataplane_ip": "10.1.2.10",

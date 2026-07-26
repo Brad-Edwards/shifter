@@ -88,7 +88,6 @@ def _run_gcp_ngfw_operation(
     operation: str,
     request_id: str,
     instance_uuid: str,
-    app_id: str,
     state: dict[str, Any],
     *,
     operation_id: str | None = None,
@@ -147,7 +146,6 @@ def _run_aws_ngfw_operation(
     operation: str,
     request_id: str,
     instance_uuid: str,
-    app_id: str,
     ec2_instance_id: str,
     *,
     operation_id: str | None = None,
@@ -244,7 +242,6 @@ def run_ngfw_operation(
     ngfw_data = get_ngfw_data_by_request_id(request_id)
     # Our UUID, not AWS instance ID
     instance_uuid = ngfw_data["instance_id"]
-    app_id = ngfw_data["app_id"]
     state = ngfw_data.get("state", {})
     provider = resolve_ngfw_attachment_config(state).cloud_provider
 
@@ -253,7 +250,6 @@ def run_ngfw_operation(
             operation,
             request_id,
             instance_uuid,
-            app_id,
             state,
             operation_id=operation_id,
             owning_operation=owning_operation,
@@ -270,7 +266,6 @@ def run_ngfw_operation(
         operation,
         request_id,
         instance_uuid,
-        app_id,
         ec2_instance_id,
         operation_id=operation_id,
         owning_operation=owning_operation,

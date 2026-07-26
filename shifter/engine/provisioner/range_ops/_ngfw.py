@@ -8,6 +8,7 @@ status to the database and event bus.
 from __future__ import annotations
 
 import logging
+from types import ModuleType
 from typing import Any
 
 from shared.operation_results import ResultStep
@@ -301,7 +302,7 @@ def _wait_for_ngfw_pause_to_complete(ngfw_info: dict[str, Any]) -> None:
 
 
 def _report_cascade(
-    _pkg,
+    _pkg: ModuleType,
     ngfw_info: dict[str, Any],
     status: str,
     *,

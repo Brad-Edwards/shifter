@@ -318,86 +318,112 @@ def _lock_operation_target(row: OperationResultInbox) -> Range | Instance | None
     return _lock_ngfw_instance(row.operation_id)
 
 
-def _dispatch(row: OperationResultInbox, step: ResultStep, payload: dict[str, Any], target: Range | Instance) -> str:
-    """Route one validated result to its domain write. Caller holds the lock."""
-    is_range_resource = row.resource in _RANGE_RESOURCES
+def _dispatch_range(row: OperationResultInbox, step: ResultStep, payload: dict[str, Any], target: Range) -> str:
+    """Apply a range-resource result. Caller holds the Range lock."""
     request_id = str(row.request_id)
+    if step in (ResultStep.RANGE_INSTANCES_PAUSED, ResultStep.RANGE_INSTANCES_READY):
+        return _apply_instances(target, payload, request_id)
+    if step is ResultStep.RANGE_TERMINAL_FAILED:
+        return _apply_failure(target, payload, request_id, is_range=True)
+    if step in (ResultStep.RANGE_TERMINAL_PAUSED, ResultStep.RANGE_TERMINAL_READY):
+        return _apply_range_terminal(target, payload, request_id)
+    return _dispatch_cascade(target, payload, request_id)
 
-    if is_range_resource:
-        range_obj = cast("Range", target)
-        if step in (ResultStep.RANGE_INSTANCES_PAUSED, ResultStep.RANGE_INSTANCES_READY):
-            return _apply_instances(range_obj, payload, request_id)
-        if step is ResultStep.RANGE_TERMINAL_FAILED:
-            return _apply_failure(range_obj, payload, request_id, is_range=True)
-        if step in (ResultStep.RANGE_TERMINAL_PAUSED, ResultStep.RANGE_TERMINAL_READY):
-            return _apply_range_terminal(range_obj, payload, request_id)
-        # NGFW cascade steps are subordinate results of the Range generation.
-        ngfw = _resolve_cascade_ngfw(range_obj, payload)
-        new_status = payload["status"]
-        if new_status in (ResourceStatus.PAUSING.value, ResourceStatus.PAUSED.value) and (
-            _other_attached_range_needs_ngfw(range_obj, ngfw)
-        ):
-            raise _NotApplicable("another attached range still needs this NGFW")
-        _apply_ngfw(ngfw, new_status, request_id)
-        return f"ngfw cascade -> {new_status}"
 
-    ngfw = cast("Instance", target)
+def _dispatch_cascade(range_obj: Range, payload: dict[str, Any], request_id: str) -> str:
+    """Apply an NGFW cascade step, a subordinate result of the Range generation."""
+    ngfw = _resolve_cascade_ngfw(range_obj, payload)
+    new_status = payload["status"]
+    pausing = new_status in (ResourceStatus.PAUSING.value, ResourceStatus.PAUSED.value)
+    if pausing and _other_attached_range_needs_ngfw(range_obj, ngfw):
+        raise _NotApplicable("another attached range still needs this NGFW")
+    _apply_ngfw(ngfw, new_status, request_id)
+    return f"ngfw cascade -> {new_status}"
+
+
+def _dispatch_ngfw(row: OperationResultInbox, step: ResultStep, payload: dict[str, Any], target: Instance) -> str:
+    """Apply a direct NGFW-resource result. Caller holds the Instance lock."""
+    request_id = str(row.request_id)
     if step is ResultStep.NGFW_TERMINAL_FAILED:
-        return _apply_failure(ngfw, payload, request_id, is_range=False)
-    if str(ngfw.uuid) != payload["ngfw_instance_uuid"]:
+        return _apply_failure(target, payload, request_id, is_range=False)
+    if str(target.uuid) != payload["ngfw_instance_uuid"]:
         raise _NotApplicable("result NGFW does not match the operation target")
-    _apply_ngfw(ngfw, payload["status"], request_id)
+    _apply_ngfw(target, payload["status"], request_id)
     return f"ngfw -> {payload['status']}"
 
 
-def apply_validated_result(row: OperationResultInbox) -> tuple[str, str]:
-    """Apply one admissible inbox row to domain state. Returns ``(disposition, detail)``.
+def _dispatch(row: OperationResultInbox, step: ResultStep, payload: dict[str, Any], target: Range | Instance) -> str:
+    """Route one validated result to its domain write. Caller holds the lock."""
+    if row.resource in _RANGE_RESOURCES:
+        return _dispatch_range(row, step, payload, cast("Range", target))
+    return _dispatch_ngfw(row, step, payload, cast("Instance", target))
 
-    The caller supplies the transaction; every write this makes is rolled back
-    with it. Deterministic refusals (invalid, conflicting, out-of-order, not
-    applicable) return a disposition and mutate nothing. Transient failures
-    propagate so the row stays retryable.
+
+class _Rejected(Exception):
+    """A deterministic refusal carrying the disposition to record."""
+
+    def __init__(self, disposition: str, detail: str) -> None:
+        super().__init__(detail)
+        self.disposition = disposition
+        self.detail = detail[:128]
+
+
+def _admit(row: OperationResultInbox) -> tuple[ResultStep, dict[str, Any]]:
+    """Return the step and parsed payload, or raise ``_Rejected``.
+
+    Raising rather than returning a verdict per check keeps the caller to a
+    single exit and keeps each guard a one-liner.
     """
     from engine.models import OperationResultDisposition
 
     try:
         envelope = validate_operation_envelope(row.envelope)
     except OperationEnvelopeError as exc:
-        return OperationResultDisposition.REJECTED_INVALID, str(exc)[:128]
+        raise _Rejected(OperationResultDisposition.REJECTED_INVALID, str(exc)) from None
 
     mismatch = _discriminator_mismatch(row, envelope)
     if mismatch:
-        return OperationResultDisposition.REJECTED_INVALID, mismatch
+        raise _Rejected(OperationResultDisposition.REJECTED_INVALID, mismatch)
 
     # Families not yet cut over stay in shadow: they have no authoritative
     # contract here and direct provisioner SQL is still their sole writer, so
-    # applying (or rejecting) them would be wrong. Phase 4 migrates the
-    # pause/resume + NGFW family only.
+    # applying (or rejecting) them would be wrong.
     if not has_contract(row.resource, row.operation):
-        return OperationResultDisposition.VALIDATED, "shadow: family not yet cut over"
+        raise _Rejected(OperationResultDisposition.VALIDATED, "shadow: family not yet cut over")
     if not row.result_step:
-        return OperationResultDisposition.VALIDATED, "shadow: result predates the step contract"
+        raise _Rejected(OperationResultDisposition.VALIDATED, "shadow: result predates the step contract")
 
     try:
         step = ResultStep(row.result_step)
         if result_kind_for(row.resource, row.operation, step=step) != row.result_kind:
-            return OperationResultDisposition.REJECTED_INVALID, "result_kind does not match the declared step"
+            raise _Rejected(OperationResultDisposition.REJECTED_INVALID, "result_kind does not match the declared step")
         payload = parse_result_payload(row.resource, row.operation, step=step, payload=envelope["payload"])
     except ValueError:
-        return OperationResultDisposition.REJECTED_INVALID, f"unknown result step '{row.result_step}'"[:128]
+        raise _Rejected(
+            OperationResultDisposition.REJECTED_INVALID, f"unknown result step '{row.result_step}'"
+        ) from None
     except OperationResultError as exc:
-        return OperationResultDisposition.REJECTED_INVALID, str(exc)[:128]
+        raise _Rejected(OperationResultDisposition.REJECTED_INVALID, str(exc)) from None
+    return step, payload
 
-    # Take the generation's row lock BEFORE deciding conflict or ordering. Every
-    # result for one operation resolves to the same target, so this serializes
-    # sibling results: without it two appliers can each read an empty applied
-    # history and both decide they may apply.
+
+def _lock_and_authorize(row: OperationResultInbox, step: ResultStep) -> Range | Instance | None:
+    """Lock the generation's target and check conflict + ordering under that lock.
+
+    Returns None when the row should stay PENDING for a later pass. Raises
+    ``_Rejected`` for a deterministic refusal.
+    """
+    from engine.models import OperationResultDisposition
+
+    # Lock BEFORE deciding conflict or ordering. Every result for one operation
+    # resolves to the same target, so this serializes sibling results: without it
+    # two appliers can each read an empty applied history and both apply.
     target = _lock_operation_target(row)
     if target is None:
-        return OperationResultDisposition.REJECTED_STALE, "operation generation is no longer current"
+        raise _Rejected(OperationResultDisposition.REJECTED_STALE, "operation generation is no longer current")
 
     if _has_conflicting_sibling(row):
-        return (
+        raise _Rejected(
             OperationResultDisposition.REJECTED_CONFLICT,
             "another result for this step carries a different payload",
         )
@@ -405,19 +431,33 @@ def apply_validated_result(row: OperationResultInbox) -> tuple[str, str]:
     # Do not advance past a still-pending earlier sibling. Claiming order is
     # created_at, but skip_locked lets a worker reach a later result first;
     # applying it would make the earlier step arrive "late" and be rejected.
-    # Leaving this row PENDING lets the next pass take them in order.
     if _has_earlier_pending_sibling(row):
-        return "", ""
+        return None
 
     previous_step = latest_step(row.resource, row.operation, _applied_steps(row))
     if not step_follows(row.resource, row.operation, previous=previous_step, step=step):
-        return (
-            OperationResultDisposition.REJECTED_ORDERING,
-            f"step may not follow '{previous_step}'"[:128],
-        )
+        raise _Rejected(OperationResultDisposition.REJECTED_ORDERING, f"step may not follow '{previous_step}'")
+    return target
+
+
+def apply_validated_result(row: OperationResultInbox) -> tuple[str, str]:
+    """Apply one admissible inbox row to domain state. Returns ``(disposition, detail)``.
+
+    The caller supplies the transaction; every write this makes is rolled back
+    with it. Deterministic refusals return a disposition and mutate nothing.
+    An empty disposition means "leave PENDING for a later pass". Transient
+    failures propagate so the row stays retryable.
+    """
+    from engine.models import OperationResultDisposition
 
     try:
+        step, payload = _admit(row)
+        target = _lock_and_authorize(row, step)
+        if target is None:
+            return "", ""
         detail = _dispatch(row, step, payload, target)
+    except _Rejected as rejection:
+        return rejection.disposition, rejection.detail
     except _NotApplicable as exc:
         return OperationResultDisposition.REJECTED_OWNERSHIP, str(exc)[:128]
     return OperationResultDisposition.APPLIED, detail[:128]

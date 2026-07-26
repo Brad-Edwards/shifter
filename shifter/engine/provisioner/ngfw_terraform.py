@@ -334,7 +334,6 @@ def _run_pan_os_post_provision(
     *,
     request_id: str,
     instance_id: str,
-    app_id: str,
     output_data: dict[str, Any],
     sls_region: str,
     operation_id: str | None = None,
@@ -438,7 +437,6 @@ def _run_provision(
     _run_pan_os_post_provision(
         request_id=request_id,
         instance_id=instance_id,
-        app_id=app_id,
         output_data=output_data,
         sls_region=sls_region,
         operation_id=operation_id,
@@ -492,7 +490,6 @@ def _run_gdc_provision(
     _run_pan_os_post_provision(
         request_id=request_id,
         instance_id=instance_id,
-        app_id=app_id,
         output_data=output_data,
         sls_region=sls_region,
         operation_id=operation_id,

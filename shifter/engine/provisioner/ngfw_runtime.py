@@ -39,7 +39,11 @@ from provisioner_db_ngfw import get_user_ngfw_data
 logger = logging.getLogger(__name__)
 
 
-def update_instance_state(
+# S107: each parameter carries a distinct part of the reported result --
+# identity, generation, step, status, normalized state, diagnostic. Collapsing
+# them into a parameter object would obscure the call sites, which are the
+# thing a reader needs to check against the step contract.
+def update_instance_state(  # NOSONAR
     request_id: str,
     status: str,
     *,

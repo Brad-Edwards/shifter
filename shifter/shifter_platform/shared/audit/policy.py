@@ -177,7 +177,9 @@ def audit_log_from_request(
     )
 
 
-def audit_log_system_event(  # NOSONAR: adds one optional emission control to an existing shared signature
+# S107: every parameter is load-bearing for an audit row; `strict` is the one
+# addition, and the alternative (a parameter object) would churn every caller.
+def audit_log_system_event(  # NOSONAR
     entity_type: str,
     entity_id: int,
     action: str,
