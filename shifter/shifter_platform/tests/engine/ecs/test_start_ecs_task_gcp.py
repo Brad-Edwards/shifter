@@ -28,7 +28,6 @@ GCP_ENV = {
     "DB_NAME": "shifter",
     "DB_USER": "shifter",
     "DB_PASSWORD": "secret",
-    "RANGE_EVENTS_TOPIC_ID": "projects/shifter-gcp-dev/topics/shifter-gcp-dev-events",
     "RANGE_NETWORK_ID": "projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range",
     "RANGE_NETWORK_CIDR": "10.50.0.0/16",
     "PORTAL_NETWORK_CIDRS": "10.40.0.0/20,10.44.0.0/16",
@@ -212,6 +211,9 @@ class TestGcpProvisionerEnvOverrides:
         assert "GDC_WINDOWS_ADMIN_PASSWORD" not in overrides
         assert "GDC_KALI_PASSWORD" not in overrides
         assert "GDC_UBUNTU_PASSWORD" not in overrides
+        # Range-event topic binding was removed from the provisioner (#1839).
+        assert "RANGE_EVENTS_TOPIC_ID" not in overrides
+        assert "SNS_RANGE_EVENTS_ARN" not in overrides
         # The deployment-scoped DC domain password is still forwarded.
         assert overrides["DC_DOMAIN_PASSWORD"] == GCP_ENV["DC_DOMAIN_PASSWORD"]
 

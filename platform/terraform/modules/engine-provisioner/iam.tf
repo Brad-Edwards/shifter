@@ -835,9 +835,7 @@ resource "aws_iam_role_policy" "vpc_endpoints" {
 # Task Role Policy - Runtime Writes
 # ------------------------------------------------------------------------------
 # Provisioner needs write access to bootstrap/* prefix for NGFW init-cfg.txt,
-# authcodes, and other bootstrap configuration files. It also publishes range
-# lifecycle events to SNS. Keep these together so SCP-constrained accounts that
-# require inline policies stay under IAM's aggregate inline-role policy limit.
+# authcodes, and other bootstrap configuration files.
 
 resource "aws_iam_role_policy" "s3_bootstrap" {
   name = "s3-bootstrap-write"
@@ -854,29 +852,6 @@ resource "aws_iam_role_policy" "s3_bootstrap" {
           "s3:GetObjectTagging"
         ]
         Resource = "${var.agent_s3_bucket_arn}/bootstrap/*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = "sns:Publish"
-        Resource = var.sns_topic_arn
-      },
-      {
-        # The range-events topic is encrypted with the portal messaging CMK.
-        # SNS Publish calls fail unless the publishing task role can use that
-        # CMK through the SNS service path.
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt",
-          "kms:DescribeKey",
-          "kms:GenerateDataKey"
-        ]
-        Resource = var.sns_kms_key_arn
-        Condition = {
-          StringEquals = {
-            "kms:CallerAccount" = local.account_id
-            "kms:ViaService"    = "sns.${local.region}.amazonaws.com"
-          }
-        }
       }
     ]
   })

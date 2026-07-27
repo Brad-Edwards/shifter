@@ -5,7 +5,6 @@ Split out of ``provisioner_db.py`` (Sonar S104), following the same convention a
 optional-cursor append helpers for the two async-processing tables the provisioner
 writes to:
 
-* ``engine_range_event_outbox`` (#476) via :func:`enqueue_event_outbox`;
 * ``engine_operation_result_inbox`` (ADR-043 Phase 2, #1834) via
   :func:`append_operation_result`.
 
@@ -54,46 +53,6 @@ class OperationRef:
     operation_id: str | None = None
 
 
-_EVENT_OUTBOX_INSERT_SQL = """
-    INSERT INTO engine_range_event_outbox
-        (event_id, event_type, payload, status, attempts, max_attempts,
-         next_attempt_at, created_at)
-    VALUES
-        (%s, %s, %s, 'PENDING', 0, 10, NOW(), NOW())
-    ON CONFLICT (event_id) DO NOTHING
-"""
-
-
-def enqueue_event_outbox(event: dict[str, object], *, cur: psycopg.Cursor[tuple[object, ...]] | None = None) -> None:
-    """Insert an event into the transactional outbox for durable delivery.
-
-    When ``cur`` is provided the INSERT is executed on that cursor and the caller
-    owns the surrounding transaction/commit (atomic with the state change). When
-    ``cur`` is None a new connection is opened, the row is inserted, and the
-    connection is committed immediately. ``ON CONFLICT (event_id) DO NOTHING``
-    makes the call idempotent.
-
-    Args:
-        event: Full event dict; must contain ``event_id`` and ``event_type``.
-        cur:   Optional psycopg cursor sharing the caller's transaction.
-
-    Raises:
-        Exception: Any DB error is re-raised -- callers must learn when durable
-            recording fails.
-    """
-    params = (str(event["event_id"]), event["event_type"], json.dumps(event))
-
-    if cur is not None:
-        cur.execute(_EVENT_OUTBOX_INSERT_SQL, params)
-    else:
-        from provisioner_db import get_db_connection
-
-        with get_db_connection() as conn:
-            with conn.cursor() as _cur:
-                _cur.execute(_EVENT_OUTBOX_INSERT_SQL, params)
-            conn.commit()
-
-
 _APPEND_OPERATION_RESULT_INSERT_SQL = """
     INSERT INTO engine_operation_result_inbox
         (operation_id, request_id, resource, operation, contract_version,
@@ -137,10 +96,9 @@ def append_operation_result(
 ) -> None:
     """Append a best-effort, versioned result to the operation result inbox.
 
-    Mirrors :func:`enqueue_event_outbox`'s optional-cursor idiom: when ``cur`` is
-    provided the INSERT rides the caller's transaction (wrapped in a SAVEPOINT so a
-    shadow failure cannot poison it); when ``cur`` is None a dedicated connection
-    is opened and committed immediately.
+    When ``cur`` is provided the INSERT rides the caller's transaction (wrapped in
+    a SAVEPOINT so a shadow failure cannot poison it); when ``cur`` is None a
+    dedicated connection is opened and committed immediately.
 
     ``result_identity`` is deterministic per operation generation + result kind
     (``f"{operation_id}:{result_kind}"``), so a retried provisioner run replays
