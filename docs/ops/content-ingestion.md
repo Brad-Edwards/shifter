@@ -110,15 +110,30 @@ conformance is promoted out of band by a trusted conformance process. A
 registered pack may remain review-only or non-realizable, and launchability
 continues to be decided by the registry.
 
-## Image-optional packs and parameterized runs
+## Artifact requirements, image-optional packs, and parameterized runs
 
 Image-bearing is optional (ADR-034). A pack whose SDL declares no VM image
 `source` is valid content: it imports through the same registration service,
 appears in the catalog, and is not failed by realizability merely for lacking
-images. Image count is never a realizability proxy. Absence of an authored image
-is not the same as "always launchable": a source-less VM still needs the backend
-to supply a base OS at realization (the tenant-managed ACES image registry), and
-a scenario whose plan requires an unsupported backend term still fails closed.
+images. Image count is never a realizability proxy.
+
+For each artifact concern, Shifter preserves the RAES author posture:
+
+- an exact artifact must resolve to that artifact and cannot be replaced by a
+  "close enough" catalog entry or a newly built image;
+- a constrained concern may use only a candidate satisfying every bound;
+- an open concern may be delegated only when the selected backend declares the
+  corresponding realization capability; and
+- an absent concern is not an implicit image or bake request.
+
+An artifact already present in the tenant, a published release artifact,
+backend composition, and an explicitly permitted preparation specification are
+possible satisfaction mechanisms, not a required or exhaustive menu. Pulling is
+an acquisition operation, while baking is one possible preparation operation;
+they are not opposite semantic choices. Absence of an authored image is not the
+same as "always launchable": a source-less VM may still need the backend to
+supply a base OS at realization, and a scenario whose plan requires an
+unsupported backend term still fails closed.
 
 A scenario's runs may be parameterized through ACES SDL `variables`: the
 multi-run experiment unit over one scenario/profile. Shifter represents a

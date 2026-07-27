@@ -981,3 +981,59 @@ resource "aws_autoscaling_lifecycle_hook" "terminate" {
   heartbeat_timeout      = var.termination_drain_timeout
   default_result         = "CONTINUE"
 }
+
+# Capacity-aware provisioning reads (PLAT-201, #680). The portal assesses an
+# event's declared capacity against observed provider headroom before spinup.
+# These grants are read-only by construction and deliberately separate from the
+# provisioner's launch permissions: observing a quota must never imply the
+# ability to consume it.
+#
+# servicequotas:GetServiceQuota and cloudwatch:GetMetricData have no
+# resource-level scoping, so Resource = "*" is the API's own shape rather than a
+# widened grant; the boundary is that both actions are read-only and neither can
+# mutate quota or metric state.
+resource "aws_iam_role_policy" "capacity_inventory_read" {
+  name = "capacity-inventory-read"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "servicequotas:GetServiceQuota",
+          "servicequotas:ListServiceQuotas",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:GetMetricData"]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+# Cross-account headroom reads (Polaris "Account B" overflow pattern). Created
+# only when a deployment actually declares overflow partitions, and scoped to
+# the exact role ARNs it declares -- no account wildcard, so adding an account
+# to the trust path is a reviewed configuration change.
+resource "aws_iam_role_policy" "capacity_inventory_assume" {
+  count = length(var.capacity_inventory_read_role_arns) > 0 ? 1 : 0
+
+  name = "capacity-inventory-assume"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["sts:AssumeRole"]
+        Resource = var.capacity_inventory_read_role_arns
+      }
+    ]
+  })
+}

@@ -34,7 +34,7 @@ from provisioner_db import (
     write_provisioned_state,
 )
 from provisioner_db_appends import OperationRef
-from range_operation_binding import (
+from range_backend_resolution import (
     assert_provision_route,
     prerequisite_error,
     resolve_operation_backend,
@@ -225,7 +225,7 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
     # persisted Range ownership (#1666). Reused for dispatch and, on a provision
     # failure, for the compensation destroy -- never re-resolved from the env
     # selector after a failure.
-    operation_backend = resolve_operation_backend(range_data, operation)
+    operation_backend = resolve_operation_backend(range_data, operation, operation_id)
     # The trusted purpose travels with the binding (#1354). It is provision-only
     # authority: destroy never parses it, so a damaged or forward-version value
     # cannot strand owned resources. A provision must also still take the route

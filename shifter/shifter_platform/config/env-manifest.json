@@ -78,6 +78,31 @@
       "source_file": "config/_browser_security.py"
     },
     {
+      "default": "'shifter-capacity-read'",
+      "name": "CAPACITY_INVENTORY_ROLE_NAME",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "CAPACITY_PLANNING_CATALOG",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "CAPACITY_PLANNING_DEFAULT_PARTITION",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
+      "default": "'False'",
+      "name": "CAPACITY_PLANNING_ENABLED",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
+      "default": "'Shifter/CapacityPlanning'",
+      "name": "CAPACITY_PLANNING_METRICS_NAMESPACE",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
       "default": "'aws'",
       "name": "CLOUD_PROVIDER",
       "source_file": "config/_cloud.py"

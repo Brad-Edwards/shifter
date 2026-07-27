@@ -1,14 +1,17 @@
-"""Per-operation range ownership binding: which backend and purpose this operation runs under.
+"""Resolve the per-operation GCP range backend binding (#1666, ADR-043).
 
-Extracted from ``terraform_ops`` (Sonar S104) when issue #1354 added purpose
-resolution beside the #1666 backend resolution. Everything here answers one
-question -- what did the platform admit for this range, and does the current
-deployment still match it -- before any provider call is made.
+Split out of ``terraform_ops.py`` (Sonar S104). This is the ownership question
+asked once at operation start: which backend does this range actually belong to?
 
-The binding is read from the locked Engine row projected by ``provisioner_db``.
-It is never taken from argv, the Job environment, scenario content, or a
-caller-supplied argument, and it is never re-derived from the mutable
-``GCP_RANGE_BACKEND`` selector after admission (ADR-030 / ADR-039).
+The evidence itself lives Engine-side now -- ADR-043 phase 5 (#1837) moved the
+``engine_instance.state`` sweep there, since the Engine owns those rows -- so
+this module reads only the normalized outcome off the immutable operation
+input. It never guesses from the mutable ``GCP_RANGE_BACKEND`` selector: after a
+``gdc -> gce`` flip that would strand a legacy range.
+
+It also hosts :func:`prerequisite_error`, the ADR-039 fail-closed denial builder,
+because that lives naturally beside the ``PREREQUISITE_DENIAL_CODE`` policy
+constant it wraps and is shared with ``terraform_ops``.
 """
 
 from __future__ import annotations
@@ -25,9 +28,16 @@ from shared.range_instantiation_policy import (
 
 from cloud.exceptions import CloudError
 from config import get_gcp_range_backend, resolve_cloud_provider
-from range_backend_evidence import resolve_legacy_range_backend
+from provisioner_db_operation_input import OperationInputError, get_operation_input
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "assert_provision_route",
+    "prerequisite_error",
+    "resolve_operation_backend",
+    "resolve_provision_purpose",
+]
 
 
 def prerequisite_error(message: str) -> CloudError:
@@ -37,19 +47,20 @@ def prerequisite_error(message: str) -> CloudError:
     return error
 
 
-def _resolve_legacy_gcp_backend(range_data: dict[str, Any]) -> str:
+def _resolve_legacy_gcp_backend(range_data: dict[str, Any], operation_id: str | None) -> str:
     """Resolve a GCP range with no persisted binding from durable ownership evidence (#1666).
 
     A pre-#1666 (legacy) range carries no ownership binding. On destroy/reconcile
     we must never guess the backend from the mutable env selector -- after a
-    ``gdc -> gce`` flip that would strand the range. Resolve only from durable,
-    ownership-proven evidence (provider/asset discriminants persisted on the
-    range's ``engine_instance.state`` rows, or an explicit operator backfill of
-    the binding). An ambiguous or evidence-free row fails closed with a
+    ``gdc -> gce`` flip that would strand the range. The evidence is the
+    provider/asset discriminant persisted on the range's ``engine_instance.state``
+    rows; ADR-043 phase 5 (#1837) moved that evaluation to the Engine, which owns
+    those rows, so only the normalized outcome crosses the operation boundary.
+    An ambiguous, evidence-free, or unavailable outcome fails closed with a
     ``prerequisite`` diagnostic and retains its cleanup state for explicit repair.
     """
     request_id = range_data["request_id"]
-    resolved = resolve_legacy_range_backend(request_id)
+    resolved = _legacy_backend_from_operation_input(operation_id, request_id)
     if resolved is not None:
         logger.info(
             "Resolved legacy GCP range backend from ownership evidence request_id=%s backend=%s",
@@ -65,7 +76,31 @@ def _resolve_legacy_gcp_backend(range_data: dict[str, Any]) -> str:
     )
 
 
-def resolve_operation_backend(range_data: dict[str, Any], operation: str) -> str | None:
+def _legacy_backend_from_operation_input(operation_id: str | None, request_id: str) -> str | None:
+    """Return the Engine-resolved legacy backend for this generation, or None.
+
+    The input is bound to BOTH halves of the generation identity: an operation id
+    from another request must not be able to supply the backend that routes this
+    range's teardown. Returns ``None`` -- which the caller turns into a
+    fail-closed ``prerequisite`` denial -- when there is no canonical generation
+    to read an input for, when the input cannot be read or does not belong to
+    this request, or when the Engine could not prove the backend. Guessing from
+    the mutable selector is exactly what #1666 forbids.
+    """
+    if not operation_id:
+        return None
+    try:
+        validated = get_operation_input(
+            operation_id=operation_id, request_id=request_id, resource="range", operation="destroy"
+        )
+    except OperationInputError:
+        logger.warning("Operation input unavailable for legacy backend resolution; failing closed")
+        return None
+    backend = validated.payload.get("legacy_range_backend")
+    return str(backend) if backend else None
+
+
+def resolve_operation_backend(range_data: dict[str, Any], operation: str, operation_id: str | None) -> str | None:
     """Resolve the per-operation GCP range backend from persisted ownership (#1666).
 
     Returns the normalized write-once binding when present; ``None`` for non-GCP
@@ -83,7 +118,7 @@ def resolve_operation_backend(range_data: dict[str, Any], operation: str) -> str
     # destroy/reconcile of a legacy range must resolve from durable evidence.
     if resolve_cloud_provider() != "gcp" or operation != "destroy":
         return None
-    return _resolve_legacy_gcp_backend(range_data)
+    return _resolve_legacy_gcp_backend(range_data, operation_id)
 
 
 def resolve_provision_purpose(range_data: dict[str, Any], operation: str) -> InstantiationPurpose:

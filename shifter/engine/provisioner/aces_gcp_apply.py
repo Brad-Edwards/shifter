@@ -339,7 +339,7 @@ def apply_aces_range_cell(
     """Provision an ACES GCE range cell and return provisioner outputs.
 
     ``delivery_bindings`` are the byte-free #1564 delivery bindings for the
-    range (``provisioner_db_aces.get_aces_content_delivery_bindings_by_request_id``);
+    range, carried on the immutable operation-input projection (#1837);
     ``None``/empty is the common case of a plan with no source-backed content.
     """
     runtime = _apply_runtime(options or AcesGceApplyOptions())

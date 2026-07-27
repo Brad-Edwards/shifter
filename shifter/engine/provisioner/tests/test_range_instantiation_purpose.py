@@ -21,37 +21,37 @@ from shared.range_instantiation_policy import (
 
 class TestResolveProvisionPurpose:
     def test_persisted_purpose_is_parsed(self):
-        import range_operation_binding
+        import range_backend_resolution
 
-        resolved = range_operation_binding.resolve_provision_purpose({"instantiation_purpose": "non_user_demo"}, "up")
+        resolved = range_backend_resolution.resolve_provision_purpose({"instantiation_purpose": "non_user_demo"}, "up")
         assert resolved is InstantiationPurpose.NON_USER_DEMO
 
     def test_null_binding_defaults_to_live_fire(self):
         # Legacy pre-#1666 and non-GCP rows carry NULL; the strictest reading of
         # "no recorded purpose" is live-fire, so an unbound row gains nothing.
-        import range_operation_binding
+        import range_backend_resolution
 
-        assert range_operation_binding.resolve_provision_purpose({}, "up") is InstantiationPurpose.LIVE_FIRE
-        assert range_operation_binding.resolve_provision_purpose({"instantiation_purpose": None}, "up") is (
+        assert range_backend_resolution.resolve_provision_purpose({}, "up") is InstantiationPurpose.LIVE_FIRE
+        assert range_backend_resolution.resolve_provision_purpose({"instantiation_purpose": None}, "up") is (
             InstantiationPurpose.LIVE_FIRE
         )
 
     def test_unknown_purpose_fails_a_provision_closed(self):
-        import range_operation_binding
+        import range_backend_resolution
         from cloud.exceptions import CloudError
 
         with pytest.raises(CloudError) as exc:
-            range_operation_binding.resolve_provision_purpose({"instantiation_purpose": "bas"}, "up")
+            range_backend_resolution.resolve_provision_purpose({"instantiation_purpose": "bas"}, "up")
         assert exc.value.code == PREREQUISITE_DENIAL_CODE
 
     def test_destroy_never_parses_the_purpose(self):
         # Purpose is provision-only authority. Teardown routes solely from
         # persisted backend ownership (#1666), so a damaged or forward-version
         # purpose value must never strand owned resources.
-        import range_operation_binding
+        import range_backend_resolution
 
         assert (
-            range_operation_binding.resolve_provision_purpose({"instantiation_purpose": "bas"}, "destroy")
+            range_backend_resolution.resolve_provision_purpose({"instantiation_purpose": "bas"}, "destroy")
             is InstantiationPurpose.LIVE_FIRE
         )
 
@@ -91,35 +91,35 @@ class TestProvisionRouteMatchesTheAdmittedBinding:
     """A selector flip after CMS admission must not silently re-route a provision."""
 
     def test_mismatched_binding_fails_closed(self):
-        import range_operation_binding
+        import range_backend_resolution
         from cloud.exceptions import CloudError
 
         with (
             patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gce"}, clear=True),
             pytest.raises(CloudError) as exc,
         ):
-            range_operation_binding.assert_provision_route("gdc", "up")
+            range_backend_resolution.assert_provision_route("gdc", "up")
         assert exc.value.code == PREREQUISITE_DENIAL_CODE
 
     def test_matching_binding_is_allowed(self):
-        import range_operation_binding
+        import range_backend_resolution
 
         with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True):
-            range_operation_binding.assert_provision_route("gdc", "up")
+            range_backend_resolution.assert_provision_route("gdc", "up")
 
     def test_destroy_is_not_gated_by_the_current_selector(self):
         # Teardown routes from ownership (#1666); an owned GDC range must still be
         # destroyable after the deploy selector flips to gce.
-        import range_operation_binding
+        import range_backend_resolution
 
         with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gce"}, clear=True):
-            range_operation_binding.assert_provision_route("gdc", "destroy")
+            range_backend_resolution.assert_provision_route("gdc", "destroy")
 
     def test_unbound_and_non_gcp_ranges_are_unaffected(self):
-        import range_operation_binding
+        import range_backend_resolution
 
         with patch.dict(os.environ, {"CLOUD_PROVIDER": "aws"}, clear=True):
-            range_operation_binding.assert_provision_route(None, "up")
+            range_backend_resolution.assert_provision_route(None, "up")
 
 
 class TestApplyRangeHonorsThePersistedPurpose:

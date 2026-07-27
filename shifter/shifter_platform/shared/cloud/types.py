@@ -7,7 +7,10 @@ right methods satisfies the protocol, no explicit inheritance required.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from shared.capacity import CapacityMetricSpec, ObservationResult, PartitionRef
 
 
 @runtime_checkable
@@ -156,3 +159,18 @@ class EventBus(Protocol):
         message: str,
         attributes: dict[str, str] | None = None,
     ) -> None: ...
+
+
+@runtime_checkable
+class CapacityInventory(Protocol):
+    """Protocol for read-only capacity observation (Service Quotas, Cloud Monitoring, etc.).
+
+    Implementations answer "what is the limit and current usage for this metric
+    in this partition" and never mutate provider state. They degrade rather than
+    raise: an unreachable provider, a malformed payload, or a metric with no
+    adapter mapping returns an :class:`~shared.capacity.ObservationResult` whose
+    ``observation`` is ``None`` and whose ``reason_code`` says why, so the
+    pre-spinup path cannot be broken by a capacity read.
+    """
+
+    def observe(self, spec: CapacityMetricSpec, partition: PartitionRef) -> ObservationResult: ...
