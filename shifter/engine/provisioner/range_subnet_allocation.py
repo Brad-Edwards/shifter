@@ -137,15 +137,22 @@ def _release_subnet_allocations_best_effort(request_id: str, *, operation_id: st
     is capacity nobody can allocate and nobody is using, so it needs an operator
     signal rather than a swallowed exception.
     """
+    # The failure class is captured and logged outside the handler on purpose:
+    # ``logger.exception`` would attach a full stack trace, and raw exception
+    # bodies must not cross this boundary (ADR-043-R5). The type name alone is
+    # enough for an operator to act on a leaked reservation.
+    failure: str | None = None
     try:
         from components.network import release_range_subnets
 
         release_range_subnets(operation_id=operation_id, request_id=request_id)
     except Exception as e:
+        failure = type(e).__name__
+    if failure is not None:
         logger.error(
             "Failed to release subnet reservations for request %s; capacity may be leaked: %s",
             request_id,
-            type(e).__name__,
+            failure,
         )
 
 

@@ -185,8 +185,10 @@ class TestRetryIdentity:
         operation_id, request_id, _ = _seed_range()
         reserve_subnet_cidrs(_request(operation_id, request_id))
 
+        candidate = _request(operation_id, request_id, subnets=("0:a", "1:b", "2:c"))
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(operation_id, request_id, subnets=("0:a", "1:b", "2:c")))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_CONFLICT in str(exc.value)
         assert SubnetAllocation.objects.filter(request_id=request_id).count() == 2
@@ -198,8 +200,10 @@ class TestRetryIdentity:
         operation_id, request_id, _ = _seed_range()
         first = reserve_subnet_cidrs(_request(operation_id, request_id))
 
+        candidate = _request(operation_id, request_id, network_id="range-network-other")
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(operation_id, request_id, network_id="range-network-other"))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_CONFLICT in str(exc.value)
         assert SubnetAllocation.objects.filter(request_id=request_id).count() == len(first)
@@ -208,8 +212,10 @@ class TestRetryIdentity:
         operation_id, request_id, _ = _seed_range()
         reserve_subnet_cidrs(_request(operation_id, request_id))
 
+        candidate = _request(operation_id, request_id, prefix_length=24)
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(operation_id, request_id, prefix_length=24))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_CONFLICT in str(exc.value)
 
@@ -220,15 +226,19 @@ class TestGenerationFencing:
         # against the Range's current generation rather than trust it.
         _, request_id, _ = _seed_range(current=False)
 
+        candidate = _request(str(uuid4()), request_id)
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(str(uuid4()), request_id))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_STALE_GENERATION in str(exc.value)
         assert not SubnetAllocation.objects.filter(request_id=request_id).exists()
 
     def test_an_unknown_request_cannot_reserve(self):
+        candidate = _request(str(uuid4()), str(uuid4()))
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(str(uuid4()), str(uuid4())))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_UNKNOWN_OPERATION in str(exc.value)
 
@@ -369,8 +379,10 @@ class TestOperationKindAuthorization:
     def test_a_destroy_generation_cannot_reserve(self):
         operation_id, request_id, _ = _seed_range(operation="destroy")
 
+        candidate = _request(operation_id, request_id)
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(operation_id, request_id))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_OPERATION_NOT_PERMITTED in str(exc.value)
         assert not SubnetAllocation.objects.filter(request_id=request_id).exists()
@@ -411,8 +423,10 @@ class TestOperationKindAuthorization:
         operation_id, request_id, _ = _seed_range()
         OperationInput.objects.filter(request_id=request_id).delete()
 
+        candidate = _request(operation_id, request_id)
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(operation_id, request_id))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_UNKNOWN_OPERATION in str(exc.value)
 
@@ -427,8 +441,10 @@ class TestRetryShapeIdentity:
         operation_id, request_id, _ = _seed_range()
         reserve_subnet_cidrs(_request(operation_id, request_id, subnets=("0:attack", "1:victim")))
 
+        candidate = _request(operation_id, request_id, subnets=("0:victim", "1:attack"))
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(operation_id, request_id, subnets=("0:victim", "1:attack")))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_CONFLICT in str(exc.value)
 
@@ -436,8 +452,10 @@ class TestRetryShapeIdentity:
         operation_id, request_id, _ = _seed_range()
         reserve_subnet_cidrs(_request(operation_id, request_id))
 
+        candidate = _request(operation_id, request_id, network_cidr="10.2.0.0/16")
+
         with pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request(operation_id, request_id, network_cidr="10.2.0.0/16"))
+            reserve_subnet_cidrs(candidate)
 
         assert REASON_CONFLICT in str(exc.value)
 

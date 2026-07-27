@@ -246,6 +246,17 @@ def _require_observations(value: object) -> tuple[str, ...]:
     return tuple(str(network) for network in sorted(networks))
 
 
+def _require_subnet_label(value: object) -> str:
+    """Return one authored subnet identity, or raise a contract error."""
+    if not isinstance(value, str) or not value or len(value) > MAX_SUBNET_LABEL_LENGTH:
+        raise SubnetCoordinationError("each subnet identity must be a non-empty bounded string")
+    # Control characters would let one label forge a field boundary in the
+    # newline-separated fingerprint.
+    if any(char < " " or char == "\x7f" for char in value):
+        raise SubnetCoordinationError("subnet identities must not contain control characters")
+    return value
+
+
 def _require_subnets(value: object) -> tuple[str, ...]:
     """Return the ordered authored subnet identities, or raise a contract error.
 
@@ -257,19 +268,22 @@ def _require_subnets(value: object) -> tuple[str, ...]:
     if not value or len(value) > MAX_SUBNET_COUNT:
         raise SubnetCoordinationError(f"subnets must contain between 1 and {MAX_SUBNET_COUNT} entries")
 
-    labels: list[str] = []
-    for entry in value:
-        if not isinstance(entry, str) or not entry or len(entry) > MAX_SUBNET_LABEL_LENGTH:
-            raise SubnetCoordinationError("each subnet identity must be a non-empty bounded string")
-        # Control characters would let one label forge a field boundary in the
-        # newline-separated fingerprint.
-        if any(char < " " or char == "\x7f" for char in entry):
-            raise SubnetCoordinationError("subnet identities must not contain control characters")
-        labels.append(entry)
-
+    labels = tuple(_require_subnet_label(entry) for entry in value)
     if len(set(labels)) != len(labels):
         raise SubnetCoordinationError("subnet identities must be unique within a reservation")
-    return tuple(labels)
+    return labels
+
+
+def _require_prefix_length(value: object, network: ipaddress.IPv4Network) -> int:
+    """Return a supported prefix length carvable from ``network``."""
+    prefix = _require_bounded_int(value, "prefix_length", 0, 32)
+    if prefix not in SUPPORTED_PREFIX_LENGTHS:
+        raise SubnetCoordinationError(
+            f"prefix_length must be one of: {', '.join(str(p) for p in sorted(SUPPORTED_PREFIX_LENGTHS))}"
+        )
+    if prefix < network.prefixlen:
+        raise SubnetCoordinationError("prefix_length must not be shorter than the network it is carved from")
+    return prefix
 
 
 def build_reservation_request(
@@ -281,7 +295,6 @@ def build_reservation_request(
     prefix_length: object,
     subnets: object,
     observed_cidrs: object = (),
-    contract_version: str = COORDINATION_CONTRACT_VERSION,
 ) -> SubnetReservationRequest:
     """Validate and normalize one reservation request.
 
@@ -291,26 +304,17 @@ def build_reservation_request(
             generation: without it the routine cannot fence the reservation to a
             current, Engine-authorized episode.
     """
-    if contract_version not in ACCEPTED_COORDINATION_VERSIONS:
-        raise SubnetCoordinationError(
-            f"contract_version must be one of: {', '.join(sorted(ACCEPTED_COORDINATION_VERSIONS))}"
-        )
-
     if not isinstance(network_id, str) or not network_id or len(network_id) > MAX_NETWORK_ID_LENGTH:
         raise SubnetCoordinationError("network_id must be a non-empty identifier")
 
     network = _require_network(network_cidr, "network_cidr")
-    prefix = _require_bounded_int(prefix_length, "prefix_length", 0, 32)
-    if prefix not in SUPPORTED_PREFIX_LENGTHS:
-        raise SubnetCoordinationError(
-            f"prefix_length must be one of: {', '.join(str(p) for p in sorted(SUPPORTED_PREFIX_LENGTHS))}"
-        )
-    if prefix < network.prefixlen:
-        raise SubnetCoordinationError("prefix_length must not be shorter than the network it is carved from")
+    prefix = _require_prefix_length(prefix_length, network)
 
     normalized_subnets = _require_subnets(subnets)
     return SubnetReservationRequest(
-        contract_version=contract_version,
+        # The producer always emits the version it was built with; a caller does
+        # not get to choose one, so it is not a parameter.
+        contract_version=COORDINATION_CONTRACT_VERSION,
         operation_id=_require_uuid(operation_id, "operation_id"),
         request_id=_require_uuid(request_id, "request_id"),
         network_id=network_id,

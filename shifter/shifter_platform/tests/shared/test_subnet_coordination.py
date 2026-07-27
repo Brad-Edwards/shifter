@@ -63,71 +63,97 @@ class TestBuildReservationRequest:
         assert isinstance(req.request_id, str)
 
     def test_rejects_a_non_uuid_operation_id(self):
+        candidate = _request(operation_id="not-a-uuid")
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(operation_id="not-a-uuid"))
+            build_reservation_request(**candidate)
 
     def test_rejects_a_missing_operation_id(self):
         # Fail closed: the preflight forbids a missing-operation fallback, so an
         # absent generation must not silently reserve untracked capacity.
+        candidate = _request(operation_id=None)
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(operation_id=None))
+            build_reservation_request(**candidate)
 
     def test_rejects_an_unsupported_prefix_length(self):
         assert 26 not in SUPPORTED_PREFIX_LENGTHS
+        candidate = _request(prefix_length=26)
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(prefix_length=26))
+            build_reservation_request(**candidate)
 
     def test_rejects_an_empty_subnet_list(self):
+        candidate = _request(subnets=[])
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(subnets=[]))
+            build_reservation_request(**candidate)
 
     def test_rejects_an_oversized_subnet_list(self):
+        candidate = _request(subnets=[f"{i}:s" for i in range(MAX_SUBNET_COUNT + 1)])
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(subnets=[f"{i}:s" for i in range(MAX_SUBNET_COUNT + 1)]))
+            build_reservation_request(**candidate)
 
     def test_rejects_duplicate_subnet_identities(self):
+        candidate = _request(subnets=["0:attack", "0:attack"])
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(subnets=["0:attack", "0:attack"]))
+            build_reservation_request(**candidate)
 
     def test_rejects_control_characters_in_a_subnet_identity(self):
         # The fingerprint is newline-separated, so a label carrying one could
         # forge a field boundary and collide with a different request shape.
+        candidate = _request(subnets=["0:attack\n1:victim", "2:dmz"])
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(subnets=["0:attack\n1:victim", "2:dmz"]))
+            build_reservation_request(**candidate)
 
     def test_rejects_an_empty_network_id(self):
+        candidate = _request(network_id="")
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(network_id=""))
+            build_reservation_request(**candidate)
 
     def test_rejects_a_non_canonical_network_cidr(self):
         # 10.1.0.1/16 has host bits set; accepting it would let the routine
         # derive candidates from a network the caller never actually named.
+        candidate = _request(network_cidr="10.1.0.1/16")
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(network_cidr="10.1.0.1/16"))
+            build_reservation_request(**candidate)
 
     def test_rejects_a_non_ipv4_network_cidr(self):
+        candidate = _request(network_cidr="2001:db8::/32")
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(network_cidr="2001:db8::/32"))
+            build_reservation_request(**candidate)
 
     def test_rejects_a_prefix_length_shorter_than_the_network(self):
         # A /28 request inside a /28 network is fine; a /24 request inside a /28
         # network cannot be satisfied and must fail at the contract, not by
         # returning an empty batch.
+        candidate = _request(network_cidr="10.1.2.0/28", prefix_length=24)
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(network_cidr="10.1.2.0/28", prefix_length=24))
+            build_reservation_request(**candidate)
 
     def test_rejects_a_malformed_observation(self):
         # Malformed observations fail closed rather than being skipped: silently
         # dropping one would let the allocator hand out a CIDR the provider is
         # already using.
+        candidate = _request(observed_cidrs=["10.1.2.0/28", "not-a-cidr"])
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(observed_cidrs=["10.1.2.0/28", "not-a-cidr"]))
+            build_reservation_request(**candidate)
 
     def test_rejects_too_many_observations(self):
+        candidate = _request(
+            observed_cidrs=[f"10.1.{i // 16}.{(i % 16) * 16}/28" for i in range(MAX_OBSERVED_CIDRS + 1)]
+        )
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(
-                **_request(observed_cidrs=[f"10.1.{i // 16}.{(i % 16) * 16}/28" for i in range(MAX_OBSERVED_CIDRS + 1)])
-            )
+            build_reservation_request(**candidate)
 
     def test_accepts_no_observations(self):
         req = build_reservation_request(**_request(observed_cidrs=[]))
@@ -138,8 +164,10 @@ class TestBuildReservationRequest:
         # "010.1.2.0" is ambiguous (octal or decimal), so it is rejected rather
         # than normalized -- guessing an interpretation here would decide which
         # network the allocator treats as occupied.
+        candidate = _request(observed_cidrs=["010.001.002.000/28"])
+
         with pytest.raises(SubnetCoordinationError):
-            build_reservation_request(**_request(observed_cidrs=["010.001.002.000/28"]))
+            build_reservation_request(**candidate)
 
     def test_deduplicates_observations(self):
         req = build_reservation_request(**_request(observed_cidrs=["10.1.2.0/28", "10.1.2.0/28"]))
@@ -204,7 +232,10 @@ class TestReservationShapeFingerprint:
         return reservation_shape_fingerprint(**base)
 
     def test_is_stable_for_an_identical_request(self):
-        assert self._fingerprint() == self._fingerprint()
+        first = self._fingerprint()
+        second = self._fingerprint()
+
+        assert first == second
 
     def test_changes_with_the_base_network_cidr(self):
         # Same count, different base network: returning the first batch here
