@@ -38,10 +38,19 @@ For a GCP product-path validation, invoke the same management command inside
 the deployed portal:
 
 ```bash
+bash scripts/smoke-test-gcp.sh --variant linux
+```
+
+Or directly via kubectl:
+
+```bash
 kubectl -n shifter-platform exec deployment/portal-web -c portal -- \
   env SMOKE_TEST_USER_EMAIL=smoke-dev@example.com \
   python manage.py run_post_deploy_smoke --variant linux
 ```
+
+The CI `post-deploy-smoke` job in `.github/workflows/_gcp-dev.yml` runs
+`scripts/smoke-test-gcp.sh` after a successful gcp-dev deploy (#1638).
 
 Do not substitute a direct provisioner/backend call: accepted evidence must
 show the CMS-created `smoke_linux` range reached READY, the SSH probe succeeded,
