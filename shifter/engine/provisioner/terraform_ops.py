@@ -28,6 +28,7 @@ from events import (
     publish_ready,
     publish_status_update,
 )
+from gcp_range_cell_scenario import validate_legacy_gce_composition
 from instance_orchestrator import run_instance_setup
 from provisioner_db import (
     get_range_data_by_request_id,
@@ -238,9 +239,10 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
         remote_access_capability = _resolve_remote_access_capability(range_data, operation)
         # Verify the producer-minted artifact before any NGFW or provider
         # operation. Other backends retain their existing legacy payload path.
-        scenario_artifact = (
-            validate_scenario_artifact(range_data.get("spec_envelope")) if is_gce_range_cell_backend() else None
-        )
+        uses_gce = operation_backend == "gce" if operation_backend is not None else is_gce_range_cell_backend()
+        scenario_artifact = validate_scenario_artifact(range_data.get("spec_envelope")) if uses_gce else None
+        if operation == "up" and scenario_artifact is not None:
+            validate_legacy_gce_composition(scenario_artifact, backend=operation_backend)
 
         if range_spec.get("ngfw", False):
             _ensure_ngfw_ready_for_provisioning(range_id, user_id)
@@ -304,7 +306,8 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
 
     # Reservation produces an operation-local realization of the authored spec.
     # ``range_spec`` itself stays authored intent and is never written back
-    # (ADR-043-R6).
+    # (ADR-043-R6), so the backend no longer decides whether to persist it --
+    # nothing persists it.
     realized_spec = _reserve_range_subnet_cidrs(
         request_id,
         range_spec,
@@ -321,13 +324,20 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         user_id,
         realized_spec,
         scenario_artifact,
+        backend=operation.backend,
         remote_access_capability=remote_access_capability,
     )
 
     # Run the provider-routed apply, carrying the trusted purpose so the
     # provisioner's defense-in-depth policy denial sees real persisted state
-    # rather than an unconditional live-fire default (#1354).
-    output_data = range_terraform_runner.apply_range(request_id, provision_variables, purpose=operation.purpose)
+    # rather than an unconditional live-fire default (#1354), and the persisted
+    # backend so selector changes cannot reroute the operation (#1666).
+    output_data = range_terraform_runner.apply_range(
+        request_id,
+        provision_variables,
+        purpose=operation.purpose,
+        backend=operation.backend,
+    )
     vpn_access_binding = (
         finalize_openvpn_access(
             vpn_preparation,

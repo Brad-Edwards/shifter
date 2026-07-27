@@ -161,8 +161,9 @@ class TestRangeOperationCarriesThePurpose:
 
         seen = {}
 
-        def _fake_apply(request_uuid, variables, *, purpose=InstantiationPurpose.LIVE_FIRE):
+        def _fake_apply(request_uuid, variables, *, purpose=InstantiationPurpose.LIVE_FIRE, backend=None):
             seen["purpose"] = purpose
+            seen["backend"] = backend
             raise RuntimeError("stop after the policy-bearing call")
 
         monkeypatch.setattr(terraform_ops.range_terraform_runner, "apply_range", _fake_apply)
@@ -176,12 +177,14 @@ class TestRangeOperationCarriesThePurpose:
             range_id=1,
             user_id=2,
             range_spec={},
+            backend="gdc",
             purpose=InstantiationPurpose.OPERATOR_VALIDATION,
         )
         with pytest.raises(RuntimeError, match="stop after"):
             terraform_ops._run_terraform_provision(operation)
 
         assert seen["purpose"] is InstantiationPurpose.OPERATOR_VALIDATION
+        assert seen["backend"] == "gdc"
 
     def test_purpose_defaults_to_live_fire(self):
         import terraform_ops

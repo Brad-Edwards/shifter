@@ -205,6 +205,8 @@ def test_invalid_persisted_artifact_fails_before_ngfw_or_provider_work(monkeypat
                 "user_id": 7,
                 "spec": malformed_envelope["payload"],
                 "spec_envelope": malformed_envelope,
+                "range_backend": "gce",
+                "instantiation_purpose": "live_fire",
             }
         ),
     )
@@ -246,6 +248,8 @@ def test_valid_persisted_artifact_is_bound_before_operation_dispatch(monkeypatch
                 "user_id": 7,
                 "spec": artifact["payload"],
                 "spec_envelope": artifact,
+                "range_backend": "gce",
+                "instantiation_purpose": "live_fire",
             }
         ),
     )
