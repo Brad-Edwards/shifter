@@ -168,7 +168,7 @@ class TestRangeOperationCarriesThePurpose:
 
         monkeypatch.setattr(terraform_ops.range_terraform_runner, "apply_range", _fake_apply)
         monkeypatch.setattr(terraform_ops, "publish_status_update", lambda **kwargs: None)
-        monkeypatch.setattr(terraform_ops, "_allocate_range_subnet_cidrs", lambda *a, **k: {})
+        monkeypatch.setattr(terraform_ops, "_reserve_range_subnet_cidrs", lambda *a, **k: {})
         monkeypatch.setattr(terraform_ops, "_build_operation_variables", lambda *a, **k: {})
         monkeypatch.setattr(terraform_ops, "is_gce_range_cell_backend", lambda: False)
 

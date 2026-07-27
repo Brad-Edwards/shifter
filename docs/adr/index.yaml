@@ -2347,6 +2347,7 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/478",
       "docs/architecture/provisioner-persistence-boundary-preflight-478.md",
+      "docs/architecture/provisioner-subnet-coordination-preflight-1838.md",
       "docs/architecture/gcp-provisioner-launch-boundary-preflight-1518.md",
       "docs/architecture/range-event-delivery-preflight-476.md",
       "shifter/shifter_platform/engine/launch_intents.py",

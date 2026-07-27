@@ -42,10 +42,10 @@ from range_backend_resolution import (
     resolve_provision_purpose,
 )
 from range_subnet_allocation import (
-    _allocate_range_subnet_cidrs,
     _post_destroy_cleanup,
-    _recover_missing_subnet_cidrs,
+    _realized_range_spec_for_destroy,
     _release_subnet_allocations_best_effort,
+    _reserve_range_subnet_cidrs,
 )
 from state_helpers import _validate_provisioned_outputs
 from terraform_ngfw_range import (
@@ -166,7 +166,7 @@ def _attempt_terraform_auto_cleanup(operation: RangeOperation) -> None:
                 _cleanup_openvpn_if_enabled(operation.range_id, operation.request_id, delete_identity=False)
             except Exception:
                 logger.exception("Failed to revoke OpenVPN generation during provision compensation")
-    _release_subnet_allocations_best_effort(operation.request_id)
+    _release_subnet_allocations_best_effort(operation.request_id, operation_id=operation.operation_id)
 
 
 def _dispatch_terraform_operation(kind: str, operation: RangeOperation) -> None:
@@ -304,22 +304,25 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         else None
     )
 
-    uses_gce = operation.backend == "gce" if operation.backend is not None else is_gce_range_cell_backend()
-    spec_subnets = _allocate_range_subnet_cidrs(
+    # Reservation produces an operation-local realization of the authored spec.
+    # ``range_spec`` itself stays authored intent and is never written back
+    # (ADR-043-R6), so the backend no longer decides whether to persist it --
+    # nothing persists it.
+    realized_spec = _reserve_range_subnet_cidrs(
         request_id,
-        range_id,
         range_spec,
-        persist_to_scenario=not uses_gce,
+        operation_id=operation.operation_id,
     )
+    spec_subnets = realized_spec.get("subnets", [])
 
-    # Build backend-appropriate range variables from the range spec (now with
-    # CIDRs). GCE range cells receive a closed request around the persisted
-    # scenario artifact; AWS receives Terraform variables.
+    # Build backend-appropriate range variables from the realized spec. GCE range
+    # cells receive a closed request around the persisted scenario artifact; AWS
+    # receives Terraform variables.
     provision_variables = _build_operation_variables(
         request_id,
         range_id,
         user_id,
-        range_spec,
+        realized_spec,
         scenario_artifact,
         backend=operation.backend,
         remote_access_capability=remote_access_capability,
@@ -371,7 +374,7 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         request_id=request_id,
         range_id=range_id,
         user_id=user_id,
-        range_spec=range_spec,
+        range_spec=realized_spec,
         spec_subnets=spec_subnets,
         subnets_output=subnets_output,
     )
@@ -431,7 +434,9 @@ def _run_terraform_destroy(operation: RangeOperation) -> None:
         return
 
     _remove_ngfw_attachments_for_destroy(user_id, range_id, range_spec)
-    _recover_missing_subnet_cidrs(range_id, range_spec)
+    # Authored intent never carried CIDRs; teardown uses the ones this range
+    # actually holds.
+    realized_spec = _realized_range_spec_for_destroy(request_id, range_spec, operation_id=operation.operation_id)
 
     logger.info("Running terraform destroy for range...")
     terraform_succeeded = False
@@ -440,7 +445,7 @@ def _run_terraform_destroy(operation: RangeOperation) -> None:
             request_id,
             range_id,
             user_id,
-            range_spec,
+            realized_spec,
             scenario_artifact,
             backend,
             remote_access_capability,

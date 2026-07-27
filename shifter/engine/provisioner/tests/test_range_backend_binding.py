@@ -356,11 +356,9 @@ class TestProvisionRoutesFromBinding:
 
         import terraform_ops
 
-        allocate = MagicMock(return_value=[])
         build_variables = MagicMock(return_value=_range_cell_variables())
         apply = MagicMock(return_value={"subnets": {}, "instances": []})
         monkeypatch.setattr(terraform_ops, "publish_status_update", MagicMock())
-        monkeypatch.setattr(terraform_ops, "_allocate_range_subnet_cidrs", allocate)
         monkeypatch.setattr(terraform_ops, "_build_operation_variables", build_variables)
         monkeypatch.setattr(terraform_ops.range_terraform_runner, "apply_range", apply)
         monkeypatch.setattr(terraform_ops, "_validate_provisioned_outputs", MagicMock())
@@ -386,7 +384,9 @@ class TestProvisionRoutesFromBinding:
 
         terraform_ops._run_terraform_provision(operation)
 
-        assert allocate.call_args.kwargs["persist_to_scenario"] is False
+        # The range has no authored subnets, so reservation short-circuits and
+        # needs no stand-in. Nothing writes realized CIDRs back to the scenario
+        # any more (ADR-043-R6), so there is no persistence flag to thread.
         assert build_variables.call_args.kwargs["backend"] == "gce"
         apply.assert_called_once_with(
             "req-1",

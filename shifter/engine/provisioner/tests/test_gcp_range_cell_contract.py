@@ -279,7 +279,7 @@ def test_reloaded_gce_range_can_destroy_without_scenario_cidrs(monkeypatch):
     }
     destroy = MagicMock()
     monkeypatch.setattr("terraform_ops.get_range_data_by_request_id", MagicMock(return_value=range_data))
-    monkeypatch.setattr("components.network.get_allocated_cidrs", MagicMock(return_value=[]))
+    monkeypatch.setattr("components.network.read_range_subnets", MagicMock(return_value=()))
     monkeypatch.setattr("terraform_ops.range_terraform_runner.destroy_range", destroy)
     monkeypatch.setattr("terraform_ops.range_terraform_runner.cleanup_range_state", MagicMock())
     monkeypatch.setattr("terraform_ops._remove_ngfw_attachments_for_destroy", MagicMock())
@@ -295,25 +295,29 @@ def test_reloaded_gce_range_can_destroy_without_scenario_cidrs(monkeypatch):
     assert destroy_request["scenario_artifact"] == artifact
 
 
-def test_gce_cidr_allocation_does_not_rewrite_scenario_content(monkeypatch):
+def test_cidr_reservation_does_not_rewrite_authored_scenario_content(monkeypatch):
+    """Reservation realizes CIDRs for the operation without touching authored intent.
+
+    Previously this held only for the GCE backend, via a ``persist_to_scenario``
+    flag; after #1838 authored intent is never rewritten for any backend, so the
+    realized spec must be a separate object from the one passed in.
+    """
     from config import RangeNetworkConfig
-    from terraform_ops import _allocate_range_subnet_cidrs
+    from terraform_ops import _reserve_range_subnet_cidrs
 
     range_spec = {"scenario_id": "scenario-a", "subnets": [{"name": "attack", "uuid": "subnet-a"}]}
-    persist = MagicMock()
-    monkeypatch.setattr("range_subnet_allocation._update_range_config", persist)
     monkeypatch.setattr(
         "range_subnet_allocation.load_range_network_config",
         MagicMock(return_value=RangeNetworkConfig("range-vpc", "10.50.0.0/16", "us-central1")),
     )
-    monkeypatch.setattr("components.network.allocate_subnets", MagicMock(return_value=["10.50.2.0/28"]))
+    monkeypatch.setattr("components.network.reserve_range_subnets", MagicMock(return_value=("10.50.2.0/28",)))
 
-    subnets = _allocate_range_subnet_cidrs(
+    realized = _reserve_range_subnet_cidrs(
         "request-a",
-        42,
         range_spec,
-        persist_to_scenario=False,
+        operation_id="11111111-1111-4111-8111-111111111111",
     )
 
-    assert subnets[0]["cidr"] == "10.50.2.0/28"
-    persist.assert_not_called()
+    assert realized["subnets"][0]["cidr"] == "10.50.2.0/28"
+    # The authored spec the operation was launched with is left as it was found.
+    assert "cidr" not in range_spec["subnets"][0]

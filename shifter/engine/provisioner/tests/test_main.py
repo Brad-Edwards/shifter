@@ -3,6 +3,7 @@
 Only tests for pure logic - no mock-heavy integration tests.
 """
 
+import importlib
 import json
 import sys
 from contextlib import contextmanager
@@ -20,18 +21,108 @@ from shared.operation_results import ResultStep
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+class _FakeCoordinationBoundary:
+    """Stands in for the database driver and the cloud SDK, nothing above them.
+
+    Subnet reservation reaches an Engine-owned database routine, so it cannot run
+    for real in a unit test. Patching the two genuine process boundaries --
+    ``psycopg.connect`` and ``boto3.client`` -- rather than the first-party
+    reservation helper keeps the whole provisioner-side path in the test: the
+    connection factory, the provider observation, the closed contract, and the
+    result parser all execute (ADR-019-R1).
+    """
+
+    def __init__(self, subnet_cidr: str):
+        self._subnet_cidr = subnet_cidr
+        self._rows: list[tuple[int, str]] = []
+
+    # -- cloud SDK boundary -------------------------------------------------
+    def describe_subnets(self, **_kwargs):
+        return {"Subnets": []}
+
+    def put_metric_data(self, **_kwargs):
+        return None
+
+    def __call__(self, service_name, **_kwargs):
+        return self
+
+    # -- database driver boundary -------------------------------------------
+    def connect(self, **_kwargs):
+        return self
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def execute(self, _sql, params=None):
+        # The reserve statement carries the requested count; hand back exactly
+        # that many ordered rows so the contract's all-or-nothing check is real.
+        count = params[6] if params and len(params) > 6 else 1
+        self._rows = [(1, self._subnet_cidr)] + [(i + 1, f"10.255.{i}.0/28") for i in range(1, count)]
+
+    def fetchall(self):
+        return self._rows
+
+    def fetchone(self):
+        return (len(self._rows),)
+
+    def commit(self):
+        return None
+
+
+class _FakeSubnetworksClient:
+    """Compute Engine subnetworks client stand-in (the real GCP SDK boundary)."""
+
+    def list(self, **_kwargs):
+        return []
+
+
 @contextmanager
 def _provision_env(provider: str, subnet_cidr: str):
     """Shared provision-time patches for ``_run_terraform_provision`` tests.
 
-    Consolidates the ``CLOUD_PROVIDER`` env override and the subnet-allocation
-    boundary patch. ``allocate_subnets`` takes a DB table lock, so it cannot run
-    unmocked in a unit test; keeping the patch in one place also keeps the
-    first-party-internal patch target to a single occurrence (ADR-019-R1).
+    The GCP case routes the network observation down the GCE range-cell branch so
+    the provider adapter bottoms out at the Compute SDK rather than a
+    secret-backed GDC kubeconfig. ``_run_terraform_provision`` never consults the
+    backend selector itself, so this only decides which SDK the inventory reaches.
     """
+    boundary = _FakeCoordinationBoundary(subnet_cidr)
+    env = {
+        "CLOUD_PROVIDER": provider,
+        "AWS_REGION": "us-east-2",
+        "DB_HOST": "db.internal",
+        "DB_PORT": "5432",
+        "DB_USER": "shifter",
+        "DB_NAME": "shifter",
+        "DB_PASSWORD": "local-dev",
+    }
+    if provider == "gcp":
+        env |= {
+            "GCP_RANGE_BACKEND": "gce",
+            "GCP_PROJECT_ID": "test-project",
+            "GCP_REGION": "us-central1",
+        }
+    compute = SimpleNamespace(SubnetworksClient=_FakeSubnetworksClient)
+    real_import_module = importlib.import_module
+
+    def _import_module(name, *args, **kwargs):
+        # Patch the stdlib import itself rather than the first-party helper that
+        # wraps it: the helper is bound into the adapter module at its import,
+        # so patching it would only take effect depending on import order.
+        if name == "google.cloud.compute_v1":
+            return compute
+        return real_import_module(name, *args, **kwargs)
+
     with (
-        patch.dict("os.environ", {"CLOUD_PROVIDER": provider}, clear=True),
-        patch("components.network.allocate_subnets", return_value=[subnet_cidr]),
+        patch.dict("os.environ", env, clear=True),
+        patch("psycopg.connect", boundary.connect),
+        patch("boto3.client", boundary),
+        patch("importlib.import_module", _import_module),
     ):
         yield
 
@@ -619,7 +710,6 @@ class TestGdcProvisioning:
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("cluster1", "10.200.0.0/24", "us-central1")),
         )
-        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 42, "subnets": range_spec["subnets"]}),
@@ -635,8 +725,12 @@ class TestGdcProvisioning:
             MagicMock(return_value={"ngfw_instance_id": None}),
         )
         monkeypatch.setattr("terraform_ops.publish_ready", MagicMock())
+        # Real request/operation identities: subnet reservation is fenced on both,
+        # so a placeholder string would not reach the coordination boundary.
+        request_id = str(uuid4())
+        operation_id = str(uuid4())
         with _provision_env("gcp", "10.200.0.96/28"):
-            _run_terraform_provision(RangeOperation("req-123", 42, 7, range_spec))
+            _run_terraform_provision(RangeOperation(request_id, 42, 7, range_spec, operation_id=operation_id))
 
         mock_setup.assert_called_once_with(
             instances_output=terraform_output["instances"],
@@ -650,7 +744,7 @@ class TestGdcProvisioning:
             instances=terraform_output["instances"],
             ngfw_instance_id=None,
             vpn_access_binding=None,
-            operation=OperationRef(request_id="req-123", operation_id=None),
+            operation=OperationRef(request_id=request_id, operation_id=operation_id),
         )
 
     def test_run_terraform_provision_threads_polaris_agent_role_arn_from_output(self, monkeypatch):
@@ -704,7 +798,6 @@ class TestGdcProvisioning:
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("vpc-9", "10.9.0.0/16", "us-east-2")),
         )
-        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 9, "subnets": range_spec["subnets"]}),
@@ -720,8 +813,9 @@ class TestGdcProvisioning:
             MagicMock(return_value={"ngfw_instance_id": None}),
         )
         monkeypatch.setattr("terraform_ops.publish_ready", MagicMock())
+        request_id = str(uuid4())
         with _provision_env("aws", "10.9.0.0/28"):
-            _run_terraform_provision(RangeOperation("req-9", 9, 2, range_spec))
+            _run_terraform_provision(RangeOperation(request_id, 9, 2, range_spec, operation_id=str(uuid4())))
 
         mock_setup.assert_called_once_with(
             instances_output=terraform_output["instances"],
@@ -791,7 +885,6 @@ class TestGdcProvisioning:
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("vpc-vpn", "10.9.0.0/16", "us-east-2")),
         )
-        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 42, "subnets": range_spec["subnets"]}),
@@ -818,6 +911,7 @@ class TestGdcProvisioning:
                     7,
                     range_spec,
                     remote_access_capability=capability,
+                    operation_id=str(uuid4()),
                 )
             )
 

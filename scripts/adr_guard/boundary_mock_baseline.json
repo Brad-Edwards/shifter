@@ -677,28 +677,13 @@
     },
     {
       "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "components.network.allocate_subnets"
-    },
-    {
-      "count": 1,
       "path": "shifter/engine/provisioner/tests/test_network_component.py",
       "target": "cloud.get_db_auth"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_network_component.py",
-      "target": "components.network._get_db_connection"
     },
     {
       "count": 1,
       "path": "shifter/engine/provisioner/tests/test_network_component.py",
       "target": "components.network._get_network_inventory"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_network_component.py",
-      "target": "components.network.psycopg.connect"
     },
     {
       "count": 2,
