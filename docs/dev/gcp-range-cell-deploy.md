@@ -35,10 +35,11 @@ New GCP ranges persist the admitted `range_backend` and
 `instantiation_purpose` as write-once Engine ownership state. Destroy and
 provision, including artifact validation, variable shaping, configuration
 loading, and provision-failure compensation, route from that per-range binding.
-Changing the deploy-wide selector therefore changes admission for later
-requests; it does not reclassify an existing or in-flight range. Both the legacy
-RangeSpec and ACES lifecycle paths require the persisted `gce`/`live_fire`
-binding and fail closed if it is absent or incompatible.
+Changing the deploy-wide selector does not reclassify an existing range:
+teardown continues to route from persisted ownership. A provision whose binding
+no longer matches the selector fails closed rather than silently re-routing.
+Both the legacy RangeSpec and ACES lifecycle paths require a valid persisted
+backend/purpose pair and fail closed if it is absent or incompatible.
 
 Legacy ranges created before the binding was introduced may have NULL ownership
 fields. Their destroy path resolves only from durable instance-state evidence;
@@ -49,12 +50,15 @@ selector is known, an operator can repair the row with
 and retry. Do not switch selectors and then infer a legacy range's owner from
 its scenario name, topology, or the backend that happens to be healthy.
 
-The environment setting is admission input for new ranges, not scenario
-metadata or ownership evidence for existing ones. The policy introduced by
-#1354 decides which requests may use each backend. Once a request has been
-admitted to the GCP VM range-cell contract, the provisioner refuses to route it
-to GDC, GKE, or the legacy Terraform path; an operator must not treat `gdc` as a
-per-request fallback for a contract-tagged live-fire user range.
+The environment setting is an operator/backend-policy input for new
+provisioning, not scenario metadata or ownership evidence for teardown. The
+closed range-instantiation policy decides which launches may use each backend;
+see
+`docs/technical/platform_infrastructure/range-instantiation-policy.md`. Once a
+request has been admitted to the GCP VM range-cell contract, the
+provisioner refuses to route it to GDC, GKE, or the legacy Terraform path; an
+operator must not treat `gdc` as a per-request fallback for a contract-tagged
+live-fire user range.
 
 ## Scenario-to-cell contract
 

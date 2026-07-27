@@ -19,15 +19,25 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE, normalize_gcp_range_backend
+from shared.range_instantiation_policy import (
+    PREREQUISITE_DENIAL_CODE,
+    InstantiationPurpose,
+    normalize_gcp_range_backend,
+    parse_instantiation_purpose,
+)
 
 from cloud.exceptions import CloudError
-from config import resolve_cloud_provider
+from config import get_gcp_range_backend, resolve_cloud_provider
 from provisioner_db_operation_input import OperationInputError, get_operation_input
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["prerequisite_error", "resolve_operation_backend"]
+__all__ = [
+    "assert_provision_route",
+    "prerequisite_error",
+    "resolve_operation_backend",
+    "resolve_provision_purpose",
+]
 
 
 def prerequisite_error(message: str) -> CloudError:
@@ -111,3 +121,45 @@ def resolve_operation_backend(range_data: dict[str, Any], operation: str, operat
             "This GCP range has no persisted backend ownership binding; retry the launch after admission"
         )
     return _resolve_legacy_gcp_backend(range_data, operation_id)
+
+
+def resolve_provision_purpose(range_data: dict[str, Any], operation: str) -> InstantiationPurpose:
+    """Resolve the trusted instantiation purpose for a provision (#1354).
+
+    Purpose is *provision-only* authority: it gates new cloud mutation and is not
+    read anywhere on the teardown path. Destroy therefore never parses it and
+    returns the ``RangeOperation`` default unexamined -- teardown routes solely
+    from persisted backend ownership (#1666), so a damaged, forward-version, or
+    rolled-back purpose value can never strand owned resources.
+
+    On a provision, a NULL binding (legacy pre-#1666 and non-GCP rows) resolves to
+    live-fire, the strictest reading of "no recorded purpose", and an unrecognized
+    stored value is a ``prerequisite`` fault rather than a reason to guess.
+    """
+    if operation != "up":
+        return InstantiationPurpose.LIVE_FIRE
+    try:
+        return parse_instantiation_purpose(range_data.get("instantiation_purpose"))
+    except ValueError as exc:
+        raise prerequisite_error(f"This range's persisted instantiation purpose is not a known value: {exc}") from exc
+
+
+def assert_provision_route(backend: str | None, operation: str) -> None:
+    """Refuse to provision when the binding no longer matches the deploy selector (#1354).
+
+    CMS admitted a specific (backend, purpose) pair and the Engine persisted it.
+    If the deploy-wide ``GCP_RANGE_BACKEND`` selector has since changed, the
+    provision route would no longer be the one policy approved -- so fail closed
+    with a ``prerequisite`` diagnostic instead of silently realizing the range on
+    a different substrate. Destroy is exempt: teardown routes from ownership by
+    design (#1666), so an owned range stays destroyable after a selector flip.
+    """
+    if operation != "up" or backend is None or resolve_cloud_provider() != "gcp":
+        return
+    selector = get_gcp_range_backend()
+    if backend != selector:
+        raise prerequisite_error(
+            f"This range was admitted for range backend '{backend}' but the deployment now selects "
+            f"'{selector}'. Provisioning stopped before any cloud mutation; restore the admitted "
+            "selector or recreate the range under the current one."
+        )

@@ -236,7 +236,7 @@ class TestResolveOperationBackend:
 class TestProvisionRoutesFromBinding:
     """Provision-time validation and dispatch consume one persisted binding."""
 
-    def test_gce_binding_validates_artifact_after_selector_flips_to_gdc(self, monkeypatch):
+    def test_gce_binding_validates_artifact_when_selector_matches(self, monkeypatch):
         from shared.range_cells import build_scenario_artifact
 
         import terraform_ops
@@ -266,7 +266,7 @@ class TestProvisionRoutesFromBinding:
         )
         monkeypatch.setattr(terraform_ops, "_dispatch_terraform_operation", dispatch)
 
-        with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True):
+        with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gce"}, clear=True):
             terraform_ops.run_range_terraform("up", "req-1")
 
         operation = dispatch.call_args.args[1]
@@ -274,7 +274,7 @@ class TestProvisionRoutesFromBinding:
         assert operation.purpose.value == "live_fire"
         assert operation.scenario_artifact == artifact
 
-    def test_gce_binding_requires_live_fire_purpose_before_dispatch(self, monkeypatch):
+    def test_gce_binding_rejects_unknown_purpose_before_dispatch(self, monkeypatch):
         import terraform_ops
         from cloud.exceptions import CloudError
 
@@ -289,7 +289,7 @@ class TestProvisionRoutesFromBinding:
                     "user_id": 7,
                     "spec": {},
                     "range_backend": "gce",
-                    "instantiation_purpose": None,
+                    "instantiation_purpose": "unknown-purpose",
                 }
             ),
         )
@@ -302,7 +302,7 @@ class TestProvisionRoutesFromBinding:
 
         assert getattr(exc.value, "code", None) == "prerequisite"
         dispatch.assert_not_called()
-        publish_failed.assert_called_once()
+        publish_failed.assert_not_called()
 
     def test_unsupported_composition_fails_before_ngfw_or_dispatch(self, monkeypatch):
         from shared.range_cells import build_scenario_artifact

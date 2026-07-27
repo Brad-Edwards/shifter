@@ -28,16 +28,16 @@ from django.conf import settings
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
+from cms.services._range_backend_admission import assert_backend_admitted
 from cms.services._range_create import (
-    _assert_live_fire_backend_admitted,
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
+    _create_range_impl,
     _reserve_active_range_slot,
     _set_range_instance_status,
     _validate_create_range_scenario,
     _validate_create_range_user,
-    create_range,
 )
 from cms.services._range_workspace import resolve_launch_workspace
 from shared.audit import (
@@ -46,6 +46,7 @@ from shared.audit import (
     AuditEntityType,
 )
 from shared.enums import ResourceStatus
+from shared.range_instantiation_policy import InstantiationPurpose
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -59,6 +60,8 @@ logger = logging.getLogger(__name__)
 
 _NATIVE_DISABLED = "ACES-native provisioning is not enabled"
 _OBJECT_SOURCE_KIND = "object"
+# The only range backend aces_range_ops can realize today (#1354).
+_ACES_REALIZED_BACKEND = "gce"
 
 
 def _is_aces_scenario(scenario: str) -> bool:
@@ -256,14 +259,52 @@ def _build_aces_range_context(request_id: UUID, scenario: str, user: User) -> Ra
     )
 
 
+def _assert_aces_adapter_supports(backend_admission: BackendAdmission | None) -> None:
+    """Refuse an ACES launch on an admitted backend that has no ACES adapter (#1354).
+
+    Policy admission and adapter availability are independent gates (ADR-030
+    preflight). ``aces_range_ops`` realizes GCE range cells only, so a non-user
+    purpose the policy permits on the retained GDC substrate must still fail
+    closed here -- before reservation and dispatch -- rather than binding ``gdc``
+    and then running the hard-coded GCE adapter.
+    """
+    if backend_admission is None or backend_admission.backend == _ACES_REALIZED_BACKEND:
+        return
+    raise CMSError(
+        f"ACES-native provisioning has no realization adapter for range backend "
+        f"'{backend_admission.backend}'; only the GCE VM range-cell backend is implemented.",
+        details={"code": "unsupported-capability"},
+    )
+
+
 def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSource | None = None) -> RangeContext:
     """Launch a registered ACES package through the native provisioning path.
+
+    The generic ACES product facade, permanently live-fire and taking no
+    instantiation-purpose argument (ADR-030-R6). The operator-gated non-user
+    entry point is ``cms.services.create_non_user_range``.
 
     Flag-gated (raises if SHIFTER_ACES_NATIVE_PROVISIONING is off). Enforces the
     same user/active-range/launchability admission as ``create_range``, persists
     the CMS Request + RangeInstance bookkeeping, then dispatches the compiled
     ACES plan. On any dispatch failure the RangeInstance is marked FAILED and the
     error propagates.
+    """
+    return _create_aces_native_range_impl(
+        user, scenario, range_source=range_source, instantiation_purpose=InstantiationPurpose.LIVE_FIRE
+    )
+
+
+def _create_aces_native_range_impl(
+    user: User,
+    scenario: str,
+    *,
+    range_source: RangeSource | None,
+    instantiation_purpose: InstantiationPurpose,
+) -> RangeContext:
+    """Shared ACES creation body, parameterized by minted launch authority.
+
+    Not a product facade; see ``_range_create._create_range_impl``.
     """
     from shared.enums import RangeSource
 
@@ -278,7 +319,8 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
 
     lease = build_range_lease(range_source)
 
-    backend_admission = _assert_live_fire_backend_admitted()
+    backend_admission = assert_backend_admitted(instantiation_purpose, range_source)
+    _assert_aces_adapter_supports(backend_admission)
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
     source = _load_aces_source_or_raise(scenario)
@@ -321,21 +363,55 @@ def create_range_dispatch(
 ) -> RangeContext:
     """Route a launch to the ACES-native or cyberscript path.
 
-    With SHIFTER_ACES_NATIVE_PROVISIONING off, always calls the cyberscript
+    The thin product router, permanently live-fire (ADR-030-R6). With
+    SHIFTER_ACES_NATIVE_PROVISIONING off, always calls the cyberscript
     ``create_range`` (byte-identical to today). With it on, a registered ACES
     scenario is launched through ``create_aces_native_range`` (``agents_by_os`` /
     ``ngfw_enabled`` do not apply to ACES packages); every other scenario stays
     on the cyberscript path.
     """
-    if settings.ACES_NATIVE_PROVISIONING_ENABLED and _is_aces_scenario(scenario):
-        if remote_access_teardown_at is not None:
-            raise CMSError("The ACES-native range adapter does not support CTF OpenVPN access")
-        return create_aces_native_range(user, scenario, range_source=range_source)
-    return create_range(
+    return dispatch_range_launch(
         user,
         scenario,
         agents_by_os,
         ngfw_enabled=ngfw_enabled,
         range_source=range_source,
         remote_access_teardown_at=remote_access_teardown_at,
+        instantiation_purpose=InstantiationPurpose.LIVE_FIRE,
+    )
+
+
+def dispatch_range_launch(
+    user: User,
+    scenario: str,
+    agents_by_os: dict[str, int],
+    *,
+    ngfw_enabled: bool,
+    range_source: RangeSource | None,
+    remote_access_teardown_at: datetime | None,
+    instantiation_purpose: InstantiationPurpose,
+) -> RangeContext:
+    """Shared ACES/cyberscript routing body, parameterized by minted launch authority.
+
+    Not a product facade; see ``_range_create._create_range_impl``. Internal to
+    the CMS create seam -- ``cms.services`` exports the two facades that wrap it,
+    never this function.
+    """
+    if settings.ACES_NATIVE_PROVISIONING_ENABLED and _is_aces_scenario(scenario):
+        if remote_access_teardown_at is not None:
+            raise CMSError("The ACES-native range adapter does not support CTF OpenVPN access")
+        return _create_aces_native_range_impl(
+            user,
+            scenario,
+            range_source=range_source,
+            instantiation_purpose=instantiation_purpose,
+        )
+    return _create_range_impl(
+        user,
+        scenario,
+        agents_by_os,
+        ngfw_enabled,
+        range_source,
+        remote_access_teardown_at,
+        instantiation_purpose,
     )

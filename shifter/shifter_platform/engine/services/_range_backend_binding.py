@@ -11,7 +11,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from shared.range_instantiation_policy import InstantiationPurpose, normalize_gcp_range_backend
+from shared.range_instantiation_policy import (
+    InstantiationPurpose,
+    evaluate_gcp_backend_admission,
+    normalize_gcp_range_backend,
+)
 
 from ._common import EngineError
 
@@ -37,16 +41,26 @@ def backend_binding_fields(backend_admission: BackendAdmission | None) -> dict[s
     """Map an admitted ``BackendAdmission`` to the write-once Range binding columns.
 
     Returns ``{}`` for a non-GCP launch (``backend_admission is None``) so the
-    columns stay NULL. Backend and purpose are re-normalized through the single
-    shared policy parser/enum so only closed policy values are ever persisted; the
-    admission already holds normalized values, this is defense in depth.
+    columns stay NULL.
+
+    ``BackendAdmission`` is a plain constructible dataclass, so ``admitted=True``
+    from an arbitrary in-process caller is not by itself authority (#1354). The
+    pair is re-evaluated here against the closed default-deny policy -- without
+    rereading the environment selector -- so a fabricated, denied, or malformed
+    pair can never be persisted as ownership. This is the Engine-side half of the
+    admission the CMS service boundary already performed.
     """
     if backend_admission is None:
         return {}
-    return {
-        "range_backend": normalize_gcp_range_backend(backend_admission.backend),
-        "instantiation_purpose": InstantiationPurpose(backend_admission.purpose).value,
-    }
+    try:
+        backend = normalize_gcp_range_backend(backend_admission.backend)
+        purpose = InstantiationPurpose(backend_admission.purpose)
+    except ValueError as exc:
+        raise EngineError(f"Range backend binding is not a closed policy value: {exc}") from exc
+    admission = evaluate_gcp_backend_admission(backend, None, purpose)
+    if not admission.admitted:
+        raise EngineError(f"Range backend binding is not admitted by policy: {admission.reason}")
+    return {"range_backend": backend, "instantiation_purpose": purpose.value}
 
 
 def verify_existing_binding(

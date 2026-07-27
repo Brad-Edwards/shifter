@@ -15,15 +15,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from shared.range_cells import RangeCellContractError, validate_scenario_artifact
-from shared.range_instantiation_policy import (
-    POLICY_DENIAL_CODE,
-    InstantiationPurpose,
-    evaluate_gcp_backend_admission,
-)
+from shared.range_instantiation_policy import InstantiationPurpose
 from shared.remote_access import parse_openvpn_capability, validate_openvpn_capability_window
 
 import range_terraform_runner
-from cloud.exceptions import CloudError
 from config import is_gce_range_cell_backend
 from events import (
     STATUS_DESTROYED,
@@ -40,7 +35,12 @@ from provisioner_db import (
     write_provisioned_state,
 )
 from provisioner_db_appends import OperationRef
-from range_backend_resolution import prerequisite_error, resolve_operation_backend
+from range_backend_resolution import (
+    assert_provision_route,
+    prerequisite_error,
+    resolve_operation_backend,
+    resolve_provision_purpose,
+)
 from range_subnet_allocation import (
     _allocate_range_subnet_cidrs,
     _post_destroy_cleanup,
@@ -78,42 +78,6 @@ def _cleanup_openvpn_if_enabled(range_id: int, request_id: str, *, delete_identi
         )
 
 
-def _coded_error(message: str, code: str) -> CloudError:
-    """Build a CloudError carrying an authored stable failure classification."""
-    error = CloudError(message)
-    error.code = code
-    return error
-
-
-def _resolve_operation_purpose(
-    range_data: dict[str, Any],
-    backend: str | None,
-    operation: str,
-) -> InstantiationPurpose | None:
-    """Validate the persisted launch purpose for a bound normal GCP operation."""
-    if backend is None:
-        return None
-    raw_purpose = range_data.get("instantiation_purpose")
-    if raw_purpose is None and operation == "destroy":
-        # Legacy cleanup remains possible; backend ownership is sufficient to
-        # select the deterministic teardown adapter.
-        return None
-    try:
-        purpose = InstantiationPurpose(raw_purpose)
-    except (TypeError, ValueError):
-        raise prerequisite_error("This GCP range has no valid persisted instantiation purpose") from None
-    if operation != "destroy":
-        if purpose is not InstantiationPurpose.LIVE_FIRE:
-            raise _coded_error(
-                "Normal GCP range provisioning requires the live_fire instantiation purpose",
-                POLICY_DENIAL_CODE,
-            )
-        admission = evaluate_gcp_backend_admission(backend, None, purpose)
-        if not admission.admitted:
-            raise _coded_error(admission.reason, admission.code)
-    return purpose
-
-
 @dataclass(frozen=True)
 class RangeOperation:
     """Inputs of one range Terraform operation, bound once at dispatch.
@@ -121,6 +85,10 @@ class RangeOperation:
     ``backend`` is the #1666 per-operation ownership binding captured at
     operation start; on a provision failure the compensation destroy routes
     from it, never a re-read of the env selector.
+
+    ``purpose`` is the #1354 trusted instantiation purpose read from the same
+    persisted binding. It reaches the provisioner's defense-in-depth policy
+    evaluation before any GDC apply call.
 
     ``operation_id`` is the ADR-043 canonical operation generation (#1834);
     ``None`` on local-dev runs / commands not yet carrying it.
@@ -132,7 +100,7 @@ class RangeOperation:
     range_spec: dict[str, Any]
     scenario_artifact: dict[str, Any] | None = None
     backend: str | None = None
-    purpose: InstantiationPurpose | None = None
+    purpose: InstantiationPurpose = InstantiationPurpose.LIVE_FIRE
     remote_access_capability: dict[str, object] | None = None
     operation_id: str | None = None
 
@@ -259,9 +227,15 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
     # failure, for the compensation destroy -- never re-resolved from the env
     # selector after a failure.
     operation_backend = resolve_operation_backend(range_data, operation, operation_id)
+    # The trusted purpose travels with the binding (#1354). It is provision-only
+    # authority: destroy never parses it, so a damaged or forward-version value
+    # cannot strand owned resources. A provision must also still take the route
+    # CMS admitted.
+    operation_purpose = resolve_provision_purpose(range_data, operation)
+    assert_provision_route(operation_backend, operation)
+
     range_operation: RangeOperation | None = None
     try:
-        operation_purpose = _resolve_operation_purpose(range_data, operation_backend, operation)
         remote_access_capability = _resolve_remote_access_capability(range_data, operation)
         # Verify the producer-minted artifact before any NGFW or provider
         # operation. Other backends retain their existing legacy payload path.
@@ -351,12 +325,15 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         remote_access_capability=remote_access_capability,
     )
 
-    # Run the provider-routed apply
+    # Run the provider-routed apply, carrying the trusted purpose so the
+    # provisioner's defense-in-depth policy denial sees real persisted state
+    # rather than an unconditional live-fire default (#1354), and the persisted
+    # backend so selector changes cannot reroute the operation (#1666).
     output_data = range_terraform_runner.apply_range(
         request_id,
         provision_variables,
+        purpose=operation.purpose,
         backend=operation.backend,
-        purpose=operation.purpose or InstantiationPurpose.LIVE_FIRE,
     )
     vpn_access_binding = (
         finalize_openvpn_access(

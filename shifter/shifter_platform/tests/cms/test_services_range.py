@@ -438,7 +438,7 @@ class TestRangeSourceAdmission:
         """An unsupported topology stays capability-false instead of breaking range launch."""
         from types import SimpleNamespace
 
-        from cms.services._range_create import _build_remote_access_capability
+        from cms.services._range_remote_access import _build_remote_access_capability
 
         range_spec = SimpleNamespace(participant_access=[], all_instances=[])
 
@@ -455,7 +455,7 @@ class TestRangeSourceAdmission:
         """CTF requires the participant VPN capability established by #1695."""
         from types import SimpleNamespace
 
-        from cms.services._range_create import _build_remote_access_capability
+        from cms.services._range_remote_access import _build_remote_access_capability
 
         range_spec = SimpleNamespace(participant_access=[], all_instances=[])
         teardown_at = timezone.now() + timedelta(days=1)
