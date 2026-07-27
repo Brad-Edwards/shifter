@@ -389,20 +389,6 @@ def mark_range_instances_destroyed(
     return instance_count, subnet_count
 
 
-def _update_range_config(range_id: int, range_spec: dict[str, Any]) -> None:
-    """Write updated range_config back to mission_control_range."""
-    from cyberscript.persisted_envelope import ensure_wrapped_persisted_spec
-
-    wrapped = ensure_wrapped_persisted_spec("range_spec", range_spec)
-    with get_db_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "UPDATE mission_control_range SET range_config = %s WHERE id = %s",
-            (json.dumps(wrapped), range_id),
-        )
-        conn.commit()
-    logger.info("Persisted updated range_config for range %d", range_id)
-
-
 def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
     """Read Range request data from Engine database."""
     with get_db_connection() as conn, conn.cursor() as cur:

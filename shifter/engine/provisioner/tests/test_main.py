@@ -24,14 +24,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def _provision_env(provider: str, subnet_cidr: str):
     """Shared provision-time patches for ``_run_terraform_provision`` tests.
 
-    Consolidates the ``CLOUD_PROVIDER`` env override and the subnet-allocation
-    boundary patch. ``allocate_subnets`` takes a DB table lock, so it cannot run
-    unmocked in a unit test; keeping the patch in one place also keeps the
-    first-party-internal patch target to a single occurrence (ADR-019-R1).
+    Consolidates the ``CLOUD_PROVIDER`` env override and the subnet-reservation
+    boundary patch. ``reserve_range_subnets`` calls the Engine coordination
+    routine over a real database connection, so it cannot run unmocked in a unit
+    test; keeping the patch in one place also keeps the first-party-internal
+    patch target to a single occurrence (ADR-019-R1).
     """
     with (
         patch.dict("os.environ", {"CLOUD_PROVIDER": provider}, clear=True),
-        patch("components.network.allocate_subnets", return_value=[subnet_cidr]),
+        patch("components.network.reserve_range_subnets", return_value=(subnet_cidr,)),
     ):
         yield
 
@@ -619,7 +620,6 @@ class TestGdcProvisioning:
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("cluster1", "10.200.0.0/24", "us-central1")),
         )
-        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 42, "subnets": range_spec["subnets"]}),
@@ -704,7 +704,6 @@ class TestGdcProvisioning:
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("vpc-9", "10.9.0.0/16", "us-east-2")),
         )
-        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 9, "subnets": range_spec["subnets"]}),
@@ -791,7 +790,6 @@ class TestGdcProvisioning:
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("vpc-vpn", "10.9.0.0/16", "us-east-2")),
         )
-        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 42, "subnets": range_spec["subnets"]}),

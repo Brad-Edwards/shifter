@@ -65,6 +65,11 @@ from ._range_by_request import (
     rebind_range_workspace_by_request,
 )
 from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
+from ._subnet_coordination import (
+    read_subnet_reservation,
+    release_subnet_reservation,
+    reserve_subnet_cidrs,
+)
 from ._terminal import (
     connect_ngfw_terminal,
     connect_terminal,
@@ -129,6 +134,7 @@ __all__ = (
     "pause_range",
     "project_aces_operation_status",
     "range_owner_reassignment_available_by_request",
+    "read_subnet_reservation",
     "reassign_range_owner_by_request",
     "rebind_range_workspace_by_request",
     "reconcile_capacity_budgets",
@@ -137,6 +143,8 @@ __all__ = (
     "record_capacity_declaration",
     "release_capacity_reservations",
     "release_range_capacity",
+    "release_subnet_reservation",
+    "reserve_subnet_cidrs",
     "resume_range",
     "run_guest_probe",
     "start_ngfw",

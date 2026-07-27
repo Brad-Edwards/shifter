@@ -474,7 +474,7 @@ def test_aws_ngfw_operation_marks_failed_when_plan_fails(monkeypatch: pytest.Mon
 
 
 def test_provisioner_db_status_helpers_use_owning_module_connection(monkeypatch: pytest.MonkeyPatch) -> None:
-    from provisioner_db import _update_range_config, mark_range_instances_destroyed, update_range_status
+    from provisioner_db import mark_range_instances_destroyed, update_range_status
 
     update_cursor = RecordingCursor()
     update_conn = RecordingConnection(update_cursor)
@@ -491,21 +491,6 @@ def test_provisioner_db_status_helpers_use_owning_module_connection(monkeypatch:
 
     assert mark_range_instances_destroyed(42) == (3, 2)
     destroy_conn.commit.assert_called_once_with()
-
-    config_cursor = RecordingCursor()
-    config_conn = RecordingConnection(config_cursor)
-    monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=config_conn))
-
-    _update_range_config(42, {"subnets": [{"name": "attack", "cidr": "10.1.2.0/28"}]})
-
-    saved_spec, saved_range_id = config_cursor.execute_calls[0][1]
-    assert json.loads(saved_spec) == {
-        "spec_schema": "range_spec",
-        "spec_version": "1",
-        "payload": {"subnets": [{"name": "attack", "cidr": "10.1.2.0/28"}]},
-    }
-    assert saved_range_id == 42
-    config_conn.commit.assert_called_once_with()
 
 
 def test_provisioner_db_ngfw_reads_user_and_request_data(monkeypatch: pytest.MonkeyPatch) -> None:
