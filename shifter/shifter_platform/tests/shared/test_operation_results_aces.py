@@ -178,13 +178,9 @@ class TestSnapshotPayload:
         assert [entry["address"] for entry in parsed["resources"]] == ["node.n0", "node.n1"]
 
     def test_snapshot_is_bounded(self):
+        oversized = _snapshot_payload(MAX_SNAPSHOT_RESOURCES + 1)
         with pytest.raises(OperationResultError):
-            parse_result_payload(
-                "aces-range",
-                "provision",
-                step=ResultStep.ACES_PROVISION_SNAPSHOT,
-                payload=_snapshot_payload(MAX_SNAPSHOT_RESOURCES + 1),
-            )
+            parse_result_payload("aces-range", "provision", step=ResultStep.ACES_PROVISION_SNAPSHOT, payload=oversized)
 
     def test_snapshot_entry_is_closed_on_keys(self):
         payload = _snapshot_payload(1)
