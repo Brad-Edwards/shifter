@@ -8,13 +8,13 @@ A connection or infrastructure fault laundered into a domain reason code would
 read to an operator as "the reservation was refused" when in fact nothing was
 asked.
 
-These drive the real facade functions and patch only the database boundary.
+These drive the real facade functions and patch only the database boundary. The
+patch lives in a fixture so each test body holds exactly one call that can throw.
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
-from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -49,6 +49,8 @@ class _DriverError(Exception):
 
 
 class _FakeCursor:
+    """The database boundary: it records statements and returns canned rows."""
+
     def __init__(self, *, rows=None, scalar=None, error=None):
         self._rows = rows or []
         self._scalar = scalar
@@ -67,16 +69,27 @@ class _FakeCursor:
         return self._scalar
 
 
-@contextmanager
-def _cursor_yielding(cursor):
+class _Boundary:
+    """Holds the cursor the patched connection hands out for one test."""
+
+    cursor: _FakeCursor | None = None
+
+    def use(self, cursor: _FakeCursor) -> _FakeCursor:
+        self.cursor = cursor
+        return cursor
+
+
+@pytest.fixture
+def boundary(monkeypatch):
     """Patch the Django connection's cursor -- the database boundary itself."""
+    holder = _Boundary()
 
     @contextmanager
     def _factory():
-        yield cursor
+        yield holder.cursor
 
-    with patch.object(connection, "cursor", _factory):
-        yield cursor
+    monkeypatch.setattr(connection, "cursor", _factory)
+    return holder
 
 
 def _request(**overrides):
@@ -93,20 +106,18 @@ def _request(**overrides):
 
 
 class TestReserve:
-    def test_returns_the_reserved_cidrs_in_ordinal_order(self):
-        cursor = _FakeCursor(rows=[(2, "10.1.2.16/28"), (1, "10.1.2.0/28")])
+    def test_returns_the_reserved_cidrs_in_ordinal_order(self, boundary):
+        boundary.use(_FakeCursor(rows=[(2, "10.1.2.16/28"), (1, "10.1.2.0/28")]))
 
-        with _cursor_yielding(cursor):
-            result = reserve_subnet_cidrs(_request())
+        result = reserve_subnet_cidrs(_request())
 
         assert result == ("10.1.2.0/28", "10.1.2.16/28")
 
-    def test_sends_the_full_request_including_its_shape_fingerprint(self):
-        cursor = _FakeCursor(rows=[(1, "10.1.2.0/28"), (2, "10.1.2.16/28")])
+    def test_sends_the_full_request_including_its_shape_fingerprint(self, boundary):
+        cursor = boundary.use(_FakeCursor(rows=[(1, "10.1.2.0/28"), (2, "10.1.2.16/28")]))
         request = _request()
 
-        with _cursor_yielding(cursor):
-            reserve_subnet_cidrs(request)
+        reserve_subnet_cidrs(request)
 
         params = cursor.executed[0][1]
         assert params[-1] == request.shape_fingerprint
@@ -123,95 +134,95 @@ class TestReserve:
             ("SH006", REASON_OPERATION_NOT_PERMITTED),
         ],
     )
-    def test_maps_each_routine_refusal_to_its_reason_code(self, sqlstate, reason):
-        cursor = _FakeCursor(error=_DriverError(sqlstate))
+    def test_maps_each_routine_refusal_to_its_reason_code(self, boundary, sqlstate, reason):
+        boundary.use(_FakeCursor(error=_DriverError(sqlstate)))
+        request = _request()
 
-        with _cursor_yielding(cursor), pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request())
+        with pytest.raises(SubnetCoordinationError) as exc:
+            reserve_subnet_cidrs(request)
 
         assert reason in str(exc.value)
 
-    def test_does_not_translate_an_unrecognized_driver_failure(self):
+    def test_does_not_translate_an_unrecognized_driver_failure(self, boundary):
         # 08006 is a connection failure. Translating it would tell an operator
         # the reservation was refused when it was never evaluated.
-        cursor = _FakeCursor(error=_DriverError("08006"))
+        boundary.use(_FakeCursor(error=_DriverError("08006")))
+        request = _request()
 
-        with _cursor_yielding(cursor), pytest.raises(_DriverError):
-            reserve_subnet_cidrs(_request())
+        with pytest.raises(_DriverError):
+            reserve_subnet_cidrs(request)
 
-    def test_reads_the_sqlstate_through_a_wrapping_exception(self):
+    def test_reads_the_sqlstate_through_a_wrapping_exception(self, boundary):
         # Django re-raises driver errors wrapped in its own exception class, so
         # the SQLSTATE lives on __cause__ rather than the exception itself.
         wrapper = RuntimeError("wrapped by the database layer")
         wrapper.__cause__ = _DriverError("SH001")
-        cursor = _FakeCursor(error=wrapper)
+        boundary.use(_FakeCursor(error=wrapper))
+        request = _request()
 
-        with _cursor_yielding(cursor), pytest.raises(SubnetCoordinationError) as exc:
-            reserve_subnet_cidrs(_request())
+        with pytest.raises(SubnetCoordinationError) as exc:
+            reserve_subnet_cidrs(request)
 
         assert REASON_CONFLICT in str(exc.value)
 
-    def test_a_short_batch_from_the_routine_fails_closed(self):
+    def test_a_short_batch_from_the_routine_fails_closed(self, boundary):
         # All-or-nothing: fewer rows than requested must not read as success.
-        cursor = _FakeCursor(rows=[(1, "10.1.2.0/28")])
+        boundary.use(_FakeCursor(rows=[(1, "10.1.2.0/28")]))
+        request = _request()
 
-        with _cursor_yielding(cursor), pytest.raises(SubnetCoordinationError):
-            reserve_subnet_cidrs(_request())
+        with pytest.raises(SubnetCoordinationError):
+            reserve_subnet_cidrs(request)
 
 
 class TestRead:
-    def test_returns_the_reservation_in_order(self):
-        cursor = _FakeCursor(rows=[(2, "10.1.2.16/28"), (1, "10.1.2.0/28")])
+    def test_returns_the_reservation_in_order(self, boundary):
+        boundary.use(_FakeCursor(rows=[(2, "10.1.2.16/28"), (1, "10.1.2.0/28")]))
 
-        with _cursor_yielding(cursor):
-            result = read_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID)
+        result = read_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID)
 
         assert result == ("10.1.2.0/28", "10.1.2.16/28")
 
-    def test_returns_empty_when_nothing_is_reserved(self):
-        cursor = _FakeCursor(rows=[])
+    def test_returns_empty_when_nothing_is_reserved(self, boundary):
+        boundary.use(_FakeCursor(rows=[]))
 
-        with _cursor_yielding(cursor):
-            assert read_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID) == ()
+        assert read_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID) == ()
 
-    def test_maps_a_refusal_to_its_reason_code(self):
-        cursor = _FakeCursor(error=_DriverError("SH003"))
+    def test_maps_a_refusal_to_its_reason_code(self, boundary):
+        boundary.use(_FakeCursor(error=_DriverError("SH003")))
 
-        with _cursor_yielding(cursor), pytest.raises(SubnetCoordinationError) as exc:
+        with pytest.raises(SubnetCoordinationError) as exc:
             read_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID)
 
         assert REASON_STALE_GENERATION in str(exc.value)
 
-    def test_does_not_translate_an_unrecognized_driver_failure(self):
-        cursor = _FakeCursor(error=_DriverError("08006"))
+    def test_does_not_translate_an_unrecognized_driver_failure(self, boundary):
+        boundary.use(_FakeCursor(error=_DriverError("08006")))
 
-        with _cursor_yielding(cursor), pytest.raises(_DriverError):
+        with pytest.raises(_DriverError):
             read_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID)
 
 
 class TestRelease:
-    def test_returns_how_many_rows_were_released(self):
-        cursor = _FakeCursor(scalar=(3,))
+    def test_returns_how_many_rows_were_released(self, boundary):
+        boundary.use(_FakeCursor(scalar=(3,)))
 
-        with _cursor_yielding(cursor):
-            assert release_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID) == 3
+        assert release_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID) == 3
 
-    def test_treats_a_missing_row_count_as_nothing_released(self):
-        cursor = _FakeCursor(scalar=None)
+    def test_treats_a_missing_row_count_as_nothing_released(self, boundary):
+        boundary.use(_FakeCursor(scalar=None))
 
-        with _cursor_yielding(cursor):
-            assert release_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID) == 0
+        assert release_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID) == 0
 
-    def test_maps_a_refusal_to_its_reason_code(self):
-        cursor = _FakeCursor(error=_DriverError("SH006"))
+    def test_maps_a_refusal_to_its_reason_code(self, boundary):
+        boundary.use(_FakeCursor(error=_DriverError("SH006")))
 
-        with _cursor_yielding(cursor), pytest.raises(SubnetCoordinationError) as exc:
+        with pytest.raises(SubnetCoordinationError) as exc:
             release_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID)
 
         assert REASON_OPERATION_NOT_PERMITTED in str(exc.value)
 
-    def test_does_not_translate_an_unrecognized_driver_failure(self):
-        cursor = _FakeCursor(error=_DriverError("08006"))
+    def test_does_not_translate_an_unrecognized_driver_failure(self, boundary):
+        boundary.use(_FakeCursor(error=_DriverError("08006")))
 
-        with _cursor_yielding(cursor), pytest.raises(_DriverError):
+        with pytest.raises(_DriverError):
             release_subnet_reservation(operation_id=OPERATION_ID, request_id=REQUEST_ID)
