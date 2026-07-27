@@ -6,7 +6,6 @@ from unittest.mock import patch
 import pytest
 from shared.operation_results import ResultStep
 
-from events import EVENT_TYPE_STATUS_UPDATED
 from range_ops import get_range_instance_ids, run_range_pause, run_range_resume
 
 _OPERATION_ID = "44444444-4444-4444-4444-444444444444"
@@ -33,20 +32,6 @@ def _assert_terminal_failure_reported(mock_cursor, *, operation: str) -> None:
     assert params[6] == ResultStep.RANGE_TERMINAL_FAILED
     payload = json.loads(params[9])["payload"]
     assert payload["reason_code"] == "cloud_operation_failed"
-
-
-def _assert_status_outbox_event(mock_update_range, *, expected_status: str) -> None:
-    """Assert update_range_status was passed a real (non-None) status outbox event.
-
-    ``outbox_event=ANY`` would also match ``None`` — which would silently break
-    the atomic status+event commit #476 requires (``update_range_status`` skips
-    ``enqueue_event_outbox`` when ``outbox_event is None``). Inspect the value
-    directly so the regression is actually guarded.
-    """
-    event = mock_update_range.call_args.kwargs["outbox_event"]
-    assert event is not None
-    assert event["event_type"] == EVENT_TYPE_STATUS_UPDATED
-    assert event["new_status"] == expected_status
 
 
 class TestRangeInstanceClassification:

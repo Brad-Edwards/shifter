@@ -294,15 +294,15 @@ class TestProvisionRoutesFromBinding:
             ),
         )
         monkeypatch.setattr(terraform_ops, "_dispatch_terraform_operation", dispatch)
-        publish_failed = MagicMock()
-        monkeypatch.setattr(terraform_ops, "publish_failed", publish_failed)
+        update_status = MagicMock()
+        monkeypatch.setattr(terraform_ops, "update_range_status", update_status)
 
         with pytest.raises(CloudError) as exc:
             terraform_ops.run_range_terraform("up", "req-1")
 
         assert getattr(exc.value, "code", None) == "prerequisite"
         dispatch.assert_not_called()
-        publish_failed.assert_not_called()
+        update_status.assert_not_called()
 
     def test_unsupported_composition_fails_before_ngfw_or_dispatch(self, monkeypatch):
         from shared.range_cells import build_scenario_artifact
@@ -342,7 +342,7 @@ class TestProvisionRoutesFromBinding:
         )
         monkeypatch.setattr(terraform_ops, "_ensure_ngfw_ready_for_provisioning", ensure_ngfw)
         monkeypatch.setattr(terraform_ops, "_dispatch_terraform_operation", dispatch)
-        monkeypatch.setattr(terraform_ops, "publish_failed", MagicMock())
+        monkeypatch.setattr(terraform_ops, "update_range_status", MagicMock())
 
         with pytest.raises(CloudError) as exc:
             terraform_ops.run_range_terraform("up", "req-1")
@@ -358,7 +358,7 @@ class TestProvisionRoutesFromBinding:
 
         build_variables = MagicMock(return_value=_range_cell_variables())
         apply = MagicMock(return_value={"subnets": {}, "instances": []})
-        monkeypatch.setattr(terraform_ops, "publish_status_update", MagicMock())
+        monkeypatch.setattr(terraform_ops, "update_range_status", MagicMock())
         monkeypatch.setattr(terraform_ops, "_build_operation_variables", build_variables)
         monkeypatch.setattr(terraform_ops.range_terraform_runner, "apply_range", apply)
         monkeypatch.setattr(terraform_ops, "_validate_provisioned_outputs", MagicMock())
@@ -371,7 +371,7 @@ class TestProvisionRoutesFromBinding:
             MagicMock(return_value={"ngfw_instance_id": None}),
         )
         monkeypatch.setattr(terraform_ops, "write_provisioned_state", MagicMock())
-        monkeypatch.setattr(terraform_ops, "publish_ready", MagicMock())
+        monkeypatch.setattr(terraform_ops, "update_range_status", MagicMock())
         operation = terraform_ops.RangeOperation(
             request_id="req-1",
             range_id=1,

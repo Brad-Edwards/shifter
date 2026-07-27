@@ -1374,8 +1374,7 @@
           "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
           "process_roles": [
             "portal",
-            "worker",
-            "provisioner"
+            "worker"
           ],
           "sensitivity": "public",
           "source": "rendered from validated Terraform outputs and the normalized root config"

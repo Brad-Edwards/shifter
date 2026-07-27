@@ -53,7 +53,6 @@ def _mock_ngfw_deps():
     with (
         patch("range_ops.get_range_ngfw_info") as mock_get_info,
         patch("range_ops._update_ngfw_status") as mock_update,
-        patch("range_ops.publish_ngfw_event") as mock_publish,
         patch("range_ops.AWSExecutor") as mock_executor_cls,
         patch("range_ops.OpsOrchestrator") as mock_orch_cls,
         patch("range_ops.NGFWStartPlan") as mock_plan_cls,
@@ -74,7 +73,6 @@ def _mock_ngfw_deps():
         yield {
             "get_info": mock_get_info,
             "update_status": mock_update,
-            "publish": mock_publish,
             "executor_cls": mock_executor_cls,
             "orch": mock_orch,
             "plan": mock_plan,
@@ -134,9 +132,6 @@ class TestEnsureNgfwRunningRetries:
         assert mocks["time"].sleep.call_count == 2
         # Status should be set to failed
         _assert_cascade_reported(mocks["update_status"], "failed", operation="resume")
-        # ADR-043 phase 4 (#1836): the provisioner no longer publishes NGFW
-        # events; the applier emits the notification with the domain write.
-        mocks["publish"].assert_not_called()
 
     def test_pausing_waits_for_paused_then_resumes(self, _mock_ngfw_deps):
         """When NGFW is pausing, wait_for_stopped is called before resuming."""
