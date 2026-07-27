@@ -30,7 +30,8 @@ def main() -> int:
     for match in matches:
         print(f"  - {match.rule}: {match.excerpt}", file=sys.stderr)
     print(
-        "Disable Cursor commit/PR attribution in ~/.cursor/cli-config.json and .cursor/cli.json.",
+        "Disable Cursor commit/PR attribution in ~/.cursor/cli-config.json "
+        "(project .cursor/cli.json cannot set attribution; see Cursor CLI docs).",
         file=sys.stderr,
     )
     return 1
