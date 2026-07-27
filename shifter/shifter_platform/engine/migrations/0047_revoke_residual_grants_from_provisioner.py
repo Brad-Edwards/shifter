@@ -61,8 +61,8 @@ def _revoke_outbox(apps, schema_editor):
         return
     if not _table_exists(schema_editor, "engine_range_event_outbox"):
         return
-    schema_editor.execute(f"REVOKE INSERT, SELECT ON engine_range_event_outbox FROM {_ROLE};")
-    schema_editor.execute(f"REVOKE ALL ON SEQUENCE public.engine_range_event_outbox_id_seq FROM {_ROLE};")
+    schema_editor.execute(f"REVOKE INSERT, SELECT ON engine_range_event_outbox FROM {_ROLE};")  # nosec B608
+    schema_editor.execute(f"REVOKE ALL ON SEQUENCE public.engine_range_event_outbox_id_seq FROM {_ROLE};")  # nosec B608
 
 
 def _grant_outbox(apps, schema_editor):
@@ -74,9 +74,9 @@ def _grant_outbox(apps, schema_editor):
             GRANT INSERT ON engine_range_event_outbox TO {_ROLE};
             GRANT SELECT ON engine_range_event_outbox TO {_ROLE};
             """
-        )
+        )  # nosec B608
     if _sequence_exists(schema_editor, "engine_range_event_outbox_id_seq"):
-        schema_editor.execute(f"GRANT USAGE ON SEQUENCE engine_range_event_outbox_id_seq TO {_ROLE};")
+        schema_editor.execute(f"GRANT USAGE ON SEQUENCE engine_range_event_outbox_id_seq TO {_ROLE};")  # nosec B608
 
 
 def _revoke_engine_table_reads(apps, schema_editor):
@@ -86,7 +86,7 @@ def _revoke_engine_table_reads(apps, schema_editor):
         if not _table_exists(schema_editor, table):
             continue
         privs = ", ".join(_REVOKE_ENGINE_TABLE_PRIVS)
-        schema_editor.execute(f"REVOKE {privs} ON {table} FROM {_ROLE};")
+        schema_editor.execute(f"REVOKE {privs} ON {table} FROM {_ROLE};")  # nosec B608
 
 
 def _grant_engine_table_reads(apps, schema_editor):
@@ -95,7 +95,7 @@ def _grant_engine_table_reads(apps, schema_editor):
     for table in _REVOKE_ENGINE_TABLES:
         if not _table_exists(schema_editor, table):
             continue
-        schema_editor.execute(f"GRANT SELECT ON {table} TO {_ROLE};")
+        schema_editor.execute(f"GRANT SELECT ON {table} TO {_ROLE};")  # nosec B608
 
 
 class Migration(migrations.Migration):

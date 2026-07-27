@@ -87,7 +87,7 @@ def _revoke_table_selects(apps, schema_editor):
         return
     for table in _REVOKE_TABLES:
         if _table_exists(schema_editor, table):
-            schema_editor.execute(f"REVOKE SELECT ON {table} FROM {_ROLE};")
+            schema_editor.execute(f"REVOKE SELECT ON {table} FROM {_ROLE};")  # nosec B608
 
 
 def _grant_table_selects(apps, schema_editor):
@@ -95,7 +95,7 @@ def _grant_table_selects(apps, schema_editor):
         return
     for table in _REVOKE_TABLES:
         if _table_exists(schema_editor, table):
-            schema_editor.execute(f"GRANT SELECT ON {table} TO {_ROLE};")
+            schema_editor.execute(f"GRANT SELECT ON {table} TO {_ROLE};")  # nosec B608
 
 
 def _revoke_legacy_range_columns(apps, schema_editor):
@@ -110,7 +110,7 @@ def _revoke_legacy_range_columns(apps, schema_editor):
             table=_TABLE,
             role=_ROLE,
         )
-    )
+    )  # nosec B608
 
 
 def _grant_legacy_range_columns(apps, schema_editor):
@@ -125,7 +125,7 @@ def _grant_legacy_range_columns(apps, schema_editor):
             table=_TABLE,
             role=_ROLE,
         )
-    )
+    )  # nosec B608
 
 
 class Migration(migrations.Migration):
