@@ -15,12 +15,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from shared.range_cells import RangeCellContractError, validate_scenario_artifact
-from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE, normalize_gcp_range_backend
+from shared.range_instantiation_policy import InstantiationPurpose
 from shared.remote_access import parse_openvpn_capability, validate_openvpn_capability_window
 
 import range_terraform_runner
-from cloud.exceptions import CloudError
-from config import is_gce_range_cell_backend, resolve_cloud_provider
+from config import is_gce_range_cell_backend
 from events import (
     STATUS_DESTROYED,
     STATUS_PROVISIONING,
@@ -35,7 +34,12 @@ from provisioner_db import (
     write_provisioned_state,
 )
 from provisioner_db_appends import OperationRef
-from range_backend_evidence import resolve_legacy_range_backend
+from range_operation_binding import (
+    assert_provision_route,
+    prerequisite_error,
+    resolve_operation_backend,
+    resolve_provision_purpose,
+)
 from range_subnet_allocation import (
     _allocate_range_subnet_cidrs,
     _post_destroy_cleanup,
@@ -73,62 +77,6 @@ def _cleanup_openvpn_if_enabled(range_id: int, request_id: str, *, delete_identi
         )
 
 
-def _prerequisite_error(message: str) -> CloudError:
-    """Build a fail-closed ADR-039 ``prerequisite`` CloudError with an authored message."""
-    error = CloudError(message)
-    error.code = PREREQUISITE_DENIAL_CODE
-    return error
-
-
-def _resolve_legacy_gcp_backend(range_data: dict[str, Any]) -> str:
-    """Resolve a GCP range with no persisted binding from durable ownership evidence (#1666).
-
-    A pre-#1666 (legacy) range carries no ownership binding. On destroy/reconcile
-    we must never guess the backend from the mutable env selector -- after a
-    ``gdc -> gce`` flip that would strand the range. Resolve only from durable,
-    ownership-proven evidence (provider/asset discriminants persisted on the
-    range's ``engine_instance.state`` rows, or an explicit operator backfill of
-    the binding). An ambiguous or evidence-free row fails closed with a
-    ``prerequisite`` diagnostic and retains its cleanup state for explicit repair.
-    """
-    request_id = range_data["request_id"]
-    resolved = resolve_legacy_range_backend(request_id)
-    if resolved is not None:
-        logger.info(
-            "Resolved legacy GCP range backend from ownership evidence request_id=%s backend=%s",
-            request_id,
-            resolved,
-        )
-        return resolved
-    raise _prerequisite_error(
-        "This GCP range predates backend ownership binding and its backend could not be proven from "
-        "durable ownership evidence. Back-fill its range_backend with the operator command "
-        "(manage.py backfill_range_backend_binding) while the historical selector is known, then retry. "
-        "The range's cleanup state is retained; no resources were touched."
-    )
-
-
-def _resolve_operation_backend(range_data: dict[str, Any], operation: str) -> str | None:
-    """Resolve the per-operation GCP range backend from persisted ownership (#1666).
-
-    Returns the normalized write-once binding when present; ``None`` for non-GCP
-    (AWS) ranges, where gce/gdc routing does not apply. For a GCP range with no
-    persisted binding, a destroy/reconcile resolves from durable ownership
-    evidence (or fails closed); provision (and its immediate compensation) fall
-    back to the env selector, since a fresh range has no resources to disambiguate
-    and the selector still equals what was admitted in that window.
-    """
-    persisted = range_data.get("range_backend")
-    if persisted:
-        return normalize_gcp_range_backend(persisted)
-    # No binding: non-GCP ranges and the provision path (a fresh range with no
-    # resources to disambiguate) fall back to the env selector; only a GCP
-    # destroy/reconcile of a legacy range must resolve from durable evidence.
-    if resolve_cloud_provider() != "gcp" or operation != "destroy":
-        return None
-    return _resolve_legacy_gcp_backend(range_data)
-
-
 @dataclass(frozen=True)
 class RangeOperation:
     """Inputs of one range Terraform operation, bound once at dispatch.
@@ -136,6 +84,10 @@ class RangeOperation:
     ``backend`` is the #1666 per-operation ownership binding captured at
     operation start; on a provision failure the compensation destroy routes
     from it, never a re-read of the env selector.
+
+    ``purpose`` is the #1354 trusted instantiation purpose read from the same
+    persisted binding. It reaches the provisioner's defense-in-depth policy
+    evaluation before any GDC apply call.
 
     ``operation_id`` is the ADR-043 canonical operation generation (#1834);
     ``None`` on local-dev runs / commands not yet carrying it.
@@ -147,6 +99,7 @@ class RangeOperation:
     range_spec: dict[str, Any]
     scenario_artifact: dict[str, Any] | None = None
     backend: str | None = None
+    purpose: InstantiationPurpose = InstantiationPurpose.LIVE_FIRE
     remote_access_capability: dict[str, object] | None = None
     operation_id: str | None = None
 
@@ -249,7 +202,7 @@ def _resolve_remote_access_capability(
     if operation == "up":
         validate_openvpn_capability_window(capability)
         if not openvpn_access_enabled():
-            raise _prerequisite_error(
+            raise prerequisite_error(
                 "This range requests OpenVPN access, but the selected provider adapter is not configured to realize it"
             )
     return capability.as_dict()
@@ -272,7 +225,13 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
     # persisted Range ownership (#1666). Reused for dispatch and, on a provision
     # failure, for the compensation destroy -- never re-resolved from the env
     # selector after a failure.
-    operation_backend = _resolve_operation_backend(range_data, operation)
+    operation_backend = resolve_operation_backend(range_data, operation)
+    # The trusted purpose travels with the binding (#1354). It is provision-only
+    # authority: destroy never parses it, so a damaged or forward-version value
+    # cannot strand owned resources. A provision must also still take the route
+    # CMS admitted.
+    operation_purpose = resolve_provision_purpose(range_data, operation)
+    assert_provision_route(operation_backend, operation)
 
     range_operation: RangeOperation | None = None
     try:
@@ -293,6 +252,7 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
             range_spec=range_spec,
             scenario_artifact=scenario_artifact,
             backend=operation_backend,
+            purpose=operation_purpose,
             remote_access_capability=remote_access_capability,
             operation_id=operation_id,
         )
@@ -361,8 +321,10 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         remote_access_capability=remote_access_capability,
     )
 
-    # Run the provider-routed apply
-    output_data = range_terraform_runner.apply_range(request_id, provision_variables)
+    # Run the provider-routed apply, carrying the trusted purpose so the
+    # provisioner's defense-in-depth policy denial sees real persisted state
+    # rather than an unconditional live-fire default (#1354).
+    output_data = range_terraform_runner.apply_range(request_id, provision_variables, purpose=operation.purpose)
     vpn_access_binding = (
         finalize_openvpn_access(
             vpn_preparation,

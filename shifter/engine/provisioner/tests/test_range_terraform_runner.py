@@ -117,7 +117,7 @@ class TestProviderRouting:
         # CloudError carries the permanent identity-or-policy classification.
         with (
             patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True),
-            pytest.raises(CloudError, match="not an approved live-fire range backend") as denial,
+            pytest.raises(CloudError, match=r"not admitted for instantiation purpose 'live_fire'") as denial,
         ):
             apply_range("req-123", variables)
 

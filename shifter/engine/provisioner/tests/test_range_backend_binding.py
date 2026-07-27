@@ -108,49 +108,55 @@ class TestResolveLegacyRangeBackend:
 
 
 class TestResolveOperationBackend:
-    """_resolve_operation_backend prefers the persisted binding and fails closed on legacy ambiguity."""
+    """resolve_operation_backend prefers the persisted binding and fails closed on legacy ambiguity."""
 
     def test_persisted_binding_wins_without_legacy_resolution(self, monkeypatch):
-        import terraform_ops
+        import range_operation_binding
 
         # A persisted binding returns immediately; the legacy resolver (a DB read)
         # must never be consulted, and neither must the env-selector path.
-        monkeypatch.setattr(terraform_ops, "resolve_legacy_range_backend", MagicMock(side_effect=AssertionError))
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", MagicMock(side_effect=AssertionError))
-        result = terraform_ops._resolve_operation_backend({"range_backend": "gdc"}, "destroy")
+        monkeypatch.setattr(
+            range_operation_binding, "resolve_legacy_range_backend", MagicMock(side_effect=AssertionError)
+        )
+        monkeypatch.setattr(range_operation_binding, "resolve_cloud_provider", MagicMock(side_effect=AssertionError))
+        result = range_operation_binding.resolve_operation_backend({"range_backend": "gdc"}, "destroy")
         assert result == "gdc"
 
     def test_non_gcp_returns_none(self, monkeypatch):
-        import terraform_ops
+        import range_operation_binding
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "aws")
-        assert terraform_ops._resolve_operation_backend({"range_backend": None}, "destroy") is None
+        monkeypatch.setattr(range_operation_binding, "resolve_cloud_provider", lambda: "aws")
+        assert range_operation_binding.resolve_operation_backend({"range_backend": None}, "destroy") is None
 
     def test_legacy_destroy_without_evidence_fails_closed(self, monkeypatch):
         from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE
 
-        import terraform_ops
+        import range_operation_binding
         from cloud.exceptions import CloudError
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "gcp")
-        monkeypatch.setattr(terraform_ops, "resolve_legacy_range_backend", lambda rid: None)
+        monkeypatch.setattr(range_operation_binding, "resolve_cloud_provider", lambda: "gcp")
+        monkeypatch.setattr(range_operation_binding, "resolve_legacy_range_backend", lambda rid: None)
         with pytest.raises(CloudError) as exc:
-            terraform_ops._resolve_operation_backend({"range_backend": None, "request_id": "req-1"}, "destroy")
+            range_operation_binding.resolve_operation_backend({"range_backend": None, "request_id": "req-1"}, "destroy")
         assert exc.value.code == PREREQUISITE_DENIAL_CODE
 
     def test_legacy_destroy_resolves_from_evidence(self, monkeypatch):
-        import terraform_ops
+        import range_operation_binding
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "gcp")
-        monkeypatch.setattr(terraform_ops, "resolve_legacy_range_backend", lambda rid: "gdc")
-        result = terraform_ops._resolve_operation_backend({"range_backend": None, "request_id": "req-1"}, "destroy")
+        monkeypatch.setattr(range_operation_binding, "resolve_cloud_provider", lambda: "gcp")
+        monkeypatch.setattr(range_operation_binding, "resolve_legacy_range_backend", lambda rid: "gdc")
+        result = range_operation_binding.resolve_operation_backend(
+            {"range_backend": None, "request_id": "req-1"}, "destroy"
+        )
         assert result == "gdc"
 
     def test_provision_with_null_binding_falls_back_to_env(self, monkeypatch):
         """A fresh provision has no resources to disambiguate; it must not fail closed."""
-        import terraform_ops
+        import range_operation_binding
 
-        monkeypatch.setattr(terraform_ops, "resolve_cloud_provider", lambda: "gcp")
+        monkeypatch.setattr(range_operation_binding, "resolve_cloud_provider", lambda: "gcp")
         # Legacy resolver must not even be consulted on the provision path.
-        monkeypatch.setattr(terraform_ops, "resolve_legacy_range_backend", MagicMock(side_effect=AssertionError))
-        assert terraform_ops._resolve_operation_backend({"range_backend": None}, "up") is None
+        monkeypatch.setattr(
+            range_operation_binding, "resolve_legacy_range_backend", MagicMock(side_effect=AssertionError)
+        )
+        assert range_operation_binding.resolve_operation_backend({"range_backend": None}, "up") is None

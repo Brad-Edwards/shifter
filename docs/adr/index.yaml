@@ -1383,6 +1383,11 @@
         "id": "ADR-030-R5",
         "description": "A backend is not event-ready until range-side escape validation passes for cross-range private IP reachability, platform/pod/service/node network reachability, cloud metadata/API credential exposure, approved management ingress, and configured internet egress policy.",
         "checks": []
+      },
+      {
+        "id": "ADR-030-R6",
+        "description": "Instantiation purpose is closed, trusted workflow authority and must not be inferred from RangeSource, scenario type or id, user role, deployment tier, feature flags, or backend selection. In particular, an ordinary Mission Control demo remains live-fire. Range-backend registration is default-deny: each backend explicitly enumerates its permitted purposes in the single shared instantiation-policy mapping, and Kubernetes/GDC may be admitted only by a dedicated non-user demo/BAS or operator-validation path.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1393,6 +1398,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/1354",
       "docs/architecture/gdc-windows-dc-image-build.md",
       "docs/architecture/gdc-vm-runtime-live-fire-gate-preflight-1348.md",
+      "docs/architecture/range-instantiation-policy-control-preflight-1354.md",
       "docs/architecture/range-isolation-model.md",
       "docs/architecture/gcp-range-cell-boundary-controls-preflight-1345.md",
       "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",
