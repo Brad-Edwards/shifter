@@ -677,11 +677,6 @@
     },
     {
       "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "components.network.reserve_range_subnets"
-    },
-    {
-      "count": 1,
       "path": "shifter/engine/provisioner/tests/test_network_component.py",
       "target": "cloud.get_db_auth"
     },
