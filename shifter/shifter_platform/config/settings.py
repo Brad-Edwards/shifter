@@ -260,6 +260,11 @@ CTF_RANGE_CLEANUP_BATCH_PAUSE_SECONDS = _env_int("CTF_RANGE_CLEANUP_BATCH_PAUSE_
 # ACES operation-record retention/cleanup knobs (issue #1277): snapshot TTL days
 # plus the dedicated prune service cadence/batch size. Non-secret integers.
 from config._aces_settings import *  # noqa: E402  # NOSONAR
+
+# Capacity-aware provisioning (PLAT-201, #680): the deployment-owned partition
+# and metric catalog plus the read-only identities used to observe provider
+# headroom. Distinct from the portal saturation emitter imported above.
+from config._capacity_planning_settings import *  # noqa: E402  # NOSONAR
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
 # CTF regex-flag safety tunables (issue #1183): pattern/submission length caps

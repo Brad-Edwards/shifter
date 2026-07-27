@@ -120,6 +120,7 @@ _AWS_AND_GCP_CAPABILITIES: frozenset[BackendCapability] = frozenset(
         BackendCapability.EVENT_BUS,
         BackendCapability.DATABASE_AUTH,
         BackendCapability.NETWORK_INVENTORY,
+        BackendCapability.CAPACITY_INVENTORY,
     }
 )
 

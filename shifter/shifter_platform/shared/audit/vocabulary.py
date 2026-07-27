@@ -47,6 +47,7 @@ class AuditAction(models.TextChoices):
     CANCEL = "cancel", "Cancel"
     RECOVER = "recover", "Recover"
     SPARE_PROVISION = "spare_provision", "Spare Provision"
+    CAPACITY_ASSESS = "capacity_assess", "Capacity Assess"
 
 
 class AuditEntityType(models.TextChoices):

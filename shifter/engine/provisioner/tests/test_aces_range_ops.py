@@ -1,10 +1,12 @@
-"""Tests for the ACES-native range lifecycle entry (ADR-031, ADR-032).
+"""Tests for the ACES-native range lifecycle entry (ADR-031, ADR-032, ADR-043).
 
-Exercises run_aces_range_provision/destroy: it reads the serialized ACES plan,
-drives the GCE apply/destroy, and publishes range lifecycle status through the
-neutral event seam. The GCE apply/destroy and the DB read are patched, so this
-verifies the orchestration flow (status transitions, failure handling, resolver
-wiring), not the cloud calls (covered by test_aces_gcp_apply).
+Exercises run_aces_range_provision/destroy after the phase-5 cutover (#1837):
+inputs come from the immutable operation-input projection selected by the
+canonical ``operation_id``, and outcomes are reported as closed results on the
+operation contract instead of published as outbox events. The GCE apply/destroy
+and the input read are patched, so this verifies the orchestration flow
+(generation fencing, step sequence, failure handling, resolver wiring), not the
+cloud calls (covered by test_aces_gcp_apply).
 """
 
 import sys
@@ -16,9 +18,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from shared.aces.content_delivery import DeliveryBinding
+from shared.aces.operation_input import AcesOperationInput
+from shared.operation_results import ResultStep
+
 import aces_range_ops
 from aces_plan import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, AcesPlan, AcesPlanImage, AcesPlanNode
 from config import GCERangeImageProfile
+
+_OPERATION_ID = "11111111-2222-3333-4444-555555555555"
+_SHA = "a" * 64
 
 
 def _serialized_plan() -> dict:
@@ -45,15 +54,31 @@ def _serialized_plan() -> dict:
     }
 
 
-_DELIVERY_BINDINGS = [
-    {
-        "content_address": "content.c",
-        "sha256": "a" * 64,
-        "storage_key": "aces/content-delivery/aa/" + "a" * 64,
-        "byte_count": 5,
-        "binding_version": 1,
+_BINDING = DeliveryBinding(
+    content_address="content.c",
+    sha256=_SHA,
+    storage_key=f"aces/content-delivery/aa/{_SHA}",
+    byte_count=5,
+)
+
+
+def _run(**overrides):
+    from provisioner_db_operation_input import AcesOperationRun
+
+    return AcesOperationRun(operation_id=_OPERATION_ID, request_id="req-1", input=_projection(**overrides))
+
+
+def _projection(**overrides) -> AcesOperationInput:
+    kwargs = {
+        "plan": _serialized_plan(),
+        "delivery_bindings": (_BINDING,),
+        "range_backend": "gce",
+        "instantiation_purpose": "live_fire",
+        "legacy_range_id": 7,
+        "_image_candidates": {},
     }
-]
+    kwargs.update(overrides)
+    return AcesOperationInput(**kwargs)
 
 
 @pytest.fixture
@@ -63,99 +88,186 @@ def patched(monkeypatch):
         destroy=MagicMock(),
         config=MagicMock(name="gce_config"),
         load_config=MagicMock(),
-        status=MagicMock(),
-        ready=MagicMock(),
-        failed=MagicMock(),
-        destroyed=MagicMock(),
-        aces_operation=MagicMock(),
-        aces_snapshot=MagicMock(),
-        delivery_bindings=MagicMock(return_value=_DELIVERY_BINDINGS),
-    )
-    monkeypatch.setattr(
-        aces_range_ops,
-        "get_aces_range_data_by_request_id",
-        lambda request_id: {
-            "range_id": 7,
-            "user_id": 3,
-            "plan": _serialized_plan(),
-            "range_backend": "gce",
-            "instantiation_purpose": "live_fire",
-        },
+        append=MagicMock(),
+        read_input=MagicMock(side_effect=lambda *a, **k: _run()),
     )
     calls.load_config.return_value = calls.config
+    monkeypatch.setattr(aces_range_ops, "get_aces_operation_input", calls.read_input)
     monkeypatch.setattr(aces_range_ops, "load_gce_range_cell_config", calls.load_config)
-    monkeypatch.setattr(aces_range_ops, "get_aces_content_delivery_bindings_by_request_id", calls.delivery_bindings)
     monkeypatch.setattr(aces_range_ops, "apply_aces_range_cell", calls.apply)
     monkeypatch.setattr(aces_range_ops, "destroy_aces_range_cell", calls.destroy)
-    monkeypatch.setattr(aces_range_ops, "publish_status_update", calls.status)
-    monkeypatch.setattr(aces_range_ops, "publish_ready", calls.ready)
-    monkeypatch.setattr(aces_range_ops, "publish_failed", calls.failed)
-    monkeypatch.setattr(aces_range_ops, "publish_destroyed", calls.destroyed)
-    monkeypatch.setattr(aces_range_ops, "publish_aces_operation", calls.aces_operation)
-    monkeypatch.setattr(aces_range_ops, "publish_aces_snapshot", calls.aces_snapshot)
+    monkeypatch.setattr(aces_range_ops, "append_operation_step_result", calls.append)
     return calls
 
 
+def _steps(calls) -> list[str]:
+    return [str(call.kwargs["step"]) for call in calls.append.call_args_list]
+
+
+def _payload_for(calls, step: ResultStep) -> dict:
+    for call in calls.append.call_args_list:
+        if call.kwargs["step"] is step:
+            return call.kwargs["result_payload"]
+    raise AssertionError(f"no result appended for step {step}")
+
+
+class TestGenerationFence:
+    def test_provision_without_a_generation_fails_before_any_cloud_work(self, patched):
+        # An ACES cloud mutation with no canonical operation id has no input to
+        # read and no fence to report against; it must refuse, not fall back.
+        with pytest.raises(aces_range_ops.AcesGenerationError):
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=None)
+        assert not patched.apply.called
+        assert not patched.read_input.called
+        assert not patched.append.called
+
+    def test_destroy_without_a_generation_fails_before_any_cloud_work(self, patched):
+        with pytest.raises(aces_range_ops.AcesGenerationError):
+            aces_range_ops.run_aces_range_destroy("req-1", operation_id=None)
+        assert not patched.destroy.called
+        assert not patched.append.called
+
+    def test_input_is_read_for_this_generation_and_operation(self, patched):
+        aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+        patched.read_input.assert_called_once_with(_OPERATION_ID, request_id="req-1", operation="provision")
+
+
 class TestProvision:
-    def test_publishes_provisioning_then_ready_and_applies(self, patched):
-        aces_range_ops.run_aces_range_provision("req-1")
-        patched.status.assert_called_once_with(request_id="req-1", range_id=7, user_id=3, new_status="provisioning")
-        assert patched.apply.called
+    def test_reports_running_snapshot_then_ready(self, patched):
+        aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+        assert _steps(patched) == [
+            ResultStep.ACES_PROVISION_RUNNING,
+            ResultStep.ACES_PROVISION_SNAPSHOT,
+            ResultStep.ACES_TERMINAL_READY,
+        ]
+
+    def test_forwards_the_parsed_plan_from_the_projection(self, patched):
+        aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
         request_id, range_id, aces_plan = patched.apply.call_args.args[:3]
+        # The legacy integer range id is the cloud/secret naming key only; it
+        # comes from the projection, never from a domain-table read.
         assert (request_id, range_id) == ("req-1", 7)
-        # The *parsed* AcesPlan is forwarded to realization, not the raw range_config
-        # dict -- a refactor that skipped parse_plan before dispatch must fail here.
+        # The *parsed* AcesPlan is forwarded to realization, not the raw dict --
+        # a refactor that skipped parse_plan before dispatch must fail here.
         assert isinstance(aces_plan, AcesPlan)
         assert [n.address for n in aces_plan.nodes] == ["node.web"]
         patched.load_config.assert_called_once_with(backend="gce")
         assert patched.apply.call_args.kwargs["options"].config is patched.config
-        patched.ready.assert_called_once_with(request_id="req-1", range_id=7, user_id=3)
-        assert not patched.failed.called
 
-    def test_reads_and_forwards_content_delivery_bindings(self, patched):
-        # #1564: the delivery bindings are read once per provision and threaded
-        # through to apply_aces_range_cell so it can gate + realize source-backed
-        # content delivery.
-        aces_range_ops.run_aces_range_provision("req-1")
-        patched.delivery_bindings.assert_called_once_with("req-1")
-        assert patched.apply.call_args.kwargs["delivery_bindings"] == _DELIVERY_BINDINGS
+    def test_forwards_content_delivery_bindings_from_the_projection(self, patched):
+        # #1564: the bindings gate + realize source-backed content delivery. They
+        # now ride the immutable input rather than a live binding-table read.
+        aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+        assert patched.apply.call_args.kwargs["delivery_bindings"] == [_BINDING.to_transport()]
 
-    def test_emits_aces_operation_and_snapshot_on_success(self, patched):
-        aces_range_ops.run_aces_range_provision("req-1")
-        statuses = [c.kwargs["status"] for c in patched.aces_operation.call_args_list]
-        assert statuses == ["running", "succeeded"]
-        assert patched.aces_operation.call_args_list[0].kwargs["operation_id"] == "req-1"
-        # snapshot emitted with the bounded resources for the plan (1 network + 1 node).
-        assert patched.aces_snapshot.called
-        resources = patched.aces_snapshot.call_args.kwargs["resources"]
+    def test_snapshot_carries_the_bounded_plan_resources(self, patched):
+        aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+        resources = _payload_for(patched, ResultStep.ACES_PROVISION_SNAPSHOT)["resources"]
         assert {r["resource_type"] for r in resources} == {"network", "node"}
 
-    def test_failure_reports_only_authored_diagnostics_and_reraises(self, patched):
+    def test_results_are_appended_under_the_aces_resource(self, patched):
+        aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+        for call in patched.append.call_args_list:
+            assert call.kwargs["resource"] == "aces-range"
+            assert call.kwargs["operation"] == "provision"
+            assert call.args[0].operation_id == _OPERATION_ID
+
+
+class TestProvisionFailure:
+    def test_failure_reports_a_closed_reason_code_and_reraises(self, patched):
+        patched.apply.side_effect = RuntimeError("gce insert 409 for projects/secret/instances/x")
+        with pytest.raises(RuntimeError):
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        payload = _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)
+        assert payload["reason_code"] == "cloud_operation_failed"
+        assert ResultStep.ACES_TERMINAL_READY not in _steps(patched)
+        assert ResultStep.ACES_PROVISION_SNAPSHOT not in _steps(patched)
+
+    def test_failure_diagnostic_is_bounded(self, patched):
+        patched.apply.side_effect = RuntimeError("x" * 5000)
+        with pytest.raises(RuntimeError):
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+        assert len(_payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)["diagnostic"]) <= 512
+
+    def test_provider_message_never_reaches_the_durable_diagnostic(self, patched):
+        # ACES failures cross provider, storage, content-delivery, and guest
+        # code whose messages carry response bodies, resource ids, storage
+        # references, signed URLs, and guest output. The result inbox is a
+        # durable cross-service channel; truncation bounds size, not
+        # confidentiality. Only authored text may cross.
         secret = "https://storage.example/bucket/obj?X-Goog-Signature=deadbeef"
-        patched.apply.side_effect = RuntimeError(f"insert projects/acme-prod/instances/db1: {secret}")
-        with pytest.raises(RuntimeError, match="acme-prod"):
-            aces_range_ops.run_aces_range_provision("req-1")
-        diagnostic = patched.failed.call_args.kwargs["error_message"]
-        status_reason = patched.aces_operation.call_args_list[-1].kwargs["status_reason"]
-        assert diagnostic == "ACES range provision failed (RuntimeError)"
-        assert status_reason == diagnostic
+        patched.apply.side_effect = RuntimeError(f"insert failed for projects/acme-prod/instances/db1: {secret}")
+        with pytest.raises(RuntimeError):
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        diagnostic = _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)["diagnostic"]
         for leaked in ("X-Goog-Signature", "deadbeef", "acme-prod", "storage.example", "db1"):
             assert leaked not in diagnostic
-            assert leaked not in status_reason
-        assert not patched.ready.called
-        # ACES operation ends 'failed'; no snapshot on failure.
-        assert patched.aces_operation.call_args_list[-1].kwargs["status"] == "failed"
-        assert not patched.aces_snapshot.called
+
+    def test_destroy_diagnostic_is_authored_too(self, patched):
+        # Same category, other entry point: a fix applied only to provision
+        # would leave this channel open.
+        patched.destroy.side_effect = RuntimeError("teardown failed for projects/acme-prod/instances/db1")
+        with pytest.raises(RuntimeError):
+            aces_range_ops.run_aces_range_destroy("req-1", operation_id=_OPERATION_ID)
+
+        diagnostic = _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)["diagnostic"]
+        assert "acme-prod" not in diagnostic
+        assert "db1" not in diagnostic
+
+    def test_diagnostic_still_identifies_the_failure_type_for_triage(self, patched):
+        # An exception class name is a code identifier, not runtime data, so it
+        # can cross while the message cannot.
+        patched.apply.side_effect = TimeoutError("waited on projects/acme-prod/operations/op-9")
+        with pytest.raises(TimeoutError):
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        payload = _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)
+        assert payload["reason_code"] == "cloud_timeout"
+        assert "acme-prod" not in payload["diagnostic"]
 
     def test_malformed_composition_proof_fails_before_snapshot_or_ready(self, patched):
         patched.apply.return_value = {"composition_verified_addresses": "content.inline"}
 
         with pytest.raises(ValueError, match="verification proof is invalid"):
-            aces_range_ops.run_aces_range_provision("req-1")
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
 
-        assert patched.failed.called
-        assert not patched.aces_snapshot.called
-        assert not patched.ready.called
+        assert ResultStep.ACES_PROVISION_SNAPSHOT not in _steps(patched)
+        assert ResultStep.ACES_TERMINAL_READY not in _steps(patched)
+        assert ResultStep.ACES_TERMINAL_FAILED in _steps(patched)
+
+    def test_an_invalid_input_projection_stops_before_cloud_work(self, patched):
+        import provisioner_db_operation_input as reader
+
+        patched.read_input.side_effect = reader.OperationInputError("tampered binding")
+        with pytest.raises(reader.OperationInputError):
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+        assert not patched.apply.called
+
+    def test_an_unreadable_input_still_reports_a_terminal_failure(self, patched):
+        # ADR-043-R7: an operation generation that never reports a terminal
+        # result is only visible through a lag signal. We hold the generation
+        # from argv, so we can fail the range explicitly instead of leaving it
+        # stuck until an operator notices.
+        import provisioner_db_operation_input as reader
+
+        patched.read_input.side_effect = reader.OperationInputError("no input row")
+        with pytest.raises(reader.OperationInputError):
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        assert _steps(patched) == [ResultStep.ACES_TERMINAL_FAILED]
+        assert _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)["reason_code"] == "dependency_unavailable"
+
+    def test_an_unreadable_input_reports_no_raw_diagnostic_detail(self, patched):
+        import provisioner_db_operation_input as reader
+
+        patched.read_input.side_effect = reader.OperationInputError("relation engine_operation_input does not exist")
+        with pytest.raises(reader.OperationInputError):
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        diagnostic = _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)["diagnostic"]
+        assert "engine_operation_input" not in diagnostic
 
     @pytest.mark.parametrize(
         ("backend", "purpose", "code"),
@@ -176,20 +288,13 @@ class TestProvision:
     ):
         from cloud.exceptions import CloudError
 
-        monkeypatch.setattr(
-            aces_range_ops,
-            "get_aces_range_data_by_request_id",
-            lambda request_id: {
-                "range_id": 7,
-                "user_id": 3,
-                "plan": _serialized_plan(),
-                "range_backend": backend,
-                "instantiation_purpose": purpose,
-            },
+        patched.read_input.side_effect = lambda *a, **k: _run(
+            range_backend=backend,
+            instantiation_purpose=purpose,
         )
 
         with pytest.raises(CloudError) as exc:
-            aces_range_ops.run_aces_range_provision("req-1")
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
 
         assert exc.value.code == code
         patched.apply.assert_not_called()
@@ -197,59 +302,36 @@ class TestProvision:
 
 
 class TestDestroy:
-    def test_destroys_and_publishes_destroyed(self, patched):
-        aces_range_ops.run_aces_range_destroy("req-1")
-        assert patched.destroy.called
+    def test_reports_running_then_destroyed(self, patched):
+        aces_range_ops.run_aces_range_destroy("req-1", operation_id=_OPERATION_ID)
+        assert _steps(patched) == [ResultStep.ACES_DESTROY_RUNNING, ResultStep.ACES_TERMINAL_DESTROYED]
+
+    def test_forwards_the_parsed_plan(self, patched):
+        aces_range_ops.run_aces_range_destroy("req-1", operation_id=_OPERATION_ID)
         request_id, range_id, aces_plan = patched.destroy.call_args.args[:3]
         assert (request_id, range_id) == ("req-1", 7)
-        # Destroy receives the parsed AcesPlan too, not the raw range_config dict.
         assert isinstance(aces_plan, AcesPlan)
         assert [n.address for n in aces_plan.nodes] == ["node.web"]
         patched.load_config.assert_called_once_with(backend="gce")
         assert patched.destroy.call_args.kwargs["config"] is patched.config
-        patched.destroyed.assert_called_once_with(request_id="req-1", range_id=7, user_id=3)
 
-    def test_failure_reports_only_authored_diagnostics_and_reraises(self, patched):
-        patched.destroy.side_effect = RuntimeError(
-            "delete projects/acme-prod/instances/db1 using https://signed.example/?token=secret"
-        )
-        with pytest.raises(RuntimeError, match="acme-prod"):
-            aces_range_ops.run_aces_range_destroy("req-1")
-        diagnostic = patched.failed.call_args.kwargs["error_message"]
-        status_reason = patched.aces_operation.call_args_list[-1].kwargs["status_reason"]
-        assert diagnostic == "ACES range destroy failed (RuntimeError)"
-        assert status_reason == diagnostic
-        for leaked in ("acme-prod", "db1", "signed.example", "token", "secret"):
-            assert leaked not in diagnostic
-            assert leaked not in status_reason
+    def test_failure_reports_a_closed_reason_code_and_reraises(self, patched):
+        patched.destroy.side_effect = RuntimeError("kaboom")
+        with pytest.raises(RuntimeError, match="kaboom"):
+            aces_range_ops.run_aces_range_destroy("req-1", operation_id=_OPERATION_ID)
+        assert _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)["reason_code"] == "cloud_operation_failed"
+        assert ResultStep.ACES_TERMINAL_DESTROYED not in _steps(patched)
 
-    def test_timeout_keeps_a_stable_failure_class_without_runtime_detail(self, patched):
-        patched.destroy.side_effect = TimeoutError("waited on projects/acme-prod/operations/op-9")
-
-        with pytest.raises(TimeoutError):
-            aces_range_ops.run_aces_range_destroy("req-1")
-
-        diagnostic = patched.failed.call_args.kwargs["error_message"]
-        assert diagnostic == "ACES range destroy timed out (TimeoutError)"
-        assert "acme-prod" not in diagnostic
-
-    def test_rejects_non_gce_binding_before_destroy(self, monkeypatch, patched):
+    def test_rejects_non_gce_binding_before_destroy(self, patched):
         from cloud.exceptions import CloudError
 
-        monkeypatch.setattr(
-            aces_range_ops,
-            "get_aces_range_data_by_request_id",
-            lambda request_id: {
-                "range_id": 7,
-                "user_id": 3,
-                "plan": _serialized_plan(),
-                "range_backend": "gdc",
-                "instantiation_purpose": "live_fire",
-            },
+        patched.read_input.side_effect = lambda *a, **k: _run(
+            range_backend="gdc",
+            instantiation_purpose="live_fire",
         )
 
         with pytest.raises(CloudError) as exc:
-            aces_range_ops.run_aces_range_destroy("req-1")
+            aces_range_ops.run_aces_range_destroy("req-1", operation_id=_OPERATION_ID)
 
         assert exc.value.code == "identity-or-policy"
         patched.destroy.assert_not_called()
@@ -263,30 +345,38 @@ def _node(image: AcesPlanImage | None) -> AcesPlanNode:
 
 
 class TestRegistryResolver:
-    def test_resolver_wires_registry_candidates_to_policy(self, monkeypatch):
+    """The resolver now reads candidates from the projection, not the registry table."""
+
+    def test_resolver_wires_projected_candidates_to_policy(self, monkeypatch):
         candidates = [{"source_version": None, "image_ref": "projects/x/global/images/ubuntu-1"}]
-        get_candidates = MagicMock(return_value=candidates)
+        projection = _projection(_image_candidates={"gce:ubuntu": tuple(candidates)})
         resolve = MagicMock(return_value=GCERangeImageProfile(source_image="projects/x/global/images/ubuntu-1"))
-        monkeypatch.setattr(aces_range_ops, "get_aces_image_candidates", get_candidates)
         monkeypatch.setattr(aces_range_ops, "resolve_gce_image", resolve)
 
         node = _node(AcesPlanImage(name="ubuntu"))
-        profile = aces_range_ops._registry_resolver()(node)
+        profile = aces_range_ops._registry_resolver(projection)(node)
 
-        get_candidates.assert_called_once_with("gce", "ubuntu")
         resolve.assert_called_once_with(node, candidates)
         assert profile.source_image == "projects/x/global/images/ubuntu-1"
 
     def test_resolver_uses_os_family_for_source_less_node(self, monkeypatch):
         # A source-less node looks up a base OS image by os_family (ADR-032).
         candidates = [{"source_version": "", "image_ref": "projects/x/global/images/ubuntu-base"}]
-        get_candidates = MagicMock(return_value=candidates)
+        projection = _projection(_image_candidates={"gce:linux": tuple(candidates)})
         resolve = MagicMock(return_value=GCERangeImageProfile())
-        monkeypatch.setattr(aces_range_ops, "get_aces_image_candidates", get_candidates)
         monkeypatch.setattr(aces_range_ops, "resolve_gce_image", resolve)
 
         node = _node(None)  # os_family linux, no image
-        aces_range_ops._registry_resolver()(node)
+        aces_range_ops._registry_resolver(projection)(node)
 
-        get_candidates.assert_called_once_with("gce", "linux")
         resolve.assert_called_once_with(node, candidates)
+
+    def test_a_source_with_no_projected_candidates_resolves_empty(self, monkeypatch):
+        # Fail-loud stays with the existing image policy, which receives an empty
+        # candidate list exactly as the direct read produced for an unmapped source.
+        resolve = MagicMock(return_value=GCERangeImageProfile())
+        monkeypatch.setattr(aces_range_ops, "resolve_gce_image", resolve)
+
+        aces_range_ops._registry_resolver(_projection())(_node(AcesPlanImage(name="nope")))
+
+        resolve.assert_called_once_with(_node(AcesPlanImage(name="nope")), [])

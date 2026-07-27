@@ -454,3 +454,24 @@ variable "permissions_boundary_arn" {
   description = "Permissions boundary ARN required on CI-created shifter-* roles"
   type        = string
 }
+
+variable "capacity_inventory_read_role_arns" {
+  description = <<-DESC
+    Cross-account capacity-read role ARNs the portal may assume to observe quota
+    headroom for a declared partition (PLAT-201, #680). Empty by default: a
+    deployment with a single account needs no assume-role grant at all, and the
+    statement is omitted entirely rather than widened to a wildcard. Each ARN
+    must be a purpose-built read-only role in the target account; never the
+    provisioner, scheduler, or an administrative role.
+  DESC
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.capacity_inventory_read_role_arns :
+      can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_-]+$", arn))
+    ])
+    error_message = "Each capacity_inventory_read_role_arns entry must be a fully-qualified IAM role ARN (no wildcards)."
+  }
+}

@@ -62,6 +62,7 @@ class BackendCapability(StrEnum):
     EVENT_BUS = "event-bus"
     DATABASE_AUTH = "database-auth"
     NETWORK_INVENTORY = "network-inventory"
+    CAPACITY_INVENTORY = "capacity-inventory"
 
 
 class OutputKind(StrEnum):

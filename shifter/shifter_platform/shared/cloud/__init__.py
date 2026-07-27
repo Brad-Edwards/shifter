@@ -35,6 +35,7 @@ PROVISIONER_CONTAINER_NAME = "pulumi-provisioner"
 
 if TYPE_CHECKING:
     from shared.cloud.types import (
+        CapacityInventory,
         EventBus,
         ObjectStorage,
         QueueConsumer,
@@ -126,6 +127,26 @@ def get_secrets_store() -> SecretsStore:
 
         return GCPSecretsStore()
     raise CloudProviderNotImplementedError(provider, BackendCapability.SECRETS)
+
+
+def get_capacity_inventory() -> CapacityInventory:
+    """Return a read-only CapacityInventory implementation for the configured provider.
+
+    Supplies the observed limit/usage readings that capacity admission (PLAT-201)
+    assesses declared event demand against. Read-only by contract: this seam never
+    mutates provider state, and its credentials are per-partition least-privilege
+    read identities rather than the provisioner's launch role.
+    """
+    provider = _require_capability(BackendCapability.CAPACITY_INVENTORY)
+    if provider == "aws":
+        from shared.cloud.aws.capacity_inventory import AWSCapacityInventory
+
+        return AWSCapacityInventory()
+    if provider == "gcp":
+        from shared.cloud.gcp.capacity_inventory import GCPCapacityInventory
+
+        return GCPCapacityInventory()
+    raise CloudProviderNotImplementedError(provider, BackendCapability.CAPACITY_INVENTORY)
 
 
 def get_event_bus() -> EventBus:

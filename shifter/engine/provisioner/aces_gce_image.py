@@ -21,7 +21,8 @@ Machine type precedence: the registry entry's ``machine_type`` (a tenant-pinned
 size) wins; otherwise the authored ``resources`` (vcpus + ram) derive a GCE
 custom machine type; otherwise the profile default. Disk falls back to the
 profile default when the registry entry omits it. This is pure (candidates are
-passed in); the DB read lives in ``provisioner_db.get_aces_image_candidates``.
+passed in); the candidates arrive on the operation-input projection
+(``shared.aces.operation_input``), not from a registry-table read.
 """
 
 from __future__ import annotations
@@ -52,8 +53,8 @@ class AcesGceImageError(RuntimeError):
 def resolve_gce_image(node: AcesPlanNode, candidates: Sequence[dict[str, Any]]) -> GCERangeImageProfile:
     """Resolve one ACES node's authored image + resources into a GCERangeImageProfile.
 
-    ``candidates`` are the tenant registry rows for (gce, source_name), as returned
-    by ``provisioner_db.get_aces_image_candidates``.
+    ``candidates`` are the tenant registry rows for (gce, source_name), projected
+    onto the operation input by the Engine (ADR-043 phase 5, #1837).
     """
     image = node.image
     if image is None or not image.name:
