@@ -18,6 +18,7 @@ from engine.models import (
     Range,
     Request,
 )
+from engine.operation_inputs import operation_input_payload
 from shared.cloud import PROVISIONER_CONTAINER_NAME
 from shared.cloud.gcp.base import build_idempotent_job_name
 from shared.operation_envelope import build_operation_envelope
@@ -362,18 +363,6 @@ def fail_current_provisioner_operation(
     return True
 
 
-def _operation_input_payload(target: Range | Instance) -> dict[str, object]:
-    """Compose the immutable operation-input projection from engine-owned models.
-
-    A reference-only projection of the existing persisted contracts, not an ORM
-    dump. Phase-2 shadow: fuller per-family completeness lands with each family's
-    cutover (#1835-#1838), when the provisioner begins consuming this input.
-    """
-    if isinstance(target, Range):
-        return {"range_spec": target.range_config or {}}
-    return {"role": str(target.role), "os_type": str(target.os_type)}
-
-
 def _materialize_operation_input(payload: dict[str, object], operation_id: UUID) -> None:
     """Persist the immutable operation input keyed by ``operation_id``.
 
@@ -382,9 +371,9 @@ def _materialize_operation_input(payload: dict[str, object], operation_id: UUID)
     ``operation_id``. Immutable: created once per operation generation.
     """
     target = _lock_operation_target(payload)
-    request = getattr(target, "request", None)
+    request: Request | None = getattr(target, "request", None)
     request_id = getattr(request, "request_id", None)
-    if request_id is None:
+    if request is None or request_id is None:
         # Deprecated legacy range with no linked request: no request-keyed input
         # projection to materialize in shadow. Skip rather than fabricate one.
         return
@@ -395,7 +384,7 @@ def _materialize_operation_input(payload: dict[str, object], operation_id: UUID)
         request_id=request_id,
         resource=resource,
         operation=operation,
-        payload=_operation_input_payload(target),
+        payload=operation_input_payload(target, resource, request),
     )
     OperationInput.objects.create(
         operation_id=operation_id,
