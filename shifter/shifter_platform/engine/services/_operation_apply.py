@@ -1,12 +1,12 @@
-"""Shadow result applier for the operation result inbox (ADR-043 Phase 2, #1834).
+"""Engine-owned result applier for the operation result inbox (ADR-043).
 
 Claims PENDING ``OperationResultInbox`` rows, validates each against the current
-domain operation generation, ownership, contract version, and payload digest, and
-records a disposition. **Shadow mode**: it records the disposition ONLY — it never
-mutates domain state, writes an applied-transition audit, or enqueues a
-``RangeEventOutbox`` row. Direct provisioner SQL remains the sole authoritative
-writer; the authoritative apply (domain state + audit + notification in one
-transaction) is a later #478 phase.
+domain operation generation, ownership, contract version, and payload digest,
+then dispatches declared operation families to the authoritative domain applier.
+Domain state, applied-transition audit, result disposition, and any
+``RangeEventOutbox`` row share one transaction. Compatibility families without a
+declared step contract remain validation-only shadow results until their direct
+provisioner SQL path is removed.
 
 The generation fence is the whole point: a result is tagged with the exact
 ``operation_id`` its provisioner run was launched for, so a result whose operation
@@ -109,12 +109,12 @@ def evaluate_operation_result(row: OperationResultInbox) -> tuple[str, str]:
 
 
 def apply_pending_operation_results(*, batch_size: int = 50) -> int:
-    """Claim and evaluate a batch of PENDING inbox results (shadow).
+    """Claim and apply a batch of PENDING inbox results.
 
     Claims with ``select_for_update(skip_locked=True)`` so concurrent appliers do
-    not contend, records each row's disposition, and returns the count evaluated.
-    Records disposition only — never mutates domain state, audit, or the range
-    event outbox.
+    not contend. Declared operation families are applied authoritatively; other
+    families receive a validation-only shadow disposition. Returns the number of
+    rows dispositioned.
     """
     from engine.models import OperationResultDisposition, OperationResultInbox
 

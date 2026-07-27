@@ -1,7 +1,8 @@
 """NGFW Terraform operations for provisioning and deprovisioning.
 
 This module provides the Terraform equivalent of the Pulumi NGFW operations.
-It makes the same DB calls and emits the same SNS events as the Pulumi path.
+It reports normalized state through the authoritative operation result inbox;
+the Engine-owned applier writes domain state, audit, and range-event intent.
 """
 
 import logging
@@ -43,7 +44,7 @@ from provisioner_db_ngfw import get_ngfw_data_by_request_id
 
 logger = logging.getLogger(__name__)
 
-# ADR-043 (#1834): map the argv tf-op back to the canonical operation name for the shadow append.
+# ADR-043: map the argv tf-op to the canonical operation name for the authoritative result append.
 _NGFW_TF_OP_TO_CANONICAL_OPERATION = {"up": "provision", "destroy": "deprovision"}
 
 
