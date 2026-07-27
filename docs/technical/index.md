@@ -19,6 +19,7 @@ Platform architecture, infrastructure, and development documentation.
 - [Infrastructure Overview](platform_infrastructure/) - AWS and GCP components
 - [GCP Infrastructure](platform_infrastructure/gcp-infrastructure) - GKE, Cloud SQL, Helm, Cloud Armor, and GCP services
 - [GDC Provisioning](platform_infrastructure/gdc-provisioning) - Range guests on GDC (KubeVirt, pods)
+- [Range Instantiation Policy](platform_infrastructure/range-instantiation-policy) - Which range backend may serve which kind of launch
 - [Networking](platform_infrastructure/networking) - Network architecture (both clouds)
 - [CI/CD](platform_infrastructure/cicd) - Deployment pipelines
 - [Machine Images](platform_infrastructure/ami-management) - AMIs (AWS) and GDC images

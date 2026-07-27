@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from shared.range_cells import RangeCellContractError, validate_scenario_artifact
+from shared.range_instantiation_policy import InstantiationPurpose
 from shared.remote_access import parse_openvpn_capability, validate_openvpn_capability_window
 
 import range_terraform_runner
@@ -33,7 +34,12 @@ from provisioner_db import (
     write_provisioned_state,
 )
 from provisioner_db_appends import OperationRef
-from range_backend_resolution import prerequisite_error, resolve_operation_backend
+from range_backend_resolution import (
+    assert_provision_route,
+    prerequisite_error,
+    resolve_operation_backend,
+    resolve_provision_purpose,
+)
 from range_subnet_allocation import (
     _allocate_range_subnet_cidrs,
     _post_destroy_cleanup,
@@ -79,6 +85,10 @@ class RangeOperation:
     operation start; on a provision failure the compensation destroy routes
     from it, never a re-read of the env selector.
 
+    ``purpose`` is the #1354 trusted instantiation purpose read from the same
+    persisted binding. It reaches the provisioner's defense-in-depth policy
+    evaluation before any GDC apply call.
+
     ``operation_id`` is the ADR-043 canonical operation generation (#1834);
     ``None`` on local-dev runs / commands not yet carrying it.
     """
@@ -89,6 +99,7 @@ class RangeOperation:
     range_spec: dict[str, Any]
     scenario_artifact: dict[str, Any] | None = None
     backend: str | None = None
+    purpose: InstantiationPurpose = InstantiationPurpose.LIVE_FIRE
     remote_access_capability: dict[str, object] | None = None
     operation_id: str | None = None
 
@@ -215,6 +226,12 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
     # failure, for the compensation destroy -- never re-resolved from the env
     # selector after a failure.
     operation_backend = resolve_operation_backend(range_data, operation, operation_id)
+    # The trusted purpose travels with the binding (#1354). It is provision-only
+    # authority: destroy never parses it, so a damaged or forward-version value
+    # cannot strand owned resources. A provision must also still take the route
+    # CMS admitted.
+    operation_purpose = resolve_provision_purpose(range_data, operation)
+    assert_provision_route(operation_backend, operation)
 
     range_operation: RangeOperation | None = None
     try:
@@ -235,6 +252,7 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
             range_spec=range_spec,
             scenario_artifact=scenario_artifact,
             backend=operation_backend,
+            purpose=operation_purpose,
             remote_access_capability=remote_access_capability,
             operation_id=operation_id,
         )
@@ -303,8 +321,10 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         remote_access_capability=remote_access_capability,
     )
 
-    # Run the provider-routed apply
-    output_data = range_terraform_runner.apply_range(request_id, provision_variables)
+    # Run the provider-routed apply, carrying the trusted purpose so the
+    # provisioner's defense-in-depth policy denial sees real persisted state
+    # rather than an unconditional live-fire default (#1354).
+    output_data = range_terraform_runner.apply_range(request_id, provision_variables, purpose=operation.purpose)
     vpn_access_binding = (
         finalize_openvpn_access(
             vpn_preparation,

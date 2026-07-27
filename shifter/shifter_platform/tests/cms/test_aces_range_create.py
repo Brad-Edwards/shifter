@@ -14,8 +14,10 @@ import pytest
 from cms.exceptions import CMSError
 from cms.models import AcesPackageSource, RangeInstance
 from cms.scenarios.pack_validation import pack_digest
-from cms.services import create_aces_native_range, create_range_dispatch
+from cms.services import create_aces_native_range, create_non_user_range, create_range_dispatch
+from cms.services._non_user_range_launch import NonUserWorkflow
 from shared.enums import ResourceStatus
+from shared.range_instantiation_policy import InstantiationPurpose
 from tests.cms.conftest import write_pack_content_manifest
 
 _PACK_REF = "packs/aces-launch"
@@ -148,13 +150,37 @@ def test_live_fire_gate_admits_gce(user, native_on, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_policy_allowed_gdc_still_fails_unsupported_capability(user, native_on, monkeypatch):
+    # Issue #1354: policy admission and adapter availability are separate gates.
+    # aces_range_ops realizes GCE only, so a non-user purpose that the policy
+    # permits on GDC must still fail closed before dispatch rather than binding
+    # gdc and then running the hard-coded GCE adapter.
+    from django.conf import settings
+
+    _make_source(user)
+    dispatched = {"called": False}
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: dispatched.update(called=True))
+    monkeypatch.setattr(settings, "CLOUD_PROVIDER", "gcp")
+    monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
+
+    user.is_staff = True
+    user.save(update_fields=["is_staff"])
+    with pytest.raises(CMSError) as exc:
+        create_non_user_range(user, "aces-launch", workflow=NonUserWorkflow.OPERATOR_VALIDATION)
+
+    assert exc.value.details["code"] == "unsupported-capability"
+    assert dispatched["called"] is False
+    assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
+
+
+@pytest.mark.django_db
 def test_dispatch_routes_cyberscript_when_flag_off(user, monkeypatch):
     from django.conf import settings
 
     monkeypatch.setattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False)
     routed = {}
     monkeypatch.setattr(
-        "cms.services._aces_range_create.create_range",
+        "cms.services._aces_range_create._create_range_impl",
         lambda *a, **k: routed.setdefault("path", "cyberscript"),
     )
     create_range_dispatch(user, "basic", {})
@@ -166,18 +192,22 @@ def test_dispatch_routes_native_for_aces_when_flag_on(user, native_on, monkeypat
     _make_source(user, scenario_id="aces-x")
     routed = {}
     monkeypatch.setattr(
-        "cms.services._aces_range_create.create_aces_native_range",
-        lambda u, s, *, range_source=None: routed.setdefault("scenario", s),
+        "cms.services._aces_range_create._create_aces_native_range_impl",
+        lambda u, s, *, range_source=None, instantiation_purpose=None: routed.update(
+            scenario=s, purpose=instantiation_purpose
+        ),
     )
     create_range_dispatch(user, "aces-x", {})
     assert routed["scenario"] == "aces-x"
+    # The product router always mints live-fire authority (#1354, ADR-030-R6).
+    assert routed["purpose"] is InstantiationPurpose.LIVE_FIRE
 
 
 @pytest.mark.django_db
 def test_dispatch_routes_cyberscript_for_non_aces_when_flag_on(user, native_on, monkeypatch):
     routed = {}
     monkeypatch.setattr(
-        "cms.services._aces_range_create.create_range",
+        "cms.services._aces_range_create._create_range_impl",
         lambda *a, **k: routed.setdefault("path", "cyberscript"),
     )
     create_range_dispatch(user, "basic", {})
