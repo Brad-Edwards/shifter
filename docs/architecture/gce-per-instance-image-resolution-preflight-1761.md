@@ -31,7 +31,8 @@ and `dc`). Add one optional, bounded, non-secret backend mapping parameter,
       "source_image": "projects/example/global/images/family/shifter-polaris-vm",
       "machine_type": "e2-standard-8",
       "disk_size_gb": 210,
-      "disk_type": "pd-balanced"
+      "disk_type": "pd-balanced",
+      "bootstrap_capability": "polaris-docker-host"
     }
   },
   "dc": {
@@ -39,18 +40,23 @@ and `dc`). Add one optional, bounded, non-secret backend mapping parameter,
       "source_image": "projects/example/global/images/family/shifter-polaris-dc",
       "machine_type": "e2-standard-4",
       "disk_size_gb": 100,
-      "disk_type": "pd-balanced"
+      "disk_type": "pd-balanced",
+      "bootstrap_capability": "prepromoted-domain-controller",
+      "domain_dns_name": "boreas.local",
+      "domain_netbios_name": "BOREAS"
     }
   }
 }
 ```
 
-Each entry is a complete `GCERangeImageProfile`; it does not inherit sizing or
-disk policy from a mutable global role profile. Complete entries avoid recreating
-the current coupling where selecting the Polaris image also requires swapping
-the global Kali disk size to 210 GB. The existing `GCP_RANGE_{LINUX,KALI,
-WINDOWS,DC}_*` variables remain the defaults for instances whose `ami_key` is
-absent or blank.
+Each entry is a complete `GCERangeImageProfile`; it does not inherit sizing,
+disk policy, or realization capabilities from a mutable global role profile.
+The typed `bootstrap_capability` selects a realizer behavior without branching
+on the logical image key. Pre-promoted DC profiles additionally bind the baked
+DNS and NetBIOS identity. Complete entries avoid recreating the current coupling
+where selecting the Polaris image also requires swapping the global Kali disk
+size to 210 GB. The existing `GCP_RANGE_{LINUX,KALI,WINDOWS,DC}_*` variables
+remain the defaults for instances whose `ami_key` is absent or blank.
 
 Resolution is exact and fail closed:
 
@@ -171,9 +177,12 @@ not identity, registry rows, API surfaces, or lookup rules.
 The seam is the single structured map parameter keyed by `(logical GCE profile
 class, legacy image key)`, whose values are complete `GCERangeImageProfile`
 objects. Adding `techvault` after its GCE image exists, a second Kali-derived
-scenario, a larger disk, or a different approved image family is a config entry,
-not a new env-var family, schema field, resolver branch, workflow, or scenario-id
-conditional.
+scenario, a larger disk, or a different approved image family is a config entry
+only when its typed bootstrap capability already has a GCE realizer. A new
+bootstrap behavior requires one adapter capability implementation and evidence;
+it must not be inferred from the logical key. This remains one structured
+contract, not a new env-var family, schema field, per-image resolver branch,
+workflow, or scenario-id conditional.
 
 The map needs a documented size and entry-count bound and closed versionless
 shape while it remains this small contract. A future incompatible shape would
@@ -220,7 +229,7 @@ registry seam.
 - Do not add one env var per image key. Every new scenario would require edits
   to workflow, renderer, inventory, launcher, and admission allowlists.
 - Do not branch on `scenario_id`, special-case Polaris/TechVault in the planner,
-  or expand `_DOCKER_HOST_AMI_KEYS` into an image registry.
+  or infer host/bootstrap behavior from image-key literals.
 - Do not reuse the ACES registry for legacy keys or add a second database image
   registry, repository, DTO, management API, or migration.
 - Do not call AWS `get_ami_id`, GCP Secret Manager ConfigStore, or a provider API
@@ -249,9 +258,9 @@ registry seam.
   `instance_type` field provider-neutral.
 - No change to ACES-native image source/version/resource realization or its
   tenant-managed image registry.
-- No `shifter-techvault` GCE image bake. Until that companion artifact exists
-  and an approved keyed profile is configured, TechVault on GCE must fail loud
-  before mutation.
+- No `shifter-techvault` GCE image bake or GCE TechVault bootstrap realizer.
+  Until both exist and an approved keyed profile declares that supported
+  capability, TechVault on GCE must fail loud before mutation.
 - No automatic migration of already-provisioned ranges to a different image.
   Existing resources retain their created image; mapping changes affect new
   provision generations and must be observable during reconciliation.

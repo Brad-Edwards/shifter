@@ -12,18 +12,32 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 
 from ._env import _get_bool_env, _get_int_env, _parse_csv_env
+from ._gce_required import missing_gce_range_required_env, resolve_gce_range_required_env
 from ._gcp_backend import is_gce_range_cell_backend
-from ._range import get_range_availability_zone
+
+GCE_BOOTSTRAP_STANDARD = "standard"
+GCE_BOOTSTRAP_POLARIS_HOST = "polaris-docker-host"
+GCE_BOOTSTRAP_PREPROMOTED_DC = "prepromoted-domain-controller"
+GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES = frozenset(
+    {
+        GCE_BOOTSTRAP_STANDARD,
+        GCE_BOOTSTRAP_POLARIS_HOST,
+        GCE_BOOTSTRAP_PREPROMOTED_DC,
+    }
+)
 
 
 @dataclass(frozen=True)
 class GCERangeImageProfile:
-    """Image and sizing contract for one Compute Engine range guest family."""
+    """Image, sizing, and realization contract for one GCE guest family."""
 
     source_image: str = ""
     machine_type: str = "e2-medium"
     disk_size_gb: int = 30
     disk_type: str = "pd-balanced"
+    bootstrap_capability: str = GCE_BOOTSTRAP_STANDARD
+    domain_dns_name: str = ""
+    domain_netbios_name: str = ""
 
 
 def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
@@ -125,7 +139,7 @@ class GCERangeCellConfig:
 
         logical_key = ami_key.strip()
         if logical_key:
-            if not _GCE_IMAGE_KEY_RE.fullmatch(logical_key):
+            if not _GCE_LOGICAL_NAME_RE.fullmatch(logical_key):
                 raise RuntimeError("GCE ami_key must be a lowercase logical key using letters, digits, and hyphens")
             mapped_profile = self.image_key_profiles.get(profile_class, {}).get(logical_key)
             if mapped_profile is None:
@@ -147,6 +161,9 @@ class GCERangeCellConfig:
                 machine_type=requested_type,
                 disk_size_gb=profile.disk_size_gb,
                 disk_type=profile.disk_type,
+                bootstrap_capability=profile.bootstrap_capability,
+                domain_dns_name=profile.domain_dns_name,
+                domain_netbios_name=profile.domain_netbios_name,
             )
         return profile
 
@@ -156,12 +173,15 @@ class GCERangeCellConfig:
 # sees a clear error before a range attempt (#1343 gap 7).
 _VALID_GCE_DISK_TYPES = frozenset({"pd-standard", "pd-balanced", "pd-ssd", "pd-extreme", "hyperdisk-balanced"})
 _GCE_PROFILE_CLASSES = frozenset({"linux", "kali", "windows", "dc"})
-_GCE_PROFILE_FIELDS = frozenset({"source_image", "machine_type", "disk_size_gb", "disk_type"})
+_GCE_PROFILE_REQUIRED_FIELDS = frozenset(
+    {"source_image", "machine_type", "disk_size_gb", "disk_type", "bootstrap_capability"}
+)
+_GCE_PROFILE_OPTIONAL_FIELDS = frozenset({"domain_dns_name", "domain_netbios_name"})
+_GCE_PROFILE_FIELDS = _GCE_PROFILE_REQUIRED_FIELDS | _GCE_PROFILE_OPTIONAL_FIELDS
 _GCE_PROFILE_MIN_DISK_SIZE_GB = {"linux": 10, "kali": 30, "windows": 100, "dc": 100}
 _GCE_IMAGE_KEY_PROFILES_MAX_BYTES = 32_768
 _GCE_IMAGE_KEY_PROFILES_MAX_ENTRIES = 64
-_GCE_IMAGE_KEY_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
-_GCE_MACHINE_TYPE_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+_GCE_LOGICAL_NAME_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 # A Compute Engine resource name segment: lowercase, starts with a letter, and
 # is at most 63 chars (RFC1035, as GCE enforces for image/family names).
@@ -214,6 +234,16 @@ def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, m
             f"{prefix}_DISK_SIZE_GB {profile.disk_size_gb} is smaller than the {min_disk_size_gb} GB "
             f"role-policy minimum for this guest role."
         )
+    if not _GCE_LOGICAL_NAME_RE.fullmatch(profile.bootstrap_capability):
+        raise RuntimeError(
+            f"{prefix}.bootstrap_capability must be a lowercase logical capability using letters, digits, and hyphens"
+        )
+    if bool(profile.domain_dns_name) != bool(profile.domain_netbios_name):
+        raise RuntimeError(f"{prefix} must set domain_dns_name and domain_netbios_name together")
+    if len(profile.domain_dns_name) > 253:
+        raise RuntimeError(f"{prefix}.domain_dns_name exceeds the 253-character DNS-name limit")
+    if len(profile.domain_netbios_name) > 15:
+        raise RuntimeError(f"{prefix}.domain_netbios_name exceeds the 15-character NetBIOS-name limit")
 
 
 def _load_gce_range_profile(
@@ -252,6 +282,14 @@ def _require_profile_string(entry: Mapping[str, object], field_name: str, *, loc
     return value.strip()
 
 
+def _optional_profile_string(entry: Mapping[str, object], field_name: str, *, location: str) -> str:
+    """Return one optional string field from a keyed profile."""
+    value = entry.get(field_name, "")
+    if not isinstance(value, str):
+        raise RuntimeError(f"{location}.{field_name} must be a string")
+    return value.strip()
+
+
 def _parse_gce_image_key_profile(
     profile_class: str,
     logical_key: str,
@@ -263,7 +301,7 @@ def _parse_gce_image_key_profile(
         raise RuntimeError(f"{location} must be an object")
     fields = set(entry)
     unknown = sorted(fields - _GCE_PROFILE_FIELDS)
-    missing = sorted(_GCE_PROFILE_FIELDS - fields)
+    missing = sorted(_GCE_PROFILE_REQUIRED_FIELDS - fields)
     if unknown:
         raise RuntimeError(f"{location} has unknown fields: {', '.join(unknown)}")
     if missing:
@@ -272,10 +310,13 @@ def _parse_gce_image_key_profile(
     source_image = _require_profile_string(entry, "source_image", location=location)
     machine_type = _require_profile_string(entry, "machine_type", location=location)
     disk_type = _require_profile_string(entry, "disk_type", location=location)
+    bootstrap_capability = _require_profile_string(entry, "bootstrap_capability", location=location)
+    domain_dns_name = _optional_profile_string(entry, "domain_dns_name", location=location)
+    domain_netbios_name = _optional_profile_string(entry, "domain_netbios_name", location=location)
     disk_size_gb = entry["disk_size_gb"]
     if isinstance(disk_size_gb, bool) or not isinstance(disk_size_gb, int) or disk_size_gb <= 0:
         raise RuntimeError(f"{location}.disk_size_gb must be a positive integer")
-    if not _GCE_MACHINE_TYPE_RE.fullmatch(machine_type):
+    if not _GCE_LOGICAL_NAME_RE.fullmatch(machine_type):
         raise RuntimeError(f"{location}.machine_type is not a valid Compute Engine machine type")
 
     profile = GCERangeImageProfile(
@@ -283,6 +324,9 @@ def _parse_gce_image_key_profile(
         machine_type=machine_type,
         disk_size_gb=disk_size_gb,
         disk_type=disk_type,
+        bootstrap_capability=bootstrap_capability,
+        domain_dns_name=domain_dns_name,
+        domain_netbios_name=domain_netbios_name,
     )
     _validate_gce_range_profile(
         location,
@@ -307,7 +351,7 @@ def _load_gce_image_key_profile_class(
         raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON[{profile_class!r}] must be an object")
     resolved_entries: dict[str, GCERangeImageProfile] = {}
     for logical_key, entry in entries.items():
-        if not _GCE_IMAGE_KEY_RE.fullmatch(logical_key):
+        if not _GCE_LOGICAL_NAME_RE.fullmatch(logical_key):
             raise RuntimeError(
                 "GCP_RANGE_IMAGE_KEY_PROFILES_JSON logical keys must be lowercase and use only "
                 "letters, digits, and hyphens"
@@ -350,57 +394,20 @@ def _load_gce_image_key_profiles() -> dict[str, dict[str, GCERangeImageProfile]]
     return profiles
 
 
-def _resolve_gce_range_required_env() -> tuple[str, str, str, str]:
-    """Resolve required environment for the GCE range-cell backend.
+def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellConfig:
+    """Load live-fire GCE configuration for the bound or selected backend.
 
-    ``GCP_RANGE_CELL_PROJECT_ID`` takes precedence so range cells can be
-    provisioned into a different project than the control plane's
-    ``GCP_PROJECT_ID`` (and so the range backend is unaffected when the
-    control-plane project is a deploy-overlay placeholder). It falls back to the
-    control-plane project keys, mirroring ``GCP_RANGE_VERTEX_PROJECT_ID``.
+    ``backend`` is the persisted per-range ownership binding. When supplied it
+    is authoritative, so a deploy-wide selector change cannot reroute an
+    in-flight operation. Direct callers may omit it to retain the environment
+    selector behavior.
     """
-    project_id = (
-        os.environ.get("GCP_RANGE_CELL_PROJECT_ID")
-        or os.environ.get("GCP_PROJECT_ID")
-        or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        or os.environ.get("CLOUD_PROJECT_ID")
-        or ""
-    ).strip()
-    region = (
-        os.environ.get("RANGE_NETWORK_REGION") or os.environ.get("GCP_REGION") or os.environ.get("CLOUD_REGION") or ""
-    ).strip()
-    zone = get_range_availability_zone(default="").strip()
-    service_account_email = os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip()
-    return project_id, region, zone, service_account_email
-
-
-def _missing_gce_range_required_env(
-    *,
-    project_id: str,
-    region: str,
-    zone: str,
-    service_account_email: str,
-) -> list[str]:
-    """Return display names for missing GCE range-cell settings."""
-    return [
-        name
-        for name, value in (
-            ("GCP_RANGE_CELL_PROJECT_ID/GCP_PROJECT_ID", project_id),
-            ("RANGE_NETWORK_REGION/GCP_REGION", region),
-            ("RANGE_NETWORK_ZONE", zone),
-            ("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", service_account_email),
-        )
-        if not value
-    ]
-
-
-def load_gce_range_cell_config() -> GCERangeCellConfig:
-    """Load the live-fire GCE range-cell backend configuration."""
-    if not is_gce_range_cell_backend():
+    uses_gce = backend == "gce" if backend is not None else is_gce_range_cell_backend()
+    if not uses_gce:
         raise RuntimeError("GCE range-cell config is only valid when CLOUD_PROVIDER=gcp and GCP_RANGE_BACKEND=gce")
 
-    project_id, region, zone, service_account_email = _resolve_gce_range_required_env()
-    missing = _missing_gce_range_required_env(
+    project_id, region, zone, service_account_email = resolve_gce_range_required_env()
+    missing = missing_gce_range_required_env(
         project_id=project_id,
         region=region,
         zone=zone,

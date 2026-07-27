@@ -33,12 +33,19 @@ from typing import Any
 
 from shared.aces.operation_input import AcesOperationInput, image_lookup_key
 from shared.operation_results import MAX_DIAGNOSTIC_CHARS, ResultStep
+from shared.range_instantiation_policy import (
+    POLICY_DENIAL_CODE,
+    PREREQUISITE_DENIAL_CODE,
+    InstantiationPurpose,
+    evaluate_gcp_backend_admission,
+)
 
 from aces_gce_image import resolve_gce_image
-from aces_gcp_apply import apply_aces_range_cell, destroy_aces_range_cell
+from aces_gcp_apply import AcesGceApplyOptions, apply_aces_range_cell, destroy_aces_range_cell
 from aces_plan import AcesPlanNode, parse_plan
 from aces_snapshot import snapshot_resources
-from config import GCERangeImageProfile
+from cloud.exceptions import CloudError
+from config import GCERangeImageProfile, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
 from provisioner_db_operation_input import AcesOperationRun, get_aces_operation_input
 
@@ -74,6 +81,39 @@ class AcesRealizationError(ValueError):
     Subclasses ``ValueError`` so existing handlers keep their behaviour, while
     giving :func:`_classify_failure` a type it can trust to carry safe text.
     """
+
+
+def _binding_error(message: str, code: str) -> CloudError:
+    """Return an authored lifecycle failure with a stable classification."""
+    error = CloudError(message)
+    error.code = code
+    return error
+
+
+def _require_gce_live_fire_binding(operation_input: AcesOperationInput) -> str:
+    """Validate the projected ownership/purpose pair for a normal ACES range."""
+    raw_backend = operation_input.range_backend
+    if not raw_backend:
+        raise _binding_error(
+            "ACES GCP range ownership binding is missing",
+            PREREQUISITE_DENIAL_CODE,
+        )
+    try:
+        purpose = InstantiationPurpose(operation_input.instantiation_purpose)
+    except (TypeError, ValueError):
+        raise _binding_error(
+            "ACES GCP range instantiation purpose is missing or invalid",
+            PREREQUISITE_DENIAL_CODE,
+        ) from None
+    if purpose is not InstantiationPurpose.LIVE_FIRE:
+        raise _binding_error(
+            "Normal ACES GCP ranges require the live_fire instantiation purpose",
+            POLICY_DENIAL_CODE,
+        )
+    admission = evaluate_gcp_backend_admission(raw_backend, None, purpose)
+    if not admission.admitted:
+        raise _binding_error(admission.reason, admission.code)
+    return admission.backend
 
 
 def _registry_resolver(operation_input: AcesOperationInput) -> Callable[[AcesPlanNode], GCERangeImageProfile]:
@@ -192,12 +232,15 @@ def run_aces_range_provision(request_id: str, *, operation_id: str | None = None
     logger.info("Starting ACES range provision for request_id=%s", request_id)
     _report(ref, operation, ResultStep.ACES_PROVISION_RUNNING, {"aces_status": "running"})
     try:
+        backend = _require_gce_live_fire_binding(operation_input)
+        config = load_gce_range_cell_config(backend=backend)
         aces_plan = parse_plan(operation_input.plan)
         apply_result = apply_aces_range_cell(
             request_id,
             range_id,
             aces_plan,
             _registry_resolver(operation_input),
+            options=AcesGceApplyOptions(config=config),
             delivery_bindings=operation_input.binding_transport(),
         )
         verified_addresses = apply_result.get("composition_verified_addresses")
@@ -227,8 +270,10 @@ def run_aces_range_destroy(request_id: str, *, operation_id: str | None = None) 
     logger.info("Starting ACES range destroy for request_id=%s", request_id)
     _report(ref, operation, ResultStep.ACES_DESTROY_RUNNING, {"aces_status": "running"})
     try:
+        backend = _require_gce_live_fire_binding(operation_input)
+        config = load_gce_range_cell_config(backend=backend)
         aces_plan = parse_plan(operation_input.plan)
-        destroy_aces_range_cell(request_id, range_id, aces_plan)
+        destroy_aces_range_cell(request_id, range_id, aces_plan, config=config)
     except Exception as exc:
         reason_code, diagnostic = _classify_failure(exc, "aces range destroy")
         logger.error("ACES range destroy failed for request_id=%s", request_id)

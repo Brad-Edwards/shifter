@@ -106,18 +106,20 @@ def resolve_operation_backend(range_data: dict[str, Any], operation: str, operat
     Returns the normalized write-once binding when present; ``None`` for non-GCP
     (AWS) ranges, where gce/gdc routing does not apply. For a GCP range with no
     persisted binding, a destroy/reconcile resolves from durable ownership
-    evidence (or fails closed); provision (and its immediate compensation) fall
-    back to the env selector, since a fresh range has no resources to disambiguate
-    and the selector still equals what was admitted in that window.
+    evidence (or fails closed). A normal provision must already carry the
+    admission-time binding and never falls back to the deploy-wide selector.
     """
     persisted = range_data.get("range_backend")
     if persisted:
         return normalize_gcp_range_backend(persisted)
-    # No binding: non-GCP ranges and the provision path (a fresh range with no
-    # resources to disambiguate) fall back to the env selector; only a GCP
-    # destroy/reconcile of a legacy range must resolve from durable evidence.
-    if resolve_cloud_provider() != "gcp" or operation != "destroy":
+    if resolve_cloud_provider() != "gcp":
         return None
+    # Re-reading the mutable selector here would allow an in-flight selector
+    # flip to change ownership after admission.
+    if operation != "destroy":
+        raise prerequisite_error(
+            "This GCP range has no persisted backend ownership binding; retry the launch after admission"
+        )
     return _resolve_legacy_gcp_backend(range_data, operation_id)
 
 

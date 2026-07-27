@@ -119,6 +119,7 @@ def destroy_range_cell(
     request_uuid: str,
     variables: ResourceDict | None,
     *,
+    backend: str | None = None,
     config: GCERangeCellConfig | None = None,
     clients: GCEClients | None = None,
     secret_ops: GCEGuestSecretOps | None = None,
@@ -128,7 +129,7 @@ def destroy_range_cell(
     if not variables:
         logger.info("No GCE range variables provided for request %s; nothing to destroy", request_uuid)
         return
-    resolved_config = config or load_gce_range_cell_config()
+    resolved_config = config or load_gce_range_cell_config(backend=backend)
     # The gateway SA email is unused for teardown (resources are deleted by name),
     # but the range's reserved pool slot (ADR-008-R7) is read so the plan renders
     # consistently with provision. The row exists while the range is DESTROYING.

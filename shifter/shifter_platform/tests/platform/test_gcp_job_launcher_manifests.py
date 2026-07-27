@@ -249,7 +249,14 @@ def _canonical_admission_job() -> dict[str, Any]:
                             "name": PROVISIONER_CONTAINER,
                             "image": "registry.example/provisioner:sha",
                             "imagePullPolicy": "Always",
-                            "args": ["range", "provision", "--request-id", "11111111-1111-1111-1111-111111111111"],
+                            "args": [
+                                "range",
+                                "provision",
+                                "--request-id",
+                                "11111111-1111-1111-1111-111111111111",
+                                "--operation-id",
+                                "22222222-2222-2222-2222-222222222222",
+                            ],
                             "securityContext": {
                                 "readOnlyRootFilesystem": True,
                                 "allowPrivilegeEscalation": False,
@@ -305,6 +312,8 @@ def _malformed_admission_job(canonical: dict[str, Any], mutation: str) -> dict[s
     mutators = {
         "operation": lambda: container["args"].__setitem__(1, "exec"),
         "extra-arg": lambda: container["args"].append("--unsafe"),
+        "operation-id-flag": lambda: container["args"].__setitem__(4, "--other-id"),
+        "operation-id-value": lambda: container["args"].__setitem__(5, "not-a-uuid"),
         "task-identity": lambda: job["metadata"]["annotations"].pop("shifter.dev/task-identity"),
         "image-pull-policy": lambda: container.__setitem__("imagePullPolicy", "IfNotPresent"),
         "literal-tamper": lambda: next(entry for entry in env if entry["name"] == "ENVIRONMENT").__setitem__(
@@ -534,6 +543,8 @@ def test_admission_policy_semantically_denies_spoofed_and_malformed_launches(loa
     for mutation in (
         "operation",
         "extra-arg",
+        "operation-id-flag",
+        "operation-id-value",
         "task-identity",
         "image-pull-policy",
         "literal-tamper",
@@ -567,6 +578,41 @@ def test_admission_policy_semantically_denies_spoofed_and_malformed_launches(loa
         )
         for job in malformed_jobs
     )
+
+
+@pytest.mark.parametrize("loader", [_load_base_documents, _load_helm_documents])
+def test_admission_policy_accepts_compatible_operation_id_command_forms(loader: Any) -> None:
+    policy = _policy(loader())
+    canonical = _canonical_admission_job()
+    image = "registry.example/provisioner:sha"
+    operation_id = "22222222-2222-2222-2222-222222222222"
+    valid_args = (
+        ["range", "provision", "--request-id", "11111111-1111-1111-1111-111111111111"],
+        [
+            "range",
+            "provision",
+            "--request-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--operation-id",
+            operation_id,
+        ],
+        ["range", "destroy", "--range-id", "149", "--user-id", "42"],
+        [
+            "range",
+            "destroy",
+            "--range-id",
+            "149",
+            "--user-id",
+            "42",
+            "--operation-id",
+            operation_id,
+        ],
+    )
+
+    for args in valid_args:
+        job = copy.deepcopy(canonical)
+        job["spec"]["template"]["spec"]["containers"][0]["args"] = args
+        assert _semantic_policy_allows(policy, PROVISIONER_LAUNCHER_USERNAME, job, image), args
 
 
 @pytest.mark.parametrize(

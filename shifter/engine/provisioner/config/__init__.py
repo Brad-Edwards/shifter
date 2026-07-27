@@ -36,6 +36,10 @@ from ._crypto import (
     resolve_cloud_provider,
 )
 from ._gce import (
+    GCE_BOOTSTRAP_POLARIS_HOST,
+    GCE_BOOTSTRAP_PREPROMOTED_DC,
+    GCE_BOOTSTRAP_STANDARD,
+    GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES,
     GCERangeCellConfig,
     GCERangeImageProfile,
     gce_image_profile_fingerprint,
@@ -73,6 +77,10 @@ from ._range import (
 )
 
 __all__ = [
+    "GCE_BOOTSTRAP_POLARIS_HOST",
+    "GCE_BOOTSTRAP_PREPROMOTED_DC",
+    "GCE_BOOTSTRAP_STANDARD",
+    "GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES",
     "AWSPolarisAgentConfig",
     "AcesContentDeliveryConfig",
     "FieldDecryptError",

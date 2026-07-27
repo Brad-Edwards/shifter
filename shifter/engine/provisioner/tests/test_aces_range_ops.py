@@ -73,7 +73,7 @@ def _projection(**overrides) -> AcesOperationInput:
         "plan": _serialized_plan(),
         "delivery_bindings": (_BINDING,),
         "range_backend": "gce",
-        "instantiation_purpose": "training",
+        "instantiation_purpose": "live_fire",
         "legacy_range_id": 7,
         "_image_candidates": {},
     }
@@ -86,10 +86,14 @@ def patched(monkeypatch):
     calls = SimpleNamespace(
         apply=MagicMock(return_value={"composition_verified_addresses": []}),
         destroy=MagicMock(),
+        config=MagicMock(name="gce_config"),
+        load_config=MagicMock(),
         append=MagicMock(),
         read_input=MagicMock(side_effect=lambda *a, **k: _run()),
     )
+    calls.load_config.return_value = calls.config
     monkeypatch.setattr(aces_range_ops, "get_aces_operation_input", calls.read_input)
+    monkeypatch.setattr(aces_range_ops, "load_gce_range_cell_config", calls.load_config)
     monkeypatch.setattr(aces_range_ops, "apply_aces_range_cell", calls.apply)
     monkeypatch.setattr(aces_range_ops, "destroy_aces_range_cell", calls.destroy)
     monkeypatch.setattr(aces_range_ops, "append_operation_step_result", calls.append)
@@ -147,6 +151,8 @@ class TestProvision:
         # a refactor that skipped parse_plan before dispatch must fail here.
         assert isinstance(aces_plan, AcesPlan)
         assert [n.address for n in aces_plan.nodes] == ["node.web"]
+        patched.load_config.assert_called_once_with(backend="gce")
+        assert patched.apply.call_args.kwargs["options"].config is patched.config
 
     def test_forwards_content_delivery_bindings_from_the_projection(self, patched):
         # #1564: the bindings gate + realize source-backed content delivery. They
@@ -263,6 +269,37 @@ class TestProvisionFailure:
         diagnostic = _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)["diagnostic"]
         assert "engine_operation_input" not in diagnostic
 
+    @pytest.mark.parametrize(
+        ("backend", "purpose", "code"),
+        [
+            (None, "live_fire", "prerequisite"),
+            ("gdc", "live_fire", "identity-or-policy"),
+            ("gce", None, "prerequisite"),
+            ("gce", "non_user_validation", "identity-or-policy"),
+        ],
+    )
+    def test_rejects_non_gce_live_fire_binding_before_apply(
+        self,
+        monkeypatch,
+        patched,
+        backend,
+        purpose,
+        code,
+    ):
+        from cloud.exceptions import CloudError
+
+        patched.read_input.side_effect = lambda *a, **k: _run(
+            range_backend=backend,
+            instantiation_purpose=purpose,
+        )
+
+        with pytest.raises(CloudError) as exc:
+            aces_range_ops.run_aces_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        assert exc.value.code == code
+        patched.apply.assert_not_called()
+        patched.load_config.assert_not_called()
+
 
 class TestDestroy:
     def test_reports_running_then_destroyed(self, patched):
@@ -275,6 +312,8 @@ class TestDestroy:
         assert (request_id, range_id) == ("req-1", 7)
         assert isinstance(aces_plan, AcesPlan)
         assert [n.address for n in aces_plan.nodes] == ["node.web"]
+        patched.load_config.assert_called_once_with(backend="gce")
+        assert patched.destroy.call_args.kwargs["config"] is patched.config
 
     def test_failure_reports_a_closed_reason_code_and_reraises(self, patched):
         patched.destroy.side_effect = RuntimeError("kaboom")
@@ -282,6 +321,21 @@ class TestDestroy:
             aces_range_ops.run_aces_range_destroy("req-1", operation_id=_OPERATION_ID)
         assert _payload_for(patched, ResultStep.ACES_TERMINAL_FAILED)["reason_code"] == "cloud_operation_failed"
         assert ResultStep.ACES_TERMINAL_DESTROYED not in _steps(patched)
+
+    def test_rejects_non_gce_binding_before_destroy(self, patched):
+        from cloud.exceptions import CloudError
+
+        patched.read_input.side_effect = lambda *a, **k: _run(
+            range_backend="gdc",
+            instantiation_purpose="live_fire",
+        )
+
+        with pytest.raises(CloudError) as exc:
+            aces_range_ops.run_aces_range_destroy("req-1", operation_id=_OPERATION_ID)
+
+        assert exc.value.code == "identity-or-policy"
+        patched.destroy.assert_not_called()
+        patched.load_config.assert_not_called()
 
 
 def _node(image: AcesPlanImage | None) -> AcesPlanNode:

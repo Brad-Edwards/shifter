@@ -28,16 +28,20 @@ Build the images with the GCP Packer workflow
   AWS `polaris-vm` AMI is baked. The host bake installs Docker, the Google
   Cloud SDK, and moves the host sshd to the management port so the Kali
   container can publish host port 22 and port 3389 for participants.
-- `polaris-dc`: use the generic `dc` image family. It ships Windows Server
-  2022 with the AD DS role and OpenSSH. The `boreas.local` domain is promoted
-  per range by the provisioner, not baked into the image.
+- `polaris-dc`: use the pre-promoted Polaris DC image family. It ships Windows
+  Server 2022 with the `boreas.local` / `BOREAS` domain and scenario AD content
+  baked in; runtime setup verifies that identity and does not promote or rename
+  the DC.
 
 Keep the generic `GCP_RANGE_KALI_*` and `GCP_RANGE_DC_*` defaults available for
 unkeyed scenarios. In `GCP_RANGE_IMAGE_KEY_PROFILES_JSON`, configure a complete
 `kali.polaris-vm` profile pointing at the promoted `shifter-polaris-vm` family
 and a complete `dc.polaris-dc` profile pointing at the promoted Polaris DC
-family. Include the GCE machine type, disk size, and disk type in each entry;
-the Polaris host disk must be at least 210 GB.
+family. Declare `bootstrap_capability=polaris-docker-host` for the host and
+`bootstrap_capability=prepromoted-domain-controller`,
+`domain_dns_name=boreas.local`, and `domain_netbios_name=BOREAS` for the DC.
+Include the GCE machine type, disk size, and disk type in each entry; the
+Polaris host disk must be at least 210 GB.
 
 The scenario keeps its logical `ami_key: polaris-vm` and
 `ami_key: polaris-dc` values. The GCE plan performs an exact class/key lookup and

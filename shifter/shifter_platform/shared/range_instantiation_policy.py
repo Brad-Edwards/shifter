@@ -37,6 +37,7 @@ _GCP_PROVIDER = "gcp"
 # missing or malformed (fail closed -- never permission to fall back to GDC).
 POLICY_DENIAL_CODE = "identity-or-policy"
 PREREQUISITE_DENIAL_CODE = "prerequisite"
+UNSUPPORTED_CAPABILITY_CODE = "unsupported-capability"
 
 # ADR-030-R3: a denial must name the scope the retained substrate is limited to,
 # so deterministic demo infrastructure is never mistaken for the approved
