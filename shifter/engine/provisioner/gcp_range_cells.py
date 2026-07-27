@@ -343,7 +343,6 @@ def apply_range_cell(
     request_uuid: str,
     variables: ResourceDict,
     *,
-    backend: str | None = None,
     config: GCERangeCellConfig | None = None,
     clients: GCEClients | None = None,
     secret_ops: GCEGuestSecretOps | None = None,
@@ -351,7 +350,7 @@ def apply_range_cell(
     cleanup_range_cell: Callable[[str, ResourceDict | None], None] | None = None,
 ) -> ResourceDict:
     """Create or reconcile a live-fire GCE range cell and return provisioner outputs."""
-    resolved_config = config or load_gce_range_cell_config(backend=backend)
+    resolved_config = config or load_gce_range_cell_config()
     # Validate the closed contract and scenario binding before constructing any
     # provider or secret client, let alone mutating a cloud resource. The gateway
     # VM runs as the range's reserved pool identity (ADR-008-R7).

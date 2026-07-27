@@ -389,12 +389,14 @@ def test_legacy_realizer_rejects_unsupported_composition_before_provider_mutatio
     clients = _mock_clients(exists=False)
     secret_ops, secret_mocks = _mock_secret_ops(mocker)
     vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
+    variables = _variables(payload=payload)
+    config = _sample_config()
 
     with pytest.raises(CloudError, match=message) as exc:
         apply_range_cell(
             "req-123",
-            _variables(payload=payload),
-            config=_sample_config(),
+            variables,
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             vertex_ops=vertex_ops,
@@ -421,11 +423,12 @@ def test_legacy_realizer_rejects_missing_dc_image_before_provider_mutation(mocke
         dc=GCERangeImageProfile(),
         image_key_profiles={},
     )
+    variables = _variables()
 
     with pytest.raises(CloudError, match="Missing GCE range image") as exc:
         apply_range_cell(
             "req-123",
-            _variables(),
+            variables,
             config=config,
             clients=clients,
             secret_ops=secret_ops,
@@ -450,12 +453,14 @@ def test_domain_composition_rejects_mismatched_keyed_domain_before_provider_muta
     clients = _mock_clients(exists=False)
     secret_ops, _ = _mock_secret_ops(mocker)
     vertex_ops, _ = _mock_vertex_ops(mocker)
+    variables = _variables(payload=payload)
+    config = _sample_config()
 
     with pytest.raises(CloudError, match="does not match the authored domain identity") as exc:
         apply_range_cell(
             "req-123",
-            _variables(payload=payload),
-            config=_sample_config(),
+            variables,
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             vertex_ops=vertex_ops,
@@ -1265,7 +1270,6 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
     output = apply_range_cell(
         "req-123",
         _variables(),
-        backend="gce",
         config=config,
         clients=clients,
         secret_ops=secret_ops,

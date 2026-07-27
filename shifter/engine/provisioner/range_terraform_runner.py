@@ -18,7 +18,7 @@ import gdc_scenario_pods
 import gdc_vmruntime_assets
 import terraform_base
 from cloud.exceptions import CloudError, CloudProviderNotImplementedError
-from config import get_gcp_range_backend, resolve_cloud_provider
+from config import get_gcp_range_backend, load_gce_range_cell_config, resolve_cloud_provider
 
 AWS_RANGE_MODULE_PATH = Path(__file__).parent / "terraform" / "modules" / "range"
 
@@ -110,8 +110,11 @@ def apply_range(
     _validate_range_cell_route(variables, backend)
     if _uses_gce_range_cells(backend):
         if gce_apply_range_cell is not None:
-            return gce_apply_range_cell(request_uuid, variables)
-        return gcp_range_cells.apply_range_cell(request_uuid, variables, backend=_resolve_backend(backend))
+            result = gce_apply_range_cell(request_uuid, variables)
+        else:
+            config = load_gce_range_cell_config(backend=_resolve_backend(backend))
+            result = gcp_range_cells.apply_range_cell(request_uuid, variables, config=config)
+        return result
 
     if _uses_active_gdc_range_plane(backend):
         # Defense in depth (issue #1348): evaluate the closed policy for the active

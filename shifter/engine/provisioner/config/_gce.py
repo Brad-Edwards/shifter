@@ -12,8 +12,8 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 
 from ._env import _get_bool_env, _get_int_env, _parse_csv_env
+from ._gce_required import missing_gce_range_required_env, resolve_gce_range_required_env
 from ._gcp_backend import is_gce_range_cell_backend
-from ._range import get_range_availability_zone
 
 GCE_BOOTSTRAP_STANDARD = "standard"
 GCE_BOOTSTRAP_POLARIS_HOST = "polaris-docker-host"
@@ -139,7 +139,7 @@ class GCERangeCellConfig:
 
         logical_key = ami_key.strip()
         if logical_key:
-            if not _GCE_IMAGE_KEY_RE.fullmatch(logical_key):
+            if not _GCE_LOGICAL_NAME_RE.fullmatch(logical_key):
                 raise RuntimeError("GCE ami_key must be a lowercase logical key using letters, digits, and hyphens")
             mapped_profile = self.image_key_profiles.get(profile_class, {}).get(logical_key)
             if mapped_profile is None:
@@ -181,9 +181,7 @@ _GCE_PROFILE_FIELDS = _GCE_PROFILE_REQUIRED_FIELDS | _GCE_PROFILE_OPTIONAL_FIELD
 _GCE_PROFILE_MIN_DISK_SIZE_GB = {"linux": 10, "kali": 30, "windows": 100, "dc": 100}
 _GCE_IMAGE_KEY_PROFILES_MAX_BYTES = 32_768
 _GCE_IMAGE_KEY_PROFILES_MAX_ENTRIES = 64
-_GCE_IMAGE_KEY_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
-_GCE_MACHINE_TYPE_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
-_GCE_BOOTSTRAP_CAPABILITY_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+_GCE_LOGICAL_NAME_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 # A Compute Engine resource name segment: lowercase, starts with a letter, and
 # is at most 63 chars (RFC1035, as GCE enforces for image/family names).
@@ -236,7 +234,7 @@ def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, m
             f"{prefix}_DISK_SIZE_GB {profile.disk_size_gb} is smaller than the {min_disk_size_gb} GB "
             f"role-policy minimum for this guest role."
         )
-    if not _GCE_BOOTSTRAP_CAPABILITY_RE.fullmatch(profile.bootstrap_capability):
+    if not _GCE_LOGICAL_NAME_RE.fullmatch(profile.bootstrap_capability):
         raise RuntimeError(
             f"{prefix}.bootstrap_capability must be a lowercase logical capability using letters, digits, and hyphens"
         )
@@ -318,7 +316,7 @@ def _parse_gce_image_key_profile(
     disk_size_gb = entry["disk_size_gb"]
     if isinstance(disk_size_gb, bool) or not isinstance(disk_size_gb, int) or disk_size_gb <= 0:
         raise RuntimeError(f"{location}.disk_size_gb must be a positive integer")
-    if not _GCE_MACHINE_TYPE_RE.fullmatch(machine_type):
+    if not _GCE_LOGICAL_NAME_RE.fullmatch(machine_type):
         raise RuntimeError(f"{location}.machine_type is not a valid Compute Engine machine type")
 
     profile = GCERangeImageProfile(
@@ -353,7 +351,7 @@ def _load_gce_image_key_profile_class(
         raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON[{profile_class!r}] must be an object")
     resolved_entries: dict[str, GCERangeImageProfile] = {}
     for logical_key, entry in entries.items():
-        if not _GCE_IMAGE_KEY_RE.fullmatch(logical_key):
+        if not _GCE_LOGICAL_NAME_RE.fullmatch(logical_key):
             raise RuntimeError(
                 "GCP_RANGE_IMAGE_KEY_PROFILES_JSON logical keys must be lowercase and use only "
                 "letters, digits, and hyphens"
@@ -396,50 +394,6 @@ def _load_gce_image_key_profiles() -> dict[str, dict[str, GCERangeImageProfile]]
     return profiles
 
 
-def _resolve_gce_range_required_env() -> tuple[str, str, str, str]:
-    """Resolve required environment for the GCE range-cell backend.
-
-    ``GCP_RANGE_CELL_PROJECT_ID`` takes precedence so range cells can be
-    provisioned into a different project than the control plane's
-    ``GCP_PROJECT_ID`` (and so the range backend is unaffected when the
-    control-plane project is a deploy-overlay placeholder). It falls back to the
-    control-plane project keys, mirroring ``GCP_RANGE_VERTEX_PROJECT_ID``.
-    """
-    project_id = (
-        os.environ.get("GCP_RANGE_CELL_PROJECT_ID")
-        or os.environ.get("GCP_PROJECT_ID")
-        or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        or os.environ.get("CLOUD_PROJECT_ID")
-        or ""
-    ).strip()
-    region = (
-        os.environ.get("RANGE_NETWORK_REGION") or os.environ.get("GCP_REGION") or os.environ.get("CLOUD_REGION") or ""
-    ).strip()
-    zone = get_range_availability_zone(default="").strip()
-    service_account_email = os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip()
-    return project_id, region, zone, service_account_email
-
-
-def _missing_gce_range_required_env(
-    *,
-    project_id: str,
-    region: str,
-    zone: str,
-    service_account_email: str,
-) -> list[str]:
-    """Return display names for missing GCE range-cell settings."""
-    return [
-        name
-        for name, value in (
-            ("GCP_RANGE_CELL_PROJECT_ID/GCP_PROJECT_ID", project_id),
-            ("RANGE_NETWORK_REGION/GCP_REGION", region),
-            ("RANGE_NETWORK_ZONE", zone),
-            ("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", service_account_email),
-        )
-        if not value
-    ]
-
-
 def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellConfig:
     """Load live-fire GCE configuration for the bound or selected backend.
 
@@ -452,8 +406,8 @@ def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellCon
     if not uses_gce:
         raise RuntimeError("GCE range-cell config is only valid when CLOUD_PROVIDER=gcp and GCP_RANGE_BACKEND=gce")
 
-    project_id, region, zone, service_account_email = _resolve_gce_range_required_env()
-    missing = _missing_gce_range_required_env(
+    project_id, region, zone, service_account_email = resolve_gce_range_required_env()
+    missing = missing_gce_range_required_env(
         project_id=project_id,
         region=region,
         zone=zone,

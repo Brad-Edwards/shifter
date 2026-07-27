@@ -56,14 +56,10 @@ def _normalize_domain_netbios_name(value: object) -> str:
     return str(value or "").strip().casefold()
 
 
-def _validate_profile_capabilities(instance: ResourceDict, profile: GCERangeImageProfile) -> None:
-    """Verify configured realization capabilities against authored guest intent."""
-    if profile.bootstrap_capability not in GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES:
-        raise _unsupported_capability("The selected GCE image profile requires an unsupported bootstrap capability")
-
-    role = str(instance.get("role") or "").strip().lower()
+def _validate_domain_controller_profile(instance: ResourceDict, profile: GCERangeImageProfile) -> None:
+    """Verify a domain controller profile against its authored domain identity."""
     dc_config = instance.get("dc_config")
-    if role != "dc" or not dc_config:
+    if not dc_config:
         return
     if not isinstance(dc_config, dict):
         raise RangeCellContractError("domain-controller dc_config must be an object")
@@ -82,6 +78,14 @@ def _validate_profile_capabilities(instance: ResourceDict, profile: GCERangeImag
         raise _missing_prerequisite(
             "The selected pre-promoted GCE domain image does not match the authored domain identity"
         )
+
+
+def _validate_profile_capabilities(instance: ResourceDict, profile: GCERangeImageProfile) -> None:
+    """Verify configured realization capabilities against authored guest intent."""
+    if profile.bootstrap_capability not in GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES:
+        raise _unsupported_capability("The selected GCE image profile requires an unsupported bootstrap capability")
+    if str(instance.get("role") or "").strip().lower() == "dc":
+        _validate_domain_controller_profile(instance, profile)
 
 
 def _validate_supported_composition(
