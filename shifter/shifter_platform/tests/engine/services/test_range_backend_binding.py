@@ -100,6 +100,35 @@ class TestCreateBindsOwnershipWriteOnce:
             )
 
 
+class TestCreateRevalidatesTheAdmittedPair:
+    """#1354: BackendAdmission is constructible, so admitted=True is not authority."""
+
+    def test_fabricated_live_fire_gdc_admission_is_refused(self, user):
+        forged = BackendAdmission(True, "gdc", InstantiationPurpose.LIVE_FIRE, "", "")
+        request_id = uuid4()
+        plan = make_compiled_plan()
+        with pytest.raises(EngineError, match="not admitted"):
+            _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, backend_admission=forged)
+        assert not Range.objects.filter(request__request_id=request_id).exists()
+
+    def test_fabricated_unregistered_backend_is_refused(self, user):
+        forged = BackendAdmission(True, "k8s", InstantiationPurpose.OPERATOR_VALIDATION, "", "")
+        request_id = uuid4()
+        plan = make_compiled_plan()
+        with pytest.raises(EngineError):
+            _create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, backend_admission=forged)
+
+    def test_a_genuinely_admitted_non_user_pair_persists(self, user):
+        admission = evaluate_gcp_backend_admission("gdc", None, InstantiationPurpose.NON_USER_DEMO)
+        request_id = uuid4()
+        _create_aces_range(
+            request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan(), backend_admission=admission
+        )
+        rng = Range.objects.get(request__request_id=request_id)
+        assert rng.range_backend == "gdc"
+        assert rng.instantiation_purpose == "non_user_demo"
+
+
 class TestOperatorBackfill:
     def test_backfill_sets_binding_then_refuses_overwrite(self, user):
         legacy = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.READY)

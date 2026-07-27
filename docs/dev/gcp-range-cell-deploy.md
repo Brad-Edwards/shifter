@@ -40,8 +40,10 @@ runbook). Binding the backend to per-range state so this ordering is no longer
 required is tracked by #1666.
 
 The environment setting is an operator/backend-policy input, not scenario
-metadata. Issue #1354 owns the policy that decides which requests may use each
-backend. Once a request has been admitted to the GCP VM range-cell contract, the
+metadata. The closed range-instantiation policy decides which launches may use
+each backend; see
+`docs/technical/platform_infrastructure/range-instantiation-policy.md`. Once a
+request has been admitted to the GCP VM range-cell contract, the
 provisioner refuses to route it to GDC, GKE, or the legacy Terraform path; an
 operator must not treat `gdc` as a per-request fallback for a contract-tagged
 live-fire user range.

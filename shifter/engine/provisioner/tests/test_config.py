@@ -290,7 +290,7 @@ class TestRangeNetworkEnv:
         # but get_gcp_range_backend() still raises RuntimeError for provisioner callers.
         mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "bogus"}, clear=True)
 
-        with pytest.raises(RuntimeError, match="GCP_RANGE_BACKEND must be 'gdc' or 'gce'"):
+        with pytest.raises(RuntimeError, match="GCP_RANGE_BACKEND must be 'gce' or 'gdc'"):
             get_gcp_range_backend()
 
     def test_load_range_network_config_prefers_generic_env_names(self, mocker):

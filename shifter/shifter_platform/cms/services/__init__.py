@@ -81,6 +81,7 @@ from ._ngfws import (
     get_ngfw,
     list_ngfws,
 )
+from ._non_user_range_launch import NonUserWorkflow, create_non_user_range
 from ._queries import (
     find_range_instance_id_by_request,
     get_range_spec_by_id,
@@ -151,6 +152,7 @@ __all__ = (
     "CtfOpenVpnProfileNotFound",
     "CtfOpenVpnProfileUnavailable",
     "EngineEventCapacitySignal",
+    "NonUserWorkflow",
     "OpenVpnProfileConflict",
     "OpenVpnProfileNotFound",
     "OpenVpnProfileUnavailable",
@@ -170,6 +172,7 @@ __all__ = (
     "create_agent",
     "create_credential",
     "create_ngfw",
+    "create_non_user_range",
     "create_range",
     "create_range_dispatch",
     "delete_agent",
