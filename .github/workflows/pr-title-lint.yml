@@ -2,12 +2,23 @@ name: PR title lint
 
 on:
   pull_request:
-    # Scoped to PRs targeting `dev` (feature PRs). Squash-merging a feature PR
-    # makes the validated title the commit release-please reads on `main`, so the
-    # conventional-title check is enforced there (ADR-042-R4). `dev` -> `main`
-    # promotion PRs are not squashed and their title never becomes a release
-    # commit, so linting them is noise (#1776). The automated `main` -> `dev`
-    # back-merge PR targets `dev` and passes with its `chore:` title.
+    # Both protected branches, because `Lint PR title` is a required status
+    # check on each. A required context whose workflow cannot trigger for a
+    # base branch never reports, and a required context that never reports
+    # blocks the merge indefinitely, so the trigger has to cover every branch
+    # protection requires it on (#1868).
+    #
+    # The two branches are linted for different reasons. Squash-merging a
+    # feature PR into `dev` makes the validated title the single commit subject
+    # release-please reads once the change reaches `main` (ADR-042-R4), so there
+    # the lint guards the release signal. A `dev` -> `main` promotion PR is
+    # merged with a merge commit and its title never becomes a release commit;
+    # linting it is not a release signal, it is what lets the required context
+    # report. #1776 narrowed this to `dev` on the reasoning that promotion
+    # titles are noise, which left promotions blocked behind an admin bypass.
+    # `make devmain` opens the promotion PR with a title the lint accepts, and
+    # the release-please PR (`chore(main): release X.Y.Z`) and the automated
+    # `main` -> `dev` back-merge both pass on their `chore:` titles.
     #
     # `pull_request` (not `pull_request_target`) - public-fork inputs run with
     # read-only checkout behavior per repo policy.
@@ -18,6 +29,7 @@ on:
       - reopened
     branches:
       - dev
+      - main
 
 permissions:
   contents: read

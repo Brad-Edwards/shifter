@@ -25,6 +25,32 @@ release model for Shifter. It is the reference cited by `CONTRIBUTING.md`,
 Do not hand-edit `CHANGELOG.md` and do not add changelog fragments. release-please
 owns both the changelog and the version (see below).
 
+## Promoting dev to main
+
+Open the promotion PR with `make devmain`. The target runs one `gh pr create`
+against `Brad-Edwards/shifter` with `dev` as the head branch, `main` as the
+base, a Conventional Commit title, and a body that restates the merge strategy.
+It pins the repository explicitly because this checkout is a fork of
+`PaloAltoNetworks/shifter`: an unpinned `gh pr create` resolves the base
+repository to the fork parent and opens the promotion PR against the upstream
+OSS repo.
+
+Merge the promotion PR with a merge commit. Never squash it. A squash collapses
+every Conventional Commit subject in the promotion into one, so release-please
+reads a single subject on `main` instead of the individual feature titles, and
+the release PR loses the correct version bump along with the changelog entries
+for that release.
+
+`pr-title-lint` runs on the promotion PR, because `Lint PR title` is a required
+status check on `main` as well as on `dev`. The title `make devmain` sends
+satisfies it. The lint is not a release signal here, since the promotion
+preserves the feature commits rather than collapsing them into one: it runs so
+that the required context reports, which a workflow scoped away from `main`
+cannot do.
+
+No check constrains how the promotion PR is merged. The target carries the
+title; the maintainer carries the merge method.
+
 ## Release model
 
 Releases are coordinated by [release-please](https://github.com/googleapis/release-please)
