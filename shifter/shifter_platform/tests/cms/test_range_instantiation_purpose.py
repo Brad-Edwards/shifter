@@ -206,12 +206,14 @@ class TestCreateRangeFacadeStaysLiveFire:
         from cms.models import RangeInstance
 
         agent = make_agent(user)
+        # Built outside the raises block so only create_range can throw (Sonar S5778).
+        teardown_at = timezone.now() + timedelta(days=1)
         with _gcp(settings, "gdc"), pytest.raises(CMSError):
             services.create_range(
                 user,
                 hydratable_scenario.scenario_id,
                 {"windows": agent.id},
                 range_source=RangeSource.CTF,
-                remote_access_teardown_at=timezone.now() + timedelta(days=1),
+                remote_access_teardown_at=teardown_at,
             )
         assert not RangeInstance.objects.filter(user_id=user.id).exists()
