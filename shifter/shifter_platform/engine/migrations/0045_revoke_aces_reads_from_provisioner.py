@@ -71,7 +71,7 @@ class Migration(migrations.Migration):
     """Revoke the ACES family's domain-table read capability from the provisioner."""
 
     dependencies = [
-        ("engine", "0042_workspace_binding_required"),
+        ("engine", "0044_capacity_budget_draws"),
     ]
 
     operations = [
