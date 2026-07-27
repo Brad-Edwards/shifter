@@ -1716,11 +1716,11 @@
     "title": "Product, distribution, and development surfaces",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane if a bare operator tenant needs it to run or extend Shifter; such dual-use capabilities (content ingestion, image baking) are built once as product capabilities and produced by maintainers through that same path (dogfood), not as maintainer-bespoke implementations. The CI/build/deploy runner fleet is development-plane and must not live in a product/operator deploy-target account (see ADR-033-R2, amended by #1546 for maintainer-owned dev tenants). Operator content acquisition and entitlement are resolved outside the platform.",
+    "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane when a bare operator tenant needs it to run or extend Shifter; content ingestion and supported artifact-preparation capabilities therefore cannot exist only in maintainer CI. Maintainers reuse a product capability when the same contract and policy apply, while genuinely distribution-only publication, promotion, replication, and credentialed preparation remain distribution-plane. Published artifacts may be exact requirements, allowed candidates, or optimizations and are not assumed to be caches or reproducible outputs. The CI/build/deploy runner fleet is development-plane and must not live in a product/operator deploy-target account (see ADR-033-R2, amended by #1546 for maintainer-owned dev tenants). Operator content acquisition and entitlement are resolved outside the platform.",
     "rules": [
       {
         "id": "ADR-033-R1",
-        "description": "Capabilities a bare operator tenant needs to run or extend Shifter (including content ingestion and image baking) are product-plane; maintainers produce shipped/blessed artifacts through the same product capability rather than a maintainer-bespoke implementation.",
+        "description": "Capabilities a bare operator tenant needs to run or extend Shifter, including content ingestion and each artifact-preparation mechanism Shifter promises operators, are product-plane rather than maintainer-only CI. Maintainers reuse a product capability when the same inputs, policy, timing, and output contract apply; distribution-only publication, promotion, replication, or credentialed preparation may use separate operated workflows. This rule does not imply that every requirement is buildable or that every published artifact is reproducible.",
         "checks": []
       },
       {
@@ -1749,7 +1749,7 @@
     "title": "Uniform content-ingestion contract",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Repo pack identity is bound to the canonical ACES associated-artifact digest at registration and verified again before native launch. Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. Content is the source of truth and a published image is a cache.",
+    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Repo pack identity is bound to the canonical RAES associated-artifact digest at registration and verified again before native launch. Artifact satisfaction preserves the RAES exact, constrained, open, and absent author postures; Shifter chooses a realization only where the authored requirement permits it and the selected backend declares support. Exact artifacts, existing backend artifacts, pack-published candidates, dynamic composition, and explicitly permitted materialization specifications are possible mechanisms rather than an exhaustive pull-or-bake choice. Acquisition transport, satisfaction mechanism, and realization timing remain separate. Packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. A published artifact may be authoritative, an allowed candidate, or an optimization; it is not inherently a cache or rebuildable substitute.",
     "rules": [
       {
         "id": "ADR-034-R1",
@@ -1758,7 +1758,7 @@
       },
       {
         "id": "ADR-034-R2",
-        "description": "Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry zero images and may define parameterized experiment runs.",
+        "description": "Artifact satisfaction preserves RAES author intent: exact artifacts must be honored, constrained requirements admit only conforming candidates, open concerns may be delegated only to a capable backend, and absence is not an implicit artifact request. Exact artifacts, existing backend inventory, pack-published candidates, dynamic composition, and explicitly permitted materialization specifications are possible mechanisms, not a closed pull-or-bake menu. Acquisition transport and realization timing are independent. Packs may carry zero images and may define parameterized experiment runs.",
         "checks": []
       },
       {
@@ -1768,7 +1768,7 @@
       },
       {
         "id": "ADR-034-R4",
-        "description": "Content is the source of truth and published images are a cache; private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
+        "description": "The portable RAES artifact requirement is semantic authority. A published artifact may be the exact required artifact, an allowed candidate, or an optimization over a reproducible path; it is not inherently a cache, substitute, or rebuildable output. Private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
         "checks": []
       },
       {
@@ -1784,6 +1784,11 @@
       {
         "id": "ADR-034-R7",
         "description": "Source-backed ACES feature artifacts reuse the uniform pack trust and delivery machinery without becoming content placements. A versioned discriminated projection binds feature type plus source name/version to an inventory-covered deterministic payload and bounded data-only install policy; content and feature entries keep distinct match semantics while sharing containment, size, digest, content-addressed storage, authenticated guest transport, and readback. Filename/extension inference, ambiguous wildcard resolution, contributor-supplied executable installers/probes, and a parallel feature artifact store are prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R8",
+        "description": "Shifter must evaluate artifact satisfiability before provisioning and report whether failure is due to an unavailable exact artifact, unsatisfied constraints, unsupported open realization, missing locked input, unavailable candidate, or unsupported backend mechanism. Long-running VM-image construction never starts on the provisioning critical path; bounded backend composition may occur during realization only when RAES author intent permits it and the backend declares and evidences that capability.",
         "checks": []
       }
     ],
