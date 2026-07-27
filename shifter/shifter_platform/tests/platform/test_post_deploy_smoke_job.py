@@ -61,3 +61,4 @@ def test_deploy_workflow_forwards_smoke_secret_to_gcp_dev() -> None:
     start = text.index("gcp-dev:")
     block = text[start : start + 3200]
     assert "SMOKE_TEST_USER_EMAIL" in block
+    assert "issues: write" in block
