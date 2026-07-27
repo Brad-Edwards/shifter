@@ -159,6 +159,23 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
         agents_by_os = event.range_config.get("agents_by_os", {}) if event.range_config else {}
         ngfw_enabled = event.range_config.get("ngfw_enabled", False) if event.range_config else False
 
+        # PLAT-201: draw this range's share of the event budget before creating
+        # it. Pure DB work in the engine -- no provider call on this path -- and
+        # idempotent on the participant id, so a retried provision does not draw
+        # twice. An enforcing over-budget draw refuses here rather than letting
+        # the range fail later in spinup.
+        from ctf.services.range.capacity import admit_range
+
+        admission = admit_range(event.pk, participant.pk)
+        if admission is not None and admission["blocking"]:
+            raise CTFRangeError(
+                "Range refused: event capacity budget exhausted",
+                details={
+                    "participant_id": str(participant_id),
+                    "capacity_reason_codes": admission["reason_codes"],
+                },
+            )
+
         try:
             from ctf.bridges import cms_create_range, cms_find_range_instance_id
 
@@ -171,6 +188,11 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
             )
         except Exception as e:
             logger.exception("Range provisioning failed for participant %s", safe_log_value(participant_id))
+            # The range never came up, so return its draw rather than leaving
+            # the budget short by a range that does not exist.
+            from ctf.services.range.capacity import release_range
+
+            release_range(participant.pk)
             raise CTFRangeError(
                 f"Range provisioning failed: {e}",
                 code=_underlying_policy_code(e),

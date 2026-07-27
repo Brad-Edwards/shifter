@@ -12,7 +12,8 @@
           "config-store",
           "event-bus",
           "database-auth",
-          "network-inventory"
+          "network-inventory",
+          "capacity-inventory"
         ],
         "title": "BackendCapability",
         "type": "string"
@@ -533,6 +534,7 @@
   "backends": {
     "aws": {
       "capabilities": [
+        "capacity-inventory",
         "config-store",
         "database-auth",
         "event-bus",
@@ -742,6 +744,7 @@
     },
     "gcp": {
       "capabilities": [
+        "capacity-inventory",
         "config-store",
         "database-auth",
         "event-bus",
