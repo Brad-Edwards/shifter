@@ -61,6 +61,8 @@ def patched(monkeypatch):
     calls = SimpleNamespace(
         apply=MagicMock(return_value={"composition_verified_addresses": []}),
         destroy=MagicMock(),
+        config=MagicMock(name="gce_config"),
+        load_config=MagicMock(),
         status=MagicMock(),
         ready=MagicMock(),
         failed=MagicMock(),
@@ -72,8 +74,16 @@ def patched(monkeypatch):
     monkeypatch.setattr(
         aces_range_ops,
         "get_aces_range_data_by_request_id",
-        lambda request_id: {"range_id": 7, "user_id": 3, "plan": _serialized_plan()},
+        lambda request_id: {
+            "range_id": 7,
+            "user_id": 3,
+            "plan": _serialized_plan(),
+            "range_backend": "gce",
+            "instantiation_purpose": "live_fire",
+        },
     )
+    calls.load_config.return_value = calls.config
+    monkeypatch.setattr(aces_range_ops, "load_gce_range_cell_config", calls.load_config)
     monkeypatch.setattr(aces_range_ops, "get_aces_content_delivery_bindings_by_request_id", calls.delivery_bindings)
     monkeypatch.setattr(aces_range_ops, "apply_aces_range_cell", calls.apply)
     monkeypatch.setattr(aces_range_ops, "destroy_aces_range_cell", calls.destroy)
@@ -97,6 +107,8 @@ class TestProvision:
         # dict -- a refactor that skipped parse_plan before dispatch must fail here.
         assert isinstance(aces_plan, AcesPlan)
         assert [n.address for n in aces_plan.nodes] == ["node.web"]
+        patched.load_config.assert_called_once_with(backend="gce")
+        assert patched.apply.call_args.kwargs["options"].config is patched.config
         patched.ready.assert_called_once_with(request_id="req-1", range_id=7, user_id=3)
         assert not patched.failed.called
 
@@ -118,12 +130,18 @@ class TestProvision:
         resources = patched.aces_snapshot.call_args.kwargs["resources"]
         assert {r["resource_type"] for r in resources} == {"network", "node"}
 
-    def test_failure_publishes_failed_and_reraises(self, patched):
-        patched.apply.side_effect = RuntimeError("boom")
-        with pytest.raises(RuntimeError, match="boom"):
+    def test_failure_reports_only_authored_diagnostics_and_reraises(self, patched):
+        secret = "https://storage.example/bucket/obj?X-Goog-Signature=deadbeef"
+        patched.apply.side_effect = RuntimeError(f"insert projects/acme-prod/instances/db1: {secret}")
+        with pytest.raises(RuntimeError, match="acme-prod"):
             aces_range_ops.run_aces_range_provision("req-1")
-        assert patched.failed.called
-        assert patched.failed.call_args.kwargs["error_message"].startswith("boom")
+        diagnostic = patched.failed.call_args.kwargs["error_message"]
+        status_reason = patched.aces_operation.call_args_list[-1].kwargs["status_reason"]
+        assert diagnostic == "ACES range provision failed (RuntimeError)"
+        assert status_reason == diagnostic
+        for leaked in ("X-Goog-Signature", "deadbeef", "acme-prod", "storage.example", "db1"):
+            assert leaked not in diagnostic
+            assert leaked not in status_reason
         assert not patched.ready.called
         # ACES operation ends 'failed'; no snapshot on failure.
         assert patched.aces_operation.call_args_list[-1].kwargs["status"] == "failed"
@@ -139,6 +157,44 @@ class TestProvision:
         assert not patched.aces_snapshot.called
         assert not patched.ready.called
 
+    @pytest.mark.parametrize(
+        ("backend", "purpose", "code"),
+        [
+            (None, "live_fire", "prerequisite"),
+            ("gdc", "live_fire", "identity-or-policy"),
+            ("gce", None, "prerequisite"),
+            ("gce", "non_user_validation", "identity-or-policy"),
+        ],
+    )
+    def test_rejects_non_gce_live_fire_binding_before_apply(
+        self,
+        monkeypatch,
+        patched,
+        backend,
+        purpose,
+        code,
+    ):
+        from cloud.exceptions import CloudError
+
+        monkeypatch.setattr(
+            aces_range_ops,
+            "get_aces_range_data_by_request_id",
+            lambda request_id: {
+                "range_id": 7,
+                "user_id": 3,
+                "plan": _serialized_plan(),
+                "range_backend": backend,
+                "instantiation_purpose": purpose,
+            },
+        )
+
+        with pytest.raises(CloudError) as exc:
+            aces_range_ops.run_aces_range_provision("req-1")
+
+        assert exc.value.code == code
+        patched.apply.assert_not_called()
+        patched.load_config.assert_not_called()
+
 
 class TestDestroy:
     def test_destroys_and_publishes_destroyed(self, patched):
@@ -149,14 +205,55 @@ class TestDestroy:
         # Destroy receives the parsed AcesPlan too, not the raw range_config dict.
         assert isinstance(aces_plan, AcesPlan)
         assert [n.address for n in aces_plan.nodes] == ["node.web"]
+        patched.load_config.assert_called_once_with(backend="gce")
+        assert patched.destroy.call_args.kwargs["config"] is patched.config
         patched.destroyed.assert_called_once_with(request_id="req-1", range_id=7, user_id=3)
 
-    def test_failure_publishes_failed_and_reraises(self, patched):
-        patched.destroy.side_effect = RuntimeError("kaboom")
-        with pytest.raises(RuntimeError, match="kaboom"):
+    def test_failure_reports_only_authored_diagnostics_and_reraises(self, patched):
+        patched.destroy.side_effect = RuntimeError(
+            "delete projects/acme-prod/instances/db1 using https://signed.example/?token=secret"
+        )
+        with pytest.raises(RuntimeError, match="acme-prod"):
             aces_range_ops.run_aces_range_destroy("req-1")
-        assert patched.failed.called
-        assert patched.failed.call_args.kwargs["error_message"].startswith("kaboom")
+        diagnostic = patched.failed.call_args.kwargs["error_message"]
+        status_reason = patched.aces_operation.call_args_list[-1].kwargs["status_reason"]
+        assert diagnostic == "ACES range destroy failed (RuntimeError)"
+        assert status_reason == diagnostic
+        for leaked in ("acme-prod", "db1", "signed.example", "token", "secret"):
+            assert leaked not in diagnostic
+            assert leaked not in status_reason
+
+    def test_timeout_keeps_a_stable_failure_class_without_runtime_detail(self, patched):
+        patched.destroy.side_effect = TimeoutError("waited on projects/acme-prod/operations/op-9")
+
+        with pytest.raises(TimeoutError):
+            aces_range_ops.run_aces_range_destroy("req-1")
+
+        diagnostic = patched.failed.call_args.kwargs["error_message"]
+        assert diagnostic == "ACES range destroy timed out (TimeoutError)"
+        assert "acme-prod" not in diagnostic
+
+    def test_rejects_non_gce_binding_before_destroy(self, monkeypatch, patched):
+        from cloud.exceptions import CloudError
+
+        monkeypatch.setattr(
+            aces_range_ops,
+            "get_aces_range_data_by_request_id",
+            lambda request_id: {
+                "range_id": 7,
+                "user_id": 3,
+                "plan": _serialized_plan(),
+                "range_backend": "gdc",
+                "instantiation_purpose": "live_fire",
+            },
+        )
+
+        with pytest.raises(CloudError) as exc:
+            aces_range_ops.run_aces_range_destroy("req-1")
+
+        assert exc.value.code == "identity-or-policy"
+        patched.destroy.assert_not_called()
+        patched.load_config.assert_not_called()
 
 
 def _node(image: AcesPlanImage | None) -> AcesPlanNode:

@@ -932,6 +932,43 @@ class TestGdcProvisioning:
             ("password", "a14-kali", "kali"),
         ]
 
+    def test_gcp_polaris_bootstrap_routes_from_profile_capability_not_image_key(self, monkeypatch):
+        from instance_orchestrator import _setup_one_other_instance
+
+        setup = MagicMock()
+        bootstrap = MagicMock()
+        container_password = MagicMock()
+        monkeypatch.setattr("instance_orchestrator.get_agent_presigned_url", MagicMock(return_value=""))
+        monkeypatch.setattr("instance_orchestrator._run_single_instance_setup", setup)
+        monkeypatch.setattr("instance_orchestrator._run_polaris_range_bootstrap", bootstrap)
+        monkeypatch.setattr(
+            "instance_orchestrator._set_attacker_container_password_after_bootstrap",
+            container_password,
+        )
+
+        result = _setup_one_other_instance(
+            {
+                "uuid": "inst-custom",
+                "asset_type": "gce_vm",
+                "role": "attacker",
+                "os": "kali",
+                "instance_id": "gce-custom",
+                "hostname": "kali",
+                "name": "kali",
+                "public_key": "ssh-rsa AAAA",
+                "gcp_bootstrap_capability": "polaris-docker-host",
+            },
+            {"inst-custom": {"ami_key": "arbitrary-logical-key"}},
+            actual_dc_ip="10.1.2.8",
+            actual_domain="boreas.local",
+            range_id=9,
+        )
+
+        assert result == ("gce-custom", True, None)
+        assert setup.call_args.kwargs["spec"].set_local_password is False
+        bootstrap.assert_called_once()
+        container_password.assert_called_once()
+
     def test_polaris_bootstrap_gcp_routes_ssh_and_uses_gcp_plan(self, monkeypatch):
         """GCP polaris bootstrap uses the routed executor and a gcp plan. No IMDS mutation exists anywhere (#1377)."""
         import polaris_bootstrap

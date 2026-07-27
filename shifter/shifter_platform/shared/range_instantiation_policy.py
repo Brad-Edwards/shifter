@@ -30,6 +30,7 @@ _SUPPORTED_LIVE_FIRE_BACKEND = "gce"
 # missing or malformed (fail closed -- never permission to fall back to GDC).
 POLICY_DENIAL_CODE = "identity-or-policy"
 PREREQUISITE_DENIAL_CODE = "prerequisite"
+UNSUPPORTED_CAPABILITY_CODE = "unsupported-capability"
 
 _LIVE_FIRE_GDC_REASON = (
     "GDC VM Runtime is not an approved live-fire range backend. Normal GCP ranges "

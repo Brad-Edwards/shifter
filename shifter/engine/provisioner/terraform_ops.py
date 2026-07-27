@@ -15,7 +15,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from shared.range_cells import RangeCellContractError, validate_scenario_artifact
-from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE, normalize_gcp_range_backend
+from shared.range_instantiation_policy import (
+    POLICY_DENIAL_CODE,
+    PREREQUISITE_DENIAL_CODE,
+    InstantiationPurpose,
+    evaluate_gcp_backend_admission,
+    normalize_gcp_range_backend,
+)
 from shared.remote_access import parse_openvpn_capability, validate_openvpn_capability_window
 
 import range_terraform_runner
@@ -29,6 +35,7 @@ from events import (
     publish_ready,
     publish_status_update,
 )
+from gcp_range_cell_scenario import validate_legacy_gce_composition
 from instance_orchestrator import run_instance_setup
 from provisioner_db import (
     get_range_data_by_request_id,
@@ -80,6 +87,13 @@ def _prerequisite_error(message: str) -> CloudError:
     return error
 
 
+def _coded_error(message: str, code: str) -> CloudError:
+    """Build a CloudError carrying an authored stable failure classification."""
+    error = CloudError(message)
+    error.code = code
+    return error
+
+
 def _resolve_legacy_gcp_backend(range_data: dict[str, Any]) -> str:
     """Resolve a GCP range with no persisted binding from durable ownership evidence (#1666).
 
@@ -114,19 +128,51 @@ def _resolve_operation_backend(range_data: dict[str, Any], operation: str) -> st
     Returns the normalized write-once binding when present; ``None`` for non-GCP
     (AWS) ranges, where gce/gdc routing does not apply. For a GCP range with no
     persisted binding, a destroy/reconcile resolves from durable ownership
-    evidence (or fails closed); provision (and its immediate compensation) fall
-    back to the env selector, since a fresh range has no resources to disambiguate
-    and the selector still equals what was admitted in that window.
+    evidence (or fails closed). A normal provision must already carry the
+    admission-time binding and never falls back to the deploy-wide selector.
     """
     persisted = range_data.get("range_backend")
     if persisted:
         return normalize_gcp_range_backend(persisted)
-    # No binding: non-GCP ranges and the provision path (a fresh range with no
-    # resources to disambiguate) fall back to the env selector; only a GCP
-    # destroy/reconcile of a legacy range must resolve from durable evidence.
-    if resolve_cloud_provider() != "gcp" or operation != "destroy":
+    # A normal GCP provision is admitted and bound before dispatch. Re-reading
+    # the deploy-wide selector here would allow an in-flight selector flip to
+    # change ownership, so a missing binding fails closed.
+    if resolve_cloud_provider() != "gcp":
         return None
+    if operation != "destroy":
+        raise _prerequisite_error(
+            "This GCP range has no persisted backend ownership binding; retry the launch after admission"
+        )
     return _resolve_legacy_gcp_backend(range_data)
+
+
+def _resolve_operation_purpose(
+    range_data: dict[str, Any],
+    backend: str | None,
+    operation: str,
+) -> InstantiationPurpose | None:
+    """Validate the persisted launch purpose for a bound normal GCP operation."""
+    if backend is None:
+        return None
+    raw_purpose = range_data.get("instantiation_purpose")
+    if raw_purpose is None and operation == "destroy":
+        # Legacy cleanup remains possible; backend ownership is sufficient to
+        # select the deterministic teardown adapter.
+        return None
+    try:
+        purpose = InstantiationPurpose(raw_purpose)
+    except (TypeError, ValueError):
+        raise _prerequisite_error("This GCP range has no valid persisted instantiation purpose") from None
+    if operation != "destroy":
+        if purpose is not InstantiationPurpose.LIVE_FIRE:
+            raise _coded_error(
+                "Normal GCP range provisioning requires the live_fire instantiation purpose",
+                POLICY_DENIAL_CODE,
+            )
+        admission = evaluate_gcp_backend_admission(backend, None, purpose)
+        if not admission.admitted:
+            raise _coded_error(admission.reason, admission.code)
+    return purpose
 
 
 @dataclass(frozen=True)
@@ -147,6 +193,7 @@ class RangeOperation:
     range_spec: dict[str, Any]
     scenario_artifact: dict[str, Any] | None = None
     backend: str | None = None
+    purpose: InstantiationPurpose | None = None
     remote_access_capability: dict[str, object] | None = None
     operation_id: str | None = None
 
@@ -272,16 +319,17 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
     # persisted Range ownership (#1666). Reused for dispatch and, on a provision
     # failure, for the compensation destroy -- never re-resolved from the env
     # selector after a failure.
-    operation_backend = _resolve_operation_backend(range_data, operation)
-
     range_operation: RangeOperation | None = None
     try:
+        operation_backend = _resolve_operation_backend(range_data, operation)
+        operation_purpose = _resolve_operation_purpose(range_data, operation_backend, operation)
         remote_access_capability = _resolve_remote_access_capability(range_data, operation)
         # Verify the producer-minted artifact before any NGFW or provider
         # operation. Other backends retain their existing legacy payload path.
-        scenario_artifact = (
-            validate_scenario_artifact(range_data.get("spec_envelope")) if is_gce_range_cell_backend() else None
-        )
+        uses_gce = operation_backend == "gce" if operation_backend is not None else is_gce_range_cell_backend()
+        scenario_artifact = validate_scenario_artifact(range_data.get("spec_envelope")) if uses_gce else None
+        if operation == "up" and scenario_artifact is not None:
+            validate_legacy_gce_composition(scenario_artifact, backend=operation_backend)
 
         if range_spec.get("ngfw", False):
             _ensure_ngfw_ready_for_provisioning(range_id, user_id)
@@ -293,6 +341,7 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
             range_spec=range_spec,
             scenario_artifact=scenario_artifact,
             backend=operation_backend,
+            purpose=operation_purpose,
             remote_access_capability=remote_access_capability,
             operation_id=operation_id,
         )
@@ -342,11 +391,12 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         else None
     )
 
+    uses_gce = operation.backend == "gce" if operation.backend is not None else is_gce_range_cell_backend()
     spec_subnets = _allocate_range_subnet_cidrs(
         request_id,
         range_id,
         range_spec,
-        persist_to_scenario=not is_gce_range_cell_backend(),
+        persist_to_scenario=not uses_gce,
     )
 
     # Build backend-appropriate range variables from the range spec (now with
@@ -358,11 +408,17 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         user_id,
         range_spec,
         scenario_artifact,
+        backend=operation.backend,
         remote_access_capability=remote_access_capability,
     )
 
     # Run the provider-routed apply
-    output_data = range_terraform_runner.apply_range(request_id, provision_variables)
+    output_data = range_terraform_runner.apply_range(
+        request_id,
+        provision_variables,
+        backend=operation.backend,
+        purpose=operation.purpose or InstantiationPurpose.LIVE_FIRE,
+    )
     vpn_access_binding = (
         finalize_openvpn_access(
             vpn_preparation,

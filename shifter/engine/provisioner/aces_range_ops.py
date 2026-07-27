@@ -17,11 +17,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from shared.range_instantiation_policy import (
+    POLICY_DENIAL_CODE,
+    PREREQUISITE_DENIAL_CODE,
+    InstantiationPurpose,
+    evaluate_gcp_backend_admission,
+)
+
 from aces_gce_image import resolve_gce_image
-from aces_gcp_apply import apply_aces_range_cell, destroy_aces_range_cell
+from aces_gcp_apply import AcesGceApplyOptions, apply_aces_range_cell, destroy_aces_range_cell
 from aces_plan import AcesPlanNode, parse_plan
 from aces_snapshot import snapshot_resources
-from config import GCERangeImageProfile
+from cloud.exceptions import CloudError
+from config import GCERangeImageProfile, load_gce_range_cell_config
 from events import (
     STATUS_PROVISIONING,
     publish_aces_operation,
@@ -31,7 +39,6 @@ from events import (
     publish_ready,
     publish_status_update,
 )
-from log_redact import safe_log_value
 from provisioner_db_aces import (
     get_aces_content_delivery_bindings_by_request_id,
     get_aces_image_candidates,
@@ -42,6 +49,59 @@ logger = logging.getLogger(__name__)
 
 #: Registry provider key for the GCE realization backend (engine_aces_image_mapping).
 _GCE_REGISTRY_PROVIDER = "gce"
+
+
+def _classify_failure(exc: BaseException, stage: str) -> str:
+    """Return an authored diagnostic safe for durable and user-visible channels.
+
+    Provider, storage, content-delivery, and guest exceptions can contain
+    signed URLs, project/resource identifiers, or guest output. Their messages
+    must remain outside lifecycle events and websocket-visible status reasons.
+    The exception type is code identity rather than runtime data, so retaining
+    it keeps the diagnostic useful without forwarding ``str(exc)``.
+    """
+    if isinstance(exc, TimeoutError):
+        return f"{stage} timed out ({type(exc).__name__})"
+    if isinstance(exc, CloudError):
+        if exc.code == POLICY_DENIAL_CODE:
+            return f"{stage} was denied by backend policy"
+        if exc.code == PREREQUISITE_DENIAL_CODE:
+            return f"{stage} prerequisites were not satisfied"
+    return f"{stage} failed ({type(exc).__name__})"
+
+
+def _binding_error(message: str, code: str) -> CloudError:
+    """Return an authored lifecycle failure with a stable classification."""
+    error = CloudError(message)
+    error.code = code
+    return error
+
+
+def _require_gce_live_fire_binding(data: dict[str, object]) -> str:
+    """Validate the persisted ownership/purpose pair for a normal ACES range."""
+    raw_backend = data.get("range_backend")
+    if not isinstance(raw_backend, str) or not raw_backend.strip():
+        raise _binding_error(
+            "ACES GCP range ownership binding is missing",
+            PREREQUISITE_DENIAL_CODE,
+        )
+    raw_purpose = data.get("instantiation_purpose")
+    try:
+        purpose = InstantiationPurpose(raw_purpose)
+    except (TypeError, ValueError):
+        raise _binding_error(
+            "ACES GCP range instantiation purpose is missing or invalid",
+            PREREQUISITE_DENIAL_CODE,
+        ) from None
+    if purpose is not InstantiationPurpose.LIVE_FIRE:
+        raise _binding_error(
+            "Normal ACES GCP ranges require the live_fire instantiation purpose",
+            POLICY_DENIAL_CODE,
+        )
+    admission = evaluate_gcp_backend_admission(raw_backend, None, purpose)
+    if not admission.admitted:
+        raise _binding_error(admission.reason, admission.code)
+    return admission.backend
 
 
 def _registry_resolver() -> Callable[[AcesPlanNode], GCERangeImageProfile]:
@@ -79,10 +139,17 @@ def run_aces_range_provision(request_id: str) -> None:
         request_id=request_id, range_id=range_id, user_id=user_id, operation_id=operation_id, status="running"
     )
     try:
+        backend = _require_gce_live_fire_binding(data)
+        config = load_gce_range_cell_config(backend=backend)
         aces_plan = parse_plan(data["plan"])
         delivery_bindings = get_aces_content_delivery_bindings_by_request_id(request_id)
         apply_result = apply_aces_range_cell(
-            request_id, range_id, aces_plan, _registry_resolver(), delivery_bindings=delivery_bindings
+            request_id,
+            range_id,
+            aces_plan,
+            _registry_resolver(),
+            options=AcesGceApplyOptions(config=config),
+            delivery_bindings=delivery_bindings,
         )
         verified_addresses = apply_result.get("composition_verified_addresses")
         if not isinstance(verified_addresses, list) or not all(
@@ -91,17 +158,17 @@ def run_aces_range_provision(request_id: str) -> None:
             raise ValueError("ACES composition verification proof is invalid")
         resources = snapshot_resources(aces_plan, set(verified_addresses))
     except Exception as exc:
-        error_msg = str(exc)[:1000]
-        logger.exception("ACES range provision failed: %s", error_msg)
+        diagnostic = _classify_failure(exc, "ACES range provision")
+        logger.error("ACES range provision failed class=%s", type(exc).__name__)
         publish_aces_operation(
             request_id=request_id,
             range_id=range_id,
             user_id=user_id,
             operation_id=operation_id,
             status="failed",
-            status_reason=safe_log_value(error_msg),
+            status_reason=diagnostic,
         )
-        publish_failed(request_id=request_id, range_id=range_id, user_id=user_id, error_message=error_msg)
+        publish_failed(request_id=request_id, range_id=range_id, user_id=user_id, error_message=diagnostic)
         raise
     publish_aces_snapshot(
         request_id=request_id,
@@ -127,20 +194,22 @@ def run_aces_range_destroy(request_id: str) -> None:
         request_id=request_id, range_id=range_id, user_id=user_id, operation_id=operation_id, status="running"
     )
     try:
+        backend = _require_gce_live_fire_binding(data)
+        config = load_gce_range_cell_config(backend=backend)
         aces_plan = parse_plan(data["plan"])
-        destroy_aces_range_cell(request_id, range_id, aces_plan)
+        destroy_aces_range_cell(request_id, range_id, aces_plan, config=config)
     except Exception as exc:
-        error_msg = str(exc)[:1000]
-        logger.exception("ACES range destroy failed: %s", error_msg)
+        diagnostic = _classify_failure(exc, "ACES range destroy")
+        logger.error("ACES range destroy failed class=%s", type(exc).__name__)
         publish_aces_operation(
             request_id=request_id,
             range_id=range_id,
             user_id=user_id,
             operation_id=operation_id,
             status="failed",
-            status_reason=safe_log_value(error_msg),
+            status_reason=diagnostic,
         )
-        publish_failed(request_id=request_id, range_id=range_id, user_id=user_id, error_message=error_msg)
+        publish_failed(request_id=request_id, range_id=range_id, user_id=user_id, error_message=diagnostic)
         raise
     publish_aces_operation(
         request_id=request_id, range_id=range_id, user_id=user_id, operation_id=operation_id, status="succeeded"

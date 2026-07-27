@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from agent_assets import get_agent_presigned_url
+from config import GCE_BOOTSTRAP_POLARIS_HOST
 from dc_setup import _run_dc_setup
 from instance_setup import (
     _DomainJoinSpec,
@@ -109,12 +110,17 @@ def _setup_one_other_instance(
     inst_id = inst["instance_id"]
     inst_uuid = inst.get("uuid", "")
     inst_config = uuid_to_config.get(inst_uuid, {})
-    is_polaris_vm = inst_config.get("ami_key") == "polaris-vm"
+    gce_bootstrap_capability = inst.get("gcp_bootstrap_capability")
+    is_polaris_vm = (
+        gce_bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST
+        if gce_bootstrap_capability is not None
+        else inst_config.get("ami_key") == "polaris-vm"
+    )
     # TechVault: an Ubuntu docker host that presents as the "kali" attacker
     # (os_type kali -> Guacamole RDP). The host seat user is "ubuntu" (uid
     # 1000, required for aptl's 0400 wazuh certs), so the SSH key + RDP
     # password target "ubuntu" rather than the os_type default "kali".
-    is_techvault = inst_config.get("ami_key") == "techvault"
+    is_techvault = gce_bootstrap_capability is None and inst_config.get("ami_key") == "techvault"
     spec = _InstanceSetupSpec(
         role=inst.get("role", "victim"),
         os_type=inst.get("os", "ubuntu"),

@@ -31,20 +31,30 @@ is retained in the rendered contract and is inert while the backend is `gce`.
 
 ### Switching the selector on an environment with existing GDC ranges
 
-Range destroy currently routes from the deploy-wide `GCP_RANGE_BACKEND` selector,
-so **tear down any existing GDC ranges before flipping `GCP_RANGE_BACKEND` from
-`gdc` to `gce`**. Flipping while GDC ranges are still live would route their
-teardown down the GCE path and strand the GDC namespaces, VMs, disks, secrets,
-L2 Networks, and subnet allocations (recover those with the manual GDC cleanup
-runbook). Binding the backend to per-range state so this ordering is no longer
-required is tracked by #1666.
+New GCP ranges persist the admitted `range_backend` and
+`instantiation_purpose` as write-once Engine ownership state. Destroy and
+provision, including artifact validation, variable shaping, configuration
+loading, and provision-failure compensation, route from that per-range binding.
+Changing the deploy-wide selector therefore changes admission for later
+requests; it does not reclassify an existing or in-flight range. Both the legacy
+RangeSpec and ACES lifecycle paths require the persisted `gce`/`live_fire`
+binding and fail closed if it is absent or incompatible.
 
-The environment setting is an operator/backend-policy input, not scenario
-metadata. Issue #1354 owns the policy that decides which requests may use each
-backend. Once a request has been admitted to the GCP VM range-cell contract, the
-provisioner refuses to route it to GDC, GKE, or the legacy Terraform path; an
-operator must not treat `gdc` as a per-request fallback for a contract-tagged
-live-fire user range.
+Legacy ranges created before the binding was introduced may have NULL ownership
+fields. Their destroy path resolves only from durable instance-state evidence;
+it never guesses from the current selector. If the evidence is absent or
+ambiguous, cleanup fails closed and retains state. While the historical
+selector is known, an operator can repair the row with
+`manage.py backfill_range_backend_binding --range-id <id> --backend <gdc|gce>`
+and retry. Do not switch selectors and then infer a legacy range's owner from
+its scenario name, topology, or the backend that happens to be healthy.
+
+The environment setting is admission input for new ranges, not scenario
+metadata or ownership evidence for existing ones. The policy introduced by
+#1354 decides which requests may use each backend. Once a request has been
+admitted to the GCP VM range-cell contract, the provisioner refuses to route it
+to GDC, GKE, or the legacy Terraform path; an operator must not treat `gdc` as a
+per-request fallback for a contract-tagged live-fire user range.
 
 ## Scenario-to-cell contract
 
@@ -85,6 +95,35 @@ scenario artifact can use a new discriminator/version adapter while retaining
 the same cell lifecycle contract. See
 `docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md` for the
 full boundary analysis.
+
+### Capability failures and diagnostics
+
+Capability checks run while rendering the closed request, before Compute,
+Secret Manager, or bootstrap mutation. Their stable failure classes are:
+
+- `unsupported-capability`: the composition needs an unimplemented GCE
+  capability, currently NGFW range attachment or a configured image profile
+  whose `bootstrap_capability` has no GCE realizer. Fix the implementation; do
+  not retry on GDC or pods.
+- `prerequisite`: the approved route is valid but a required input is absent,
+  including a missing exact image mapping or a domain-intent DC whose
+  pre-promoted image metadata does not exactly match the authored DNS and
+  NetBIOS identity. Fix configuration or the scenario artifact, then launch a
+  new range.
+- `identity-or-policy`: the persisted backend/purpose pair is not admitted for
+  a normal live-fire range, notably `gdc` with `live_fire`.
+
+The current built-in support/evidence projection is in
+[`docs/scenarios/index.md`](../scenarios/index.md#gcp-vm-range-cell-support).
+It is documentation only; do not reproduce it as a scenario-ID branch or CMS
+allowlist. Destroy renders with image and provision-capability checks disabled,
+so a newly unsupported composition can still be cleaned up deterministically.
+That recovery also tolerates a missing CIDR or OpenVPN gateway-pool binding when
+provision failed before allocation: deletion uses deterministic owned-resource
+names and remains idempotent. If the launcher reports the canonical command
+grammar denial, verify that the base and Helm `restrict-provisioner-jobs`
+policies accept the optional UUID-validated `--operation-id` suffix; do not
+disable admission or remove the suffix.
 
 ## Required configuration
 
@@ -130,9 +169,12 @@ of four approved image profiles by role and OS (`GCERangeCellConfig.get_profile`
 Instances without an `ami_key` continue to use those four defaults. An instance
 with an `ami_key` requires an exact entry in
 `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` under its derived profile class. Each entry
-is complete: image, machine type, disk size, and disk type. Unknown keys and
-keys placed under the wrong class fail before any Compute or secret client is
-created; they never fall back to the default role image.
+is complete: image, machine type, disk size, disk type, and typed bootstrap
+capability. Pre-promoted domain profiles also declare their baked DNS and
+NetBIOS identity. Unknown keys and keys placed under the wrong class fail
+before any Compute or secret client is created; they never fall back to the
+default role image. The adapter routes host access and bootstrap from this
+trusted profile metadata, never from a scenario or image-name literal.
 
 The value is a non-secret JSON object, limited to 32,768 bytes and 64 total
 entries. Profile classes and fields are closed. Logical keys must be lowercase
@@ -145,13 +187,15 @@ letters, digits, and hyphens. For example:
       "source_image": "projects/PROJECT/global/images/family/shifter-polaris-vm",
       "machine_type": "e2-standard-8",
       "disk_size_gb": 210,
-      "disk_type": "pd-balanced"
+      "disk_type": "pd-balanced",
+      "bootstrap_capability": "polaris-docker-host"
     },
     "techvault": {
       "source_image": "projects/PROJECT/global/images/family/shifter-techvault",
       "machine_type": "n2-standard-8",
       "disk_size_gb": 150,
-      "disk_type": "pd-balanced"
+      "disk_type": "pd-balanced",
+      "bootstrap_capability": "techvault-container-stack"
     }
   },
   "dc": {
@@ -159,11 +203,22 @@ letters, digits, and hyphens. For example:
       "source_image": "projects/PROJECT/global/images/family/shifter-polaris-dc",
       "machine_type": "e2-standard-4",
       "disk_size_gb": 100,
-      "disk_type": "pd-balanced"
+      "disk_type": "pd-balanced",
+      "bootstrap_capability": "prepromoted-domain-controller",
+      "domain_dns_name": "boreas.local",
+      "domain_netbios_name": "BOREAS"
     }
   }
 }
 ```
+
+The supported bootstrap capabilities are `standard`,
+`polaris-docker-host`, and `prepromoted-domain-controller`. Other well-formed
+capability values remain parseable so the adapter can return the stable
+`unsupported-capability` result when a scenario selects them. A
+`prepromoted-domain-controller` profile is usable only when both domain fields
+match the scenario's `dc_config` (case-insensitively, with an optional trailing
+DNS dot).
 
 The provisioner records a bounded key/profile fingerprint on each new VM and
 in existing provider metadata. Reconciliation rejects a keyed same-name VM if
