@@ -68,9 +68,13 @@ Current mechanisms:
   SonarQube Cloud scan so runner deprecation warnings do not mask real
   SonarCloud quality findings.
   - Repository branch protection for `main` and `dev` requires the
-    aggregate `PR Gate`, CodeQL, and pull-request title lint with strict
-    up-to-date status checks. Admin bypass remains enabled for emergency
-    override; normal changes land through PRs.
+    aggregate `PR Gate`, CodeQL, and `Lint PR title` with strict
+    up-to-date status checks. The title-lint workflow triggers on PRs
+    against both branches so the required context reports on each; a
+    required context whose workflow cannot trigger for a base branch
+    never reports and blocks the merge indefinitely (#1868). Admin
+    bypass remains enabled for emergency override; normal changes land
+    through PRs.
 - `.github/workflows/codeql-analysis.yml`: GitHub CodeQL static analysis
   with the `security-extended` query suite for Python and JavaScript;
   runs on pushes to `main` and `dev`, on pull requests against either
@@ -78,13 +82,17 @@ Current mechanisms:
   weekly schedule. Least-privilege permissions (`contents: read`,
   `security-events: write`, `actions: read`); no `pull_request_target`.
 - `.github/workflows/pr-title-lint.yml`: pull-request title validation
-  against the conventional-commit shape used by towncrier and the
-  release-drafter conventions. PRs to or from the `dev` integration
-  branch are exempt; release/environment promotion PRs that do not
-  involve `dev` are validated. Allowed types: `security`, `added`, `changed`,
-  `deprecated`, `removed`, `fixed`, `feat`, `fix`, `chore`, `docs`,
-  `refactor`, `test`, `ci`, `build`, `perf`, `revert`. Subject must
-  start with a lowercase letter.
+  against the conventional-commit shape Release Please consumes. It runs
+  on PRs targeting `dev` and `main`, the two branches whose protection
+  requires the `Lint PR title` context. On `dev` the lint guards the
+  release signal: squash-merging a feature PR makes the validated title
+  the single commit subject Release Please reads once the change reaches
+  `main` (ADR-042-R4). On `main` the promotion PR is merged with a merge
+  commit and preserves the feature commits, so its title is not a release
+  signal; the lint runs there so the required context reports. Allowed
+  types: `security`, `added`, `changed`, `deprecated`, `removed`, `fixed`,
+  `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`,
+  `perf`, `revert`. Subject must start with a lowercase letter.
 - `.github/workflows/_shifter-engine.yml`: engine image validation and
   deployment. The provisioner pytest gate and Docker-build validation run
   on GitHub-hosted runners; self-hosted runners are reserved for the
