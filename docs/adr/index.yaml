@@ -87,8 +87,11 @@
       },
       {
         "id": "ADR-003-R6",
-        "description": "After successful AWS dev portal deploy verification, _shifter-platform.yml may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes scripts/smoke-test.sh via scripts/portal_deploy/portal_deploy.py run-manage-on-portal. The job must remain dev-only (inputs.is_dev), continue-on-error so deploy success is not blocked, request issues: write only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. Long-running portal manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit aws ssm wait command-executed waiter. The smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED.",
-        "checks": ["deploy-verification-fail-loud", "deploy-workflow-runner-exposure"]
+        "description": "After successful dev portal deploy verification, provider-specific reusable deploy workflows may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes the shared run_post_deploy_smoke manage command through the provider's portal-exec transport. The job must remain dev-only (`inputs.is_dev` or the provider-equivalent dev-environment gate), continue-on-error so deploy success is not blocked, request `issues: write` only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. AWS keeps its existing `scripts/smoke-test.sh` -> `scripts/portal_deploy/portal_deploy.py run-manage-on-portal` SSM transport, and long-running AWS portal-manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit `aws ssm wait command-executed` waiter. The shared smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED. Provider parity must reuse the shared smoke command/variant contract rather than forking smoke lifecycle logic by cloud.",
+        "checks": [
+          "deploy-verification-fail-loud",
+          "deploy-workflow-runner-exposure"
+        ]
       },
       {
         "id": "ADR-003-R4",
