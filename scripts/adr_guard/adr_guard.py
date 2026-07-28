@@ -5213,6 +5213,13 @@ _DW_EXPR_TOKEN = re.compile(
         |(?P<ident>[A-Za-z0-9_.\-]+)""",
     re.VERBOSE,
 )
+# `if:` accepts a condition with or without the `${{ }}` wrapper; the workflows
+# here use both styles, so the evaluator normalizes to the bare expression.
+_DW_EXPR_WRAPPER = re.compile(r"^\$\{\{(?P<body>.*)\}\}$", re.DOTALL)
+# The one repository whose runs are the canonical CI. Steps that must not
+# silently no-op compare `github.repository` against this literal rather than
+# testing whether their configuration variables happen to be set (ADR-003-R7).
+_DW_CANONICAL_REPOSITORY = "Brad-Edwards/shifter"
 
 
 class _DwShapeError(Exception):
@@ -5266,6 +5273,13 @@ def _dw_normalize_expr(expr) -> str:
     return " ".join(str(expr or "").split())
 
 
+def _dw_unwrap_expr(expr: str) -> str:
+    """Strip a single enclosing ``${{ }}`` so the tokenizer sees a bare
+    expression. Anything else is returned unchanged."""
+    match = _DW_EXPR_WRAPPER.match(expr)
+    return match.group("body").strip() if match else expr
+
+
 def _dw_job_if(job: dict) -> str:
     return _dw_normalize_expr(job.get("if", ""))
 
@@ -5307,7 +5321,8 @@ def _dw_result_guarded_upstreams(if_expr) -> set:
 # asserts the job does not run. Supports only the operators these workflows
 # use - `==`, `!=`, `&&`, `||`, `!`, parentheses, string literals, and the
 # `always()` status function; operands are `needs.<job>.result`,
-# `needs.<job>.outputs.<key>`, `inputs.<key>`, and `github.<field>`.
+# `needs.<job>.outputs.<key>`, `inputs.<key>`, `vars.<name>`, and
+# `github.<field>`.
 def _dw_truthy(value) -> bool:
     if isinstance(value, bool):
         return value
@@ -5428,16 +5443,20 @@ def _dw_evaluate_if(
     event_name="workflow_dispatch",
     ref="refs/heads/aws-dev",
     base_ref="",
+    repository=_DW_CANONICAL_REPOSITORY,
     inputs_true=True,
+    vars_set=True,
 ) -> bool:
-    """Evaluate a job ``if:`` against a permissive context; return whether the
-    job would run. Unspecified upstream results default to ``success``, every
-    ``needs.*.outputs.*`` to ``true``, and every ``inputs.*`` to
-    ``inputs_true`` - so the only thing that flips the outcome is the scenario
-    under test (a failed upstream, a pull_request event)."""
-    expr = _dw_normalize_expr(if_expr)
+    """Evaluate a job or step ``if:`` against a permissive context; return
+    whether it would run. Unspecified upstream results default to ``success``,
+    every ``needs.*.outputs.*`` to ``true``, every ``inputs.*`` to
+    ``inputs_true``, and every ``vars.*`` to a non-empty value when
+    ``vars_set`` - so the only thing that flips the outcome is the scenario
+    under test (a failed upstream, a pull_request event, a fork's
+    ``repository``, an unset repository variable)."""
+    expr = _dw_unwrap_expr(_dw_normalize_expr(if_expr))
     if not expr:
-        return True  # a job with no `if:` is always eligible
+        return True  # no `if:` at all is always eligible
     results = results or {}
 
     def resolve(path):
@@ -5452,12 +5471,15 @@ def _dw_evaluate_if(
             return "success"
         if head == "inputs":
             return inputs_true
+        if head == "vars":
+            return "true" if vars_set else ""
         if head == "github":
             field = parts[1] if len(parts) > 1 else ""
             return {
                 "event_name": event_name,
                 "ref": ref,
                 "base_ref": base_ref,
+                "repository": repository,
             }.get(field, "")
         raise _DwExprError(f"unresolvable operand: {path}")
 
