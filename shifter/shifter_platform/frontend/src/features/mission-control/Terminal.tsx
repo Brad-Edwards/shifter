@@ -19,6 +19,8 @@ import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 
+import { cn } from "@/lib/utils";
+
 import "@xterm/xterm/css/xterm.css";
 
 // Mirrors static/js/terminal.js's terminalOptions.theme for visual continuity
@@ -80,11 +82,20 @@ function createTerminal(container: HTMLElement): { term: XTerm; fitAddon: FitAdd
 }
 
 /**
- * Wire copy-on-select, right-click paste, and Ctrl+Shift+C/V for the terminal.
+ * Wire copy-on-select and Ctrl+Shift+C/V for the terminal.
  *
  * tmux owns wheel events so its history remains scrollable. xterm's standard
- * Shift+drag bypass creates a browser selection; copy it when the drag ends
- * and paste on right click. Keep keyboard equivalents for keyboard-only use.
+ * Shift+drag bypass creates a browser selection; copy it when the drag ends.
+ *
+ * Paste is deliberately NOT bound to `contextmenu`. Ranges are
+ * adversary-simulation environments, so a hostile or compromised instance can
+ * prompt the operator to right-click; reading `navigator.clipboard` there and
+ * feeding it straight to the session would silently exfiltrate whatever is on
+ * the workstation clipboard (passwords, cloud credentials, incident notes)
+ * into the remote shell — with the default browser menu suppressed, nothing
+ * signals that a clipboard read happened. Paste stays an explicit gesture:
+ * Ctrl+Shift+V below, or the browser's own context-menu paste.
+ *
  * Returns a teardown that removes the DOM listeners it added.
  */
 function attachClipboardAndKeys(term: XTerm): () => void {
@@ -106,13 +117,8 @@ function attachClipboardAndKeys(term: XTerm): () => void {
     }
   };
   const handleMouseUp = () => copySelection();
-  const handleContextMenu = (event: MouseEvent) => {
-    event.preventDefault();
-    pasteClipboard();
-  };
 
   terminalElement?.addEventListener("mouseup", handleMouseUp);
-  terminalElement?.addEventListener("contextmenu", handleContextMenu);
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) return true;
     if (event.key.toLowerCase() === "c") {
@@ -128,7 +134,6 @@ function attachClipboardAndKeys(term: XTerm): () => void {
 
   return () => {
     terminalElement?.removeEventListener("mouseup", handleMouseUp);
-    terminalElement?.removeEventListener("contextmenu", handleContextMenu);
   };
 }
 
@@ -230,6 +235,18 @@ export interface TerminalProps {
   instanceUuid: string;
   tmuxWheelScrolling?: boolean;
   onConnectionStateChange?: ConnectionStateHandler;
+  /**
+   * Container sizing for the terminal surface. Defaults to the standalone
+   * page's fixed height; the workspace passes `h-full` so a pane (tab body or
+   * split column) drives the height instead. `FitAddon` and xterm DOM
+   * ownership stay inside this component either way.
+   */
+  className?: string;
+  /**
+   * Accessible name for the terminal region. The workspace passes a
+   * device-specific name so two panes are not duplicate `region` landmarks.
+   */
+  label?: string;
 }
 
 /** Owns one xterm instance + one terminal websocket for its lifetime; remount (via `key`) to reconnect. */
@@ -237,6 +254,8 @@ export function Terminal({
   instanceUuid,
   tmuxWheelScrolling = false,
   onConnectionStateChange,
+  className = "h-[32rem]",
+  label = "Terminal session",
 }: Readonly<TerminalProps>) {
   const containerRef = useRef<HTMLElement>(null);
   const onStateChangeRef = useRef(onConnectionStateChange);
@@ -252,6 +271,14 @@ export function Terminal({
     const detachWheel = attachTmuxWheel(term, socket, tmuxWheelScrolling);
     const detachSocket = bindSocket(term, fitAddon, socket, onStateChangeRef);
 
+    // A workspace pane changes size without the window changing size: showing a
+    // tab, dragging the split separator, or mounting into a container that was
+    // zero-width a frame earlier. A hidden or zero-width xterm container is a
+    // known mis-fit source, so observe the container itself rather than relying
+    // on `window.resize` alone (which stays for browsers mid-teardown).
+    const observer = new ResizeObserver(() => fitAddon.fit());
+    observer.observe(container);
+
     function handleWindowResize() {
       fitAddon.fit();
     }
@@ -259,6 +286,7 @@ export function Terminal({
 
     return () => {
       window.removeEventListener("resize", handleWindowResize);
+      observer.disconnect();
       detachWheel();
       detachClipboard();
       detachSocket();
@@ -273,8 +301,8 @@ export function Terminal({
   return (
     <section
       ref={containerRef}
-      aria-label="Terminal session"
-      className="h-[32rem] overflow-hidden rounded-md border border-white/10 bg-[#0d0d0d] p-2"
+      aria-label={label}
+      className={cn("overflow-hidden rounded-md border border-white/10 bg-[#0d0d0d] p-2", className)}
     />
   );
 }

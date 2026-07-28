@@ -6,15 +6,16 @@ optional-cursor append helpers for the two async-processing tables the provision
 writes to:
 
 * ``engine_operation_result_inbox`` (ADR-043 Phase 2, #1834) via
-  :func:`append_operation_result`.
+  :func:`append_operation_result` for the remaining CyberScript compatibility
+  path and :func:`append_operation_step_result` for cut-over families.
 
-Both ride the caller's cursor when one is supplied (atomic with the authoritative
-state write) or open a dedicated connection and commit otherwise. The operation
-result append is *shadow mode*: the direct SQL writes performed by
+Both ride the caller's cursor when one is supplied or open a dedicated connection
+and commit otherwise. The unstepped append is a best-effort shadow of the direct
+SQL writes performed by
 ``provisioner_db.write_provisioned_state`` /
-``provisioner_db.mark_range_instances_destroyed`` /
-``ngfw_runtime.update_instance_state`` remain the sole authoritative writers, so
-every append here is best-effort and must never fail an authoritative operation.
+``provisioner_db.mark_range_instances_destroyed``. The stepped append is the
+fail-hard authoritative write for cut-over families; Engine applies its validated
+result to domain state, audit, and notifications in one transaction.
 
 ``OperationRef`` is the parameter object that carries the operation identity
 (request + canonical generation) so leaf writers thread one value instead of a
