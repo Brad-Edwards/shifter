@@ -17,9 +17,22 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from engine.launch_intents import enqueue_provisioner_launch
-from engine.models import Instance, OperationInput, RaesContentDeliveryBinding, RaesImageMapping, Range, Request
+from engine.models import (
+    Instance,
+    OperationInput,
+    RaesContentDeliveryBinding,
+    RaesImageMapping,
+    RaesParticipantAccessBinding,
+    Range,
+    Request,
+)
 from shared.enums import ResourceStatus
-from shared.raes.operation_input import candidate_key, parse_raes_operation_input
+from shared.raes.operation_input import (
+    MAX_ACCESS_BINDINGS,
+    RaesOperationInputError,
+    candidate_key,
+    parse_raes_operation_input,
+)
 
 # Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
 # exercise tenancy; a fixed scalar stands in for the value the CMS launch
@@ -79,6 +92,15 @@ class _RaesRange:
             sha256=_SHA,
             storage_key=f"raes/content-delivery/bb/{_SHA}",
             byte_count=11,
+            binding_version=1,
+        )
+
+    def bind_access(self, channel: str = "ssh") -> RaesParticipantAccessBinding:
+        return RaesParticipantAccessBinding.objects.create(
+            range=self.range,
+            target_address="node.web",
+            channel=channel,
+            account_address="acct.analyst",
             binding_version=1,
         )
 
@@ -214,3 +236,79 @@ class TestBackendOwnership:
         serialized = str(fx.launch("destroy").envelope)
         assert "internal_ip" not in serialized
         assert "secret-name" not in serialized
+
+
+class TestParticipantAccessProjection:
+    """The #1710 sidecar crosses the boundary through this one immutable row."""
+
+    def test_a_range_without_declared_access_projects_none(self):
+        assert _RaesRange().payload().access_bindings == ()
+
+    def test_declared_access_is_projected_for_the_provisioner(self):
+        fixture = _RaesRange()
+        fixture.bind_access()
+        (binding,) = fixture.payload().access_bindings
+        assert (binding.target_address, binding.channel, binding.account_address) == (
+            "node.web",
+            "ssh",
+            "acct.analyst",
+        )
+
+    def test_the_transport_carries_identity_only(self):
+        """No address, port, login, or credential reference may ride along."""
+        fixture = _RaesRange()
+        fixture.bind_access()
+        (row,) = fixture.payload().access_binding_transport()
+        assert set(row) == {"target_address", "channel", "account_address", "binding_version"}
+
+    def test_every_declared_channel_is_projected(self):
+        fixture = _RaesRange()
+        fixture.bind_access("ssh")
+        fixture.bind_access("rdp")
+        channels = {binding.channel for binding in fixture.payload().access_bindings}
+        assert channels == {"ssh", "rdp"}
+
+
+class TestParticipantAccessParserFailsClosed:
+    def test_a_smuggled_credential_field_is_rejected(self):
+        fixture = _RaesRange()
+        fixture.bind_access()
+        payload = fixture.launch().envelope["payload"]
+        payload["access_bindings"][0]["credential_ref"] = "projects/p/secrets/s"
+        with pytest.raises(RaesOperationInputError):
+            parse_raes_operation_input(payload)
+
+    def test_an_unsupported_channel_is_rejected(self):
+        fixture = _RaesRange()
+        fixture.bind_access()
+        payload = fixture.launch().envelope["payload"]
+        payload["access_bindings"][0]["channel"] = "vnc"
+        with pytest.raises(RaesOperationInputError):
+            parse_raes_operation_input(payload)
+
+    def test_a_duplicate_endpoint_is_rejected(self):
+        fixture = _RaesRange()
+        fixture.bind_access()
+        payload = fixture.launch().envelope["payload"]
+        payload["access_bindings"].append(dict(payload["access_bindings"][0]))
+        with pytest.raises(RaesOperationInputError, match="duplicates"):
+            parse_raes_operation_input(payload)
+
+    def test_an_unbounded_binding_set_is_rejected(self):
+        fixture = _RaesRange()
+        fixture.bind_access()
+        payload = fixture.launch().envelope["payload"]
+        row = payload["access_bindings"][0]
+        payload["access_bindings"] = [
+            {**row, "target_address": f"node.n{index}"} for index in range(MAX_ACCESS_BINDINGS + 1)
+        ]
+        with pytest.raises(RaesOperationInputError, match="more than"):
+            parse_raes_operation_input(payload)
+
+    def test_a_missing_access_bindings_key_is_rejected(self):
+        """The projection is exact-key: a dropped field is a contract break."""
+        fixture = _RaesRange()
+        payload = fixture.launch().envelope["payload"]
+        del payload["access_bindings"]
+        with pytest.raises(RaesOperationInputError):
+            parse_raes_operation_input(payload)

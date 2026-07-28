@@ -49,6 +49,7 @@ from shared.operation_result_payloads import (
     failure,
     progress,
     raes_progress,
+    raes_ready,
     raes_snapshot,
     raes_success,
     success,
@@ -174,7 +175,7 @@ _NGFW_STOP_STEPS: dict[ResultStep, StepSpec] = {
 _RAES_PROVISION_STEPS: dict[ResultStep, StepSpec] = {
     ResultStep.RAES_PROVISION_RUNNING: raes_progress(10, RAES_STATE_RUNNING, ResourceStatus.PROVISIONING),
     ResultStep.RAES_PROVISION_SNAPSHOT: raes_snapshot(20),
-    ResultStep.RAES_TERMINAL_READY: raes_success(30, ResourceStatus.READY),
+    ResultStep.RAES_TERMINAL_READY: raes_ready(30, ResourceStatus.READY),
     ResultStep.RAES_TERMINAL_FAILED: failure(30),
 }
 

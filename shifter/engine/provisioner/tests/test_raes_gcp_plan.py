@@ -15,8 +15,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import GCERangeCellConfig, GCERangeImageProfile
+from raes_access import RealizedAccessBinding
 from raes_gcp_firewall import node_tag
 from raes_gcp_plan import RaesGcePlanError, build_raes_range_cell_plan
+from raes_identity import RESERVED_MANAGEMENT_LOGIN
 from raes_plan import RaesPlan, RaesPlanAcl, RaesPlanImage, RaesPlanNetwork, RaesPlanNode, RaesPlanServicePort
 
 
@@ -270,3 +272,62 @@ class TestServiceFirewalls:
         config_2 = _config()
         with pytest.raises(RaesGcePlanError, match="portal"):
             build_raes_range_cell_plan("req-1", 7, plan_2, resolver_2, config_2)
+
+
+class TestParticipantAccess:
+    """Joined interactive access lands on the right instance (#1710)."""
+
+    @staticmethod
+    def _binding(target="node.a", channel="ssh", username="analyst"):
+        return RealizedAccessBinding(
+            target_address=target,
+            channel=channel,
+            account_address=f"acct.{username}",
+            username=username,
+            auth_method="publickey" if channel == "ssh" else "password",
+        )
+
+    def test_no_bindings_leaves_every_instance_without_access(self):
+        plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config())
+        assert plan["instances"][0]["participant_access_channels"] == []
+        assert plan["instances"][0]["participant_access_usernames"] == {}
+
+    def test_channels_and_usernames_land_on_the_declared_instance(self):
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), (self._binding(),)
+        )
+        instance = plan["instances"][0]
+        assert instance["participant_access_channels"] == ["ssh"]
+        assert instance["participant_access_usernames"] == {"ssh": "analyst"}
+
+    def test_per_channel_usernames_are_kept_distinct(self):
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            _plan((_node(os_family="windows"),), (_network(),)),
+            _resolver(),
+            _config(),
+            (self._binding(channel="ssh", username="sshuser"), self._binding(channel="rdp", username="rdpuser")),
+        )
+        instance = plan["instances"][0]
+        assert sorted(instance["participant_access_channels"]) == ["rdp", "ssh"]
+        assert instance["participant_access_usernames"] == {"ssh": "sshuser", "rdp": "rdpuser"}
+
+    def test_a_binding_never_cross_wires_to_another_node(self):
+        """Grouping is by target address: an undeclared node stays access-free."""
+        nodes = (_node(address="node.a", name="web"), _node(address="node.b", name="db"))
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan(nodes, (_network(),)), _resolver(), _config(), (self._binding(target="node.a"),)
+        )
+        by_uuid = {instance["uuid"]: instance for instance in plan["instances"]}
+        assert by_uuid["node.a#0"]["participant_access_channels"] == ["ssh"]
+        assert by_uuid["node.b#0"]["participant_access_channels"] == []
+        assert by_uuid["node.b#0"]["participant_access_usernames"] == {}
+
+    def test_the_management_login_is_not_the_participant_login(self):
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), (self._binding(),)
+        )
+        instance = plan["instances"][0]
+        assert instance["ssh_username"] == RESERVED_MANAGEMENT_LOGIN
+        assert instance["participant_access_usernames"]["ssh"] != RESERVED_MANAGEMENT_LOGIN

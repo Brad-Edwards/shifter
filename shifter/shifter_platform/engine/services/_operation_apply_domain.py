@@ -460,6 +460,8 @@ def apply_validated_result(row: OperationResultInbox) -> tuple[str, str]:
     """
     from engine.models import OperationResultDisposition
 
+    from ._operation_apply_raes import RaesRealizedAccessError
+
     try:
         step, payload = _admit(row)
         target = _lock_and_authorize(row, step)
@@ -470,4 +472,7 @@ def apply_validated_result(row: OperationResultInbox) -> tuple[str, str]:
         return rejection.disposition, rejection.detail
     except _NotApplicable as exc:
         return OperationResultDisposition.REJECTED_OWNERSHIP, str(exc)[:128]
+    except RaesRealizedAccessError as exc:
+        # A realized/declared access mismatch can never be satisfied by a retry.
+        return OperationResultDisposition.REJECTED_INVALID, str(exc)[:128]
     return OperationResultDisposition.APPLIED, detail[:128]

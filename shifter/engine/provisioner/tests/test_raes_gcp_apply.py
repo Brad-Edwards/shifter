@@ -935,3 +935,108 @@ class TestDestroy:
 
         assert clients.instances.delete.call_count == 1
         assert secret_mocks.delete_ssh.call_count == 1
+
+
+def _access_plan() -> RaesPlan:
+    """One single-instance node with one enabled local publickey account."""
+    node = RaesPlanNode(
+        address="node.web",
+        name="web",
+        os_family="linux",
+        count=1,
+        network_addresses=("net.lan",),
+        image=RaesPlanImage(name="ubuntu"),
+    )
+    account = RaesPlanAccount(
+        username="analyst",
+        target_address="node.web",
+        address="acct.analyst",
+        auth_method="publickey",
+    )
+    network = RaesPlanNetwork(address="net.lan", name="lan", cidr="10.9.0.0/24")
+    return RaesPlan(raes_version="2.0.0", nodes=(node,), networks=(network,), accounts=(account,))
+
+
+def _access_transport(channel: str = "ssh") -> dict:
+    return {
+        "target_address": "node.web",
+        "channel": channel,
+        "account_address": "acct.analyst",
+        "binding_version": 1,
+    }
+
+
+class TestParticipantAccessRealization:
+    """A declared endpoint reaches the output only with a verified credential (#1710)."""
+
+    def test_declared_ssh_publishes_the_account_credential_reference(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        account_ops, _mocks = _account_secret_ops()
+        options = _apply_options(
+            _config(),
+            clients,
+            secret_ops,
+            account_secret_ops=account_ops,
+            credential_installer=lambda **_kwargs: {"acct.analyst": "projects/proj-1/secrets/analyst-key"},
+        )
+
+        output = apply_raes_range_cell(
+            "req-1", 7, _access_plan(), _resolver, options, access_bindings=[_access_transport()]
+        )
+
+        instance = output["instances"][0]
+        assert instance["participant_access_channels"] == ["ssh"]
+        assert instance["ssh_key_secret_arn"] == "projects/proj-1/secrets/analyst-key"
+        assert instance["participant_access_usernames"] == {"ssh": "analyst"}
+
+    def test_a_declared_channel_without_a_verified_credential_fails_closed(self):
+        """No verified credential means the endpoint was never realized."""
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        account_ops, _mocks = _account_secret_ops()
+        options = _apply_options(
+            _config(),
+            clients,
+            secret_ops,
+            account_secret_ops=account_ops,
+            # The installer reports no reference for the declared account.
+            credential_installer=lambda **_kwargs: {},
+        )
+
+        with pytest.raises(RaesGcePlanError, match="no verified account credential"):
+            apply_raes_range_cell("req-1", 7, _access_plan(), _resolver, options, access_bindings=[_access_transport()])
+
+    def test_an_unrealizable_binding_is_refused_before_any_cloud_call(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        options = _apply_options(_config(), clients, secret_ops)
+
+        with pytest.raises(Exception, match="participant access"):
+            apply_raes_range_cell(
+                "req-1",
+                7,
+                _access_plan(),
+                _resolver,
+                options,
+                access_bindings=[{**_access_transport(), "target_address": "node.ghost"}],
+            )
+        assert not clients.instances.insert.called
+
+    def test_no_bindings_leaves_the_instance_participant_free(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        account_ops, _mocks = _account_secret_ops()
+        options = _apply_options(
+            _config(),
+            clients,
+            secret_ops,
+            account_secret_ops=account_ops,
+            credential_installer=lambda **_kwargs: {"acct.analyst": "projects/proj-1/secrets/analyst-key"},
+        )
+
+        output = apply_raes_range_cell("req-1", 7, _access_plan(), _resolver, options)
+
+        instance = output["instances"][0]
+        assert instance["participant_access_channels"] == []
+        assert instance["ssh_key_secret_arn"] == ""

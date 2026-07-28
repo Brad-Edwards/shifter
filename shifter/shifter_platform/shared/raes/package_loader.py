@@ -23,7 +23,8 @@ from raes_runtime import RuntimeManager
 
 from shared.log_sanitize import safe_log_value
 from shared.raes.dispatch_port import ShifterProvisioningDispatchPort
-from shared.raes.runtime_target import create_shifter_backend_target
+from shared.raes.participant_access import ParticipantAccessError, project_participant_access
+from shared.raes.runtime_target import NODE_RESOURCE_TYPE, create_shifter_backend_target
 
 #: Bounded cap for a rendered diagnostic string (ADR-031-R4: bounded evidence).
 _DIAGNOSTIC_CAP = 240
@@ -123,8 +124,36 @@ def launch_raes_package(
     except (ScenarioError, OSError) as exc:
         raise RaesPackageError(f"failed to load RAES package: {safe_log_value(exc)}") from exc
 
-    manager = RuntimeManager(create_shifter_backend_target(port=port))
+    target = create_shifter_backend_target(port=port)
+    manager = RuntimeManager(target)
     execution_plan = manager.plan(scenario, parameters=parameters)
+
+    # #1710: lower the compiled participant-domain interactive access into the
+    # bounded sidecar here -- this is the only point where Shifter holds the
+    # RuntimeModel, which the provisioner protocol's apply(plan, snapshot) never
+    # sees. An unrealizable policy (ambiguous across participants, dangling
+    # target, omitted account, ...) is rejected before dispatch, so no range row
+    # or cloud resource is ever created for it (ADR-032-R10).
+    try:
+        participant_access = project_participant_access(
+            execution_plan.model.participant_behaviors,
+            node_addresses=frozenset(
+                resource.address
+                for resource in execution_plan.provisioning.resources.values()
+                if resource.resource_type == NODE_RESOURCE_TYPE
+            ),
+        )
+    except ParticipantAccessError as exc:
+        return ShifterLaunchResult(
+            accepted=False,
+            status="rejected",
+            changed_addresses=(),
+            diagnostics=(
+                f"shifter-provisioner.participant-access-unrealizable: {safe_log_value(exc)}"[:_DIAGNOSTIC_CAP],
+            ),
+        )
+    target.provisioner.bind_participant_access(participant_access)
+
     result = manager.apply(execution_plan)
     return ShifterLaunchResult(
         accepted=result.success,

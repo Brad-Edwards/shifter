@@ -111,11 +111,22 @@ def _sftp_root_for_os(os_type: str | None) -> str | None:
 def _rdp_security_for_os(os_type: str | None) -> str:
     """Return Guacamole's RDP security mode for the given OS type.
 
-    Kali/xrdp targets speak TLS, not the classic RDP crypto Guacamole
-    negotiates by default, so they must be pinned to ``tls`` (issue #1801).
+    Every target negotiates: the mode is left to the RDP handshake rather than
+    pinned per OS.
+
+    Issue #1801 pinned Kali to ``tls`` on the assumption that xrdp only speaks
+    TLS. That is not true of the range's Kali guest, and pinning breaks it: an
+    X.224 negotiation probe against a live range host shows the server answering
+    ``RDP_NEG_RSP`` with ``PROTOCOL_RDP`` (0) for *every* request — including
+    requests for TLS, HYBRID/NLA, and RDSTLS. Pinning ``tls`` therefore makes
+    guacd demand a protocol the guest never selects, and the session dies with
+    "Security negotiation failed (wrong security type?)" after the tunnel and
+    Guacamole authentication have both succeeded (issue #987).
+
+    ``any`` lets the handshake settle it, so a guest that offers only legacy RDP
+    security and a guest that offers TLS both connect without a per-image
+    allowlist here.
     """
-    if os_type == "kali":
-        return "tls"
     return "any"
 
 
