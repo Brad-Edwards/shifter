@@ -1,26 +1,65 @@
 {
   "api_major": "v1",
-  "adr": "ADR-045",
-  "issue": 1374,
-  "paths": [
-    "/api/v1/risks/",
-    "/api/v1/risks/{id}/",
-    "/api/v1/risks/{id}/restore/",
-    "/api/v1/risks/{risk_pk}/comments/",
-    "/api/v1/risks/{risk_pk}/comments/{id}/"
-  ],
-  "response_schema_properties": [
+  "retirements": [
     {
-      "schema": "BootstrapFeatureFlags",
-      "property": "risk_register_spa"
+      "adr": "ADR-045",
+      "issue": 1374,
+      "paths": [
+        "/api/v1/risks/",
+        "/api/v1/risks/{id}/",
+        "/api/v1/risks/{id}/restore/",
+        "/api/v1/risks/{risk_pk}/comments/",
+        "/api/v1/risks/{risk_pk}/comments/{id}/"
+      ],
+      "response_schema_properties": [
+        {
+          "schema": "BootstrapFeatureFlags",
+          "property": "risk_register_spa"
+        },
+        {
+          "schema": "BootstrapPermissions",
+          "property": "can_access_risk_register"
+        },
+        {
+          "schema": "DashboardSummary",
+          "property": "risk_register"
+        }
+      ]
     },
     {
-      "schema": "BootstrapPermissions",
-      "property": "can_access_risk_register"
-    },
-    {
-      "schema": "DashboardSummary",
-      "property": "risk_register"
+      "adr": "ADR-024",
+      "issue": 1862,
+      "paths": [
+        "/api/v1/cms/aces-image-mappings/",
+        "/api/v1/cms/aces-image-mappings/disable/",
+        "/api/v1/mission-control/range/{request_id}/aces/operation-receipts/",
+        "/api/v1/mission-control/range/{request_id}/aces/operation-status/",
+        "/api/v1/mission-control/range/{request_id}/aces/participant-implementations/",
+        "/api/v1/mission-control/range/{request_id}/aces/participant-runtimes/",
+        "/api/v1/mission-control/range/{request_id}/aces/snapshots/"
+      ],
+      "response_schema_properties": [
+        {
+          "schema": "BootstrapFeatureFlags",
+          "property": "aces_native_provisioning"
+        },
+        {
+          "schema": "CatalogEntry",
+          "property": "aces"
+        },
+        {
+          "schema": "CurrentRangeResponse",
+          "property": "aces_participant_runtime"
+        },
+        {
+          "schema": "CurrentRangeResponse",
+          "property": "aces_projection"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "aces"
+        }
+      ]
     }
   ]
 }

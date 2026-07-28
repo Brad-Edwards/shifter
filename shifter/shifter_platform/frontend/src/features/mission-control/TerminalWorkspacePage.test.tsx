@@ -90,8 +90,8 @@ function currentRange(overrides: Partial<RangePresentation> = {}): CurrentRangeR
       ...overrides,
     },
     connection_urls: [],
-    aces_projection: null,
-    aces_participant_runtime: null,
+    raes_projection: null,
+    raes_participant_runtime: null,
     lifecycle: null,
     vpn_profile_available: false,
   } as CurrentRangeResponse;

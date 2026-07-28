@@ -1340,6 +1340,7 @@
       "shifter/shifter_platform/engine/migrations/0048_raes_hard_cutover.py",
       "shifter/shifter_platform/shared/migrations/0008_raes_hard_cutover.py",
       "shifter/shifter_platform/shared/migrations/0009_raes_hard_cutover_cleanup.py",
+      "shifter/shifter_platform/openapi/v1.retirements.json",
       "shifter/shifter_platform/tests/test_raes_cutover_migrations.py"
     ]
   },

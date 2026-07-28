@@ -51,6 +51,9 @@ does not read them.
   `raes-provisioning-plan-v1`, and producer version `2.0.0`.
 - Package ingestion accepts only current RAES contract identities and upstream
   environment-pack validation.
+- ADR-040 retirement metadata removes the exact retired API paths and response
+  fields from the trusted v1 baseline. Current RAES operations are new paths
+  and fields; no old-name route, redirect, or response alias remains.
 - Shifter-specific authorization, lifecycle, cloud realization, CTF, Mission
   Control, audit, redaction, and operator behavior remain Shifter-owned service
   responsibilities.
