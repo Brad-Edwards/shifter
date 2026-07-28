@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 
 import { useCtfOrganizerScoreboard } from "@/api/ctf";
 import { useAssignCtfBracket, useCtfEventRanges, useCtfParticipant, useCtfParticipantRangeAction, useGrantCtfAward, useResendCtfInvite, useRevokeCtfAward, type CtfRangeAction } from "@/api/ctfAdmin";

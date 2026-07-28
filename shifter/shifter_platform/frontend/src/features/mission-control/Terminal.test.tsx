@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { installFakeWebSocket, latestSocket } from "@/test/fake-websocket";
 
 vi.mock("@xterm/addon-fit", () => {
   class FakeFitAddon {
+    static instances: FakeFitAddon[] = [];
     fit = vi.fn();
+
+    constructor() {
+      FakeFitAddon.instances.push(this);
+    }
   }
   return { FitAddon: FakeFitAddon };
 });
@@ -44,9 +49,25 @@ vi.mock("@xterm/xterm", () => {
   return { Terminal: FakeXTerm };
 });
 
+import { FitAddon as FitAddonCtor } from "@xterm/addon-fit";
 import { Terminal as XTermCtor } from "@xterm/xterm";
 
+import { ResizeObserverStub } from "@/test/setup";
+
 import { Terminal } from "./Terminal";
+
+function latestFitAddon(): { fit: ReturnType<typeof vi.fn> } {
+  const instances = (FitAddonCtor as unknown as { instances: { fit: ReturnType<typeof vi.fn> }[] }).instances;
+  const addon = instances.at(-1);
+  if (!addon) throw new Error("No fake fit addon was created");
+  return addon;
+}
+
+function latestResizeObserver(): ResizeObserverStub {
+  const observer = ResizeObserverStub.instances.at(-1);
+  if (!observer) throw new Error("No ResizeObserver was constructed");
+  return observer;
+}
 
 interface FakeXTermInstance {
   element: HTMLElement;
@@ -77,6 +98,8 @@ let clipboardWriteText: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   restoreWebSocket = installFakeWebSocket();
   (XTermCtor as unknown as { instances: unknown[] }).instances = [];
+  (FitAddonCtor as unknown as { instances: unknown[] }).instances = [];
+  ResizeObserverStub.instances.length = 0;
   clipboardReadText = vi.fn(() => Promise.resolve("clipboard input"));
   clipboardWriteText = vi.fn(() => Promise.resolve());
   Object.defineProperty(navigator, "clipboard", {
@@ -104,6 +127,81 @@ describe("Terminal", () => {
 
     expect(socket.sent).toContainEqual(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
     expect(latestTerm().focus).toHaveBeenCalled();
+  });
+
+  it("fills a caller-supplied container height so a workspace pane can size it", () => {
+    const { container } = render(<Terminal instanceUuid={INSTANCE_UUID} className="h-full" />);
+    const surface = container.querySelector("section");
+    expect(surface).toHaveClass("h-full");
+    expect(surface).not.toHaveClass("h-[32rem]");
+  });
+
+  it("names its region from the caller so two panes are not duplicate landmarks", () => {
+    render(<Terminal instanceUuid={INSTANCE_UUID} label="Left pane: web-01" />);
+    expect(screen.getByRole("region", { name: "Left pane: web-01" })).toBeInTheDocument();
+  });
+
+  it("falls back to a generic region name for the standalone page", () => {
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    expect(screen.getByRole("region", { name: "Terminal session" })).toBeInTheDocument();
+  });
+
+  it("keeps the standalone fixed height when no className is supplied", () => {
+    const { container } = render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    expect(container.querySelector("section")).toHaveClass("h-[32rem]");
+  });
+
+  it("refits xterm when its container resizes, not only on window resize", () => {
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const fitAddon = latestFitAddon();
+    const observer = latestResizeObserver();
+
+    const fitsAfterMount = fitAddon.fit.mock.calls.length;
+    act(() => observer.trigger());
+
+    expect(fitAddon.fit.mock.calls.length).toBeGreaterThan(fitsAfterMount);
+  });
+
+  it("disconnects the container observer on unmount", () => {
+    const { unmount } = render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const observer = latestResizeObserver();
+    expect(observer.observed.size).toBe(1);
+
+    unmount();
+    expect(observer.observed.size).toBe(0);
+  });
+
+  it("does not read or send the clipboard on right-click", async () => {
+    // Ranges are adversary-simulation environments: a hostile or compromised
+    // instance can prompt a user to right-click. Auto-pasting on contextmenu
+    // would silently ship whatever is on the workstation clipboard
+    // (passwords, cloud creds) into the remote shell with no browser-visible
+    // indication. Paste must stay an explicit, user-understood gesture.
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const term = latestTerm();
+    const socket = latestSocket();
+    act(() => socket.emitOpen());
+    socket.sent.length = 0;
+
+    fireEvent.contextMenu(term.element);
+    await Promise.resolve();
+
+    expect(clipboardReadText).not.toHaveBeenCalled();
+    expect(term.paste).not.toHaveBeenCalled();
+    expect(socket.sent).toHaveLength(0);
+  });
+
+  it("still pastes on the explicit Ctrl+Shift+V gesture", async () => {
+    render(<Terminal instanceUuid={INSTANCE_UUID} />);
+    const term = latestTerm();
+    const handler = term.attachCustomKeyEventHandler.mock.calls[0][0] as (event: KeyboardEvent) => boolean;
+
+    const handled = handler({ type: "keydown", ctrlKey: true, shiftKey: true, key: "V" } as KeyboardEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(handled).toBe(false);
+    expect(clipboardReadText).toHaveBeenCalled();
   });
 
   it("reports the open state via onConnectionStateChange", () => {
@@ -152,15 +250,6 @@ describe("Terminal", () => {
     fireEvent.mouseUp(term.element);
 
     await waitFor(() => expect(clipboardWriteText).toHaveBeenCalledWith("selected output"));
-  });
-
-  it("pastes browser clipboard text into xterm on right click", async () => {
-    render(<Terminal instanceUuid={INSTANCE_UUID} />);
-    const term = latestTerm();
-
-    fireEvent.contextMenu(term.element);
-
-    await waitFor(() => expect(term.paste).toHaveBeenCalledWith("clipboard input"));
   });
 
   it("supports Ctrl+Shift+C and Ctrl+Shift+V clipboard shortcuts", async () => {

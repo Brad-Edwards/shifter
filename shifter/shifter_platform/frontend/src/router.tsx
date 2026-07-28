@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter } from "react-router";
 
 import { RootLayout, type RouteHandle } from "@/app/RootLayout";
 import { NotFoundPage } from "@/components/not-found";
@@ -38,6 +38,7 @@ import { RangeDetailPage } from "@/features/mission-control/RangeDetailPage";
 import { RangeHistoryPage } from "@/features/mission-control/RangeHistoryPage";
 import { RangeLaunchPage } from "@/features/mission-control/RangeLaunchPage";
 import { TerminalPage } from "@/features/mission-control/TerminalPage";
+import { TerminalWorkspacePage } from "@/features/mission-control/TerminalWorkspacePage";
 import { ScenarioDetailPage } from "@/features/scenario-editor/ScenarioDetailPage";
 import { ScenarioFormPage } from "@/features/scenario-editor/ScenarioFormPage";
 import { ScenarioListPage } from "@/features/scenario-editor/ScenarioListPage";
@@ -93,7 +94,11 @@ export const router = createBrowserRouter(
             { path: "ranges", element: <RangeHistoryPage /> },
             { path: "launch", element: <RangeLaunchPage /> },
             { path: "ranges/:requestId", element: <RangeDetailPage /> },
-            { path: "terminal/:instanceUuid", element: <TerminalPage tmuxWheelScrolling /> },
+            // The workspace owns both: `terminal/` is the nav destination and
+            // the legacy multi-device console's path, and `terminal/:instanceUuid`
+            // is a deep link that preselects one of its devices (#1661).
+            { path: "terminal", element: <TerminalWorkspacePage /> },
+            { path: "terminal/:instanceUuid", element: <TerminalWorkspacePage /> },
             { path: "agents", element: <AgentsPage /> },
             { path: "ngfw", element: <NgfwListPage /> },
             { path: "ngfw/setup", element: <NgfwWizardPage /> },
