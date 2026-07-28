@@ -97,11 +97,10 @@ def _build_ngfw_range_attachment_record(
 def _record_ngfw_range_attachment(
     *,
     ngfw_request_id: str,
-    ngfw_status: str,
     attachment_record: dict[str, Any],
 ) -> None:
     """Merge the current range attachment into the NGFW instance state."""
-    from ngfw_runtime import update_instance_state
+    from ngfw_runtime import update_ngfw_attachment_state
 
     ngfw_data = get_ngfw_data_by_request_id(ngfw_request_id)
     current_state = ngfw_data.get("state") or {}
@@ -112,31 +111,22 @@ def _record_ngfw_range_attachment(
         if attachment.get("range_id") != attachment_record.get("range_id")
     ]
     current_attachments.append(attachment_record)
-    update_instance_state(
-        ngfw_request_id,
-        ngfw_status,
-        attached_ranges=current_attachments,
-    )
+    update_ngfw_attachment_state(ngfw_request_id, current_attachments)
 
 
 def _remove_ngfw_range_attachment(
     *,
     ngfw_request_id: str,
-    ngfw_status: str,
     range_id: int,
 ) -> None:
     """Remove a range attachment from the NGFW instance state."""
-    from ngfw_runtime import update_instance_state
+    from ngfw_runtime import update_ngfw_attachment_state
 
     ngfw_data = get_ngfw_data_by_request_id(ngfw_request_id)
     current_state = ngfw_data.get("state") or {}
     current_attachments = list(current_state.get("attached_ranges") or [])
     remaining_attachments = [attachment for attachment in current_attachments if attachment.get("range_id") != range_id]
-    update_instance_state(
-        ngfw_request_id,
-        ngfw_status,
-        attached_ranges=remaining_attachments,
-    )
+    update_ngfw_attachment_state(ngfw_request_id, remaining_attachments)
 
 
 def get_ngfw_data_by_request_id(request_id: str) -> dict[str, Any]:

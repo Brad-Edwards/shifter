@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { Loader2 } from "lucide-react";
 
@@ -127,7 +127,7 @@ function editGuard(
   if (detail.data && !editable) {
     return (
       <GuardAlert title="This scenario cannot be edited here">
-        Built-in, ACES, and CTF scenarios are read-only in the editor.{" "}
+        Built-in, RAES, and CTF scenarios are read-only in the editor.{" "}
         <Link className="underline" to={scenarioPath(scenarioId)}>
           Back to scenario
         </Link>

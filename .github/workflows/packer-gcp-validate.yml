@@ -33,7 +33,6 @@ on:
           - brokenbk
           - kali
           - polaris-vm
-          - techvault
           - dc-prebaked
       environment:
         description: 'GCP environment the candidate lives in'
@@ -169,15 +168,11 @@ jobs:
           GCP_PACKER_ZONE: ${{ vars.GCP_PACKER_ZONE }}
           GCP_PACKER_SUBNETWORK: ${{ vars.GCP_PACKER_SUBNETWORK || 'default' }}
           GCP_VALIDATE_MACHINE_TYPE: ${{ vars.GCP_VALIDATE_MACHINE_TYPE || 'e2-standard-4' }}
-          GCP_TECHVAULT_VALIDATE_MACHINE_TYPE: ${{ vars.GCP_TECHVAULT_VALIDATE_MACHINE_TYPE || 'n2-highmem-8' }}
           GCP_RANGE_HOST_MGMT_SSH_PORT: ${{ vars.GCP_RANGE_HOST_MGMT_SSH_PORT || '2222' }}
         run: |
           set -euo pipefail
           ZONE="${GCP_PACKER_ZONE:-${GCP_REGION}-a}"
           MACHINE_TYPE="${GCP_VALIDATE_MACHINE_TYPE}"
-          if [ "${IMAGE_TYPE}" = "techvault" ]; then
-            MACHINE_TYPE="${GCP_TECHVAULT_VALIDATE_MACHINE_TYPE}"
-          fi
 
           # SSH port the runner probes: polaris-vm moves the host sshd to the
           # management port; other Linux guests keep :22. dc-prebaked is probed
@@ -280,7 +275,6 @@ jobs:
           set -euo pipefail
           # The runner (not the guest) executes the checks over an IAP tunnel and
           # gates on the result — the candidate cannot self-report a pass.
-          # techvault routes to scripts/validate/techvault.sh in the dispatcher.
           VM="${VALIDATION_VM}" ZONE="${ZONE}" GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
             IMAGE_TYPE="${IMAGE_TYPE}" SSH_PORT="${SSH_PORT}" \
             EXPECTED_DOMAIN="${EXPECTED_DOMAIN}" SSH_KEY=/tmp/validator_key \

@@ -12,6 +12,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 CLUSTER = "test-cluster"
 TASK_DEFINITION = "test-taskdef"
 SECURITY_GROUP = "sg-test"
@@ -116,6 +121,7 @@ def make_authorized_range(request_id, *, status=None, request_type="range"):
     user = get_user_model().objects.create_user(username=f"{request_id}@example.com")
     request = Request.objects.create(request_id=str(request_id), request_type=request_type, user=user)
     range_row = Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=request,
         user=user,
         status=status if status is not None else Range.Status.PROVISIONING,

@@ -19,15 +19,15 @@ private submodules by domain:
   ``_request.Instantiation``).
 - ``_outbox``: OutboxStatus, RangeEventOutbox.
 - ``_launch``: ProvisionerLaunchStatus, ProvisionerLaunchIntent.
-- ``_aces``: AcesImageMapping, AcesContentDeliveryBinding.
+- ``_raes``: RaesImageMapping, RaesContentDeliveryBinding.
 
 All models are re-exported here so Django's app registry discovers them via
 ``engine.models`` and callers keep using ``from engine.models import X``
 exactly as before the split.
 """
 
-from ._aces import AcesContentDeliveryBinding, AcesImageMapping
 from ._capacity import CapacityDeclaration
+from ._capacity_assessment import CapacityAssessment, CapacityDraw, CapacityReservation
 from ._launch import ProvisionerLaunchIntent, ProvisionerLaunchStatus
 from ._operation_io import (
     OperationInput,
@@ -36,15 +36,17 @@ from ._operation_io import (
     OperationResultKind,
 )
 from ._outbox import OutboxStatus, RangeEventOutbox
+from ._raes import RaesContentDeliveryBinding, RaesImageMapping
 from ._range import Range
 from ._request import App, Instance, Instantiation, Request
 from ._subnet import Subnet, SubnetAllocation
 
 __all__ = [
-    "AcesContentDeliveryBinding",
-    "AcesImageMapping",
     "App",
+    "CapacityAssessment",
     "CapacityDeclaration",
+    "CapacityDraw",
+    "CapacityReservation",
     "Instance",
     "Instantiation",
     "OperationInput",
@@ -54,6 +56,8 @@ __all__ = [
     "OutboxStatus",
     "ProvisionerLaunchIntent",
     "ProvisionerLaunchStatus",
+    "RaesContentDeliveryBinding",
+    "RaesImageMapping",
     "Range",
     "RangeEventOutbox",
     "Request",

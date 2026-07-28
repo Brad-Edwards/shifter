@@ -2,9 +2,8 @@
 
 Covers get_range_target_instances, which selects the instances shown on the
 CTF participant range page. Explicit scenario ``participant_access`` bindings
-are authoritative: POLARIS exposes the Kali workstation, not the DC. See #1465:
-a single-seat purple-team lab (TechVault) provisions only an attacker-tagged
-seat host, and the page must still show it.
+are authoritative: POLARIS exposes the Kali workstation, not the DC. A
+single-seat lab that provisions only an attacker-tagged seat must still show it.
 
 The selector reads the user's ready range from the engine, so these exercise
 the real database rather than mocking the first-party query seam (ADR-019-R1):
@@ -16,10 +15,15 @@ from django.contrib.auth import get_user_model
 
 from cms.services import get_range_target_instances
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 User = get_user_model()
 
 _ATTACKER = {
-    "name": "techvault",
+    "name": "single-seat-lab",
     "role": "attacker",
     "os_type": "kali",
     "private_ip": "10.1.2.22",
@@ -29,6 +33,12 @@ _POLARIS_KALI = {
     **_ATTACKER,
     "name": "kali",
     "participant_access_channels": ["ssh", "rdp"],
+}
+_AWS_POLARIS_KALI = {
+    **_ATTACKER,
+    "name": "kali",
+    "cloud_provider": "aws",
+    "participant_access_channels": None,
 }
 _DC = {
     "name": "dc01",
@@ -49,6 +59,7 @@ def _ready_range(user, provisioned_instances):
     from engine.models import Range as EngineRange
 
     return EngineRange.objects.create(
+        workspace_id=_WORKSPACE_ID,
         user=user,
         status=EngineRange.Status.READY,
         provisioned_instances=provisioned_instances,
@@ -63,13 +74,18 @@ class TestGetRangeTargetInstances:
         _ready_range(user, [_POLARIS_KALI, _DC])
         assert get_range_target_instances(user.id) == [_POLARIS_KALI]
 
+    def test_aws_open_access_returns_attacker_seat(self, user):
+        """AWS POLARIS state exposes the Kali seat when no closed binding exists."""
+        _ready_range(user, [_AWS_POLARIS_KALI, _DC])
+        assert get_range_target_instances(user.id) == [_AWS_POLARIS_KALI]
+
     def test_legacy_multi_node_hides_attacker_and_shows_targets(self, user):
         """Legacy rows without access channels keep the non-attacker heuristic."""
         _ready_range(user, [_ATTACKER, _DC])
         assert get_range_target_instances(user.id) == [_DC]
 
     def test_single_seat_lab_returns_attacker_seat(self, user):
-        """TechVault-style range: the sole attacker-tagged seat is returned (#1465)."""
+        """The sole attacker-tagged seat is returned."""
         _ready_range(user, [_ATTACKER])
         assert get_range_target_instances(user.id) == [_ATTACKER]
 

@@ -41,12 +41,18 @@ There is also agent-specific wiring:
 - `.claude/skills/adr-check/SKILL.md` provides a default workflow for ADR conformance work.
 - `.claude/skills/architecture-review/SKILL.md` provides a repo-specific architecture review checklist.
 - `AGENTS.md` gives Codex a repo-local policy file, including Ground Control project context for the `/implement` workflow. The GC project pointer (and matching `.ground-control.yaml` `project:` field) names the `shifter` project (id `df4e718f-1f67-46f8-a375-3ba53fabc9c4`) with `CTF-*`, `PLAT-*`, `GEN-*` UID prefixes by subsystem; an earlier draft incorrectly pointed both at `aphelion` (a separate, unrelated project).
+- `.ground-control.yaml` is validated as a whole by the Ground Control context reader, so an unrecognized key fails the entire file closed rather than being ignored: the reader returns `invalid_ground_control_yaml`, and `/implement` loses the project, SonarCloud, and plan-rules context along with the offending block. The `routing:` block accepts only `enabled`, `default_provider`, and `stages`. Routing is advisory under ADR-036, annotating a stage's capability tier for telemetry without selecting an executor, so a stale routing key is worth deleting rather than reinterpreting.
 
 Review controls:
 
 - `.github/CODEOWNERS` requires review on guardrail files and shared/public architecture seams.
 - `.github/pull_request_template.md` requires an ADR impact section on PRs.
 - `.github/copilot-instructions.md` now points GitHub Copilot toward the same ADR enforcement model.
+- `.ground-control.yaml` binds synchronized `/implement` runs to the root
+  `make test` completion boundary. The companion `make policy` target runs the
+  full ADR guard, import-linter contracts, diff whitespace validation, and Vale
+  against Markdown changed from `origin/dev`; `tools/install-vale.sh` supplies
+  the pinned local Vale binary when it is not already installed.
 - `.github/workflows/_gcp-dev.yml` now pins `platform/k8s/gcp/overlays/gcp-dev/kustomization.yaml` image `newTag` values to `${SHORT_SHA}` before `kubectl apply -k`, preventing mutable `:latest` restarts from drifting to a different image than the commit being deployed.
 
 Deploy-time enforcement (ADR-035):
@@ -98,9 +104,12 @@ The first slice intentionally stays small:
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
-  domain (`engine`, `cms`, `management`, `ctf`, `risk_register`), presentation
+  domain (`engine`, `cms`, `management`, `ctf`, `workspaces`), presentation
   (`mission_control`), support/contracts (`shared`), or support/composition
-  (`config`) layer. Service-package imports may use only the public facade (for
+  (`config`) layer. `workspaces` is the organization/workspace tenancy domain
+  added by ADR-046 (#1325); other layers reach it only through
+  `workspaces.services` and carry a scalar `workspace_id` rather than a
+  cross-layer ForeignKey. Service-package imports may use only the public facade (for
   example `cms.services`); private split-package submodules such as
   `cms.services._range_pause` are not cross-layer seams. This covers both the
   dotted form (`import cms.services._range_pause`) and the
@@ -130,6 +139,9 @@ The first slice intentionally stays small:
   Rejects AI/agent attribution markers in tracked text (agent `Co-authored-by`
   trailers, Cursor marketing footers, Claude Code branding strings, etc.).
   A `commit-msg` pre-commit hook blocks the same markers in commit messages.
+  When a commit is rejected for attribution markers, disable Cursor commit/PR
+  attribution in `~/.cursor/cli-config.json` only; project `.cursor/cli.json`
+  cannot set attribution (permissions-only per Cursor CLI docs).
 
 - `cross-layer-model-imports`
   Fails on direct cross-layer model imports inside service layers. The current tree already satisfies this rule, so it is part of the default guard.
@@ -213,31 +225,16 @@ The first slice intentionally stays small:
   genuinely absent directory at the base (a real first publication) is distinguished
   from an unreadable tree and still passes.
 
-- `aces-parity-inventory-path-integrity`
-  Enforces ADR-024-R4: every `legacy_source` / `validation_evidence` clause in
-  `docs/architecture/aces-migration-parity-inventory.yaml` that is a
-  repository-relative path or glob must resolve to an existing path (a glob must
-  match at least one path). Each field's `;`-separated clauses are classified
-  syntactically into `path`, `glob`, `command`, or `prose`; command clauses
-  (`python3 … --level ci`, `cd … && uv run …`, `aces conformance … --profile …`)
-  and prose clauses (removal statements, dotted references like
-  `engine.Range.provisioned_instances`, annotated summaries) are skipped, and
-  path-looking substrings are never extracted from prose. Classification is never
-  existence-led, so a deleted path stays a `path` and fails instead of
-  self-exempting as prose. Like `adr-registry` it validates the whole inventory on
-  every run and ignores the changed-file list, because a referenced file can be
-  moved or deleted without the inventory itself being edited. It treats the YAML
-  as untrusted static input: `yaml.safe_load` only; absolute paths, `..`
-  traversal, symlink escape, and shell-expansion characters are rejected
-  fail-closed; referenced content is never read and inventory text never reaches a
-  shell or subprocess. Missing PyYAML or a malformed/wrong-shape inventory is a
-  bounded violation, not a crash. It runs at the `ci` level and via a dedicated
-  `adr-guard-parity-inventory` pre-commit hook (also registered in the
-  always-present `deploy.yml` pre-commit job) so a referenced-file deletion in a
-  docs-only change cannot evade it.
-
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
+
+- `makemigrations --check --dry-run`
+  Fails when a model or field-choices change ships without its migration. Runs
+  as the `missing-migrations-shifter-platform` pre-commit hook as well as in the
+  Quality workflow. Adding a `TextChoices` member alters the field, so enum
+  additions need a migration too. The hook exists because the CI check sits
+  behind the test gate, which is skipped when an earlier job fails -- so a
+  missing migration could reach review unnoticed (#680).
 
 - `actionlint`
   Lints GitHub Actions workflows beyond plain YAML validation.

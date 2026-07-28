@@ -119,6 +119,37 @@ class TestSelfHostedClassLabels(unittest.TestCase):
         self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": ["ubuntu-latest"]}))
 
 
+class TestExpressionOperandCoverage(unittest.TestCase):
+    """#1874: the evaluator resolves the operands `_quality.yml` conditions use.
+
+    That workflow writes its conditions in the wrapped ``${{ }}`` form, and the
+    Sonar scan gate is an exact comparison against ``github.repository`` that
+    must stay independent of whether ``vars.SONAR_*`` are set. Without unwrap,
+    repository, and ``vars`` support the gate could only be substring-matched -
+    the failure mode this whole suite exists to avoid.
+    """
+
+    def test_wrapped_expressions_are_unwrapped_before_evaluation(self):
+        self.assertTrue(ADR_GUARD._dw_evaluate_if("${{ always() }}"))
+        self.assertFalse(
+            ADR_GUARD._dw_evaluate_if(
+                "${{ github.event_name == 'pull_request' }}", event_name="push"
+            )
+        )
+
+    def test_repository_identity_is_resolvable(self):
+        expr = "github.repository == 'Brad-Edwards/shifter'"
+        # The permissive default is the canonical repository, so only the
+        # scenario under test flips the outcome.
+        self.assertTrue(ADR_GUARD._dw_evaluate_if(expr))
+        self.assertFalse(ADR_GUARD._dw_evaluate_if(expr, repository="a-fork/shifter"))
+
+    def test_repository_variables_are_resolvable_and_can_be_unset(self):
+        expr = "vars.SONAR_PROJECT_KEY != ''"
+        self.assertTrue(ADR_GUARD._dw_evaluate_if(expr))
+        self.assertFalse(ADR_GUARD._dw_evaluate_if(expr, vars_set=False))
+
+
 class TestUpstreamGating(unittest.TestCase):
     """#781: a failed/cancelled upstream must block every deploy job."""
 
@@ -397,6 +428,151 @@ class TestTflintPluginAuthentication(unittest.TestCase):
             init_step.get("env", {}).get("GITHUB_TOKEN"),
             "${{ github.token }}",
         )
+
+
+class TestSonarScannerIdentity(unittest.TestCase):
+    """#1874 / ADR-003-R7: Sonar project identity is repository configuration.
+
+    The project key and organization come from non-secret repository variables
+    instead of the committed properties file, and the scan attempt is gated on
+    the canonical repository rather than on those variables being set. The
+    gating half is the security-relevant one: `if: vars.SONAR_PROJECT_KEY != ''`
+    would make a renamed or deleted variable delete the SonarCloud quality gate
+    from `PR Gate` with a green check and no failure anywhere. Evaluating the
+    condition (rather than matching its text) is what proves a presence guard
+    has not crept back in.
+    """
+
+    CANONICAL_REPOSITORY = "Brad-Edwards/shifter"
+    IDENTITY_PROPERTIES = (
+        "sonar.projectKey",
+        "sonar.organization",
+        "sonar.projectName",
+    )
+    # Shared analysis configuration that must stay committed - the guard against
+    # over-deleting while removing identity.
+    SHARED_PROPERTIES = (
+        "sonar.projectVersion",
+        "sonar.sources",
+        "sonar.tests",
+        "sonar.exclusions",
+        "sonar.security.exclusions",
+        "sonar.coverage.exclusions",
+        "sonar.python.coverage.reportPaths",
+        "sonar.javascript.lcov.reportPaths",
+        "sonar.sourceEncoding",
+        "sonar.issue.ignore.multicriteria",
+        "sonar.html.fileHeader",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        jobs = ADR_GUARD._dw_jobs(_load("_quality.yml"), "_quality.yml")
+        cls.scan_step = next(
+            step
+            for step in ADR_GUARD._dw_job_steps(jobs["sonarcloud"])
+            if step.get("name") == "SonarQube Cloud scan"
+        )
+        cls.scan_if = cls.scan_step.get("if", "")
+        cls.args = str(cls.scan_step.get("with", {}).get("args", ""))
+        cls.property_keys = {
+            line.split("=", 1)[0].strip()
+            for line in (REPO_ROOT / "sonar-project.properties")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if "=" in line and not line.lstrip().startswith("#")
+        }
+
+    def test_identity_properties_are_not_committed(self):
+        for prop in self.IDENTITY_PROPERTIES:
+            self.assertNotIn(
+                prop,
+                self.property_keys,
+                f"{prop} must not travel with the source (ADR-003-R7)",
+            )
+
+    def test_shared_analysis_configuration_stays_committed(self):
+        for prop in self.SHARED_PROPERTIES:
+            self.assertIn(
+                prop,
+                self.property_keys,
+                f"{prop} is shared analysis configuration and belongs in the repo",
+            )
+
+    def test_scan_reads_identity_from_repository_variables(self):
+        self.assertIn("-Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}", self.args)
+        self.assertIn("-Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}", self.args)
+
+    def test_canonical_repository_always_attempts_the_scan(self):
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if, repository=self.CANONICAL_REPOSITORY
+            ),
+            "the canonical repository must always attempt the Sonar scan",
+        )
+
+    def test_unset_variables_do_not_skip_the_scan(self):
+        # The regression this test exists for: a presence guard makes the
+        # scanner no-op and the quality gate vanish silently. With the identity
+        # gate the scanner receives an empty key and fails loudly instead.
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if,
+                repository=self.CANONICAL_REPOSITORY,
+                vars_set=False,
+            ),
+            "the scan must not be gated on SONAR_PROJECT_KEY / SONAR_ORGANIZATION "
+            "being set - an unset variable has to fail the scanner, not skip it",
+        )
+
+    def test_other_repositories_skip_the_scan(self):
+        self.assertFalse(
+            ADR_GUARD._dw_evaluate_if(self.scan_if, repository="someone/shifter"),
+            "SonarCloud is this project's tooling choice, not a dependency "
+            "imposed on anyone who cloned the repo — their runs must skip it",
+        )
+
+    def test_fork_origin_pull_requests_skip_the_scan(self):
+        # A fork PR runs in the base repository's context, so the identity test
+        # passes, but GitHub withholds secrets from it. Without this the scan
+        # fails on an empty SONAR_TOKEN and an outside contributor gets a red
+        # check they cannot fix.
+        self.assertFalse(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if,
+                repository=self.CANONICAL_REPOSITORY,
+                event_name="pull_request",
+                fork_pr=True,
+            ),
+            "a fork-origin pull request must skip the scan, not fail on a "
+            "secret it can never be given",
+        )
+
+    def test_same_repository_pull_requests_still_scan(self):
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if,
+                repository=self.CANONICAL_REPOSITORY,
+                event_name="pull_request",
+                fork_pr=False,
+            ),
+            "a branch PR inside the canonical repository must still be analyzed",
+        )
+
+    def test_token_stays_out_of_scanner_argv(self):
+        self.assertEqual(
+            self.scan_step.get("env", {}).get("SONAR_TOKEN"),
+            "${{ secrets.SONAR_TOKEN }}",
+        )
+        self.assertNotIn(
+            "SONAR_TOKEN",
+            self.args,
+            "the analysis token must never reach the scanner's argv",
+        )
+
+    def test_pull_request_quality_gate_wait_survives(self):
+        self.assertIn("-Dsonar.qualitygate.wait=true", self.args)
+        self.assertIn("github.event_name == 'pull_request'", self.args)
 
 
 class TestGithubEnvironmentBinding(unittest.TestCase):

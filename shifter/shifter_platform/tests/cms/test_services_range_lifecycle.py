@@ -14,11 +14,16 @@ from django.contrib.auth import get_user_model
 from cms import services
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
-from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
+from shared.models import AuditLog
+
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
 
 pytestmark = pytest.mark.django_db
 
@@ -33,7 +38,12 @@ def user(db):
 def _range_no_request(user, *, range_id=42):
     """A real RangeInstance with no associated Request."""
     return RangeInstance.objects.create(
-        scenario_id="basic", user_id=user.id, range_id=range_id, status="provisioning", request=None
+        workspace_id=_WORKSPACE_ID,
+        scenario_id="basic",
+        user_id=user.id,
+        range_id=range_id,
+        status="provisioning",
+        request=None,
     )
 
 

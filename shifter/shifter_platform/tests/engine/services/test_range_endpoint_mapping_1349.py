@@ -19,6 +19,11 @@ from engine.models import Range
 
 from .conftest import SSH_KEY_PEM, boto3_secrets, make_secrets_client
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -60,7 +65,7 @@ def _gcp_instance(
 
 
 def _range(user, instances: list[dict], *, status=Range.Status.READY) -> Range:
-    return Range.objects.create(user=user, status=status, provisioned_instances=instances)
+    return Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=status, provisioned_instances=instances)
 
 
 class TestLinuxOnlyComposition:

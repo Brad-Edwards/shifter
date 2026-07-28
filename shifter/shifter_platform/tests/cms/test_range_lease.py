@@ -16,6 +16,11 @@ from cms.models import RangeInstance
 from cms.models import Request as CMSRequest
 from shared.enums import RangeSource, RequestType, ResourceStatus
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -23,11 +28,13 @@ User = get_user_model()
 
 def _range(user, *, source=RangeSource.MISSION_CONTROL, expires_at=None, maximum_expires_at=None):
     request = CMSRequest.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request_id=uuid4(),
         request_type=RequestType.RANGE.value,
         user=user,
     )
     return RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID,
         user_id=user.id,
         request=request,
         status=ResourceStatus.READY.value,
@@ -75,8 +82,8 @@ def test_lease_builder_rejects_invalid_deadlines_and_sources():
 
 def test_extend_mission_control_range_advances_one_bounded_increment():
     from cms.services._range_lease import extend_mission_control_range
-    from risk_register.models import AuditLog
     from shared.audit import AuditAction, AuditActorType
+    from shared.models import AuditLog
 
     user = User.objects.create_user(username="lease-owner@example.com")
     now = timezone.now()
@@ -225,8 +232,8 @@ def test_expire_due_ranges_uses_canonical_destroy_and_system_audit():
     from cms.services._range_lease import expire_due_ranges
     from engine.models import Range as EngineRange
     from engine.models import Request as EngineRequest
-    from risk_register.models import AuditLog
     from shared.audit import AuditAction, AuditActorType
+    from shared.models import AuditLog
 
     user = User.objects.create_user(username="lease-cleanup@example.com")
     now = timezone.now()
@@ -241,6 +248,7 @@ def test_expire_due_ranges_uses_canonical_destroy_and_system_audit():
         user=user,
     )
     engine_range = EngineRange.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=engine_request,
         user=user,
         status=ResourceStatus.READY.value,
@@ -268,6 +276,7 @@ def test_expire_due_ranges_counts_a_row_without_a_request_as_failed():
     user = User.objects.create_user(username="lease-missing-request@example.com")
     now = timezone.now()
     instance = RangeInstance.objects.create(
+        workspace_id=_WORKSPACE_ID,
         user_id=user.id,
         request=None,
         status=ResourceStatus.READY.value,

@@ -12,14 +12,14 @@ from django.db import IntegrityError, transaction
 from cms.exceptions import CMSError
 from cms.models import ACTIVE_RANGE_UNIQUE_CONSTRAINT, AgentConfig, RangeInstance
 
-# Re-exported for existing importers (cms.services._aces_range_create, tests); the
+# Re-exported for existing importers (cms.services._raes_range_create, tests); the
 # gate lives in its own module so _range_create stays within its size budget.
 from cms.services._range_backend_admission import (
-    _assert_live_fire_backend_admitted,
     _openvpn_backend_admitted,
+    assert_backend_admitted,
 )
 
-# Re-exported for existing importers (cms.services._aces_range_create): the
+# Re-exported for existing importers (cms.services._raes_range_create): the
 # argument-shape and scenario admission validators live in their own module.
 from cms.services._range_create_validation import (
     _assert_scenario_launchable,
@@ -29,12 +29,15 @@ from cms.services._range_create_validation import (
     _validate_create_range_scenario,
     _validate_create_range_user,
 )
+from cms.services._range_remote_access import _build_remote_access_capability
+from cms.services._range_workspace import resolve_launch_workspace
 from shared.audit import (
     AuditAction,
     AuditActorType,
     AuditEntityType,
 )
 from shared.enums import ResourceStatus
+from shared.range_instantiation_policy import InstantiationPurpose
 from shared.schemas import RangeRef
 from shared.schemas.persistence import wrap_persisted_spec
 
@@ -61,23 +64,30 @@ _ACTIVE_RANGE_MESSAGE = "You already have an active range. Please destroy it bef
 
 def _engine_create_range_call(
     request_spec: RequestSpec,
-    backend_admission: BackendAdmission | None = None,
-    remote_access_capability: dict[str, object] | None = None,
+    backend_admission: BackendAdmission | None,
+    remote_access_capability: dict[str, object] | None,
+    workspace_id: int,
 ) -> RangeRef:
     """Late-bound call to ``cms.services.engine_create_range`` so test patches apply.
 
     ``backend_admission`` is the trusted #1348 admission result carried beside the
     RequestSpec (never inside it); the Engine persists the backend/purpose binding
-    from it at create (#1666).
+    from it at create (#1666). ``workspace_id`` is the trusted #1325 tenancy
+    scope and travels the same way (ADR-046-R3).
     """
     from cms import services as _cs
 
     if remote_access_capability is None:
-        return _cs.engine_create_range(request_spec, backend_admission=backend_admission)
+        return _cs.engine_create_range(
+            request_spec,
+            backend_admission=backend_admission,
+            workspace_id=workspace_id,
+        )
     return _cs.engine_create_range(
         request_spec,
         backend_admission=backend_admission,
         remote_access_capability=remote_access_capability,
+        workspace_id=workspace_id,
     )
 
 
@@ -147,6 +157,7 @@ def _reserve_active_range_slot(
     user: User,
     range_source: RangeSource,
     persist_instance: Callable[[Request], RangeInstance],
+    workspace_id: int,
 ) -> tuple[UUID, Request, RangeInstance]:
     """Atomically reserve the single active-range slot for ``(user, range_source)``.
 
@@ -159,11 +170,11 @@ def _reserve_active_range_slot(
     authored active-range ``CMSError``. Unrelated integrity errors propagate.
 
     Cloud/engine dispatch MUST happen outside this call — never hold the
-    transaction open across an Engine/ACES/broker call (#307 preflight).
+    transaction open across an Engine/RAES/broker call (#307 preflight).
     """
     try:
         with transaction.atomic():
-            request_id, cms_request = _create_cms_request(user)
+            request_id, cms_request = _create_cms_request(user, workspace_id)
             range_instance = persist_instance(cms_request)
             _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
     except IntegrityError as exc:
@@ -183,7 +194,7 @@ def _lookup_agents_by_os(user: User, agents_by_os: dict[str, int]) -> dict[str, 
     return {os_type: _get_agent_call(user, aid) for os_type, aid in agents_by_os.items()}
 
 
-def _create_cms_request(user: User) -> tuple[UUID, Request]:
+def _create_cms_request(user: User, workspace_id: int) -> tuple[UUID, Request]:
     """Create the CMS Request row and return (request_id, cms_request)."""
     from uuid import uuid4
 
@@ -195,6 +206,7 @@ def _create_cms_request(user: User) -> tuple[UUID, Request]:
         request_id=request_id,
         request_type=RequestType.RANGE.value,
         user=user,
+        workspace_id=workspace_id,
     )
     logger.info(
         "create_range: created CMS Request id=%s for user_id=%s",
@@ -208,13 +220,17 @@ def _dispatch_engine_range(
     request_id: UUID,
     user: User,
     range_spec: RangeSpec,
-    backend_admission: BackendAdmission | None = None,
-    remote_access_capability: dict[str, object] | None = None,
+    backend_admission: BackendAdmission | None,
+    remote_access_capability: dict[str, object] | None,
+    workspace_id: int,
 ) -> None:
     """Dispatch range provisioning to engine for an already-owned CMS request.
 
     ``backend_admission`` (the trusted #1348 result) is carried beside the
     RequestSpec so the Engine persists the #1666 ownership binding at create.
+    ``workspace_id`` is the trusted #1325 tenancy scope, carried the same way
+    (beside, never inside, the spec) so Engine persists it in the range's create
+    transaction without CMS reaching into Engine's models (ADR-046-R3).
     """
     from shared.schemas import RequestSpec
 
@@ -223,47 +239,7 @@ def _dispatch_engine_range(
         user_id=user.id,
         items=[range_spec],
     )
-    _engine_create_range_call(request_spec, backend_admission, remote_access_capability)
-
-
-def _build_remote_access_capability(
-    range_spec: RangeSpec,
-    teardown_at: datetime | None,
-    *,
-    backend_admitted: bool = True,
-    required: bool,
-) -> dict[str, object] | None:
-    """Mint OpenVPN authority when the product and scenario support it."""
-    capability = None
-    if teardown_at is not None and not backend_admitted:
-        if required:
-            raise CMSError("OpenVPN access is unavailable on the selected range backend")
-    elif teardown_at is not None:
-        target_uuid = _remote_access_target_uuid(range_spec)
-        if target_uuid is None:
-            if required:
-                raise CMSError("OpenVPN access requires exactly one identified Kali attacker target")
-        else:
-            from shared.remote_access import build_openvpn_capability
-
-            capability = build_openvpn_capability(target_uuid, teardown_at)
-    return capability
-
-
-def _remote_access_target_uuid(range_spec: RangeSpec) -> str | None:
-    """Return the sole participant-visible Kali attacker UUID, when unambiguous."""
-    participant_targets = {binding.target_ref for binding in range_spec.participant_access}
-    kali_targets = [
-        instance for instance in range_spec.all_instances if instance.role == "attacker" and instance.os_type == "kali"
-    ]
-    targets = (
-        [instance for instance in kali_targets if str(instance.uuid) in participant_targets]
-        if participant_targets
-        else kali_targets
-    )
-    if len(targets) != 1:
-        return None
-    return targets[0].uuid
+    _engine_create_range_call(request_spec, backend_admission, remote_access_capability, workspace_id)
 
 
 def _persist_range_instance_record(
@@ -282,6 +258,9 @@ def _persist_range_instance_record(
         request=cms_request,
         scenario_id=scenario,
         user_id=user.id,
+        # The projection inherits the request's authorized scope rather than
+        # re-resolving it, so the two can never disagree (ADR-046-R3).
+        workspace_id=cms_request.workspace_id,
         agent=first_agent,
         range_source=range_source.value,
         range_spec=wrap_persisted_spec("range_spec", range_spec),
@@ -364,8 +343,12 @@ def create_range(
 ) -> RangeContext:
     """Validate, hydrate, and trigger range provisioning.
 
-    CMS validates scenario and agent requirements, hydrates the scenario
-    template with agent details, calls Engine, and stores RangeInstance.
+    The generic product facade. Every range it creates is live-fire and it takes
+    no instantiation-purpose argument, so no in-process caller can escalate a
+    normal launch onto the retained GDC substrate (ADR-030-R6). The dedicated
+    authorized entry point for a non-user launch is
+    ``cms.services.create_non_user_range``, which mints its purpose only after
+    its own operator-authority gate.
 
     Args:
         user: User requesting the range
@@ -389,6 +372,33 @@ def create_range(
             invalid
         CMSError: If scenario not found, agent not found, or
             requirements not met
+    """
+    return _create_range_impl(
+        user,
+        scenario,
+        agents_by_os,
+        ngfw_enabled,
+        range_source,
+        remote_access_teardown_at,
+        InstantiationPurpose.LIVE_FIRE,
+    )
+
+
+def _create_range_impl(
+    user: User,
+    scenario: str,
+    agents_by_os: dict[str, int],
+    ngfw_enabled: bool,
+    range_source: RangeSource | None,
+    remote_access_teardown_at: datetime | None,
+    instantiation_purpose: InstantiationPurpose,
+) -> RangeContext:
+    """Shared cyberscript creation body, parameterized by minted launch authority.
+
+    Not a product facade. ``instantiation_purpose`` is authority already minted by
+    a caller that passed its own authorization gate -- either ``create_range``
+    (permanently live-fire) or ``_non_user_range_launch.create_non_user_range``
+    (operator-gated). ``assert_backend_admitted`` still re-checks the value.
     """
     from cms.scenarios.hydrator import hydrate_scenario
     from shared.enums import RangeSource
@@ -417,7 +427,7 @@ def create_range(
     )
 
     try:
-        backend_admission = _assert_live_fire_backend_admitted()
+        backend_admission = assert_backend_admitted(instantiation_purpose, range_source)
         _assert_no_active_range(user, range_source)
 
         _assert_scenario_launchable(scenario)
@@ -446,7 +456,10 @@ def create_range(
                 range_source,
             )
 
-        request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
+        workspace_id = resolve_launch_workspace(user)
+        request_id, _cms_request, range_instance = _reserve_active_range_slot(
+            user, range_source, _persist, workspace_id
+        )
         try:
             _dispatch_engine_range(
                 request_id,
@@ -454,6 +467,7 @@ def create_range(
                 range_spec,
                 backend_admission,
                 remote_access_capability,
+                workspace_id,
             )
         except Exception:
             _set_range_instance_status(range_instance, ResourceStatus.FAILED)

@@ -1,17 +1,7 @@
-/**
- * Domain types for the Risk Register, re-exported from the generated OpenAPI
- * schema (`schema.d.ts`, produced by `npm run gen:api`). Do not hand-copy Risk,
- * Comment, AuditLog, severity, status, or STRIDE shapes — regenerate instead.
- */
+/** Shared types re-exported from the generated OpenAPI schema. */
 import type { components } from "./schema";
 
-export type Risk = components["schemas"]["Risk"];
-export type RiskCreate = components["schemas"]["RiskCreate"];
-export type RiskUpdate = components["schemas"]["RiskUpdate"];
-export type PatchedRiskUpdate = components["schemas"]["PatchedRiskUpdate"];
-export type Comment = components["schemas"]["Comment"];
 export type AuditLog = components["schemas"]["AuditLog"];
-export type PaginatedRiskList = components["schemas"]["PaginatedRiskList"];
 export type PaginatedAuditLogList = components["schemas"]["PaginatedAuditLogList"];
 export type Bootstrap = components["schemas"]["Bootstrap"];
 export type BootstrapModes = components["schemas"]["BootstrapModes"];
@@ -29,32 +19,6 @@ export type AdminUserListItem = components["schemas"]["AdminUserListItem"];
 export type AdminUserDetail = components["schemas"]["AdminUserDetail"];
 export type PaginatedAdminUserListItemList = components["schemas"]["PaginatedAdminUserListItemList"];
 export type OrganizerGrantResult = components["schemas"]["OrganizerGrantResult"];
-
-export type Severity = components["schemas"]["SeverityEnum"];
-export type Status = components["schemas"]["StatusEnum"];
-
-export type StrideCode = "S" | "T" | "R" | "I" | "D" | "E";
-
-/**
- * Runtime option lists for filters/forms. Typed against the generated enums so
- * an invalid value fails typecheck; the backend serializers remain the
- * authoritative validator (these are UI affordances only).
- */
-export const SEVERITIES: readonly Severity[] = ["critical", "high", "medium", "low"];
-export const STATUSES: readonly Status[] = ["open", "acknowledged", "mitigating", "resolved", "closed"];
-export const STRIDE_OPTIONS: ReadonlyArray<{ code: StrideCode; label: string }> = [
-  { code: "S", label: "Spoofing" },
-  { code: "T", label: "Tampering" },
-  { code: "R", label: "Repudiation" },
-  { code: "I", label: "Information Disclosure" },
-  { code: "D", label: "Denial of Service" },
-  { code: "E", label: "Elevation of Privilege" },
-];
-
-/** Normalize the JSONField `stride_categories` (typed `unknown`) into a string list. */
-export function strideList(value: unknown): string[] {
-  return Array.isArray(value) ? value.map(String) : [];
-}
 
 /**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
@@ -104,26 +68,28 @@ export type ScenarioMetadataUpdate = components["schemas"]["PatchedScenarioMetad
 export type ScenarioCreated = components["schemas"]["ScenarioCreated"];
 export type ScenarioExport = components["schemas"]["ScenarioExport"];
 export type ScenarioMetadataState = components["schemas"]["ScenarioMetadataState"];
-export type ScenarioAcesFields = components["schemas"]["AcesCatalogFields"];
+export type ScenarioRaesFields = components["schemas"]["RaesCatalogFields"];
+export type ScenarioRealizability = components["schemas"]["ScenarioRealizability"];
+export type ScenarioRealizabilityGap = components["schemas"]["RealizabilityGap"];
 export type ScenarioYamlValidation = components["schemas"]["YAMLValidationResult"];
 export type ScenarioInstanceRole = components["schemas"]["ScenarioInstanceRoleEnum"];
 export type ScenarioInstanceOsType = components["schemas"]["ScenarioInstanceOsTypeEnum"];
 
 /** Scenario source classification the detail endpoint returns in `source`. */
-export type ScenarioSource = "builtin" | "custom" | "aces" | "ctf";
+export type ScenarioSource = "builtin" | "custom" | "raes" | "ctf";
 
 /**
- * ACES image registry types (#1566), re-exported from the generated OpenAPI
+ * RAES image registry types (#1566), re-exported from the generated OpenAPI
  * schema. The `engine.services` write path stays the authoritative validator;
  * regenerate `schema.d.ts` via `npm run gen:api` instead of hand-copying.
  */
-export type AcesImageMapping = components["schemas"]["AcesImageMappingView"];
-export type AcesImageMappingRegister = components["schemas"]["AcesImageMappingRegister"];
-export type AcesImageMappingDisable = components["schemas"]["AcesImageMappingDisable"];
+export type RaesImageMapping = components["schemas"]["RaesImageMappingView"];
+export type RaesImageMappingRegister = components["schemas"]["RaesImageMappingRegister"];
+export type RaesImageMappingDisable = components["schemas"]["RaesImageMappingDisable"];
 
-/** Provider choices mirroring engine.models.AcesImageMapping.Provider (UI affordance only). */
-export type AcesImageProvider = "gce" | "aws";
-export const ACES_IMAGE_PROVIDERS: ReadonlyArray<{ value: AcesImageProvider; label: string }> = [
+/** Provider choices mirroring engine.models.RaesImageMapping.Provider (UI affordance only). */
+export type RaesImageProvider = "gce" | "aws";
+export const RAES_IMAGE_PROVIDERS: ReadonlyArray<{ value: RaesImageProvider; label: string }> = [
   { value: "gce", label: "Google Compute Engine" },
   { value: "aws", label: "AWS EC2" },
 ];

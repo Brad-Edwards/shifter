@@ -1,9 +1,9 @@
-"""Tests for the shadow operation-result applier (ADR-043 Phase 2, #1834).
+"""Tests for the Engine-owned operation-result applier (ADR-043).
 
-The applier records a validation disposition and NEVER mutates domain state,
-audit, or the range event outbox. Logic tests run on any backend; the
-concurrency (skip_locked) and effective-privilege (real GRANTs) tests require
-PostgreSQL and are marked accordingly.
+The applier authoritatively applies declared operation families and records
+validation-only dispositions for compatibility families. Logic tests run on any
+backend; the concurrency (skip_locked) and effective-privilege (real GRANTs)
+tests require PostgreSQL and are marked accordingly.
 """
 
 from __future__ import annotations
@@ -26,7 +26,30 @@ from engine.models import (
 from engine.services import apply_pending_operation_results, evaluate_operation_result
 from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
+
+
+def test_applier_descriptions_reflect_authoritative_cutovers():
+    """Public worker descriptions must not present every result as shadow-only."""
+    from engine.management.commands.apply_operation_results import Command
+    from engine.models import _operation_io
+    from engine.services import _operation_apply
+
+    descriptions = (
+        _operation_io.__doc__ or "",
+        _operation_apply.__doc__ or "",
+        _operation_apply.apply_pending_operation_results.__doc__ or "",
+    )
+
+    assert all("sole authoritative writer" not in description for description in descriptions)
+    assert all("never mutates domain state" not in description for description in descriptions)
+    assert all("authoritative" in description.lower() for description in descriptions)
+    assert "shadow" not in Command.help.lower()
 
 
 def _seed(
@@ -49,6 +72,7 @@ def _seed(
     user = get_user_model().objects.create_user(username=f"{request_id}@example.com")
     request = Request.objects.create(request_id=request_id, request_type="range", user=user)
     Range.objects.create(
+        workspace_id=_WORKSPACE_ID,
         request=request,
         user=user,
         status=Range.Status.PROVISIONING,

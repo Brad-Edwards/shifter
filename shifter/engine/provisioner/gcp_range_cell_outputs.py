@@ -67,6 +67,7 @@ def instance_output(
         "gcp_image_key": instance["image_key"] or "default",
         "gcp_image_profile_fingerprint": instance["image_profile_fingerprint"],
         "gcp_source_image": instance["profile"].source_image,
+        "gcp_bootstrap_capability": instance["profile"].bootstrap_capability,
         "gcp_service_account_email": config.service_account_email if instance["attach_service_account"] else "",
     }
     if credentials.rdp_password_secret_ref:

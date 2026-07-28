@@ -157,7 +157,6 @@ def _configure_ngfw_for_range(
     )
     _record_ngfw_range_attachment(
         ngfw_request_id=ngfw_data[_NGFW_REQUEST_ID_KEY],
-        ngfw_status=ngfw_data[_STATUS_KEY],
         attachment_record=_build_ngfw_range_attachment_record(
             range_id=range_id,
             request_id=request_id,
@@ -178,7 +177,6 @@ def _remove_ngfw_attachments_for_destroy(user_id: int, range_id: int, range_spec
         if ngfw_data:
             _remove_ngfw_range_attachment(
                 ngfw_request_id=ngfw_data[_NGFW_REQUEST_ID_KEY],
-                ngfw_status=ngfw_data[_STATUS_KEY],
                 range_id=range_id,
             )
     except Exception as exc:

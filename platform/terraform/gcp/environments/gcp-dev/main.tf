@@ -93,7 +93,7 @@ module "platform_core" {
   email_sender_domain               = var.email_sender_domain
   range_egress_mode                 = var.range_egress_mode
   range_egress_allowed_cidrs        = var.range_egress_allowed_cidrs
-  aces_package_bucket_name          = var.aces_package_bucket_name
+  raes_package_bucket_name          = var.raes_package_bucket_name
   labels                            = local.labels
 
   messaging_enable_dlq                  = var.messaging_enable_dlq

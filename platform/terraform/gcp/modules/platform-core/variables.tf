@@ -318,8 +318,8 @@ variable "vmseries_bootstrap_bucket_name" {
   default     = ""
 }
 
-variable "aces_package_bucket_name" {
-  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Empty grants the portal no binding on it (ADR-008-R7); set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) when a deployment enables object-backed ACES packages."
+variable "raes_package_bucket_name" {
+  description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Empty grants the portal no binding on it (ADR-008-R7); set it (with SHIFTER_RAES_PACKAGE_BUCKET on the app) when a deployment enables object-backed RAES packages."
   type        = string
   default     = ""
 }

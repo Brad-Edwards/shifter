@@ -20,6 +20,10 @@ real scenarios, not by the post-deploy smoke (#1422).
 - AWS credentials with SSM access to the portal EC2 instance
 - `ENV` (default `dev`) and optional `PORTAL_INSTANCE_TAG` (default `${ENV}-portal`)
 
+For GCP, use an authenticated `kubectl` context for the target platform cluster
+instead of AWS credentials. The deployed portal runs as
+`deployment/portal-web`, container `portal`, in `shifter-platform`.
+
 ## Local usage
 
 ```bash

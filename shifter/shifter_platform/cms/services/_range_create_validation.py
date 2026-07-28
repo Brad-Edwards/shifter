@@ -77,7 +77,7 @@ def _assert_scenario_launchable(scenario: str) -> None:
 
     Unknown ids are left to ``_load_scenario_template_or_raise`` (which raises
     the not-found CMSError), preserving existing behavior. Legacy YAML/DB
-    entries are always launchable; a non-launchable ACES entry (pending
+    entries are always launchable; a non-launchable RAES entry (pending
     conformance, unsupported profile, invalid refs, or a shadowed legacy id)
     is rejected here with a clear error instead of an opaque not-found.
     """

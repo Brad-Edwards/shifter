@@ -83,8 +83,8 @@ describe("triggerGceImageWorkflow protected-ref dispatch", () => {
       () =>
         triggerGceImageWorkflow({
           workflow: "packer-gcp.yml",
-          inputs: { image_type: "techvault" },
-          ref: "1760-add-techvault-gcp-image",
+          inputs: { image_type: "polaris-vm" },
+          ref: "feature-image-build",
           actionsPath: "packer-gcp.yml",
         }),
       /protected branch/,
@@ -97,8 +97,8 @@ describe("triggerGceImageWorkflow protected-ref dispatch", () => {
       {
         workflow: "packer-gcp-promote.yml",
         inputs: {
-          image_type: "techvault",
-          source_image: "shifter-techvault-123",
+          image_type: "polaris-vm",
+          source_image: "shifter-polaris-vm-123",
         },
         ref: "main",
         actionsPath: "packer-gcp-promote.yml",
@@ -116,13 +116,13 @@ describe("triggerGceImageWorkflow protected-ref dispatch", () => {
       "--ref",
       "main",
       "-f",
-      "image_type=techvault",
+      "image_type=polaris-vm",
       "-f",
-      "source_image=shifter-techvault-123",
+      "source_image=shifter-polaris-vm-123",
     ]);
     assert.equal(
       message,
-      "Triggered packer-gcp-promote.yml for techvault on ref main. View at: https://github.com/Brad-Edwards/shifter/actions/workflows/packer-gcp-promote.yml",
+      "Triggered packer-gcp-promote.yml for polaris-vm on ref main. View at: https://github.com/Brad-Edwards/shifter/actions/workflows/packer-gcp-promote.yml",
     );
   });
 });

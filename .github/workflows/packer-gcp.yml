@@ -24,7 +24,6 @@ on:
           - windows
           - dc
           - polaris-vm
-          - techvault
           - dc-prebaked
       environment:
         description: 'GCP environment to build in'
@@ -121,7 +120,6 @@ jobs:
           GCP_PACKER_SUBNETWORK: ${{ vars.GCP_PACKER_SUBNETWORK || 'default' }}
           GCP_PACKER_SERVICE_ACCOUNT: ${{ vars.GCP_PACKER_SERVICE_ACCOUNT }}
           GCP_PACKER_MACHINE_TYPE: ${{ vars.GCP_PACKER_MACHINE_TYPE || 'e2-standard-2' }}
-          GCP_TECHVAULT_PACKER_MACHINE_TYPE: ${{ vars.GCP_TECHVAULT_PACKER_MACHINE_TYPE || 'n2-highmem-8' }}
           GCP_PACKER_USE_INTERNAL_IP: ${{ vars.GCP_PACKER_USE_INTERNAL_IP || 'false' }}
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
           # GCS bucket holding the polaris compose-stack tarball (polaris-vm build
@@ -144,9 +142,6 @@ jobs:
           # otherwise the WIF-impersonated deploy service account.
           BUILDER_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
           MACHINE_TYPE="${GCP_PACKER_MACHINE_TYPE}"
-          if [ "${IMAGE_TYPE}" = "techvault" ]; then
-            MACHINE_TYPE="${GCP_TECHVAULT_PACKER_MACHINE_TYPE}"
-          fi
           # Export as PKR_VAR_* so Packer reads them from the environment — never
           # as -var CLI flags (which would expose values in the process list).
           {
@@ -237,7 +232,7 @@ jobs:
       # do not boot on GDC (firmware/drivers), and their GDC images come from the
       # native gdc-vm-images build, so skip the export for the Windows family.
       - name: Export image to GCS for the GDC VM Runtime
-        if: inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked' && inputs.image_type != 'techvault'
+        if: inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked'
         working-directory: shifter/packer/gcp
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}

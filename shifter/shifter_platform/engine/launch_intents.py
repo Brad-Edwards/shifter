@@ -18,13 +18,14 @@ from engine.models import (
     Range,
     Request,
 )
+from engine.operation_inputs import operation_input_payload
 from shared.cloud import PROVISIONER_CONTAINER_NAME
 from shared.cloud.gcp.base import build_idempotent_job_name
 from shared.operation_envelope import build_operation_envelope
 
 _OPERATIONS = {
     "range": {"provision", "destroy", "pause", "resume"},
-    "aces-range": {"provision", "destroy", "pause", "resume"},
+    "raes-range": {"provision", "destroy", "pause", "resume"},
     "ngfw": {"provision", "deprovision", "start", "stop"},
 }
 PROVISIONER_DISPATCH_FAILED = "Provisioner dispatch failed"
@@ -163,7 +164,7 @@ def _authorize_request_range(
     target: Range | Instance | None,
     expected_operation_id: UUID | str | None,
 ) -> None:
-    """Authorize a request-based Range or ACES Range payload."""
+    """Authorize a request-based Range or RAES Range payload."""
     range_rows = _lock_for_generation(Range.objects.all(), expected_operation_id)
     row = target if isinstance(target, Range) else range_rows.filter(request=request).first()
     if row is None:
@@ -214,7 +215,7 @@ def authorize_provisioner_payload(
     request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
     if request is None:
         raise ValueError("launch intent request does not exist")
-    if payload.get("resource") in {"range", "aces-range"}:
+    if payload.get("resource") in {"range", "raes-range"}:
         _authorize_request_range(payload, request, target, expected_operation_id)
     else:
         _authorize_request_ngfw(payload, request, target, expected_operation_id)
@@ -225,7 +226,7 @@ def _lock_operation_target(payload: dict[str, object]) -> Range | Instance:
     if "request_id" not in payload:
         return Range.objects.select_for_update().get(pk=int(str(payload["range_id"])))
     request = Request.objects.get(request_id=UUID(str(payload["request_id"])))
-    if payload["resource"] in {"range", "aces-range"}:
+    if payload["resource"] in {"range", "raes-range"}:
         return Range.objects.select_for_update().get(request=request)
     return Instance.objects.select_for_update().get(request=request, role=Instance.Role.NGFW)
 
@@ -274,7 +275,7 @@ def _resolve_failure_target(payload: dict[str, object]) -> Range | Instance | No
         request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
         if request is None:
             target = None
-        elif payload.get("resource") in {"range", "aces-range"}:
+        elif payload.get("resource") in {"range", "raes-range"}:
             target = Range.objects.select_for_update().filter(request=request).first()
         else:
             target = Instance.objects.select_for_update().filter(request=request, role=Instance.Role.NGFW).first()
@@ -362,18 +363,6 @@ def fail_current_provisioner_operation(
     return True
 
 
-def _operation_input_payload(target: Range | Instance) -> dict[str, object]:
-    """Compose the immutable operation-input projection from engine-owned models.
-
-    A reference-only projection of the existing persisted contracts, not an ORM
-    dump. Phase-2 shadow: fuller per-family completeness lands with each family's
-    cutover (#1835-#1838), when the provisioner begins consuming this input.
-    """
-    if isinstance(target, Range):
-        return {"range_spec": target.range_config or {}}
-    return {"role": str(target.role), "os_type": str(target.os_type)}
-
-
 def _materialize_operation_input(payload: dict[str, object], operation_id: UUID) -> None:
     """Persist the immutable operation input keyed by ``operation_id``.
 
@@ -382,9 +371,9 @@ def _materialize_operation_input(payload: dict[str, object], operation_id: UUID)
     ``operation_id``. Immutable: created once per operation generation.
     """
     target = _lock_operation_target(payload)
-    request = getattr(target, "request", None)
+    request: Request | None = getattr(target, "request", None)
     request_id = getattr(request, "request_id", None)
-    if request_id is None:
+    if request is None or request_id is None:
         # Deprecated legacy range with no linked request: no request-keyed input
         # projection to materialize in shadow. Skip rather than fabricate one.
         return
@@ -395,7 +384,7 @@ def _materialize_operation_input(payload: dict[str, object], operation_id: UUID)
         request_id=request_id,
         resource=resource,
         operation=operation,
-        payload=_operation_input_payload(target),
+        payload=operation_input_payload(target, resource, request),
     )
     OperationInput.objects.create(
         operation_id=operation_id,

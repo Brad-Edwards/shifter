@@ -68,9 +68,13 @@ Current mechanisms:
   SonarQube Cloud scan so runner deprecation warnings do not mask real
   SonarCloud quality findings.
   - Repository branch protection for `main` and `dev` requires the
-    aggregate `PR Gate`, CodeQL, and pull-request title lint with strict
-    up-to-date status checks. Admin bypass remains enabled for emergency
-    override; normal changes land through PRs.
+    aggregate `PR Gate`, CodeQL, and `Lint PR title` with strict
+    up-to-date status checks. The title-lint workflow triggers on PRs
+    against both branches so the required context reports on each; a
+    required context whose workflow cannot trigger for a base branch
+    never reports and blocks the merge indefinitely (#1868). Admin
+    bypass remains enabled for emergency override; normal changes land
+    through PRs.
 - `.github/workflows/codeql-analysis.yml`: GitHub CodeQL static analysis
   with the `security-extended` query suite for Python and JavaScript;
   runs on pushes to `main` and `dev`, on pull requests against either
@@ -78,13 +82,17 @@ Current mechanisms:
   weekly schedule. Least-privilege permissions (`contents: read`,
   `security-events: write`, `actions: read`); no `pull_request_target`.
 - `.github/workflows/pr-title-lint.yml`: pull-request title validation
-  against the conventional-commit shape used by towncrier and the
-  release-drafter conventions. PRs to or from the `dev` integration
-  branch are exempt; release/environment promotion PRs that do not
-  involve `dev` are validated. Allowed types: `security`, `added`, `changed`,
-  `deprecated`, `removed`, `fixed`, `feat`, `fix`, `chore`, `docs`,
-  `refactor`, `test`, `ci`, `build`, `perf`, `revert`. Subject must
-  start with a lowercase letter.
+  against the conventional-commit shape Release Please consumes. It runs
+  on PRs targeting `dev` and `main`, the two branches whose protection
+  requires the `Lint PR title` context. On `dev` the lint guards the
+  release signal: squash-merging a feature PR makes the validated title
+  the single commit subject Release Please reads once the change reaches
+  `main` (ADR-042-R4). On `main` the promotion PR is merged with a merge
+  commit and preserves the feature commits, so its title is not a release
+  signal; the lint runs there so the required context reports. Allowed
+  types: `security`, `added`, `changed`, `deprecated`, `removed`, `fixed`,
+  `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`,
+  `perf`, `revert`. Subject must start with a lowercase letter.
 - `.github/workflows/_shifter-engine.yml`: engine image validation and
   deployment. The provisioner pytest gate and Docker-build validation run
   on GitHub-hosted runners; self-hosted runners are reserved for the
@@ -110,7 +118,13 @@ Current mechanisms:
   the version tag is absent, and Terraform resolves that tag to a digest.
 - `.github/dependabot.yml`: weekly dependency PRs across every uv,
   npm, github-actions, and pre-commit package root in the repo; every
-  block targets the `dev` integration branch.
+  block targets the `dev` integration branch. One block per package
+  root, and a block's directory must name a root that actually holds a
+  manifest; Dependabot silently ignores a block whose directory does
+  not exist, leaving that root unwatched. The SPA
+  (`shifter/shifter_platform/frontend`) is a separate npm root from
+  `shifter/shifter_platform` and carries its own block; the latter does
+  not reach it (#1880).
 - `.claude/hooks/adr_guard_hook.py`: Claude post-edit validation
 - `AGENTS.md`: Codex repo-local policy. Points at `.ground-control.yaml`
   and `.gc/plan-rules.md` for Ground Control workflow context
@@ -121,7 +135,15 @@ Current mechanisms:
   `github_repo` value is the canonical GitHub target for agent issue,
   PR, CI, and traceability operations. The optional `routing` block opts
   the repository into per-step `/implement` routing while keeping the
-  workflow's gate contract in `.gc/plan-rules.md`.
+  workflow's gate contract in `.gc/plan-rules.md`. The configured
+  completion boundary is the root `make test` target; `make policy`
+  composes the existing ADR, import, diff, and changed-document checks
+  required by the synchronized pre-PR gate. The `routing` block accepts
+  only `enabled`, `default_provider`, and `stages`; a stale
+  `default_fallback` key, valid when the block was first written and
+  later removed upstream without a migration, was dropped in #1581. See
+  `docs/technical/dev/adr-enforcement.md` for how whole-file validation
+  makes an unrecognized key fail closed.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can
@@ -347,7 +369,7 @@ entries. Completed so far:
   `compute_stats`. `management` was added to the `enable_log_propagation` fixture
   so its service logs are observable by `caplog`.
 
-- `shared` + `risk_register`: the cloud-storage adapter suites
+- `shared`: the cloud-storage adapter suites
   (`shared/cloud/test_aws_storage`, `test_gcp_storage`) drive the real
   `AWSObjectStorage` / `GCPObjectStorage` (including their real `_get_client`
   region/endpoint/client resolution) and mock only the SDK boundary—
@@ -361,11 +383,11 @@ entries. Completed so far:
   `IntegrityError` race-fallback test is dropped because the unique constraint
   exactly matches the `get_or_create` lookup, so the fallback is reachable only
   via a genuine multi-connection race or by mocking the first-party manager.
-  `risk_register/test_audit_services` drives the real audit functions against
+  `shared/test_audit_store` drives the real audit functions against
   real `AuditLog` rows (asserting the persisted row) instead of patching
   `AuditLog.log`, with the swallow path exercised via a real non-JSON payload
-  fault. With these, the `shared` and `risk_register` areas carry no remaining
-  ADR-019 baseline entries.
+  fault. With these, the `shared` area carries no remaining ADR-019 baseline
+  entries.
 
 - `mission_control` Guacamole connection-URL endpoints
   (`test_guacamole_ssh`, `test_api_instance_ssh_url`, `test_api_ngfw_ssh_url`,
@@ -506,4 +528,9 @@ Exceptions are explicit and time-bounded:
 ]
 ```
 
-Expired exceptions fail `adr_guard`.
+Expired exceptions fail `adr_guard`, and they also stop suppressing: once
+`expires_on` has passed, the entry no longer covers its violations and those
+findings resurface on their own. An entry whose `expires_on` is missing or
+unparseable never suppresses anything, so a malformed date cannot buy
+open-ended cover. `expires_on` is inclusive: the exception is live through that
+date and dead the day after.

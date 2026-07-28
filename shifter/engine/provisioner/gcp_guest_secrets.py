@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import logging
 import re
@@ -20,8 +19,8 @@ _SECRETMANAGER_MODULE = "google.cloud.secretmanager"
 _GOOGLE_EXCEPTIONS_MODULE = "google.api_core.exceptions"
 GuestInstance = dict[str, object]
 
-_ACES_PASSWORD_LENGTHS = {"weak": 12, "medium": 18, "strong": 24}
-_ACES_ACCOUNT_SECRET_KINDS = {
+_RAES_PASSWORD_LENGTHS = {"weak": 12, "medium": 18, "strong": 24}
+_RAES_ACCOUNT_SECRET_KINDS = {
     "password": "-".join(("account", "password")),
     "publickey": "account-publickey",
 }
@@ -158,18 +157,18 @@ def ensure_rdp_password_secret(range_id: int, instance: GuestInstance) -> tuple[
     )
 
 
-def _aces_secret_id(range_id: int, instance_key: str, kind: str) -> str:
-    """Return the deterministic secret id for an ACES-native range instance.
+def _raes_secret_id(range_id: int, instance_key: str, kind: str) -> str:
+    """Return the deterministic secret id for an RAES-native range instance.
 
-    Keyed on the range id + the ACES instance key (node address + count index),
-    not a cyberscript ``ScenarioInstance``: the ACES provisioning path carries no
+    Keyed on the range id + the RAES instance key (node address + count index),
+    not a cyberscript ``ScenarioInstance``: the RAES provisioning path carries no
     scenario role/os enums, so credentials are minted per authored node instance.
     """
-    return _sanitize_secret_part(f"shifter-range-{range_id}-aces-{instance_key}-{kind}", max_length=255)
+    return _sanitize_secret_part(f"shifter-range-{range_id}-raes-{instance_key}-{kind}", max_length=255)
 
 
-def ensure_aces_ssh_secret(range_id: int, instance_key: str) -> tuple[str, str]:
-    """Create or read the provisioner-managed SSH key for one ACES range instance.
+def ensure_raes_ssh_secret(range_id: int, instance_key: str) -> tuple[str, str]:
+    """Create or read the provisioner-managed SSH key for one RAES range instance.
 
     The provisioner owns this range-management credential (it is not a participant
     account, which is a later participant-runtime concern): it mints the keypair,
@@ -177,74 +176,74 @@ def ensure_aces_ssh_secret(range_id: int, instance_key: str) -> tuple[str, str]:
     public_key)`` so the public half can be injected as the guest login key.
     """
     secret_name, private_key = _read_or_create_secret(
-        _aces_secret_id(range_id, instance_key, "ssh"),
+        _raes_secret_id(range_id, instance_key, "ssh"),
         lambda: generate_ssh_keypair()[0],
     )
     return secret_name, derive_ssh_public_key(private_key)
 
 
-def _aces_account_secret_id(range_id: int, instance_key: str, username: str, kind: str) -> str:
+def _raes_account_secret_id(range_id: int, instance_key: str, username: str, kind: str) -> str:
     """Return a collision-resistant deterministic authored-account secret id."""
-    encoded_user = base64.b32encode(username.encode("utf-8")).decode("ascii").rstrip("=").lower()
+    user_digest = hashlib.sha256(username.encode("utf-8")).hexdigest()[:40]
     user_part = _sanitize_secret_part(username, max_length=32)
-    suffix = f"{user_part}-{encoded_user[:40]}-{kind}"
-    prefix = _sanitize_secret_part(f"shifter-range-{range_id}-aces-{instance_key}", max_length=254 - len(suffix))
+    suffix = f"{user_part}-{user_digest}-{kind}"
+    prefix = _sanitize_secret_part(f"shifter-range-{range_id}-raes-{instance_key}", max_length=254 - len(suffix))
     return f"{prefix}-{suffix}"
 
 
-def _aces_directory_secret_id(range_id: int, domain_id: str, subject_address: str, purpose: str) -> str:
+def _raes_directory_secret_id(range_id: int, domain_id: str, subject_address: str, purpose: str) -> str:
     """Return an opaque deterministic id for one range-local directory secret."""
     identity = "\0".join((str(range_id), domain_id, subject_address, purpose)).encode("utf-8")
     digest = hashlib.sha256(identity).hexdigest()[:40]
     safe_purpose = _sanitize_secret_part(purpose, max_length=32)
-    return f"shifter-range-{range_id}-aces-domain-{digest}-{safe_purpose}"
+    return f"shifter-range-{range_id}-raes-domain-{digest}-{safe_purpose}"
 
 
 def _password_length(strength: str) -> int:
     """Resolve an admitted password-strength label to its generated length."""
-    length = _ACES_PASSWORD_LENGTHS.get(strength)
+    length = _RAES_PASSWORD_LENGTHS.get(strength)
     if length is None:
         raise ValueError(f"unsupported password strength {strength!r}")
     return length
 
 
-def ensure_aces_account_password_secret(
+def ensure_raes_account_password_secret(
     range_id: int, instance_key: str, username: str, password_strength: str
 ) -> tuple[str, str]:
     """Create or read one authored account's password using explicit strength policy."""
     length = _password_length(password_strength)
     return _read_or_create_secret(
-        _aces_account_secret_id(range_id, instance_key, username, "account-password"),
+        _raes_account_secret_id(range_id, instance_key, username, "account-password"),
         lambda: generate_rdp_password(length),
     )
 
 
-def ensure_aces_account_public_key_secret(range_id: int, instance_key: str, username: str) -> tuple[str, str]:
+def ensure_raes_account_public_key_secret(range_id: int, instance_key: str, username: str) -> tuple[str, str]:
     """Create/read an authored account private key and return only its public half."""
     secret_name, private_key = _read_or_create_secret(
-        _aces_account_secret_id(range_id, instance_key, username, "account-publickey"),
+        _raes_account_secret_id(range_id, instance_key, username, "account-publickey"),
         lambda: generate_ssh_keypair()[0],
     )
     return secret_name, derive_ssh_public_key(private_key)
 
 
-def ensure_aces_domain_dsrm_secret(range_id: int, domain_id: str) -> tuple[str, str]:
+def ensure_raes_domain_dsrm_secret(range_id: int, domain_id: str) -> tuple[str, str]:
     """Create or read the distinct DSRM password for one range-local domain."""
     return _read_or_create_secret(
-        _aces_directory_secret_id(range_id, domain_id, "dsrm", "dsrm-password"),
+        _raes_directory_secret_id(range_id, domain_id, "dsrm", "dsrm-password"),
         lambda: generate_rdp_password(_password_length("strong")),
     )
 
 
-def ensure_aces_domain_authority_secret(range_id: int, domain_id: str, password_strength: str) -> tuple[str, str]:
+def ensure_raes_domain_authority_secret(range_id: int, domain_id: str, password_strength: str) -> tuple[str, str]:
     """Create or read the built-in domain authority password."""
     return _read_or_create_secret(
-        _aces_directory_secret_id(range_id, domain_id, "authority", "authority-password"),
+        _raes_directory_secret_id(range_id, domain_id, "authority", "authority-password"),
         lambda: generate_rdp_password(_password_length(password_strength)),
     )
 
 
-def ensure_aces_domain_account_password_secret(
+def ensure_raes_domain_account_password_secret(
     range_id: int,
     domain_id: str,
     account_address: str,
@@ -252,69 +251,69 @@ def ensure_aces_domain_account_password_secret(
 ) -> tuple[str, str]:
     """Create or read a domain-account password keyed by stable account address."""
     return _read_or_create_secret(
-        _aces_directory_secret_id(range_id, domain_id, account_address, "account-password"),
+        _raes_directory_secret_id(range_id, domain_id, account_address, "account-password"),
         lambda: generate_rdp_password(_password_length(password_strength)),
     )
 
 
-def _delete_aces_directory_secret(range_id: int, domain_id: str, subject_address: str, purpose: str) -> None:
+def _delete_raes_directory_secret(range_id: int, domain_id: str, subject_address: str, purpose: str) -> None:
     """Delete one deterministic directory secret when Secret Manager is configured."""
     try:
         client, google_exceptions, project_id = _secret_client()
     except RuntimeError:
         return
-    secret_id = _aces_directory_secret_id(range_id, domain_id, subject_address, purpose)
+    secret_id = _raes_directory_secret_id(range_id, domain_id, subject_address, purpose)
     secret_name = f"projects/{project_id}/secrets/{secret_id}"
     try:
         client.delete_secret(request={"name": secret_name})
-        logger.info("Deleted ACES directory secret secret_fp=%s", safe_log_fingerprint(secret_name))
+        logger.info("Deleted RAES directory secret secret_fp=%s", safe_log_fingerprint(secret_name))
     except google_exceptions.NotFound:
         return
 
 
-def delete_aces_domain_dsrm_secret(range_id: int, domain_id: str) -> None:
+def delete_raes_domain_dsrm_secret(range_id: int, domain_id: str) -> None:
     """Delete the DSRM secret for one range-local domain."""
-    _delete_aces_directory_secret(range_id, domain_id, "dsrm", "dsrm-password")
+    _delete_raes_directory_secret(range_id, domain_id, "dsrm", "dsrm-password")
 
 
-def delete_aces_domain_authority_secret(range_id: int, domain_id: str) -> None:
+def delete_raes_domain_authority_secret(range_id: int, domain_id: str) -> None:
     """Delete the RID-500 authority secret for one range-local domain."""
-    _delete_aces_directory_secret(range_id, domain_id, "authority", "authority-password")
+    _delete_raes_directory_secret(range_id, domain_id, "authority", "authority-password")
 
 
-def delete_aces_domain_account_secret(range_id: int, domain_id: str, account_address: str) -> None:
+def delete_raes_domain_account_secret(range_id: int, domain_id: str, account_address: str) -> None:
     """Delete one domain-account password secret by stable account address."""
-    _delete_aces_directory_secret(range_id, domain_id, account_address, "account-password")
+    _delete_raes_directory_secret(range_id, domain_id, account_address, "account-password")
 
 
-def delete_aces_ssh_secret(range_id: int, instance_key: str) -> None:
-    """Delete the provisioner-managed SSH secret for one ACES range instance."""
+def delete_raes_ssh_secret(range_id: int, instance_key: str) -> None:
+    """Delete the provisioner-managed SSH secret for one RAES range instance."""
     try:
         client, google_exceptions, project_id = _secret_client()
     except RuntimeError:
         return
-    secret_name = f"projects/{project_id}/secrets/{_aces_secret_id(range_id, instance_key, 'ssh')}"
+    secret_name = f"projects/{project_id}/secrets/{_raes_secret_id(range_id, instance_key, 'ssh')}"
     try:
         client.delete_secret(request={"name": secret_name})
-        logger.info("Deleted ACES range guest secret secret_fp=%s", safe_log_fingerprint(secret_name))
+        logger.info("Deleted RAES range guest secret secret_fp=%s", safe_log_fingerprint(secret_name))
     except google_exceptions.NotFound:
         return
 
 
-def delete_aces_account_secret(range_id: int, instance_key: str, username: str, auth_method: str) -> None:
+def delete_raes_account_secret(range_id: int, instance_key: str, username: str, auth_method: str) -> None:
     """Delete one deterministic authored-account credential secret."""
-    kind = _ACES_ACCOUNT_SECRET_KINDS.get(auth_method)
+    kind = _RAES_ACCOUNT_SECRET_KINDS.get(auth_method)
     if kind is None:
         raise ValueError(f"unsupported account auth method {auth_method!r}")
     try:
         client, google_exceptions, project_id = _secret_client()
     except RuntimeError:
         return
-    secret_id = _aces_account_secret_id(range_id, instance_key, username, kind)
+    secret_id = _raes_account_secret_id(range_id, instance_key, username, kind)
     secret_name = f"projects/{project_id}/secrets/{secret_id}"
     try:
         client.delete_secret(request={"name": secret_name})
-        logger.info("Deleted ACES authored-account secret secret_fp=%s", safe_log_fingerprint(secret_name))
+        logger.info("Deleted RAES authored-account secret secret_fp=%s", safe_log_fingerprint(secret_name))
     except google_exceptions.NotFound:
         return
 

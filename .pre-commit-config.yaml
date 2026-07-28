@@ -633,21 +633,18 @@ repos:
         pass_filenames: true
         verbose: true
 
-      # ADR-024-R4 / issue #1313: the ACES parity inventory
-      # (docs/architecture/aces-migration-parity-inventory.yaml) cites repo paths
-      # and globs in its legacy_source / validation_evidence rows. A referenced
-      # file can be moved or deleted anywhere in the repo without the inventory
-      # itself being edited, so this runs on every commit (always_run,
-      # pass_filenames=false, --all) rather than only when the inventory changes.
-      # language: python + pyyaml mirrors the adr-guard-k8s dependency-bearing
-      # pattern so PyYAML is present in the hook environment.
-      - id: adr-guard-parity-inventory
-        name: architecture (adr guard parity inventory path integrity)
-        entry: python3 scripts/adr_guard/adr_guard.py --checks aces-parity-inventory-path-integrity --all
-        language: python
-        additional_dependencies:
-          - pyyaml>=6.0
-        always_run: true
+      - id: missing-migrations-shifter-platform
+        name: django migrations (no missing migrations)
+        entry: >-
+          bash -c 'cd shifter/shifter_platform && source .venv/bin/activate &&
+          TESTING=1 DJANGO_DEBUG=true TEST_DB_BACKEND=sqlite
+          DJANGO_SECRET_KEY=dummy-for-testing ENVIRONMENT=test
+          python manage.py makemigrations --check --dry-run'
+        language: system
+        # A model or field-choices change without its migration only surfaced in
+        # CI behind the test gate, which skips when an earlier job fails (#680).
+        # Enum choices count: adding a TextChoices member alters the field.
+        files: ^shifter/shifter_platform/.*/(models|models/.*|enums|migrations/.*)\.py$
         pass_filenames: false
         verbose: true
 
@@ -655,7 +652,7 @@ repos:
         name: architecture (import linter)
         entry: bash -c 'cd shifter/shifter_platform && uv run lint-imports --config ../../.importlinter'
         language: system
-        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf|config|risk_register)/.*\.py$|\.importlinter$)
+        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf|config)/.*\.py$|\.importlinter$)
         pass_filenames: false
         verbose: true
 
@@ -853,7 +850,7 @@ repos:
           bash -c 'cd shifter/shifter_platform && source .venv/bin/activate &&
           TESTING=1 TEST_DB_BACKEND=sqlite DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing python
           -m pytest tests/
-          --ignore=tests/risk_register -m "not redis and not postgres" -q --cov=.
+          -m "not redis and not postgres" -q --cov=.
           --cov-report=html:../../coverage/shifter_platform
           --cov-report=xml:coverage.xml
           --cov-report=term-missing:skip-covered'

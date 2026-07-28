@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 
 import {
   Bot,
@@ -16,7 +16,6 @@ import {
   Server,
   Settings,
   Shield,
-  ShieldAlert,
   Sun,
   Terminal,
   Trophy,
@@ -48,7 +47,6 @@ const ICONS: Record<NavIconKey, ComponentType<{ className?: string }>> = {
   terminal: Terminal,
   settings: Settings,
   "file-code": FileCode,
-  "shield-alert": ShieldAlert,
   "user-cog": UserCog,
   "circle-dollar-sign": CircleDollarSign,
 };

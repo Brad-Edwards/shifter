@@ -25,6 +25,11 @@ from engine.models import Instance, Range
 from engine.models import Request as EngineRequest
 from shared.enums import RangeSource, RequestType, ResourceStatus
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 
 def _make_unregistered_participant(event, idx):
     """Create an unassigned, unregistered participant on ``event``.
@@ -240,11 +245,13 @@ class TestGetRangeStatus:
         user = ctf_participant.user
         request_id = uuid4()
         cms_request = CMSRequest.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request_id=request_id,
             request_type=RequestType.RANGE.value,
             user=user,
         )
         cms_range = RangeInstance.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=cms_request,
             scenario_id="basic",
             user_id=user.id,
@@ -265,6 +272,7 @@ class TestGetRangeStatus:
             status=Range.Status.READY,
         )
         Range.objects.create(
+            workspace_id=_WORKSPACE_ID,
             request=engine_request,
             user=user,
             status=Range.Status.READY,

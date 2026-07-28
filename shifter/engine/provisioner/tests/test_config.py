@@ -14,7 +14,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
-    AcesContentDeliveryConfig,
     AWSPolarisAgentConfig,
     GCERangeCellConfig,
     GCERangeImageProfile,
@@ -23,6 +22,7 @@ from config import (
     GDCVMRuntimeConfig,
     GDCVMRuntimeProfile,
     InstanceConfig,
+    RaesContentDeliveryConfig,
     RangeConfig,
     RangeNetworkConfig,
     SubnetConfig,
@@ -32,12 +32,12 @@ from config import (
     get_range_availability_zone,
     get_range_from_db,
     is_gce_range_cell_backend,
-    load_aces_content_delivery_config,
     load_aws_polaris_agent_config,
     load_gce_range_cell_config,
     load_gdc_network_access_config,
     load_gdc_palo_alto_vmseries_config,
     load_gdc_vmruntime_config,
+    load_raes_content_delivery_config,
     load_range_network_config,
 )
 
@@ -290,7 +290,7 @@ class TestRangeNetworkEnv:
         # but get_gcp_range_backend() still raises RuntimeError for provisioner callers.
         mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "bogus"}, clear=True)
 
-        with pytest.raises(RuntimeError, match="GCP_RANGE_BACKEND must be 'gdc' or 'gce'"):
+        with pytest.raises(RuntimeError, match="GCP_RANGE_BACKEND must be 'gce' or 'gdc'"):
             get_gcp_range_backend()
 
     def test_load_range_network_config_prefers_generic_env_names(self, mocker):
@@ -489,6 +489,27 @@ class TestRangeNetworkEnv:
             portal_network_cidrs=("10.40.0.0/20",),
             egress_allow_cidrs=("10.60.0.0/16",),
         )
+
+    def test_load_gce_range_cell_config_uses_bound_backend_after_selector_flip(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/kali/global/images/kali",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+            },
+            clear=True,
+        )
+
+        config = load_gce_range_cell_config(backend="gce")
+
+        assert config.project_id == "test-project"
+        assert config.network_id.endswith("/range-net")
 
     def test_load_gce_range_cell_config_shared_vpc_requires_range_network_id(self, mocker):
         mocker.patch.dict(
@@ -696,7 +717,7 @@ class TestRangeNetworkEnv:
         with pytest.raises(RuntimeError, match="lowercase logical key"):
             config.get_profile(role="attacker", os_type="kali", ami_key="Polaris-VM")
         with pytest.raises(RuntimeError, match="no configured GCE image profile"):
-            config.get_profile(role="attacker", os_type="kali", ami_key="techvault")
+            config.get_profile(role="attacker", os_type="kali", ami_key="unknown-stack")
         with pytest.raises(RuntimeError, match="no configured GCE image profile"):
             config.get_profile(role="dc", os_type="windows", ami_key="polaris-vm")
 
@@ -708,6 +729,7 @@ class TestRangeNetworkEnv:
                     "machine_type": "e2-standard-8",
                     "disk_size_gb": 210,
                     "disk_type": "pd-balanced",
+                    "bootstrap_capability": "polaris-docker-host",
                 }
             },
             "dc": {
@@ -716,6 +738,9 @@ class TestRangeNetworkEnv:
                     "machine_type": "e2-standard-4",
                     "disk_size_gb": 100,
                     "disk_type": "pd-ssd",
+                    "bootstrap_capability": "prepromoted-domain-controller",
+                    "domain_dns_name": "boreas.local",
+                    "domain_netbios_name": "BOREAS",
                 }
             },
         }
@@ -751,28 +776,39 @@ class TestRangeNetworkEnv:
             ('{"kali":{"Polaris":{}}}', "logical keys must be lowercase"),
             (
                 '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
-                '"disk_size_gb":210,"disk_type":"pd-balanced","extra":true}}}',
+                '"disk_size_gb":210,"disk_type":"pd-balanced","bootstrap_capability":"standard","extra":true}}}',
                 "unknown fields",
             ),
             (
                 '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
-                '"disk_size_gb":20,"disk_type":"pd-balanced"}}}',
+                '"disk_size_gb":20,"disk_type":"pd-balanced","bootstrap_capability":"standard"}}}',
                 "smaller than",
             ),
             (
                 '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"n2 standard",'
-                '"disk_size_gb":210,"disk_type":"pd-balanced"}}}',
+                '"disk_size_gb":210,"disk_type":"pd-balanced","bootstrap_capability":"standard"}}}',
                 "machine type",
             ),
             (
                 '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
-                '"disk_size_gb":true,"disk_type":"pd-balanced"}}}',
+                '"disk_size_gb":true,"disk_type":"pd-balanced","bootstrap_capability":"standard"}}}',
                 "positive integer",
             ),
             (
                 '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
-                '"disk_size_gb":210,"disk_type":"pd-bogus"}}}',
+                '"disk_size_gb":210,"disk_type":"pd-bogus","bootstrap_capability":"standard"}}}',
                 "supported Compute Engine disk type",
+            ),
+            (
+                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '"disk_size_gb":210,"disk_type":"pd-balanced","bootstrap_capability":"Bad Value"}}}',
+                "lowercase logical capability",
+            ),
+            (
+                '{"dc":{"domain-image":{"source_image":"family/domain","machine_type":"e2-standard-4",'
+                '"disk_size_gb":100,"disk_type":"pd-balanced","bootstrap_capability":'
+                '"prepromoted-domain-controller","domain_dns_name":"example.test"}}}',
+                "must set domain_dns_name and domain_netbios_name together",
             ),
         ],
     )
@@ -823,6 +859,7 @@ class TestRangeNetworkEnv:
             "machine_type": "e2-standard-2",
             "disk_size_gb": 30,
             "disk_type": "pd-balanced",
+            "bootstrap_capability": "standard",
         }
         profiles = {"linux": {f"image-{index}": entry for index in range(65)}}
         mocker.patch.dict(
@@ -1319,7 +1356,7 @@ class TestLoadAwsPolarisAgentConfig:
             load_aws_polaris_agent_config()
 
 
-class TestLoadAcesContentDeliveryConfig:
+class TestLoadRaesContentDeliveryConfig:
     """Tests for the #1564 post-boot content-delivery object-storage config."""
 
     def test_empty_bucket_when_unconfigured(self, mocker):
@@ -1328,30 +1365,30 @@ class TestLoadAcesContentDeliveryConfig:
         needs it, not eagerly at load time."""
         mocker.patch.dict(os.environ, {}, clear=True)
 
-        config = load_aces_content_delivery_config()
+        config = load_raes_content_delivery_config()
 
-        assert config == AcesContentDeliveryConfig(bucket="", max_bytes=268435456)
+        assert config == RaesContentDeliveryConfig(bucket="", max_bytes=268435456)
 
     def test_prefers_dedicated_bucket_env_var(self, mocker):
         mocker.patch.dict(
             os.environ,
-            {"ACES_CONTENT_DELIVERY_BUCKET": "aces-delivery", "STORAGE_BUCKET_NAME": "platform-assets"},
+            {"RAES_CONTENT_DELIVERY_BUCKET": "raes-delivery", "STORAGE_BUCKET_NAME": "platform-assets"},
             clear=True,
         )
 
-        assert load_aces_content_delivery_config().bucket == "aces-delivery"
+        assert load_raes_content_delivery_config().bucket == "raes-delivery"
 
     def test_falls_back_to_shared_storage_bucket_name(self, mocker):
         """Same env var name the Django CMS side reads for the assets bucket, so a
         single shared value can configure both deployables."""
         mocker.patch.dict(os.environ, {"STORAGE_BUCKET_NAME": "platform-assets"}, clear=True)
 
-        assert load_aces_content_delivery_config().bucket == "platform-assets"
+        assert load_raes_content_delivery_config().bucket == "platform-assets"
 
     def test_reads_max_bytes_override(self, mocker):
-        mocker.patch.dict(os.environ, {"ACES_CONTENT_DELIVERY_MAX_BYTES": "1024"}, clear=True)
+        mocker.patch.dict(os.environ, {"RAES_CONTENT_DELIVERY_MAX_BYTES": "1024"}, clear=True)
 
-        assert load_aces_content_delivery_config().max_bytes == 1024
+        assert load_raes_content_delivery_config().max_bytes == 1024
 
 
 class TestDecryptField:

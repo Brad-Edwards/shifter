@@ -393,7 +393,7 @@ resource "aws_iam_policy" "compute" {
       },
       {
         # Packer's amazon-ebs SSM communicator (ssh_interface = "session_manager",
-        # used by the no-inbound techvault / polaris-vm scenario bakes) opens an
+        # used by the no-inbound polaris-vm scenario bake) opens an
         # SSH-over-SSM tunnel to the EC2 builder via the AWS-StartSSHSession
         # document. The management policy's SSMRunCommand grant covers SendCommand
         # but not StartSession, so the scenario bakes fail with AccessDenied
@@ -1239,8 +1239,8 @@ resource "aws_iam_policy" "management" {
         ]
         # AWS-owned PUBLIC parameters (no account in the ARN) used to resolve
         # current base AMIs at build time - e.g. the Canonical Ubuntu and
-        # Amazon Linux AMI-ID parameters the scenario bakes (techvault /
-        # polaris golden ranges) read. Read-only; scoped to /aws/service/*.
+        # Amazon Linux AMI-ID parameters the Polaris golden range reads.
+        # Read-only; scoped to /aws/service/*.
         Resource = [
           "arn:aws:ssm:${var.aws_region}::parameter/aws/service/*"
         ]

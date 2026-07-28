@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, type RenderResult } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createMemoryRouter, RouterProvider } from "react-router";
 
 import type { Bootstrap } from "@/api/types";
 
@@ -16,7 +16,6 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
     is_superuser: false,
   },
   permissions: {
-    can_access_risk_register: true,
     can_access_threat_research: false,
     is_ctf_organizer: false,
     is_ctf_participant: false,
@@ -26,12 +25,11 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
   },
   modes: { participant: false, operator: true, default: "operator" },
   feature_flags: {
-    risk_register_spa: true,
     platform_spa: true,
     mission_control_spa: true,
     scenario_editor_spa: true,
     ctf_workspace_spa: true,
-    aces_native_provisioning: true,
+    raes_native_provisioning: true,
     administer_spa: true,
   },
 };

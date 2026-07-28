@@ -3,21 +3,6 @@
   "schema_version": 1,
   "variables": [
     {
-      "default": "'500'",
-      "name": "ACES_OPERATION_RECORD_PRUNE_BATCH_SIZE",
-      "source_file": "config/_aces_settings.py"
-    },
-    {
-      "default": "'3600'",
-      "name": "ACES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS",
-      "source_file": "config/_aces_settings.py"
-    },
-    {
-      "default": "'30'",
-      "name": "ACES_OPERATION_RECORD_RETENTION_DAYS",
-      "source_file": "config/_aces_settings.py"
-    },
-    {
       "default": "False",
       "name": "ADMINISTER_SPA_ENABLED",
       "source_file": "config/settings.py"
@@ -76,6 +61,31 @@
       "default": "'report-only'",
       "name": "BROWSER_CSP_MODE",
       "source_file": "config/_browser_security.py"
+    },
+    {
+      "default": "'shifter-capacity-read'",
+      "name": "CAPACITY_INVENTORY_ROLE_NAME",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "CAPACITY_PLANNING_CATALOG",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "CAPACITY_PLANNING_DEFAULT_PARTITION",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
+      "default": "'False'",
+      "name": "CAPACITY_PLANNING_ENABLED",
+      "source_file": "config/_capacity_planning_settings.py"
+    },
+    {
+      "default": "'Shifter/CapacityPlanning'",
+      "name": "CAPACITY_PLANNING_METRICS_NAMESPACE",
+      "source_file": "config/_capacity_planning_settings.py"
     },
     {
       "default": "'aws'",
@@ -488,6 +498,21 @@
       "source_file": "config/_cloud.py"
     },
     {
+      "default": "'500'",
+      "name": "RAES_OPERATION_RECORD_PRUNE_BATCH_SIZE",
+      "source_file": "config/_raes_settings.py"
+    },
+    {
+      "default": "'3600'",
+      "name": "RAES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS",
+      "source_file": "config/_raes_settings.py"
+    },
+    {
+      "default": "'30'",
+      "name": "RAES_OPERATION_RECORD_RETENTION_DAYS",
+      "source_file": "config/_raes_settings.py"
+    },
+    {
       "default": null,
       "name": "RANGE_EVENTS_TOPIC_ID",
       "source_file": "config/_cloud.py"
@@ -524,48 +549,48 @@
     },
     {
       "default": "'268435456'",
-      "name": "SHIFTER_ACES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES",
-      "source_file": "config/_aces_settings.py"
+      "name": "SHIFTER_RAES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES",
+      "source_file": "config/_raes_settings.py"
     },
     {
-      "default": "'aces/content-delivery'",
-      "name": "SHIFTER_ACES_CONTENT_DELIVERY_PREFIX",
-      "source_file": "config/_aces_settings.py"
+      "default": "'raes/content-delivery'",
+      "name": "SHIFTER_RAES_CONTENT_DELIVERY_PREFIX",
+      "source_file": "config/_raes_settings.py"
     },
     {
       "default": "'False'",
-      "name": "SHIFTER_ACES_NATIVE_PROVISIONING",
-      "source_file": "config/_aces_settings.py"
+      "name": "SHIFTER_RAES_NATIVE_PROVISIONING",
+      "source_file": "config/_raes_settings.py"
     },
     {
       "default": "''",
-      "name": "SHIFTER_ACES_PACKAGE_BUCKET",
-      "source_file": "config/_aces_settings.py"
+      "name": "SHIFTER_RAES_PACKAGE_BUCKET",
+      "source_file": "config/_raes_settings.py"
     },
     {
       "default": "'268435456'",
-      "name": "SHIFTER_ACES_PACKAGE_MAX_ARCHIVE_BYTES",
-      "source_file": "config/_aces_settings.py"
+      "name": "SHIFTER_RAES_PACKAGE_MAX_ARCHIVE_BYTES",
+      "source_file": "config/_raes_settings.py"
     },
     {
       "default": "'20000'",
-      "name": "SHIFTER_ACES_PACKAGE_MAX_ENTRIES",
-      "source_file": "config/_aces_settings.py"
+      "name": "SHIFTER_RAES_PACKAGE_MAX_ENTRIES",
+      "source_file": "config/_raes_settings.py"
     },
     {
       "default": "'1073741824'",
-      "name": "SHIFTER_ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES",
-      "source_file": "config/_aces_settings.py"
+      "name": "SHIFTER_RAES_PACKAGE_MAX_UNCOMPRESSED_BYTES",
+      "source_file": "config/_raes_settings.py"
     },
     {
       "default": "''",
-      "name": "SHIFTER_ACES_PACKAGE_PREFIX",
-      "source_file": "config/_aces_settings.py"
+      "name": "SHIFTER_RAES_PACKAGE_PREFIX",
+      "source_file": "config/_raes_settings.py"
     },
     {
-      "default": "str(_aces_default_package_root)",
-      "name": "SHIFTER_ACES_PACKAGE_ROOT",
-      "source_file": "config/_aces_settings.py"
+      "default": "str(_raes_default_package_root)",
+      "name": "SHIFTER_RAES_PACKAGE_ROOT",
+      "source_file": "config/_raes_settings.py"
     },
     {
       "default": "'noreply@shifter.local'",

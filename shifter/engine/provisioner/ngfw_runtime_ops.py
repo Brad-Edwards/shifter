@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from shared.operation_results import ResultStep
+
 from config import resolve_ngfw_attachment_config
 from events import (
     STATUS_FAILED,
@@ -17,7 +19,6 @@ from events import (
     STATUS_PAUSING,
     STATUS_READY,
     STATUS_RESUMING,
-    publish_ngfw_event,
 )
 from executors.aws_executor import AWSExecutor
 from ngfw_runtime import update_instance_state
@@ -39,22 +40,46 @@ def _validate_ngfw_operation(operation: str) -> tuple[str, str]:
     return status_map[operation]
 
 
+# (owning operation, reported status) -> closed result step. An auto-stop run as
+# part of provisioning reports under the provision generation rather than
+# minting a second `stop` generation (ADR-043 phase 4 preflight).
+_RUNTIME_STEP = {
+    ("start", STATUS_RESUMING): ResultStep.NGFW_POWER_STARTING,
+    ("start", STATUS_READY): ResultStep.NGFW_TERMINAL_READY,
+    ("stop", STATUS_PAUSING): ResultStep.NGFW_POWER_STOPPING,
+    ("stop", STATUS_PAUSED): ResultStep.NGFW_TERMINAL_PAUSED,
+    ("provision", STATUS_PAUSING): ResultStep.NGFW_PROVISION_READY,
+    ("provision", STATUS_PAUSED): ResultStep.NGFW_PROVISION_AUTOSTOP,
+}
+
+
+def _runtime_step(owning_operation: str, status: str) -> ResultStep:
+    """Return the closed step for a power transition under its owning operation."""
+    if status == STATUS_FAILED:
+        return ResultStep.NGFW_TERMINAL_FAILED
+    step = _RUNTIME_STEP.get((owning_operation, status))
+    if step is None:
+        raise ValueError(f"no result step declared for {owning_operation}:{status}")
+    return step
+
+
 def _publish_ngfw_runtime_status(
     request_id: str,
     instance_uuid: str,
-    app_id: str,
     status: str,
     *,
     operation_id: str | None = None,
     operation: str | None = None,
+    owning_operation: str | None = None,
 ) -> None:
-    """Persist the new NGFW runtime status and emit the corresponding lifecycle event."""
-    update_instance_state(request_id, status, operation_id=operation_id, operation=operation)
-    publish_ngfw_event(
-        request_id=request_id,
-        instance_id=instance_uuid,
-        app_id=app_id,
-        status=status,
+    """Report the NGFW runtime transition to the result inbox."""
+    reporting_operation = owning_operation or operation
+    update_instance_state(
+        request_id,
+        status,
+        step=_runtime_step(str(reporting_operation), status),
+        operation_id=operation_id,
+        operation=reporting_operation,
     )
 
 
@@ -62,34 +87,43 @@ def _run_gcp_ngfw_operation(
     operation: str,
     request_id: str,
     instance_uuid: str,
-    app_id: str,
     state: dict[str, Any],
     *,
     operation_id: str | None = None,
+    owning_operation: str | None = None,
 ) -> None:
     """Drive a start/stop power operation against a GCP VM-Series NGFW."""
     import gdc_vmseries_ngfw
 
     in_progress_status, success_status = _validate_ngfw_operation(operation)
     _publish_ngfw_runtime_status(
-        request_id, instance_uuid, app_id, in_progress_status, operation_id=operation_id, operation=operation
+        request_id,
+        instance_uuid,
+        in_progress_status,
+        operation_id=operation_id,
+        operation=operation,
+        owning_operation=owning_operation,
     )
     try:
         gdc_vmseries_ngfw.run_power_operation(operation, state)
     except Exception as e:
         logger.exception("GDC VM-Series NGFW operation failed")
         update_instance_state(
-            request_id, STATUS_FAILED, operation_id=operation_id, operation=operation, error_message=str(e)
-        )
-        publish_ngfw_event(
-            request_id=request_id,
-            instance_id=instance_uuid,
-            app_id=app_id,
-            status=STATUS_FAILED,
+            request_id,
+            STATUS_FAILED,
+            step=ResultStep.NGFW_TERMINAL_FAILED,
+            operation_id=operation_id,
+            operation=owning_operation or operation,
+            error_message=str(e),
         )
         raise
     _publish_ngfw_runtime_status(
-        request_id, instance_uuid, app_id, success_status, operation_id=operation_id, operation=operation
+        request_id,
+        instance_uuid,
+        success_status,
+        operation_id=operation_id,
+        operation=operation,
+        owning_operation=owning_operation,
     )
 
 
@@ -110,16 +144,21 @@ def _run_aws_ngfw_operation(
     operation: str,
     request_id: str,
     instance_uuid: str,
-    app_id: str,
     ec2_instance_id: str,
     *,
     operation_id: str | None = None,
+    owning_operation: str | None = None,
     **kwargs: str,
 ) -> None:
     """Drive a start/stop power operation against an AWS-attached NGFW EC2 instance."""
     in_progress_status, success_status = _validate_ngfw_operation(operation)
     _publish_ngfw_runtime_status(
-        request_id, instance_uuid, app_id, in_progress_status, operation_id=operation_id, operation=operation
+        request_id,
+        instance_uuid,
+        in_progress_status,
+        operation_id=operation_id,
+        operation=operation,
+        owning_operation=owning_operation,
     )
 
     try:
@@ -141,22 +180,33 @@ def _run_aws_ngfw_operation(
     except Exception as e:
         error_msg = str(e)[:1000]
         update_instance_state(
-            request_id, STATUS_FAILED, operation_id=operation_id, operation=operation, error_message=error_msg
-        )
-        publish_ngfw_event(
-            request_id=request_id,
-            instance_id=instance_uuid,
-            app_id=app_id,
-            status=STATUS_FAILED,
+            request_id,
+            STATUS_FAILED,
+            step=ResultStep.NGFW_TERMINAL_FAILED,
+            operation_id=operation_id,
+            operation=owning_operation or operation,
+            error_message=error_msg,
         )
         raise
 
     _publish_ngfw_runtime_status(
-        request_id, instance_uuid, app_id, success_status, operation_id=operation_id, operation=operation
+        request_id,
+        instance_uuid,
+        success_status,
+        operation_id=operation_id,
+        operation=operation,
+        owning_operation=owning_operation,
     )
 
 
-def run_ngfw_operation(operation: str, request_id: str, *, operation_id: str | None = None, **kwargs: str) -> None:
+def run_ngfw_operation(
+    operation: str,
+    request_id: str,
+    *,
+    operation_id: str | None = None,
+    owning_operation: str | None = None,
+    **kwargs: str,
+) -> None:
     """Run NGFW runtime operation (start/stop).
 
     Retrieves EC2 instance ID from the Instance.state (populated during
@@ -169,6 +219,10 @@ def run_ngfw_operation(operation: str, request_id: str, *, operation_id: str | N
         operation_id: ADR-043 canonical operation generation (#1834), threaded
             onto the argv only on the remote/drainer dispatch path; ``None`` on
             local-dev runs.
+        owning_operation: When this power change is a *step of* another operation
+            -- the auto-stop that ends provisioning -- the owning operation name.
+            Results are then reported under that generation instead of minting a
+            second one (ADR-043 phase 4 preflight).
         **kwargs: Operation-specific parameters (overrides for context).
 
     Raises:
@@ -185,12 +239,18 @@ def run_ngfw_operation(operation: str, request_id: str, *, operation_id: str | N
     ngfw_data = get_ngfw_data_by_request_id(request_id)
     # Our UUID, not AWS instance ID
     instance_uuid = ngfw_data["instance_id"]
-    app_id = ngfw_data["app_id"]
     state = ngfw_data.get("state", {})
     provider = resolve_ngfw_attachment_config(state).cloud_provider
 
     if provider == "gcp":
-        _run_gcp_ngfw_operation(operation, request_id, instance_uuid, app_id, state, operation_id=operation_id)
+        _run_gcp_ngfw_operation(
+            operation,
+            request_id,
+            instance_uuid,
+            state,
+            operation_id=operation_id,
+            owning_operation=owning_operation,
+        )
         return
     if provider != "aws":
         raise RuntimeError(f"NGFW runtime operation {operation!r} is not implemented for cloud_provider={provider!r}")
@@ -200,5 +260,11 @@ def run_ngfw_operation(operation: str, request_id: str, *, operation_id: str | N
     if not ec2_instance_id:
         raise ValueError(f"EC2 instance ID not found in state for request: {request_id}")
     _run_aws_ngfw_operation(
-        operation, request_id, instance_uuid, app_id, ec2_instance_id, operation_id=operation_id, **kwargs
+        operation,
+        request_id,
+        instance_uuid,
+        ec2_instance_id,
+        operation_id=operation_id,
+        owning_operation=owning_operation,
+        **kwargs,
     )

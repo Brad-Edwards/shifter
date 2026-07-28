@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { useCtfRangeStatus } from "@/api/ctf";
 import { PageHeader } from "@/components/page-header";

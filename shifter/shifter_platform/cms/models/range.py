@@ -74,6 +74,15 @@ class RangeInstance(SoftDeleteMixin, models.Model):
     range_id = models.IntegerField(unique=True, null=True, blank=True)
     scenario_id = models.CharField(max_length=50)
     user_id = models.IntegerField()
+    # Soft reference to workspaces.Workspace (ADR-046-R3, #1325), matching the
+    # existing range_id/user_id scalar convention on this model. Non-null with no
+    # default: the projection always inherits its request's authorized scope, so
+    # the two cannot disagree. Introduced nullable for the validated backfill and
+    # made mandatory by cms migration 0040.
+    workspace_id = models.IntegerField(
+        db_index=True,
+        help_text="Workspace this range is scoped to (soft reference; see ADR-046).",
+    )
     agent = models.ForeignKey(
         AgentConfig,
         on_delete=models.SET_NULL,

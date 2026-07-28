@@ -1,21 +1,21 @@
 """Provisioner_db append helpers for the async-processing tables.
 
 Split out of ``provisioner_db.py`` (Sonar S104), following the same convention as
-``provisioner_db_ngfw.py`` / ``provisioner_db_aces.py``. Owns the transactional,
+``provisioner_db_ngfw.py``. Owns the transactional,
 optional-cursor append helpers for the two async-processing tables the provisioner
 writes to:
 
-* ``engine_range_event_outbox`` (#476) via :func:`enqueue_event_outbox`;
 * ``engine_operation_result_inbox`` (ADR-043 Phase 2, #1834) via
-  :func:`append_operation_result`.
+  :func:`append_operation_result` for the remaining CyberScript compatibility
+  path and :func:`append_operation_step_result` for cut-over families.
 
-Both ride the caller's cursor when one is supplied (atomic with the authoritative
-state write) or open a dedicated connection and commit otherwise. The operation
-result append is *shadow mode*: the direct SQL writes performed by
+Both ride the caller's cursor when one is supplied or open a dedicated connection
+and commit otherwise. The unstepped append is a best-effort shadow of the direct
+SQL writes performed by
 ``provisioner_db.write_provisioned_state`` /
-``provisioner_db.mark_range_instances_destroyed`` /
-``ngfw_runtime.update_instance_state`` remain the sole authoritative writers, so
-every append here is best-effort and must never fail an authoritative operation.
+``provisioner_db.mark_range_instances_destroyed``. The stepped append is the
+fail-hard authoritative write for cut-over families; Engine applies its validated
+result to domain state, audit, and notifications in one transaction.
 
 ``OperationRef`` is the parameter object that carries the operation identity
 (request + canonical generation) so leaf writers thread one value instead of a
@@ -32,6 +32,7 @@ from typing import Any
 import psycopg
 from cyberscript.enums import ResourceStatus
 from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
+from shared.operation_results import build_result_identity, parse_result_payload, result_kind_for
 
 from log_redact import safe_log_fingerprint
 
@@ -53,91 +54,35 @@ class OperationRef:
     operation_id: str | None = None
 
 
-_EVENT_OUTBOX_INSERT_SQL = """
-    INSERT INTO engine_range_event_outbox
-        (event_id, event_type, payload, status, attempts, max_attempts,
-         next_attempt_at, created_at)
-    VALUES
-        (%s, %s, %s, 'PENDING', 0, 10, NOW(), NOW())
-    ON CONFLICT (event_id) DO NOTHING
-"""
-
-
-def enqueue_event_outbox(event: dict[str, object], *, cur: psycopg.Cursor[tuple[object, ...]] | None = None) -> None:
-    """Insert an event into the transactional outbox for durable delivery.
-
-    When ``cur`` is provided the INSERT is executed on that cursor and the caller
-    owns the surrounding transaction/commit (atomic with the state change). When
-    ``cur`` is None a new connection is opened, the row is inserted, and the
-    connection is committed immediately. ``ON CONFLICT (event_id) DO NOTHING``
-    makes the call idempotent.
-
-    Args:
-        event: Full event dict; must contain ``event_id`` and ``event_type``.
-        cur:   Optional psycopg cursor sharing the caller's transaction.
-
-    Raises:
-        Exception: Any DB error is re-raised -- callers must learn when durable
-            recording fails.
-    """
-    params = (str(event["event_id"]), event["event_type"], json.dumps(event))
-
-    if cur is not None:
-        cur.execute(_EVENT_OUTBOX_INSERT_SQL, params)
-    else:
-        from provisioner_db import get_db_connection
-
-        with get_db_connection() as conn:
-            with conn.cursor() as _cur:
-                _cur.execute(_EVENT_OUTBOX_INSERT_SQL, params)
-            conn.commit()
-
-
 _APPEND_OPERATION_RESULT_INSERT_SQL = """
     INSERT INTO engine_operation_result_inbox
         (operation_id, request_id, resource, operation, contract_version,
-         result_kind, result_identity, payload_digest, envelope,
+         result_kind, result_step, result_identity, payload_digest, envelope,
          disposition, disposition_detail, created_at)
     VALUES
-        (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'PENDING', '', NOW())
+        (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'PENDING', '', NOW())
     ON CONFLICT (result_identity) DO NOTHING
-"""
-
-_APPEND_OPERATION_RESULT_SELECT_DIGEST_SQL = """
-    SELECT payload_digest FROM engine_operation_result_inbox WHERE result_identity = %s
 """
 
 
 def _insert_operation_result(
     cur: psycopg.Cursor[tuple[object, ...]],
     *,
-    result_identity: str,
-    digest: str,
     params: tuple[object, ...],
 ) -> None:
-    """Issue the idempotent INSERT and resolve a same-identity replay/conflict.
+    """Issue the idempotent INSERT.
 
-    ``ON CONFLICT (result_identity) DO NOTHING`` alone would silently swallow a
-    *conflicting* replay (same identity, different payload) -- indistinguishable
-    from a harmless retry. The SELECT-and-compare after a zero-row insert is what
-    tells the two apart (ADR-043).
+    Replay/conflict resolution deliberately does NOT read the inbox back: the
+    provisioner principal is granted ``INSERT`` only (engine migration 0036), so a
+    ``SELECT`` here raises under real grants. Instead the identity carries the
+    payload digest, which makes the two cases separable without a read:
+
+    * identical replay -> identical identity -> ``ON CONFLICT DO NOTHING``;
+    * conflicting replay -> different identity -> a second row for the same
+      ``(operation_id, result_step)``, which the applier (which may read)
+      dispositions as ``REJECTED_CONFLICT``.
     """
     cur.execute(_APPEND_OPERATION_RESULT_INSERT_SQL, params)
-    if cur.rowcount:
-        return
-
-    cur.execute(_APPEND_OPERATION_RESULT_SELECT_DIGEST_SQL, (result_identity,))
-    row = cur.fetchone()
-    existing_digest = row[0] if row else None
-    if existing_digest == digest:
-        # Harmless replay: same operation generation, same result content.
-        return
-
-    logger.warning(
-        "%s result_identity_fp=%s",
-        _OPERATION_RESULT_CONFLICT,
-        safe_log_fingerprint(result_identity),
-    )
 
 
 def append_operation_result(
@@ -152,15 +97,18 @@ def append_operation_result(
 ) -> None:
     """Append a best-effort, versioned result to the operation result inbox.
 
-    Mirrors :func:`enqueue_event_outbox`'s optional-cursor idiom: when ``cur`` is
-    provided the INSERT rides the caller's transaction (wrapped in a SAVEPOINT so a
-    shadow failure cannot poison it); when ``cur`` is None a dedicated connection
-    is opened and committed immediately.
+    When ``cur`` is provided the INSERT rides the caller's transaction (wrapped in
+    a SAVEPOINT so a shadow failure cannot poison it); when ``cur`` is None a
+    dedicated connection is opened and committed immediately.
 
     ``result_identity`` is deterministic per operation generation + result kind
     (``f"{operation_id}:{result_kind}"``), so a retried provisioner run replays
-    idempotently. Any failure -- including a conflicting replay -- is logged and
-    swallowed, never raised.
+    idempotently. Any failure is logged and swallowed, never raised.
+
+    This is the **shadow** helper, for families whose authoritative writer is
+    still direct provisioner SQL (cyberscript range provision/destroy). Families
+    that have cut over use :func:`append_operation_step_result`, which is
+    fail-hard because the append *is* the write.
     """
     try:
         envelope = build_operation_envelope(
@@ -171,7 +119,6 @@ def append_operation_result(
             payload=result_payload,
         )
         digest = canonical_payload_digest(result_payload)
-        result_identity = f"{envelope['operation_id']}:{result_kind}"
         params = (
             envelope["operation_id"],
             envelope["request_id"],
@@ -179,26 +126,12 @@ def append_operation_result(
             operation,
             envelope["contract_version"],
             result_kind,
-            result_identity,
+            "",
+            f"{envelope['operation_id']}:{result_kind}",
             digest,
             json.dumps(envelope),
         )
-
-        if cur is not None:
-            # SAVEPOINT: an unexpected error inside the shadow append rolls back
-            # only this append, never the caller's authoritative write.
-            with cur.connection.transaction():
-                _insert_operation_result(cur, result_identity=result_identity, digest=digest, params=params)
-        else:
-            # Lazy import breaks the provisioner_db <-> provisioner_db_appends
-            # cycle: provisioner_db re-exports these helpers, so it may not be
-            # imported at this module's top.
-            from provisioner_db import get_db_connection
-
-            with get_db_connection() as conn:
-                with conn.cursor() as _cur:
-                    _insert_operation_result(_cur, result_identity=result_identity, digest=digest, params=params)
-                conn.commit()
+        _write_append(params, cur, savepoint=True)
     except Exception:
         logger.warning(
             "%s operation_id_fp=%s result_kind=%s",
@@ -207,6 +140,82 @@ def append_operation_result(
             result_kind,
             exc_info=True,
         )
+
+
+def _write_append(
+    params: tuple[object, ...],
+    cur: psycopg.Cursor[tuple[object, ...]] | None,
+    *,
+    savepoint: bool,
+) -> None:
+    """Execute the append on the caller's cursor or a dedicated connection."""
+    if cur is not None:
+        if savepoint:
+            # A shadow failure must not poison the caller's authoritative write.
+            with cur.connection.transaction():
+                _insert_operation_result(cur, params=params)
+        else:
+            # Authoritative: the append shares the caller's transaction outright,
+            # so a failure fails the operation rather than being isolated away.
+            _insert_operation_result(cur, params=params)
+        return
+
+    # Lazy import breaks the provisioner_db <-> provisioner_db_appends cycle:
+    # provisioner_db re-exports these helpers, so it may not be imported at this
+    # module's top.
+    from provisioner_db import get_db_connection
+
+    with get_db_connection() as conn:
+        with conn.cursor() as _cur:
+            _insert_operation_result(_cur, params=params)
+        conn.commit()
+
+
+def append_operation_step_result(
+    ref: OperationRef | None,
+    *,
+    resource: str,
+    operation: str,
+    step: str,
+    result_payload: dict[str, Any],
+    cur: psycopg.Cursor[tuple[object, ...]] | None = None,
+) -> None:
+    """Append an **authoritative** operation result for a cut-over family.
+
+    Unlike :func:`append_operation_result` this does not swallow failures: after
+    cutover the append is the write, so a failure must fail the operation and let
+    the existing task retry/re-drive recover it. It also validates the payload
+    against the closed contract before insert, so a malformed result is caught at
+    the producer rather than dispositioned at the applier.
+
+    Skips entirely when no canonical generation is present (local dev / a caller
+    not yet threading an operation id), matching the existing helpers.
+    """
+    if ref is None or ref.operation_id is None:
+        return
+
+    parsed = parse_result_payload(resource, operation, step=step, payload=result_payload)
+    envelope = build_operation_envelope(
+        operation_id=ref.operation_id,
+        request_id=ref.request_id,
+        resource=resource,
+        operation=operation,
+        payload=parsed,
+    )
+    digest = canonical_payload_digest(envelope["payload"])
+    params = (
+        envelope["operation_id"],
+        envelope["request_id"],
+        resource,
+        operation,
+        envelope["contract_version"],
+        result_kind_for(resource, operation, step=step),
+        str(step),
+        build_result_identity(operation_id=envelope["operation_id"], step=step, digest=digest),
+        digest,
+        json.dumps(envelope),
+    )
+    _write_append(params, cur, savepoint=False)
 
 
 def append_range_provision_result(

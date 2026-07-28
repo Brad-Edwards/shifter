@@ -53,11 +53,11 @@ class PackRegistrationResultSerializer(serializers.Serializer):
     conformance_status = serializers.CharField(read_only=True)
 
 
-class AcesCatalogFieldsSerializer(serializers.Serializer):
-    """Read-only, allowlisted ACES package-source presentation fields.
+class RaesCatalogFieldsSerializer(serializers.Serializer):
+    """Read-only, allowlisted RAES package-source presentation fields.
 
     Every field is bounded provenance/identity metadata. This serializer never
-    exposes raw ACES SDL, imported module bodies, generated content, flags,
+    exposes raw RAES SDL, imported module bodies, generated content, flags,
     credentials, presigned URLs, provider payloads, or runtime config.
     """
 
@@ -78,7 +78,7 @@ class CatalogEntrySerializer(serializers.Serializer):
     """Read-only catalog entry projection for the CMS catalog API.
 
     Serializes the presentation DTO from ``cms.scenarios.catalog_presentation``.
-    ``aces`` is present only for ACES package-backed entries; legacy YAML/DB
+    ``raes`` is present only for RAES package-backed entries; legacy YAML/DB
     entries serialize it as ``null``.
     """
 
@@ -90,7 +90,7 @@ class CatalogEntrySerializer(serializers.Serializer):
     enabled = serializers.BooleanField(read_only=True)
     staff_only = serializers.BooleanField(read_only=True)
     launchable = serializers.BooleanField(read_only=True)
-    aces = AcesCatalogFieldsSerializer(read_only=True, allow_null=True)
+    raes = RaesCatalogFieldsSerializer(read_only=True, allow_null=True)
 
 
 class DCConfigSerializer(serializers.Serializer):
@@ -130,10 +130,10 @@ class ScenarioSubnetSerializer(serializers.Serializer):
 class ScenarioDetailSerializer(serializers.Serializer):
     """Full scenario detail with source-capability flags for the editor.
 
-    ``source`` classifies the entry (``builtin`` / ``custom`` / ``aces`` /
+    ``source`` classifies the entry (``builtin`` / ``custom`` / ``raes`` /
     ``ctf``) and the capability booleans tell the SPA which actions to offer.
     ``instances`` / ``subnets`` are populated for structural (demo) scenarios;
-    ``aces`` carries the read-only provenance block for ACES entries.
+    ``raes`` carries the read-only provenance block for RAES entries.
     """
 
     id = serializers.CharField(read_only=True)
@@ -151,7 +151,7 @@ class ScenarioDetailSerializer(serializers.Serializer):
     ngfw = serializers.BooleanField(read_only=True)
     instances = ScenarioInstanceSerializer(many=True, read_only=True)
     subnets = ScenarioSubnetSerializer(many=True, read_only=True)
-    aces = AcesCatalogFieldsSerializer(read_only=True, allow_null=True)
+    raes = RaesCatalogFieldsSerializer(read_only=True, allow_null=True)
 
 
 class _ScenarioDefinitionSerializer(serializers.Serializer):
@@ -231,3 +231,33 @@ class YAMLValidationResultSerializer(serializers.Serializer):
     valid = serializers.BooleanField(read_only=True)
     errors = serializers.ListField(child=serializers.CharField(), read_only=True)
     definition = serializers.DictField(read_only=True, allow_null=True)
+
+
+class RealizabilityGapSerializer(serializers.Serializer):
+    """One bounded reason the backend cannot realize a scenario (ADR-034-R3).
+
+    ``code`` is the stable identifier clients switch on; ``message`` is prose for
+    the author and must never be parsed. Nothing here carries authored payloads,
+    parameter or account values, provider detail, or filesystem paths.
+    """
+
+    code = serializers.CharField(read_only=True)
+    address = serializers.CharField(read_only=True)
+    category = serializers.CharField(read_only=True)
+    message = serializers.CharField(read_only=True)
+
+
+class ScenarioRealizabilitySerializer(serializers.Serializer):
+    """Backend realizability assessment for one catalog entry (ADR-034-R3).
+
+    Serializes the projection from ``cms.scenarios.realizability``. A negative
+    assessment is a successful response with ``outcome`` set and ``gaps``
+    populated -- non-realizability is a domain answer, not an HTTP error.
+    ``indeterminate`` means the assessment could not be completed and must never
+    be rendered as realizable.
+    """
+
+    scenario_id = serializers.CharField(read_only=True)
+    target_id = serializers.CharField(read_only=True, allow_blank=True)
+    outcome = serializers.CharField(read_only=True)
+    gaps = RealizabilityGapSerializer(many=True, read_only=True)

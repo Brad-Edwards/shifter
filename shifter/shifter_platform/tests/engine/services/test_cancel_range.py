@@ -17,6 +17,11 @@ from engine.models import Range
 from shared.enums import ResourceStatus
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
+# Opaque #1325 workspace scope binding. engine.services requires one on every
+# range create (ADR-046-R3); these suites do not exercise tenancy, so a fixed
+# scalar stands in for the value the CMS launch facade would resolve.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -68,35 +73,36 @@ class TestCancelRange:
             cancel_range("not-a-ref")
 
     def test_pydantic_rejects_negative_range_id(self):
+        request_id = uuid4()
         with pytest.raises(ValueError):
             RangeRef(
-                request_id=uuid4(),
+                request_id=request_id,
                 range_id=-1,
                 user_id=1,
                 status=ResourceStatus.PENDING,
             )
 
     def test_cancels_provisioning_range(self, user):
-        range_obj = Range.objects.create(user=user, status=Range.Status.PROVISIONING)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.PROVISIONING)
         cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PROVISIONING))
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.DESTROYING
 
     def test_does_not_cancel_ready_range(self, user):
-        range_obj = Range.objects.create(user=user, status=Range.Status.READY)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.READY)
         cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.READY))
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.READY
 
     def test_ignores_stale_cancellable_ref_when_db_is_ready(self, user):
         """RangeRef.status is a snapshot; persisted Range.status is authoritative."""
-        range_obj = Range.objects.create(user=user, status=Range.Status.READY)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.READY)
         cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PROVISIONING))
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.READY
 
     def test_cancels_when_db_is_cancellable_despite_stale_ref_status(self, user):
-        range_obj = Range.objects.create(user=user, status=Range.Status.PROVISIONING)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.PROVISIONING)
         cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.READY))
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.DESTROYING
@@ -109,7 +115,7 @@ class TestCancelRange:
         assert "range not found range_id=999999" in caplog.text
 
     def test_logs_cancellation(self, user, caplog):
-        range_obj = Range.objects.create(user=user, status=Range.Status.PENDING)
+        range_obj = Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=Range.Status.PENDING)
         with caplog.at_level(logging.INFO, logger="engine"):
             cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PENDING))
         assert "cancelled" in caplog.text.lower()
@@ -118,7 +124,7 @@ class TestCancelRange:
 
     def test_cancels_via_request_id_when_range_id_none(self, user):
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         cancel_range(
             RangeRef(
                 request_id=spec.request_id,
@@ -154,7 +160,7 @@ class TestCancelRange:
 class TestCancelRangeByRequest:
     def test_returns_true_and_destroys_cancellable_range(self, user):
         spec = _request_spec(user.id)
-        create_range(spec)  # persists a PROVISIONING Range + Request
+        create_range(spec, workspace_id=_WORKSPACE_ID)  # persists a PROVISIONING Range + Request
         result = cancel_range_by_request(spec.request_id)
         assert result is True
         range_obj = Range.objects.get(request__request_id=spec.request_id)
@@ -162,13 +168,13 @@ class TestCancelRangeByRequest:
 
     def test_returns_false_for_non_cancellable_range(self, user):
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         Range.objects.filter(request__request_id=spec.request_id).update(status=Range.Status.READY)
         assert cancel_range_by_request(spec.request_id) is False
 
     def test_returns_true_when_already_destroying(self, user):
         spec = _request_spec(user.id)
-        create_range(spec)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
         Range.objects.filter(request__request_id=spec.request_id).update(status=Range.Status.DESTROYING)
         assert cancel_range_by_request(spec.request_id) is True
 
