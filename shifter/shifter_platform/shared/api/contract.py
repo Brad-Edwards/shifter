@@ -51,6 +51,7 @@ def retirement_path(major: str = API_MAJOR) -> Path:
 
 
 def _read_retirements(path: Path, major: str) -> list[dict[str, Any]]:
+    """Load and validate the retirement list for the requested API major."""
     metadata = json.loads(path.read_text(encoding="utf-8"))
     retirements = metadata.get("retirements")
     if metadata.get("api_major") != major or not isinstance(retirements, list) or not retirements:
@@ -60,7 +61,8 @@ def _read_retirements(path: Path, major: str) -> list[dict[str, Any]]:
     return retirements
 
 
-def _has_valid_retirement_header(retirement: Any) -> bool:
+def _has_valid_retirement_header(retirement: object) -> bool:
+    """Return whether a retirement entry has its required audit identity."""
     if not isinstance(retirement, dict) or not retirement.get("adr"):
         return False
     issue = retirement.get("issue")
@@ -68,6 +70,7 @@ def _has_valid_retirement_header(retirement: Any) -> bool:
 
 
 def _remove_retired_path(base: dict[str, Any], current: dict[str, Any], retired_path: str) -> None:
+    """Remove one retired path unless the current contract reintroduced it."""
     if retired_path in current.get("paths", {}):
         raise RuntimeError(f"Retired API path was reintroduced: {retired_path}")
     base.get("paths", {}).pop(retired_path, None)
@@ -78,6 +81,7 @@ def _remove_retired_property(
     current: dict[str, Any],
     retired_property: dict[str, str],
 ) -> None:
+    """Remove one retired response field unless the current contract restored it."""
     schema_name = retired_property["schema"]
     property_name = retired_property["property"]
     current_schema = current.get("components", {}).get("schemas", {}).get(schema_name, {})
@@ -91,6 +95,7 @@ def _remove_retired_property(
 
 
 def _apply_retirement(base: dict[str, Any], current: dict[str, Any], retirement: dict[str, Any]) -> None:
+    """Project every exact path and response field in one retirement record."""
     for retired_path in retirement.get("paths", []):
         _remove_retired_path(base, current, retired_path)
     for retired_property in retirement.get("response_schema_properties", []):
