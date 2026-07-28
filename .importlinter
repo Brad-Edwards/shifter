@@ -98,15 +98,15 @@ forbidden_modules =
     workspaces.models
 allow_indirect_imports = True
 
-# ADR-031-R1: the ACES SDL tooling (aces-sdl) may be imported only within
-# shared.aces. The realization layers must consume ACES provisioning through the
-# neutral ProvisioningSpec and shared seams, never by importing an aces_*
-# package. shared is intentionally excluded as a source module here because
-# shared.aces (the manifest builder and RuntimeTarget backend) is the one place
-# allowed to import the tooling; shared.aces.__init__ is inert so importing a
-# runtime-safe shared.aces submodule never pulls the tooling in transitively.
-[importlinter:contract:aces-sdl-confined-to-shared-aces]
-name = ACES SDL tooling is confined to shared.aces (ADR-031-R1)
+# ADR-031-R1: the RAES module family supplied by the raes distribution may be
+# imported only within shared.raes. The realization layers must consume RAES provisioning through the
+# neutral ProvisioningSpec and shared seams, never by importing those modules.
+# shared is intentionally excluded as a source module here because
+# shared.raes (the manifest builder and RuntimeTarget backend) is the one place
+# allowed to import the tooling; shared.raes.__init__ is inert so importing a
+# runtime-safe shared.raes submodule never pulls the tooling in transitively.
+[importlinter:contract:raes-confined-to-shared-raes]
+name = RAES module family is confined to shared.raes (ADR-031-R1)
 type = forbidden
 source_modules =
     cms
@@ -116,10 +116,10 @@ source_modules =
     ctf
     config
 forbidden_modules =
-    aces_sdl
-    aces_contracts
-    aces_runtime
-    aces_processor
-    aces_conformance
-    aces_backend_protocols
+    raes
+    raes_contracts
+    raes_runtime
+    raes_processor
+    raes_conformance
+    raes_backend_protocols
 allow_indirect_imports = True

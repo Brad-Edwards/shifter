@@ -56,7 +56,7 @@ All four operations receive one closed, versioned operation context containing:
 - existing trace context, without credentials or raw user input.
 
 `provision` consumes the existing validated realization artifact. The legacy path keeps
-using `RequestSpec` / `RangeSpec` and their persisted envelope; the ACES-native path
+using `RequestSpec` / `RangeSpec` and their persisted envelope; the RAES-native path
 keeps using the validated serialized `ProvisioningPlan` and the process-local
 realization projection allowed by ADR-032. The substrate contract must not create a
 third scenario, topology, node, network, or account schema.
@@ -144,7 +144,7 @@ responsibilities:
 | Concern | Canonical incumbent | Binding rule |
 | --- | --- | --- |
 | Authentication, authorization, ownership, rate limits, audit | Mission Control permissions/serializers, CTF gates, `cms.services`, `shared.AuditLog` | Substrate adapters are never HTTP entrypoints or authorization oracles. They receive an already-authorized range identity. |
-| Authoring and realization intent | `shared.schemas.RequestSpec` / `RangeSpec`; ADR-031/032 ACES `ProvisioningPlan` transport | Do not duplicate or providerize scenario/topology schemas. Validate before cloud mutation. |
+| Authoring and realization intent | `shared.schemas.RequestSpec` / `RangeSpec`; ADR-031/032 RAES `ProvisioningPlan` transport | Do not duplicate or providerize scenario/topology schemas. Validate before cloud mutation. |
 | Public lifecycle state | `shared.enums.ResourceStatus`, Engine/CMS state machines | Do not add provider status enums to public APIs. Adapter phases are private operation evidence. |
 | Backend selection/config | `shifter/installation` loader, schema, contract, registry, runtime inventory, backend settings models | The registry advertises the substrate capability and conformance evidence. No independent `CLOUD_PROVIDER` default or branch/provider switch may select it. |
 | Task delivery | `shared.cloud.TaskRunner`, `engine.ecs`, provisioner CLI command family, GCP Job admission policy | Preserve structured argv and the `range <operation> --request-id <uuid>` family. Task dispatch is not substrate implementation. |
@@ -160,7 +160,7 @@ ADR-011-R4 that would model a whole range as a composition of public low-level c
 factories. A backend bundle is metadata and selection; a substrate adapter is the
 runtime implementation behind the bundle's declared range-substrate capability.
 
-ACES backend-manifest conformance and range-substrate conformance are also distinct.
+RAES backend-manifest conformance and range-substrate conformance are also distinct.
 The former proves authored semantic realizability; the latter proves operational
 lifecycle behavior and security invariants on a provider. Passing one does not imply
 the other.
@@ -347,7 +347,7 @@ The implementation is constrained across these existing surfaces:
 ## Non-goals and prohibited designs
 
 - No implementation is part of this ADR, and it is not an implementation plan.
-- No new public scenario DSL, duplicate `RangeSpec`/ACES model, duplicate
+- No new public scenario DSL, duplicate `RangeSpec`/RAES model, duplicate
   `ResourceStatus`, per-provider API DTO, repository, validator, event family, or
   exception hierarchy.
 - No redesign of CMS/CTF admission, public lifecycle endpoints, task runner, durable

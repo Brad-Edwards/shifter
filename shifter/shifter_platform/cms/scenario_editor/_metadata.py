@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 from cms.models import ScenarioMetadata
 from cms.scenarios.realizability import get_scenario_realizability
 from cms.scenarios.registry import get_catalog_entry
-from shared.aces.realizability import RealizabilityOutcome
 from shared.audit import AuditAction
 from shared.log_sanitize import safe_log_value
+from shared.raes.realizability import RealizabilityOutcome
 
 from ._common import ScenarioEditorError, audit_scenario_change, validate_user
 
@@ -27,7 +27,7 @@ def _verify_scenario_exists(scenario_id: str, *, user_id: int) -> None:
     """Confirm the scenario exists in the unified catalog before metadata changes.
 
     Uses the catalog projection (not the legacy YAML/DB detail lookup) so the
-    access overlay can be toggled for ACES package-backed entries as well as
+    access overlay can be toggled for RAES package-backed entries as well as
     legacy YAML defaults and DB customs.
     """
     if get_catalog_entry(scenario_id) is None:
@@ -50,7 +50,7 @@ _UNASSESSED_OUTCOME = RealizabilityOutcome.INDETERMINATE
 
 
 def _assert_publishable(scenario_id: str, *, enabled: bool | None) -> None:
-    """Refuse to enable an ACES entry the backend cannot realize (ADR-034-R3).
+    """Refuse to enable an RAES entry the backend cannot realize (ADR-034-R3).
 
     This is the authoritative gate. The editor's badge is advisory -- a caller
     can ignore it, drive the API directly, or race a registry change -- so

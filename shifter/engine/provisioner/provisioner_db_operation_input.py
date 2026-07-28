@@ -26,21 +26,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from shared.aces.operation_input import AcesOperationInput, AcesOperationInputError, parse_aces_operation_input
 from shared.operation_envelope import (
     ACCEPTED_CONTRACT_VERSIONS,
     OperationEnvelopeError,
     validate_operation_envelope,
 )
+from shared.raes.operation_input import RaesOperationInput, RaesOperationInputError, parse_raes_operation_input
 
 from provisioner_db import get_db_connection
 
 __all__ = [
-    "AcesOperationRun",
     "OperationInputError",
+    "RaesOperationRun",
     "ValidatedOperationInput",
-    "get_aces_operation_input",
     "get_operation_input",
+    "get_raes_operation_input",
 ]
 
 
@@ -65,12 +65,12 @@ class ValidatedOperationInput:
 
 
 @dataclass(frozen=True)
-class AcesOperationRun:
-    """The proven identity plus the parsed ACES projection for one generation."""
+class RaesOperationRun:
+    """The proven identity plus the parsed RAES projection for one generation."""
 
     operation_id: str
     request_id: str
-    input: AcesOperationInput
+    input: RaesOperationInput
 
 
 _SELECT_OPERATION_INPUT_SQL = """
@@ -103,7 +103,7 @@ def get_operation_input(
         operation_id: The canonical ADR-043 generation this run was launched for.
         request_id: The request identity supplied on the same command.
         resource: The resource discriminator the caller expects (for example
-            ``aces-range``).
+            ``raes-range``).
         operation: The operation discriminator the caller expects.
 
     Raises:
@@ -149,20 +149,20 @@ def get_operation_input(
     )
 
 
-def get_aces_operation_input(operation_id: str, *, request_id: str, operation: str) -> AcesOperationRun:
-    """Return the proven identity and parsed ACES projection for one generation.
+def get_raes_operation_input(operation_id: str, *, request_id: str, operation: str) -> RaesOperationRun:
+    """Return the proven identity and parsed RAES projection for one generation.
 
-    Runs the closed ACES payload parser on top of the transport and identity
+    Runs the closed RAES payload parser on top of the transport and identity
     validation, so a tampered delivery binding, an over-claiming registry row,
     an unbounded collection, or a request/operation pair that were never
     launched together fails here -- before any cloud or guest mutation -- rather
     than part-way through realization.
     """
     validated = get_operation_input(
-        operation_id=operation_id, request_id=request_id, resource="aces-range", operation=operation
+        operation_id=operation_id, request_id=request_id, resource="raes-range", operation=operation
     )
     try:
-        projection = parse_aces_operation_input(validated.payload)
-    except AcesOperationInputError as exc:
-        raise OperationInputError(f"aces operation input is invalid: {exc}") from None
-    return AcesOperationRun(operation_id=validated.operation_id, request_id=validated.request_id, input=projection)
+        projection = parse_raes_operation_input(validated.payload)
+    except RaesOperationInputError as exc:
+        raise OperationInputError(f"raes operation input is invalid: {exc}") from None
+    return RaesOperationRun(operation_id=validated.operation_id, request_id=validated.request_id, input=projection)

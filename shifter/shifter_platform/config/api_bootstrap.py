@@ -86,11 +86,11 @@ class BootstrapFeatureFlagsSerializer(serializers.Serializer):
     # entries. Mirrors CTF_WORKSPACE_SPA_ENABLED (advisory only; the /api/v1/ctf/
     # endpoints remain the authority).
     ctf_workspace_spa = serializers.BooleanField()
-    # ACES native provisioning (#1566): gates the in-SPA ACES image registry
-    # management surface. Mirrors SHIFTER_ACES_NATIVE_PROVISIONING, so the nav
+    # RAES native provisioning (#1566): gates the in-SPA RAES image registry
+    # management surface. Mirrors SHIFTER_RAES_NATIVE_PROVISIONING, so the nav
     # entry only shows when the whole native path is enabled (advisory only;
-    # the /api/v1/cms/aces-image-mappings/ endpoints remain the authority).
-    aces_native_provisioning = serializers.BooleanField()
+    # the /api/v1/cms/raes-image-mappings/ endpoints remain the authority).
+    raes_native_provisioning = serializers.BooleanField()
     # Administer workspace SPA rollout (#1373): gates the in-SPA Administer nav
     # entries and route visibility. Mirrors ADMINISTER_SPA_ENABLED; advisory
     # only, the /api/v1/administer/ endpoints remain the authority.
@@ -201,7 +201,7 @@ class BootstrapView(APIView):
                 "mission_control_spa": bool(getattr(settings, "MISSION_CONTROL_SPA_ENABLED", False)),
                 "scenario_editor_spa": bool(getattr(settings, "SCENARIO_EDITOR_SPA_ENABLED", False)),
                 "ctf_workspace_spa": bool(getattr(settings, "CTF_WORKSPACE_SPA_ENABLED", False)),
-                "aces_native_provisioning": bool(getattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False)),
+                "raes_native_provisioning": bool(getattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False)),
                 "administer_spa": bool(getattr(settings, "ADMINISTER_SPA_ENABLED", False)),
             },
         }

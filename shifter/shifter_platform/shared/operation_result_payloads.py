@@ -1,7 +1,7 @@
 """Closed payload shapes for the operation-result contract (ADR-043).
 
 Split out of ``operation_results.py`` (Sonar S104), which grew past the
-file-size budget when the ACES family was added in phase 5 (#1837). The seam is
+file-size budget when the RAES family was added in phase 5 (#1837). The seam is
 deliberate rather than arbitrary: this module owns *what a result payload looks
 like and how it is validated*, while ``operation_results`` owns *which steps
 exist for a (resource, operation), what order they may arrive in, and how a
@@ -24,7 +24,7 @@ from uuid import UUID
 from cyberscript.enums import ResourceStatus
 from cyberscript.exceptions import ValidationError as OperationResultError
 
-from shared.aces.status import ACES_OPERATION_STATES, ACES_STATE_SUCCEEDED
+from shared.raes.status import RAES_OPERATION_STATES, RAES_STATE_SUCCEEDED
 
 __all__ = [
     "MAX_DIAGNOSTIC_CHARS",
@@ -37,11 +37,11 @@ __all__ = [
     "OperationResultError",
     "Shape",
     "StepSpec",
-    "aces_progress",
-    "aces_snapshot",
-    "aces_success",
     "failure",
     "progress",
+    "raes_progress",
+    "raes_snapshot",
+    "raes_success",
     "success",
 ]
 
@@ -53,8 +53,8 @@ class Shape(StrEnum):
     NGFW = "ngfw"
     RANGE_TERMINAL = "range_terminal"
     FAILURE = "failure"
-    ACES_OPERATION = "aces_operation"
-    ACES_SNAPSHOT = "aces_snapshot"
+    RAES_OPERATION = "raes_operation"
+    RAES_SNAPSHOT = "raes_snapshot"
 
 
 # Result kinds mirror ``engine.models.OperationResultKind`` without importing
@@ -70,12 +70,12 @@ _PAYLOAD_FIELD = "result payload"
 # Bounded per ADR-043: results carry summaries, never snapshots.
 MAX_INSTANCE_OUTCOMES = 256
 MAX_DIAGNOSTIC_CHARS = 512
-# The ACES runtime snapshot is already byte-bounded by ``aces_snapshot`` before
+# The RAES runtime snapshot is already byte-bounded by ``raes_snapshot`` before
 # it is published; this is the transport-side count bound so an oversized
 # topology fails at the wire rather than at the sidecar's size validator.
 MAX_SNAPSHOT_RESOURCES = 512
 
-# Exactly the bounded fields ``aces_snapshot.snapshot_resources`` emits. ACES
+# Exactly the bounded fields ``raes_snapshot.snapshot_resources`` emits. RAES
 # addresses are compiled handles carrying no authored values or infrastructure
 # detail, which is what makes the snapshot safe for the redacted sidecar; an IP,
 # hostname, or provider id appearing here would defeat that.
@@ -113,10 +113,10 @@ class StepSpec:
 
     ``status`` carries two meanings depending on the shape. For the families
     whose payload reports a ``ResourceStatus`` directly it *pins* that reported
-    value. For the ACES shapes -- whose payload reports a coarse ACES operation
+    value. For the RAES shapes -- whose payload reports a coarse RAES operation
     state instead -- it is the range status the step projects, or ``None`` when
-    the step is evidence only and must not move lifecycle state. ``aces_state``
-    is what pins the ACES payload.
+    the step is evidence only and must not move lifecycle state. ``raes_state``
+    is what pins the RAES payload.
     """
 
     rank: int
@@ -124,7 +124,7 @@ class StepSpec:
     shape: Shape
     status: ResourceStatus | None
     terminal: bool = False
-    aces_state: str | None = None
+    raes_state: str | None = None
 
 
 def progress(rank: int, shape: Shape, status: ResourceStatus) -> StepSpec:
@@ -142,32 +142,32 @@ def failure(rank: int) -> StepSpec:
     return StepSpec(rank=rank, result_kind=_TERMINAL_FAILURE, shape=Shape.FAILURE, status=None, terminal=True)
 
 
-def aces_progress(rank: int, aces_state: str, status: ResourceStatus | None) -> StepSpec:
-    """Declare a non-terminal ACES observation, optionally projecting a range status."""
+def raes_progress(rank: int, raes_state: str, status: ResourceStatus | None) -> StepSpec:
+    """Declare a non-terminal RAES observation, optionally projecting a range status."""
     return StepSpec(
-        rank=rank, result_kind=_RESOURCE_STATE, shape=Shape.ACES_OPERATION, status=status, aces_state=aces_state
+        rank=rank, result_kind=_RESOURCE_STATE, shape=Shape.RAES_OPERATION, status=status, raes_state=raes_state
     )
 
 
-def aces_success(rank: int, status: ResourceStatus) -> StepSpec:
-    """Declare an ACES terminal-success observation."""
+def raes_success(rank: int, status: ResourceStatus) -> StepSpec:
+    """Declare an RAES terminal-success observation."""
     return StepSpec(
         rank=rank,
         result_kind=_TERMINAL_SUCCESS,
-        shape=Shape.ACES_OPERATION,
+        shape=Shape.RAES_OPERATION,
         status=status,
         terminal=True,
-        aces_state=ACES_STATE_SUCCEEDED,
+        raes_state=RAES_STATE_SUCCEEDED,
     )
 
 
-def aces_snapshot(rank: int) -> StepSpec:
+def raes_snapshot(rank: int) -> StepSpec:
     """Declare the bounded runtime-snapshot evidence step.
 
     Evidence only: ``status=None`` keeps it out of the lifecycle write path, so
     a snapshot can never produce an audit row or a range event.
     """
-    return StepSpec(rank=rank, result_kind=_RESOURCE_STATE, shape=Shape.ACES_SNAPSHOT, status=None)
+    return StepSpec(rank=rank, result_kind=_RESOURCE_STATE, shape=Shape.RAES_SNAPSHOT, status=None)
 
 
 def _require_dict(value: object, field: str) -> dict[str, Any]:
@@ -279,14 +279,14 @@ def _parse_failure(payload: dict[str, Any], _spec_unused: StepSpec) -> dict[str,
     return {"reason_code": reason_code, "diagnostic": diagnostic}
 
 
-def _parse_aces_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, Any]:
-    """Parse an ACES operation observation, with an optional bounded reason.
+def _parse_raes_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, Any]:
+    """Parse an RAES operation observation, with an optional bounded reason.
 
-    ``aces_status`` is pinned to the step's declared state: the ACES vocabulary
+    ``raes_status`` is pinned to the step's declared state: the RAES vocabulary
     is coarse and direction-free, so an unpinned body would let a late
     ``running`` result be recorded under a terminal step (or the reverse).
     """
-    required = frozenset({"aces_status"})
+    required = frozenset({"raes_status"})
     unexpected = sorted(frozenset(payload) - (required | {"status_reason"}))
     if unexpected:
         raise OperationResultError(f"{_PAYLOAD_FIELD} has unexpected field(s): {', '.join(unexpected)}")
@@ -294,15 +294,15 @@ def _parse_aces_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, 
     if missing:
         raise OperationResultError(f"{_PAYLOAD_FIELD} is missing field(s): {', '.join(missing)}")
 
-    state = payload["aces_status"]
-    if not isinstance(state, str) or state not in ACES_OPERATION_STATES:
+    state = payload["raes_status"]
+    if not isinstance(state, str) or state not in RAES_OPERATION_STATES:
         raise OperationResultError(
-            f"{_PAYLOAD_FIELD} aces_status must be one of: {', '.join(sorted(ACES_OPERATION_STATES))}"
+            f"{_PAYLOAD_FIELD} raes_status must be one of: {', '.join(sorted(RAES_OPERATION_STATES))}"
         )
-    if spec.aces_state is not None and state != spec.aces_state:
-        raise OperationResultError(f"{_PAYLOAD_FIELD} aces_status must be '{spec.aces_state}' for this step")
+    if spec.raes_state is not None and state != spec.raes_state:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} raes_status must be '{spec.raes_state}' for this step")
 
-    parsed: dict[str, Any] = {"aces_status": state}
+    parsed: dict[str, Any] = {"raes_status": state}
     if "status_reason" in payload:
         reason = payload["status_reason"]
         if not isinstance(reason, str):
@@ -313,8 +313,8 @@ def _parse_aces_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, 
     return parsed
 
 
-def _parse_aces_snapshot(payload: dict[str, Any], _spec_unused: StepSpec) -> dict[str, Any]:
-    """Parse the bounded ACES runtime-snapshot evidence."""
+def _parse_raes_snapshot(payload: dict[str, Any], _spec_unused: StepSpec) -> dict[str, Any]:
+    """Parse the bounded RAES runtime-snapshot evidence."""
     _require_exact_keys(payload, frozenset({"resources"}), _PAYLOAD_FIELD)
     raw = payload["resources"]
     if not isinstance(raw, list):
@@ -338,6 +338,6 @@ PARSERS = {
     Shape.NGFW: _parse_ngfw,
     Shape.RANGE_TERMINAL: _parse_range_terminal,
     Shape.FAILURE: _parse_failure,
-    Shape.ACES_OPERATION: _parse_aces_operation,
-    Shape.ACES_SNAPSHOT: _parse_aces_snapshot,
+    Shape.RAES_OPERATION: _parse_raes_operation,
+    Shape.RAES_SNAPSHOT: _parse_raes_snapshot,
 }

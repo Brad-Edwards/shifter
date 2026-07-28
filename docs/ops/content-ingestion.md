@@ -9,8 +9,8 @@ pack reaches Shifter (ADR-034).
 A pack is registered as a provenance-only reference: Shifter records where the
 pack lives (`package_ref`), its version and digest, its contract and profile, and
 bounded provenance. It does not copy the pack body into the catalog. Pack content
-is defined by the `aces-scenario-packs` contract. Shifter pins
-`aces-scenario-packs==2.0.1` with its required `aces-sdl==0.23.0`, and delegates
+is defined by the `raes-env-packs` contract. Shifter pins
+`raes-env-packs==3.0.0` with its required `raes==2.0.0`, and delegates
 validation and canonical content identity to those released libraries. A
 broken, malformed, or non-conformant pack is rejected.
 
@@ -28,7 +28,7 @@ pack.
 {
   "scenario_id": "example-pack",
   "source_kind": "repo",
-  "contract_kind": "aces",
+  "contract_kind": "raes",
   "contract_profile": "shifter",
   "package_ref": "scenario-dev/example-pack",
   "package_version": "0.1.0",
@@ -67,7 +67,7 @@ conformant default packs ship yet, so the manifest is currently empty.
 
 ## Resolution and launchability
 
-`repo` packs resolve under `ACES_PACKAGE_ROOT` with containment enforcement, and
+`repo` packs resolve under `RAES_PACKAGE_ROOT` with containment enforcement, and
 `package_ref` names the pack root, not an SDL file. The root directory name,
 catalog id, and `pack.yaml` name must agree, so one immutable pack cannot be
 registered under arbitrary aliases. The current Shifter profile requires
@@ -75,7 +75,7 @@ exactly one direct `sdl/*.sdl.yaml` entry; zero or multiple entries fail closed
 until an explicit variant selector is part of the contract.
 
 Every repo pack must declare `associated_artifact_manifest` in `pack.yaml`. That
-ACES manifest must cover the exact pack inventory and bind every payload byte to
+RAES manifest must cover the exact pack inventory and bind every payload byte to
 one canonical `sha256:<64 lowercase hex>` set digest. Registration verifies the
 advertised `package_digest` before persistence. Native launch verifies the same
 digest again before SDL resolution, parsing, planning, or dispatch, so a pack
@@ -95,14 +95,14 @@ same canonical `package_digest` (the equivalent containment and immutable-identi
 guarantees repo packs get, ADR-034-R5), all before SDL resolution, parsing,
 planning, or dispatch. The staged directory is always removed afterward.
 
-Object launch requires deployment configuration: set `SHIFTER_ACES_PACKAGE_BUCKET`
-(and optionally `SHIFTER_ACES_PACKAGE_PREFIX`) on the app, and grant the portal
+Object launch requires deployment configuration: set `SHIFTER_RAES_PACKAGE_BUCKET`
+(and optionally `SHIFTER_RAES_PACKAGE_PREFIX`) on the app, and grant the portal
 workload least-privilege read-only access to that bucket/prefix in Terraform
-(`aces_package_bucket_arn` on AWS, `aces_package_bucket_name` on GCP). With no
+(`raes_package_bucket_arn` on AWS, `raes_package_bucket_name` on GCP). With no
 bucket configured an object row stays registrable and visible in the catalog but
 non-launchable (fail closed): a readiness decision, not a catalog-time network
-probe. Size and traversal bounds are tunable via `SHIFTER_ACES_PACKAGE_MAX_ARCHIVE_BYTES`,
-`SHIFTER_ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES`, and `SHIFTER_ACES_PACKAGE_MAX_ENTRIES`.
+probe. Size and traversal bounds are tunable via `SHIFTER_RAES_PACKAGE_MAX_ARCHIVE_BYTES`,
+`SHIFTER_RAES_PACKAGE_MAX_UNCOMPRESSED_BYTES`, and `SHIFTER_RAES_PACKAGE_MAX_ENTRIES`.
 
 Registration is not conformance and is not launchability. A caller cannot assert
 that a pack has passed conformance: every registration lands non-passed, and
@@ -135,10 +135,10 @@ same as "always launchable": a source-less VM may still need the backend to
 supply a base OS at realization, and a scenario whose plan requires an
 unsupported backend term still fails closed.
 
-A scenario's runs may be parameterized through ACES SDL `variables`: the
+A scenario's runs may be parameterized through RAES SDL `variables`: the
 multi-run experiment unit over one scenario/profile. Shifter represents a
 parameterized run as `scenario_id + profile + parameter binding identity`,
-validated against the scenario's declared variables (via the ACES SDL
+validated against the scenario's declared variables (via the RAES SDL
 instantiation contract) before planning. Parameter values are never persisted:
 the package record stays provenance-only, a run is identified by a one-way digest
 of its binding, and the catalog-model run-capability projection surfaces only a

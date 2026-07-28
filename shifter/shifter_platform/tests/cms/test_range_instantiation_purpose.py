@@ -42,14 +42,14 @@ class TestGenericFacadesCannotEscalate:
 
     @pytest.mark.parametrize(
         "facade",
-        [services.create_range, services.create_range_dispatch, services.create_aces_native_range],
+        [services.create_range, services.create_range_dispatch, services.create_raes_native_range],
     )
     def test_facade_exposes_no_instantiation_purpose_parameter(self, facade):
         assert "instantiation_purpose" not in inspect.signature(facade).parameters
 
     @pytest.mark.parametrize(
         "facade",
-        [services.create_range, services.create_range_dispatch, services.create_aces_native_range],
+        [services.create_range, services.create_range_dispatch, services.create_raes_native_range],
     )
     def test_facade_rejects_a_smuggled_purpose_argument(self, facade):
         with pytest.raises(TypeError):
@@ -104,8 +104,9 @@ class TestPurposeIsAClosedTrustedValue:
             assert_backend_admitted("non_user_demo")
 
     def test_an_unknown_object_is_rejected(self, settings):
+        unknown_purpose = object()
         with _gcp(settings, "gdc"), pytest.raises(CMSError):
-            assert_backend_admitted(object())
+            assert_backend_admitted(unknown_purpose)
 
     def test_non_gcp_returns_no_binding(self, settings):
         settings.CLOUD_PROVIDER = "aws"

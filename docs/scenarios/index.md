@@ -10,7 +10,6 @@ A scenario defines what your range contains. Choose based on your demo needs.
 | [AD Attack Lab](ad-attack-lab) | Kali, DC, Workstation | No | Active Directory attacks |
 | [Basic Range with NGFW](ngfw-range) | Kali, Workstation | Yes | Traffic logging demos |
 | AD Attack Lab with NGFW | Kali, DC, Workstation | Yes | AD attacks with network visibility + Cortex XDR |
-| [TechVault Purple-Team Lab](techvault) | One host: Kali + enterprise + full SOC (~31 containers) | No | Agent-driven purple teaming (attack, detect, respond) via VS Code + Claude Code |
 
 ## GCP VM range-cell support
 
@@ -27,7 +26,6 @@ provide.
 | `polaris` | Supported with prerequisites | Requires exact `polaris-vm` and `polaris-dc` profiles declaring the Polaris-host and matching `boreas.local` pre-promoted-domain capabilities, plus the bootstrap inputs documented in the GCP deploy runbook. |
 | `ad_attack_lab` | Prerequisite-blocked | Its domain controller requires a pre-promoted profile whose configured DNS and NetBIOS identity exactly match the authored `internal.shifter` domain. Add and configure that image contract before enabling this composition on GCP. |
 | `basic_ngfw`, `ad_attack_lab_ngfw` | Unsupported capability | GCE range cells do not implement the NGFW attachment and segmented-routing contract. The request fails with `unsupported-capability`; it never falls back to GDC or pods. |
-| `techvault` | Unsupported capability | Its configured image profile declares a bootstrap capability for which no GCP realizer exists. The request fails with `unsupported-capability` before VM creation. |
 
 Other legacy or CTF scenarios follow the same capability rules: no NGFW,
 domain-intent DCs require exact pre-promoted domain metadata, every image key
@@ -52,6 +50,5 @@ implementation. AWS behavior is unchanged.
 | AD Attack Lab | 5-10 minutes |
 | Basic Range with NGFW | 3-7 minutes |
 | AD Attack Lab with NGFW | 6-12 minutes |
-| TechVault Purple-Team Lab | 3-6 minutes (pre-baked; boots + auto-starts the stack) |
 
 Times vary based on infrastructure load.

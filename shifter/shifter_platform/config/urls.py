@@ -37,27 +37,27 @@ def _root_page(request: HttpRequest, *args: object, **kwargs: object) -> HttpRes
     return home(request, *args, **kwargs)
 
 
-def _aces_image_registry_spa_enabled() -> bool:
-    """Return whether the SPA shell should serve the ACES image registry pages.
+def _raes_image_registry_spa_enabled() -> bool:
+    """Return whether the SPA shell should serve the RAES image registry pages.
 
     Greenfield SPA-only surface (#1566): there is no legacy Django page here, so
     the pages exist only inside the flag-gated SPA. Gated on the platform SPA
-    shell AND ``SHIFTER_ACES_NATIVE_PROVISIONING`` (the issue's hard gate), so the
+    shell AND ``SHIFTER_RAES_NATIVE_PROVISIONING`` (the issue's hard gate), so the
     surface is inert unless both are on. No separate cutover flag: nothing is
     being replaced.
     """
-    return bool(platform_spa_enabled() and getattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False))
+    return bool(platform_spa_enabled() and getattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False))
 
 
 @require_safe
-def _aces_image_registry_page(request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
-    """Serve the SPA shell for the ACES image registry pages, else 404.
+def _raes_image_registry_page(request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+    """Serve the SPA shell for the RAES image registry pages, else 404.
 
     GET/HEAD only. When the surface is disabled the path 404s (there is no legacy
     page to fall back to), so the route is inert in the default configuration and
     never swallows a request.
     """
-    if _aces_image_registry_spa_enabled():
+    if _raes_image_registry_spa_enabled():
         return platform_spa_host(request, *args, **kwargs)
     raise Http404
 
@@ -99,12 +99,12 @@ urlpatterns = [
     path("logout/", logout_view, name="logout"),
     path("mission-control/", include("mission_control.urls")),
     path("scenario-editor/", include("cms.scenario_editor.urls")),
-    # ACES image registry SPA pages (#1566): greenfield, SPA-only, gated on the
-    # platform SPA shell + SHIFTER_ACES_NATIVE_PROVISIONING. The base path plus a
+    # RAES image registry SPA pages (#1566): greenfield, SPA-only, gated on the
+    # platform SPA shell + SHIFTER_RAES_NATIVE_PROVISIONING. The base path plus a
     # catch-all under the prefix serve the shell so client-router deep links and
     # refresh resolve; both 404 when the surface is disabled.
-    path("aces-image-registry/", _aces_image_registry_page, name="aces_image_registry"),
-    re_path(r"^aces-image-registry/.*$", _aces_image_registry_page),
+    path("raes-image-registry/", _raes_image_registry_page, name="raes_image_registry"),
+    re_path(r"^raes-image-registry/.*$", _raes_image_registry_page),
     # Administer workspace SPA pages (#1373): greenfield, SPA-only, gated on the
     # platform SPA shell + ADMINISTER_SPA_ENABLED. The base path plus a catch-all
     # under the prefix serve the shell so client-router deep links and refresh

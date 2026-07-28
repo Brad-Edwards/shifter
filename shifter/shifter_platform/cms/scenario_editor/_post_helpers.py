@@ -316,7 +316,7 @@ def clone_scenario_from_form_post(
 def toggle_scenario_metadata_flag(user: User, scenario_id: str, *, field: str, default: bool) -> bool:
     """Toggle a boolean scenario metadata flag and return the new value.
 
-    Reads the current flag from the unified catalog projection so ACES
+    Reads the current flag from the unified catalog projection so RAES
     package-backed entries can have their access overlay toggled alongside
     legacy YAML defaults and DB customs.
     """

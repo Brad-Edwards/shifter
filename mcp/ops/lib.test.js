@@ -458,12 +458,10 @@ describe("validateManageCommand", () => {
   });
 
   it("does not echo the rejected payload in the error message", () => {
-    try {
-      validateManageCommand("check; secret-token-value");
-      assert.fail("expected a throw");
-    } catch (e) {
-      assert.doesNotMatch(e.message, /secret-token-value/);
-    }
+    assert.throws(() => validateManageCommand("check; secret-token-value"), (error) => {
+      assert.doesNotMatch(error.message, /secret-token-value/);
+      return true;
+    });
   });
 });
 
@@ -1218,7 +1216,6 @@ describe("GCE_IMAGE_TYPES", () => {
       "windows",
       "dc",
       "polaris-vm",
-      "techvault",
       "dc-prebaked",
     ]);
   });

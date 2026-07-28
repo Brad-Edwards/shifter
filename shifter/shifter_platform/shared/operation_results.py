@@ -1,4 +1,4 @@
-"""Closed operation-result contract for the pause/resume, NGFW, and ACES families.
+"""Closed operation-result contract for the pause/resume, NGFW, and RAES families.
 
 ADR-043 phase 4 (#1836) and phase 5 (#1837). ``shared.operation_envelope`` owns
 the *transport* shape; this module owns the bounded, operation-specific
@@ -36,7 +36,6 @@ from uuid import UUID
 from cyberscript.enums import ResourceStatus
 from cyberscript.exceptions import ValidationError as OperationResultError
 
-from shared.aces.status import ACES_STATE_RUNNING
 from shared.operation_result_payloads import (
     MAX_DIAGNOSTIC_CHARS,
     MAX_INSTANCE_OUTCOMES,
@@ -47,13 +46,14 @@ from shared.operation_result_payloads import (
     SNAPSHOT_ENTRY_KEYS,
     Shape,
     StepSpec,
-    aces_progress,
-    aces_snapshot,
-    aces_success,
     failure,
     progress,
+    raes_progress,
+    raes_snapshot,
+    raes_success,
     success,
 )
+from shared.raes.status import RAES_STATE_RUNNING
 
 __all__ = [
     "MAX_DIAGNOSTIC_CHARS",
@@ -109,16 +109,16 @@ class ResultStep(StrEnum):
     NGFW_TERMINAL_PAUSED = "ngfw_terminal_paused"
     NGFW_TERMINAL_DESTROYED = "ngfw_terminal_destroyed"
     NGFW_TERMINAL_FAILED = "ngfw_terminal_failed"
-    # aces-range provision/destroy (phase 5). The ACES operation vocabulary is
+    # raes-range provision/destroy (phase 5). The RAES operation vocabulary is
     # coarse (running/succeeded/failed) and carries no lifecycle direction, so
     # the step -- not the reported state -- is what distinguishes and orders a
     # provision observation from a destroy one.
-    ACES_PROVISION_RUNNING = "aces_provision_running"
-    ACES_PROVISION_SNAPSHOT = "aces_provision_snapshot"
-    ACES_DESTROY_RUNNING = "aces_destroy_running"
-    ACES_TERMINAL_READY = "aces_terminal_ready"
-    ACES_TERMINAL_DESTROYED = "aces_terminal_destroyed"
-    ACES_TERMINAL_FAILED = "aces_terminal_failed"
+    RAES_PROVISION_RUNNING = "raes_provision_running"
+    RAES_PROVISION_SNAPSHOT = "raes_provision_snapshot"
+    RAES_DESTROY_RUNNING = "raes_destroy_running"
+    RAES_TERMINAL_READY = "raes_terminal_ready"
+    RAES_TERMINAL_DESTROYED = "raes_terminal_destroyed"
+    RAES_TERMINAL_FAILED = "raes_terminal_failed"
 
 
 _RANGE_PAUSE_STEPS: dict[ResultStep, StepSpec] = {
@@ -166,35 +166,35 @@ _NGFW_STOP_STEPS: dict[ResultStep, StepSpec] = {
     ResultStep.NGFW_TERMINAL_FAILED: failure(20),
 }
 
-# ACES provision reports one running observation, then bounded topology
+# RAES provision reports one running observation, then bounded topology
 # evidence, then its terminal state. Provision-running projects PROVISIONING
 # because the pre-cutover path published that range status at start; destroy
 # has no equivalent published start event, so its running observation is
 # sidecar evidence and projects nothing.
-_ACES_PROVISION_STEPS: dict[ResultStep, StepSpec] = {
-    ResultStep.ACES_PROVISION_RUNNING: aces_progress(10, ACES_STATE_RUNNING, ResourceStatus.PROVISIONING),
-    ResultStep.ACES_PROVISION_SNAPSHOT: aces_snapshot(20),
-    ResultStep.ACES_TERMINAL_READY: aces_success(30, ResourceStatus.READY),
-    ResultStep.ACES_TERMINAL_FAILED: failure(30),
+_RAES_PROVISION_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.RAES_PROVISION_RUNNING: raes_progress(10, RAES_STATE_RUNNING, ResourceStatus.PROVISIONING),
+    ResultStep.RAES_PROVISION_SNAPSHOT: raes_snapshot(20),
+    ResultStep.RAES_TERMINAL_READY: raes_success(30, ResourceStatus.READY),
+    ResultStep.RAES_TERMINAL_FAILED: failure(30),
 }
 
-_ACES_DESTROY_STEPS: dict[ResultStep, StepSpec] = {
-    ResultStep.ACES_DESTROY_RUNNING: aces_progress(10, ACES_STATE_RUNNING, None),
-    ResultStep.ACES_TERMINAL_DESTROYED: aces_success(20, ResourceStatus.DESTROYED),
-    ResultStep.ACES_TERMINAL_FAILED: failure(20),
+_RAES_DESTROY_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.RAES_DESTROY_RUNNING: raes_progress(10, RAES_STATE_RUNNING, None),
+    ResultStep.RAES_TERMINAL_DESTROYED: raes_success(20, ResourceStatus.DESTROYED),
+    ResultStep.RAES_TERMINAL_FAILED: failure(20),
 }
 
-# ``aces-range`` pause/resume share the range lifecycle contract; the applier
+# ``raes-range`` pause/resume share the range lifecycle contract; the applier
 # resolves the target differently, the result shape is the same. Provision and
-# destroy do not: they report ACES operation observations, not instance sets.
+# destroy do not: they report RAES operation observations, not instance sets.
 
 _CONTRACT: dict[tuple[str, str], dict[ResultStep, StepSpec]] = {
     ("range", "pause"): _RANGE_PAUSE_STEPS,
     ("range", "resume"): _RANGE_RESUME_STEPS,
-    ("aces-range", "pause"): _RANGE_PAUSE_STEPS,
-    ("aces-range", "resume"): _RANGE_RESUME_STEPS,
-    ("aces-range", "provision"): _ACES_PROVISION_STEPS,
-    ("aces-range", "destroy"): _ACES_DESTROY_STEPS,
+    ("raes-range", "pause"): _RANGE_PAUSE_STEPS,
+    ("raes-range", "resume"): _RANGE_RESUME_STEPS,
+    ("raes-range", "provision"): _RAES_PROVISION_STEPS,
+    ("raes-range", "destroy"): _RAES_DESTROY_STEPS,
     ("ngfw", "provision"): _NGFW_PROVISION_STEPS,
     ("ngfw", "deprovision"): _NGFW_DEPROVISION_STEPS,
     ("ngfw", "start"): _NGFW_START_STEPS,

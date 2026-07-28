@@ -109,7 +109,7 @@ The following principles are binding:
   platform. The platform never contains an entitlement system.
 
 This ADR defines and enforces the surface boundary. The existing execution
-programs run *under* it: ACES Backend (ADR-024), Backend Bundles & Substrate
+programs run *under* it: RAES Backend (ADR-024), Backend Bundles & Substrate
 (ADR-011, and the substrate-interface work in issue #1322), and Workspaces &
 Platform API. Program tracking issue: #1584.
 

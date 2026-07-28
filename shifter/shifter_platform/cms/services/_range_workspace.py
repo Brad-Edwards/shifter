@@ -1,7 +1,7 @@
 """Workspace scope resolution for the CMS launch boundary (#1325, ADR-046-R3).
 
 One place decides which workspace a launch belongs to. Both launch paths -- the
-cyberscript ``create_range`` and the ACES-native ``create_aces_native_range`` --
+cyberscript ``create_range`` and the RAES-native ``create_raes_native_range`` --
 call this, so scope is never resolved in a view, a serializer, or the
 provisioner.
 """

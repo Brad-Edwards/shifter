@@ -2,7 +2,7 @@
 
 Turns "this event expects N concurrent ranges of this shape" into per-metric
 amounts and per-image counts. Pure arithmetic, kept stdlib-only so the
-provisioner can import it: the ACES/legacy plan projection that feeds it lives
+provisioner can import it: the RAES/legacy plan projection that feeds it lives
 in the Engine, not here.
 """
 

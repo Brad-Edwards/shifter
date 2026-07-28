@@ -9,8 +9,8 @@ they have. This module turns that into the two things admission needs:
 - **Per-image counts**, which is the pre-bake planning half of the requirement:
   image identity times the number of concurrent ranges that need it.
 
-Deliberately stdlib-only and free of any ACES or Django import. The projection
-that reads a hydrated legacy ``RangeSpec`` or an ACES ``ProvisioningPlan`` into
+Deliberately stdlib-only and free of any RAES or Django import. The projection
+that reads a hydrated legacy ``RangeSpec`` or an RAES ``ProvisioningPlan`` into
 ``ImageCount`` values lives in the Engine, so this arithmetic stays testable and
 importable from the standalone provisioner.
 """
@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 class ImageCount:
     """How many instances of one image identity a scope needs.
 
-    Identity mirrors ``shared.aces.realizability.ImageDemand`` so the ACES
+    Identity mirrors ``shared.raes.realizability.ImageDemand`` so the RAES
     projection maps across without inventing a second vocabulary. Only identity
     and count cross this boundary -- never authored node payloads.
     """

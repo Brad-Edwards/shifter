@@ -564,222 +564,6 @@
         }
       }
     },
-    "/api/v1/cms/aces-image-mappings/": {
-      "get": {
-        "operationId": "cms_aces_image_mappings_list",
-        "description": "Return registry rows as allowlisted DTOs (disabled rows included by default).",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "include_disabled",
-            "schema": {
-              "type": "boolean",
-              "default": true
-            }
-          },
-          {
-            "in": "query",
-            "name": "provider",
-            "schema": {
-              "type": "string",
-              "maxLength": 16,
-              "minLength": 1
-            }
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AcesImageMappingView"
-                  }
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:read"
-        ]
-      },
-      "post": {
-        "operationId": "cms_aces_image_mappings_create",
-        "description": "Register (create or update) a mapping through the single validated write path.",
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcesImageMappingRegister"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/AcesImageMappingRegister"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/AcesImageMappingRegister"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcesImageMappingView"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
-    "/api/v1/cms/aces-image-mappings/disable/": {
-      "post": {
-        "operationId": "cms_aces_image_mappings_disable_create",
-        "description": "Disable an existing mapping without deleting it (preserves audit).",
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcesImageMappingDisable"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/AcesImageMappingDisable"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/AcesImageMappingDisable"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcesImageMappingView"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
     "/api/v1/cms/catalog/": {
       "get": {
         "operationId": "cms_catalog_list",
@@ -969,6 +753,222 @@
         ]
       }
     },
+    "/api/v1/cms/raes-image-mappings/": {
+      "get": {
+        "operationId": "cms_raes_image_mappings_list",
+        "description": "Return registry rows as allowlisted DTOs (disabled rows included by default).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_disabled",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "schema": {
+              "type": "string",
+              "maxLength": 16,
+              "minLength": 1
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RaesImageMappingView"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      },
+      "post": {
+        "operationId": "cms_raes_image_mappings_create",
+        "description": "Register (create or update) a mapping through the single validated write path.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaesImageMappingRegister"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RaesImageMappingRegister"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RaesImageMappingRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaesImageMappingView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/raes-image-mappings/disable/": {
+      "post": {
+        "operationId": "cms_raes_image_mappings_disable_create",
+        "description": "Disable an existing mapping without deleting it (preserves audit).",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaesImageMappingDisable"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RaesImageMappingDisable"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RaesImageMappingDisable"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaesImageMappingView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
     "/api/v1/cms/scenario-editor/scenarios/": {
       "post": {
         "operationId": "cms_scenario_editor_scenarios_create",
@@ -1044,7 +1044,7 @@
     "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
       "get": {
         "operationId": "cms_scenario_editor_scenarios_retrieve",
-        "description": "Return full structural detail (or a read-only ACES projection).",
+        "description": "Return full structural detail (or a read-only RAES projection).",
         "parameters": [
           {
             "in": "path",
@@ -9313,9 +9313,9 @@
         ]
       }
     },
-    "/api/v1/mission-control/range/{request_id}/aces/operation-receipts/": {
+    "/api/v1/mission-control/range/{request_id}/raes/operation-receipts/": {
       "get": {
-        "operationId": "api_v1_mission_control_aces_operation_receipts_list",
+        "operationId": "api_v1_mission_control_raes_operation_receipts_list",
         "description": "Return newest-first redacted records for the owned range's request_id.",
         "parameters": [
           {
@@ -9344,7 +9344,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AcesOperationRecordListResponse"
+                  "$ref": "#/components/schemas/RaesOperationRecordListResponse"
                 }
               }
             },
@@ -9376,9 +9376,9 @@
         ]
       }
     },
-    "/api/v1/mission-control/range/{request_id}/aces/operation-status/": {
+    "/api/v1/mission-control/range/{request_id}/raes/operation-status/": {
       "get": {
-        "operationId": "api_v1_mission_control_aces_operation_status_list",
+        "operationId": "api_v1_mission_control_raes_operation_status_list",
         "description": "Return newest-first redacted records for the owned range's request_id.",
         "parameters": [
           {
@@ -9407,7 +9407,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AcesOperationRecordListResponse"
+                  "$ref": "#/components/schemas/RaesOperationRecordListResponse"
                 }
               }
             },
@@ -9439,9 +9439,9 @@
         ]
       }
     },
-    "/api/v1/mission-control/range/{request_id}/aces/participant-implementations/": {
+    "/api/v1/mission-control/range/{request_id}/raes/participant-implementations/": {
       "get": {
-        "operationId": "api_v1_mission_control_aces_participant_implementations_list",
+        "operationId": "api_v1_mission_control_raes_participant_implementations_list",
         "description": "Return newest-first redacted records for the owned range's request_id.",
         "parameters": [
           {
@@ -9470,7 +9470,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AcesParticipantRuntimeRecordListResponse"
+                  "$ref": "#/components/schemas/RaesParticipantRuntimeRecordListResponse"
                 }
               }
             },
@@ -9502,9 +9502,9 @@
         ]
       }
     },
-    "/api/v1/mission-control/range/{request_id}/aces/participant-runtimes/": {
+    "/api/v1/mission-control/range/{request_id}/raes/participant-runtimes/": {
       "get": {
-        "operationId": "api_v1_mission_control_aces_participant_runtimes_list",
+        "operationId": "api_v1_mission_control_raes_participant_runtimes_list",
         "description": "Return newest-first redacted records for the owned range's request_id.",
         "parameters": [
           {
@@ -9533,7 +9533,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AcesParticipantRuntimeRecordListResponse"
+                  "$ref": "#/components/schemas/RaesParticipantRuntimeRecordListResponse"
                 }
               }
             },
@@ -9565,9 +9565,9 @@
         ]
       }
     },
-    "/api/v1/mission-control/range/{request_id}/aces/snapshots/": {
+    "/api/v1/mission-control/range/{request_id}/raes/snapshots/": {
       "get": {
-        "operationId": "api_v1_mission_control_aces_runtime_snapshots_list",
+        "operationId": "api_v1_mission_control_raes_runtime_snapshots_list",
         "description": "Return newest-first redacted records for the owned range's request_id.",
         "parameters": [
           {
@@ -9596,7 +9596,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AcesOperationRecordListResponse"
+                  "$ref": "#/components/schemas/RaesOperationRecordListResponse"
                 }
               }
             },
@@ -10519,444 +10519,6 @@
   },
   "components": {
     "schemas": {
-      "AcesCatalogFields": {
-        "type": "object",
-        "description": "Read-only, allowlisted ACES package-source presentation fields.\n\nEvery field is bounded provenance/identity metadata. This serializer never\nexposes raw ACES SDL, imported module bodies, generated content, flags,\ncredentials, presigned URLs, provider payloads, or runtime config.",
-        "properties": {
-          "source_kind": {
-            "type": "string",
-            "readOnly": true
-          },
-          "contract_kind": {
-            "type": "string",
-            "readOnly": true
-          },
-          "contract_profile": {
-            "type": "string",
-            "readOnly": true
-          },
-          "package_ref": {
-            "type": "string",
-            "readOnly": true
-          },
-          "package_version": {
-            "type": "string",
-            "readOnly": true
-          },
-          "package_digest": {
-            "type": "string",
-            "readOnly": true
-          },
-          "lock_ref": {
-            "type": "string",
-            "readOnly": true
-          },
-          "lock_digest": {
-            "type": "string",
-            "readOnly": true
-          },
-          "conformance_status": {
-            "type": "string",
-            "readOnly": true
-          },
-          "conformance_report_ref": {
-            "type": "string",
-            "readOnly": true
-          },
-          "provenance_summary": {
-            "type": "object",
-            "additionalProperties": {},
-            "readOnly": true
-          }
-        },
-        "required": [
-          "conformance_report_ref",
-          "conformance_status",
-          "contract_kind",
-          "contract_profile",
-          "lock_digest",
-          "lock_ref",
-          "package_digest",
-          "package_ref",
-          "package_version",
-          "provenance_summary",
-          "source_kind"
-        ]
-      },
-      "AcesImageMappingDisable": {
-        "type": "object",
-        "description": "Shape validation for a disable request (natural key only).",
-        "properties": {
-          "provider": {
-            "type": "string",
-            "maxLength": 16
-          },
-          "source_name": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "source_version": {
-            "type": "string",
-            "default": "",
-            "maxLength": 100
-          }
-        },
-        "required": [
-          "provider",
-          "source_name"
-        ]
-      },
-      "AcesImageMappingRegister": {
-        "type": "object",
-        "description": "Shape validation for a register/upsert request; the service is final validator.\n\nProvider-choice validity, natural-key rules, and soft-disable semantics stay\nin ``engine.services`` so the API and management command cannot drift; this\nserializer only enforces HTTP shape (required fields, max lengths, positive\ndisk size, boolean).",
-        "properties": {
-          "provider": {
-            "type": "string",
-            "maxLength": 16
-          },
-          "source_name": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "image_ref": {
-            "type": "string",
-            "maxLength": 500
-          },
-          "source_version": {
-            "type": "string",
-            "default": "",
-            "maxLength": 100
-          },
-          "machine_type": {
-            "type": "string",
-            "default": "",
-            "maxLength": 100
-          },
-          "disk_size_gb": {
-            "type": "integer",
-            "minimum": 1,
-            "nullable": true
-          },
-          "disk_type": {
-            "type": "string",
-            "default": "",
-            "maxLength": 100
-          },
-          "enabled": {
-            "type": "boolean",
-            "default": true
-          },
-          "notes": {
-            "type": "string",
-            "default": ""
-          }
-        },
-        "required": [
-          "image_ref",
-          "provider",
-          "source_name"
-        ]
-      },
-      "AcesImageMappingView": {
-        "type": "object",
-        "description": "Allowlisted read projection shared by the register, list, and disable responses.\n\nField-for-field with ``engine.services.AcesImageMappingView`` so it renders\neither that DTO (list/disable) or the model instance the upsert returns.",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "provider": {
-            "type": "string",
-            "readOnly": true
-          },
-          "source_name": {
-            "type": "string",
-            "readOnly": true
-          },
-          "source_version": {
-            "type": "string",
-            "readOnly": true
-          },
-          "image_ref": {
-            "type": "string",
-            "readOnly": true
-          },
-          "machine_type": {
-            "type": "string",
-            "readOnly": true
-          },
-          "disk_size_gb": {
-            "type": "integer",
-            "readOnly": true,
-            "nullable": true
-          },
-          "disk_type": {
-            "type": "string",
-            "readOnly": true
-          },
-          "enabled": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "notes": {
-            "type": "string",
-            "readOnly": true
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "created_at",
-          "disk_size_gb",
-          "disk_type",
-          "enabled",
-          "id",
-          "image_ref",
-          "machine_type",
-          "notes",
-          "provider",
-          "source_name",
-          "source_version",
-          "updated_at"
-        ]
-      },
-      "AcesOperationRecord": {
-        "type": "object",
-        "description": "Read-only projection of one ACES operation sidecar record (#1275).\n\nSerializes an ``AcesOperationRecordProjection`` (already redacted by the\nshared read seam); it never touches the raw model ``payload``.",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "readOnly": true
-          },
-          "request_id": {
-            "type": "string",
-            "format": "uuid",
-            "readOnly": true
-          },
-          "range_id": {
-            "type": "string",
-            "format": "uuid",
-            "readOnly": true,
-            "nullable": true
-          },
-          "record_kind": {
-            "type": "string",
-            "readOnly": true
-          },
-          "contract_kind": {
-            "type": "string",
-            "readOnly": true
-          },
-          "contract_version": {
-            "type": "string",
-            "readOnly": true
-          },
-          "contract_profile": {
-            "type": "string",
-            "readOnly": true
-          },
-          "source_timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "payload_digest": {
-            "type": "string",
-            "readOnly": true
-          },
-          "payload": {
-            "type": "object",
-            "additionalProperties": {},
-            "readOnly": true
-          },
-          "diagnostic_refs": {
-            "type": "object",
-            "additionalProperties": {},
-            "readOnly": true
-          }
-        },
-        "required": [
-          "contract_kind",
-          "contract_profile",
-          "contract_version",
-          "created_at",
-          "diagnostic_refs",
-          "id",
-          "payload",
-          "payload_digest",
-          "range_id",
-          "record_kind",
-          "request_id",
-          "source_timestamp",
-          "updated_at"
-        ]
-      },
-      "AcesOperationRecordListResponse": {
-        "type": "object",
-        "description": "Response body shared by ``mission_control.api.aces`` list endpoints.",
-        "properties": {
-          "request_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "record_kind": {
-            "type": "string"
-          },
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AcesOperationRecord"
-            }
-          }
-        },
-        "required": [
-          "record_kind",
-          "request_id",
-          "results"
-        ]
-      },
-      "AcesParticipantRuntimeRecord": {
-        "type": "object",
-        "description": "Read-only projection of one ACES participant-runtime sidecar record (#1288).\n\nSerializes an ``AcesParticipantRuntimeRecordProjection`` (already redacted\nby the shared read seam); it never touches the raw model ``payload``.",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "readOnly": true
-          },
-          "request_id": {
-            "type": "string",
-            "format": "uuid",
-            "readOnly": true
-          },
-          "range_id": {
-            "type": "string",
-            "format": "uuid",
-            "readOnly": true,
-            "nullable": true
-          },
-          "range_instance_id": {
-            "type": "string",
-            "format": "uuid",
-            "readOnly": true,
-            "nullable": true
-          },
-          "participant_ref": {
-            "type": "string",
-            "readOnly": true
-          },
-          "record_kind": {
-            "type": "string",
-            "readOnly": true
-          },
-          "contract_kind": {
-            "type": "string",
-            "readOnly": true
-          },
-          "contract_version": {
-            "type": "string",
-            "readOnly": true
-          },
-          "contract_profile": {
-            "type": "string",
-            "readOnly": true
-          },
-          "participant_runtime_profile": {
-            "type": "string",
-            "readOnly": true
-          },
-          "source_timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "payload_digest": {
-            "type": "string",
-            "readOnly": true
-          },
-          "payload": {
-            "type": "object",
-            "additionalProperties": {},
-            "readOnly": true
-          },
-          "diagnostic_refs": {
-            "type": "object",
-            "additionalProperties": {},
-            "readOnly": true
-          }
-        },
-        "required": [
-          "contract_kind",
-          "contract_profile",
-          "contract_version",
-          "created_at",
-          "diagnostic_refs",
-          "id",
-          "participant_ref",
-          "participant_runtime_profile",
-          "payload",
-          "payload_digest",
-          "range_id",
-          "range_instance_id",
-          "record_kind",
-          "request_id",
-          "source_timestamp",
-          "updated_at"
-        ]
-      },
-      "AcesParticipantRuntimeRecordListResponse": {
-        "type": "object",
-        "description": "Response body shared by ``mission_control.api.aces_participant`` list endpoints.",
-        "properties": {
-          "request_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "record_kind": {
-            "type": "string"
-          },
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AcesParticipantRuntimeRecord"
-            }
-          }
-        },
-        "required": [
-          "record_kind",
-          "request_id",
-          "results"
-        ]
-      },
       "ActorTypeEnum": {
         "enum": [
           "user",
@@ -11470,7 +11032,7 @@
           "ctf_workspace_spa": {
             "type": "boolean"
           },
-          "aces_native_provisioning": {
+          "raes_native_provisioning": {
             "type": "boolean"
           },
           "administer_spa": {
@@ -11478,11 +11040,11 @@
           }
         },
         "required": [
-          "aces_native_provisioning",
           "administer_spa",
           "ctf_workspace_spa",
           "mission_control_spa",
           "platform_spa",
+          "raes_native_provisioning",
           "scenario_editor_spa"
         ]
       },
@@ -11573,7 +11135,7 @@
       },
       "CatalogEntry": {
         "type": "object",
-        "description": "Read-only catalog entry projection for the CMS catalog API.\n\nSerializes the presentation DTO from ``cms.scenarios.catalog_presentation``.\n``aces`` is present only for ACES package-backed entries; legacy YAML/DB\nentries serialize it as ``null``.",
+        "description": "Read-only catalog entry projection for the CMS catalog API.\n\nSerializes the presentation DTO from ``cms.scenarios.catalog_presentation``.\n``raes`` is present only for RAES package-backed entries; legacy YAML/DB\nentries serialize it as ``null``.",
         "properties": {
           "id": {
             "type": "string",
@@ -11607,10 +11169,10 @@
             "type": "boolean",
             "readOnly": true
           },
-          "aces": {
+          "raes": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/AcesCatalogFields"
+                "$ref": "#/components/schemas/RaesCatalogFields"
               }
             ],
             "readOnly": true,
@@ -11618,12 +11180,12 @@
           }
         },
         "required": [
-          "aces",
           "enabled",
           "id",
           "is_default",
           "launchable",
           "name",
+          "raes",
           "scenario_type",
           "source",
           "staff_only"
@@ -12236,12 +11798,12 @@
               "$ref": "#/components/schemas/ConnectionUrl"
             }
           },
-          "aces_projection": {
+          "raes_projection": {
             "type": "object",
             "additionalProperties": {},
             "nullable": true
           },
-          "aces_participant_runtime": {
+          "raes_participant_runtime": {
             "type": "object",
             "additionalProperties": {},
             "nullable": true
@@ -12259,11 +11821,11 @@
           }
         },
         "required": [
-          "aces_participant_runtime",
-          "aces_projection",
           "connection_urls",
           "has_range",
           "lifecycle",
+          "raes_participant_runtime",
+          "raes_projection",
           "range",
           "vpn_profile_available"
         ]
@@ -15157,6 +14719,444 @@
           "team_mode"
         ]
       },
+      "RaesCatalogFields": {
+        "type": "object",
+        "description": "Read-only, allowlisted RAES package-source presentation fields.\n\nEvery field is bounded provenance/identity metadata. This serializer never\nexposes raw RAES SDL, imported module bodies, generated content, flags,\ncredentials, presigned URLs, provider payloads, or runtime config.",
+        "properties": {
+          "source_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "package_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "package_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "package_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "lock_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "lock_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "conformance_status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "conformance_report_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "provenance_summary": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          }
+        },
+        "required": [
+          "conformance_report_ref",
+          "conformance_status",
+          "contract_kind",
+          "contract_profile",
+          "lock_digest",
+          "lock_ref",
+          "package_digest",
+          "package_ref",
+          "package_version",
+          "provenance_summary",
+          "source_kind"
+        ]
+      },
+      "RaesImageMappingDisable": {
+        "type": "object",
+        "description": "Shape validation for a disable request (natural key only).",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "source_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "source_version": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "provider",
+          "source_name"
+        ]
+      },
+      "RaesImageMappingRegister": {
+        "type": "object",
+        "description": "Shape validation for a register/upsert request; the service is final validator.\n\nProvider-choice validity, natural-key rules, and soft-disable semantics stay\nin ``engine.services`` so the API and management command cannot drift; this\nserializer only enforces HTTP shape (required fields, max lengths, positive\ndisk size, boolean).",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "source_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "image_ref": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "source_version": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "machine_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "disk_size_gb": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "disk_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "notes": {
+            "type": "string",
+            "default": ""
+          }
+        },
+        "required": [
+          "image_ref",
+          "provider",
+          "source_name"
+        ]
+      },
+      "RaesImageMappingView": {
+        "type": "object",
+        "description": "Allowlisted read projection shared by the register, list, and disable responses.\n\nField-for-field with ``engine.services.RaesImageMappingView`` so it renders\neither that DTO (list/disable) or the model instance the upsert returns.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "provider": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "image_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "machine_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "disk_size_gb": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
+          "disk_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "notes": {
+            "type": "string",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "disk_size_gb",
+          "disk_type",
+          "enabled",
+          "id",
+          "image_ref",
+          "machine_type",
+          "notes",
+          "provider",
+          "source_name",
+          "source_version",
+          "updated_at"
+        ]
+      },
+      "RaesOperationRecord": {
+        "type": "object",
+        "description": "Read-only projection of one RAES operation sidecar record (#1275).\n\nSerializes an ``RaesOperationRecordProjection`` (already redacted by the\nshared read seam); it never touches the raw model ``payload``.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "range_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          },
+          "record_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "payload_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          },
+          "diagnostic_refs": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          }
+        },
+        "required": [
+          "contract_kind",
+          "contract_profile",
+          "contract_version",
+          "created_at",
+          "diagnostic_refs",
+          "id",
+          "payload",
+          "payload_digest",
+          "range_id",
+          "record_kind",
+          "request_id",
+          "source_timestamp",
+          "updated_at"
+        ]
+      },
+      "RaesOperationRecordListResponse": {
+        "type": "object",
+        "description": "Response body shared by ``mission_control.api.raes`` list endpoints.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "record_kind": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RaesOperationRecord"
+            }
+          }
+        },
+        "required": [
+          "record_kind",
+          "request_id",
+          "results"
+        ]
+      },
+      "RaesParticipantRuntimeRecord": {
+        "type": "object",
+        "description": "Read-only projection of one RAES participant-runtime sidecar record (#1288).\n\nSerializes an ``RaesParticipantRuntimeRecordProjection`` (already redacted\nby the shared read seam); it never touches the raw model ``payload``.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "range_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          },
+          "range_instance_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          },
+          "participant_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "record_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "participant_runtime_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "payload_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          },
+          "diagnostic_refs": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          }
+        },
+        "required": [
+          "contract_kind",
+          "contract_profile",
+          "contract_version",
+          "created_at",
+          "diagnostic_refs",
+          "id",
+          "participant_ref",
+          "participant_runtime_profile",
+          "payload",
+          "payload_digest",
+          "range_id",
+          "range_instance_id",
+          "record_kind",
+          "request_id",
+          "source_timestamp",
+          "updated_at"
+        ]
+      },
+      "RaesParticipantRuntimeRecordListResponse": {
+        "type": "object",
+        "description": "Response body shared by ``mission_control.api.raes_participant`` list endpoints.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "record_kind": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RaesParticipantRuntimeRecord"
+            }
+          }
+        },
+        "required": [
+          "record_kind",
+          "request_id",
+          "results"
+        ]
+      },
       "RangeAccessResponse": {
         "type": "object",
         "description": "Redirect pointer to the mission_control Guacamole RDP endpoint.",
@@ -15752,7 +15752,7 @@
       },
       "ScenarioDetail": {
         "type": "object",
-        "description": "Full scenario detail with source-capability flags for the editor.\n\n``source`` classifies the entry (``builtin`` / ``custom`` / ``aces`` /\n``ctf``) and the capability booleans tell the SPA which actions to offer.\n``instances`` / ``subnets`` are populated for structural (demo) scenarios;\n``aces`` carries the read-only provenance block for ACES entries.",
+        "description": "Full scenario detail with source-capability flags for the editor.\n\n``source`` classifies the entry (``builtin`` / ``custom`` / ``raes`` /\n``ctf``) and the capability booleans tell the SPA which actions to offer.\n``instances`` / ``subnets`` are populated for structural (demo) scenarios;\n``raes`` carries the read-only provenance block for RAES entries.",
         "properties": {
           "id": {
             "type": "string",
@@ -15820,10 +15820,10 @@
             },
             "readOnly": true
           },
-          "aces": {
+          "raes": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/AcesCatalogFields"
+                "$ref": "#/components/schemas/RaesCatalogFields"
               }
             ],
             "readOnly": true,
@@ -15831,7 +15831,6 @@
           }
         },
         "required": [
-          "aces",
           "deletable",
           "description",
           "editable",
@@ -15843,6 +15842,7 @@
           "launchable",
           "name",
           "ngfw",
+          "raes",
           "scenario_type",
           "source",
           "staff_only",
@@ -15936,7 +15936,7 @@
       },
       "ScenarioListItem": {
         "type": "object",
-        "description": "One entry from ``cms.services.list_launchable_scenarios``.\n\nLegacy YAML/DB scenarios and ACES-derived catalog entries share this\nprojection but are not fully homogeneous; fields the SPA does not render\nstay loosely typed (``DictField``/``ListField(DictField)``) rather than\nmodeling the full ``ScenarioTemplate``/ACES catalog schema here.",
+        "description": "One entry from ``cms.services.list_launchable_scenarios``.\n\nLegacy YAML/DB scenarios and RAES-derived catalog entries share this\nprojection but are not fully homogeneous; fields the SPA does not render\nstay loosely typed (``DictField``/``ListField(DictField)``) rather than\nmodeling the full ``ScenarioTemplate``/RAES catalog schema here.",
         "properties": {
           "id": {
             "type": "string"

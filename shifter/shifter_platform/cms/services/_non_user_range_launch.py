@@ -7,7 +7,7 @@ minted by a dedicated workflow rather than passed in by whoever happens to call
 the product facade.
 
 This module is that workflow. The generic facades (``create_range``,
-``create_range_dispatch``, ``create_aces_native_range``) take no
+``create_range_dispatch``, ``create_raes_native_range``) take no
 instantiation-purpose argument at all, so they cannot escalate. Reaching a
 non-user purpose means calling ``create_non_user_range``, which:
 
@@ -28,7 +28,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from cms.exceptions import CMSError
-from cms.services._aces_range_create import dispatch_range_launch
+from cms.services._raes_range_create import dispatch_range_launch
 from shared.range_instantiation_policy import POLICY_DENIAL_CODE, InstantiationPurpose
 
 if TYPE_CHECKING:
@@ -105,7 +105,7 @@ def create_non_user_range(
 ) -> RangeContext:
     """Launch a range under a declared non-user mode, after the operator gate.
 
-    Routes through the same ACES/cyberscript dispatch, active-range admission,
+    Routes through the same RAES/cyberscript dispatch, active-range admission,
     Engine persistence, and provisioner path as a normal launch -- only the
     minted instantiation purpose differs, which is what lets the retained
     GDC/Kubernetes plumbing be selected (ADR-030-R3).

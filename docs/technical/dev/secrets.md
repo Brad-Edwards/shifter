@@ -230,10 +230,10 @@ channel). See `docs/architecture/vm-guest-credential-preflight-762.md`.
    non-sensitive `ValueError` that the Mission Control RDP view maps
    to HTTP 400, the same envelope as a missing reference.
 
-#### ACES-authored account credentials
+#### RAES-authored account credentials
 
-The ACES-native GCE path treats authored accounts separately from the
-provisioner's `aces` management login and from portal/participant credentials.
+The RAES-native GCE path treats authored accounts separately from the
+provisioner's `raes` management login and from portal/participant credentials.
 For every enabled account on every concrete node instance, the provisioner
 read-or-creates a deterministic Secret Manager entry keyed by range, instance,
 username, and canonical `auth_method`:
@@ -247,7 +247,7 @@ username, and canonical `auth_method`:
 - Disabled accounts receive no usable credential. `password_strength: none` is
   accepted only for a disabled account, never as a blank-password login.
 
-Credential values and references do not enter the serialized ACES plan, GCE
+Credential values and references do not enter the serialized RAES plan, GCE
 metadata, provisioner outputs, runtime snapshots, events, diagnostics, or logs.
 The existing strict-host-key-checked management SSH channel carries setup after
 boot, and `SetupOrchestrator` masks password context. Destroy reconstructs and
@@ -256,7 +256,7 @@ retrieval surface for these backend-owned credentials.
 
 `auth_method` admits only the canonical `password` and `publickey` spellings at
 both the shared admission boundary and the separate provisioner parser. The
-backend does not declare ACES `mail`: Linux aliases and Windows marker files do
+backend does not declare RAES `mail`: Linux aliases and Windows marker files do
 not provide one equivalent, verified mail-routing semantic.
 
 #### DC role

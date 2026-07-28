@@ -3,11 +3,11 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from cms.models import AcesPackageSource, Scenario, ScenarioMetadata
+from cms.models import RaesPackageSource, Scenario, ScenarioMetadata
 from cms.scenarios.legacy_ids import active_legacy_scenario_ids
 from cms.scenarios.registry import (
     ScenarioWorkflow,
-    _aces_launchable,
+    _raes_launchable,
     check_scenario_access,
     get_catalog_entry,
     get_scenario_detail,
@@ -166,10 +166,10 @@ class TestListAllScenarios:
         assert "custom-test" not in ids
 
 
-def _make_aces_source(staff_user, scenario_id, **overrides):
+def _make_raes_source(staff_user, scenario_id, **overrides):
     fields = {
         "scenario_id": scenario_id,
-        "contract_kind": "aces",
+        "contract_kind": "raes",
         "contract_profile": "shifter",
         "package_ref": "scenario-dev/polaris/content-packages/polaris",
         "package_version": "1.0.0",
@@ -177,69 +177,69 @@ def _make_aces_source(staff_user, scenario_id, **overrides):
         "registered_by": staff_user,
     }
     fields.update(overrides)
-    return AcesPackageSource.objects.create(**fields)
+    return RaesPackageSource.objects.create(**fields)
 
 
-class TestAcesPackageSourceProjection:
-    def test_aces_entry_appears(self, staff_user):
-        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
+class TestRaesPackageSourceProjection:
+    def test_raes_entry_appears(self, staff_user):
+        _make_raes_source(staff_user, "polaris-raes", conformance_status="passed")
         result = list_all_scenarios()
-        entry = next(s for s in result if s["id"] == "polaris-aces")
+        entry = next(s for s in result if s["id"] == "polaris-raes")
         assert entry["is_default"] is False
-        assert entry["scenario_type"] == "aces"
+        assert entry["scenario_type"] == "raes"
         assert entry["source_kind"] == "repo"
-        assert entry["contract_kind"] == "aces"
+        assert entry["contract_kind"] == "raes"
         # Review-only by default: no runtime adapter is wired yet.
         assert entry["launchable"] is False
         assert "agent_requirements" in entry
-        assert entry["name"] == "polaris-aces"
+        assert entry["name"] == "polaris-raes"
 
     def test_projection_stays_sorted_by_name(self, staff_user):
-        _make_aces_source(staff_user, "polaris-aces")
+        _make_raes_source(staff_user, "polaris-raes")
         result = list_all_scenarios()
         names = [s["name"] for s in result]
         assert names == sorted(names)
 
     def test_launchable_false_when_not_conformant(self, staff_user):
-        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+        _make_raes_source(staff_user, "polaris-pending", conformance_status="pending")
         result = list_all_scenarios()
         entry = next(s for s in result if s["id"] == "polaris-pending")
         assert entry["launchable"] is False
 
     def test_no_shadow_of_yaml_default(self, staff_user):
-        _make_aces_source(staff_user, "basic")
+        _make_raes_source(staff_user, "basic")
         result = list_all_scenarios()
         basic = [s for s in result if s["id"] == "basic"]
         assert len(basic) == 1
         assert basic[0]["is_default"] is True
-        assert basic[0].get("scenario_type") != "aces"
+        assert basic[0].get("scenario_type") != "raes"
 
     def test_no_shadow_of_active_db_custom(self, custom_scenario, staff_user):
-        _make_aces_source(staff_user, "custom-test")
+        _make_raes_source(staff_user, "custom-test")
         result = list_all_scenarios()
         entries = [s for s in result if s["id"] == "custom-test"]
         assert len(entries) == 1
-        # The surviving entry is the DB custom (demo), not the ACES row.
+        # The surviving entry is the DB custom (demo), not the RAES row.
         assert entries[0]["is_default"] is False
-        assert entries[0].get("scenario_type") != "aces"
+        assert entries[0].get("scenario_type") != "raes"
 
     def test_metadata_overlay_reuse(self, staff_user, regular_user):
-        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
+        _make_raes_source(staff_user, "polaris-raes", conformance_status="passed")
         ScenarioMetadata.objects.create(
-            scenario_id="polaris-aces",
+            scenario_id="polaris-raes",
             enabled=False,
             staff_only=True,
             updated_by=staff_user,
         )
-        entry = next(s for s in list_all_scenarios(user=None) if s["id"] == "polaris-aces")
+        entry = next(s for s in list_all_scenarios(user=None) if s["id"] == "polaris-raes")
         assert entry["enabled"] is False
         assert entry["staff_only"] is True
-        # Regular users do not see a disabled / staff-only ACES entry.
+        # Regular users do not see a disabled / staff-only RAES entry.
         ids = [s["id"] for s in list_all_scenarios(user=regular_user)]
-        assert "polaris-aces" not in ids
+        assert "polaris-raes" not in ids
 
-    def test_access_and_launchability_independent(self, staff_user, aces_launch_adapter):
-        _make_aces_source(staff_user, "polaris-split", conformance_status="passed")
+    def test_access_and_launchability_independent(self, staff_user, raes_launch_adapter):
+        _make_raes_source(staff_user, "polaris-split", conformance_status="passed")
         ScenarioMetadata.objects.create(
             scenario_id="polaris-split",
             enabled=False,
@@ -252,44 +252,44 @@ class TestAcesPackageSourceProjection:
         assert entry["launchable"] is True
 
 
-class TestAcesPackageSourceNotLaunchable:
-    """ACES package-source ids are fail-closed at the launch chokepoint.
+class TestRaesPackageSourceNotLaunchable:
+    """RAES package-source ids are fail-closed at the launch chokepoint.
 
-    In this slice there is no ACES launch adapter (owned by #1253), so an ACES
+    In this slice there is no RAES launch adapter (owned by #1253), so an RAES
     catalog entry is visible/selectable in the projection but MUST NOT resolve
     through the launch path that ``cms.services.create_range`` and the CTF
     hydrator both funnel through (``load_scenario_template`` /
     ``load_demo_scenario_template``). It resolves only DB ``Scenario`` rows and
-    YAML defaults, so an ACES-only id raises ``ValueError`` — it cannot launch,
+    YAML defaults, so an RAES-only id raises ``ValueError`` — it cannot launch,
     regardless of its projected ``launchable`` flag.
     """
 
-    def test_conformant_aces_id_not_resolvable_for_launch(self, staff_user):
-        # Even a conformance-passed (launchable=True in the projection) ACES id
+    def test_conformant_raes_id_not_resolvable_for_launch(self, staff_user):
+        # Even a conformance-passed (launchable=True in the projection) RAES id
         # is not launchable while no launch adapter exists.
-        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
+        _make_raes_source(staff_user, "polaris-raes", conformance_status="passed")
         with pytest.raises(ValueError, match="not found"):
-            load_scenario_template("polaris-aces")
+            load_scenario_template("polaris-raes")
         with pytest.raises(ValueError, match="not found"):
-            load_demo_scenario_template("polaris-aces")
+            load_demo_scenario_template("polaris-raes")
 
-    def test_pending_aces_id_not_resolvable_for_launch(self, staff_user):
-        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+    def test_pending_raes_id_not_resolvable_for_launch(self, staff_user):
+        _make_raes_source(staff_user, "polaris-pending", conformance_status="pending")
         with pytest.raises(ValueError, match="not found"):
             load_scenario_template("polaris-pending")
 
 
 @pytest.fixture
-def aces_launch_adapter(monkeypatch):
-    """Enable the ACES-native launch path for the ('aces','shifter') profile.
+def raes_launch_adapter(monkeypatch):
+    """Enable the RAES-native launch path for the ('raes','shifter') profile.
 
-    The runtime launch adapter is wired (#1479), but ACES launchability is gated
-    on the SHIFTER_ACES_NATIVE_PROVISIONING flag, off by default. Tests that
+    The runtime launch adapter is wired (#1479), but RAES launchability is gated
+    on the SHIFTER_RAES_NATIVE_PROVISIONING flag, off by default. Tests that
     exercise the positive launchability path use this fixture to turn it on.
     """
     from django.conf import settings
 
-    monkeypatch.setattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", True)
+    monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", True)
 
 
 class TestLaunchability:
@@ -297,61 +297,61 @@ class TestLaunchability:
         entry = next(s for s in list_all_scenarios() if s["id"] == "basic")
         assert entry["launchable"] is True
 
-    def test_aces_review_only_without_adapter(self, staff_user):
-        # SHIFTER_ACES_NATIVE_PROVISIONING is off by default, so even a conformant
-        # ACES entry is review-only (not launchable) and never enters launch flows.
-        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
-        assert get_catalog_entry("polaris-aces")["launchable"] is False
+    def test_raes_review_only_without_adapter(self, staff_user):
+        # SHIFTER_RAES_NATIVE_PROVISIONING is off by default, so even a conformant
+        # RAES entry is review-only (not launchable) and never enters launch flows.
+        _make_raes_source(staff_user, "polaris-raes", conformance_status="passed")
+        assert get_catalog_entry("polaris-raes")["launchable"] is False
 
-    def test_conformant_supported_aces_launchable_with_adapter(self, staff_user, aces_launch_adapter):
-        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
-        assert get_catalog_entry("polaris-aces")["launchable"] is True
+    def test_conformant_supported_raes_launchable_with_adapter(self, staff_user, raes_launch_adapter):
+        _make_raes_source(staff_user, "polaris-raes", conformance_status="passed")
+        assert get_catalog_entry("polaris-raes")["launchable"] is True
 
     def test_native_provisioning_flag_toggles_launchability(self, staff_user, monkeypatch):
         # The same conformant source is not launchable with the flag off and
         # launchable with it on: the flag is the cutover gate.
         from django.conf import settings
 
-        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
-        monkeypatch.setattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False)
-        assert get_catalog_entry("polaris-aces")["launchable"] is False
-        monkeypatch.setattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", True)
-        assert get_catalog_entry("polaris-aces")["launchable"] is True
+        _make_raes_source(staff_user, "polaris-raes", conformance_status="passed")
+        monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False)
+        assert get_catalog_entry("polaris-raes")["launchable"] is False
+        monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", True)
+        assert get_catalog_entry("polaris-raes")["launchable"] is True
 
-    def test_pending_aces_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
-        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+    def test_pending_raes_not_launchable_with_adapter(self, staff_user, raes_launch_adapter):
+        _make_raes_source(staff_user, "polaris-pending", conformance_status="pending")
         assert get_catalog_entry("polaris-pending")["launchable"] is False
 
-    def test_object_source_launchable_with_bucket_configured(self, staff_user, aces_launch_adapter, monkeypatch):
+    def test_object_source_launchable_with_bucket_configured(self, staff_user, raes_launch_adapter, monkeypatch):
         from django.conf import settings
 
-        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "aces-pkgs")
-        _make_aces_source(staff_user, "obj-ok", conformance_status="passed", source_kind="object")
+        monkeypatch.setattr(settings, "RAES_PACKAGE_BUCKET", "raes-pkgs")
+        _make_raes_source(staff_user, "obj-ok", conformance_status="passed", source_kind="object")
         assert get_catalog_entry("obj-ok")["launchable"] is True
 
-    def test_object_source_not_launchable_without_bucket(self, staff_user, aces_launch_adapter, monkeypatch):
+    def test_object_source_not_launchable_without_bucket(self, staff_user, raes_launch_adapter, monkeypatch):
         from django.conf import settings
 
-        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "")
-        _make_aces_source(staff_user, "obj-nobucket", conformance_status="passed", source_kind="object")
+        monkeypatch.setattr(settings, "RAES_PACKAGE_BUCKET", "")
+        _make_raes_source(staff_user, "obj-nobucket", conformance_status="passed", source_kind="object")
         # Registrable and visible, but non-launchable until a package bucket is
         # configured (config readiness, not a network probe).
         assert get_catalog_entry("obj-nobucket")["launchable"] is False
 
-    def test_unsupported_profile_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+    def test_unsupported_profile_not_launchable_with_adapter(self, staff_user, raes_launch_adapter):
         # profile is a free single-line string at persistence, but only supported
         # profiles (with a wired adapter) are launchable.
-        _make_aces_source(staff_user, "polaris-badprofile", conformance_status="passed", contract_profile="polaris")
+        _make_raes_source(staff_user, "polaris-badprofile", conformance_status="passed", contract_profile="polaris")
         assert get_catalog_entry("polaris-badprofile")["launchable"] is False
 
-    def test_invalid_digest_fails_closed_with_adapter(self, staff_user, aces_launch_adapter):
+    def test_invalid_digest_fails_closed_with_adapter(self, staff_user, raes_launch_adapter):
         # Build (unsaved) a row that bypasses the persistence validator to prove
         # launchability re-validates refs/digests fail-closed.
-        from cms.models import AcesPackageSource
+        from cms.models import RaesPackageSource
 
-        row = AcesPackageSource(
+        row = RaesPackageSource(
             scenario_id="polaris-baddigest",
-            contract_kind="aces",
+            contract_kind="raes",
             contract_profile="shifter",
             source_kind="repo",
             package_ref="pkg",
@@ -360,38 +360,38 @@ class TestLaunchability:
             conformance_status="passed",
             registered_by=staff_user,
         )
-        assert _aces_launchable(row, known_legacy_ids=set()) is False
+        assert _raes_launchable(row, known_legacy_ids=set()) is False
 
-    def test_list_launchable_excludes_aces_without_adapter(self, staff_user):
-        _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
-        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+    def test_list_launchable_excludes_raes_without_adapter(self, staff_user):
+        _make_raes_source(staff_user, "polaris-ok", conformance_status="passed")
+        _make_raes_source(staff_user, "polaris-pending", conformance_status="pending")
         ids = [s["id"] for s in list_launchable_scenarios(workflow=ScenarioWorkflow.RANGE_LAUNCH)]
         assert "polaris-ok" not in ids  # review-only: native provisioning flag off
         assert "polaris-pending" not in ids
         assert "basic" in ids  # legacy stays launchable
 
-    def test_list_launchable_includes_conformant_aces_with_adapter(self, staff_user, aces_launch_adapter):
-        _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
-        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+    def test_list_launchable_includes_conformant_raes_with_adapter(self, staff_user, raes_launch_adapter):
+        _make_raes_source(staff_user, "polaris-ok", conformance_status="passed")
+        _make_raes_source(staff_user, "polaris-pending", conformance_status="pending")
         ids = [s["id"] for s in list_launchable_scenarios(workflow=ScenarioWorkflow.RANGE_LAUNCH)]
         assert "polaris-ok" in ids
         assert "polaris-pending" not in ids
         assert "basic" in ids
 
-    def test_staff_review_includes_non_launchable_aces(self, staff_user):
-        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+    def test_staff_review_includes_non_launchable_raes(self, staff_user):
+        _make_raes_source(staff_user, "polaris-pending", conformance_status="pending")
         ids = [s["id"] for s in list_launchable_scenarios(user=None, workflow=ScenarioWorkflow.STAFF_REVIEW)]
         assert "polaris-pending" in ids
 
     def test_is_scenario_launchable_without_adapter(self, staff_user):
-        _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
+        _make_raes_source(staff_user, "polaris-ok", conformance_status="passed")
         assert is_scenario_launchable("polaris-ok") is False  # review-only
         assert is_scenario_launchable("basic") is True  # legacy launchable
         assert is_scenario_launchable("does-not-exist") is False
 
-    def test_is_scenario_launchable_with_adapter(self, staff_user, aces_launch_adapter):
-        _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
-        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+    def test_is_scenario_launchable_with_adapter(self, staff_user, raes_launch_adapter):
+        _make_raes_source(staff_user, "polaris-ok", conformance_status="passed")
+        _make_raes_source(staff_user, "polaris-pending", conformance_status="pending")
         assert is_scenario_launchable("polaris-ok") is True
         assert is_scenario_launchable("polaris-pending") is False
 
@@ -529,21 +529,21 @@ class TestActiveLegacyScenarioIds:
         assert "custom-test" not in active_legacy_scenario_ids()
 
     def test_matches_projection_ids(self, custom_scenario):
-        projection_legacy = {s["id"] for s in list_all_scenarios() if s.get("source_kind") != "aces"}
+        projection_legacy = {s["id"] for s in list_all_scenarios() if s.get("source_kind") != "raes"}
         assert active_legacy_scenario_ids() == projection_legacy
 
 
 class TestObjectSourceNotLaunchable:
     """Object-backed packs are never launchable until #1567 supplies a resolver.
 
-    The native launch loader resolves refs only under ACES_PACKAGE_ROOT, so an
+    The native launch loader resolves refs only under RAES_PACKAGE_ROOT, so an
     object-storage-backed pack has no containment-checked, immutable-identity
     resolution yet. It is fail-closed at the launchability axis even when the
     adapter is wired, the flag is on, and conformance has passed.
     """
 
-    def test_object_source_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
-        _make_aces_source(
+    def test_object_source_not_launchable_with_adapter(self, staff_user, raes_launch_adapter):
+        _make_raes_source(
             staff_user,
             "polaris-object",
             source_kind="object",
@@ -551,8 +551,8 @@ class TestObjectSourceNotLaunchable:
         )
         assert get_catalog_entry("polaris-object")["launchable"] is False
 
-    def test_repo_source_launchable_with_adapter(self, staff_user, aces_launch_adapter):
-        _make_aces_source(
+    def test_repo_source_launchable_with_adapter(self, staff_user, raes_launch_adapter):
+        _make_raes_source(
             staff_user,
             "polaris-repo",
             source_kind="repo",

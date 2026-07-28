@@ -87,7 +87,7 @@ def _classify(scenario_type: str, is_default: bool) -> tuple[str, bool, bool, bo
     """Return (source, editable, deletable, exportable) capability flags.
 
     Custom demo scenarios are fully editable; built-in YAML defaults are
-    code-managed (clone/export/metadata only); ACES and CTF entries are
+    code-managed (clone/export/metadata only); RAES and CTF entries are
     read-only in this editor. ``source`` comes from the single server-owned
     classifier (``catalog_presentation.scenario_source``) so the catalog list,
     the detail projection, and the SPA never derive it independently.
@@ -120,12 +120,12 @@ def _structural_detail_payload(detail: dict[str, Any]) -> dict[str, Any]:
         "ngfw": bool(detail.get("ngfw", False)),
         "instances": detail.get("instances", []),
         "subnets": detail.get("subnets", []),
-        "aces": None,
+        "raes": None,
     }
 
 
-def _aces_detail_payload(scenario_id: str) -> dict[str, Any] | None:
-    """Build a read-only editor detail payload for an ACES catalog entry."""
+def _raes_detail_payload(scenario_id: str) -> dict[str, Any] | None:
+    """Build a read-only editor detail payload for an RAES catalog entry."""
     entry = catalog_presentation.get_catalog_presentation(scenario_id)
     if entry is None:
         return None
@@ -133,8 +133,8 @@ def _aces_detail_payload(scenario_id: str) -> dict[str, Any] | None:
         "id": entry["id"],
         "name": entry["name"],
         "description": "",
-        "scenario_type": entry.get("scenario_type", "aces"),
-        "source": "aces",
+        "scenario_type": entry.get("scenario_type", "raes"),
+        "source": "raes",
         "is_default": bool(entry.get("is_default", False)),
         "enabled": bool(entry.get("enabled", True)),
         "staff_only": bool(entry.get("staff_only", False)),
@@ -145,14 +145,14 @@ def _aces_detail_payload(scenario_id: str) -> dict[str, Any] | None:
         "ngfw": False,
         "instances": [],
         "subnets": [],
-        "aces": entry.get("aces"),
+        "raes": entry.get("raes"),
     }
 
 
 class CatalogListView(APIView):
     """List catalog entries as read-only metadata (staff-review projection).
 
-    Returns every catalog entry (YAML defaults, DB customs, and ACES
+    Returns every catalog entry (YAML defaults, DB customs, and RAES
     package-backed entries) with allowlisted read-only fields. This is the
     unfiltered staff-review projection — like the scenario-editor list — so a
     CMS authoring actor can inspect disabled / staff-only entries. User-facing
@@ -323,12 +323,12 @@ class ScenarioResourceView(APIView):
 
     @extend_schema(responses=ScenarioDetailSerializer)
     def get(self, request: Request, scenario_id: str) -> Response:
-        """Return full structural detail (or a read-only ACES projection)."""
+        """Return full structural detail (or a read-only RAES projection)."""
         payload: dict[str, Any] | None
         try:
             payload = _structural_detail_payload(get_scenario_detail(scenario_id))
         except ValueError:
-            payload = _aces_detail_payload(scenario_id)
+            payload = _raes_detail_payload(scenario_id)
         if payload is None:
             return _not_found(request)
         return Response(ScenarioDetailSerializer(payload).data)
@@ -393,7 +393,7 @@ class ScenarioCloneView(APIView):
 
 
 class ScenarioRealizabilityView(APIView):
-    """Report whether the selected backend can realize an ACES scenario (ADR-034-R3)."""
+    """Report whether the selected backend can realize an RAES scenario (ADR-034-R3)."""
 
     permission_classes = CMS_READ_PERMISSIONS
 

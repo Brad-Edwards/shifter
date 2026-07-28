@@ -98,7 +98,7 @@ The invariant is enforced in two places, not by convention:
   reachable state. A default would let a creation path persist a placeholder
   tenant, which is what the constraint exists to prevent.
 - **The Engine creation boundary.** `engine.services.create_range` and
-  `create_aces_range` take `workspace_id` as a required argument and refuse a
+  `create_raes_range` take `workspace_id` as a required argument and refuse a
   missing one, so a caller that forgets it fails loudly at the seam rather than
   at an integrity error deep in a transaction.
 
@@ -136,7 +136,7 @@ Tenancy scopes principals and range ownership. It does not scope platform
 configuration or catalog. These remain deployment-global and do not acquire a
 workspace binding as a side effect of this layer (ADR-046-R7):
 
-- the scenario catalog and ACES package sources;
+- the scenario catalog and RAES package sources;
 - the agent, operating-system, instance-type, and app catalogs;
 - NGFW instances and platform network/infrastructure;
 - cloud provider, range-backend, and deployment settings, including the

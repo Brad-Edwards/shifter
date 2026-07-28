@@ -15,7 +15,7 @@ published image is a rebuildable cache.
 ## Context
 
 An operator running a packaged Shifter tenant must be able to add new images to
-the runtime catalog, import scenario packs (see `../aces-scenario-packs` for the
+the runtime catalog, import environment packs (see `raes-env-packs` for the
 pack format), and author their own scenarios. Today these read as three
 different mechanisms, and the shipped catalog is loaded through a privileged
 in-box path distinct from how an operator would add anything.
@@ -36,7 +36,7 @@ Several facts constrain the design:
 - **Not every pack has images.** Some packs are structure only; large parts of
   an experiment (the multi-run unit of a scenario) are parameterized, with
   images supplied per run or not at all.
-- **We do not create loopholes in ACES.** If a scenario requires an image or
+- **We do not create loopholes in RAES.** If a scenario requires an image or
   capability the backend cannot provide, that scenario is not realizable, and
   the author should be told, ideally in the scenario editor, rather than
   discovering it at provision time.
@@ -61,7 +61,7 @@ ADR-033.
 
 - **Repo pack identity is byte-bound at ingestion and use.** A repository
   `package_ref` identifies a containment-checked pack root. Registration uses
-  the canonical ACES associated-artifact manifest to bind the advertised digest
+  the canonical RAES associated-artifact manifest to bind the advertised digest
   to the exact inventory and payload bytes; native launch verifies that digest
   again before resolving or executing SDL. This trust control is identical for
   shipped, public, private, and self-authored content and is not entitlement.
@@ -90,7 +90,7 @@ ADR-033.
 - **Ingestion validates realizability against the backend manifest.** A pack
   that a conformant Shifter backend cannot realize is flagged (no silent
   loopholes) and surfaced to the author (the scenario editor is the natural
-  place). This uses the ACES backend manifest and realizability ledger.
+  place). This uses the RAES backend manifest and realizability ledger.
 
 - **Authority is declared, not inferred from artifact form.** The portable RAES
   requirement is the semantic authority. A published image may itself be the
@@ -120,7 +120,7 @@ ADR-033.
   credential only.
 - This contract is realized by the issues under program #1584 and cross-links
   the REV1.2 realizability ledger (#1563) and object-storage package sources
-  (#1567), and the ACES catalog/registry work under ADR-024 (#1252, #1253,
+  (#1567), and the RAES catalog/registry work under ADR-024 (#1252, #1253,
   #1254). It builds on backend bundles (ADR-011) and the substrate interface
   (#1322).
 

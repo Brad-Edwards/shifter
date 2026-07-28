@@ -65,8 +65,8 @@ class TestRangeTokenAccess:
             "has_range": False,
             "range": None,
             "connection_urls": [],
-            "aces_projection": None,
-            "aces_participant_runtime": None,
+            "raes_projection": None,
+            "raes_participant_runtime": None,
             "lifecycle": None,
             "vpn_profile_available": False,
         }

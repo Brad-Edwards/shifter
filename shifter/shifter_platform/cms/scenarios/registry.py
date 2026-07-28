@@ -24,7 +24,7 @@ from shared.log_sanitize import safe_log_value
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from cms.models import AcesPackageSource
+    from cms.models import RaesPackageSource
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class ScenarioWorkflow(enum.StrEnum):
     """Workflow purpose a scenario listing / launchability check is scoped to.
 
     ``STAFF_REVIEW`` is the unfiltered catalog view (staff may see
-    non-launchable ACES entries for review). Every other value is a launch
+    non-launchable RAES entries for review). Every other value is a launch
     purpose whose selection must be restricted to launchable entries.
     """
 
@@ -45,26 +45,26 @@ class ScenarioWorkflow(enum.StrEnum):
 
 
 # Data-driven launchability allowlists. Widen these constants (not the call
-# sites) when a new supported ACES source / contract / profile lands. Both
+# sites) when a new supported RAES source / contract / profile lands. Both
 # ``repo`` and ``object`` are launchable (object via the #1567 launch resolver,
 # ADR-034-R5); object launchability also requires a configured package bucket
 # (see :func:`_source_kind_launchable`), so an object-backed row with none set
 # stays registrable and visible but non-launchable (fail closed).
 LAUNCHABLE_SOURCE_KINDS = frozenset({"repo", "object"})
-LAUNCHABLE_CONTRACT_KINDS = frozenset({"aces"})
+LAUNCHABLE_CONTRACT_KINDS = frozenset({"raes"})
 LAUNCHABLE_CONTRACT_PROFILES = frozenset({"shifter"})
 
-# Resolved at launch by the #1567 object resolver, not under ACES_PACKAGE_ROOT.
+# Resolved at launch by the #1567 object resolver, not under RAES_PACKAGE_ROOT.
 _OBJECT_SOURCE_KIND = "object"
 
 # (contract_kind, contract_profile) pairs that have a wired runtime launch
 # adapter — i.e. a launchable entry of that kind/profile can actually be turned
-# into a Shifter range by the ACES-native launch path (#1479:
-# cms.services.create_aces_native_range -> shared.aces package loader -> engine
-# dispatch). Gated at runtime by SHIFTER_ACES_NATIVE_PROVISIONING (see
-# ``_aces_launchable``): with the flag off, ACES entries are never launchable and
+# into a Shifter range by the RAES-native launch path (#1479:
+# cms.services.create_raes_native_range -> shared.raes package loader -> engine
+# dispatch). Gated at runtime by SHIFTER_RAES_NATIVE_PROVISIONING (see
+# ``_raes_launchable``): with the flag off, RAES entries are never launchable and
 # behaviour is byte-identical to the pre-flag empty-set state.
-_LAUNCH_ADAPTER_CONTRACT_PROFILES: frozenset[tuple[str, str]] = frozenset({("aces", "shifter")})
+_LAUNCH_ADAPTER_CONTRACT_PROFILES: frozenset[tuple[str, str]] = frozenset({("raes", "shifter")})
 
 
 def _get_metadata_map() -> dict[str, dict[str, Any]]:
@@ -99,22 +99,22 @@ def _get_db_scenarios() -> list[AnyScenarioTemplate]:
     return scenarios
 
 
-def _get_aces_sources() -> list[AcesPackageSource]:
-    """Load all ACES package-source rows for the catalog projection.
+def _get_raes_sources() -> list[RaesPackageSource]:
+    """Load all RAES package-source rows for the catalog projection.
 
     Returns:
-        List of AcesPackageSource instances.
+        List of RaesPackageSource instances.
     """
-    from cms.models import AcesPackageSource
+    from cms.models import RaesPackageSource
 
-    return list(AcesPackageSource.objects.all())
+    return list(RaesPackageSource.objects.all())
 
 
-def _aces_source_refs_valid(source: AcesPackageSource) -> bool:
-    """Re-validate an ACES row's refs/digests/provenance against the shared contract."""
-    from shared.schemas.aces_package_source import (
-        AcesPackageSourceError,
+def _raes_source_refs_valid(source: RaesPackageSource) -> bool:
+    """Re-validate an RAES row's refs/digests/provenance against the shared contract."""
+    from shared.schemas.raes_package_source import (
         PackageSourceRecord,
+        RaesPackageSourceError,
         validate_package_source,
     )
 
@@ -134,15 +134,15 @@ def _aces_source_refs_valid(source: AcesPackageSource) -> bool:
                 provenance=source.provenance,
             )
         )
-    except AcesPackageSourceError:
+    except RaesPackageSourceError:
         return False
     return True
 
 
-def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -> bool:
-    """Data-driven launchability decision for an ACES package-source row.
+def _raes_launchable(source: RaesPackageSource, *, known_legacy_ids: set[str]) -> bool:
+    """Data-driven launchability decision for an RAES package-source row.
 
-    Launchability is NOT merely ``conformance_status == "passed"``. An ACES
+    Launchability is NOT merely ``conformance_status == "passed"``. An RAES
     entry is launchable only when ALL hold (fail-closed):
 
     - a runtime hydration adapter exists for its contract/profile;
@@ -152,17 +152,17 @@ def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -
     - its refs/digests/provenance re-validate against the shared contract.
 
     Args:
-        source: AcesPackageSource instance.
+        source: RaesPackageSource instance.
         known_legacy_ids: Active YAML-default + DB-custom ids (no-shadow set).
 
     Returns:
         True only if the entry is launchable.
     """
-    from cms.models import AcesPackageSource as _AcesPackageSource
+    from cms.models import RaesPackageSource as _RaesPackageSource
 
-    # Fail-closed on the cutover flag: with SHIFTER_ACES_NATIVE_PROVISIONING off,
-    # no ACES entry is launchable and behaviour matches the pre-adapter state.
-    if not settings.ACES_NATIVE_PROVISIONING_ENABLED:
+    # Fail-closed on the cutover flag: with SHIFTER_RAES_NATIVE_PROVISIONING off,
+    # no RAES entry is launchable and behaviour matches the pre-adapter state.
+    if not settings.RAES_NATIVE_PROVISIONING_ENABLED:
         return False
 
     return (
@@ -172,8 +172,8 @@ def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -
         and source.contract_kind in LAUNCHABLE_CONTRACT_KINDS
         and source.contract_profile in LAUNCHABLE_CONTRACT_PROFILES
         and _source_kind_launchable(source.source_kind)
-        and source.conformance_status == _AcesPackageSource.ConformanceStatus.PASSED
-        and _aces_source_refs_valid(source)
+        and source.conformance_status == _RaesPackageSource.ConformanceStatus.PASSED
+        and _raes_source_refs_valid(source)
     )
 
 
@@ -183,31 +183,31 @@ def _source_kind_launchable(source_kind: str) -> bool:
     if source_kind not in LAUNCHABLE_SOURCE_KINDS:
         return False
     if source_kind == _OBJECT_SOURCE_KIND:
-        return bool(str(getattr(settings, "ACES_PACKAGE_BUCKET", "") or "").strip())
+        return bool(str(getattr(settings, "RAES_PACKAGE_BUCKET", "") or "").strip())
     return True
 
 
-def _aces_source_to_dict(
-    source: AcesPackageSource,
+def _raes_source_to_dict(
+    source: RaesPackageSource,
     *,
     metadata: dict[str, Any] | None,
     launchable: bool,
 ) -> dict[str, Any]:
-    """Build a catalog projection entry for an ACES package-source row.
+    """Build a catalog projection entry for an RAES package-source row.
 
-    ACES rows are provenance-only, so display fields are derived (name from
+    RAES rows are provenance-only, so display fields are derived (name from
     scenario_id, empty description). Access comes from the shared
     ``ScenarioMetadata`` overlay; ``launchable`` is the data-driven registry
-    decision (see :func:`_aces_launchable`), independent of access.
+    decision (see :func:`_raes_launchable`), independent of access.
 
     Args:
-        source: AcesPackageSource instance.
+        source: RaesPackageSource instance.
         metadata: Override dict with enabled/staff_only, or None for defaults.
         launchable: The computed launchability decision for this entry.
 
     Returns:
         Projection dict shaped like other catalog entries (id/name/enabled/
-        staff_only/is_default/launchable/agent_requirements) plus ACES source fields.
+        staff_only/is_default/launchable/agent_requirements) plus RAES source fields.
     """
     if metadata is not None:
         enabled = metadata["enabled"]
@@ -220,7 +220,7 @@ def _aces_source_to_dict(
         "id": source.scenario_id,
         "name": source.scenario_id,
         "description": "",
-        "scenario_type": "aces",
+        "scenario_type": "raes",
         "source_kind": source.source_kind,
         "contract_kind": source.contract_kind,
         "contract_profile": source.contract_profile,
@@ -308,8 +308,8 @@ def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
 
     yaml_entries, yaml_ids = _yaml_source_entries(metadata_map)
     db_entries, db_ids = _db_source_entries(metadata_map, yaml_ids)
-    aces_entries = _aces_source_entries(metadata_map, yaml_ids | db_ids)
-    result = yaml_entries + db_entries + aces_entries
+    raes_entries = _raes_source_entries(metadata_map, yaml_ids | db_ids)
+    result = yaml_entries + db_entries + raes_entries
 
     # Access filtering
     if user is not None and not (user.is_staff or user.is_superuser):
@@ -343,19 +343,19 @@ def _db_source_entries(metadata_map: dict[str, Any], yaml_ids: set[str]) -> tupl
     return entries, db_ids
 
 
-def _aces_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> list[dict[str, Any]]:
-    """Build ACES entries, fail-closed skipping any id that shadows an active legacy scenario."""
+def _raes_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> list[dict[str, Any]]:
+    """Build RAES entries, fail-closed skipping any id that shadows an active legacy scenario."""
     entries = []
-    for source in _get_aces_sources():
+    for source in _get_raes_sources():
         if source.scenario_id in known_ids:
             logger.warning(
-                "ACES package-source '%s' collides with an active legacy scenario_id, skipping",
+                "RAES package-source '%s' collides with an active legacy scenario_id, skipping",
                 safe_log_value(source.scenario_id),
             )
             continue
-        launchable = _aces_launchable(source, known_legacy_ids=known_ids)
+        launchable = _raes_launchable(source, known_legacy_ids=known_ids)
         entries.append(
-            _aces_source_to_dict(source, metadata=metadata_map.get(source.scenario_id), launchable=launchable)
+            _raes_source_to_dict(source, metadata=metadata_map.get(source.scenario_id), launchable=launchable)
         )
     return entries
 
@@ -379,9 +379,9 @@ def list_launchable_scenarios(
     """List scenarios a given workflow may launch.
 
     ``STAFF_REVIEW`` returns the full access-filtered projection (including
-    non-launchable ACES entries for review). Every launch workflow returns only
+    non-launchable RAES entries for review). Every launch workflow returns only
     entries whose ``launchable`` flag is set. Legacy YAML/DB entries are always
-    launchable; ACES entries follow :func:`_aces_launchable`.
+    launchable; RAES entries follow :func:`_raes_launchable`.
     """
     scenarios = list_all_scenarios(user=user)
     if workflow == ScenarioWorkflow.STAFF_REVIEW:

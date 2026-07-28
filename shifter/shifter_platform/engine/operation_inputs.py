@@ -1,12 +1,12 @@
 """Compose the immutable operation-input projection (ADR-043).
 
 Split out of ``launch_intents.py`` (Sonar S104), which grew past the file-size
-budget when the ACES family was cut over in phase 5 (#1837). ``launch_intents``
+budget when the RAES family was cut over in phase 5 (#1837). ``launch_intents``
 owns *authorizing and minting* an operation generation; this module owns *what
 that generation's immutable input contains*.
 
 The projection is reference-only: it composes the existing persisted contracts
-(the serialized ACES plan, ``DeliveryBinding``, the registry candidate shape,
+(the serialized RAES plan, ``DeliveryBinding``, the registry candidate shape,
 the normalized backend vocabulary) rather than dumping ORM rows. Payload-owned
 ownership, raw ``engine_instance.state``, and registry management metadata do
 not cross the boundary.
@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 
 from engine.models import Instance, Range, Request
-from shared.aces.content_delivery import DeliveryBinding
-from shared.aces.operation_input import build_aces_operation_input, candidate_key, plan_image_lookup_keys
+from shared.raes.content_delivery import DeliveryBinding
+from shared.raes.operation_input import build_raes_operation_input, candidate_key, plan_image_lookup_keys
 
 __all__ = ["operation_input_payload"]
 
@@ -68,7 +68,7 @@ def _resolved_range_backend(target: Range, request: Request) -> str | None:
     return _resolve_backend_from_evidence(request)
 
 
-def _aces_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, object]]]:
+def _raes_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, object]]]:
     """Project the enabled registry rows this plan can actually ask for.
 
     Scoped to the plan's own lookup keys (ADR-032-R2 authored source, else the
@@ -77,13 +77,13 @@ def _aces_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, 
     ``WHERE enabled = TRUE`` read did, keeping a retired mapping fail-loud at
     realization.
     """
-    from engine.models import AcesImageMapping
+    from engine.models import RaesImageMapping
 
     keys = plan_image_lookup_keys(plan)
     if not keys:
         return {}
     projected: dict[str, list[dict[str, object]]] = {}
-    rows = AcesImageMapping.objects.filter(source_name__in=list(keys), enabled=True).order_by(
+    rows = RaesImageMapping.objects.filter(source_name__in=list(keys), enabled=True).order_by(
         "provider", "source_name", "source_version"
     )
     for row in rows:
@@ -99,12 +99,12 @@ def _aces_image_candidates(plan: dict[str, object]) -> dict[str, list[dict[str, 
     return projected
 
 
-def _aces_delivery_bindings(target: Range) -> list[DeliveryBinding]:
+def _raes_delivery_bindings(target: Range) -> list[DeliveryBinding]:
     """Rebuild this range's byte-free delivery bindings for transport."""
-    from engine.models import AcesContentDeliveryBinding
+    from engine.models import RaesContentDeliveryBinding
 
     bindings = []
-    for row in AcesContentDeliveryBinding.objects.filter(range=target).order_by("pk"):
+    for row in RaesContentDeliveryBinding.objects.filter(range=target).order_by("pk"):
         bindings.append(
             DeliveryBinding(
                 content_address=row.content_address or None,
@@ -121,18 +121,18 @@ def _aces_delivery_bindings(target: Range) -> list[DeliveryBinding]:
     return bindings
 
 
-def _aces_input_payload(target: Range, request: Request) -> dict[str, object]:
-    """Compose the ACES operation input (ADR-043 phase 5, #1837).
+def _raes_input_payload(target: Range, request: Request) -> dict[str, object]:
+    """Compose the RAES operation input (ADR-043 phase 5, #1837).
 
     Replaces four direct provisioner reads with one immutable row: the
     serialized plan, the delivery bindings, the plan-scoped image candidates,
     and the normalized backend ownership.
     """
     plan = target.range_config or {}
-    return build_aces_operation_input(
+    return build_raes_operation_input(
         plan=plan,
-        delivery_bindings=_aces_delivery_bindings(target),
-        image_candidates=_aces_image_candidates(plan),
+        delivery_bindings=_raes_delivery_bindings(target),
+        image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),
         instantiation_purpose=target.instantiation_purpose or None,
         legacy_range_id=target.id,
@@ -143,13 +143,13 @@ def operation_input_payload(target: Range | Instance, resource: str, request: Re
     """Compose the immutable operation-input projection from engine-owned models.
 
     A reference-only projection of the existing persisted contracts, not an ORM
-    dump. The ACES family consumes the full projection (#1837); the cyberscript
+    dump. The RAES family consumes the full projection (#1837); the cyberscript
     range family still reads most of its inputs directly, and takes only the
     normalized legacy backend it can no longer resolve for itself.
     """
     if isinstance(target, Range):
-        if resource == "aces-range":
-            return _aces_input_payload(target, request)
+        if resource == "raes-range":
+            return _raes_input_payload(target, request)
         return {
             "range_spec": target.range_config or {},
             "legacy_range_backend": _resolved_range_backend(target, request),

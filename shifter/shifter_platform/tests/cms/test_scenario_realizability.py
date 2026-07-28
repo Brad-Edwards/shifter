@@ -2,12 +2,12 @@
 
 ADR-034-R3 requires non-realizable packs to be flagged and surfaced to the author
 without creating loopholes. These tests pin the CMS projection that the editor
-renders: it combines the capability envelope (via ``shared.aces.realizability``)
+renders: it combines the capability envelope (via ``shared.raes.realizability``)
 with backend *supply* (the tenant image registry), reports a closed outcome with
 bounded gaps, and never reports "cannot assess" as realizable.
 
-Legacy YAML/DB scenarios have no ACES pack, so they are ``not_applicable`` -- the
-editor must not claim the ACES ledger checked something it never saw.
+Legacy YAML/DB scenarios have no RAES pack, so they are ``not_applicable`` -- the
+editor must not claim the RAES ledger checked something it never saw.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from django.contrib.auth import get_user_model
 from cms.scenarios.pack_validation import pack_digest
 from cms.scenarios.realizability import get_scenario_realizability
 from cms.services import PackRegistrationRequest, register_pack
-from engine.services import AcesImageMappingOptions, upsert_aces_image_mapping
-from shared.aces.realizability import GapCategory, RealizabilityOutcome
+from engine.services import RaesImageMappingOptions, upsert_raes_image_mapping
+from shared.raes.realizability import GapCategory, RealizabilityOutcome
 from tests.cms.conftest import IMAGELESS_PACK_SDL
 
 User = get_user_model()
@@ -37,22 +37,22 @@ def staff_user(db):
 
 @pytest.fixture(autouse=True)
 def _gcp_target(monkeypatch):
-    """Run assessment against the GCE ACES realization adapter.
+    """Run assessment against the GCE RAES realization adapter.
 
-    ``CLOUD_PROVIDER`` dev-defaults to aws, which has no ACES adapter; without
+    ``CLOUD_PROVIDER`` dev-defaults to aws, which has no RAES adapter; without
     this the whole suite would only ever exercise the target-gap path.
     """
     monkeypatch.setattr(settings, "CLOUD_PROVIDER", "gcp")
 
 
 def _register(staff_user, make_pack, tmp_path, monkeypatch, *, name, sdl=IMAGELESS_PACK_SDL):
-    """Place a pack under a monkeypatched ACES_PACKAGE_ROOT and register it."""
+    """Place a pack under a monkeypatched RAES_PACKAGE_ROOT and register it."""
     root = make_pack(tmp_path / "packs" / name, name=name, sdl=sdl)
-    monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path))
     request = PackRegistrationRequest(
         scenario_id=name,
         source_kind="repo",
-        contract_kind="aces",
+        contract_kind="raes",
         contract_profile="shifter",
         package_ref=f"packs/{name}",
         package_version="0.1.0",
@@ -65,16 +65,16 @@ def _register(staff_user, make_pack, tmp_path, monkeypatch, *, name, sdl=IMAGELE
 
 def _map_base_os(os_family: str = "linux", image_ref: str = "projects/p/global/images/base-linux") -> None:
     """Register the tenant base-OS mapping a source-less node needs."""
-    upsert_aces_image_mapping(
+    upsert_raes_image_mapping(
         provider=_GCE,
         source_name=os_family,
         image_ref=image_ref,
-        options=AcesImageMappingOptions(source_version=""),
+        options=RaesImageMappingOptions(source_version=""),
     )
 
 
 class TestNotApplicable:
-    """Realizability is an ACES question; legacy entries must not be judged by it."""
+    """Realizability is an RAES question; legacy entries must not be judged by it."""
 
     def test_legacy_scenario_is_not_applicable(self, hydratable_scenario):
         result = get_scenario_realizability(hydratable_scenario.scenario_id)
@@ -116,11 +116,11 @@ class TestImageSupplyGap:
 
     def test_disabled_mapping_does_not_satisfy_supply(self, staff_user, make_pack, tmp_path, monkeypatch):
         _register(staff_user, make_pack, tmp_path, monkeypatch, name="imageless")
-        upsert_aces_image_mapping(
+        upsert_raes_image_mapping(
             provider=_GCE,
             source_name="linux",
             image_ref="projects/p/global/images/retired",
-            options=AcesImageMappingOptions(source_version="", enabled=False),
+            options=RaesImageMappingOptions(source_version="", enabled=False),
         )
 
         result = get_scenario_realizability("imageless")
@@ -154,7 +154,7 @@ class TestSourceIntegrity:
     def test_missing_pack_on_disk_is_indeterminate(self, staff_user, make_pack, tmp_path, monkeypatch):
         _register(staff_user, make_pack, tmp_path, monkeypatch, name="imageless")
         _map_base_os()
-        monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path / "elsewhere"))
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path / "elsewhere"))
 
         result = get_scenario_realizability("imageless")
 
@@ -177,13 +177,13 @@ class TestObjectBackedPacks:
         import contextlib
 
         root = make_pack(tmp_path / "staged" / "imageless", name="imageless", sdl=IMAGELESS_PACK_SDL)
-        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "packs-bucket")
+        monkeypatch.setattr(settings, "RAES_PACKAGE_BUCKET", "packs-bucket")
 
         @contextlib.contextmanager
         def _fake_stage(**_kwargs):
             yield root
 
-        monkeypatch.setattr("shared.aces.object_source.stage_object_pack", _fake_stage)
+        monkeypatch.setattr("shared.raes.object_source.stage_object_pack", _fake_stage)
         monkeypatch.setattr("shared.cloud.get_object_storage", lambda: object())
         return root
 
@@ -193,7 +193,7 @@ class TestObjectBackedPacks:
             request=PackRegistrationRequest(
                 scenario_id="imageless",
                 source_kind="object",
-                contract_kind="aces",
+                contract_kind="raes",
                 contract_profile="shifter",
                 package_ref="imageless.tar.gz",
                 package_version="0.1.0",
@@ -230,7 +230,7 @@ class TestObjectBackedPacks:
 
     def test_object_pack_without_a_bucket_is_indeterminate(self, staff_user, _object_storage, monkeypatch):
         self._register_object(staff_user, pack_digest(_object_storage))
-        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "")
+        monkeypatch.setattr(settings, "RAES_PACKAGE_BUCKET", "")
 
         result = get_scenario_realizability("imageless")
 
@@ -241,15 +241,15 @@ class TestBoundedAndReadOnly:
     """The projection is derived data off the catalog hot path."""
 
     def test_assessment_performs_no_writes(self, staff_user, make_pack, tmp_path, monkeypatch):
-        from cms.models import AcesPackageSource
+        from cms.models import RaesPackageSource
 
         _register(staff_user, make_pack, tmp_path, monkeypatch, name="imageless")
         _map_base_os()
-        before = AcesPackageSource.objects.get(scenario_id="imageless")
+        before = RaesPackageSource.objects.get(scenario_id="imageless")
 
         get_scenario_realizability("imageless")
 
-        after = AcesPackageSource.objects.get(scenario_id="imageless")
+        after = RaesPackageSource.objects.get(scenario_id="imageless")
         assert after.package_digest == before.package_digest
         assert after.conformance_status == before.conformance_status
 

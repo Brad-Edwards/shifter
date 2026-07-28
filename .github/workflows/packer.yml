@@ -15,7 +15,6 @@ on:
           - polaris-dc
           - brokenbk
           # Scenario AMIs baked over the no-inbound SSM communicator (bake-scenario job).
-          - techvault
           - polaris-vm
       environment:
         description: 'AWS environment to build in'
@@ -38,7 +37,7 @@ on:
       # (PACKER_VERIFY_*_<ENV>), NOT free-form dispatch inputs, so a dispatcher
       # cannot select what the candidate launches with. workflow_dispatch is capped
       # at 10 inputs, so these are variables rather than inputs by necessity too.
-      # --- scenario bake inputs (techvault / polaris-vm only) --------------------
+      # --- scenario bake inputs (polaris-vm only) --------------------------------
       # The scenario builders run in an operator-supplied isolated bake VPC with
       # no inbound and drive the guest over AWS Session Manager. These inputs are
       # ignored by base-image builds.
@@ -77,7 +76,7 @@ jobs:
     name: Build ${{ inputs.ami_type }} AMI in ${{ inputs.environment }}
     # Base-image builds (SSH/WinRM over public IP). Scenario AMIs baked over the
     # no-inbound SSM communicator run in the bake-scenario job below.
-    if: ${{ !contains(fromJSON('["techvault","polaris-vm"]'), inputs.ami_type) }}
+    if: ${{ inputs.ami_type != 'polaris-vm' }}
     runs-on: self-hosted
     defaults:
       run:
@@ -419,11 +418,11 @@ jobs:
 
   bake-scenario:
     name: Bake ${{ inputs.ami_type }} scenario AMI in ${{ inputs.environment }}
-    # Scenario AMIs (techvault, polaris-vm) baked by Packer over the no-inbound
+    # Polaris is baked by Packer over the no-inbound
     # AWS Session Manager communicator. Packer owns launch/provision/image/
     # teardown; this job adds the encryption + fresh-boot golden-verify gates and
     # the success-only SSM publish that the retired hand-rolled bake workflows had.
-    if: ${{ contains(fromJSON('["techvault","polaris-vm"]'), inputs.ami_type) }}
+    if: ${{ inputs.ami_type == 'polaris-vm' }}
     runs-on: self-hosted
     # Serialize scenario bakes of the same AMI in the same environment so the
     # always() builder cleanup can never terminate a concurrent same-type run's
@@ -503,14 +502,6 @@ jobs:
           echo "SSM_PARAM=${SSM_PARAM}" >> "$GITHUB_ENV"
 
           case "$AMI_TYPE" in
-            techvault)
-              {
-                echo "SCENARIO=techvault"
-                echo "MIN_CONTAINERS=30"
-                echo "NAME_FILTER=aptl-"
-                echo "REQUIRED_CONTAINERS=aptl-wazuh-manager aptl-victim aptl-kali"
-              } >> "$GITHUB_ENV"
-              ;;
             polaris-vm)
               req s3_tarball_uri "$S3_TARBALL_URI"
               match s3_tarball_uri "$S3_TARBALL_URI" '^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[A-Za-z0-9._/-]+$'

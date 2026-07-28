@@ -4,7 +4,7 @@ ADR-043: the engine and the separately deployed provisioner exchange operation
 inputs and results as one operation-shaped envelope anchored to the canonical
 ``operation_id`` generation, not as ORM/table projections. This module owns the
 *transport* shape and the canonical digest; the bounded operation-specific
-``payload`` composes the existing persisted contracts (RangeSpec / ACES
+``payload`` composes the existing persisted contracts (RangeSpec / RAES
 ProvisioningPlan / ``shared.range_cells`` / ``shared.remote_access`` / …) and is
 validated by those contracts, not re-modelled here.
 
@@ -47,7 +47,7 @@ ACCEPTED_CONTRACT_VERSIONS = frozenset({"1"})
 # Closed discriminators. The specific operation legal for a resource is enforced
 # by the domain authorization (engine.launch_intents); the envelope only bounds
 # the vocabulary so an unknown discriminator fails closed at the wire.
-RESOURCES = frozenset({"range", "aces-range", "ngfw"})
+RESOURCES = frozenset({"range", "raes-range", "ngfw"})
 OPERATIONS = frozenset({"provision", "destroy", "pause", "resume", "deprovision", "start", "stop"})
 
 _ENVELOPE_KEYS = frozenset({"contract_version", "operation_id", "request_id", "resource", "operation", "payload"})
@@ -99,7 +99,7 @@ def canonical_payload_digest(payload: ContractDict) -> str:
 
     Result identity replay detection compares this digest: the same result
     identity with an equal digest is a harmless replay; an unequal digest is a
-    conflict that must fail closed (ADR-043-R2). Mirrors the ACES operation-record
+    conflict that must fail closed (ADR-043-R2). Mirrors the RAES operation-record
     digest so both sides agree byte-for-byte.
     """
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")

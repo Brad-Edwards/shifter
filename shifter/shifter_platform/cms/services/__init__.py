@@ -58,8 +58,6 @@ from shared.audit import (
     audit_log,
 )
 
-from ._aces_range_create import create_aces_native_range, create_range_dispatch
-
 # --- Public service functions ------------------------------------------------
 from ._agents import (
     create_agent,
@@ -88,6 +86,7 @@ from ._queries import (
     get_range_status_by_id,
     get_range_target_instances,
 )
+from ._raes_range_create import create_raes_native_range, create_range_dispatch
 from ._range_create import create_range
 from ._range_destroy import (
     cancel_range,
@@ -168,11 +167,11 @@ __all__ = (
     "cancel_range_by_request_id",
     "cancel_upload",
     "complete_upload",
-    "create_aces_native_range",
     "create_agent",
     "create_credential",
     "create_ngfw",
     "create_non_user_range",
+    "create_raes_native_range",
     "create_range",
     "create_range_dispatch",
     "delete_agent",

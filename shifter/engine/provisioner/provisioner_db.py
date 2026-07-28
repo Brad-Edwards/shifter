@@ -8,8 +8,8 @@ Range metadata.
 The NGFW-specific read/write helpers (``get_user_ngfw_data``,
 ``get_ngfw_data_by_request_id``, and the range-attachment record helpers)
 were split out into ``provisioner_db_ngfw.py`` to keep this module under the
-Sonar S104 line budget. The ACES-native readers that once lived in
-``provisioner_db_aces.py`` are gone entirely: those inputs now arrive through
+Sonar S104 line budget. The RAES-native readers that once lived in
+``provisioner_db_raes.py`` are gone entirely: those inputs now arrive through
 the immutable operation-input projection (ADR-043 phase 5, #1837).
 """
 

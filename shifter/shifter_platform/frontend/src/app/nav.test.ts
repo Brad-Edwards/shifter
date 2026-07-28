@@ -64,7 +64,7 @@ describe("isNavEntryVisible", () => {
         mission_control_spa: true,
         scenario_editor_spa: false,
         ctf_workspace_spa: false,
-        aces_native_provisioning: false,
+        raes_native_provisioning: false,
         administer_spa: false,
       },
     });

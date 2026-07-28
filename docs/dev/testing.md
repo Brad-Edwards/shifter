@@ -69,7 +69,7 @@ time-bounded exception.
 | `scripts/check_layer_imports` | 96% | 95 |
 | `shifter/packer` | n/a (Packer HCL; no owned production Python) | not a coverage publisher |
 
-**Changed-code floor**, owned by the SonarCloud `aces-strict` quality gate,
+**Changed-code floor**, owned by the SonarCloud `raes-strict` quality gate,
 which fails a PR when `new_coverage < 80` (80% coverage on changed lines), plus
 `new_violations > 0`, new duplicated-lines density > 3%, any new rating worse than
 A, and new security hotspots not fully reviewed. PR analysis waits for the gate

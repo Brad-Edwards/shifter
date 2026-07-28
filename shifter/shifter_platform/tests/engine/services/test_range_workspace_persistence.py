@@ -19,7 +19,7 @@ from uuid import uuid4
 import pytest
 
 from engine.models import Range
-from engine.services import create_aces_range, create_range
+from engine.services import create_raes_range, create_range
 from engine.services._common import EngineError
 from tests.engine.services.test_create_range import make_request_spec
 
@@ -35,8 +35,8 @@ def _spec(user):
     return make_request_spec(user_id=user.id)
 
 
-def _aces_plan():
-    return {"kind": "aces_provisioning_plan", "aces_sdl_version": "1.0", "resources": []}
+def _raes_plan():
+    return {"kind": "raes_provisioning_plan", "raes_version": "1.0", "resources": []}
 
 
 # ---------------------------------------------------------------------------
@@ -69,34 +69,34 @@ def test_create_range_refuses_a_missing_workspace_and_persists_nothing(user):
 
 
 # ---------------------------------------------------------------------------
-# ACES create_aces_range
+# RAES create_raes_range
 # ---------------------------------------------------------------------------
 
 
-def test_create_aces_range_persists_the_exact_workspace_it_was_given(user):
+def test_create_raes_range_persists_the_exact_workspace_it_was_given(user):
     request_id = uuid4()
 
-    create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=_aces_plan(), workspace_id=7373)
+    create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=_raes_plan(), workspace_id=7373)
 
     assert Range.objects.get(request__request_id=request_id).workspace_id == 7373
 
 
-def test_two_aces_ranges_with_different_scopes_do_not_collapse_to_one(user):
+def test_two_raes_ranges_with_different_scopes_do_not_collapse_to_one(user):
     first_id, second_id = uuid4(), uuid4()
 
-    create_aces_range(request_id=first_id, user_id=user.id, compiled_plan=_aces_plan(), workspace_id=11)
-    create_aces_range(request_id=second_id, user_id=user.id, compiled_plan=_aces_plan(), workspace_id=22)
+    create_raes_range(request_id=first_id, user_id=user.id, compiled_plan=_raes_plan(), workspace_id=11)
+    create_raes_range(request_id=second_id, user_id=user.id, compiled_plan=_raes_plan(), workspace_id=22)
 
     assert Range.objects.get(request__request_id=first_id).workspace_id == 11
     assert Range.objects.get(request__request_id=second_id).workspace_id == 22
 
 
-def test_create_aces_range_refuses_a_missing_workspace_and_persists_nothing(user):
+def test_create_raes_range_refuses_a_missing_workspace_and_persists_nothing(user):
     request_id = uuid4()
 
-    plan = _aces_plan()
+    plan = _raes_plan()
 
     with pytest.raises(EngineError):
-        create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=plan, workspace_id=None)
+        create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=plan, workspace_id=None)
 
     assert not Range.objects.filter(request__request_id=request_id).exists()
