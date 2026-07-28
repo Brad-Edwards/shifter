@@ -139,6 +139,9 @@ The first slice intentionally stays small:
   Rejects AI/agent attribution markers in tracked text (agent `Co-authored-by`
   trailers, Cursor marketing footers, Claude Code branding strings, etc.).
   A `commit-msg` pre-commit hook blocks the same markers in commit messages.
+  When a commit is rejected for attribution markers, disable Cursor commit/PR
+  attribution in `~/.cursor/cli-config.json` only; project `.cursor/cli.json`
+  cannot set attribution (permissions-only per Cursor CLI docs).
 
 - `cross-layer-model-imports`
   Fails on direct cross-layer model imports inside service layers. The current tree already satisfies this rule, so it is part of the default guard.

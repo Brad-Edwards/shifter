@@ -407,7 +407,8 @@ jobs:
     needs: [changes, quality]
     # `_gcp-dev.yml::deploy` requests `id-token: write` (GCP OIDC via
     # workload identity federation) and `attestations: write` (SBOM +
-    # provenance attestation, ADR-037-R5/R6). Reusable workflows can't request
+    # provenance attestation, ADR-037-R5/R6). `post-deploy-smoke` requests
+    # `issues: write` (smoke failure issues). Reusable workflows can't request
     # higher GITHUB_TOKEN scopes than the caller grants — without this
     # block the workflow fails at startup with
     # `nested job 'deploy' is requesting 'id-token: write', but is only
@@ -416,6 +417,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+      issues: write
     if: |
       always() &&
       github.event_name != 'pull_request' &&
@@ -451,6 +453,7 @@ jobs:
       GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
       PLATFORM_BOOTSTRAP_STAFF_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_STAFF_EMAILS }}
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
+      SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
 
   core:
     name: Core
