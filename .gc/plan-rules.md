@@ -17,6 +17,15 @@ architectural defaults, and Kubernetes-specific validators previously in
   exceptions at `docs/adr/exceptions.yaml`. New or changed guardrails
   require matching ADR/registry updates in the same change.
 - Plans that touch `.github/workflows/**` MUST pass `actionlint`.
+- Plans that change the SonarCloud scan MUST keep scanner identity out of
+  `sonar-project.properties`: the scan step consumes `SONAR_PROJECT_KEY` and
+  `SONAR_ORGANIZATION` from non-secret repository variables, while shared
+  analysis configuration stays committed. The scan attempt MUST be gated on
+  the canonical `github.repository`, never on either variable being non-empty,
+  so a missing or renamed variable fails loudly on `Brad-Edwards/shifter` and
+  forks skip deliberately. Preserve the `SONAR_TOKEN` secret boundary, PR
+  `sonar.qualitygate.wait=true`, action SHA pinning, and same-delivery
+  repository-variable activation/readback.
 - Plans that touch Terraform under `platform/terraform/` MUST pass
   `TFLINT_CONFIG="$(pwd)/.tflint.hcl"; cd platform/terraform && tflint --recursive --config "$TFLINT_CONFIG"`.
 - Plans that touch Python in `shifter/shifter_platform/` MUST pass
