@@ -120,7 +120,7 @@ Current mechanisms:
   npm, github-actions, and pre-commit package root in the repo; every
   block targets the `dev` integration branch. One block per package
   root, and a block's directory must name a root that actually holds a
-  manifest — Dependabot silently ignores a block whose directory does
+  manifest; Dependabot silently ignores a block whose directory does
   not exist, leaving that root unwatched. The SPA
   (`shifter/shifter_platform/frontend`) is a separate npm root from
   `shifter/shifter_platform` and carries its own block; the latter does
