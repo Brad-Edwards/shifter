@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -236,6 +237,59 @@ class AdrGuardTests(unittest.TestCase):
 
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0].rule_id, "ADR-002-R1")
+
+    def test_filter_excepted_violations_ignores_expired_exception(self) -> None:
+        """An expired exception must stop suppressing, not merely report itself."""
+        violation = ADR_GUARD.Violation(
+            "layer-imports",
+            "ADR-001-R1",
+            "shifter/shifter_platform/cms/example.py",
+            "example",
+        )
+        expired = {
+            "rule_id": "ADR-001-R1",
+            "owner": "platform",
+            "reason": "temporary",
+            "expires_on": "2020-01-01",
+            "paths": ["shifter/shifter_platform/cms/*"],
+            "checks": ["layer-imports"],
+        }
+
+        self.assertEqual(ADR_GUARD.filter_excepted_violations([violation], [expired]), [violation])
+
+    def test_filter_excepted_violations_ignores_undated_or_malformed_exception(self) -> None:
+        """A missing or unparseable expiry must not buy open-ended suppression."""
+        violation = ADR_GUARD.Violation(
+            "layer-imports",
+            "ADR-001-R1",
+            "shifter/shifter_platform/cms/example.py",
+            "example",
+        )
+        base = {
+            "rule_id": "ADR-001-R1",
+            "owner": "platform",
+            "reason": "temporary",
+            "paths": ["shifter/shifter_platform/cms/*"],
+            "checks": ["layer-imports"],
+        }
+
+        for expires_on in (None, "not-a-date", "2020-13-01", 20200101):
+            with self.subTest(expires_on=expires_on):
+                exception = dict(base)
+                if expires_on is not None:
+                    exception["expires_on"] = expires_on
+                self.assertEqual(
+                    ADR_GUARD.filter_excepted_violations([violation], [exception]),
+                    [violation],
+                )
+
+    def test_exception_is_active_boundary_is_inclusive(self) -> None:
+        """An exception is live through its expiry date and dead the day after."""
+        exception = {"expires_on": "2026-06-15"}
+
+        self.assertTrue(ADR_GUARD.exception_is_active(exception, today=date(2026, 6, 14)))
+        self.assertTrue(ADR_GUARD.exception_is_active(exception, today=date(2026, 6, 15)))
+        self.assertFalse(ADR_GUARD.exception_is_active(exception, today=date(2026, 6, 16)))
 
 
 class LayerImportTighteningTests(unittest.TestCase):
