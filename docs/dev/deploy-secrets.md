@@ -92,7 +92,19 @@ and stays committed in `sonar-project.properties`.
 The scan is gated on `github.repository`, deliberately **not** on these variables
 being set. A missing or renamed variable therefore fails the scanner and the job,
 rather than skipping the scan and quietly removing the SonarCloud quality gate
-from `PR Gate`. Workflows running in a fork skip the scan.
+from `PR Gate`.
+
+Two cases skip the scan on purpose:
+
+- **Runs under any other repository slug.** SonarCloud is this project's tooling
+  choice, not a dependency imposed on anyone who cloned the repository and ran
+  the workflow as-is. Their runs skip it; to analyse their own fork they set
+  these two variables plus a `SONAR_TOKEN` of their own.
+- **Fork-origin pull requests.** They execute in the base repository's context,
+  so the identity test passes, but GitHub withholds secrets from them. Scanning
+  would fail on an empty `SONAR_TOKEN` and give an outside contributor a red
+  check they cannot fix. Their code is analysed on the `dev` run after merge, so
+  nothing reaches a release unanalysed.
 
 ## Populating and syncing the secrets
 

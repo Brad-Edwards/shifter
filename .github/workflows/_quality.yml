@@ -2404,8 +2404,18 @@ jobs:
         # makes a renamed or deleted variable skip the scan silently, taking the
         # SonarCloud quality gate out of PR Gate with everything still green. The
         # canonical repository therefore always attempts the scan and fails loud
-        # on misconfiguration; workflows running in a fork skip deliberately.
-        if: ${{ github.repository == 'Brad-Edwards/shifter' }}
+        # on misconfiguration. Anyone else running this workflow on their own
+        # copy skips it: SonarCloud is our tooling choice, not a dependency we
+        # impose on people who cloned the repo.
+        #
+        # Fork-origin pull requests also skip. They run in the base repository's
+        # context, so the identity test above passes, but GitHub withholds
+        # secrets from them — the scan would fail on a missing SONAR_TOKEN and
+        # hand an outside contributor a red check they have no way to fix.
+        # Analysis for their code happens on the `dev` run after merge.
+        if: >-
+          ${{ github.repository == 'Brad-Edwards/shifter'
+          && github.event.pull_request.head.repo.fork != true }}
         uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
