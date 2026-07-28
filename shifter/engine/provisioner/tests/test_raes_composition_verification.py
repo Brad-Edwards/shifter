@@ -206,15 +206,14 @@ def test_real_setup_orchestrator_failure_is_converted_to_bounded_verification_er
     execution = _Execution()
     execution.executor = executor
     monkeypatch.setattr("orchestrators.setup_orchestrator.time.sleep", lambda _seconds: None)
+    plan = _plan(node=_node(count=1))
+    outputs = _outputs(count=1)
+    ops = RaesCompositionVerificationOps(
+        execution_builder=lambda *_args, **_kwargs: execution,
+    )
 
     with pytest.raises(RaesGceCompositionError, match="in-guest verification failed"):
-        verify_bootstrap_composition(
-            _plan(node=_node(count=1)),
-            _outputs(count=1),
-            RaesCompositionVerificationOps(
-                execution_builder=lambda *_args, **_kwargs: execution,
-            ),
-        )
+        verify_bootstrap_composition(plan, outputs, ops)
 
     assert executor.run_command.call_count == 5
     execution.close.assert_called_once()

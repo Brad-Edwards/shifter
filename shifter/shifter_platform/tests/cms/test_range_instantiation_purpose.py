@@ -104,8 +104,9 @@ class TestPurposeIsAClosedTrustedValue:
             assert_backend_admitted("non_user_demo")
 
     def test_an_unknown_object_is_rejected(self, settings):
+        unknown_purpose = object()
         with _gcp(settings, "gdc"), pytest.raises(CMSError):
-            assert_backend_admitted(object())
+            assert_backend_admitted(unknown_purpose)
 
     def test_non_gcp_returns_no_binding(self, settings):
         settings.CLOUD_PROVIDER = "aws"

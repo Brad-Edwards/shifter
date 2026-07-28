@@ -156,5 +156,6 @@ class TestNeverDispatches:
     def test_dispatch_port_refuses_to_realize(self) -> None:
         from shared.raes.realizability import _NeverDispatchPort
 
+        port = _NeverDispatchPort()
         with pytest.raises(AssertionError):
-            _NeverDispatchPort().realize({"any": "plan"})
+            port.realize({"any": "plan"})

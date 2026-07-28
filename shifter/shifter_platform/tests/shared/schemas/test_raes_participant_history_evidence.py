@@ -84,6 +84,11 @@ def _history(*, payload=None, **overrides):
     return RaesParticipantRuntimeRecordData(**fields)
 
 
+def _assert_invalid(record, match=None):
+    with pytest.raises(RaesParticipantRuntimeRecordError, match=match):
+        validate_raes_participant_runtime_record(record)
+
+
 # --- valid records -----------------------------------------------------------
 
 
@@ -118,13 +123,11 @@ def test_evidence_operation_reference_fields_pass():
 
 
 def test_evidence_record_kind_requires_evidence_contract_version():
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="contract_version"):
-        validate_raes_participant_runtime_record(_evidence(contract_version="participant-runtime-v1"))
+    _assert_invalid(_evidence(contract_version="participant-runtime-v1"), "contract_version")
 
 
 def test_history_record_kind_requires_history_contract_version():
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="contract_version"):
-        validate_raes_participant_runtime_record(_history(contract_version="participant-evidence-v1"))
+    _assert_invalid(_history(contract_version="participant-evidence-v1"), "contract_version")
 
 
 # --- required fields ---------------------------------------------------------
@@ -133,15 +136,13 @@ def test_history_record_kind_requires_history_contract_version():
 @pytest.mark.parametrize("missing", ["evidence_kind", "capture_profile", "provenance_source", "redaction_policy"])
 def test_evidence_missing_required_field_rejected(missing):
     payload = {k: v for k, v in _EVIDENCE_PAYLOAD.items() if k != missing}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="required"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "required")
 
 
 @pytest.mark.parametrize("missing", ["event_kind", "event_ref"])
 def test_history_missing_required_field_rejected(missing):
     payload = {k: v for k, v in _HISTORY_PAYLOAD.items() if k != missing}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="required"):
-        validate_raes_participant_runtime_record(_history(payload=payload))
+    _assert_invalid(_history(payload=payload), "required")
 
 
 # --- vocabulary validation ---------------------------------------------------
@@ -149,62 +150,52 @@ def test_history_missing_required_field_rejected(missing):
 
 def test_unsupported_evidence_kind_rejected():
     payload = {**_EVIDENCE_PAYLOAD, "evidence_kind": "raw_dump"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="evidence_kind"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "evidence_kind")
 
 
 def test_unsupported_capture_profile_rejected():
     payload = {**_EVIDENCE_PAYLOAD, "capture_profile": "full_copy"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="capture_profile"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "capture_profile")
 
 
 def test_unsupported_provenance_source_rejected():
     payload = {**_EVIDENCE_PAYLOAD, "provenance_source": "unknown_service"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="provenance_source"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "provenance_source")
 
 
 def test_unsupported_redaction_policy_rejected():
     payload = {**_EVIDENCE_PAYLOAD, "redaction_policy": "store_raw"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="redaction_policy"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "redaction_policy")
 
 
 def test_unsupported_behavior_event_kind_rejected():
     payload = {**_HISTORY_PAYLOAD, "event_kind": "exfiltrate"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="event_kind"):
-        validate_raes_participant_runtime_record(_history(payload=payload))
+    _assert_invalid(_history(payload=payload), "event_kind")
 
 
 def test_malformed_artifact_digest_rejected():
     payload = {**_EVIDENCE_PAYLOAD, "artifact_digest": "not-a-digest"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="artifact_digest"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "artifact_digest")
 
 
 def test_malformed_event_digest_rejected():
     payload = {**_HISTORY_PAYLOAD, "event_digest": "deadbeef"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="event_digest"):
-        validate_raes_participant_runtime_record(_history(payload=payload))
+    _assert_invalid(_history(payload=payload), "event_digest")
 
 
 def test_negative_sequence_rejected():
     payload = {**_HISTORY_PAYLOAD, "sequence": -1}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="sequence"):
-        validate_raes_participant_runtime_record(_history(payload=payload))
+    _assert_invalid(_history(payload=payload), "sequence")
 
 
 def test_non_integer_sequence_rejected():
     payload = {**_HISTORY_PAYLOAD, "sequence": "3"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="sequence"):
-        validate_raes_participant_runtime_record(_history(payload=payload))
+    _assert_invalid(_history(payload=payload), "sequence")
 
 
 def test_evidence_rejects_unallowed_key():
     payload = {**_EVIDENCE_PAYLOAD, "notes": "extra"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="not allowed"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "not allowed")
 
 
 # --- bounded-ref validation on allowed ref fields (issue #1289 codex review) --
@@ -212,28 +203,24 @@ def test_evidence_rejects_unallowed_key():
 
 def test_empty_provenance_ref_rejected():
     payload = {**_EVIDENCE_PAYLOAD, "provenance_ref": "   "}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="provenance_ref"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "provenance_ref")
 
 
 def test_overlong_provenance_ref_rejected():
     payload = {**_EVIDENCE_PAYLOAD, "provenance_ref": "r" * 513}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="provenance_ref"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "provenance_ref")
 
 
 def test_empty_event_ref_rejected():
     payload = {**_HISTORY_PAYLOAD, "event_ref": ""}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="event_ref"):
-        validate_raes_participant_runtime_record(_history(payload=payload))
+    _assert_invalid(_history(payload=payload), "event_ref")
 
 
 def test_body_shaped_value_in_allowed_ref_field_rejected():
     # A prohibited body (multi-line transcript) placed in an ALLOWED ref field
     # must still be rejected, not only when placed under a disallowed key.
     payload = {**_EVIDENCE_PAYLOAD, "provenance_ref": "user: hi\nassistant: hello"}
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="single-line"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "single-line")
 
 
 # --- digest pinning for mutable external material -----------------------------
@@ -245,8 +232,7 @@ def test_body_shaped_value_in_allowed_ref_field_rejected():
 def test_mutable_evidence_kind_requires_artifact_digest(evidence_kind):
     payload = {k: v for k, v in _EVIDENCE_PAYLOAD.items() if k != "artifact_digest"}
     payload["evidence_kind"] = evidence_kind
-    with pytest.raises(RaesParticipantRuntimeRecordError, match="artifact_digest is required"):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload), "artifact_digest is required")
 
 
 @pytest.mark.parametrize("evidence_kind", ["dispatch_receipt", "manual_evidence"])
@@ -288,8 +274,7 @@ PROHIBITED_PAYLOAD_CASES = [
 )
 def test_prohibited_payload_class_rejected(fragment):
     payload = {**_EVIDENCE_PAYLOAD, **fragment}
-    with pytest.raises(RaesParticipantRuntimeRecordError):
-        validate_raes_participant_runtime_record(_evidence(payload=payload))
+    _assert_invalid(_evidence(payload=payload))
 
 
 @pytest.mark.parametrize(
@@ -297,5 +282,4 @@ def test_prohibited_payload_class_rejected(fragment):
 )
 def test_prohibited_payload_class_rejected_in_behavior_history(fragment):
     payload = {**_HISTORY_PAYLOAD, **fragment}
-    with pytest.raises(RaesParticipantRuntimeRecordError):
-        validate_raes_participant_runtime_record(_history(payload=payload))
+    _assert_invalid(_history(payload=payload))

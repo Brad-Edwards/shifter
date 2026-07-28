@@ -32,6 +32,11 @@ def _record(**overrides):
     return PackageSourceRecord(**{**VALID, **overrides})
 
 
+def _assert_invalid(record, match=None):
+    with pytest.raises(RaesPackageSourceError, match=match):
+        validate_package_source(record)
+
+
 class TestValidatePackageSource:
     def test_valid_payload_passes(self):
         assert validate_package_source(_record()) == VALID["provenance"]
@@ -55,68 +60,54 @@ class TestValidatePackageSource:
         ["", "abc", "sha1:" + "a" * 40, "sha256:" + "A" * 64, "sha256:" + "a" * 63],
     )
     def test_bad_package_digest_rejected(self, digest):
-        with pytest.raises(RaesPackageSourceError):
-            validate_package_source(_record(package_digest=digest))
+        _assert_invalid(_record(package_digest=digest))
 
     def test_bad_lock_digest_rejected(self):
-        with pytest.raises(RaesPackageSourceError):
-            validate_package_source(_record(lock_digest="not-a-digest"))
+        _assert_invalid(_record(lock_digest="not-a-digest"))
 
     def test_multiline_ref_rejected(self):
-        with pytest.raises(RaesPackageSourceError, match="single-line"):
-            validate_package_source(_record(package_ref="line1\nSDL body line2"))
+        _assert_invalid(_record(package_ref="line1\nSDL body line2"), match="single-line")
 
     def test_unknown_source_kind_rejected(self):
-        with pytest.raises(RaesPackageSourceError):
-            validate_package_source(_record(source_kind="ftp"))
+        _assert_invalid(_record(source_kind="ftp"))
 
     def test_unknown_contract_kind_rejected(self):
-        with pytest.raises(RaesPackageSourceError):
-            validate_package_source(_record(contract_kind="polaris"))
+        _assert_invalid(_record(contract_kind="polaris"))
 
     def test_unknown_conformance_status_rejected(self):
-        with pytest.raises(RaesPackageSourceError):
-            validate_package_source(_record(conformance_status="great"))
+        _assert_invalid(_record(conformance_status="great"))
 
     def test_empty_contract_profile_rejected(self):
-        with pytest.raises(RaesPackageSourceError):
-            validate_package_source(_record(contract_profile="   "))
+        _assert_invalid(_record(contract_profile="   "))
 
     @pytest.mark.parametrize(
         "key",
         ["sdl", "module_body", "generated", "credential", "token", "runtime_config", "flag"],
     )
     def test_forbidden_provenance_key_rejected(self, key):
-        with pytest.raises(RaesPackageSourceError, match="not an allowed"):
-            validate_package_source(_record(provenance={key: "x"}))
+        _assert_invalid(_record(provenance={key: "x"}), match="not an allowed")
 
     def test_nested_provenance_value_rejected(self):
-        with pytest.raises(RaesPackageSourceError, match="scalar"):
-            validate_package_source(_record(provenance={"notes": {"nested": "blob"}}))
+        _assert_invalid(_record(provenance={"notes": {"nested": "blob"}}), match="scalar")
 
     def test_multiline_provenance_value_rejected(self):
-        with pytest.raises(RaesPackageSourceError, match="single-line"):
-            validate_package_source(_record(provenance={"notes": "line1\nline2"}))
+        _assert_invalid(_record(provenance={"notes": "line1\nline2"}), match="single-line")
 
     def test_per_value_length_rejected(self):
         # 600 chars: over the 512 per-value cap, but the whole payload stays
         # under the 4096-byte cap so this isolates the _validate_scalar check.
-        with pytest.raises(RaesPackageSourceError, match="512 characters"):
-            validate_package_source(_record(provenance={"notes": "x" * 600}))
+        _assert_invalid(_record(provenance={"notes": "x" * 600}), match="512 characters")
 
     def test_total_provenance_size_rejected(self):
         # Many allowed-length values whose combined size exceeds the 4096-byte
         # cap while each value stays within the 512 per-value limit.
-        with pytest.raises(RaesPackageSourceError, match="4096 bytes"):
-            validate_package_source(_record(provenance={"notes": ["x" * 500 for _ in range(30)]}))
+        _assert_invalid(_record(provenance={"notes": ["x" * 500 for _ in range(30)]}), match="4096 bytes")
 
     def test_provenance_list_length_rejected(self):
-        with pytest.raises(RaesPackageSourceError, match="items"):
-            validate_package_source(_record(provenance={"notes": ["a"] * 33}))
+        _assert_invalid(_record(provenance={"notes": ["a"] * 33}), match="items")
 
     def test_non_dict_provenance_rejected(self):
-        with pytest.raises(RaesPackageSourceError, match="JSON object"):
-            validate_package_source(_record(provenance=["repo", "commit"]))
+        _assert_invalid(_record(provenance=["repo", "commit"]), match="JSON object")
 
     def test_none_provenance_normalizes_to_empty(self):
         assert validate_package_source(_record(provenance=None)) == {}

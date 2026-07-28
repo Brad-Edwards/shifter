@@ -53,9 +53,10 @@ def test_persist_participant_runtime_record_is_idempotent_for_same_source_event(
 def test_persist_participant_runtime_record_conflicts_when_replay_payload_drifts():
     _persist()
     changed_payload = {"participant_ref": "ctf-participant-1", "implementation_ref": "impl-2"}
+    changed_digest = canonical_raes_payload_digest(changed_payload)
 
     with pytest.raises(RaesParticipantRuntimeRecordConflict, match="idempotency conflict"):
-        _persist(payload=changed_payload, payload_digest=canonical_raes_payload_digest(changed_payload))
+        _persist(payload=changed_payload, payload_digest=changed_digest)
 
     assert RaesParticipantRuntimeRecord.objects.count() == 1
 
@@ -63,9 +64,10 @@ def test_persist_participant_runtime_record_conflicts_when_replay_payload_drifts
 @pytest.mark.django_db
 def test_persist_participant_runtime_record_conflicts_when_replay_timestamp_drifts():
     _persist()
+    changed_timestamp = SOURCE_TS + timedelta(seconds=1)
 
     with pytest.raises(RaesParticipantRuntimeRecordConflict, match="idempotency conflict"):
-        _persist(source_timestamp=SOURCE_TS + timedelta(seconds=1))
+        _persist(source_timestamp=changed_timestamp)
 
 
 @pytest.mark.django_db

@@ -213,5 +213,6 @@ class TestListParticipantRuntimeRecords:
         )
 
     def test_unknown_record_kind_raises(self):
+        request_id = uuid4()
         with pytest.raises(ValueError, match="record_kind must be one of"):
-            list_participant_runtime_records(uuid4(), "participant_access_channel")
+            list_participant_runtime_records(request_id, "participant_access_channel")
