@@ -212,6 +212,20 @@ class TestInstanceResource:
         assert "windows-startup-script-ps1" not in meta
         assert "ssh_host_ed25519_key" in meta["startup-script"]
 
+        # The composition script is appended to the host-key script, so the
+        # host-key half must never terminate the shell: an `exit` here would
+        # silently skip building the range's content (issue #987).
+        startup = meta["startup-script"]
+        host_key_half = startup.split("shifter_install_host_key || true", 1)[0]
+        assert "\nexit " not in host_key_half, "host-key install must not exit the shared startup script"
+
+        # A divergence between the injected key and the key sshd serves leaves
+        # every terminal session failing with HostKeyNotVerifiable, so the script
+        # verifies convergence and says so on the serial console rather than
+        # swallowing the failure (issue #987).
+        assert "shifter-hostkey:" in startup, "host-key install must log a diagnosable marker"
+        assert "ssh-keyscan" in startup, "host-key install must verify sshd serves the injected key"
+
         # service_account_email set -> service_accounts block present with scopes.
         assert body["service_accounts"][0]["email"] == "range-host@test-project.iam.gserviceaccount.com"
         assert body["service_accounts"][0]["scopes"] == ["https://www.googleapis.com/auth/cloud-platform"]
