@@ -8,7 +8,9 @@ import "@testing-library/jest-dom/vitest";
 type ResizeObserverCallback = (entries: unknown[], observer: ResizeObserverStub) => void;
 
 class ResizeObserverStub {
-  static instances: ResizeObserverStub[] = [];
+  // Mutable contents, immutable binding: tests clear it in place
+  // (`instances.length = 0`) rather than reassigning the array.
+  static readonly instances: ResizeObserverStub[] = [];
 
   readonly callback: ResizeObserverCallback;
   readonly observed = new Set<Element>();

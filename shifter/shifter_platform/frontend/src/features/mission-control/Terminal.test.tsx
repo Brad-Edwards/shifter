@@ -99,7 +99,7 @@ beforeEach(() => {
   restoreWebSocket = installFakeWebSocket();
   (XTermCtor as unknown as { instances: unknown[] }).instances = [];
   (FitAddonCtor as unknown as { instances: unknown[] }).instances = [];
-  ResizeObserverStub.instances = [];
+  ResizeObserverStub.instances.length = 0;
   clipboardReadText = vi.fn(() => Promise.resolve("clipboard input"));
   clipboardWriteText = vi.fn(() => Promise.resolve());
   Object.defineProperty(navigator, "clipboard", {

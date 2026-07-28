@@ -73,7 +73,11 @@ function LayoutToggle({
   onChange,
 }: Readonly<{ layout: TerminalLayout; onChange: (next: TerminalLayout) => void }>) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border p-[3px]" role="group" aria-label="Terminal layout">
+    // `fieldset`/`legend` rather than `role="group"`: the native grouping
+    // element is understood by assistive tech that does not implement the ARIA
+    // role, and the legend names the group without a visible label.
+    <fieldset className="inline-flex items-center gap-1 rounded-lg border p-[3px]">
+      <legend className="sr-only">Terminal layout</legend>
       {LAYOUT_OPTIONS.map((option) => (
         <Button
           key={option.value}
@@ -86,7 +90,7 @@ function LayoutToggle({
           {option.label}
         </Button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 

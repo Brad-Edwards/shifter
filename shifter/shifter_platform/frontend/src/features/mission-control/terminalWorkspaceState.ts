@@ -41,9 +41,13 @@ export function swapIfDuplicate(
   pane: "left" | "right",
   uuid: string,
 ): WorkspaceSelection {
-  const other = pane === "left" ? selection.rightUuid : selection.leftUuid;
-  const displaced = other === uuid ? (pane === "left" ? selection.leftUuid : selection.rightUuid) : other;
-  return pane === "left"
+  const isLeft = pane === "left";
+  const other = isLeft ? selection.rightUuid : selection.leftUuid;
+  const current = isLeft ? selection.leftUuid : selection.rightUuid;
+  // When the other pane already shows `uuid`, it takes this pane's current
+  // target (a swap); otherwise the other pane is untouched.
+  const displaced = other === uuid ? current : other;
+  return isLeft
     ? { ...selection, leftUuid: uuid, rightUuid: displaced }
     : { ...selection, leftUuid: displaced, rightUuid: uuid };
 }
