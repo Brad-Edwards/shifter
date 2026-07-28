@@ -22,16 +22,15 @@ import range_terraform_runner
 from config import is_gce_range_cell_backend
 from events import (
     STATUS_DESTROYED,
+    STATUS_FAILED,
     STATUS_PROVISIONING,
-    publish_destroyed,
-    publish_failed,
-    publish_ready,
-    publish_status_update,
+    STATUS_READY,
 )
 from gcp_range_cell_scenario import validate_legacy_gce_composition
 from instance_orchestrator import run_instance_setup
 from provisioner_db import (
     get_range_data_by_request_id,
+    update_range_status,
     write_provisioned_state,
 )
 from provisioner_db_appends import OperationRef
@@ -264,10 +263,9 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
         logger.exception("Range Terraform operation failed: %s", error_msg)
         if operation == "up" and range_operation is not None:
             _attempt_terraform_auto_cleanup(range_operation)
-        publish_failed(
-            request_id=request_id,
+        update_range_status(
             range_id=range_id,
-            user_id=user_id,
+            status=STATUS_FAILED,
             error_message=error_msg,
         )
         raise
@@ -281,11 +279,9 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
     range_spec = operation.range_spec
     scenario_artifact = operation.scenario_artifact
     remote_access_capability = operation.remote_access_capability
-    publish_status_update(
-        request_id=request_id,
+    update_range_status(
         range_id=range_id,
-        user_id=user_id,
-        new_status=STATUS_PROVISIONING,
+        status=STATUS_PROVISIONING,
     )
 
     logger.info("Running terraform apply for range...")
@@ -399,7 +395,7 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         operation=OperationRef(request_id=request_id, operation_id=operation.operation_id),
     )
 
-    publish_ready(request_id=request_id, range_id=range_id, user_id=user_id)
+    update_range_status(range_id=range_id, status=STATUS_READY)
 
 
 def _ensure_range_is_active(request_id: str, range_id: int) -> bool:
@@ -460,4 +456,4 @@ def _run_terraform_destroy(operation: RangeOperation) -> None:
             _post_destroy_cleanup(request_id, range_id, operation_id=operation.operation_id)
         _maybe_pause_user_ngfw(user_id, range_id)
 
-    publish_destroyed(request_id=request_id, range_id=range_id, user_id=user_id)
+    update_range_status(range_id=range_id, status=STATUS_DESTROYED)

@@ -73,8 +73,6 @@ resource "aws_ecs_task_definition" "engine_provisioner" {
       { name = "NGFW_SUBNET_CIDR", value = var.ngfw_subnet_cidr },
       { name = "NGFW_BOOTSTRAP_BUCKET", value = var.agent_s3_bucket },
       { name = "NGFW_INSTANCE_PROFILE_NAME", value = var.ngfw_instance_profile_name },
-      # Messaging (SNS for range events)
-      { name = "SNS_RANGE_EVENTS_ARN", value = var.sns_topic_arn },
       # Polaris Bedrock agent config (#1377). See
       # shifter/engine/provisioner/config.py load_aws_polaris_agent_config().
       # RANGE_INSTANCE_ROLE_ARN reuses the existing shared range-host role

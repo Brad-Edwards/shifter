@@ -705,7 +705,7 @@ class TestGdcProvisioning:
 
         mock_setup = MagicMock()
         mock_write_state = MagicMock()
-        monkeypatch.setattr("terraform_ops.publish_status_update", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
         monkeypatch.setattr(
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("cluster1", "10.200.0.0/24", "us-central1")),
@@ -724,7 +724,7 @@ class TestGdcProvisioning:
             "terraform_ops.get_range_data_by_request_id",
             MagicMock(return_value={"ngfw_instance_id": None}),
         )
-        monkeypatch.setattr("terraform_ops.publish_ready", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
         # Real request/operation identities: subnet reservation is fenced on both,
         # so a placeholder string would not reach the coordination boundary.
         request_id = str(uuid4())
@@ -793,7 +793,7 @@ class TestGdcProvisioning:
         }
 
         mock_setup = MagicMock()
-        monkeypatch.setattr("terraform_ops.publish_status_update", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
         monkeypatch.setattr(
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("vpc-9", "10.9.0.0/16", "us-east-2")),
@@ -812,7 +812,7 @@ class TestGdcProvisioning:
             "terraform_ops.get_range_data_by_request_id",
             MagicMock(return_value={"ngfw_instance_id": None}),
         )
-        monkeypatch.setattr("terraform_ops.publish_ready", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
         request_id = str(uuid4())
         with _provision_env("aws", "10.9.0.0/28"):
             _run_terraform_provision(RangeOperation(request_id, 9, 2, range_spec, operation_id=str(uuid4())))
@@ -880,7 +880,7 @@ class TestGdcProvisioning:
         }
         secret_ops = _MemoryVpnSecretOps()
         mock_write_state = MagicMock()
-        monkeypatch.setattr("terraform_ops.publish_status_update", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
         monkeypatch.setattr(
             "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("vpc-vpn", "10.9.0.0/16", "us-east-2")),
@@ -901,7 +901,7 @@ class TestGdcProvisioning:
             "terraform_ops.get_range_data_by_request_id",
             MagicMock(return_value={"ngfw_instance_id": None}),
         )
-        monkeypatch.setattr("terraform_ops.publish_ready", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
 
         with _provision_env("aws", "10.9.0.0/28"):
             _run_terraform_provision(
@@ -1666,13 +1666,13 @@ class TestGdcProvisioning:
                 }
             ),
         )
-        publish_failed = MagicMock()
-        monkeypatch.setattr("terraform_ops.publish_failed", publish_failed)
+        update_status = MagicMock()
+        monkeypatch.setattr("terraform_ops.update_range_status", update_status)
 
         with pytest.raises(RuntimeError, match="already be in ready state"):
             run_range_terraform("up", "req-123")
 
-        publish_failed.assert_called_once()
+        update_status.assert_called_once()
 
     def test_record_and_remove_ngfw_range_attachment_updates_state(self, monkeypatch):
         from provisioner_db_ngfw import _record_ngfw_range_attachment, _remove_ngfw_range_attachment
