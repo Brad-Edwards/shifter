@@ -42,14 +42,14 @@ class TestGenericFacadesCannotEscalate:
 
     @pytest.mark.parametrize(
         "facade",
-        [services.create_range, services.create_range_dispatch, services.create_aces_native_range],
+        [services.create_range, services.create_range_dispatch, services.create_raes_native_range],
     )
     def test_facade_exposes_no_instantiation_purpose_parameter(self, facade):
         assert "instantiation_purpose" not in inspect.signature(facade).parameters
 
     @pytest.mark.parametrize(
         "facade",
-        [services.create_range, services.create_range_dispatch, services.create_aces_native_range],
+        [services.create_range, services.create_range_dispatch, services.create_raes_native_range],
     )
     def test_facade_rejects_a_smuggled_purpose_argument(self, facade):
         with pytest.raises(TypeError):

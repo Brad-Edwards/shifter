@@ -38,8 +38,8 @@ def _install_entrypoint_fakes(monkeypatch) -> dict[str, Recorder]:
         "run_range_terraform": Recorder(),
         "run_range_pause": Recorder(),
         "run_range_resume": Recorder(),
-        "run_aces_range_provision": Recorder(),
-        "run_aces_range_destroy": Recorder(),
+        "run_raes_range_provision": Recorder(),
+        "run_raes_range_destroy": Recorder(),
     }
     _install_module(monkeypatch, "logging_config", configure_logging=calls["configure_logging"])
     _install_module(monkeypatch, "ngfw_runtime_ops", run_ngfw_operation=calls["run_ngfw_operation"])
@@ -53,9 +53,9 @@ def _install_entrypoint_fakes(monkeypatch) -> dict[str, Recorder]:
     )
     _install_module(
         monkeypatch,
-        "aces_range_ops",
-        run_aces_range_provision=calls["run_aces_range_provision"],
-        run_aces_range_destroy=calls["run_aces_range_destroy"],
+        "raes_range_ops",
+        run_raes_range_provision=calls["run_raes_range_provision"],
+        run_raes_range_destroy=calls["run_raes_range_destroy"],
     )
     return calls
 
@@ -192,33 +192,33 @@ def test_ngfw_start_threads_operation_id_when_present(monkeypatch) -> None:
     calls["run_ngfw_operation"].assert_called_once_with("start", "ngfw-3", operation_id=operation_id)
 
 
-# ADR-043 phase 5 (#1837): the ACES family is cut over, so its entrypoint must
-# carry the canonical generation. Before this, aces-range was the only resource
+# ADR-043 phase 5 (#1837): the RAES family is cut over, so its entrypoint must
+# carry the canonical generation. Before this, raes-range was the only resource
 # whose dispatch dropped --operation-id on the floor, leaving the realization
 # path with no fence and no input row to read.
-def test_aces_provision_threads_operation_id(monkeypatch) -> None:
+def test_raes_provision_threads_operation_id(monkeypatch) -> None:
     calls = _install_entrypoint_fakes(monkeypatch)
     operation_id = "44444444-4444-4444-4444-444444444444"
 
-    _run_main(monkeypatch, "aces-range", "provision", "--request-id", "aces-1", "--operation-id", operation_id)
+    _run_main(monkeypatch, "raes-range", "provision", "--request-id", "raes-1", "--operation-id", operation_id)
 
-    calls["run_aces_range_provision"].assert_called_once_with("aces-1", operation_id=operation_id)
+    calls["run_raes_range_provision"].assert_called_once_with("raes-1", operation_id=operation_id)
 
 
-def test_aces_destroy_threads_operation_id(monkeypatch) -> None:
+def test_raes_destroy_threads_operation_id(monkeypatch) -> None:
     calls = _install_entrypoint_fakes(monkeypatch)
     operation_id = "55555555-5555-5555-5555-555555555555"
 
-    _run_main(monkeypatch, "aces-range", "destroy", "--request-id", "aces-2", "--operation-id", operation_id)
+    _run_main(monkeypatch, "raes-range", "destroy", "--request-id", "raes-2", "--operation-id", operation_id)
 
-    calls["run_aces_range_destroy"].assert_called_once_with("aces-2", operation_id=operation_id)
+    calls["run_raes_range_destroy"].assert_called_once_with("raes-2", operation_id=operation_id)
 
 
-def test_aces_dispatch_without_a_generation_passes_none_through(monkeypatch) -> None:
-    # main.py does not decide the policy; aces_range_ops refuses. Threading None
+def test_raes_dispatch_without_a_generation_passes_none_through(monkeypatch) -> None:
+    # main.py does not decide the policy; raes_range_ops refuses. Threading None
     # explicitly is what lets it refuse instead of silently realizing unfenced.
     calls = _install_entrypoint_fakes(monkeypatch)
 
-    _run_main(monkeypatch, "aces-range", "provision", "--request-id", "aces-3")
+    _run_main(monkeypatch, "raes-range", "provision", "--request-id", "raes-3")
 
-    calls["run_aces_range_provision"].assert_called_once_with("aces-3", operation_id=None)
+    calls["run_raes_range_provision"].assert_called_once_with("raes-3", operation_id=None)

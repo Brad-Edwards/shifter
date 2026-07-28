@@ -94,7 +94,7 @@ exact source revision and the verified OCI image digest (ADR-037); a SemVer tag
 is never a deploy trigger or an image selector.
 
 The release tag and GitHub Release are created by the release-please action
-using the workflow's ephemeral `GITHUB_TOKEN`, mirroring the sibling ACES
+using the workflow's ephemeral `GITHUB_TOKEN`, mirroring the sibling RAES
 repositories. The release PR is opened by that token, so branch-protection
 required checks do not run on it automatically; a maintainer merges it (admin).
 

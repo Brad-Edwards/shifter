@@ -17,7 +17,7 @@ from cms.scenario_editor.view_support import (
     render_not_found,
     render_unexpected_error,
 )
-from cms.scenarios.catalog_presentation import ACES_SCENARIO_TYPE, get_catalog_presentation
+from cms.scenarios.catalog_presentation import RAES_SCENARIO_TYPE, get_catalog_presentation
 from cms.scenarios.realizability import get_scenario_realizability
 from cms.scenarios.registry import get_scenario_detail, list_all_scenarios
 from shared.auth import threat_research_required
@@ -26,7 +26,7 @@ from shared.log_sanitize import safe_log_value
 logger = logging.getLogger(__name__)
 IS_DEFAULT_CONTEXT_KEY = "is_default"
 SCENARIOS_CONTEXT_KEY = "scenarios"
-ACES_DETAIL_TEMPLATE = "scenario_editor/aces_detail.html"
+RAES_DETAIL_TEMPLATE = "scenario_editor/raes_detail.html"
 REALIZABILITY_CONTEXT_KEY = "realizability"
 
 
@@ -53,12 +53,12 @@ def _realizability_or_none(scenario_id: str) -> dict | None:
 
 
 def _render_scenario_detail(request: HttpRequest, scenario_id: str) -> HttpResponse:
-    """Render ACES read-only detail or the legacy authoring detail for a scenario."""
+    """Render RAES read-only detail or the legacy authoring detail for a scenario."""
     presentation = get_catalog_presentation(scenario_id)
-    if presentation is not None and presentation["scenario_type"] == ACES_SCENARIO_TYPE:
+    if presentation is not None and presentation["scenario_type"] == RAES_SCENARIO_TYPE:
         return render(
             request,
-            ACES_DETAIL_TEMPLATE,
+            RAES_DETAIL_TEMPLATE,
             {
                 SCENARIO_CONTEXT_KEY: presentation,
                 REALIZABILITY_CONTEXT_KEY: _realizability_or_none(scenario_id),
@@ -86,7 +86,7 @@ def _render_scenario_detail(request: HttpRequest, scenario_id: str) -> HttpRespo
 def scenario_detail_view(request: HttpRequest, scenario_id: str) -> HttpResponse:
     """View scenario details.
 
-    ACES package-backed entries render read-only catalog metadata; legacy YAML
+    RAES package-backed entries render read-only catalog metadata; legacy YAML
     defaults and DB customs keep the full authoring detail (YAML preview, edit,
     clone, delete, export).
     """

@@ -189,9 +189,9 @@ def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range
         request_id: UUID of the Request to operate on
         command: Command to run ("provision" or "destroy")
         resource: Provisioner subcommand/resource group. Defaults to ``"range"``
-            (the cyberscript path, unchanged). The ACES-native path passes
-            ``"aces-range"`` so the provisioner realizes a persisted serialized
-            ACES plan instead of a wrapped RangeSpec (ADR-031/ADR-032); the
+            (the cyberscript path, unchanged). The RAES-native path passes
+            ``"raes-range"`` so the provisioner realizes a persisted serialized
+            RAES plan instead of a wrapped RangeSpec (ADR-031/ADR-032); the
             local/ECS dispatch mechanics are identical.
 
     Returns:
@@ -240,32 +240,32 @@ def start_range_provisioning(request_id: UUID) -> str | None:
     return _start_range_ecs_task(request_id, "provision")
 
 
-def start_aces_range_provisioning(request_id: UUID) -> str | None:
-    """Start provisioning an ACES-native range via the provisioner ``aces-range``
+def start_raes_range_provisioning(request_id: UUID) -> str | None:
+    """Start provisioning an RAES-native range via the provisioner ``raes-range``
     command using request_id (ADR-031, feature-flagged parallel path).
 
     Identical dispatch mechanics to :func:`start_range_provisioning` (local
     subprocess or ECS Fargate); only the provisioner subcommand differs, so the
-    provisioner realizes a persisted serialized ACES plan rather than a RangeSpec.
+    provisioner realizes a persisted serialized RAES plan rather than a RangeSpec.
 
     Returns:
         Task ARN / local handle if dispatched, None if ECS is not configured.
     """
-    return _start_range_ecs_task(request_id, "provision", resource="aces-range")
+    return _start_range_ecs_task(request_id, "provision", resource="raes-range")
 
 
-def start_aces_range_teardown(request_id: UUID) -> str | None:
-    """Start teardown of an ACES-native range via the provisioner ``aces-range``
+def start_raes_range_teardown(request_id: UUID) -> str | None:
+    """Start teardown of an RAES-native range via the provisioner ``raes-range``
     command using request_id (ADR-031, feature-flagged parallel path).
 
     Identical dispatch mechanics to :func:`start_range_teardown`; only the
     provisioner subcommand differs, so the provisioner reconstructs the range
-    resources from the persisted serialized ACES plan and deletes them.
+    resources from the persisted serialized RAES plan and deletes them.
 
     Returns:
         Task ARN / local handle if dispatched, None if ECS is not configured.
     """
-    return _start_range_ecs_task(request_id, "destroy", resource="aces-range")
+    return _start_range_ecs_task(request_id, "destroy", resource="raes-range")
 
 
 def start_range_teardown(request_id: UUID) -> str | None:
@@ -423,12 +423,12 @@ __all__ = [
     # Public provisioner dispatch entrypoints.
     "dispatch_provisioner_command",
     "get_task_status",
-    "start_aces_range_provisioning",
-    "start_aces_range_teardown",
     "start_ngfw_operation",
     "start_ngfw_provisioning",
     "start_ngfw_teardown",
     "start_provisioning",
+    "start_raes_range_provisioning",
+    "start_raes_range_teardown",
     "start_range_operation",
     "start_range_provisioning",
     "start_range_teardown",

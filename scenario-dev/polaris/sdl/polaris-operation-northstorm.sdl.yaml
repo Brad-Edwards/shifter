@@ -3,7 +3,7 @@ description: >
   Operation NORTHSTORM against the fictional Boreas Systems front company.
   Five-mission red-team CTF: OSINT, front-office compromise, research-lab
   pivot, SCADA blackout, and underground OT platform. Expressed in the
-  extended ACES SDL (22 sections) so a docker-plus-adjacent-VM backend
+  extended RAES SDL (22 sections) so a docker-plus-adjacent-VM backend
   can realise the entire stack.
 
 variables:

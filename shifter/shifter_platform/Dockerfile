@@ -36,8 +36,8 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # PYTHONPATH in the production stage instead of through a pip install.
 # --no-dev excludes the [dependency-groups].dev group from the export: dev/test
 # tooling (ruff, pytest, mypy, ...) has no place in the production image. Runtime
-# deps live in [project].dependencies and are exported here. `aces-sdl` is a
-# runtime dependency (issue #1262: shared.aces.runtime_target imports it) and is
+# deps live in [project].dependencies and are exported here. `raes` is a
+# runtime dependency (issue #1262: shared.raes.runtime_target imports it) and is
 # installed from its published PyPI wheel, so uv emits a hash for it and the
 # --require-hashes install succeeds; it was previously a git source, which uv
 # cannot hash, and that broke this build when it was promoted to runtime (#1445).

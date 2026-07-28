@@ -19,8 +19,6 @@ Sources used:
   and `docs/research/ctf-timing-completion-research.md`.
 - Existing UX-002 visual identity boundary in
   `docs/design/ux-002-oss-visual-identity-preflight.md`.
-- The APTL reference in `../aptl`, especially the dark operational deck and
-  the Svelte lab UI. The reference is used as tone evidence only.
 - Direct product context from maintaining Shifter as an OSS cyber range and CTF
   platform.
 
@@ -33,11 +31,11 @@ Not used:
 
 ## Design Direction Evidence
 
-The APTL reference points toward a dark operational interface: black or near
-black base, quiet borders, a narrow top or bottom stripe, dense typography,
-plain status text, and restrained semantic color. Its strongest qualities are
-focus, scan speed, and a feeling that the product is an instrument rather than
-marketing.
+The existing product research points toward a dark operational interface:
+black or near-black base, quiet borders, a narrow top or bottom stripe, dense
+typography, plain status text, and restrained semantic color. Its strongest
+qualities are focus, scan speed, and a feeling that the product is an
+instrument rather than marketing.
 
 Downstream Shifter design work should treat that as the preferred direction:
 
@@ -269,8 +267,8 @@ several places.
 Interpretation:
 
 Future IA should make operational state scannable before decorative identity.
-The APTL-style dark stripe is useful here because it leaves room for dense state
-tables and concise status text.
+The dark stripe is useful here because it leaves room for dense state tables
+and concise status text.
 
 ### pain-mixed-skill-onboarding
 

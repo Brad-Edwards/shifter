@@ -487,7 +487,7 @@ Use one canonical name per concept.
 | File | CTF challenge attachment. | Attachment when attached to a CTF challenge. |
 | Scenario | Reusable range or exercise definition authored in Scenario Editor. | Challenge, event, mission. |
 | Scenario YAML | Structured source representation for a scenario. | Config blob. |
-| Experiment | Future ACES-backed execution workflow concept; the legacy Mission Control implementation was removed by ADR-027. | Scenario, range, event. |
+| Experiment | Future RAES-backed execution workflow concept; the legacy Mission Control implementation was removed by ADR-027. | Scenario, range, event. |
 | API key | Revocable credential for API access. | Token unless API docs require the protocol term. |
 | Documentation | User and technical knowledge surfaced under `/docs/`. | Help when referring to canonical docs. |
 | Guide | Task-oriented documentation. | Reference. |

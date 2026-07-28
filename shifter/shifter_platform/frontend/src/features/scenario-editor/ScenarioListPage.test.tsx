@@ -31,7 +31,7 @@ function entry(overrides: Record<string, unknown> = {}) {
     enabled: true,
     staff_only: false,
     launchable: true,
-    aces: null,
+    raes: null,
     ...overrides,
   };
 }

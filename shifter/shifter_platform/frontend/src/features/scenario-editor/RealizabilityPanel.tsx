@@ -43,7 +43,7 @@ const OUTCOME_PRESENTATION: Record<string, { label: string; dot: string; summary
   not_applicable: {
     label: "Not applicable",
     dot: "#8e8e93",
-    summary: "Backend realizability applies to ACES packages only.",
+    summary: "Backend realizability applies to RAES packages only.",
   },
 };
 

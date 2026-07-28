@@ -2,7 +2,7 @@ import { createBrowserRouter } from "react-router-dom";
 
 import { RootLayout, type RouteHandle } from "@/app/RootLayout";
 import { NotFoundPage } from "@/components/not-found";
-import { AcesImageRegistryPage } from "@/features/aces-image-registry/AcesImageRegistryPage";
+import { RaesImageRegistryPage } from "@/features/raes-image-registry/RaesImageRegistryPage";
 import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
@@ -52,9 +52,9 @@ const missionControlHandle: RouteHandle = { permissionPolicy: "authenticated" };
 // Scenario Editor (#1371) is gated on CMS-authoring access, the same advisory
 // policy the existing "Author" nav group / legacy threat-research views use.
 const scenarioEditorHandle: RouteHandle = { permissionPolicy: "threat_research" };
-// ACES image registry (#1566) shares the "Author" CMS-authoring gate; the API
-// additionally 404s unless SHIFTER_ACES_NATIVE_PROVISIONING is on.
-const acesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_research" };
+// RAES image registry (#1566) shares the "Author" CMS-authoring gate; the API
+// additionally 404s unless SHIFTER_RAES_NATIVE_PROVISIONING is on.
+const raesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_research" };
 // Administer workspace (#1373) is gated on staff, the same advisory policy the
 // "Administer" nav group and the /api/v1/administer/ endpoints enforce. The Django
 // host additionally serves these pages only when ADMINISTER_SPA_ENABLED is on.
@@ -177,12 +177,12 @@ export const router = createBrowserRouter(
           ],
         },
         {
-          // ACES image registry (#1566): greenfield SPA-only surface. The Django
-          // host serves the shell for /aces-image-registry/* GET paths only when
-          // PLATFORM_SPA_ENABLED and SHIFTER_ACES_NATIVE_PROVISIONING are on.
-          path: "aces-image-registry",
-          handle: acesImageRegistryHandle,
-          children: [{ index: true, element: <AcesImageRegistryPage /> }],
+          // RAES image registry (#1566): greenfield SPA-only surface. The Django
+          // host serves the shell for /raes-image-registry/* GET paths only when
+          // PLATFORM_SPA_ENABLED and SHIFTER_RAES_NATIVE_PROVISIONING are on.
+          path: "raes-image-registry",
+          handle: raesImageRegistryHandle,
+          children: [{ index: true, element: <RaesImageRegistryPage /> }],
         },
         {
           // Administer workspace (#1373): greenfield SPA surface. The Django host

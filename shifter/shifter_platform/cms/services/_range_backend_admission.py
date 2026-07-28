@@ -1,6 +1,6 @@
 """GCP range-backend admission gate (ADR-030 / #1348), returning its result (#1666).
 
-The single service-level admission check shared by the cyberscript and ACES
+The single service-level admission check shared by the cyberscript and RAES
 create paths. Extracted from ``_range_create`` so that module stays within its
 size budget; re-exported there for existing importers.
 
@@ -61,9 +61,9 @@ def assert_backend_admitted(
 ) -> BackendAdmission | None:
     """Reject a range launch on a backend not admitted for ``purpose`` (ADR-030).
 
-    Shared by ``create_range`` and ``create_aces_native_range`` -- and therefore
+    Shared by ``create_range`` and ``create_raes_native_range`` -- and therefore
     every product path (Mission Control, CTF participant/batch/spare/recovery,
-    ACES, management commands, and direct service callers) that funnels through
+    RAES, management commands, and direct service callers) that funnels through
     them. It runs before the DB reservation, Engine persistence, dispatch, subnet
     allocation, or any cloud mutation, and is a no-op for non-GCP providers.
 

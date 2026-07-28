@@ -12,7 +12,7 @@ Shifter does.
 | [Getting started](getting-started/index.md) | You are new and want the quickstart and core concepts. |
 | [How-to guides](how-to/index.md) | You want step-by-step guides such as running your first demo. |
 | [Features](features/index.md) | You need details on agents, ranges, the terminal, credentials, NGFW, or CTF. |
-| [Scenarios](scenarios/index.md) | You are running a specific scenario such as the AD attack lab, an NGFW range, or TechVault. |
+| [Scenarios](scenarios/index.md) | You are running a specific scenario such as the AD attack lab or an NGFW range. |
 | [Reference](reference/index.md) | You need the FAQ or support pointers. |
 
 ## Deploy and operate
@@ -34,7 +34,6 @@ enforces the prerequisites documented here before any Terraform apply.
 | [Service Discovery ForceNew](dev/service-discovery-forcenew.md) | You hit a Service Discovery replacement and need the operational rule. |
 | [Disaster recovery](ops/disaster-recovery.md) | You are recovering the AWS portal stack after a failure. |
 | [GitHub runner health alerts](ops/github-runner-health-alerts.md) | A runner-health alert fired and you need the response steps. |
-| [TechVault golden AMI bake](ops/techvault-bake-runbook.md) | You are baking the TechVault golden AMI. |
 
 ## Develop and govern
 

@@ -101,14 +101,14 @@ variable "s3_bucket_arn" {
   type        = string
 }
 
-variable "aces_package_bucket_arn" {
-  description = "ARN of the S3 bucket holding object-backed ACES package archives (#1567). Grants the portal role read-only (GetObject + prefix-scoped ListBucket). Empty disables the grant."
+variable "raes_package_bucket_arn" {
+  description = "ARN of the S3 bucket holding object-backed RAES package archives (#1567). Grants the portal role read-only (GetObject + prefix-scoped ListBucket). Empty disables the grant."
   type        = string
   default     = ""
 }
 
-variable "aces_package_prefix" {
-  description = "Optional key prefix under the ACES package bucket the portal may read (least-privilege scoping)."
+variable "raes_package_prefix" {
+  description = "Optional key prefix under the RAES package bucket the portal may read (least-privilege scoping)."
   type        = string
   default     = ""
 }

@@ -1,7 +1,7 @@
 # Polaris SDL — design rationale
 
 This directory holds the Polaris Operation Northstorm scenario in
-[aces-sdl][aces-sdl] form:
+[raes][raes] form:
 
 - `polaris-operation-northstorm.sdl.yaml` — full event scenario (~1.7k LOC,
   17 nodes: domain controller + 16 mission assets).
@@ -16,7 +16,7 @@ be **explicitly justified as authored/static artifacts**. The Polaris SDL
 takes the second path:
 
 1. **The SDL is the source of truth.** Splitting it into per-asset or
-   per-mission files would create a generator / merge step. The aces-sdl
+   per-mission files would create a generator / merge step. The raes
    loader does not own one today; the live-event deploy and the scenario
    smoketest both read the YAML directly.
 2. **No generator means no verification gate for splits.** A multi-file
@@ -27,7 +27,7 @@ takes the second path:
    generator, and verification path stay reviewable."
 3. **#620 is the path forward.** The scenario-expressiveness work tracked
    in #620 owns the long-term move toward declarative composition (and
-   away from monolithic SDL). When that lands, an aces-sdl generator and
+   away from monolithic SDL). When that lands, an raes generator and
    per-asset review surface fall out of it; until then, this file stays as
    the authored single source.
 4. **Review is already mission-scoped.** Every block has a `name:` /
@@ -38,7 +38,7 @@ takes the second path:
 If you change a Polaris asset, change it here. Do not generate this file
 from a parallel source until #620 supplies the generator.
 
-[aces-sdl]: ../design/aces-sdl-validation-path.md
+[raes]: ../design/raes-validation-path.md
 
 ## Related
 
@@ -48,4 +48,4 @@ from a parallel source until #620 supplies the generator.
 - `../tests/run-all-smoketests.sh` — per-asset smoketests; topology
   assertions live here and must keep passing after any SDL edit.
 - Live-event deploy path stays through `build/`, not `sdl/`; this
-  directory feeds the aces-sdl / APTL validation path.
+  directory feeds the RAES validation path.

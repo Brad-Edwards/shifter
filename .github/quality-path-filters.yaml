@@ -251,7 +251,6 @@ quality_units:
       - .ground-control.yaml
       - .gc/plan-rules.md
       - .shifter.yaml
-      - docs/architecture/aces-migration-parity-inventory.yaml
     sonar: false
     responsibilities:
       lint: []
@@ -438,7 +437,7 @@ exclusions:
 
   - type: config
     reason: >-
-      Scenario authoring content and packages (Polaris and ACES-validation
+      Scenario authoring content and packages (Polaris and RAES-validation
       scenario material, briefing/design notes, container and content-package
       inputs). Authoring content, not product source; Polaris smoke tests are
       owned separately by the polaris_tests unit.

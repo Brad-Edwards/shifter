@@ -24,13 +24,13 @@ class DashboardManager {
 
         // State
         this.currentRange = null;
-        // Secondary, read-only ACES operation projection (#1276). Absent/null for
-        // legacy non-ACES ranges; never drives lifecycle, websocket, or polling.
-        this.currentAcesProjection = null;
-        // Secondary, read-only ACES participant/runtime + access-channel
-        // projection (#1290). Sibling to currentAcesProjection: absent/null for
-        // legacy non-ACES ranges; never drives lifecycle, websocket, or polling.
-        this.currentAcesParticipantRuntime = null;
+        // Secondary, read-only RAES operation projection (#1276). Absent/null for
+        // legacy non-RAES ranges; never drives lifecycle, websocket, or polling.
+        this.currentRaesProjection = null;
+        // Secondary, read-only RAES participant/runtime + access-channel
+        // projection (#1290). Sibling to currentRaesProjection: absent/null for
+        // legacy non-RAES ranges; never drives lifecycle, websocket, or polling.
+        this.currentRaesParticipantRuntime = null;
         this.statusSocket = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
@@ -535,8 +535,8 @@ class DashboardManager {
         }
 
         this.currentRange = data.range;
-        this.currentAcesProjection = data.aces_projection || null;
-        this.currentAcesParticipantRuntime = data.aces_participant_runtime || null;
+        this.currentRaesProjection = data.raes_projection || null;
+        this.currentRaesParticipantRuntime = data.raes_participant_runtime || null;
         this._updateUI();
 
         // Connect WebSocket if in a transitional state
@@ -663,8 +663,8 @@ class DashboardManager {
             pauseBtn.addEventListener('click', () => this.pauseRange());
         }
 
-        this._renderAcesProjection(tile);
-        this._renderAcesParticipantRuntime(tile);
+        this._renderRaesProjection(tile);
+        this._renderRaesParticipantRuntime(tile);
     }
 
     /**
@@ -700,38 +700,38 @@ class DashboardManager {
             resumeBtn.addEventListener('click', () => this.resumeRange());
         }
 
-        this._renderAcesProjection(tile);
-        this._renderAcesParticipantRuntime(tile);
+        this._renderRaesProjection(tile);
+        this._renderRaesParticipantRuntime(tile);
     }
 
     /**
-     * Render the secondary, read-only ACES operation projection into a tile (#1276).
+     * Render the secondary, read-only RAES operation projection into a tile (#1276).
      *
-     * ACES-derived values are inserted with textContent only (never innerHTML),
-     * and the section stays hidden for legacy / non-ACES ranges (null projection).
+     * RAES-derived values are inserted with textContent only (never innerHTML),
+     * and the section stays hidden for legacy / non-RAES ranges (null projection).
      * This is display-only: it does not affect range status, websocket, or polling.
      */
-    _renderAcesProjection(tile) {
-        const section = tile.querySelector('.aces-projection');
+    _renderRaesProjection(tile) {
+        const section = tile.querySelector('.raes-projection');
         if (!section) return;
 
-        const projection = this.currentAcesProjection;
+        const projection = this.currentRaesProjection;
         if (!projection) {
             section.hidden = true;
             return;
         }
 
-        const labelEl = section.querySelector('.aces-status-label');
+        const labelEl = section.querySelector('.raes-status-label');
         if (labelEl) labelEl.textContent = projection.status_label || '';
 
-        const observedEl = section.querySelector('.aces-observed-at');
+        const observedEl = section.querySelector('.raes-observed-at');
         if (observedEl) {
             observedEl.textContent = projection.observed_at
                 ? `Observed ${this._formatDate(projection.observed_at)}`
                 : '';
         }
 
-        const snapshotEl = section.querySelector('.aces-snapshot-summary');
+        const snapshotEl = section.querySelector('.raes-snapshot-summary');
         if (snapshotEl) {
             const snapshot = projection.snapshot;
             snapshotEl.textContent = snapshot ? `Snapshot: ${snapshot.resource_count} resource(s)` : '';
@@ -741,24 +741,24 @@ class DashboardManager {
     }
 
     /**
-     * Render the secondary, read-only ACES participant/runtime + access-channel
-     * projection into a tile (#1290). Sibling to _renderAcesProjection:
-     * ACES-derived values are inserted with textContent only (never innerHTML),
-     * and the section stays hidden for legacy / non-ACES ranges (null
+     * Render the secondary, read-only RAES participant/runtime + access-channel
+     * projection into a tile (#1290). Sibling to _renderRaesProjection:
+     * RAES-derived values are inserted with textContent only (never innerHTML),
+     * and the section stays hidden for legacy / non-RAES ranges (null
      * projection). This is display-only: it does not affect range status,
      * websocket, or polling.
      */
-    _renderAcesParticipantRuntime(tile) {
-        const section = tile.querySelector('.aces-participant-runtime');
+    _renderRaesParticipantRuntime(tile) {
+        const section = tile.querySelector('.raes-participant-runtime');
         if (!section) return;
 
-        const projection = this.currentAcesParticipantRuntime;
+        const projection = this.currentRaesParticipantRuntime;
         if (!projection) {
             section.hidden = true;
             return;
         }
 
-        const participantsEl = section.querySelector('.aces-participant-runtime-participants');
+        const participantsEl = section.querySelector('.raes-participant-runtime-participants');
         if (participantsEl) {
             participantsEl.textContent = '';
             for (const participant of projection.participants || []) {
@@ -771,7 +771,7 @@ class DashboardManager {
             }
         }
 
-        const channelsEl = section.querySelector('.aces-participant-runtime-channels');
+        const channelsEl = section.querySelector('.raes-participant-runtime-channels');
         if (channelsEl) {
             const labels = (projection.access_channels || []).map((channel) => channel.channel);
             channelsEl.textContent = labels.join(', ');
@@ -869,8 +869,8 @@ class DashboardManager {
             }
 
             this.currentRange = data.range;
-            this.currentAcesProjection = data.aces_projection || null;
-            this.currentAcesParticipantRuntime = data.aces_participant_runtime || null;
+            this.currentRaesProjection = data.raes_projection || null;
+            this.currentRaesParticipantRuntime = data.raes_participant_runtime || null;
             this._updateUI();
             this._connectStatusSocket(data.range.request_id);
 
@@ -906,8 +906,8 @@ class DashboardManager {
 
             this._closeStatusSocket();
             this.currentRange = null;
-            this.currentAcesProjection = null;
-            this.currentAcesParticipantRuntime = null;
+            this.currentRaesProjection = null;
+            this.currentRaesParticipantRuntime = null;
             this._updateUI();
 
         } catch (error) {
@@ -939,8 +939,8 @@ class DashboardManager {
             // Range is destroyed immediately - show no-range state
             this._closeStatusSocket();
             this.currentRange = null;
-            this.currentAcesProjection = null;
-            this.currentAcesParticipantRuntime = null;
+            this.currentRaesProjection = null;
+            this.currentRaesParticipantRuntime = null;
             this._updateUI();
 
         } catch (error) {
@@ -1038,8 +1038,8 @@ class DashboardManager {
         // Clear the current range and show no-range state
         this._closeStatusSocket();
         this.currentRange = null;
-        this.currentAcesProjection = null;
-        this.currentAcesParticipantRuntime = null;
+        this.currentRaesProjection = null;
+        this.currentRaesParticipantRuntime = null;
         this._updateUI();
     }
 
@@ -1216,8 +1216,8 @@ class DashboardManager {
             if (!this._isTransitionalState(polledStatus)) {
                 console.log(`Poll detected stable state: ${polledStatus}`);
                 this.currentRange = data.range;
-                this.currentAcesProjection = data.aces_projection || null;
-                this.currentAcesParticipantRuntime = data.aces_participant_runtime || null;
+                this.currentRaesProjection = data.raes_projection || null;
+                this.currentRaesParticipantRuntime = data.raes_participant_runtime || null;
                 this._updateUI();
                 this._closeStatusSocket(); // This also stops polling
             }

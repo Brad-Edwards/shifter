@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
 
 import cms.scenario_editor.services as scenario_services
-from cms.models import AcesPackageSource, Scenario, ScenarioMetadata
+from cms.models import RaesPackageSource, Scenario, ScenarioMetadata
 from cms.scenario_editor._validation import structural_definition_from_detail
 from cms.scenario_editor.services import (
     ScenarioEditorError,
@@ -207,10 +207,10 @@ class TestCreateScenario:
             )
 
     def test_collision_with_registered_pack(self, staff_user, valid_definition):
-        AcesPackageSource.objects.create(
+        RaesPackageSource.objects.create(
             scenario_id="pack-owned-id",
             source_kind="object",
-            contract_kind="aces",
+            contract_kind="raes",
             contract_profile="shifter",
             package_ref="packs/pack-owned-id",
             package_version="1.0.0",
@@ -219,7 +219,7 @@ class TestCreateScenario:
             registered_by=staff_user,
         )
 
-        with pytest.raises(ScenarioEditorError, match="registered ACES pack"):
+        with pytest.raises(ScenarioEditorError, match="registered RAES pack"):
             create_scenario(
                 staff_user,
                 scenario_id="pack-owned-id",

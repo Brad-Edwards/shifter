@@ -154,7 +154,7 @@ def _metadata_items(
     """Render guest metadata: provisioned user key, host key install, host pubkey.
 
     ``composition_script`` (empty on the cyberscript path) is appended to the guest
-    startup script after the host-key install, so the ACES-native path realizes
+    startup script after the host-key install, so the RAES-native path realizes
     node content/features/accounts as part of the same idempotent bootstrap.
     """
     items = [{"key": key, "value": value} for key, value in config.metadata_items]

@@ -1,6 +1,6 @@
 name: polaris-demo-minimal
 description: >
-  Three-container end-to-end demo exercising the aces_backend pipeline with
+  Three-container end-to-end demo exercising the raes_backend pipeline with
   pre-built public images. Proves docker+topology-mutation mechanics without
   needing the full Polaris build chain. Uses only images already on Docker
   Hub so the demo works on a clean host.
@@ -22,7 +22,7 @@ nodes:
     os_version: Alpine 3.19
     source: {name: "alpine", version: "3.19"}
     resources: {ram: 256 mib, cpu: 1}
-    description: "aces-backend-command: sh -c 'while true; do sleep 30; done'"
+    description: "raes-backend-command: sh -c 'while true; do sleep 30; done'"
     services:
       - {port: 80, name: http, role: internal}
 
@@ -32,7 +32,7 @@ nodes:
     os_version: Alpine 3.19
     source: {name: "alpine", version: "3.19"}
     resources: {ram: 256 mib, cpu: 1}
-    description: "stand-in for BIND. aces-backend-command: sh -c 'while true; do sleep 30; done'"
+    description: "stand-in for BIND. raes-backend-command: sh -c 'while true; do sleep 30; done'"
     services:
       - {port: 53, protocol: udp, name: dns, role: internal}
 
@@ -42,7 +42,7 @@ nodes:
     os_version: Alpine 3.19
     source: {name: "alpine", version: "3.19"}
     resources: {ram: 256 mib, cpu: 1}
-    description: "stand-in for Kali. aces-backend-command: sh -c 'while true; do sleep 30; done'"
+    description: "stand-in for Kali. raes-backend-command: sh -c 'while true; do sleep 30; done'"
     services:
       - {port: 22, name: ssh, role: internal}
 

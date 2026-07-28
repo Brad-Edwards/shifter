@@ -2,7 +2,7 @@
 
 Public surface for the Django-free capacity-admission policy. Engine services,
 cloud capacity-inventory adapters, and product wiring import from here rather
-than reaching into the module directly, matching the ``shared.aces`` package
+than reaching into the module directly, matching the ``shared.raes`` package
 convention.
 """
 

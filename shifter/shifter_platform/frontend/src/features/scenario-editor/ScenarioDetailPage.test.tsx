@@ -37,7 +37,7 @@ function detail(overrides: Record<string, unknown> = {}) {
     ngfw: false,
     instances: [{ name: "Attacker", role: "attacker", os_type: "kali", xdr_agent: false }],
     subnets: [{ name: "core", instances: ["Attacker"], connected_to: [] }],
-    aces: null,
+    raes: null,
     ...overrides,
   };
 }
@@ -74,21 +74,21 @@ describe("ScenarioDetailPage", () => {
     expect(screen.getByRole("button", { name: "Clone" })).toBeInTheDocument();
   });
 
-  it("renders the ACES provenance block for an ACES scenario", async () => {
+  it("renders the RAES provenance block for an RAES scenario", async () => {
     mockApi.mockResolvedValue(
       detail({
-        id: "polaris-aces",
-        name: "polaris-aces",
-        source: "aces",
-        scenario_type: "aces",
+        id: "polaris-raes",
+        name: "polaris-raes",
+        source: "raes",
+        scenario_type: "raes",
         editable: false,
         deletable: false,
         exportable: false,
         instances: [],
         subnets: [],
-        aces: {
+        raes: {
           source_kind: "repo",
-          contract_kind: "aces",
+          contract_kind: "raes",
           contract_profile: "shifter",
           package_ref: "content-packages/polaris",
           package_version: "1.0.0",
@@ -101,8 +101,8 @@ describe("ScenarioDetailPage", () => {
         },
       }),
     );
-    renderDetail("polaris-aces");
-    expect(await screen.findByText("ACES package provenance")).toBeInTheDocument();
+    renderDetail("polaris-raes");
+    expect(await screen.findByText("RAES package provenance")).toBeInTheDocument();
   });
 
   it("has no axe violations when loaded", async () => {

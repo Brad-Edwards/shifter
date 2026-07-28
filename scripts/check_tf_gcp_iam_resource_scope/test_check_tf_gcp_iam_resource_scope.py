@@ -425,8 +425,8 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
             {workload: roles for workload, roles in self.bucket_roles.items()},
             {
                 # portal: objectAdmin on the assets bucket, and read-only
-                # objectViewer on the optional object-backed ACES package bucket
-                # (#1567, gated on aces_package_bucket_name).
+                # objectViewer on the optional object-backed RAES package bucket
+                # (#1567, gated on raes_package_bucket_name).
                 "portal": {"roles/storage.objectAdmin", "roles/storage.objectViewer"},
                 "workers": {"roles/storage.objectViewer"},
                 "provisioner": {"roles/storage.objectViewer", "roles/storage.objectAdmin"},

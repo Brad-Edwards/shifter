@@ -50,11 +50,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_RANGE_RESOURCES = frozenset({"range", "aces-range"})
+_RANGE_RESOURCES = frozenset({"range", "raes-range"})
 
-# ACES-native lifecycle operations (ADR-043 phase 5, #1837). Pause/resume are
+# RAES-native lifecycle operations (ADR-043 phase 5, #1837). Pause/resume are
 # deliberately absent: they share the generic range step tables and dispatch.
-_ACES_OPERATIONS = frozenset({("aces-range", "provision"), ("aces-range", "destroy")})
+_RAES_OPERATIONS = frozenset({("raes-range", "provision"), ("raes-range", "destroy")})
 
 # Statuses on another attached range that keep a shared NGFW running. The
 # provisioner's ``should_pause_ngfw`` is a pre-cloud compatibility check; this
@@ -359,12 +359,12 @@ def _dispatch_ngfw(row: OperationResultInbox, step: ResultStep, payload: dict[st
 def _dispatch(row: OperationResultInbox, step: ResultStep, payload: dict[str, Any], target: Range | Instance) -> str:
     """Route one validated result to its domain write. Caller holds the lock."""
     if row.resource in _RANGE_RESOURCES:
-        if (row.resource, row.operation) in _ACES_OPERATIONS:
-            # ACES provision/destroy report operation observations and topology
+        if (row.resource, row.operation) in _RAES_OPERATIONS:
+            # RAES provision/destroy report operation observations and topology
             # evidence, not instance sets; pause/resume keep the range shape.
-            from ._operation_apply_aces import apply_aces_result
+            from ._operation_apply_raes import apply_raes_result
 
-            return apply_aces_result(row, step, payload, cast("Range", target), _apply_failure)
+            return apply_raes_result(row, step, payload, cast("Range", target), _apply_failure)
         return _dispatch_range(row, step, payload, cast("Range", target))
     return _dispatch_ngfw(row, step, payload, cast("Instance", target))
 

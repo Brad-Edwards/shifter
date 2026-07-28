@@ -41,13 +41,13 @@ particular, an ordinary Mission Control demo scenario is still `live_fire`—the
 user can execute arbitrary activity in it.
 
 There is no request field, serializer field, query parameter, scenario YAML key,
-`RangeSpec` field, or ACES plan field that carries a purpose. It cannot be
+`RangeSpec` field, or RAES plan field that carries a purpose. It cannot be
 requested from outside the platform.
 
 ### Who can mint a non-user purpose
 
 The generic product facades—`create_range`, `create_range_dispatch`, and
-`create_aces_native_range`—take no instantiation-purpose argument at all. They
+`create_raes_native_range`—take no instantiation-purpose argument at all. They
 are permanently live-fire, so no in-process caller can escalate a normal launch
 onto the retained substrate.
 
@@ -90,7 +90,7 @@ Four layers, each independent:
 1. **CMS service boundary**—`cms.services._range_backend_admission.assert_backend_admitted()`
    runs before the active-range reservation, Engine persistence, launch-intent
    creation, subnet allocation, secret access, or any cloud mutation. Both the
-   cyberscript (`create_range`) and ACES (`create_aces_native_range`) create
+   cyberscript (`create_range`) and RAES (`create_raes_native_range`) create
    paths call it, so every product entry point funnels through one check. A CTF
    launch is additionally refused any non-live-fire purpose outright, and the
    operator gate on `create_non_user_range` runs before a purpose exists at all.
@@ -104,8 +104,8 @@ Four layers, each independent:
    the locked Engine row projected by `provisioner_db`, never from argv, the Job
    environment, or scenario content. A provision whose persisted binding no
    longer matches the deploy selector fails closed rather than re-routing.
-4. **Adapter availability**—policy approval is not adapter support. ACES-native
-   provisioning realizes GCE range cells only, so an ACES launch on any other
+4. **Adapter availability**—policy approval is not adapter support. RAES-native
+   provisioning realizes GCE range cells only, so an RAES launch on any other
    admitted backend fails with `unsupported-capability` before dispatch.
 
 Teardown is deliberately **not** gated by new-provision policy. An existing GDC
@@ -147,7 +147,7 @@ Then:
   first—successful boot, network uniqueness, or namespace isolation is not
   containment evidence;
 - advertise and check its realization capability separately, including legacy
-  versus ACES support;
+  versus RAES support;
 - persist and route from the same Engine binding; and
 - add policy-matrix, service-boundary, Engine-binding, provisioner
   defense-in-depth, and cleanup tests.

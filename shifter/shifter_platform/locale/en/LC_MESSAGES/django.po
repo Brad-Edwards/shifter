@@ -430,7 +430,7 @@ msgstr ""
 #: templates/ctf/admin/challenge_detail.html:232
 #: templates/ctf/admin/challenge_detail.html:286
 #: templates/ctf/admin/event_detail.html:214
-#: templates/scenario_editor/aces_detail.html:165
+#: templates/scenario_editor/raes_detail.html:165
 #: templates/scenario_editor/clone.html:108
 #: templates/scenario_editor/detail.html:75
 #: templates/scenario_editor/detail.html:224
@@ -1021,7 +1021,7 @@ msgstr ""
 #: templates/ctf/participant/team.html:44
 #: templates/mission_control/ngfw/detail.html:88
 #: templates/mission_control/ngfw/detail.html:165
-#: templates/scenario_editor/aces_detail.html:182
+#: templates/scenario_editor/raes_detail.html:182
 #: templates/scenario_editor/list.html:46
 msgid "Status"
 msgstr ""
@@ -1484,8 +1484,8 @@ msgid "disabled"
 msgstr ""
 
 #: templates/ctf/admin/event_form.html:339
-#: templates/scenario_editor/aces_detail.html:18
-#: templates/scenario_editor/aces_detail.html:128
+#: templates/scenario_editor/raes_detail.html:18
+#: templates/scenario_editor/raes_detail.html:128
 #: templates/scenario_editor/detail.html:22
 #: templates/scenario_editor/detail.html:148
 #: templates/scenario_editor/list.html:106
@@ -3120,7 +3120,7 @@ msgid "OS"
 msgstr ""
 
 #: templates/ctf/participant/range.html:45
-#: templates/scenario_editor/aces_detail.html:136
+#: templates/scenario_editor/raes_detail.html:136
 #: templates/scenario_editor/detail.html:156
 #: templates/scenario_editor/list.html:49
 msgid "Access"
@@ -4143,12 +4143,12 @@ msgstr ""
 
 #: templates/mission_control/dashboard.html:234
 #: templates/mission_control/dashboard.html:285
-msgid "ACES Operation"
+msgid "RAES Operation"
 msgstr ""
 
 #: templates/mission_control/dashboard.html:248
 #: templates/mission_control/dashboard.html:299
-msgid "ACES Participants"
+msgid "RAES Participants"
 msgstr ""
 
 #: templates/mission_control/dashboard.html:258
@@ -4897,102 +4897,102 @@ msgid ""
 "notice dismissal."
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:16
+#: templates/scenario_editor/raes_detail.html:16
 #: templates/scenario_editor/list.html:68
-msgid "ACES"
+msgid "RAES"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:21
-#: templates/scenario_editor/aces_detail.html:147
+#: templates/scenario_editor/raes_detail.html:21
+#: templates/scenario_editor/raes_detail.html:147
 #: templates/scenario_editor/detail.html:25
 #: templates/scenario_editor/detail.html:167
 #: templates/scenario_editor/list.html:120
 msgid "Staff Only"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:28
+#: templates/scenario_editor/raes_detail.html:28
 msgid ""
 "\n"
-"                This is a read-only ACES package-backed catalog entry. "
+"                This is a read-only RAES package-backed catalog entry. "
 "Authoring, YAML\n"
 "                editing, cloning, deletion, and export are not available for "
-"ACES\n"
+"RAES\n"
 "                scenarios.\n"
 "            "
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:39
+#: templates/scenario_editor/raes_detail.html:39
 msgid "Package Source"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:44
+#: templates/scenario_editor/raes_detail.html:44
 msgid "Source Kind"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:52
+#: templates/scenario_editor/raes_detail.html:52
 msgid "Contract"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:60
+#: templates/scenario_editor/raes_detail.html:60
 msgid "Package"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:68
+#: templates/scenario_editor/raes_detail.html:68
 msgid "Version"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:76
+#: templates/scenario_editor/raes_detail.html:76
 msgid "Package Digest"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:85
+#: templates/scenario_editor/raes_detail.html:85
 msgid "Lock"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:95
+#: templates/scenario_editor/raes_detail.html:95
 msgid "Lock Digest"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:106
+#: templates/scenario_editor/raes_detail.html:106
 #: templates/scenario_editor/detail.html:126
 msgid "Access Control"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:111
-#: templates/scenario_editor/aces_detail.html:122
+#: templates/scenario_editor/raes_detail.html:111
+#: templates/scenario_editor/raes_detail.html:122
 #: templates/scenario_editor/detail.html:131
 #: templates/scenario_editor/detail.html:142
 #: templates/scenario_editor/list.html:100
 msgid "Enabled"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:153
+#: templates/scenario_editor/raes_detail.html:153
 #: templates/scenario_editor/detail.html:173
 #: templates/scenario_editor/list.html:126
 msgid "All Users"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:161
+#: templates/scenario_editor/raes_detail.html:161
 msgid "Launchable"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:167
+#: templates/scenario_editor/raes_detail.html:167
 msgid "No (review only)"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:177
+#: templates/scenario_editor/raes_detail.html:177
 msgid "Conformance"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:191
+#: templates/scenario_editor/raes_detail.html:191
 msgid "Report"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:204
+#: templates/scenario_editor/raes_detail.html:204
 msgid "Provenance"
 msgstr ""
 
-#: templates/scenario_editor/aces_detail.html:222
+#: templates/scenario_editor/raes_detail.html:222
 #: templates/scenario_editor/detail.html:299
 #: templates/scenario_editor/error.html:20
 #: templates/scenario_editor/not_found.html:20

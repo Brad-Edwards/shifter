@@ -257,10 +257,8 @@ CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 
 CTF_RANGE_CLEANUP_BATCH_SIZE = _env_int("CTF_RANGE_CLEANUP_BATCH_SIZE", 10)
 CTF_RANGE_CLEANUP_BATCH_PAUSE_SECONDS = _env_int("CTF_RANGE_CLEANUP_BATCH_PAUSE_SECONDS", 5)
 
-# ACES operation-record retention/cleanup knobs (issue #1277): snapshot TTL days
+# RAES operation-record retention/cleanup knobs (issue #1277): snapshot TTL days
 # plus the dedicated prune service cadence/batch size. Non-secret integers.
-from config._aces_settings import *  # noqa: E402  # NOSONAR
-
 # Capacity-aware provisioning (PLAT-201, #680): the deployment-owned partition
 # and metric catalog plus the read-only identities used to observe provider
 # headroom. Distinct from the portal saturation emitter imported above.
@@ -275,6 +273,7 @@ from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
 # Split into config/_database_settings.py to keep this module under the S104
 # 500-line cap; the IAM-auth DB path lives there (issue #159).
 from config._database_settings import *  # noqa: E402  # NOSONAR
+from config._raes_settings import *  # noqa: E402  # NOSONAR
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

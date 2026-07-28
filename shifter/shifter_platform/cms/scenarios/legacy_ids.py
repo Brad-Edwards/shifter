@@ -1,6 +1,6 @@
-"""Shared catalog namespace guard for legacy scenarios and ACES packs (#1578).
+"""Shared catalog namespace guard for legacy scenarios and RAES packs (#1578).
 
-Legacy scenarios and ACES package sources live in separate stores, so no
+Legacy scenarios and RAES package sources live in separate stores, so no
 cross-table database constraint can make their shared ``scenario_id`` namespace
 unique. Every mutation boundary therefore calls :func:`ensure_scenario_id_available`:
 pack registration rejects active legacy owners, while legacy model saves reject
@@ -50,10 +50,10 @@ def ensure_scenario_id_available(scenario_id: str, *, registering: Literal["lega
         return
 
     if registering == "legacy":
-        from cms.models import AcesPackageSource
+        from cms.models import RaesPackageSource
 
-        if AcesPackageSource.objects.filter(scenario_id=scenario_id).exists():
-            raise ScenarioIdCollisionError(f"legacy scenario id '{scenario_id}' shadows a registered ACES pack")
+        if RaesPackageSource.objects.filter(scenario_id=scenario_id).exists():
+            raise ScenarioIdCollisionError(f"legacy scenario id '{scenario_id}' shadows a registered RAES pack")
         return
 
     raise ValueError("registering must be 'legacy' or 'pack'")

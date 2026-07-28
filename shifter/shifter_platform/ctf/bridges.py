@@ -295,7 +295,7 @@ def cms_list_scenarios(user: User) -> list[tuple[str, str]]:
 
     CTF event creation is a launch workflow, so this returns only scenarios that
     are launchable for the ``ctf_event`` workflow (legacy YAML/DB scenarios plus
-    any launchable ACES package entries); non-launchable ACES review entries are
+    any launchable RAES package entries); non-launchable RAES review entries are
     excluded. Staff review of non-launchable entries lives in the CMS scenario
     editor, not in CTF event selection.
 

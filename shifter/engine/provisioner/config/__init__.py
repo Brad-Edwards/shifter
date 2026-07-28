@@ -26,8 +26,8 @@ from ._aws_polaris import (
     load_aws_polaris_agent_config,
 )
 from ._content_delivery import (
-    AcesContentDeliveryConfig,
-    load_aces_content_delivery_config,
+    RaesContentDeliveryConfig,
+    load_raes_content_delivery_config,
 )
 from ._crypto import (
     FieldDecryptError,
@@ -82,7 +82,6 @@ __all__ = [
     "GCE_BOOTSTRAP_STANDARD",
     "GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES",
     "AWSPolarisAgentConfig",
-    "AcesContentDeliveryConfig",
     "FieldDecryptError",
     "GCERangeCellConfig",
     "GCERangeImageProfile",
@@ -94,6 +93,7 @@ __all__ = [
     "GDCVMRuntimeProfile",
     "InstanceConfig",
     "NGFWAttachmentConfig",
+    "RaesContentDeliveryConfig",
     "RangeConfig",
     "RangeNetworkConfig",
     "SubnetConfig",
@@ -105,13 +105,13 @@ __all__ = [
     "get_range_from_db",
     "has_ngfw_attachment_state",
     "is_gce_range_cell_backend",
-    "load_aces_content_delivery_config",
     "load_aws_polaris_agent_config",
     "load_gce_range_cell_config",
     "load_gdc_network_access_config",
     "load_gdc_palo_alto_vmseries_config",
     "load_gdc_scenario_pod_config",
     "load_gdc_vmruntime_config",
+    "load_raes_content_delivery_config",
     "load_range_network_config",
     "resolve_cloud_provider",
     "resolve_ngfw_attachment_config",

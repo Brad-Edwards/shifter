@@ -13,7 +13,7 @@ import pytest
 from django.contrib.auth.models import Group
 from rest_framework.test import APIClient
 
-from cms.models import AcesPackageSource, Scenario, ScenarioMetadata
+from cms.models import RaesPackageSource, Scenario, ScenarioMetadata
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 from shared.auth import THREAT_RESEARCH_GROUP
@@ -75,6 +75,14 @@ def authoring_user(django_user_model):
 
 
 @pytest.fixture
+def non_authoring_user(django_user_model):
+    return django_user_model.objects.create_user(
+        username="scenario-viewer@example.com",
+        email="scenario-viewer@example.com",
+    )
+
+
+@pytest.fixture
 def custom_scenario(authoring_user) -> Scenario:
     return Scenario.objects.create(
         scenario_id="existing-lab",
@@ -128,6 +136,14 @@ class TestScenarioCreate:
 
         assert response.status_code in {401, 403}
 
+    def test_authenticated_non_authoring_user_cannot_create(self, api_client, non_authoring_user):
+        api_client.force_authenticate(user=non_authoring_user)
+
+        response = api_client.post(SCENARIOS_URL, _create_body(), format="json")
+
+        assert response.status_code == 403
+        assert not Scenario.objects.filter(scenario_id="my-lab").exists()
+
     def test_read_scope_token_cannot_create(self, api_client, authoring_user):
         raw = _token(authoring_user, scopes.CMS_AUTHORING_READ)
 
@@ -163,27 +179,27 @@ class TestScenarioDetail:
         assert payload["deletable"] is False
         assert payload["exportable"] is True
 
-    def test_aces_scenario_detail_is_read_only_with_provenance(self, api_client, authoring_user):
-        AcesPackageSource.objects.create(
-            scenario_id="polaris-aces",
-            contract_kind="aces",
+    def test_raes_scenario_detail_is_read_only_with_provenance(self, api_client, authoring_user):
+        RaesPackageSource.objects.create(
+            scenario_id="polaris-raes",
+            contract_kind="raes",
             contract_profile="shifter",
             package_ref="content-packages/polaris",
             package_version="1.0.0",
             package_digest="sha256:" + "a" * 64,
             conformance_status="passed",
-            provenance={"repo": "acme/aces"},
+            provenance={"repo": "acme/raes"},
             registered_by=authoring_user,
         )
         api_client.force_authenticate(user=authoring_user)
 
-        response = api_client.get(_detail_url("polaris-aces"))
+        response = api_client.get(_detail_url("polaris-raes"))
 
         assert response.status_code == 200
         payload = response.json()
-        assert payload["source"] == "aces"
+        assert payload["source"] == "raes"
         assert payload["editable"] is False
-        assert payload["aces"]["contract_kind"] == "aces"
+        assert payload["raes"]["contract_kind"] == "raes"
 
     def test_unknown_scenario_returns_404(self, api_client, authoring_user):
         api_client.force_authenticate(user=authoring_user)
@@ -223,8 +239,22 @@ class TestScenarioUpdate:
 
         response = api_client.patch(_detail_url("basic"), body, format="json")
 
-        assert response.status_code in {400, 403, 409}
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid"
+        assert response.json()["error"]["message"] == (
+            "Cannot edit default scenario 'basic'. Default scenarios are managed in code."
+        )
         assert not Scenario.objects.filter(scenario_id="basic").exists()
+
+    def test_authenticated_non_authoring_user_cannot_update(self, api_client, non_authoring_user, custom_scenario):
+        api_client.force_authenticate(user=non_authoring_user)
+        body = {"name": "Unauthorized", "description": "x", **_DEFINITION}
+
+        response = api_client.patch(_detail_url("existing-lab"), body, format="json")
+
+        assert response.status_code == 403
+        custom_scenario.refresh_from_db()
+        assert custom_scenario.name == "Existing Lab"
 
     def test_read_scope_token_cannot_update(self, api_client, authoring_user, custom_scenario):
         raw = _token(authoring_user, scopes.CMS_AUTHORING_READ)
@@ -252,7 +282,11 @@ class TestScenarioDelete:
 
         response = api_client.delete(_detail_url("basic"))
 
-        assert response.status_code in {400, 403, 409}
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid"
+        assert response.json()["error"]["message"] == (
+            "Cannot delete default scenario 'basic'. Default scenarios are managed in code."
+        )
 
 
 class TestScenarioClone:
@@ -291,6 +325,20 @@ class TestScenarioMetadata:
         response = _bearer(api_client, raw).patch(_metadata_url("existing-lab"), {"enabled": False}, format="json")
 
         assert response.status_code == 403
+
+    def test_authenticated_non_authoring_user_cannot_update_metadata(
+        self, api_client, non_authoring_user, custom_scenario
+    ):
+        api_client.force_authenticate(user=non_authoring_user)
+
+        response = api_client.patch(
+            _metadata_url("existing-lab"),
+            {"enabled": False, "staff_only": True},
+            format="json",
+        )
+
+        assert response.status_code == 403
+        assert not ScenarioMetadata.objects.filter(scenario_id="existing-lab").exists()
 
 
 class TestScenarioExport:

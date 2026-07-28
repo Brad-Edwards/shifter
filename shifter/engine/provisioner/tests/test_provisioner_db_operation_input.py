@@ -35,12 +35,12 @@ def _mock_conn(fetchone=_UNSET):
 
 def _payload(**overrides):
     payload = {
-        "plan": {"kind": "aces_provisioning_plan", "resources": {}},
+        "plan": {"kind": "raes_provisioning_plan", "resources": {}},
         "delivery_bindings": [
             {
                 "content_address": "content.c",
                 "sha256": _SHA,
-                "storage_key": f"aces/content-delivery/cc/{_SHA}",
+                "storage_key": f"raes/content-delivery/cc/{_SHA}",
                 "byte_count": 4,
                 "binding_version": 1,
             }
@@ -69,7 +69,7 @@ def _envelope(**overrides):
         "contract_version": "1",
         "operation_id": _OPERATION_ID,
         "request_id": _REQUEST_ID,
-        "resource": "aces-range",
+        "resource": "raes-range",
         "operation": "provision",
         "payload": _payload(),
     }
@@ -82,7 +82,7 @@ def _row(envelope=None, **column_overrides):
     columns = {
         "operation_id": _OPERATION_ID,
         "request_id": _REQUEST_ID,
-        "resource": "aces-range",
+        "resource": "raes-range",
         "operation": "provision",
         "contract_version": "1",
     }
@@ -98,7 +98,7 @@ def _read(monkeypatch, row, **kwargs):
     call_kwargs = {
         "operation_id": _OPERATION_ID,
         "request_id": _REQUEST_ID,
-        "resource": "aces-range",
+        "resource": "raes-range",
         "operation": "provision",
     }
     call_kwargs.update(kwargs)
@@ -133,14 +133,14 @@ class TestDiscriminatorsAreChecked:
     def test_a_row_for_another_resource_is_refused(self, monkeypatch):
         import provisioner_db_operation_input as reader
 
-        row = _row(resource="range")
+        row = _row(_envelope(resource="range"), resource="range")
         with pytest.raises(reader.OperationInputError):
             _read(monkeypatch, row)
 
     def test_a_row_for_another_operation_is_refused(self, monkeypatch):
         import provisioner_db_operation_input as reader
 
-        row = _row(operation="destroy")
+        row = _row(_envelope(operation="destroy"), operation="destroy")
         with pytest.raises(reader.OperationInputError):
             _read(monkeypatch, row)
 
@@ -169,13 +169,13 @@ class TestDiscriminatorsAreChecked:
             _read(monkeypatch, row)
 
 
-class TestAcesProjection:
-    def test_parses_into_the_closed_aces_projection(self, monkeypatch):
+class TestRaesProjection:
+    def test_parses_into_the_closed_raes_projection(self, monkeypatch):
         import provisioner_db_operation_input as reader
 
         conn, _cursor = _mock_conn(fetchone=_row())
         monkeypatch.setattr(reader, "get_db_connection", MagicMock(return_value=conn))
-        run = reader.get_aces_operation_input(_OPERATION_ID, request_id=_REQUEST_ID, operation="provision")
+        run = reader.get_raes_operation_input(_OPERATION_ID, request_id=_REQUEST_ID, operation="provision")
         projection = run.input
         assert projection.legacy_range_id == 42
         assert projection.range_backend == "gce"
@@ -190,7 +190,7 @@ class TestAcesProjection:
         conn, _cursor = _mock_conn(fetchone=_row(_envelope(payload=payload)))
         monkeypatch.setattr(reader, "get_db_connection", MagicMock(return_value=conn))
         with pytest.raises(reader.OperationInputError):
-            reader.get_aces_operation_input(_OPERATION_ID, request_id=_REQUEST_ID, operation="provision")
+            reader.get_raes_operation_input(_OPERATION_ID, request_id=_REQUEST_ID, operation="provision")
 
 
 class TestRequestIdentityBinding:
@@ -209,13 +209,13 @@ class TestRequestIdentityBinding:
         with pytest.raises(reader.OperationInputError):
             _read(monkeypatch, row, request_id="99999999-9999-9999-9999-999999999999")
 
-    def test_the_aces_consumer_refuses_a_mismatched_request(self, monkeypatch):
+    def test_the_raes_consumer_refuses_a_mismatched_request(self, monkeypatch):
         import provisioner_db_operation_input as reader
 
         conn, _cursor = _mock_conn(fetchone=_row())
         monkeypatch.setattr(reader, "get_db_connection", MagicMock(return_value=conn))
         with pytest.raises(reader.OperationInputError):
-            reader.get_aces_operation_input(
+            reader.get_raes_operation_input(
                 _OPERATION_ID, request_id="99999999-9999-9999-9999-999999999999", operation="provision"
             )
 
@@ -226,5 +226,5 @@ class TestRequestIdentityBinding:
 
         conn, _cursor = _mock_conn(fetchone=_row())
         monkeypatch.setattr(reader, "get_db_connection", MagicMock(return_value=conn))
-        run = reader.get_aces_operation_input(_OPERATION_ID, request_id=_REQUEST_ID, operation="provision")
+        run = reader.get_raes_operation_input(_OPERATION_ID, request_id=_REQUEST_ID, operation="provision")
         assert (run.operation_id, run.request_id) == (_OPERATION_ID, _REQUEST_ID)

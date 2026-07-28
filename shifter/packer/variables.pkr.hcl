@@ -25,14 +25,14 @@ variable "subnet_id" {
   description = "Subnet ID to launch builder in (use empty string for default)"
 }
 
-# --- scenario bakes (techvault.pkr.hcl / polaris-vm.pkr.hcl) only ---------------
+# --- scenario bakes (polaris-vm.pkr.hcl only) -----------------------------------
 # The scenario sources bake full Docker Compose stacks over the no-inbound AWS
 # Session Manager communicator, so they need a larger builder, an SSM-enabled
 # instance profile, an encrypted root volume, and (for polaris) the operator-
 # supplied private build tarball. Base-image builds ignore all of these.
 variable "scenario_instance_type" {
   type        = string
-  description = "EC2 instance type for scenario bake builders (the stacks need more RAM than base images; techvault runbook pins r5.2xlarge)."
+  description = "EC2 instance type for scenario bake builders (the stack needs more RAM than base images)."
   default     = "r5.2xlarge"
 }
 
@@ -50,7 +50,7 @@ variable "security_group_id" {
 
 variable "root_volume_size" {
   type        = number
-  description = "Root EBS volume size (GiB) for scenario bake builders. TechVault's baked stack needs ~100 GiB."
+  description = "Root EBS volume size (GiB) for scenario bake builders."
   default     = 100
 }
 

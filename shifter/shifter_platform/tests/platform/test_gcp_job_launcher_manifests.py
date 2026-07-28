@@ -407,7 +407,7 @@ def test_provisioner_job_admission_policy_invariants(source_name: str, loader: A
         PROVISIONER_IMAGE_PARAM,
         "!has(c.command)",
         "'range'",
-        "'aces-range'",
+        "'raes-range'",
         "'ngfw'",
         "c.envFrom",
         "v.emptyDir",

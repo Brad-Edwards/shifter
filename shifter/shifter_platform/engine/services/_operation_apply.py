@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_RANGE_RESOURCES = frozenset({"range", "aces-range"})
+_RANGE_RESOURCES = frozenset({"range", "raes-range"})
 
 
 def _resolve_operation_target(resource: str, operation_id: UUID | str) -> Range | Instance | None:
