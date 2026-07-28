@@ -25,6 +25,7 @@ from django.utils import timezone
 from engine.ecs import start_raes_range_provisioning
 from shared.enums import RequestType
 from shared.raes.content_delivery import DeliveryBinding
+from shared.raes.participant_access import ParticipantAccessBinding
 
 from ._range_backend_binding import backend_binding_fields, require_workspace_binding, verify_existing_binding
 
@@ -52,6 +53,7 @@ def create_raes_range(
     workspace_id: int,
     backend_admission: BackendAdmission | None = None,
     delivery_bindings: tuple[DeliveryBinding, ...] = (),
+    participant_access: tuple[ParticipantAccessBinding, ...] = (),
 ) -> RaesRangeRef:
     """Create + dispatch an RAES-native range from a serialized RAES plan.
 
@@ -79,10 +81,23 @@ def create_raes_range(
     ``engine.models.RaesContentDeliveryBinding`` row in the same transaction as
     the Range. On the idempotent existing-range reuse path bindings are not
     re-created -- the first create already persisted them.
+
+    ``participant_access`` are the #1710 non-secret ``ParticipantAccessBinding``
+    declarations that ride beside the plan the same way, persisted as
+    ``engine.models.RaesParticipantAccessBinding`` rows in the same transaction
+    (ADR-032-R10). Because they are the immutable declaration the realized access
+    is later compared against, an idempotent replay of the same ``request_id``
+    carrying *different* access intent is rejected rather than silently reusing
+    the first declaration.
     """
     # Imported lazily (like the cyberscript ``create_range`` path) so importing
     # the ``engine`` app does not define models before the app registry is ready.
-    from engine.models import RaesContentDeliveryBinding, Range, Request
+    from engine.models import (
+        RaesContentDeliveryBinding,
+        RaesParticipantAccessBinding,
+        Range,
+        Request,
+    )
 
     require_workspace_binding(workspace_id)
     request_uuid = request_id if isinstance(request_id, UUID) else UUID(str(request_id))
@@ -90,6 +105,7 @@ def create_raes_range(
     existing = Range.objects.filter(request__request_id=request_uuid).first()
     if existing is not None:
         verify_existing_binding(existing, request_uuid, backend_admission)
+        _verify_existing_participant_access(existing, participant_access)
         return RaesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
         )
@@ -126,6 +142,16 @@ def create_raes_range(
             )
             for binding in delivery_bindings
         )
+        RaesParticipantAccessBinding.objects.bulk_create(
+            RaesParticipantAccessBinding(
+                range=range_obj,
+                target_address=binding.target_address,
+                channel=binding.channel,
+                account_address=binding.account_address,
+                binding_version=binding.binding_version,
+            )
+            for binding in participant_access
+        )
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
     try:
@@ -139,6 +165,29 @@ def create_raes_range(
     return RaesRangeRef(
         request_id=str(request_uuid), range_id=str(range_obj.uuid), status=range_obj.status, accepted=True
     )
+
+
+def _verify_existing_participant_access(
+    existing: Any,
+    participant_access: tuple[ParticipantAccessBinding, ...],
+) -> None:
+    """Reject an idempotent replay that carries different access intent (#1710).
+
+    The persisted rows are the immutable declaration the realized access binding
+    is later compared against. Silently reusing the first declaration for a
+    replay that now declares different access would let a second launch of the
+    same ``request_id`` realize access the caller did not ask for, so a mismatch
+    fails closed instead.
+    """
+    from engine.models import RaesParticipantAccessBinding
+
+    persisted = {
+        (row.target_address, row.channel, row.account_address)
+        for row in RaesParticipantAccessBinding.objects.filter(range=existing)
+    }
+    requested = {(binding.target_address, binding.channel, binding.account_address) for binding in participant_access}
+    if persisted != requested:
+        raise ValueError("RAES range replay carries different participant access intent than the persisted binding")
 
 
 def _write_operation_receipt(request_id: UUID, *, range_id: str) -> None:

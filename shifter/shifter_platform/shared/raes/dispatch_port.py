@@ -16,6 +16,7 @@ lets the realization side depend on the seam without pulling the SDL tooling
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -57,6 +58,17 @@ class ShifterProvisioningDispatchPort(Protocol):
         """The Shifter request id this dispatch is keyed by (operation key)."""
         ...
 
-    def realize(self, compiled_plan: dict[str, Any]) -> ShifterDispatchResult:
-        """Persist + dispatch the serialized ``compiled_plan``; return IDs/status only."""
+    def realize(
+        self,
+        compiled_plan: dict[str, Any],
+        participant_access: Sequence[Any] = (),
+    ) -> ShifterDispatchResult:
+        """Persist + dispatch the serialized ``compiled_plan``; return IDs/status only.
+
+        ``participant_access`` is the #1710 bounded, non-secret
+        ``ParticipantAccessBinding`` sidecar that rides *beside* the plan
+        (ADR-032-R10), persisted separately from ``range_config`` exactly as the
+        #1564 delivery bindings are. Empty is the common case of a scenario that
+        authored no interactive access.
+        """
         ...

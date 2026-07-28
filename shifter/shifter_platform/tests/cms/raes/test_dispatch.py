@@ -9,6 +9,7 @@ to ``shared.raes`` (ADR-024, ADR-031-R1). The persisted ``range_config`` is the
 serialized RAES plan (self-describing via its ``kind``).
 """
 
+import json
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -17,8 +18,9 @@ from django.contrib.auth import get_user_model
 from raes_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 
 from cms.raes.dispatch import CmsRaesDispatchPort
-from engine.models import Range
+from engine.models import RaesParticipantAccessBinding, Range
 from shared.raes.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
+from shared.raes.participant_access import ParticipantAccessBinding
 from shared.raes.runtime_target import RAES_PROVISIONING_PLAN_KIND, serialize_provisioning_plan
 
 # Opaque #1325 workspace scope binding; this suite does not exercise tenancy.
@@ -182,3 +184,45 @@ class TestCmsRaesDispatchPort:
         assert "sha256" not in str(
             Range.objects.get().range_config.get("resources", {}).get("provision.content.flag", {})
         )
+
+
+class TestParticipantAccessSidecar:
+    """The #1710 sidecar rides beside the plan through this port (ADR-032-R10)."""
+
+    @staticmethod
+    def _binding(channel: str = "ssh") -> ParticipantAccessBinding:
+        return ParticipantAccessBinding(
+            target_address="provision.node.attacker",
+            channel=channel,
+            account_address="provision.account.analyst",
+        )
+
+    def test_declared_access_is_persisted_beside_the_range(self, user):
+        request_id = uuid4()
+        port = CmsRaesDispatchPort(user_id=user.id, workspace_id=_WORKSPACE_ID, request_id=str(request_id))
+
+        port.realize(make_compiled_plan(), (self._binding(),))
+
+        range_obj = Range.objects.get(request__request_id=request_id)
+        rows = RaesParticipantAccessBinding.objects.filter(range=range_obj)
+        assert [(row.target_address, row.channel, row.account_address) for row in rows] == [
+            ("provision.node.attacker", "ssh", "provision.account.analyst")
+        ]
+
+    def test_no_declared_access_persists_no_rows(self, user):
+        request_id = uuid4()
+        port = CmsRaesDispatchPort(user_id=user.id, workspace_id=_WORKSPACE_ID, request_id=str(request_id))
+
+        port.realize(make_compiled_plan())
+
+        range_obj = Range.objects.get(request__request_id=request_id)
+        assert not RaesParticipantAccessBinding.objects.filter(range=range_obj).exists()
+
+    def test_the_sidecar_never_enters_the_persisted_plan(self, user):
+        request_id = uuid4()
+        port = CmsRaesDispatchPort(user_id=user.id, workspace_id=_WORKSPACE_ID, request_id=str(request_id))
+
+        port.realize(make_compiled_plan(), (self._binding(),))
+
+        range_obj = Range.objects.get(request__request_id=request_id)
+        assert "account_address" not in json.dumps(range_obj.range_config)

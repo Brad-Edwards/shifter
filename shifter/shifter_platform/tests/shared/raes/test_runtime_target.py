@@ -61,7 +61,7 @@ class FakeDispatchPort:
     raises: Exception | None = None
     plans: list = field(default_factory=list)
 
-    def realize(self, compiled_plan) -> ShifterDispatchResult:
+    def realize(self, compiled_plan, participant_access=()) -> ShifterDispatchResult:
         if self.raises is not None:
             raise self.raises
         self.plans.append(compiled_plan)

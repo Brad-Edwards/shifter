@@ -19,7 +19,7 @@ top).
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from config import (
     GCERangeCellConfig,
@@ -43,6 +43,7 @@ from gcp_range_cell_types import (
     RangeCellPlan,
     SubnetPlan,
 )
+from raes_access import RealizedAccessBinding
 from raes_gcp_firewall import (
     acl_cidr_lookup,
     build_acl_firewalls,
@@ -68,11 +69,17 @@ def build_raes_range_cell_plan(
     raes_plan: RaesPlan,
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
     config: GCERangeCellConfig | None = None,
+    access_bindings: Sequence[RealizedAccessBinding] = (),
 ) -> RangeCellPlan:
     """Render the deterministic GCE range-cell plan for a parsed RAES plan.
 
     ``resolve_image`` maps one node to its concrete image/sizing profile (wired to
     the tenant image registry by the caller), keeping this builder pure/testable.
+
+    ``access_bindings`` are the #1710 participant-access declarations already
+    joined to this plan by ``raes_access.join_participant_access``. They are the
+    only source of a node's participant channels: authored services, ACLs, OS
+    family, image, and account existence never synthesize one.
     """
     resolved_config = config or load_gce_range_cell_config()
     network_name, network_link, manage_network = _network_placement(resolved_config, range_id)
@@ -90,11 +97,15 @@ def build_raes_range_cell_plan(
         network.address: subnet for network, subnet in zip(raes_plan.networks, subnet_plans, strict=True)
     }
 
+    access_by_node = _access_by_node(access_bindings)
+
     instance_plans: list[InstancePlan] = []
     for network in raes_plan.networks:
         subnet = subnet_by_address[network.address]
         for node in nodes_by_network.get(network.address, ()):
-            instance_plans.extend(_instance_plans_for_node(node, subnet, range_id, resolve_image))
+            instance_plans.extend(
+                _instance_plans_for_node(node, subnet, range_id, resolve_image, access_by_node.get(node.address, ()))
+            )
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
 
@@ -272,13 +283,29 @@ def _subnet_plan(
     }
 
 
+def _access_by_node(
+    access_bindings: Sequence[RealizedAccessBinding],
+) -> dict[str, tuple[RealizedAccessBinding, ...]]:
+    """Group already-joined participant access by target node address."""
+    grouped: dict[str, list[RealizedAccessBinding]] = {}
+    for binding in access_bindings:
+        grouped.setdefault(binding.target_address, []).append(binding)
+    return {address: tuple(bindings) for address, bindings in grouped.items()}
+
+
 def _instance_plans_for_node(
     node: RaesPlanNode,
     subnet: SubnetPlan,
     range_id: int,
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
+    access_bindings: Sequence[RealizedAccessBinding] = (),
 ) -> list[InstancePlan]:
-    """Render one InstancePlan per ``count`` for a node placed on ``subnet``."""
+    """Render one InstancePlan per ``count`` for a node placed on ``subnet``.
+
+    ``access_bindings`` carry this node's declared participant channels. The join
+    already proved a node bearing access materializes exactly one instance, so
+    the channels bind to that instance without any fan-out choice.
+    """
     profile = resolve_image(node)
     os_type = node.os_family or "linux"
     plans: list[InstancePlan] = []
@@ -308,9 +335,12 @@ def _instance_plans_for_node(
                 "ssh_username": _DEFAULT_SSH_USERNAME,
                 "host_ssh_username": _DEFAULT_SSH_USERNAME,
                 "ssh_port": _DEFAULT_SSH_PORT,
-                # RAES account/access realization remains owned by its native
-                # plan and must not inherit legacy scenario access channels.
-                "participant_access_channels": [],
+                # The closed realized access binding the portal authorizes
+                # against (#1349), sourced only from the authored RAES
+                # interactive_access declarations joined to this plan (#1710).
+                # Empty when the scenario authored none.
+                "participant_access_channels": [binding.channel for binding in access_bindings],
+                "participant_access_usernames": {binding.channel: binding.username for binding in access_bindings},
                 "attach_service_account": False,
             }
         )

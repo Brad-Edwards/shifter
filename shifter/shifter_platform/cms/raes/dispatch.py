@@ -17,6 +17,7 @@ Shifter-owned spec. This module imports only ``shared.raes`` and the public
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from shared.raes.content_delivery import DeliveryBinding
+    from shared.raes.participant_access import ParticipantAccessBinding
     from shared.range_instantiation_policy import BackendAdmission
 
 __all__ = ["CmsRaesDispatchPort"]
@@ -69,7 +71,11 @@ class CmsRaesDispatchPort:
     backend_admission: BackendAdmission | None = None
     pack_root: Path | None = None
 
-    def realize(self, compiled_plan: dict[str, Any]) -> ShifterDispatchResult:
+    def realize(
+        self,
+        compiled_plan: dict[str, Any],
+        participant_access: Sequence[ParticipantAccessBinding] = (),
+    ) -> ShifterDispatchResult:
         delivery_bindings = self._prepare_delivery(compiled_plan)
         ref = create_raes_range(
             request_id=self.request_id,
@@ -77,6 +83,7 @@ class CmsRaesDispatchPort:
             compiled_plan=compiled_plan,
             backend_admission=self.backend_admission,
             delivery_bindings=delivery_bindings,
+            participant_access=tuple(participant_access),
             workspace_id=self.workspace_id,
         )
         return ShifterDispatchResult(

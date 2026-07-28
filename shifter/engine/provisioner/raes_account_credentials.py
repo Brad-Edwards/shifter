@@ -51,9 +51,9 @@ def _run_password_strategy(
     platform: str,
     account: RaesPlanAccount,
     secret_ops: RaesAccountCredentialOps,
-) -> None:
-    """Install one authored account's password through the setup orchestrator."""
-    _secret_ref, password = secret_ops.ensure_password(
+) -> str:
+    """Install one authored account's password, returning its secret reference."""
+    secret_ref, password = secret_ops.ensure_password(
         range_id, instance_key, account.username, account.password_strength
     )
     plan = SetLocalPasswordPlan(platform=platform)
@@ -62,6 +62,7 @@ def _run_password_strategy(
     verification = result.verification_result
     if not result.success or verification is None or not verification.success:
         raise RuntimeError("password setup plan did not complete")
+    return secret_ref
 
 
 def _run_public_key_strategy(
@@ -72,15 +73,16 @@ def _run_public_key_strategy(
     platform: str,
     account: RaesPlanAccount,
     secret_ops: RaesAccountCredentialOps,
-) -> None:
-    """Install one authored account's public key through the setup orchestrator."""
-    _secret_ref, public_key = secret_ops.ensure_public_key(range_id, instance_key, account.username)
+) -> str:
+    """Install one authored account's public key, returning its secret reference."""
+    secret_ref, public_key = secret_ops.ensure_public_key(range_id, instance_key, account.username)
     plan = SetAuthorizedKeyPlan(platform=platform)
     context = plan.get_context({"account_username": account.username, "account_public_key": public_key})
     result = orchestrator.orchestrate(execution.target, plan, context, execution.document_name)
     verification = result.verification_result
     if not result.success or verification is None or not verification.success:
         raise RuntimeError("public-key setup plan did not complete")
+    return secret_ref
 
 
 def install_instance_account_credentials(
@@ -91,11 +93,20 @@ def install_instance_account_credentials(
     instance_output: dict[str, Any],
     accounts: Iterable[RaesPlanAccount],
     secret_ops: RaesAccountCredentialOps,
-) -> None:
-    """Install and verify every enabled authored-account credential on one guest."""
+) -> dict[str, str]:
+    """Install and verify every enabled authored-account credential on one guest.
+
+    Returns the installed credential's Secret Manager reference keyed by compiled
+    account address. The reference is *already* minted deterministically while
+    installing; retaining it here (#1710) lets participant access be brokered
+    through the account the scenario authored, rather than minting a parallel
+    credential or exposing the reserved provisioner-management secret. A
+    reference is returned only for a credential that installed **and** verified,
+    so a published access binding always has a working credential behind it.
+    """
     enabled_accounts = tuple(account for account in accounts if not account.disabled)
     if not enabled_accounts:
-        return
+        return {}
     try:
         execution = secret_ops.execution_builder(instance_output, provider="gcp", os_type=platform, role="raes-node")
     except Exception:
@@ -106,14 +117,15 @@ def install_instance_account_credentials(
         except Exception:
             raise RaesAccountCredentialError("failed to establish authored-account credential setup channel") from None
         orchestrator = secret_ops.orchestrator_factory(execution.executor)
+        secret_refs: dict[str, str] = {}
         for account in enabled_accounts:
             try:
                 if account.auth_method == "password":
-                    _run_password_strategy(
+                    secret_ref = _run_password_strategy(
                         orchestrator, execution, range_id, instance_key, platform, account, secret_ops
                     )
                 elif account.auth_method == "publickey":
-                    _run_public_key_strategy(
+                    secret_ref = _run_public_key_strategy(
                         orchestrator, execution, range_id, instance_key, platform, account, secret_ops
                     )
                 # Defense in depth; the plan parser rejects this first.
@@ -121,6 +133,8 @@ def install_instance_account_credentials(
                     raise ValueError("unsupported authored-account credential strategy")
             except Exception:
                 raise RaesAccountCredentialError("failed to realize authored-account credential") from None
+            secret_refs[account.address] = secret_ref
+        return secret_refs
     finally:
         execution.close()
 
