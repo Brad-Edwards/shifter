@@ -525,10 +525,38 @@ class TestSonarScannerIdentity(unittest.TestCase):
             "being set - an unset variable has to fail the scanner, not skip it",
         )
 
-    def test_fork_workflows_skip_the_scan(self):
+    def test_other_repositories_skip_the_scan(self):
         self.assertFalse(
-            ADR_GUARD._dw_evaluate_if(self.scan_if, repository="a-fork/shifter"),
-            "a workflow running in a fork must skip the scan deliberately",
+            ADR_GUARD._dw_evaluate_if(self.scan_if, repository="someone/shifter"),
+            "SonarCloud is this project's tooling choice, not a dependency "
+            "imposed on anyone who cloned the repo — their runs must skip it",
+        )
+
+    def test_fork_origin_pull_requests_skip_the_scan(self):
+        # A fork PR runs in the base repository's context, so the identity test
+        # passes, but GitHub withholds secrets from it. Without this the scan
+        # fails on an empty SONAR_TOKEN and an outside contributor gets a red
+        # check they cannot fix.
+        self.assertFalse(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if,
+                repository=self.CANONICAL_REPOSITORY,
+                event_name="pull_request",
+                fork_pr=True,
+            ),
+            "a fork-origin pull request must skip the scan, not fail on a "
+            "secret it can never be given",
+        )
+
+    def test_same_repository_pull_requests_still_scan(self):
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if,
+                repository=self.CANONICAL_REPOSITORY,
+                event_name="pull_request",
+                fork_pr=False,
+            ),
+            "a branch PR inside the canonical repository must still be analyzed",
         )
 
     def test_token_stays_out_of_scanner_argv(self):

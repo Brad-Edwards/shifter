@@ -5465,6 +5465,7 @@ def _dw_evaluate_if(
     repository=_DW_CANONICAL_REPOSITORY,
     inputs_true=True,
     vars_set=True,
+    fork_pr=False,
 ) -> bool:
     """Evaluate a job or step ``if:`` against a permissive context; return
     whether it would run. Unspecified upstream results default to ``success``,
@@ -5492,7 +5493,13 @@ def _dw_evaluate_if(
             return inputs_true
         if head == "vars":
             return "true" if vars_set else ""
+        if path in ("true", "false"):
+            return path == "true"
         if head == "github":
+            # Fork-origin PRs run in the base repository's context, so
+            # `github.repository` alone cannot distinguish them.
+            if path == "github.event.pull_request.head.repo.fork":
+                return fork_pr
             field = parts[1] if len(parts) > 1 else ""
             return {
                 "event_name": event_name,
