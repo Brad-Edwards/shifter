@@ -183,8 +183,28 @@ def validate_adr_exceptions(exceptions: list[dict]) -> list[str]:
     return errors
 
 
+def exception_is_active(exception: dict, today: date | None = None) -> bool:
+    """Return True when an exception carries a valid, unexpired ``expires_on``.
+
+    A missing or unparseable date counts as inactive. ``validate_adr_exceptions``
+    reports those separately, and a malformed date must never buy open-ended
+    suppression: the expiry is the only thing bounding an accepted violation.
+    """
+    raw = exception.get("expires_on")
+    if not isinstance(raw, str):
+        return False
+    try:
+        expires_on = _parse_iso_date(raw)
+    except ValueError:
+        return False
+    return expires_on >= (today or date.today())
+
+
 def exception_matches(violation: Violation, exception: dict) -> bool:
-    """Return True if an exception covers a given violation."""
+    """Return True if an unexpired exception covers a given violation."""
+    if not exception_is_active(exception):
+        return False
+
     if exception.get("rule_id") != violation.rule_id:
         return False
 
