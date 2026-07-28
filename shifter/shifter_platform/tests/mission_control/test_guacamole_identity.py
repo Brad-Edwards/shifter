@@ -65,8 +65,15 @@ def test_rdp_url_build_uses_nonblank_identity_for_email_less_account(monkeypatch
     assert url.startswith("https://example/guacamole/#/client/")
 
 
-def test_rdp_url_build_forces_tls_security_for_kali(monkeypatch):
-    """Kali/xrdp targets must use TLS instead of incompatible classic RDP crypto."""
+def test_rdp_url_build_leaves_kali_security_on_negotiate(monkeypatch):
+    """Kali must negotiate, not pin TLS.
+
+    The range's Kali guest answers every X.224 negotiation request — TLS,
+    HYBRID/NLA, RDSTLS — with PROTOCOL_RDP, so pinning ``tls`` (the old #1801
+    behaviour) made guacd demand a protocol the guest never selects and the
+    session failed with "Security negotiation failed" after Guacamole
+    authentication had already succeeded (issue #987).
+    """
     user = User(username="range-abcd1234", email="player@example.com")
     captured: dict[str, str] = {}
 
@@ -83,7 +90,7 @@ def test_rdp_url_build_forces_tls_security_for_kali(monkeypatch):
 
     _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
 
-    assert captured["security"] == "tls"
+    assert captured["security"] == "any"
 
 
 def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):

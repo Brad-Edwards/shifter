@@ -60,7 +60,15 @@ Current mechanisms:
   - `check-tf-rds-security`: local Terraform RDS hardening check that
     keeps the portal and Guacamole RDS instances on IAM DB auth and an
     explicit CA certificate identifier.
-- `.github/workflows/_quality.yml`: CI architecture gate. Its SonarCloud
+- `.github/workflows/_quality.yml`: CI architecture gate. Every quality unit
+  it routes is declared in the `.github/quality-path-filters.yaml` contract
+  (ADR-004-R24), which the `quality-path-ownership` check reconciles against
+  the whole tracked estate. `uat/range-functional-smoke/**` is such a unit
+  (`range-functional-smoke-lint` / `-sast` / `-tests`). Its CI jobs cover the
+  harness's deterministic layers only: the harness itself drives a deployed
+  tenant and a live range, so it is operator-invoked and deliberately has no CI
+  execution job and gates no deploy (issue #987).
+  Its SonarCloud
   job restores coverage artifacts, sets up Temurin Java 21, and disables
   SonarScanner JRE auto-provisioning so the quality gate does not depend
   on downloading a runtime during analysis. The job uses Node 24-backed
