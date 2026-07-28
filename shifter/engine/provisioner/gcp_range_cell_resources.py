@@ -101,15 +101,59 @@ def _linux_host_key_script(host_private_key_b64: str) -> str:
     known_hosts with the public half, so StrictHostKeyChecking validates against
     a trusted side-channel key rather than trust-on-first-use. Runs on every boot
     (idempotent: the same key is reinstalled).
+
+    The script is written to fail *loudly* and to converge. The previous version
+    redirected every error to ``/dev/null`` and ended in ``|| true``, and wrote
+    the key by truncating the live file in place. That combination turns any
+    failure — a partial write, an invalid decode, a refused restart, or another
+    boot unit regenerating host keys afterwards — into a guest that serves a key
+    the portal does not trust, with nothing in the serial log to say so. The
+    portal then rejects every terminal session for the life of the range with
+    ``HostKeyNotVerifiable``, which is exactly the failure observed on range 6
+    (issue #987): the recorded key and the served key had diverged, silently.
+
+    So: decode to a temporary file, validate it before it can replace anything,
+    install it atomically, then verify that sshd is actually serving the intended
+    key and retry the restart once if it is not. Every step logs a
+    ``shifter-hostkey:`` marker to stdout, which the guest agent forwards to the
+    serial console, so a future divergence is diagnosable instead of invisible.
+
+    The whole body is a single function invoked once, and it never calls
+    ``exit``: the range composition script is *concatenated* onto this one, so an
+    early exit here would silently skip building the range's content.
     """
     return (
         "#!/bin/bash\n"
-        f"printf %s '{host_private_key_b64}' | base64 -d > /etc/ssh/ssh_host_ed25519_key\n"
-        "chmod 600 /etc/ssh/ssh_host_ed25519_key\n"
-        "chown root:root /etc/ssh/ssh_host_ed25519_key\n"
-        "ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub\n"
-        "chmod 644 /etc/ssh/ssh_host_ed25519_key.pub\n"
-        "systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true\n"
+        "shifter_install_host_key() {\n"
+        "  local tmp want got attempt\n"
+        '  log() { echo "shifter-hostkey: $*"; }\n'
+        "  restart_ssh() { systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null; }\n"
+        "  tmp=$(mktemp)\n"
+        f"  if ! printf %s '{host_private_key_b64}' | base64 -d > \"$tmp\"; then\n"
+        '    log "FAILED to decode host key material"; rm -f "$tmp"; return 1\n'
+        "  fi\n"
+        '  chmod 600 "$tmp"\n'
+        # Validate before install: a corrupt key must never replace a working one.
+        '  if ! want=$(ssh-keygen -y -f "$tmp" 2>/dev/null); then\n'
+        '    log "FAILED decoded host key is not a valid private key"; rm -f "$tmp"; return 1\n'
+        "  fi\n"
+        '  install -o root -g root -m 600 "$tmp" /etc/ssh/ssh_host_ed25519_key\n'
+        '  rm -f "$tmp"\n'
+        '  printf "%s\\n" "$want" > /etc/ssh/ssh_host_ed25519_key.pub\n'
+        "  chmod 644 /etc/ssh/ssh_host_ed25519_key.pub\n"
+        "  chown root:root /etc/ssh/ssh_host_ed25519_key.pub\n"
+        '  if ! restart_ssh; then log "WARNING could not restart the ssh service"; fi\n'
+        # Converge: confirm sshd actually serves the intended key, once it is up.
+        "  for attempt in 1 2 3 4 5; do\n"
+        "    got=$(ssh-keyscan -t ed25519 -T 5 127.0.0.1 2>/dev/null | awk '{print $2\" \"$3}' | tail -n1)\n"
+        '    if [ "$got" = "$want" ]; then log "OK serving the provisioner-issued host key"; return 0; fi\n'
+        "    sleep 3\n"
+        '    if [ "$attempt" = 3 ]; then log "retrying ssh restart"; restart_ssh || true; fi\n'
+        "  done\n"
+        '  log "FAILED sshd is not serving the provisioner-issued host key"\n'
+        "  return 1\n"
+        "}\n"
+        "shifter_install_host_key || true\n"
     )
 
 

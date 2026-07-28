@@ -223,6 +223,8 @@ def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider:
         # providers that expose every instance (AWS), where credential presence
         # remains the gate.
         "participant_access_channels": instance_data.get("participant_access_channels"),
+        # Per-channel participant logins for the RAES-native path (#1710).
+        "participant_access_usernames": instance_data.get("participant_access_usernames"),
         "ssh_key_secret_arn": instance_data.get("ssh_key_secret_arn"),
         # Per-instance RDP password secret reference (#762).
         "rdp_password_secret_arn": instance_data.get("rdp_password_secret_arn"),

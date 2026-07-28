@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.operation_results import ResultStep
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import RaesOperationInput
+from shared.raes.participant_access import ParticipantAccessBinding
 
 import raes_range_ops
 from config import GCERangeImageProfile
@@ -72,6 +73,7 @@ def _projection(**overrides) -> RaesOperationInput:
     kwargs = {
         "plan": _serialized_plan(),
         "delivery_bindings": (_BINDING,),
+        "access_bindings": (),
         "range_backend": "gce",
         "instantiation_purpose": "live_fire",
         "legacy_range_id": 7,
@@ -84,7 +86,7 @@ def _projection(**overrides) -> RaesOperationInput:
 @pytest.fixture
 def patched(monkeypatch):
     calls = SimpleNamespace(
-        apply=MagicMock(return_value={"composition_verified_addresses": []}),
+        apply=MagicMock(return_value={"composition_verified_addresses": [], "instances": []}),
         destroy=MagicMock(),
         config=MagicMock(name="gce_config"),
         load_config=MagicMock(),
@@ -141,6 +143,64 @@ class TestProvision:
             ResultStep.RAES_TERMINAL_READY,
         ]
 
+    def test_the_terminal_result_carries_the_realized_access_projection(self, patched):
+        """One generation, one atomic apply: READY carries its own realized state."""
+        patched.apply.return_value = {
+            "composition_verified_addresses": [],
+            "instances": [
+                {
+                    "uuid": "node.web#0",
+                    "name": "web",
+                    "os": "linux",
+                    "private_ip": "10.9.0.10",
+                    "instance_id": "shifter-r-7-lan-web",
+                    "subnet_name": "lan",
+                    "participant_access_channels": ["ssh"],
+                    "participant_access_usernames": {"ssh": "analyst"},
+                    "ssh_key_secret_arn": "projects/p/secrets/ssh",
+                    "gcp_host_public_key": "ssh-ed25519 AAAA",
+                }
+            ],
+        }
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        members = _payload_for(patched, ResultStep.RAES_TERMINAL_READY)["members"]
+        assert members == [
+            {
+                "uuid": "node.web#0",
+                "name": "web",
+                "os_type": "linux",
+                "private_ip": "10.9.0.10",
+                "instance_id": "shifter-r-7-lan-web",
+                "subnet_name": "lan",
+                "participant_access_channels": ["ssh"],
+                "participant_access_usernames": {"ssh": "analyst"},
+                "host_public_key": "ssh-ed25519 AAAA",
+                "ssh_key_secret_arn": "projects/p/secrets/ssh",
+            }
+        ]
+
+    def test_members_never_carry_the_management_secret_reference(self, patched):
+        """The provisioner-managed host key secret is not a participant credential."""
+        patched.apply.return_value = {
+            "composition_verified_addresses": [],
+            "instances": [
+                {
+                    "uuid": "node.web#0",
+                    "name": "web",
+                    "os": "linux",
+                    "private_ip": "10.9.0.10",
+                    "instance_id": "shifter-r-7-lan-web",
+                    "subnet_name": "lan",
+                    "participant_access_channels": [],
+                    "participant_access_usernames": {},
+                    "gcp_host_ssh_key_secret_ref": "projects/p/secrets/management",
+                }
+            ],
+        }
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        members = _payload_for(patched, ResultStep.RAES_TERMINAL_READY)["members"]
+        assert "projects/p/secrets/management" not in str(members)
+
     def test_forwards_the_parsed_plan_from_the_projection(self, patched):
         raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
         request_id, range_id, raes_plan = patched.apply.call_args.args[:3]
@@ -159,6 +219,18 @@ class TestProvision:
         # now ride the immutable input rather than a live binding-table read.
         raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
         assert patched.apply.call_args.kwargs["delivery_bindings"] == [_BINDING.to_transport()]
+
+    def test_forwards_participant_access_bindings_from_the_projection(self, patched):
+        # #1710: the sidecar gates + realizes participant access. Fabricating
+        # apply's return value proves nothing about the input reaching it.
+        binding = ParticipantAccessBinding(
+            target_address="node.web",
+            channel="ssh",
+            account_address="acct.analyst",
+        )
+        patched.read_input.side_effect = lambda *a, **k: _run(access_bindings=(binding,))
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        assert patched.apply.call_args.kwargs["access_bindings"] == [binding.to_transport()]
 
     def test_snapshot_carries_the_bounded_plan_resources(self, patched):
         raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)

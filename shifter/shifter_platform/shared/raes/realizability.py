@@ -150,7 +150,7 @@ class _NeverDispatchPort:
         """Identify the assessment; no Shifter request is ever created."""
         return "realizability-assessment"
 
-    def realize(self, compiled_plan: dict[str, Any]) -> Any:
+    def realize(self, compiled_plan: dict[str, Any], participant_access: object = ()) -> Any:
         """Refuse to dispatch -- assessment is an authoring check, not a launch."""
         raise AssertionError("realizability assessment must never dispatch a provisioning plan")
 

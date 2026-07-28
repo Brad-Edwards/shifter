@@ -35,8 +35,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from shared.raes.content_delivery import ContentDeliveryError, DeliveryBinding
+from shared.raes.participant_access import (
+    MAX_ACCESS_BINDINGS,
+    ParticipantAccessBinding,
+    ParticipantAccessError,
+)
 
 __all__ = [
+    "MAX_ACCESS_BINDINGS",
     "MAX_DELIVERY_BINDINGS",
     "MAX_IMAGE_CANDIDATES",
     "MAX_IMAGE_KEYS",
@@ -64,6 +70,7 @@ _INPUT_KEYS = frozenset(
     {
         "plan",
         "delivery_bindings",
+        "access_bindings",
         "image_candidates",
         "range_backend",
         "instantiation_purpose",
@@ -173,6 +180,7 @@ class RaesOperationInput:
 
     plan: dict[str, Any]
     delivery_bindings: tuple[DeliveryBinding, ...]
+    access_bindings: tuple[ParticipantAccessBinding, ...]
     range_backend: str | None
     instantiation_purpose: str | None
     legacy_range_id: int
@@ -190,6 +198,10 @@ class RaesOperationInput:
     def binding_transport(self) -> list[dict[str, Any]]:
         """Return the byte-free binding transport rows for the realization path."""
         return [binding.to_transport() for binding in self.delivery_bindings]
+
+    def access_binding_transport(self) -> list[dict[str, Any]]:
+        """Return the non-secret participant-access rows for the realization path."""
+        return [binding.to_transport() for binding in self.access_bindings]
 
 
 def _validated_backend(value: object) -> str | None:
@@ -237,6 +249,41 @@ def _validated_bindings(value: object) -> tuple[DeliveryBinding, ...]:
             bindings.append(DeliveryBinding.from_transport(raw))
         except ContentDeliveryError as exc:
             raise RaesOperationInputError(f"raes operation input delivery_bindings[{index}]: {exc}") from None
+    return tuple(bindings)
+
+
+def _validated_access_bindings(value: object) -> tuple[ParticipantAccessBinding, ...]:
+    """Rebuild every participant-access binding through its own closed parser.
+
+    ``ParticipantAccessBinding.from_transport`` is the gate: it rejects unknown
+    keys, so a smuggled address, port, login name, or credential reference
+    cannot ride along, and it re-validates the channel vocabulary and every
+    compiled identity. A duplicate ``(target, channel)`` is rejected here because
+    the sidecar is the declaration of record the realized access is compared
+    against (ADR-032-R10).
+    """
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        raise RaesOperationInputError("raes operation input access_bindings must be a list")
+    rows = list(value)
+    _require(
+        len(rows) <= MAX_ACCESS_BINDINGS,
+        f"raes operation input carries more than {MAX_ACCESS_BINDINGS} access bindings",
+    )
+    bindings: list[ParticipantAccessBinding] = []
+    seen: set[tuple[str, str]] = set()
+    for index, row in enumerate(rows):
+        raw = _require_mapping(row, f"raes operation input access_bindings[{index}]")
+        try:
+            binding = ParticipantAccessBinding.from_transport(raw)
+        except ParticipantAccessError as exc:
+            raise RaesOperationInputError(f"raes operation input access_bindings[{index}]: {exc}") from None
+        endpoint = (binding.target_address, binding.channel)
+        _require(
+            endpoint not in seen,
+            f"raes operation input access_bindings[{index}] duplicates {binding.target_address}/{binding.channel}",
+        )
+        seen.add(endpoint)
+        bindings.append(binding)
     return tuple(bindings)
 
 
@@ -288,6 +335,7 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
     return RaesOperationInput(
         plan=_require_mapping(obj["plan"], "raes operation input plan"),
         delivery_bindings=_validated_bindings(obj["delivery_bindings"]),
+        access_bindings=_validated_access_bindings(obj["access_bindings"]),
         range_backend=_validated_backend(obj["range_backend"]),
         instantiation_purpose=_optional_str(obj["instantiation_purpose"]),
         legacy_range_id=_validated_legacy_range_id(obj["legacy_range_id"]),
@@ -299,6 +347,7 @@ def build_raes_operation_input(
     *,
     plan: Mapping[str, Any],
     delivery_bindings: Sequence[DeliveryBinding],
+    access_bindings: Sequence[ParticipantAccessBinding] = (),
     image_candidates: Mapping[str, Sequence[Mapping[str, Any]]],
     range_backend: str | None,
     instantiation_purpose: str | None,
@@ -313,6 +362,7 @@ def build_raes_operation_input(
     payload = {
         "plan": dict(plan),
         "delivery_bindings": [binding.to_transport() for binding in delivery_bindings],
+        "access_bindings": [binding.to_transport() for binding in access_bindings],
         "image_candidates": {key: [dict(row) for row in image_candidates[key]] for key in sorted(image_candidates)},
         "range_backend": range_backend,
         "instantiation_purpose": instantiation_purpose,
