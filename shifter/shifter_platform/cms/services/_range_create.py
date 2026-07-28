@@ -12,14 +12,14 @@ from django.db import IntegrityError, transaction
 from cms.exceptions import CMSError
 from cms.models import ACTIVE_RANGE_UNIQUE_CONSTRAINT, AgentConfig, RangeInstance
 
-# Re-exported for existing importers (cms.services._aces_range_create, tests); the
+# Re-exported for existing importers (cms.services._raes_range_create, tests); the
 # gate lives in its own module so _range_create stays within its size budget.
 from cms.services._range_backend_admission import (
     _openvpn_backend_admitted,
     assert_backend_admitted,
 )
 
-# Re-exported for existing importers (cms.services._aces_range_create): the
+# Re-exported for existing importers (cms.services._raes_range_create): the
 # argument-shape and scenario admission validators live in their own module.
 from cms.services._range_create_validation import (
     _assert_scenario_launchable,
@@ -170,7 +170,7 @@ def _reserve_active_range_slot(
     authored active-range ``CMSError``. Unrelated integrity errors propagate.
 
     Cloud/engine dispatch MUST happen outside this call — never hold the
-    transaction open across an Engine/ACES/broker call (#307 preflight).
+    transaction open across an Engine/RAES/broker call (#307 preflight).
     """
     try:
         with transaction.atomic():

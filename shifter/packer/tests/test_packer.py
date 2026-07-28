@@ -91,7 +91,6 @@ class TestScriptContent:
             "ubuntu/*.sh",
             "brokenbk/*.sh",
             "common/*.sh",
-            "techvault/*.sh",
             "polaris/*.sh",
             "bake/*.sh",
             "aws/*.sh",
@@ -188,7 +187,7 @@ class TestPackerTemplates:
         subprocess.run([packer_path, "init", "."], capture_output=True, cwd=PACKER_DIR)  # noqa: S603
 
         # Validate with var-file (no defaults). The scenario sources
-        # (techvault / polaris-vm) use the SSM session_manager communicator,
+        # polaris-vm uses the SSM session_manager communicator,
         # which requires a non-empty iam_instance_profile at validate time; the
         # var-file does not carry one (it is an operator dispatch input), so pass
         # a validate-only placeholder. It never reaches AWS — validate is a
@@ -514,7 +513,7 @@ class TestPackerWorkflowCleanup:
 class TestScenarioBakeTemplates:
     """Packer sources for the SSM-communicator scenario bakes (#1469)."""
 
-    SCENARIO_SOURCES = ("techvault", "polaris-vm")
+    SCENARIO_SOURCES = ("polaris-vm",)
 
     @staticmethod
     def _content(source: str) -> str:
@@ -565,13 +564,7 @@ class TestScenarioBakeTemplates:
         # >= 45 min of headroom for the large-image snapshot.
         assert int(m.group(1)) * int(delay.group(1)) >= 2700
 
-    @pytest.mark.parametrize(
-        ("source", "builder_name"),
-        [
-            ("techvault", "packer-builder-techvault"),
-            ("polaris-vm", "packer-builder-polaris-vm"),
-        ],
-    )
+    @pytest.mark.parametrize(("source", "builder_name"), [("polaris-vm", "packer-builder-polaris-vm")])
     def test_run_tag_name_matches_cleanup_selector(self, source, builder_name):
         """Workflow cleanup keys off packer-builder-<ami_type>; templates must align."""
         assert re.search(rf'Name\s*=\s*"{re.escape(builder_name)}"', self._content(source))
@@ -580,22 +573,12 @@ class TestScenarioBakeTemplates:
 class TestScenarioBakeScripts:
     """Provisioner + verify script bodies for the scenario bakes (#1469)."""
 
-    def test_techvault_provisioner_scripts_exist(self):
-        for script in ("toolchain.sh", "stack.sh", "seat.sh", "wait-stack.sh"):
-            assert (SCRIPTS_DIR / "techvault" / script).exists(), f"missing techvault/{script}"
-
     def test_polaris_bootstrap_exists(self):
         assert (SCRIPTS_DIR / "polaris" / "bootstrap.sh").exists()
 
     def test_bake_verify_scripts_exist(self):
         for script in ("verify-encrypted-ami.sh", "golden-verify.sh"):
             assert (SCRIPTS_DIR / "bake" / script).exists(), f"missing bake/{script}"
-
-    def test_techvault_stack_runs_as_ubuntu(self):
-        """Wazuh certs need uid 1000; the stack must run as the ubuntu user."""
-        content = (SCRIPTS_DIR / "techvault" / "stack.sh").read_text()
-        assert "sudo -u ubuntu" in content
-        assert "aptl lab start" in content
 
     def test_polaris_bootstrap_pulls_tarball_and_runs_stack(self):
         content = (SCRIPTS_DIR / "polaris" / "bootstrap.sh").read_text()
@@ -660,7 +643,6 @@ class TestScenarioBakeWorkflow:
         assert "bake-scenario:" in wf
 
     def test_scenario_ami_type_choices(self, wf):
-        assert "- techvault" in wf
         assert "- polaris-vm" in wf
 
     def test_encryption_and_golden_verify_precede_publish(self, wf):
@@ -675,11 +657,10 @@ class TestScenarioBakeWorkflow:
         assert "session-manager-plugin" in wf
 
     def test_base_build_skips_scenario_types(self, wf):
-        assert '!contains(fromJSON(\'["techvault","polaris-vm"]\'), inputs.ami_type)' in wf
+        assert "inputs.ami_type != 'polaris-vm'" in wf
 
     def test_legacy_bake_workflows_deleted(self):
         wdir = REPO_ROOT / ".github" / "workflows"
-        assert not (wdir / "techvault-scenario-bake.yml").exists()
         assert not (wdir / "polaris-scenario-bake.yml").exists()
 
 
@@ -688,7 +669,6 @@ class TestAmiHelperAlignment:
 
     def test_scenario_types_listed(self):
         content = (REPO_ROOT / "scripts" / "ami.sh").read_text()
-        assert "techvault" in content
         assert "polaris-vm" in content
 
 

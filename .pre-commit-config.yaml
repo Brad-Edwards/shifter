@@ -633,24 +633,6 @@ repos:
         pass_filenames: true
         verbose: true
 
-      # ADR-024-R4 / issue #1313: the ACES parity inventory
-      # (docs/architecture/aces-migration-parity-inventory.yaml) cites repo paths
-      # and globs in its legacy_source / validation_evidence rows. A referenced
-      # file can be moved or deleted anywhere in the repo without the inventory
-      # itself being edited, so this runs on every commit (always_run,
-      # pass_filenames=false, --all) rather than only when the inventory changes.
-      # language: python + pyyaml mirrors the adr-guard-k8s dependency-bearing
-      # pattern so PyYAML is present in the hook environment.
-      - id: adr-guard-parity-inventory
-        name: architecture (adr guard parity inventory path integrity)
-        entry: python3 scripts/adr_guard/adr_guard.py --checks aces-parity-inventory-path-integrity --all
-        language: python
-        additional_dependencies:
-          - pyyaml>=6.0
-        always_run: true
-        pass_filenames: false
-        verbose: true
-
       - id: missing-migrations-shifter-platform
         name: django migrations (no missing migrations)
         entry: >-

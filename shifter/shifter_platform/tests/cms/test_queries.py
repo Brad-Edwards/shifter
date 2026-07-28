@@ -2,9 +2,8 @@
 
 Covers get_range_target_instances, which selects the instances shown on the
 CTF participant range page. Explicit scenario ``participant_access`` bindings
-are authoritative: POLARIS exposes the Kali workstation, not the DC. See #1465:
-a single-seat purple-team lab (TechVault) provisions only an attacker-tagged
-seat host, and the page must still show it.
+are authoritative: POLARIS exposes the Kali workstation, not the DC. A
+single-seat lab that provisions only an attacker-tagged seat must still show it.
 
 The selector reads the user's ready range from the engine, so these exercise
 the real database rather than mocking the first-party query seam (ADR-019-R1):
@@ -24,7 +23,7 @@ _WORKSPACE_ID = 1
 User = get_user_model()
 
 _ATTACKER = {
-    "name": "techvault",
+    "name": "single-seat-lab",
     "role": "attacker",
     "os_type": "kali",
     "private_ip": "10.1.2.22",
@@ -86,7 +85,7 @@ class TestGetRangeTargetInstances:
         assert get_range_target_instances(user.id) == [_DC]
 
     def test_single_seat_lab_returns_attacker_seat(self, user):
-        """TechVault-style range: the sole attacker-tagged seat is returned (#1465)."""
+        """The sole attacker-tagged seat is returned."""
         _ready_range(user, [_ATTACKER])
         assert get_range_target_instances(user.id) == [_ATTACKER]
 

@@ -179,15 +179,15 @@ def make_credential(credential_type_obj, pk=1, **overrides):
 
 
 # -----------------------------------------------------------------------------
-# Uniform content-ingestion fixtures (#1578): build conformant / malformed ACES
+# Uniform content-ingestion fixtures (#1578): build conformant / malformed RAES
 # scenario packs on disk for pack-validation and registration tests.
 # -----------------------------------------------------------------------------
 
-# A minimal ACES SDL start state that parses through aces-sdl (mirrors
-# scenario-dev/shifter-aces-validation/sdl/shifter-aces-validation.sdl.yaml).
+# A minimal RAES SDL start state that parses through raes (mirrors
+# scenario-dev/shifter-raes-validation/sdl/shifter-raes-validation.sdl.yaml).
 CONFORMANT_PACK_SDL = """\
 name: __PACK_NAME__
-description: Minimal provisioning-only ACES start state for ingestion tests.
+description: Minimal provisioning-only RAES start state for ingestion tests.
 nodes:
   lan:
     type: Switch
@@ -216,7 +216,7 @@ infrastructure:
 # ingestion, catalog projection, and realizability (ADR-034).
 IMAGELESS_PACK_SDL = """\
 name: __PACK_NAME__
-description: Image-less provisioning-only ACES start state (no VM source).
+description: Image-less provisioning-only RAES start state (no VM source).
 nodes:
   lan:
     type: Switch
@@ -235,11 +235,11 @@ infrastructure:
       - lan: 10.80.0.10
 """
 
-# A conformant SDL start state whose runs are parameterized via ACES SDL
+# A conformant SDL start state whose runs are parameterized via RAES SDL
 # `variables` (#1579): the multi-run experiment unit. Also image-less.
 PARAMETERIZED_PACK_SDL = """\
 name: __PACK_NAME__
-description: Parameterized ACES scenario using SDL variables.
+description: Parameterized RAES scenario using SDL variables.
 variables:
   region:
     type: string
@@ -280,12 +280,12 @@ def conformant_pack_yaml(name: str) -> dict[str, Any]:
 
 def conformant_provenance(name: str) -> dict[str, Any]:
     return {
-        "schema_version": "scenario-pack-provenance/v2",
+        "schema_version": "environment-pack-provenance/v3",
         "pack": {"name": name},
         "sources": [
             {
                 "source_id": "original-design",
-                "name": "Original ACES design",
+                "name": "Original RAES design",
                 "license": "proprietary",
                 "usage": "reused",
                 "attribution_required": False,
@@ -312,9 +312,9 @@ def conformant_provenance(name: str) -> dict[str, Any]:
 
 
 def write_pack_content_manifest(root: Path, name: str) -> str:
-    """Write the canonical ACES associated-artifact manifest for test bytes."""
-    from aces_contracts.associated_artifacts import associated_artifact_set_digest
-    from aces_contracts.contracts import AssociatedArtifactManifestModel
+    """Write the canonical RAES associated-artifact manifest for test bytes."""
+    from raes_contracts.associated_artifacts import associated_artifact_set_digest
+    from raes_contracts.contracts import AssociatedArtifactManifestModel
 
     manifest_rel = "associated-artifacts.json"
     members = sorted(
@@ -330,7 +330,7 @@ def write_pack_content_manifest(root: Path, name: str) -> str:
             "artifact_id": artifact_id,
             "role": "other",
             "media_type": "application/octet-stream",
-            "uri": f"aces-scenario-pack:/{quote(rel, safe='/-._~')}",
+            "uri": f"raes-environment-pack:/{quote(rel, safe='/-._~')}",
             "checksum": {"algorithm": "sha256", "value": hashlib.sha256(body).hexdigest()},
             "size_bytes": len(body),
             "created_at": "2026-07-13T00:00:00Z",
@@ -356,10 +356,10 @@ def write_pack_content_manifest(root: Path, name: str) -> str:
 
 @pytest.fixture
 def make_pack():
-    """Factory: write an ACES scenario pack to disk and return its root Path.
+    """Factory: write an RAES scenario pack to disk and return its root Path.
 
     Defaults produce a conformant pack (valid pack.yaml, provenance ledger,
-    concepts doc, and an SDL start state that parses through aces-sdl). Override
+    concepts doc, and an SDL start state that parses through raes). Override
     ``pack_yaml`` / ``provenance`` / ``sdl`` (pass ``sdl=None`` to omit SDL) to
     build malformed packs for negative tests.
     """

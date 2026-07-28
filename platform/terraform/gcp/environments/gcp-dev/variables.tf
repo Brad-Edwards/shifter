@@ -258,8 +258,8 @@ variable "range_egress_allowed_cidrs" {
   default     = []
 }
 
-variable "aces_package_bucket_name" {
-  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Grants the portal read-only access; set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) to enable object-backed ACES packages. Empty disables the binding."
+variable "raes_package_bucket_name" {
+  description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Grants the portal read-only access; set it (with SHIFTER_RAES_PACKAGE_BUCKET on the app) to enable object-backed RAES packages. Empty disables the binding."
   type        = string
   default     = ""
 }

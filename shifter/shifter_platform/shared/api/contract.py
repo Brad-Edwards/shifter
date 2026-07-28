@@ -50,6 +50,58 @@ def retirement_path(major: str = API_MAJOR) -> Path:
     return ARTIFACT_DIR / f"{major}.retirements.json"
 
 
+def _read_retirements(path: Path, major: str) -> list[dict[str, Any]]:
+    """Load and validate the retirement list for the requested API major."""
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    retirements = metadata.get("retirements")
+    if metadata.get("api_major") != major or not isinstance(retirements, list) or not retirements:
+        raise RuntimeError(f"Invalid API retirement metadata: {path}")
+    if any(not _has_valid_retirement_header(retirement) for retirement in retirements):
+        raise RuntimeError(f"Invalid API retirement metadata: {path}")
+    return retirements
+
+
+def _has_valid_retirement_header(retirement: object) -> bool:
+    """Return whether a retirement entry has its required audit identity."""
+    if not isinstance(retirement, dict) or not retirement.get("adr"):
+        return False
+    issue = retirement.get("issue")
+    return isinstance(issue, int) and issue > 0
+
+
+def _remove_retired_path(base: dict[str, Any], current: dict[str, Any], retired_path: str) -> None:
+    """Remove one retired path unless the current contract reintroduced it."""
+    if retired_path in current.get("paths", {}):
+        raise RuntimeError(f"Retired API path was reintroduced: {retired_path}")
+    base.get("paths", {}).pop(retired_path, None)
+
+
+def _remove_retired_property(
+    base: dict[str, Any],
+    current: dict[str, Any],
+    retired_property: dict[str, str],
+) -> None:
+    """Remove one retired response field unless the current contract restored it."""
+    schema_name = retired_property["schema"]
+    property_name = retired_property["property"]
+    current_schema = current.get("components", {}).get("schemas", {}).get(schema_name, {})
+    if property_name in current_schema.get("properties", {}):
+        raise RuntimeError(f"Retired API response property was reintroduced: {schema_name}.{property_name}")
+
+    base_schema = base.get("components", {}).get("schemas", {}).get(schema_name, {})
+    base_schema.get("properties", {}).pop(property_name, None)
+    if property_name in base_schema.get("required", []):
+        base_schema["required"].remove(property_name)
+
+
+def _apply_retirement(base: dict[str, Any], current: dict[str, Any], retirement: dict[str, Any]) -> None:
+    """Project every exact path and response field in one retirement record."""
+    for retired_path in retirement.get("paths", []):
+        _remove_retired_path(base, current, retired_path)
+    for retired_property in retirement.get("response_schema_properties", []):
+        _remove_retired_property(base, current, retired_property)
+
+
 def apply_accepted_retirements(base_text: str, current_text: str, major: str = API_MAJOR) -> str:
     """Project accepted whole-feature retirements out of the trusted baseline.
 
@@ -64,28 +116,11 @@ def apply_accepted_retirements(base_text: str, current_text: str, major: str = A
     if not path.exists():
         return base_text
 
-    retirement = json.loads(path.read_text(encoding="utf-8"))
-    if retirement.get("api_major") != major or not retirement.get("adr"):
-        raise RuntimeError(f"Invalid API retirement metadata: {path}")
-
+    retirements = _read_retirements(path, major)
     base: dict[str, Any] = json.loads(base_text)
     current: dict[str, Any] = json.loads(current_text)
-
-    for retired_path in retirement.get("paths", []):
-        if retired_path in current.get("paths", {}):
-            raise RuntimeError(f"Retired API path was reintroduced: {retired_path}")
-        base.get("paths", {}).pop(retired_path, None)
-
-    for retired_property in retirement.get("response_schema_properties", []):
-        schema_name = retired_property["schema"]
-        property_name = retired_property["property"]
-        current_schema = current.get("components", {}).get("schemas", {}).get(schema_name, {})
-        if property_name in current_schema.get("properties", {}):
-            raise RuntimeError(f"Retired API response property was reintroduced: {schema_name}.{property_name}")
-        base_schema = base.get("components", {}).get("schemas", {}).get(schema_name, {})
-        base_schema.get("properties", {}).pop(property_name, None)
-        if property_name in base_schema.get("required", []):
-            base_schema["required"].remove(property_name)
+    for retirement in retirements:
+        _apply_retirement(base, current, retirement)
 
     return _canonicalize(base)
 

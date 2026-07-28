@@ -1302,61 +1302,46 @@
   },
   {
     "id": "ADR-024",
-    "title": "ACES migration uses a parity-gated parallel cutover",
+    "title": "RAES is a hard cutover",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter migrates toward ACES through a parallel path, a row-based parity inventory, explicit ACES manifest/conformance gates, and archive-after-cutover cleanup. Current Shifter behavior remains authoritative until the ACES path proves parity through the normal portal, CMS, engine, provisioner, CTF, Mission Control, artifact, status, and validation surfaces. Legacy experiments are the explicit exception: ADR-027 removes the half-built `cms.experiments` path, so future experiment capability starts from a new ACES-backed design.",
+    "decision": "Shifter cuts directly to the exact released RAES contract pair. The current application has one package, catalog, transport, configuration, API, event, persistence, and provisioning vocabulary. There is no parallel path, old transport reader, fallback, alias, redirect, dual configuration read, compatibility view/model, or runtime selector. Existing content is republished as a current environment pack. Deployment fails closed until all retired-version provisioning work is terminal; old package and sidecar rows are removed rather than relabeled, while terminal opaque plan and envelope bytes remain factual and inert.",
     "rules": [
       {
         "id": "ADR-024-R1",
-        "description": "ACES adoption must not replace current Shifter runtime behavior until a parallel ACES path has passed parity, manifest/conformance, portal/engine/provisioner, Polaris, CTF, Mission Control, artifact, status, and ADR guard validation. Legacy experiments are removed by ADR-027 and are not current runtime authority.",
+        "description": "Current code and deployed contracts use RAES only. A fallback import, old-name alias, old transport reader, dual configuration read, redirect, compatibility API/model/view, runtime selector, or parallel package/catalog/provisioning path is prohibited.",
         "checks": []
       },
       {
         "id": "ADR-024-R2",
-        "description": "Every legacy migration surface tracked for ACES cutover must map to exactly one category in docs/architecture/aces-migration-parity-inventory.yaml: ACES SDL, ACES schema/profile gap, Shifter backend responsibility, validation gate, or archive/delete. Inventory rows cite canonical owners and must not become a second runtime schema, parser, status taxonomy, or exception envelope. The aces-parity-inventory-row-schema adr_guard check enforces this as a global repository invariant: every row must carry all row_schema.required_fields, its category must be a member of the top-level categories list, its surface must be a member of the top-level surfaces list, its next_issue_kind must be a member of row_schema.next_issue_kinds, row ids must be unique, and a missing or malformed categories/surfaces/row_schema header block fails closed instead of silently passing.",
-        "checks": [
-          "aces-parity-inventory-row-schema"
-        ]
+        "description": "The cutover migration must not recursively rewrite authored JSON, relabel a payload produced under another versioned contract, or feed that payload to the RAES 2.0.0 consumer. It must abort while matching range, instance, launch, result, or event work remains active.",
+        "checks": []
       },
       {
         "id": "ADR-024-R3",
-        "description": "Archive/delete is generally a post-cutover posture. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green. ADR-027 is the accepted exception for the removed legacy experiments path.",
+        "description": "Rows whose contract bytes are not RAES are removed from current package and sidecar stores rather than exposed through RAES models or APIs. Existing scenario content must be republished and registered as a current environment pack.",
         "checks": []
       },
       {
         "id": "ADR-024-R4",
-        "description": "Every legacy_source and validation_evidence clause in docs/architecture/aces-migration-parity-inventory.yaml that is a repository-relative path or glob must resolve to an existing path (a glob must match at least one path); shell-command and prose clauses are classified and skipped. The aces-parity-inventory-path-integrity adr_guard check enforces this as a global repository invariant (it runs even when the inventory is not in the changed-file set, because a referenced file can be moved or deleted without the inventory itself changing) and treats the inventory as untrusted static input: it inspects path metadata only, rejects absolute paths, '..' traversal, and symlink escape fail-closed, and never reads referenced content or lets inventory text reach a shell or subprocess.",
-        "checks": [
-          "aces-parity-inventory-path-integrity"
-        ]
+        "description": "Rollback is a coordinated restore of the pre-cutover database backup and preceding release with workers stopped. The current release must not contain an in-process, mixed-schema, or feature-selector rollback path.",
+        "checks": []
       }
     ],
     "exceptions": [],
     "enforcement": [
       "agent-policy",
-      "pre-commit",
       "ci"
     ],
     "evidence": [
-      "docs/architecture/aces-migration-adr.md",
-      "docs/architecture/aces-migration-parity-inventory.yaml",
-      "docs/architecture/aces-parity-inventory-path-integrity-preflight-1313.md",
-      "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
-      "docs/architecture/aces-operation-status-snapshot-projection-preflight-1234.md",
-      "docs/architecture/aces-polaris-acceptance-parity-gate-preflight-1237.md",
-      "scenario-dev/polaris/design/aces-sdl-validation-path.md",
-      "scenario-dev/polaris/sdl/README.md",
-      "shifter/shifter_platform/cms/scenarios/schema.py",
-      "shifter/shifter_platform/cms/scenarios/registry.py",
-      "shifter/shifter_platform/cms/scenarios/hydrator.py",
-      "shifter/shifter_platform/shared/schemas",
-      "shifter/cyberscript",
-      "shifter/shifter_platform/ctf",
-      "shifter/shifter_platform/mission_control",
-      "shifter/shifter_platform/engine",
-      "shifter/engine/provisioner",
-      "scripts/adr_guard/adr_guard.py"
+      "docs/architecture/raes-migration-adr.md",
+      "docs/architecture/raes-hard-cutover-preflight-1862.md",
+      "shifter/shifter_platform/cms/migrations/0041_raes_hard_cutover.py",
+      "shifter/shifter_platform/engine/migrations/0048_raes_hard_cutover.py",
+      "shifter/shifter_platform/shared/migrations/0008_raes_hard_cutover.py",
+      "shifter/shifter_platform/shared/migrations/0009_raes_hard_cutover_cleanup.py",
+      "shifter/shifter_platform/openapi/v1.retirements.json",
+      "shifter/shifter_platform/tests/test_raes_cutover_migrations.py"
     ]
   },
   {
@@ -1416,10 +1401,10 @@
   },
   {
     "id": "ADR-027",
-    "title": "Remove legacy experiments in favor of a future ACES-backed design",
+    "title": "Remove legacy experiments in favor of a future RAES-backed design",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter removes the half-built legacy `cms.experiments` feature instead of completing or redesigning it in place. The removal deletes the Django app, experiment/script UI and APIs, websocket/event/queue/runtime wiring, tests, specs, UAT artifacts, and legacy database tables. Future experiment capability must start from an accepted ACES-backed replacement design rather than reviving the deleted runtime path or feature flag.",
+    "decision": "Shifter removes the half-built legacy `cms.experiments` feature instead of completing or redesigning it in place. The removal deletes the Django app, experiment/script UI and APIs, websocket/event/queue/runtime wiring, tests, specs, UAT artifacts, and legacy database tables. Future experiment capability must start from an accepted RAES-backed replacement design rather than reviving the deleted runtime path or feature flag.",
     "rules": [
       {
         "id": "ADR-027-R1",
@@ -1433,7 +1418,7 @@
       },
       {
         "id": "ADR-027-R3",
-        "description": "Future experiment capability starts from an ACES-backed contract and must not reuse `EXPERIMENTS_ENABLED`, `EXPERIMENT_PAYLOAD`, or the removed `cms.experiments` data model as the implementation shortcut.",
+        "description": "Future experiment capability starts from an RAES-backed contract and must not reuse `EXPERIMENTS_ENABLED`, `EXPERIMENT_PAYLOAD`, or the removed `cms.experiments` data model as the implementation shortcut.",
         "checks": []
       }
     ],
@@ -1444,7 +1429,7 @@
     ],
     "evidence": [
       "docs/architecture/experiments-removal-adr.md",
-      "docs/architecture/aces-migration-adr.md",
+      "docs/architecture/raes-migration-adr.md",
       "shifter/shifter_platform/cms/migrations/0034_remove_legacy_experiments.py",
       "shifter/shifter_platform/tests/cms/test_experiments_removed.py",
       "shifter/shifter_platform/config/settings.py",
@@ -1590,34 +1575,34 @@
   },
   {
     "id": "ADR-031",
-    "title": "ACES-native provisioning core is a feature-flagged parallel path",
+    "title": "RAES provisioning is the direct plan realization path",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter builds an ACES-native provisioning path as a parallel, feature-flagged implementation rather than routing ACES through the cyberscript scenario kernel. A compiled ACES ProvisioningPlan (produced by the PyPI-pinned aces-sdl runtime inside shared.aces) is realized directly: the platform serializes the compiled plan and the engine/provisioner realize it by reading the ACES plan payloads via accessors that mirror the reference ACES backends. Shifter introduces no parallel SDL and no re-modeled provisioning schema; see ADR-032 for how realization works. The existing cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is left unchanged and authoritative. The whole ACES-native path is gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off) and stays inert until an explicitly authorized cutover. This is the provisioning-surface instance of ADR-024 (parity-gated parallel cutover); the ACES-owned conformance suite is the primary oracle. It supersedes the #1262 scenario_ref passthrough, which discarded compiled ACES topology and depended on cyberscript scenarios.",
+    "decision": "A compiled RAES ProvisioningPlan produced by the exact PyPI-pinned runtime inside shared.raes is serialized and realized directly by the engine/provisioner through accessors that mirror the reference RAES backends. Shifter introduces no parallel SDL, re-modeled provisioning schema, feature flag, or alternate ACES path. The RAES-owned conformance suite is the primary oracle.",
     "rules": [
       {
         "id": "ADR-031-R1",
-        "description": "ACES SDL packages (aces_sdl, aces_contracts, aces_runtime, aces_processor, aces_conformance, aces_backend_protocols) may be imported only within shared.aces. The cms, engine, mission_control, ctf, and management layers and the engine provisioner must consume ACES realization through the serialized ACES ProvisioningPlan and shared seams, never by importing an aces_* package. Enforced by an import-linter forbidden contract in CI.",
+        "description": "The RAES module family supplied by the raes distribution (raes, raes_contracts, raes_runtime, raes_processor, raes_conformance, and raes_backend_protocols) may be imported only within shared.raes. The cms, engine, mission_control, ctf, and management layers and the engine provisioner must consume RAES realization through the serialized RAES ProvisioningPlan and shared seams, never by importing those modules. Enforced by an import-linter forbidden contract in CI.",
         "checks": []
       },
       {
         "id": "ADR-031-R2",
-        "description": "The ACES-native provisioning path \u2014 ACES catalog launchability, ACES dispatch, ACES engine consumption, and ACES provisioner realization \u2014 must be gated by the SHIFTER_ACES_NATIVE_PROVISIONING feature flag (default off). With the flag off, ACES catalog entries are not launchable and the cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is unchanged and authoritative. The ACES-native path must not modify cyberscript hydration, RangeSpec/InstanceSpec, or the existing create_range body; it may only add parallel modules and additive flag-gated branches.",
+        "description": "RAES catalog launchability, dispatch, engine consumption, and provisioner realization are one direct current path. They must not be gated by a retired selector or accompanied by an additive old-contract branch.",
         "checks": []
       },
       {
         "id": "ADR-031-R3",
-        "description": "ACES realization consumes the compiled ACES ProvisioningPlan directly; Shifter must not introduce a parallel SDL or a re-modeled provisioning schema (see ADR-032). The Shifter ACES RuntimeTarget backend must pass the ACES-owned conformance suite: the provisioning-only fixture gate (run_fixture_suite) and a live target probe (run_target_conformance) that requires a non-empty changed_addresses set and at least one PROVISIONING snapshot entry. Conformance verdict logic must not be reimplemented in Shifter.",
+        "description": "RAES realization consumes the compiled RAES ProvisioningPlan directly; Shifter must not introduce a parallel SDL or a re-modeled provisioning schema (see ADR-032). The Shifter RAES RuntimeTarget backend must pass the RAES-owned conformance suite: the provisioning-only fixture gate (run_fixture_suite) and a live target probe (run_target_conformance) that requires a non-empty changed_addresses set and at least one PROVISIONING snapshot entry. Conformance verdict logic must not be reimplemented in Shifter.",
         "checks": []
       },
       {
         "id": "ADR-031-R4",
-        "description": "ACES backend diagnostics and operation evidence must be bounded, single-line, and free of backend realization detail (no terraform, ssm, ami-, cidr, subnet, secret, password, credential, or token substrings). Image ids, machine sizes, subnet allocation, provider configuration, and secrets are backend-owned realization and must not surface as authored ACES semantics or as evidence.",
+        "description": "RAES backend diagnostics and operation evidence must be bounded, single-line, and free of backend realization detail (no terraform, ssm, ami-, cidr, subnet, secret, password, credential, or token substrings). Image ids, machine sizes, subnet allocation, provider configuration, and secrets are backend-owned realization and must not surface as authored RAES semantics or as evidence.",
         "checks": []
       },
       {
         "id": "ADR-031-R5",
-        "description": "ACES catalog launchability and the ACES-native launch service (cms.services.create_aces_native_range, routed via create_range_dispatch) are gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off); with the flag off no ACES entry is launchable and create_range_dispatch is byte-identical to create_range. The launch service reuses create_range's ownership/active-range/audit helpers and persists the same CMS Request + RangeInstance bookkeeping (range_spec=None -- no cyberscript RangeSpec) so Mission Control visibility, active-range admission, and the range.status.updated -> apply_range_status flow work uniformly keyed by request_id. To be genuinely launch-conformant the Shifter backend manifest must declare all and only terms the backend genuinely realizes -- including 'switch' for networks, since the aces-sdl planner rejects any network resource otherwise. Its provisional PROVISIONING snapshot must echo the authored exact concerns covered by the public CONCERN_PAYLOAD_PATH (os_family, node_type, content spec.type) for the RuntimeManager.apply SEM-218 non-approximation gate. Account features not covered by that public path require an equivalent Shifter validate/apply assertion, using the canonical ACES account-feature extractor and an evidence-backed realization envelope independent of the manifest declaration, before dispatch; account values must not enter diagnostics or snapshot evidence.",
+        "description": "The RAES launch service reuses the existing ownership, active-range, audit, CMS Request, RangeInstance, status-event, and Mission Control boundaries. The backend manifest declares only terms genuinely realized. Provisional snapshots echo exact authored concern values required by the runtime non-approximation gate, and account-feature realization remains evidence-backed and free of authored values in diagnostics.",
         "checks": []
       }
     ],
@@ -1633,68 +1618,67 @@
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
-      "docs/architecture/aces-migration-parity-inventory.yaml",
       ".importlinter",
-      "shifter/shifter_platform/shared/aces/domain_topology.py",
-      "shifter/shifter_platform/shared/aces/runtime_target.py",
-      "shifter/shifter_platform/shared/aces/dispatch_port.py",
-      "shifter/shifter_platform/shared/aces/package_loader.py",
-      "shifter/shifter_platform/cms/services/_aces_range_create.py",
+      "shifter/shifter_platform/shared/raes/domain_topology.py",
+      "shifter/shifter_platform/shared/raes/runtime_target.py",
+      "shifter/shifter_platform/shared/raes/dispatch_port.py",
+      "shifter/shifter_platform/shared/raes/package_loader.py",
+      "shifter/shifter_platform/cms/services/_raes_range_create.py",
       "shifter/shifter_platform/cms/scenarios/registry.py",
-      "shifter/shifter_platform/config/_aces_settings.py",
-      "shifter/shifter_platform/tests/shared/aces/test_backend_conformance_gate.py"
+      "shifter/shifter_platform/config/_raes_settings.py",
+      "shifter/shifter_platform/tests/shared/raes/test_backend_conformance_gate.py"
     ]
   },
   {
     "id": "ADR-032",
-    "title": "How Shifter realizes ACES scenarios",
+    "title": "How Shifter realizes RAES scenarios",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter realizes ACES by riding the ACES contract end to end, not by shadowing it. The pinned aces-sdl runtime (inside shared.aces) compiles a scenario into an ACES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the ACES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference ACES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the authored provisioning-intent artifact that crosses the boundary is the serialized ACES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions. Source-backed content delivery may accompany dispatch only as a separately validated, immutable identity binding governed by ADR-032-R3; it is not authored intent or a second provisioning model. A consumer may materialize a bounded, process-local realization projection after validating the envelope, producer compatibility, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute ACES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. ACES is a deliberate stack commitment: Shifter depends on the aces-sdl PyPI package pinned to a released version.",
+    "decision": "Shifter realizes RAES by riding the RAES contract end to end, not by shadowing it. The pinned raes runtime (inside shared.raes) compiles a scenario into an RAES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the RAES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference RAES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the authored provisioning-intent artifact that crosses the boundary is the serialized RAES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions. Source-backed content delivery may accompany dispatch only as a separately validated, immutable identity binding governed by ADR-032-R3; it is not authored intent or a second provisioning model. A consumer may materialize a bounded, process-local realization projection after validating the envelope, exact producer version, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute RAES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. RAES is a deliberate stack commitment: Shifter depends on the raes PyPI distribution pinned to a released version.",
     "rules": [
       {
         "id": "ADR-032-R1",
-        "description": "Authored ACES intent is consumed verbatim, never re-derived or guessed. The node image is taken from the ACES source (name/version), sizing from resources (ram/cpu), and os_family selects only the OS realization dialect and serves as a cross-check. Realization must not infer the image from os_family, invent sizing, or override authored intent with backend heuristics.",
+        "description": "Authored RAES intent is consumed verbatim, never re-derived or guessed. The node image is taken from the RAES source (name/version), sizing from resources (ram/cpu), and os_family selects only the OS realization dialect and serves as a cross-check. Realization must not infer the image from os_family, invent sizing, or override authored intent with backend heuristics.",
         "checks": []
       },
       {
         "id": "ADR-032-R2",
-        "description": "Concrete artifacts (image ids, machine sizes, subnets, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration (the registry/prebake seam), never carried as authored ACES semantics. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact, but recognition must be keyed on authored/compiled content, must fail loud or fall through, and must never reshape parsing or the model. Sniffing a field to hardcode a specific scenario into a backend is prohibited.",
+        "description": "Concrete artifacts (image ids, machine sizes, subnets, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration (the registry/prebake seam), never carried as authored RAES semantics. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact, but recognition must be keyed on authored/compiled content, must fail loud or fall through, and must never reshape parsing or the model. Sniffing a field to hardcode a specific scenario into a backend is prohibited.",
         "checks": []
       },
       {
         "id": "ADR-032-R3",
-        "description": "The only authored provisioning-intent artifact crossing the platform -> provisioner boundary is the serialized ACES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the public ACES/backend payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). For source-backed content, dispatch may carry a versioned server-owned delivery binding beside -- never inside -- that plan, limited to the compiled content resource address, sha256 content digest, normalized content-addressed object key, and bounded byte count. The binding contains no payload bytes, bucket or URL, credential, guest path, command, generated configuration, or client-controlled locator; it is persisted separately from range_config and the launch-intent payload, revalidated and joined exactly to the plan before retrieval or mutation, and is not an authored contract, public DTO, or second provisioning model. A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces ACES.",
+        "description": "The only authored provisioning-intent artifact crossing the platform -> provisioner boundary is the serialized RAES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the public RAES/backend payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). For source-backed content, dispatch may carry a versioned server-owned delivery binding beside -- never inside -- that plan, limited to the compiled content resource address, sha256 content digest, normalized content-addressed object key, and bounded byte count. The binding contains no payload bytes, bucket or URL, credential, guest path, command, generated configuration, or client-controlled locator; it is persisted separately from range_config and the launch-intent payload, revalidated and joined exactly to the plan before retrieval or mutation, and is not an authored contract, public DTO, or second provisioning model. A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces RAES.",
         "checks": []
       },
       {
         "id": "ADR-032-R4",
-        "description": "Shifter depends on released PyPI artifacts pinned as one compatible pair (currently aces-scenario-packs 2.0.1 and its exact aces-sdl 0.23.0 dependency); it must not pin either contract to a git ref or non-released build. The provisioner consumer retains a bounded rolling-read window for persisted producer plans (currently [0.19.1, 0.24.0)). aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
+        "description": "Shifter depends on the exact released PyPI pair raes==2.0.0 and raes-env-packs==3.0.0; the environment-pack distribution itself requires raes==2.0.0. Neither contract may use a range, git ref, non-released build, or alternate name. The provisioner consumer accepts only producer version 2.0.0 and rejects every other producer version; no rolling-read compatibility window remains. The RAES module family is imported only within shared.raes (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing it.",
         "checks": []
       },
       {
         "id": "ADR-032-R5",
-        "description": "A node that declares no ACES source still requires a boot OS; the backend supplies a base OS image resolved from backend-owned configuration keyed on os_family. This base-OS default for a source-LESS node is legitimate backend policy and is the only sanctioned use of os_family to select an image; it is distinct from and does not license inferring an image from os_family for an authored source (ADR-032-R1), and it must fail loud when no base image is registered for the os_family.",
+        "description": "A node that declares no RAES source still requires a boot OS; the backend supplies a base OS image resolved from backend-owned configuration keyed on os_family. This base-OS default for a source-LESS node is legitimate backend policy and is the only sanctioned use of os_family to select an image; it is distinct from and does not license inferring an image from os_family for an authored source (ADR-032-R1), and it must fail loud when no base image is registered for the os_family.",
         "checks": []
       },
       {
         "id": "ADR-032-R6",
-        "description": "ACES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content, account, or feature term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, echoing authored intent, submitting an asynchronous bootstrap, or observing command/VM success is not realization. Every admitted guest-local composition item must have its claimed state read back on every concrete target instance before apply returns, operation success/runtime-snapshot evidence is emitted, or the range becomes READY; directory-scoped accounts and SPNs instead require one readback from the declared authoritative directory under the domain realization contract and must not be duplicated per member VM. Sanitized snapshot evidence may identify a verified item only by compiled resource address, composition resource type, and a bounded verified status; it must not carry authored values, target instances, guest output, provider detail, or secrets, and plan-derived entries may be emitted only after exact guest-check coverage succeeds. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical ACES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
+        "description": "RAES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content, account, or feature term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, echoing authored intent, submitting an asynchronous bootstrap, or observing command/VM success is not realization. Every admitted guest-local composition item must have its claimed state read back on every concrete target instance before apply returns, operation success/runtime-snapshot evidence is emitted, or the range becomes READY; directory-scoped accounts and SPNs instead require one readback from the declared authoritative directory under the domain realization contract and must not be duplicated per member VM. Sanitized snapshot evidence may identify a verified item only by compiled resource address, composition resource type, and a bounded verified status; it must not carry authored values, target instances, guest output, provider detail, or secrets, and plan-derived entries may be emitted only after exact guest-check coverage succeeds. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical RAES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
         "checks": []
       },
       {
         "id": "ADR-032-R7",
-        "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. Shared admission must invoke the public ACES domain-topology diagnostics against the provisioner's explicitly declared supported_domain_profiles, including the current runtime snapshot for incremental apply. The separate plain-data consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, domain-topology carriers outside Shifter's supported profiles, and unsupported domain-scoped account terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
+        "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. Shared admission must invoke the public RAES domain-topology diagnostics against the provisioner's explicitly declared supported_domain_profiles, including the current runtime snapshot for incremental apply. The separate plain-data consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, domain-topology carriers outside Shifter's supported profiles, and unsupported domain-scoped account terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public RAES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
         "checks": []
       },
       {
         "id": "ADR-032-R8",
-        "description": "ACES Node.services entries are authored layer-4 transport exposure intent, not informational labels, guest service installation, participant authorization, or an override of authored ACLs. The GCE realization must validate the compiled spec.node.services payload again at the separate provisioner trust boundary and realize supported TCP/UDP ports as deterministic per-node-tag ingress policy sourced only from concrete CIDRs declared by networks in that same compiled range. It must never widen a service to 0.0.0.0/0, platform/portal/operator CIDRs, or another range by default. The existing management-plane allow remains higher precedence than authored ACLs; authored ACLs remain higher precedence than service-derived allows. Unsupported or malformed service shapes and any priority/source scope that cannot be represented without widening must fail before cloud mutation. The projection is process-local realization data only; it must not become a second SDL, persisted schema, API DTO, setting, or participant-access contract.",
+        "description": "RAES Node.services entries are authored layer-4 transport exposure intent, not informational labels, guest service installation, participant authorization, or an override of authored ACLs. The GCE realization must validate the compiled spec.node.services payload again at the separate provisioner trust boundary and realize supported TCP/UDP ports as deterministic per-node-tag ingress policy sourced only from concrete CIDRs declared by networks in that same compiled range. It must never widen a service to 0.0.0.0/0, platform/portal/operator CIDRs, or another range by default. The existing management-plane allow remains higher precedence than authored ACLs; authored ACLs remain higher precedence than service-derived allows. Unsupported or malformed service shapes and any priority/source scope that cannot be represented without widening must fail before cloud mutation. The projection is process-local realization data only; it must not become a second SDL, persisted schema, API DTO, setting, or participant-access contract.",
         "checks": []
       },
       {
         "id": "ADR-032-R9",
-        "description": "ACES feature bindings use an honest, shape-aware realization ledger. Package/baked services require package presence plus enabled/running in-guest verification before READY; source-backed artifact/configuration bytes reuse the immutable content-addressed delivery channel and independent in-guest digest readback. Unsupported feature types or values fail through the common validate/apply path before dispatch. A versioned server-owned delivery binding may identify a compiled content-placement or feature-binding by resource type plus resource address and bounded payload kind, but remains byte-free and separate from the serialized ACES plan. Feature types must not be modeled as content/account capabilities, features must not masquerade in a legacy content_address, and the backend must not execute pack-supplied commands or installer hooks.",
+        "description": "RAES feature bindings use an honest, shape-aware realization ledger. Package/baked services require package presence plus enabled/running in-guest verification before READY; source-backed artifact/configuration bytes reuse the immutable content-addressed delivery channel and independent in-guest digest readback. Unsupported feature types or values fail through the common validate/apply path before dispatch. A versioned server-owned delivery binding may identify a compiled content-placement or feature-binding by resource type plus resource address and bounded payload kind, but remains byte-free and separate from the serialized RAES plan. Feature types must not be modeled as content/account capabilities, features must not masquerade in a legacy content_address, and the backend must not execute pack-supplied commands or installer hooks.",
         "checks": []
       }
     ],
@@ -1722,8 +1706,8 @@
       "docs/architecture/aces-domain-topology-preflight-1606.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
-      "shifter/shifter_platform/shared/aces/domain_topology.py",
-      "shifter/shifter_platform/shared/aces/runtime_target.py"
+      "shifter/shifter_platform/shared/raes/domain_topology.py",
+      "shifter/shifter_platform/shared/raes/runtime_target.py"
     ]
   },
   {
@@ -1788,17 +1772,17 @@
       },
       {
         "id": "ADR-034-R5",
-        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical ACES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and an object-backed pack becomes launchable only after its resolver provides equivalent bounded extraction, containment, immutable-object identity, contract validation, and digest guarantees.",
+        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical RAES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and an object-backed pack becomes launchable only after its resolver provides equivalent bounded extraction, containment, immutable-object identity, contract validation, and digest guarantees.",
         "checks": []
       },
       {
         "id": "ADR-034-R6",
-        "description": "Source-backed ACES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
+        "description": "Source-backed RAES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
         "checks": []
       },
       {
         "id": "ADR-034-R7",
-        "description": "Source-backed ACES feature artifacts reuse the uniform pack trust and delivery machinery without becoming content placements. A versioned discriminated projection binds feature type plus source name/version to an inventory-covered deterministic payload and bounded data-only install policy; content and feature entries keep distinct match semantics while sharing containment, size, digest, content-addressed storage, authenticated guest transport, and readback. Filename/extension inference, ambiguous wildcard resolution, contributor-supplied executable installers/probes, and a parallel feature artifact store are prohibited.",
+        "description": "Source-backed RAES feature artifacts reuse the uniform pack trust and delivery machinery without becoming content placements. A versioned discriminated projection binds feature type plus source name/version to an inventory-covered deterministic payload and bounded data-only install policy; content and feature entries keep distinct match semantics while sharing containment, size, digest, content-addressed storage, authenticated guest transport, and readback. Filename/extension inference, ambiguous wildcard resolution, contributor-supplied executable installers/probes, and a parallel feature artifact store are prohibited.",
         "checks": []
       },
       {
@@ -1999,7 +1983,7 @@
     "title": "Provider-neutral range substrate",
     "status": "accepted",
     "scope": "range_provisioning",
-    "decision": "Each root-selected backend bundle selects exactly one provider-neutral range-substrate adapter exposing four convergent operations -- provision, destroy, pause, and resume -- over the complete range resource set (networks, instances, optional NGFW, and remote-access bindings). The port consumes existing validated RangeSpec or ACES realization intent rather than a new topology schema, returns closed versioned non-secret resource bindings, uses one classified error contract and request-scoped idempotency semantics, and is trusted only after the shared black-box lifecycle/security conformance suite passes. Task dispatch, backend metadata, public workflow/status, ACES semantic conformance, and Guacamole credential/session construction remain separate concerns. AWS Terraform and GCP GDC are the initial adapters; Azure is deferred until both pass conformance and may enter only as another bundle/adapter behind this contract.",
+    "decision": "Each root-selected backend bundle selects exactly one provider-neutral range-substrate adapter exposing four convergent operations -- provision, destroy, pause, and resume -- over the complete range resource set (networks, instances, optional NGFW, and remote-access bindings). The port consumes existing validated RangeSpec or RAES realization intent rather than a new topology schema, returns closed versioned non-secret resource bindings, uses one classified error contract and request-scoped idempotency semantics, and is trusted only after the shared black-box lifecycle/security conformance suite passes. Task dispatch, backend metadata, public workflow/status, RAES semantic conformance, and Guacamole credential/session construction remain separate concerns. AWS Terraform and GCP GDC are the initial adapters; Azure is deferred until both pass conformance and may enter only as another bundle/adapter behind this contract.",
     "interface_contract": {
       "kind": "range-substrate/v1",
       "operations": [
@@ -2055,7 +2039,7 @@
       },
       {
         "id": "ADR-039-R2",
-        "description": "Substrate inputs and results are closed and versioned. The port carries existing validated RequestSpec/RangeSpec or ADR-032 ACES ProvisioningPlan realization intent plus its immutable digest and must not introduce another scenario/topology schema, universal placement taxonomy, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Scenario realization owns internal composition semantics; substrate lifecycle ownership is limited to provider-safe membership, ownership, state, cleanup, and logical access bindings. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
+        "description": "Substrate inputs and results are closed and versioned. The port carries existing validated RequestSpec/RangeSpec or ADR-032 RAES ProvisioningPlan realization intent plus its immutable digest and must not introduce another scenario/topology schema, universal placement taxonomy, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Scenario realization owns internal composition semantics; substrate lifecycle ownership is limited to provider-safe membership, ownership, state, cleanup, and logical access bindings. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
         "checks": []
       },
       {
@@ -2186,7 +2170,7 @@
     "title": "Scenario verification uses an explicitly selected installed plugin seam",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Core owns a provider- and scenario-neutral shared scenario-verification contract and framework, but ships zero scenario adapters, answer material, topology, or runner implementations. Adapters are loaded only from the fixed shifter.scenario_verification.adapters entry-point group after deterministic installed-metadata discovery and explicit distribution/version/entry-point selection (or a sole unambiguous match). The frozen v1 contract exposes bounded declarations, explicit runtime prerequisites, an injected transport-neutral argv-only runner with per-command and whole-run budgets, closed pass/fail/blocked/error reports, and one versioned redacted report DTO. ACES demand/supply/realizability, challenge-board readback, provider topology, persistence, and deployment configuration remain outside the seam.",
+    "decision": "Core owns a provider- and scenario-neutral shared scenario-verification contract and framework, but ships zero scenario adapters, answer material, topology, or runner implementations. Adapters are loaded only from the fixed shifter.scenario_verification.adapters entry-point group after deterministic installed-metadata discovery and explicit distribution/version/entry-point selection (or a sole unambiguous match). The frozen v1 contract exposes bounded declarations, explicit runtime prerequisites, an injected transport-neutral argv-only runner with per-command and whole-run budgets, closed pass/fail/blocked/error reports, and one versioned redacted report DTO. RAES demand/supply/realizability, challenge-board readback, provider topology, persistence, and deployment configuration remain outside the seam.",
     "rules": [
       {
         "id": "ADR-041-R1",
@@ -2238,8 +2222,7 @@
       "shifter/shifter_platform/shared/scenario_verification",
       "shifter/shifter_platform/tests/shared/scenario_verification",
       ".github/quality-path-filters.yaml",
-      ".github/workflows/_quality.yml",
-      "docs/architecture/aces-migration-parity-inventory.yaml"
+      ".github/workflows/_quality.yml"
     ]
   },
   {
@@ -2247,7 +2230,7 @@
     "title": "Repository releases use one Release Please umbrella lineage",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter has one umbrella SemVer release line coordinated by Release Please on protected main. A release is a vX.Y.Z source tag plus GitHub Release created by the Release Please action on merge of its release PR (mirroring the sibling ACES repos), not a deployment or independently published component set. Release Please is the sole CHANGELOG.md writer after a lossless final Towncrier transition; Conventional Commit signals must survive the feature-to-dev and dev-to-main merge topology. Component package/chart versions and OCI digest-based deployment identity remain separate contracts.",
+    "decision": "Shifter has one umbrella SemVer release line coordinated by Release Please on protected main. A release is a vX.Y.Z source tag plus GitHub Release created by the Release Please action on merge of its release PR (mirroring the sibling RAES repos), not a deployment or independently published component set. Release Please is the sole CHANGELOG.md writer after a lossless final Towncrier transition; Conventional Commit signals must survive the feature-to-dev and dev-to-main merge topology. Component package/chart versions and OCI digest-based deployment identity remain separate contracts.",
     "rules": [
       {
         "id": "ADR-042-R1",
@@ -2256,7 +2239,7 @@
       },
       {
         "id": "ADR-042-R2",
-        "description": "A Shifter release is a vX.Y.Z tag and GitHub Release bound to one protected-main source commit, created by the Release Please action via the ephemeral GITHUB_TOKEN (mirroring the sibling ACES repos); a CI-managed release tag is not required to carry a GPG/OIDC signature. Release creation MUST NOT deploy, publish packages or images, mint cloud credentials, or replace ADR-037's exact OCI digest and source-revision deployment identity. Existing tags are immutable and a mismatched same-version tag fails closed.",
+        "description": "A Shifter release is a vX.Y.Z tag and GitHub Release bound to one protected-main source commit, created by the Release Please action via the ephemeral GITHUB_TOKEN (mirroring the sibling RAES repos); a CI-managed release tag is not required to carry a GPG/OIDC signature. Release creation MUST NOT deploy, publish packages or images, mint cloud credentials, or replace ADR-037's exact OCI digest and source-revision deployment identity. Existing tags are immutable and a mismatched same-version tag fails closed.",
         "checks": []
       },
       {
@@ -2329,7 +2312,7 @@
       },
       {
         "id": "ADR-043-R4",
-        "description": "Operation payloads MUST compose the existing shared persisted RangeSpec/ACES ProvisioningPlan, range-cell, backend-admission, remote-access, ACES content/evidence, ResourceStatus, NGFW attachment, audit, error, and logging contracts. They MUST NOT introduce table-shaped DTOs, a second authored/runtime state model, duplicate validators/status enums/event constants/exception hierarchies, raw provider-response persistence, or a generic repository/query/patch interface.",
+        "description": "Operation payloads MUST compose the existing shared persisted RangeSpec/RAES ProvisioningPlan, range-cell, backend-admission, remote-access, RAES content/evidence, ResourceStatus, NGFW attachment, audit, error, and logging contracts. They MUST NOT introduce table-shaped DTOs, a second authored/runtime state model, duplicate validators/status enums/event constants/exception hierarchies, raw provider-response persistence, or a generic repository/query/patch interface.",
         "checks": []
       },
       {
@@ -2521,7 +2504,7 @@
       },
       {
         "id": "ADR-046-R7",
-        "description": "Tenancy scopes principals and range ownership, not platform configuration or catalog. The following remain deployment-global and MUST NOT acquire an organization or workspace binding as an implicit consequence of this layer: the scenario catalog and ACES package sources; the agent, operating-system, instance-type, and app catalogs; NGFW instances and platform network/infrastructure; cloud provider, range-backend, and deployment settings including the environment manifest; identity-provider configuration (issuer, audience, allowlists) and the API-token scope registry; the durable audit store; feature flags; and CTF events, teams, and participants, which stay a separate membership model. Scoping any of these to a workspace is a separate decision requiring its own ADR, because each carries platform-operator authority rather than tenant authority; a workspace-level policy surface (for example the #1171 zero-egress posture) is added by an explicit decision on that surface, never by inheritance from this rule.",
+        "description": "Tenancy scopes principals and range ownership, not platform configuration or catalog. The following remain deployment-global and MUST NOT acquire an organization or workspace binding as an implicit consequence of this layer: the scenario catalog and RAES package sources; the agent, operating-system, instance-type, and app catalogs; NGFW instances and platform network/infrastructure; cloud provider, range-backend, and deployment settings including the environment manifest; identity-provider configuration (issuer, audience, allowlists) and the API-token scope registry; the durable audit store; feature flags; and CTF events, teams, and participants, which stay a separate membership model. Scoping any of these to a workspace is a separate decision requiring its own ADR, because each carries platform-operator authority rather than tenant authority; a workspace-level policy surface (for example the #1171 zero-egress posture) is added by an explicit decision on that surface, never by inheritance from this rule.",
         "checks": []
       }
     ],

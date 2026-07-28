@@ -19,8 +19,8 @@ from rest_framework.test import APIClient
 
 from cms.scenarios.pack_validation import pack_digest
 from cms.services import PackRegistrationRequest, register_pack
-from engine.services import AcesImageMappingOptions, upsert_aces_image_mapping
-from shared.aces.realizability import RealizabilityOutcome
+from engine.services import RaesImageMappingOptions, upsert_raes_image_mapping
+from shared.raes.realizability import RealizabilityOutcome
 from tests.cms.conftest import IMAGELESS_PACK_SDL
 
 pytestmark = pytest.mark.django_db
@@ -46,6 +46,14 @@ def staff_user(django_user_model):
     )
 
 
+@pytest.fixture
+def non_authoring_user(django_user_model):
+    return django_user_model.objects.create_user(
+        username="realizability-viewer@example.com",
+        email="realizability-viewer@example.com",
+    )
+
+
 @pytest.fixture(autouse=True)
 def _gcp_target(monkeypatch):
     monkeypatch.setattr(settings, "CLOUD_PROVIDER", "gcp")
@@ -54,13 +62,13 @@ def _gcp_target(monkeypatch):
 @pytest.fixture
 def registered_pack(staff_user, make_pack, tmp_path, monkeypatch):
     root = make_pack(tmp_path / "packs" / "imageless", name="imageless", sdl=IMAGELESS_PACK_SDL)
-    monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path))
     register_pack(
         user=staff_user,
         request=PackRegistrationRequest(
             scenario_id="imageless",
             source_kind="repo",
-            contract_kind="aces",
+            contract_kind="raes",
             contract_profile="shifter",
             package_ref="packs/imageless",
             package_version="0.1.0",
@@ -82,6 +90,10 @@ class TestAuthorization:
         api_client.force_authenticate(user=staff_user)
         assert api_client.get(_url("imageless")).status_code == 200
 
+    def test_authenticated_non_authoring_user_is_rejected(self, api_client, non_authoring_user, registered_pack):
+        api_client.force_authenticate(user=non_authoring_user)
+        assert api_client.get(_url("imageless")).status_code == 403
+
 
 class TestNegativeAssessmentIsATypedResult:
     """A non-realizable pack is a 200 domain answer, not an exception."""
@@ -96,11 +108,11 @@ class TestNegativeAssessmentIsATypedResult:
         assert response.data["gaps"], "the author must be told what the gap is"
 
     def test_realizable_pack_reports_no_gaps(self, api_client, staff_user, registered_pack):
-        upsert_aces_image_mapping(
+        upsert_raes_image_mapping(
             provider=_GCE,
             source_name="linux",
             image_ref="projects/p/global/images/base-linux",
-            options=AcesImageMappingOptions(source_version=""),
+            options=RaesImageMappingOptions(source_version=""),
         )
         api_client.force_authenticate(user=staff_user)
 

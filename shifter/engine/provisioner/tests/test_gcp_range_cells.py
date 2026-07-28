@@ -94,7 +94,7 @@ def _sample_config() -> GCERangeCellConfig:
                     bootstrap_capability=GCE_BOOTSTRAP_POLARIS_HOST,
                 ),
                 "custom-stack": GCERangeImageProfile(
-                    source_image="projects/shifter/global/images/techvault",
+                    source_image="projects/shifter/global/images/custom-stack",
                     machine_type="n2-standard-8",
                     disk_size_gb=150,
                     bootstrap_capability="unsupported-container-stack",
@@ -1036,6 +1036,109 @@ def test_apply_emits_gcp_host_public_key(mocker):
 
     for instance in output["instances"]:
         assert instance["gcp_host_public_key"].startswith("ssh-ed25519 ")
+
+
+def test_apply_creates_every_planned_gcp_resource_with_the_expected_body(mocker):
+    from gcp_range_cell_resources import (
+        address_resource,
+        firewall_resource,
+        network_resource,
+        subnetwork_resource,
+    )
+
+    config = _sample_config()
+    variables = _variables()
+    plan = render_range_cell_plan("req-123", variables, config)
+    clients = _mock_clients(exists=False)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+
+    apply_range_cell(
+        "req-123",
+        variables,
+        config=config,
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    clients.networks.insert.assert_called_once_with(
+        project=plan["project_id"],
+        network_resource=network_resource(plan),
+    )
+    assert clients.subnetworks.insert.call_args_list == [
+        call(
+            project=plan["project_id"],
+            region=plan["region"],
+            subnetwork_resource=subnetwork_resource(plan, subnet),
+        )
+        for subnet in plan["subnets"]
+    ]
+    assert clients.firewalls.insert.call_args_list == [
+        call(
+            project=plan["project_id"],
+            firewall_resource=firewall_resource(plan, firewall),
+        )
+        for firewall in plan["firewalls"]
+    ]
+    assert clients.addresses.insert.call_args_list == [
+        call(
+            project=plan["project_id"],
+            region=plan["region"],
+            address_resource=address_resource(instance),
+        )
+        for instance in plan["instances"]
+    ]
+    assert clients.instances.insert.call_count == len(plan["instances"])
+    assert [
+        call_record.kwargs["instance_resource"]["name"] for call_record in clients.instances.insert.call_args_list
+    ] == [instance["resource_name"] for instance in plan["instances"]]
+
+
+def test_apply_creates_a_missing_openvpn_gateway_and_returns_its_endpoint(mocker):
+    config = dataclasses.replace(_shared_vpc_config(), private_google_access=True)
+    variables = _variables(remote_access=True)
+    plan = render_range_cell_plan(
+        "req-123",
+        variables,
+        config,
+        vpn_gateway_pool_slot=_TEST_VPN_GATEWAY_POOL_SLOT,
+    )
+    gateway = plan["vpn_gateway"]
+    assert gateway is not None
+    clients = _mock_clients(exists=False)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+    gateway_gets = 0
+
+    def get_instance(*, instance, **_kwargs):
+        nonlocal gateway_gets
+        if instance != gateway["resource_name"]:
+            raise NotFound()
+        gateway_gets += 1
+        if gateway_gets == 1:
+            raise NotFound()
+        return SimpleNamespace(
+            network_interfaces=[SimpleNamespace(access_configs=[SimpleNamespace(nat_i_p="203.0.113.10")])]
+        )
+
+    clients.instances.get.side_effect = get_instance
+
+    output = apply_range_cell(
+        "req-123",
+        variables,
+        config=config,
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    assert output["vpn_gateway"]["endpoint"] == "203.0.113.10"
+    assert gateway_gets == 2
+    assert clients.addresses.insert.call_count == len(plan["instances"]) + 1
+    assert clients.instances.insert.call_count == len(plan["instances"]) + 1
+    assert clients.addresses.insert.call_args_list[-1].kwargs["address_resource"]["name"] == gateway["address_name"]
+    assert clients.instances.insert.call_args_list[-1].kwargs["instance_resource"]["name"] == gateway["resource_name"]
 
 
 def test_apply_emits_closed_lifecycle_membership_and_access_result(mocker):

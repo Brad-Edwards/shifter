@@ -93,7 +93,7 @@ describe("RealizabilityPanel", () => {
     expect(screen.queryByText("Realizable")).not.toBeInTheDocument();
   });
 
-  it("renders nothing and issues no request for a non-ACES scenario", () => {
+  it("renders nothing and issues no request for a non-RAES scenario", () => {
     renderPanel(false);
 
     expect(screen.queryByText("Backend realizability")).not.toBeInTheDocument();

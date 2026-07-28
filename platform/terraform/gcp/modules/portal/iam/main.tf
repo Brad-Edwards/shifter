@@ -111,11 +111,11 @@ locals {
     var.vmseries_bootstrap_bucket_name == "" ? {} : {
       "provisioner:vmseries" = { workload = "provisioner", bucket = var.vmseries_bootstrap_bucket_name, role = "roles/storage.objectAdmin" }
     },
-    # Object-storage-backed ACES packages (#1567, ADR-034-R5): the portal reads
+    # Object-storage-backed RAES packages (#1567, ADR-034-R5): the portal reads
     # (never writes) the single immutable pack archive at launch. Least-privilege
     # objectViewer, bound per named bucket (ADR-008-R7); empty disables it.
-    var.aces_package_bucket_name == "" ? {} : {
-      "portal:aces-packages" = { workload = "portal", bucket = var.aces_package_bucket_name, role = "roles/storage.objectViewer" }
+    var.raes_package_bucket_name == "" ? {} : {
+      "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectViewer" }
     },
   )
 }

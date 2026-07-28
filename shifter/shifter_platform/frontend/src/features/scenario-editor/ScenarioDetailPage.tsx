@@ -178,23 +178,23 @@ function SubnetsCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
   );
 }
 
-function AcesCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
-  const aces = scenario.aces;
-  if (!aces) return null;
+function RaesCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
+  const raes = scenario.raes;
+  if (!raes) return null;
   return (
     <Card className="mt-6">
       <CardContent>
-        <h2 className="mb-3 text-sm font-semibold">ACES package provenance</h2>
+        <h2 className="mb-3 text-sm font-semibold">RAES package provenance</h2>
         <dl>
           <Field label="Contract">
-            {aces.contract_kind} / {aces.contract_profile}
+            {raes.contract_kind} / {raes.contract_profile}
           </Field>
-          <Field label="Package">{aces.package_ref}</Field>
-          <Field label="Version">{aces.package_version}</Field>
+          <Field label="Package">{raes.package_ref}</Field>
+          <Field label="Version">{raes.package_version}</Field>
           <Field label="Digest">
-            <span className="font-mono text-xs break-all">{aces.package_digest}</span>
+            <span className="font-mono text-xs break-all">{raes.package_digest}</span>
           </Field>
-          <Field label="Conformance">{aces.conformance_status}</Field>
+          <Field label="Conformance">{raes.conformance_status}</Field>
         </dl>
       </CardContent>
     </Card>
@@ -289,10 +289,10 @@ export function ScenarioDetailPage() {
       ) : null}
 
       <OverviewCard scenario={scenario} />
-      <AcesCard scenario={scenario} />
-      {/* ACES packs only: realizability is a backend-manifest question, and a
-          legacy scenario was never checked by the ACES ledger (ADR-034-R3). */}
-      <RealizabilityPanel scenarioId={scenarioId} enabled={Boolean(scenario.aces)} />
+      <RaesCard scenario={scenario} />
+      {/* RAES packs only: realizability is a backend-manifest question, and a
+          legacy scenario was never checked by the RAES ledger (ADR-034-R3). */}
+      <RealizabilityPanel scenarioId={scenarioId} enabled={Boolean(scenario.raes)} />
       <InstancesCard scenario={scenario} />
       <SubnetsCard scenario={scenario} />
 

@@ -5,7 +5,7 @@ This is the Django-free policy seam shared by the Engine assessment service
 capacity-inventory adapters that supply observations. It is intentionally
 dependency-light -- stdlib only, inert on import -- so the standalone
 provisioner and the portal both import it, exactly as they both import
-``shared.range_instantiation_policy`` and ``shared.aces.realizability``.
+``shared.range_instantiation_policy`` and ``shared.raes.realizability``.
 
 Three rules carry the safety of the whole layer:
 

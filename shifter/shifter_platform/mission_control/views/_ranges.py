@@ -11,12 +11,12 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from mission_control.utils import build_connection_urls
-from shared.aces.presentation import build_range_aces_projection, build_range_participant_runtime_projection
 from shared.audit import AuditAction
 from shared.auth import block_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
+from shared.raes.presentation import build_range_participant_runtime_projection, build_range_raes_projection
 
 from ._common import _audit_range_lifecycle, _get_user, _logger, _pkg
 
@@ -56,20 +56,20 @@ def get_range(request: HttpRequest) -> JsonResponse:
                 "has_range": False,
                 "range": None,
                 "connection_urls": [],
-                "aces_projection": None,
-                "aces_participant_runtime": None,
+                "raes_projection": None,
+                "raes_participant_runtime": None,
             }
         )
 
-    projection = build_range_aces_projection(active_range.request_id)
+    projection = build_range_raes_projection(active_range.request_id)
     participant_runtime = build_range_participant_runtime_projection(active_range.request_id, active_range.instances)
     return JsonResponse(
         {
             "has_range": True,
             "range": active_range.model_dump(mode="json"),
             "connection_urls": build_connection_urls(active_range.instances),
-            "aces_projection": projection.to_payload() if projection else None,
-            "aces_participant_runtime": participant_runtime.to_payload() if participant_runtime else None,
+            "raes_projection": projection.to_payload() if projection else None,
+            "raes_participant_runtime": participant_runtime.to_payload() if participant_runtime else None,
         }
     )
 

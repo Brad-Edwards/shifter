@@ -38,7 +38,7 @@ loading, and provision-failure compensation, route from that per-range binding.
 Changing the deploy-wide selector does not reclassify an existing range:
 teardown continues to route from persisted ownership. A provision whose binding
 no longer matches the selector fails closed rather than silently re-routing.
-Both the legacy RangeSpec and ACES lifecycle paths require a valid persisted
+Both the legacy RangeSpec and RAES lifecycle paths require a valid persisted
 backend/purpose pair and fail closed if it is absent or incompatible.
 
 Legacy ranges created before the binding was introduced may have NULL ownership
@@ -193,13 +193,6 @@ letters, digits, and hyphens. For example:
       "disk_size_gb": 210,
       "disk_type": "pd-balanced",
       "bootstrap_capability": "polaris-docker-host"
-    },
-    "techvault": {
-      "source_image": "projects/PROJECT/global/images/family/shifter-techvault",
-      "machine_type": "n2-standard-8",
-      "disk_size_gb": 150,
-      "disk_type": "pd-balanced",
-      "bootstrap_capability": "techvault-container-stack"
     }
   },
   "dc": {

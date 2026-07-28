@@ -288,11 +288,8 @@ def _resolve_rdp_credentials(instance: dict[str, Any]) -> tuple[str | None, str 
     ``DC_DOMAIN_PASSWORD`` lookup (separate concern — domain admin).
 
     For a non-DC guest the RDP login user is the recorded seat user
-    (``ssh_username``) when present, otherwise the os_type default. This matters
-    when the seat user differs from the os_type default: TechVault runs the aptl
-    lab on an ``os_type: kali`` host whose actual seat (VS Code Desktop + Claude
-    Code, uid 1000) is ``ubuntu``, so RDP must land as ``ubuntu`` rather than the
-    ``kali`` default (#1465). A domain controller keeps its domain-admin login.
+    (``ssh_username``) when present, otherwise the os_type default. A domain
+    controller keeps its domain-admin login.
     """
     os_type = _first_connection_value(instance.get("os_type"), instance.get("os")).lower()
     role = _first_connection_value(instance.get("role"), "instance").lower()

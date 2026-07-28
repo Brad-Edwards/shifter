@@ -3,17 +3,17 @@
 ADR-034-R3 requires ingestion to validate realizability against the backend
 manifest and surface non-realizability to the author without creating loopholes.
 This module is the bounded, read-only catalog seam the editor renders: given a
-registered ACES catalog entry it reports whether the server-selected backend can
+registered RAES catalog entry it reports whether the server-selected backend can
 realize the pack, and if not, which specific gaps stand in the way.
 
 Two independent contributors produce one ordered answer:
 
 - **Capability** -- does the declared envelope admit the compiled plan
-  (:mod:`shared.aces.realizability`, which runs the real ACES compile/plan/
+  (:mod:`shared.raes.realizability`, which runs the real RAES compile/plan/
   validate path and never dispatches);
 - **Backend supply** -- does the tenant image registry actually offer a concrete
   image for every node, resolved through the one shared matching policy the
-  provisioner executes at realization (:mod:`shared.aces.image_policy`).
+  provisioner executes at realization (:mod:`shared.raes.image_policy`).
 
 Boundaries:
 
@@ -28,8 +28,8 @@ Boundaries:
 - **Fail closed, but honestly.** Inability to assess (untrusted pack, unreadable
   SDL, unsupported target) is ``indeterminate`` -- distinct from a proven
   ``not_realizable`` and never rendered as realizable. Legacy YAML/DB scenarios
-  have no ACES pack and are ``not_applicable``; this module never translates a
-  legacy definition into ACES to produce a greener answer.
+  have no RAES pack and are ``not_applicable``; this module never translates a
+  legacy definition into RAES to produce a greener answer.
 - **Bounded output.** Gaps carry a stable code, category, resource address, and a
   safe message. Never SDL bodies, authored values, parameter or account values,
   provider payloads, credentials, or local filesystem paths.
@@ -47,33 +47,33 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
-from cms.scenarios.catalog_presentation import ACES_SCENARIO_TYPE
+from cms.scenarios.catalog_presentation import RAES_SCENARIO_TYPE
 from cms.scenarios.registry import get_catalog_entry
-from shared.aces.image_policy import is_concrete_image_ref, resolve_from_candidates
-from shared.aces.realizability import (
+from shared.log_sanitize import safe_log_value
+from shared.raes.image_policy import is_concrete_image_ref, resolve_from_candidates
+from shared.raes.realizability import (
     GapCategory,
     RealizabilityGap,
     RealizabilityOutcome,
     assess_scenario_capability,
     worst_outcome,
 )
-from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
     from contextlib import AbstractContextManager
 
-    from cms.models import AcesPackageSource
-    from shared.aces.realizability import ImageDemand
+    from cms.models import RaesPackageSource
+    from shared.raes.realizability import ImageDemand
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["get_scenario_realizability"]
 
-#: Registry provider key for the only implemented ACES realization adapter.
+#: Registry provider key for the only implemented RAES realization adapter.
 _GCE_TARGET = "gce"
 
-#: Cloud backend whose ACES realization adapter exists today.
+#: Cloud backend whose RAES realization adapter exists today.
 _GCP_PROVIDER = "gcp"
 
 _OBJECT_SOURCE_KIND = "object"
@@ -100,7 +100,7 @@ def get_scenario_realizability(scenario_id: str) -> dict[str, Any] | None:
     entry = get_catalog_entry(scenario_id)
     if entry is None:
         return None
-    if entry.get("scenario_type") != ACES_SCENARIO_TYPE:
+    if entry.get("scenario_type") != RAES_SCENARIO_TYPE:
         return _result(scenario_id, "", RealizabilityOutcome.NOT_APPLICABLE, ())
 
     source = _package_source(scenario_id)
@@ -113,8 +113,8 @@ def get_scenario_realizability(scenario_id: str) -> dict[str, Any] | None:
     return _assess_registered_pack(scenario_id, source, target_id)
 
 
-def _assess_registered_pack(scenario_id: str, source: AcesPackageSource, target_id: str) -> dict[str, Any]:
-    """Assess a registered ACES pack against ``target_id``.
+def _assess_registered_pack(scenario_id: str, source: RaesPackageSource, target_id: str) -> dict[str, Any]:
+    """Assess a registered RAES pack against ``target_id``.
 
     The whole assessment runs inside the pack-root context because an
     object-backed pack lives in private temporary staging that is torn down on
@@ -135,7 +135,7 @@ def _assess_trusted_path(scenario_id: str, scenario_path: Path, target_id: str) 
     gaps = tuple(sorted({*capability.gaps, *supply_gaps}))
     outcome = worst_outcome((capability.outcome, supply_outcome))
     logger.info(
-        "aces realizability assessed",
+        "raes realizability assessed",
         extra={
             "scenario_id": safe_log_value(scenario_id),
             "target_id": target_id,
@@ -147,21 +147,21 @@ def _assess_trusted_path(scenario_id: str, scenario_path: Path, target_id: str) 
     return _result(scenario_id, target_id, outcome, gaps)
 
 
-def _package_source(scenario_id: str) -> AcesPackageSource | None:
-    """Return the registered ACES package-source row for ``scenario_id``, or None."""
-    from cms.models import AcesPackageSource
+def _package_source(scenario_id: str) -> RaesPackageSource | None:
+    """Return the registered RAES package-source row for ``scenario_id``, or None."""
+    from cms.models import RaesPackageSource
 
-    return AcesPackageSource.objects.filter(scenario_id=scenario_id).first()
+    return RaesPackageSource.objects.filter(scenario_id=scenario_id).first()
 
 
 def _resolve_target_id() -> str:
-    """Return the stable id of the server-selected ACES realization target.
+    """Return the stable id of the server-selected RAES realization target.
 
     Derived only from validated deployment configuration -- never from the
     request. Mirrors the incumbent live-fire admission gate in
     ``cms.services._range_backend_admission`` so assessment and launch agree on
     which backend is admitted. Returns an empty string when the configured
-    backend has no ACES realization adapter, which fails closed rather than
+    backend has no RAES realization adapter, which fails closed rather than
     implying an adapter (notably an AWS one) exists.
     """
     if str(getattr(settings, "CLOUD_PROVIDER", "")).strip().lower() != _GCP_PROVIDER:
@@ -184,7 +184,7 @@ def _gcp_backend_admitted() -> bool:
 
 
 @contextmanager
-def _trusted_scenario_path(source: AcesPackageSource) -> Iterator[tuple[Path | None, RealizabilityGap]]:
+def _trusted_scenario_path(source: RaesPackageSource) -> Iterator[tuple[Path | None, RealizabilityGap]]:
     """Yield the pack's SDL path after the same trust gates launch applies.
 
     Yields ``(path, gap)`` where ``path`` is None when the pack could not be
@@ -203,56 +203,56 @@ def _trusted_scenario_path(source: AcesPackageSource) -> Iterator[tuple[Path | N
         try:
             pack_root = stack.enter_context(_stage_object_pack(source))
         except Exception as exc:
-            logger.info("aces realizability could not stage object pack (%s)", type(exc).__name__)
+            logger.info("raes realizability could not stage object pack (%s)", type(exc).__name__)
             yield None, _gap_pack_unresolvable()
         else:
             yield _verified_object_scenario_path(pack_root, source)
 
 
-def _repo_scenario_path(source: AcesPackageSource) -> tuple[Path | None, RealizabilityGap]:
+def _repo_scenario_path(source: RaesPackageSource) -> tuple[Path | None, RealizabilityGap]:
     """Resolve and digest-verify a repo-backed pack, exactly as launch does."""
     from cms.scenarios.pack_validation import verify_pack_digest
-    from shared.aces.package_loader import resolve_pack_root, resolve_pack_scenario_path
+    from shared.raes.package_loader import resolve_pack_root, resolve_pack_scenario_path
 
     try:
-        pack_root = resolve_pack_root(source.package_ref, package_root=Path(settings.ACES_PACKAGE_ROOT))
+        pack_root = resolve_pack_root(source.package_ref, package_root=Path(settings.RAES_PACKAGE_ROOT))
         if source.package_digest and not verify_pack_digest(pack_root, source.package_digest):
             return None, _gap_untrusted()
         return resolve_pack_scenario_path(pack_root), _gap_untrusted()
     except Exception as exc:
         # Any resolution failure means "cannot assess", never "realizable". Only
-        # the failure class is surfaced: ACES/pack errors embed absolute paths.
-        logger.info("aces realizability could not resolve pack (%s)", type(exc).__name__)
+        # the failure class is surfaced: RAES/pack errors embed absolute paths.
+        logger.info("raes realizability could not resolve pack (%s)", type(exc).__name__)
         return None, _gap_pack_unresolvable()
 
 
-def _stage_object_pack(source: AcesPackageSource) -> AbstractContextManager[Path]:
+def _stage_object_pack(source: RaesPackageSource) -> AbstractContextManager[Path]:
     """Stage the immutable object archive named by ``package_ref``.
 
     Reuses the launch-side bounded download / safe-extraction path
-    (``shared.aces.object_source``) with the configured bucket, prefix, and size
+    (``shared.raes.object_source``) with the configured bucket, prefix, and size
     bounds. The request never supplies a bucket, key, root, or credential.
     """
-    from shared.aces.object_source import stage_object_pack
     from shared.cloud import get_object_storage
+    from shared.raes.object_source import stage_object_pack
 
-    bucket = str(getattr(settings, "ACES_PACKAGE_BUCKET", "") or "").strip()
+    bucket = str(getattr(settings, "RAES_PACKAGE_BUCKET", "") or "").strip()
     if not bucket:
-        raise RuntimeError("no ACES package bucket is configured")
+        raise RuntimeError("no RAES package bucket is configured")
 
-    prefix = str(getattr(settings, "ACES_PACKAGE_PREFIX", "") or "").strip().strip("/")
+    prefix = str(getattr(settings, "RAES_PACKAGE_PREFIX", "") or "").strip().strip("/")
     ref = source.package_ref.strip().lstrip("/")
     return stage_object_pack(
         storage=get_object_storage(),
         bucket=bucket,
         key=f"{prefix}/{ref}" if prefix else ref,
-        max_archive_bytes=settings.ACES_PACKAGE_MAX_ARCHIVE_BYTES,
-        max_uncompressed_bytes=settings.ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES,
-        max_entries=settings.ACES_PACKAGE_MAX_ENTRIES,
+        max_archive_bytes=settings.RAES_PACKAGE_MAX_ARCHIVE_BYTES,
+        max_uncompressed_bytes=settings.RAES_PACKAGE_MAX_UNCOMPRESSED_BYTES,
+        max_entries=settings.RAES_PACKAGE_MAX_ENTRIES,
     )
 
 
-def _verified_object_scenario_path(pack_root: Path, source: AcesPackageSource) -> tuple[Path | None, RealizabilityGap]:
+def _verified_object_scenario_path(pack_root: Path, source: RaesPackageSource) -> tuple[Path | None, RealizabilityGap]:
     """Give a staged object pack the identity guarantees repo packs get.
 
     Object rows are registered without content validation or digest binding
@@ -261,7 +261,7 @@ def _verified_object_scenario_path(pack_root: Path, source: AcesPackageSource) -
     digest before anything is compiled (ADR-034-R5).
     """
     from cms.scenarios.pack_validation import validate_pack, verify_pack_digest
-    from shared.aces.package_loader import resolve_pack_scenario_path
+    from shared.raes.package_loader import resolve_pack_scenario_path
 
     try:
         if validate_pack(pack_root) != source.scenario_id:
@@ -270,7 +270,7 @@ def _verified_object_scenario_path(pack_root: Path, source: AcesPackageSource) -
             return None, _gap_untrusted()
         return resolve_pack_scenario_path(pack_root), _gap_untrusted()
     except Exception as exc:
-        logger.info("aces realizability could not verify object pack (%s)", type(exc).__name__)
+        logger.info("raes realizability could not verify object pack (%s)", type(exc).__name__)
         return None, _gap_pack_unresolvable()
 
 
@@ -319,7 +319,7 @@ def _missing_mapping_message(demand: ImageDemand, name: str, target_id: str) -> 
         pinned = demand.source_version or "*"
         return (
             f"no enabled {target_id} image mapping for source '{name}' (version {pinned}); "
-            "register an ACES image mapping for it"
+            "register an RAES image mapping for it"
         )
     return (
         f"no enabled {target_id} base-OS image mapping for os_family '{name}'; "
@@ -335,14 +335,14 @@ def _registry_candidates(names: set[str], *, target_id: str) -> dict[str, list[d
     provider-filtered read serves every node, so assessment never issues a query
     per node.
     """
-    from engine.services import list_aces_image_mappings
+    from engine.services import list_raes_image_mappings
 
     wanted = {name for name in names if name}
     if not wanted:
         return {}
 
     grouped: dict[str, list[dict[str, Any]]] = {}
-    for row in list_aces_image_mappings(provider=target_id, include_disabled=False):
+    for row in list_raes_image_mappings(provider=target_id, include_disabled=False):
         if row.source_name not in wanted:
             continue
         grouped.setdefault(row.source_name, []).append(
@@ -382,12 +382,12 @@ def _gap(code: str, address: str, category: GapCategory, message: str) -> Realiz
 
 
 def _gap_no_target() -> RealizabilityGap:
-    """Gap for a deployment whose configured backend has no ACES realization adapter."""
+    """Gap for a deployment whose configured backend has no RAES realization adapter."""
     return _gap(
         _NO_TARGET_ADAPTER,
         _PLAN_ADDRESS,
         GapCategory.TARGET,
-        "the configured range backend has no ACES realization adapter, so realizability cannot be assessed",
+        "the configured range backend has no RAES realization adapter, so realizability cannot be assessed",
     )
 
 

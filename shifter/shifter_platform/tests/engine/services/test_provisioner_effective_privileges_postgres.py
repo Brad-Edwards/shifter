@@ -123,8 +123,8 @@ class TestOutboxAndLegacyCapabilitiesAreGone:
     def test_subnet_allocation_sequence_access_is_revoked(self, priv):
         assert _sequence("engine_subnetallocation_id_seq", priv) is False
 
-    def test_aces_delivery_binding_read_is_revoked(self):
-        assert _table("engine_aces_content_delivery_binding", "SELECT") is False
+    def test_raes_delivery_binding_read_is_revoked(self):
+        assert _table("engine_raes_content_delivery_binding", "SELECT") is False
 
 
 class TestAllowlistedTablePrivileges:

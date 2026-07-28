@@ -62,7 +62,7 @@ def list_launchable_scenarios(user: User, workflow: str = "range_launch") -> lis
 
     Staff review listings (the full catalog) use ``list_scenarios``; launch,
     CTF event, CTF participant, and experiment selection paths use this so they
-    never offer or accept a non-launchable ACES entry. Legacy YAML/DB scenarios
+    never offer or accept a non-launchable RAES entry. Legacy YAML/DB scenarios
     remain launchable for every workflow.
 
     Args:

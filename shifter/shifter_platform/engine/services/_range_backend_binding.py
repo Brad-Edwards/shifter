@@ -1,7 +1,7 @@
 """Write-once range-backend ownership binding helpers (#1666).
 
-Shared by the cyberscript (:mod:`engine.services._range`) and ACES
-(:mod:`engine.services._aces_range`) create services: map the trusted CMS
+Shared by the cyberscript (:mod:`engine.services._range`) and RAES
+(:mod:`engine.services._raes_range`) create services: map the trusted CMS
 ``BackendAdmission`` to the Range binding columns and enforce write-once
 ownership on an idempotent create reuse.
 """

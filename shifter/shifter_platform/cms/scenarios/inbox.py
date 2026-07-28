@@ -27,9 +27,9 @@ from django.db import transaction
 
 from cms.exceptions import CMSError
 from cms.services import PackRegistrationRequest, RegisteredPack, register_pack
-from shared.schemas.aces_package_source import (
-    AcesPackageSourceError,
+from shared.schemas.raes_package_source import (
     PackageSourceRecord,
+    RaesPackageSourceError,
     validate_package_source,
 )
 
@@ -132,7 +132,7 @@ def _entry_to_request(entry: dict[str, Any], *, index: int) -> PackRegistrationR
     request = PackRegistrationRequest(
         scenario_id=entry.get("scenario_id", ""),
         source_kind=entry.get("source_kind", "repo"),
-        contract_kind=entry.get("contract_kind", "aces"),
+        contract_kind=entry.get("contract_kind", "raes"),
         contract_profile=entry.get("contract_profile", "shifter"),
         package_ref=entry.get("package_ref", ""),
         package_version=entry.get("package_version", ""),
@@ -166,6 +166,6 @@ def _entry_to_request(entry: dict[str, Any], *, index: int) -> PackRegistrationR
                 provenance=request.provenance,
             )
         )
-    except AcesPackageSourceError as exc:
+    except RaesPackageSourceError as exc:
         raise InboxManifestError(f"in-box pack manifest entry {index} violates the package-source contract") from exc
     return request

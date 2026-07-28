@@ -25,7 +25,7 @@ from shared.operation_envelope import build_operation_envelope
 
 _OPERATIONS = {
     "range": {"provision", "destroy", "pause", "resume"},
-    "aces-range": {"provision", "destroy", "pause", "resume"},
+    "raes-range": {"provision", "destroy", "pause", "resume"},
     "ngfw": {"provision", "deprovision", "start", "stop"},
 }
 PROVISIONER_DISPATCH_FAILED = "Provisioner dispatch failed"
@@ -164,7 +164,7 @@ def _authorize_request_range(
     target: Range | Instance | None,
     expected_operation_id: UUID | str | None,
 ) -> None:
-    """Authorize a request-based Range or ACES Range payload."""
+    """Authorize a request-based Range or RAES Range payload."""
     range_rows = _lock_for_generation(Range.objects.all(), expected_operation_id)
     row = target if isinstance(target, Range) else range_rows.filter(request=request).first()
     if row is None:
@@ -215,7 +215,7 @@ def authorize_provisioner_payload(
     request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
     if request is None:
         raise ValueError("launch intent request does not exist")
-    if payload.get("resource") in {"range", "aces-range"}:
+    if payload.get("resource") in {"range", "raes-range"}:
         _authorize_request_range(payload, request, target, expected_operation_id)
     else:
         _authorize_request_ngfw(payload, request, target, expected_operation_id)
@@ -226,7 +226,7 @@ def _lock_operation_target(payload: dict[str, object]) -> Range | Instance:
     if "request_id" not in payload:
         return Range.objects.select_for_update().get(pk=int(str(payload["range_id"])))
     request = Request.objects.get(request_id=UUID(str(payload["request_id"])))
-    if payload["resource"] in {"range", "aces-range"}:
+    if payload["resource"] in {"range", "raes-range"}:
         return Range.objects.select_for_update().get(request=request)
     return Instance.objects.select_for_update().get(request=request, role=Instance.Role.NGFW)
 
@@ -275,7 +275,7 @@ def _resolve_failure_target(payload: dict[str, object]) -> Range | Instance | No
         request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
         if request is None:
             target = None
-        elif payload.get("resource") in {"range", "aces-range"}:
+        elif payload.get("resource") in {"range", "raes-range"}:
             target = Range.objects.select_for_update().filter(request=request).first()
         else:
             target = Instance.objects.select_for_update().filter(request=request, role=Instance.Role.NGFW).first()

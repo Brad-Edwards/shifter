@@ -153,41 +153,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/cms/aces-image-mappings/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Return registry rows as allowlisted DTOs (disabled rows included by default). */
-        get: operations["cms_aces_image_mappings_list"];
-        put?: never;
-        /** @description Register (create or update) a mapping through the single validated write path. */
-        post: operations["cms_aces_image_mappings_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cms/aces-image-mappings/disable/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Disable an existing mapping without deleting it (preserves audit). */
-        post: operations["cms_aces_image_mappings_disable_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/cms/catalog/": {
         parameters: {
             query?: never;
@@ -239,6 +204,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/raes-image-mappings/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return registry rows as allowlisted DTOs (disabled rows included by default). */
+        get: operations["cms_raes_image_mappings_list"];
+        put?: never;
+        /** @description Register (create or update) a mapping through the single validated write path. */
+        post: operations["cms_raes_image_mappings_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/raes-image-mappings/disable/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Disable an existing mapping without deleting it (preserves audit). */
+        post: operations["cms_raes_image_mappings_disable_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/scenario-editor/scenarios/": {
         parameters: {
             query?: never;
@@ -263,7 +263,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return full structural detail (or a read-only ACES projection). */
+        /** @description Return full structural detail (or a read-only RAES projection). */
         get: operations["cms_scenario_editor_scenarios_retrieve"];
         put?: never;
         post?: never;
@@ -2038,7 +2038,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/mission-control/range/{request_id}/aces/operation-receipts/": {
+    "/api/v1/mission-control/range/{request_id}/raes/operation-receipts/": {
         parameters: {
             query?: never;
             header?: never;
@@ -2046,7 +2046,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["api_v1_mission_control_aces_operation_receipts_list"];
+        get: operations["api_v1_mission_control_raes_operation_receipts_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2055,7 +2055,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/mission-control/range/{request_id}/aces/operation-status/": {
+    "/api/v1/mission-control/range/{request_id}/raes/operation-status/": {
         parameters: {
             query?: never;
             header?: never;
@@ -2063,7 +2063,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["api_v1_mission_control_aces_operation_status_list"];
+        get: operations["api_v1_mission_control_raes_operation_status_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2072,7 +2072,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/mission-control/range/{request_id}/aces/participant-implementations/": {
+    "/api/v1/mission-control/range/{request_id}/raes/participant-implementations/": {
         parameters: {
             query?: never;
             header?: never;
@@ -2080,7 +2080,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["api_v1_mission_control_aces_participant_implementations_list"];
+        get: operations["api_v1_mission_control_raes_participant_implementations_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2089,7 +2089,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/mission-control/range/{request_id}/aces/participant-runtimes/": {
+    "/api/v1/mission-control/range/{request_id}/raes/participant-runtimes/": {
         parameters: {
             query?: never;
             header?: never;
@@ -2097,7 +2097,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["api_v1_mission_control_aces_participant_runtimes_list"];
+        get: operations["api_v1_mission_control_raes_participant_runtimes_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2106,7 +2106,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/mission-control/range/{request_id}/aces/snapshots/": {
+    "/api/v1/mission-control/range/{request_id}/raes/snapshots/": {
         parameters: {
             query?: never;
             header?: never;
@@ -2114,7 +2114,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["api_v1_mission_control_aces_runtime_snapshots_list"];
+        get: operations["api_v1_mission_control_raes_runtime_snapshots_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2332,161 +2332,6 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * @description Read-only, allowlisted ACES package-source presentation fields.
-         *
-         *     Every field is bounded provenance/identity metadata. This serializer never
-         *     exposes raw ACES SDL, imported module bodies, generated content, flags,
-         *     credentials, presigned URLs, provider payloads, or runtime config.
-         */
-        AcesCatalogFields: {
-            readonly source_kind: string;
-            readonly contract_kind: string;
-            readonly contract_profile: string;
-            readonly package_ref: string;
-            readonly package_version: string;
-            readonly package_digest: string;
-            readonly lock_ref: string;
-            readonly lock_digest: string;
-            readonly conformance_status: string;
-            readonly conformance_report_ref: string;
-            readonly provenance_summary: {
-                [key: string]: unknown;
-            };
-        };
-        /** @description Shape validation for a disable request (natural key only). */
-        AcesImageMappingDisable: {
-            provider: string;
-            source_name: string;
-            /** @default  */
-            source_version: string;
-        };
-        /**
-         * @description Shape validation for a register/upsert request; the service is final validator.
-         *
-         *     Provider-choice validity, natural-key rules, and soft-disable semantics stay
-         *     in ``engine.services`` so the API and management command cannot drift; this
-         *     serializer only enforces HTTP shape (required fields, max lengths, positive
-         *     disk size, boolean).
-         */
-        AcesImageMappingRegister: {
-            provider: string;
-            source_name: string;
-            image_ref: string;
-            /** @default  */
-            source_version: string;
-            /** @default  */
-            machine_type: string;
-            disk_size_gb?: number | null;
-            /** @default  */
-            disk_type: string;
-            /** @default true */
-            enabled: boolean;
-            /** @default  */
-            notes: string;
-        };
-        /**
-         * @description Allowlisted read projection shared by the register, list, and disable responses.
-         *
-         *     Field-for-field with ``engine.services.AcesImageMappingView`` so it renders
-         *     either that DTO (list/disable) or the model instance the upsert returns.
-         */
-        AcesImageMappingView: {
-            readonly id: number;
-            readonly provider: string;
-            readonly source_name: string;
-            readonly source_version: string;
-            readonly image_ref: string;
-            readonly machine_type: string;
-            readonly disk_size_gb: number | null;
-            readonly disk_type: string;
-            readonly enabled: boolean;
-            readonly notes: string;
-            /** Format: date-time */
-            readonly created_at: string;
-            /** Format: date-time */
-            readonly updated_at: string;
-        };
-        /**
-         * @description Read-only projection of one ACES operation sidecar record (#1275).
-         *
-         *     Serializes an ``AcesOperationRecordProjection`` (already redacted by the
-         *     shared read seam); it never touches the raw model ``payload``.
-         */
-        AcesOperationRecord: {
-            /** Format: uuid */
-            readonly id: string;
-            /** Format: uuid */
-            readonly request_id: string;
-            /** Format: uuid */
-            readonly range_id: string | null;
-            readonly record_kind: string;
-            readonly contract_kind: string;
-            readonly contract_version: string;
-            readonly contract_profile: string;
-            /** Format: date-time */
-            readonly source_timestamp: string;
-            /** Format: date-time */
-            readonly created_at: string;
-            /** Format: date-time */
-            readonly updated_at: string;
-            readonly payload_digest: string;
-            readonly payload: {
-                [key: string]: unknown;
-            };
-            readonly diagnostic_refs: {
-                [key: string]: unknown;
-            };
-        };
-        /** @description Response body shared by ``mission_control.api.aces`` list endpoints. */
-        AcesOperationRecordListResponse: {
-            /** Format: uuid */
-            request_id: string;
-            record_kind: string;
-            results: components["schemas"]["AcesOperationRecord"][];
-        };
-        /**
-         * @description Read-only projection of one ACES participant-runtime sidecar record (#1288).
-         *
-         *     Serializes an ``AcesParticipantRuntimeRecordProjection`` (already redacted
-         *     by the shared read seam); it never touches the raw model ``payload``.
-         */
-        AcesParticipantRuntimeRecord: {
-            /** Format: uuid */
-            readonly id: string;
-            /** Format: uuid */
-            readonly request_id: string;
-            /** Format: uuid */
-            readonly range_id: string | null;
-            /** Format: uuid */
-            readonly range_instance_id: string | null;
-            readonly participant_ref: string;
-            readonly record_kind: string;
-            readonly contract_kind: string;
-            readonly contract_version: string;
-            readonly contract_profile: string;
-            readonly participant_runtime_profile: string;
-            /** Format: date-time */
-            readonly source_timestamp: string;
-            /** Format: date-time */
-            readonly created_at: string;
-            /** Format: date-time */
-            readonly updated_at: string;
-            readonly payload_digest: string;
-            readonly payload: {
-                [key: string]: unknown;
-            };
-            readonly diagnostic_refs: {
-                [key: string]: unknown;
-            };
-        };
-        /** @description Response body shared by ``mission_control.api.aces_participant`` list endpoints. */
-        AcesParticipantRuntimeRecordListResponse: {
-            /** Format: uuid */
-            request_id: string;
-            record_kind: string;
-            results: components["schemas"]["AcesParticipantRuntimeRecord"][];
-        };
-        /**
          * @description * `user` - User
          *     * `apikey` - API Key
          *     * `system` - System
@@ -2655,7 +2500,7 @@ export interface components {
             mission_control_spa: boolean;
             scenario_editor_spa: boolean;
             ctf_workspace_spa: boolean;
-            aces_native_provisioning: boolean;
+            raes_native_provisioning: boolean;
             administer_spa: boolean;
         };
         /** @description UX mode eligibility (participant/operator). Not an authorization fact. */
@@ -2686,7 +2531,7 @@ export interface components {
          * @description Read-only catalog entry projection for the CMS catalog API.
          *
          *     Serializes the presentation DTO from ``cms.scenarios.catalog_presentation``.
-         *     ``aces`` is present only for ACES package-backed entries; legacy YAML/DB
+         *     ``raes`` is present only for RAES package-backed entries; legacy YAML/DB
          *     entries serialize it as ``null``.
          */
         CatalogEntry: {
@@ -2698,7 +2543,7 @@ export interface components {
             readonly enabled: boolean;
             readonly staff_only: boolean;
             readonly launchable: boolean;
-            readonly aces: components["schemas"]["AcesCatalogFields"] | null;
+            readonly raes: components["schemas"]["RaesCatalogFields"] | null;
         };
         /** @description Target-instance connection info, surfaced only when the range is ready. */
         ChallengeConnectionInfo: {
@@ -2876,10 +2721,10 @@ export interface components {
             has_range: boolean;
             range: components["schemas"]["RangePresentation"] | null;
             connection_urls: components["schemas"]["ConnectionUrl"][];
-            aces_projection: {
+            raes_projection: {
                 [key: string]: unknown;
             } | null;
-            aces_participant_runtime: {
+            raes_participant_runtime: {
                 [key: string]: unknown;
             } | null;
             lifecycle: components["schemas"]["RangeLease"] | null;
@@ -3784,6 +3629,161 @@ export interface components {
             }[] | null;
             readonly brackets: components["schemas"]["_NamedRef"][];
         };
+        /**
+         * @description Read-only, allowlisted RAES package-source presentation fields.
+         *
+         *     Every field is bounded provenance/identity metadata. This serializer never
+         *     exposes raw RAES SDL, imported module bodies, generated content, flags,
+         *     credentials, presigned URLs, provider payloads, or runtime config.
+         */
+        RaesCatalogFields: {
+            readonly source_kind: string;
+            readonly contract_kind: string;
+            readonly contract_profile: string;
+            readonly package_ref: string;
+            readonly package_version: string;
+            readonly package_digest: string;
+            readonly lock_ref: string;
+            readonly lock_digest: string;
+            readonly conformance_status: string;
+            readonly conformance_report_ref: string;
+            readonly provenance_summary: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Shape validation for a disable request (natural key only). */
+        RaesImageMappingDisable: {
+            provider: string;
+            source_name: string;
+            /** @default  */
+            source_version: string;
+        };
+        /**
+         * @description Shape validation for a register/upsert request; the service is final validator.
+         *
+         *     Provider-choice validity, natural-key rules, and soft-disable semantics stay
+         *     in ``engine.services`` so the API and management command cannot drift; this
+         *     serializer only enforces HTTP shape (required fields, max lengths, positive
+         *     disk size, boolean).
+         */
+        RaesImageMappingRegister: {
+            provider: string;
+            source_name: string;
+            image_ref: string;
+            /** @default  */
+            source_version: string;
+            /** @default  */
+            machine_type: string;
+            disk_size_gb?: number | null;
+            /** @default  */
+            disk_type: string;
+            /** @default true */
+            enabled: boolean;
+            /** @default  */
+            notes: string;
+        };
+        /**
+         * @description Allowlisted read projection shared by the register, list, and disable responses.
+         *
+         *     Field-for-field with ``engine.services.RaesImageMappingView`` so it renders
+         *     either that DTO (list/disable) or the model instance the upsert returns.
+         */
+        RaesImageMappingView: {
+            readonly id: number;
+            readonly provider: string;
+            readonly source_name: string;
+            readonly source_version: string;
+            readonly image_ref: string;
+            readonly machine_type: string;
+            readonly disk_size_gb: number | null;
+            readonly disk_type: string;
+            readonly enabled: boolean;
+            readonly notes: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description Read-only projection of one RAES operation sidecar record (#1275).
+         *
+         *     Serializes an ``RaesOperationRecordProjection`` (already redacted by the
+         *     shared read seam); it never touches the raw model ``payload``.
+         */
+        RaesOperationRecord: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly request_id: string;
+            /** Format: uuid */
+            readonly range_id: string | null;
+            readonly record_kind: string;
+            readonly contract_kind: string;
+            readonly contract_version: string;
+            readonly contract_profile: string;
+            /** Format: date-time */
+            readonly source_timestamp: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly payload_digest: string;
+            readonly payload: {
+                [key: string]: unknown;
+            };
+            readonly diagnostic_refs: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Response body shared by ``mission_control.api.raes`` list endpoints. */
+        RaesOperationRecordListResponse: {
+            /** Format: uuid */
+            request_id: string;
+            record_kind: string;
+            results: components["schemas"]["RaesOperationRecord"][];
+        };
+        /**
+         * @description Read-only projection of one RAES participant-runtime sidecar record (#1288).
+         *
+         *     Serializes an ``RaesParticipantRuntimeRecordProjection`` (already redacted
+         *     by the shared read seam); it never touches the raw model ``payload``.
+         */
+        RaesParticipantRuntimeRecord: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly request_id: string;
+            /** Format: uuid */
+            readonly range_id: string | null;
+            /** Format: uuid */
+            readonly range_instance_id: string | null;
+            readonly participant_ref: string;
+            readonly record_kind: string;
+            readonly contract_kind: string;
+            readonly contract_version: string;
+            readonly contract_profile: string;
+            readonly participant_runtime_profile: string;
+            /** Format: date-time */
+            readonly source_timestamp: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly payload_digest: string;
+            readonly payload: {
+                [key: string]: unknown;
+            };
+            readonly diagnostic_refs: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Response body shared by ``mission_control.api.raes_participant`` list endpoints. */
+        RaesParticipantRuntimeRecordListResponse: {
+            /** Format: uuid */
+            request_id: string;
+            record_kind: string;
+            results: components["schemas"]["RaesParticipantRuntimeRecord"][];
+        };
         /** @description Redirect pointer to the mission_control Guacamole RDP endpoint. */
         RangeAccessResponse: {
             readonly redirect: string;
@@ -3993,10 +3993,10 @@ export interface components {
         /**
          * @description Full scenario detail with source-capability flags for the editor.
          *
-         *     ``source`` classifies the entry (``builtin`` / ``custom`` / ``aces`` /
+         *     ``source`` classifies the entry (``builtin`` / ``custom`` / ``raes`` /
          *     ``ctf``) and the capability booleans tell the SPA which actions to offer.
          *     ``instances`` / ``subnets`` are populated for structural (demo) scenarios;
-         *     ``aces`` carries the read-only provenance block for ACES entries.
+         *     ``raes`` carries the read-only provenance block for RAES entries.
          */
         ScenarioDetail: {
             readonly id: string;
@@ -4014,7 +4014,7 @@ export interface components {
             readonly ngfw: boolean;
             readonly instances: components["schemas"]["ScenarioInstance"][];
             readonly subnets: components["schemas"]["ScenarioSubnet"][];
-            readonly aces: components["schemas"]["AcesCatalogFields"] | null;
+            readonly raes: components["schemas"]["RaesCatalogFields"] | null;
         };
         /** @description Response for an export: the scenario id and its YAML rendering. */
         ScenarioExport: {
@@ -4060,10 +4060,10 @@ export interface components {
         /**
          * @description One entry from ``cms.services.list_launchable_scenarios``.
          *
-         *     Legacy YAML/DB scenarios and ACES-derived catalog entries share this
+         *     Legacy YAML/DB scenarios and RAES-derived catalog entries share this
          *     projection but are not fully homogeneous; fields the SPA does not render
          *     stay loosely typed (``DictField``/``ListField(DictField)``) rather than
-         *     modeling the full ``ScenarioTemplate``/ACES catalog schema here.
+         *     modeling the full ``ScenarioTemplate``/RAES catalog schema here.
          */
         ScenarioListItem: {
             id: string;
@@ -4670,132 +4670,6 @@ export interface operations {
             };
         };
     };
-    cms_aces_image_mappings_list: {
-        parameters: {
-            query?: {
-                include_disabled?: boolean;
-                provider?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcesImageMappingView"][];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    cms_aces_image_mappings_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcesImageMappingRegister"];
-                "application/x-www-form-urlencoded": components["schemas"]["AcesImageMappingRegister"];
-                "multipart/form-data": components["schemas"]["AcesImageMappingRegister"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcesImageMappingView"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    cms_aces_image_mappings_disable_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcesImageMappingDisable"];
-                "application/x-www-form-urlencoded": components["schemas"]["AcesImageMappingDisable"];
-                "multipart/form-data": components["schemas"]["AcesImageMappingDisable"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcesImageMappingView"];
-                };
-            };
-            /** @description Authentication failed. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Permission denied. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     cms_catalog_list: {
         parameters: {
             query?: never;
@@ -4893,6 +4767,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackRegistrationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_raes_image_mappings_list: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+                provider?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaesImageMappingView"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_raes_image_mappings_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RaesImageMappingRegister"];
+                "application/x-www-form-urlencoded": components["schemas"]["RaesImageMappingRegister"];
+                "multipart/form-data": components["schemas"]["RaesImageMappingRegister"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaesImageMappingView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_raes_image_mappings_disable_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RaesImageMappingDisable"];
+                "application/x-www-form-urlencoded": components["schemas"]["RaesImageMappingDisable"];
+                "multipart/form-data": components["schemas"]["RaesImageMappingDisable"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaesImageMappingView"];
                 };
             };
             /** @description Authentication failed. */
@@ -10213,7 +10213,7 @@ export interface operations {
             };
         };
     };
-    api_v1_mission_control_aces_operation_receipts_list: {
+    api_v1_mission_control_raes_operation_receipts_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -10229,7 +10229,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AcesOperationRecordListResponse"];
+                    "application/json": components["schemas"]["RaesOperationRecordListResponse"];
                 };
             };
             /** @description Authentication failed. */
@@ -10252,7 +10252,7 @@ export interface operations {
             };
         };
     };
-    api_v1_mission_control_aces_operation_status_list: {
+    api_v1_mission_control_raes_operation_status_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -10268,7 +10268,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AcesOperationRecordListResponse"];
+                    "application/json": components["schemas"]["RaesOperationRecordListResponse"];
                 };
             };
             /** @description Authentication failed. */
@@ -10291,7 +10291,7 @@ export interface operations {
             };
         };
     };
-    api_v1_mission_control_aces_participant_implementations_list: {
+    api_v1_mission_control_raes_participant_implementations_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -10307,7 +10307,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AcesParticipantRuntimeRecordListResponse"];
+                    "application/json": components["schemas"]["RaesParticipantRuntimeRecordListResponse"];
                 };
             };
             /** @description Authentication failed. */
@@ -10330,7 +10330,7 @@ export interface operations {
             };
         };
     };
-    api_v1_mission_control_aces_participant_runtimes_list: {
+    api_v1_mission_control_raes_participant_runtimes_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -10346,7 +10346,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AcesParticipantRuntimeRecordListResponse"];
+                    "application/json": components["schemas"]["RaesParticipantRuntimeRecordListResponse"];
                 };
             };
             /** @description Authentication failed. */
@@ -10369,7 +10369,7 @@ export interface operations {
             };
         };
     };
-    api_v1_mission_control_aces_runtime_snapshots_list: {
+    api_v1_mission_control_raes_runtime_snapshots_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -10385,7 +10385,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AcesOperationRecordListResponse"];
+                    "application/json": components["schemas"]["RaesOperationRecordListResponse"];
                 };
             };
             /** @description Authentication failed. */

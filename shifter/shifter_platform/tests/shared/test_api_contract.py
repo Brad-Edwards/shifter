@@ -164,21 +164,40 @@ class TestBreakingChangeGate:
             json.dumps(
                 {
                     "api_major": "v1",
-                    "adr": "ADR-045",
-                    "paths": ["/api/v1/retired/"],
-                    "response_schema_properties": [{"schema": "Bootstrap", "property": "retired"}],
+                    "retirements": [
+                        {
+                            "adr": "ADR-045",
+                            "issue": 1374,
+                            "paths": ["/api/v1/retired/"],
+                            "response_schema_properties": [{"schema": "Bootstrap", "property": "retired"}],
+                        },
+                        {
+                            "adr": "ADR-024",
+                            "issue": 1862,
+                            "paths": ["/api/v1/also-retired/"],
+                            "response_schema_properties": [{"schema": "Bootstrap", "property": "also_retired"}],
+                        },
+                    ],
                 }
             ),
             encoding="utf-8",
         )
         monkeypatch.setattr(contract, "retirement_path", lambda major=contract.API_MAJOR: metadata)
         base = {
-            "paths": {"/api/v1/retired/": {}, "/api/v1/kept/": {}},
+            "paths": {
+                "/api/v1/retired/": {},
+                "/api/v1/also-retired/": {},
+                "/api/v1/kept/": {},
+            },
             "components": {
                 "schemas": {
                     "Bootstrap": {
-                        "properties": {"retired": {"type": "boolean"}, "kept": {"type": "boolean"}},
-                        "required": ["kept", "retired"],
+                        "properties": {
+                            "retired": {"type": "boolean"},
+                            "also_retired": {"type": "boolean"},
+                            "kept": {"type": "boolean"},
+                        },
+                        "required": ["kept", "retired", "also_retired"],
                     }
                 }
             },
@@ -207,9 +226,14 @@ class TestBreakingChangeGate:
             json.dumps(
                 {
                     "api_major": "v1",
-                    "adr": "ADR-045",
-                    "paths": ["/api/v1/retired/"],
-                    "response_schema_properties": [],
+                    "retirements": [
+                        {
+                            "adr": "ADR-045",
+                            "issue": 1374,
+                            "paths": ["/api/v1/retired/"],
+                            "response_schema_properties": [],
+                        }
+                    ],
                 }
             ),
             encoding="utf-8",
@@ -219,6 +243,27 @@ class TestBreakingChangeGate:
 
         with pytest.raises(RuntimeError, match="reintroduced"):
             contract.apply_accepted_retirements(document, document)
+
+    def test_accepted_feature_retirement_rejects_legacy_metadata_shape(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        metadata = tmp_path / "v1.retirements.json"
+        metadata.write_text(
+            json.dumps(
+                {
+                    "api_major": "v1",
+                    "adr": "ADR-045",
+                    "issue": 1374,
+                    "paths": ["/api/v1/retired/"],
+                    "response_schema_properties": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(contract, "retirement_path", lambda major=contract.API_MAJOR: metadata)
+
+        with pytest.raises(RuntimeError, match="Invalid API retirement metadata"):
+            contract.apply_accepted_retirements("{}", "{}")
 
     def test_breaking_change_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(

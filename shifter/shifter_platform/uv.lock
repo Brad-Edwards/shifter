@@ -24,44 +24,6 @@ constraints = [
 ]
 
 [[package]]
-name = "aces-scenario-packs"
-version = "2.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aces-sdl" },
-    { name = "pyyaml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/cd/8d/c5d9f8187c1d17c7b42454fab07cfce9db8e5c74592954fb6596b2ac32d6/aces_scenario_packs-2.0.1.tar.gz", hash = "sha256:b96981643db06b487334cea3c9b8bfbc7c9fcb078ad6451da3634d03b3aa53ec", size = 153469, upload-time = "2026-07-17T02:02:16.556Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/13/6812991eb3011406dba4ba20db786f8ee67a90b4dc05e5d6865728c7a50f/aces_scenario_packs-2.0.1-py3-none-any.whl", hash = "sha256:4f56aa3b937c447a30548676a23fa8c161427c1c4be859e85928404d6d68f298", size = 95698, upload-time = "2026-07-17T02:02:14.918Z" },
-]
-
-[[package]]
-name = "aces-sdl"
-version = "0.23.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "asyncssh" },
-    { name = "blake3" },
-    { name = "cryptography" },
-    { name = "defusedxml" },
-    { name = "fastapi" },
-    { name = "mcp" },
-    { name = "packaging" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "rfc8785" },
-    { name = "rich" },
-    { name = "sse-starlette" },
-    { name = "typer" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e8/35/0ce9dd1a49009c6b29ed3ab81965bd321664a313aba85882fb38efb60541/aces_sdl-0.23.0.tar.gz", hash = "sha256:ad70c7c970cb2228834ae12495bf9f0b0b77e67a8dfdfea98a3521ba528e6dbd", size = 1669233, upload-time = "2026-07-17T01:43:24.93Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/6c/2817c77aaad592f02a313ee8b889fa8d307b5ce7c0b61974d40e53866ccf/aces_sdl-0.23.0-py3-none-any.whl", hash = "sha256:3c90abce50d7180717bf8c87e71bcd4727778d7edf207cda424e09b31f77fd00", size = 1462625, upload-time = "2026-07-17T01:43:23.14Z" },
-]
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2478,6 +2440,45 @@ wheels = [
 ]
 
 [[package]]
+name = "raes"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "asyncssh" },
+    { name = "blake3" },
+    { name = "cryptography" },
+    { name = "defusedxml" },
+    { name = "fastapi" },
+    { name = "mcp" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rfc8785" },
+    { name = "rich" },
+    { name = "sse-starlette" },
+    { name = "typer" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "z3-solver" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/00/d5/2444e66bd45ffdd8ffdffc2588c853bdb1025bfd3ce951448107d6275ac7/raes-2.0.0.tar.gz", hash = "sha256:12b7e338350ad11cb65a32216a4a6ea3fd3f165e7f97207e27d1bb88ddd0976d", size = 2392051, upload-time = "2026-07-27T06:59:00.395Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/30/29169747ee4629d733794c780f2684494a74cf2df5b7346a947ff485ec56/raes-2.0.0-py3-none-any.whl", hash = "sha256:8205f90631009a6867c861914fb0e6fa33b32f65faa15873f3dabed02c9e02c2", size = 2250915, upload-time = "2026-07-27T06:58:58.44Z" },
+]
+
+[[package]]
+name = "raes-env-packs"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "raes" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ac/82/e2a571f7b7a9e1183c6e2cc5d92e5571bd00b95becfc78237219fca80a5f/raes_env_packs-3.0.0.tar.gz", hash = "sha256:a3d228f2219865c4366b6bf41149b7545ba566848a9f74e63831c1db652c8385", size = 212780, upload-time = "2026-07-28T04:07:19.746Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/10/5f31d30dd1807cc664046112947344fe4fa7f73fa66375b199107f45e53c/raes_env_packs-3.0.0-py3-none-any.whl", hash = "sha256:9f25db0d26e5daba1bcedb026eeec013f0158e8566fc8e3d06172902b633ffdf", size = 97106, upload-time = "2026-07-28T04:07:18.435Z" },
+]
+
+[[package]]
 name = "redis"
 version = "7.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2801,8 +2802,6 @@ name = "shifter-platform"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "aces-scenario-packs" },
-    { name = "aces-sdl" },
     { name = "asyncssh" },
     { name = "bleach" },
     { name = "boto3" },
@@ -2827,6 +2826,8 @@ dependencies = [
     { name = "pycurl" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "raes" },
+    { name = "raes-env-packs" },
     { name = "redis" },
     { name = "regex" },
     { name = "requests" },
@@ -2857,8 +2858,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aces-scenario-packs", specifier = "==2.0.1" },
-    { name = "aces-sdl", specifier = "==0.23.0" },
     { name = "asyncssh", specifier = ">=2.23.0" },
     { name = "bleach", specifier = ">=6.4.0" },
     { name = "boto3" },
@@ -2883,6 +2882,8 @@ requires-dist = [
     { name = "pycurl", specifier = ">=7.45.7" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
+    { name = "raes", specifier = "==2.0.0" },
+    { name = "raes-env-packs", specifier = "==3.0.0" },
     { name = "redis", specifier = ">=5.0" },
     { name = "regex", specifier = ">=2026.6.28" },
     { name = "requests" },
@@ -3430,6 +3431,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cb/2a/55b3f3a4ec326cd077c1c3defeee656b9298372a69229134d930151acd01/whitenoise-6.12.0.tar.gz", hash = "sha256:f723ebb76a112e98816ff80fcea0a6c9b8ecde835f8ddda25df7a30a3c2db6ad", size = 26841, upload-time = "2026-02-27T00:05:42.028Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/db/eb/d5583a11486211f3ebd4b385545ae787f32363d453c19fffd81106c9c138/whitenoise-6.12.0-py3-none-any.whl", hash = "sha256:fc5e8c572e33ebf24795b47b6a7da8da3c00cff2349f5b04c02f28d0cc5a3cc2", size = 20302, upload-time = "2026-02-27T00:05:40.086Z" },
+]
+
+[[package]]
+name = "z3-solver"
+version = "4.16.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/3b/2b714c40ef2ecf6d8aa080056b9c24a77fe4ca2c83abd83e9c93d34212ac/z3_solver-4.16.0.0.tar.gz", hash = "sha256:263d9ad668966e832c2b246ba0389298a599637793da2dc01cc5e4ef4b0b6c78", size = 5098891, upload-time = "2026-02-19T04:14:08.818Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/5d/9b277a80333db6b85fedd0f5082e311efcbaec47f2c44c57d38953c2d4d9/z3_solver-4.16.0.0-py3-none-macosx_15_0_arm64.whl", hash = "sha256:cc52843cfdd3d3f2cd24bedc62e71c18af8c8b7b23fb05e639ab60b01b5f8f2f", size = 36963251, upload-time = "2026-02-19T04:13:44.303Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/c4/fc99aa544930fb7bfcd88947c2788f318acaf1b9704a7a914445e204436a/z3_solver-4.16.0.0-py3-none-macosx_15_0_x86_64.whl", hash = "sha256:e292df40951523e4ecfbc8dee549d93dee00a3fe4ee4833270d19876b713e210", size = 47523873, upload-time = "2026-02-19T04:13:48.154Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/e6/98741b086b6e01630a55db1fbda596949f738204aac14ef35e64a9526ccb/z3_solver-4.16.0.0-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:afae2551f795670f0522cfce82132d129c408a2694adff71eb01ba0f2ece44f9", size = 31741807, upload-time = "2026-02-19T04:13:52.283Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/2e/295d467c7c796c01337bff790dbedc28cf279f9d365ed64aa9f8ca6b2ba1/z3_solver-4.16.0.0-py3-none-manylinux_2_38_aarch64.whl", hash = "sha256:358648c3b5ef82b9ec9a25711cf4fc498c7881f03a9f4a2ea6ffa9304ca65d94", size = 27326531, upload-time = "2026-02-19T04:13:55.787Z" },
+    { url = "https://files.pythonhosted.org/packages/34/df/29816ce4de24cca3acb007412f9c6fba603e55fcc27ce8c2aade0939057a/z3_solver-4.16.0.0-py3-none-win32.whl", hash = "sha256:cc64c4d41fbebe419fccddb044979c3d95b41214547db65eecdaa67fafef7fe0", size = 13341643, upload-time = "2026-02-19T04:13:58.88Z" },
+    { url = "https://files.pythonhosted.org/packages/86/20/cef4f4d70845df24572d005d19995f92b7f527eb2ffb63a3f5f938a0de2e/z3_solver-4.16.0.0-py3-none-win_amd64.whl", hash = "sha256:eb5df383cb6a3d6b7767dbdca348ac71f6f41e82f76c9ac42002a1f55e35f462", size = 16419861, upload-time = "2026-02-19T04:14:03.232Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/18/7dc1051093abfd6db56ce9addb63c624bfa31946ccb9cfc9be5e75237a26/z3_solver-4.16.0.0-py3-none-win_arm64.whl", hash = "sha256:28729eae2c89112e37697acce4d4517f5e44c6c54d36fed9cf914b06f380cbd6", size = 15084866, upload-time = "2026-02-19T04:14:06.355Z" },
 ]
 
 [[package]]

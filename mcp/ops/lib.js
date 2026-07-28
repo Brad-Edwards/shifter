@@ -55,7 +55,6 @@ export const GCE_IMAGE_TYPES = Object.freeze([
   "windows",
   "dc",
   "polaris-vm",
-  "techvault",
   "dc-prebaked",
 ]);
 

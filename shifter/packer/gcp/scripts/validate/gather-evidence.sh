@@ -102,9 +102,6 @@ fi
 [[ -n "${SSH_KEY}" ]] || { echo "::error::SSH_KEY not provided for Linux validation" >&2; exit 1; }
 rc=255
 CHECK_SCRIPT="${SCRIPT_DIR}/linux.sh"
-if [[ "${IMAGE_TYPE}" == "techvault" ]]; then
-  CHECK_SCRIPT="${SCRIPT_DIR}/techvault.sh"
-fi
 for _ in $(seq 1 40); do
   ssh -i "${SSH_KEY}" -p "${LPORT}" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \

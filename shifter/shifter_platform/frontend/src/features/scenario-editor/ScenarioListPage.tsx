@@ -21,7 +21,7 @@ import { titleCase } from "./format";
 import { scenarioCreatePath, scenarioPath } from "./routes";
 
 const ALL = "all";
-const SOURCES = ["builtin", "custom", "aces", "ctf"] as const;
+const SOURCES = ["builtin", "custom", "raes", "ctf"] as const;
 
 export function ScenarioListPage() {
   const bootstrap = useBootstrapContext();

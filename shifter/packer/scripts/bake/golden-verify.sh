@@ -6,9 +6,9 @@
 # expected number of containers converge before the AMI is published to SSM.
 #
 # Parameterized per scenario (the "verification profile keyed by ami_type" seam):
-#   SCENARIO         label for logs/tags (e.g. techvault, polaris)
-#   MIN_CONTAINERS   required running-container count (techvault=30, polaris=17)
-#   NAME_FILTER      optional docker name filter token (e.g. aptl-); empty = all
+#   SCENARIO         label for logs/tags
+#   MIN_CONTAINERS   required running-container count
+#   NAME_FILTER      optional docker name filter token; empty = all
 #
 # Env: AMI_ID, INSTANCE_TYPE, SUBNET_ID, SECURITY_GROUP_ID, INSTANCE_PROFILE,
 #      SCENARIO, MIN_CONTAINERS, NAME_FILTER (optional), RUN_ID (optional)

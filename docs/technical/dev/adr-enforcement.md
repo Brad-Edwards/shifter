@@ -225,29 +225,6 @@ The first slice intentionally stays small:
   genuinely absent directory at the base (a real first publication) is distinguished
   from an unreadable tree and still passes.
 
-- `aces-parity-inventory-path-integrity`
-  Enforces ADR-024-R4: every `legacy_source` / `validation_evidence` clause in
-  `docs/architecture/aces-migration-parity-inventory.yaml` that is a
-  repository-relative path or glob must resolve to an existing path (a glob must
-  match at least one path). Each field's `;`-separated clauses are classified
-  syntactically into `path`, `glob`, `command`, or `prose`; command clauses
-  (`python3 … --level ci`, `cd … && uv run …`, `aces conformance … --profile …`)
-  and prose clauses (removal statements, dotted references like
-  `engine.Range.provisioned_instances`, annotated summaries) are skipped, and
-  path-looking substrings are never extracted from prose. Classification is never
-  existence-led, so a deleted path stays a `path` and fails instead of
-  self-exempting as prose. Like `adr-registry` it validates the whole inventory on
-  every run and ignores the changed-file list, because a referenced file can be
-  moved or deleted without the inventory itself being edited. It treats the YAML
-  as untrusted static input: `yaml.safe_load` only; absolute paths, `..`
-  traversal, symlink escape, and shell-expansion characters are rejected
-  fail-closed; referenced content is never read and inventory text never reaches a
-  shell or subprocess. Missing PyYAML or a malformed/wrong-shape inventory is a
-  bounded violation, not a crash. It runs at the `ci` level and via a dedicated
-  `adr-guard-parity-inventory` pre-commit hook (also registered in the
-  always-present `deploy.yml` pre-commit job) so a referenced-file deletion in a
-  docs-only change cannot evade it.
-
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
 

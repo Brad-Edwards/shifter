@@ -64,7 +64,7 @@ def get_range_target_instances(user_id: int) -> list[dict[str, str]]:
     example, POLARIS declares RDP/SSH access to Kali only even though the range
     also contains a DC target. Legacy rows that predate channel metadata keep
     the previous heuristic: show non-attacker targets, or fall back to attacker
-    seats for single-workstation labs such as TechVault.
+    seats for single-workstation labs.
 
     Args:
         user_id: PK of the user.

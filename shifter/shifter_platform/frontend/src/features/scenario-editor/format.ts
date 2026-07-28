@@ -8,7 +8,7 @@ export { titleCase };
 export const SOURCE_LABELS: Record<ScenarioSource, string> = {
   builtin: "Built-in",
   custom: "Custom",
-  aces: "ACES",
+  raes: "RAES",
   ctf: "CTF",
 };
 
