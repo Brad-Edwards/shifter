@@ -213,11 +213,11 @@ def test_invalid_persisted_artifact_fails_before_ngfw_or_provider_work(monkeypat
     ngfw_ready = MagicMock()
     dispatch = MagicMock()
     cleanup = MagicMock()
-    publish_failed = MagicMock()
+    update_status = MagicMock()
     monkeypatch.setattr("terraform_ops._ensure_ngfw_ready_for_provisioning", ngfw_ready)
     monkeypatch.setattr("terraform_ops._dispatch_terraform_operation", dispatch)
     monkeypatch.setattr("terraform_ops._attempt_terraform_auto_cleanup", cleanup)
-    monkeypatch.setattr("terraform_ops.publish_failed", publish_failed)
+    monkeypatch.setattr("terraform_ops.update_range_status", update_status)
 
     with (
         patch.dict("os.environ", {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gce"}, clear=True),
@@ -228,10 +228,9 @@ def test_invalid_persisted_artifact_fails_before_ngfw_or_provider_work(monkeypat
     ngfw_ready.assert_not_called()
     dispatch.assert_not_called()
     cleanup.assert_not_called()
-    publish_failed.assert_called_once_with(
-        request_id="request-a",
+    update_status.assert_called_once_with(
         range_id=42,
-        user_id=7,
+        status="failed",
         error_message="Range-cell contract validation failed",
     )
 
@@ -285,7 +284,7 @@ def test_reloaded_gce_range_can_destroy_without_scenario_cidrs(monkeypatch):
     monkeypatch.setattr("terraform_ops._remove_ngfw_attachments_for_destroy", MagicMock())
     monkeypatch.setattr("terraform_ops._post_destroy_cleanup", MagicMock())
     monkeypatch.setattr("terraform_ops._maybe_pause_user_ngfw", MagicMock())
-    monkeypatch.setattr("terraform_ops.publish_destroyed", MagicMock())
+    monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
 
     with patch.dict("os.environ", {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gce"}, clear=True):
         run_range_terraform("destroy", "request-a")

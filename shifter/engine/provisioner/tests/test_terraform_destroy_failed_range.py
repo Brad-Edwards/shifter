@@ -20,16 +20,16 @@ def _install_destroy_fakes(monkeypatch, *, status="ready", variables=None):
     mock_get_data = MagicMock(return_value={"status": status})
     mock_tf_runner = MagicMock()
     mock_build_vars = MagicMock(return_value=variables or {})
-    mock_publish = MagicMock()
+    mock_update_status = MagicMock()
     mock_mark = MagicMock()
     monkeypatch.setattr("terraform_ops.get_range_data_by_request_id", mock_get_data)
     monkeypatch.setattr("terraform_ops.range_terraform_runner", mock_tf_runner)
     monkeypatch.setattr("terraform_ops.build_range_variables", mock_build_vars)
-    monkeypatch.setattr("terraform_ops.publish_destroyed", mock_publish)
+    monkeypatch.setattr("terraform_ops.update_range_status", mock_update_status)
     monkeypatch.setattr("range_subnet_allocation.mark_range_instances_destroyed", mock_mark)
     monkeypatch.setattr("terraform_ops.get_vpn_secret_ops", MagicMock())
     monkeypatch.setattr("terraform_ops.cleanup_openvpn_access", MagicMock())
-    return mock_get_data, mock_tf_runner, mock_build_vars, mock_publish, mock_mark
+    return mock_get_data, mock_tf_runner, mock_build_vars, mock_update_status, mock_mark
 
 
 class TestRunTerraformDestroySkipsOnlyDestroyed:
@@ -114,7 +114,7 @@ class TestAutoCleanupPassesVariables:
         )
         monkeypatch.setattr("terraform_ops.range_terraform_runner", mock_tf_runner)
         monkeypatch.setattr("terraform_ops.build_range_variables", mock_build_vars)
-        monkeypatch.setattr("terraform_ops.publish_failed", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
 
         with pytest.raises(RuntimeError, match="NGFW config failed"):
             run_range_terraform("up", "req-1")
@@ -150,7 +150,7 @@ class TestAutoCleanupPassesVariables:
             "terraform_ops.build_range_variables",
             MagicMock(side_effect=ValueError("NGFW missing")),
         )
-        monkeypatch.setattr("terraform_ops.publish_failed", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
 
         with pytest.raises(RuntimeError, match="provision failed"), caplog.at_level(logging.ERROR):
             run_range_terraform("up", "req-1")
@@ -177,7 +177,7 @@ class TestAutoCleanupPassesVariables:
         monkeypatch.setattr("terraform_ops.range_terraform_runner", mock_tf_runner)
         mock_destroy = MagicMock()
         monkeypatch.setattr("terraform_ops._run_terraform_destroy", mock_destroy)
-        monkeypatch.setattr("terraform_ops.publish_failed", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
         mock_destroy.side_effect = RuntimeError("destroy failed")
 
         with pytest.raises(RuntimeError, match="destroy failed"):
@@ -216,7 +216,7 @@ class TestRemoteAccessAdmission:
         )
         dispatch = MagicMock()
         monkeypatch.setattr("terraform_ops._dispatch_terraform_operation", dispatch)
-        monkeypatch.setattr("terraform_ops.publish_failed", MagicMock())
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
 
         with pytest.raises(CloudError, match="not configured"):
             run_range_terraform("up", "req-1")

@@ -27,15 +27,10 @@ from shared.remote_access import parse_openvpn_binding
 
 from config import has_ngfw_attachment_state
 from log_redact import safe_log_fingerprint
-
-# enqueue_event_outbox is called by the writers below and imported here so
-# events.py's provisioner_db.enqueue_event_outbox reference and the outbox tests
-# keep resolving after the append helpers moved to provisioner_db_appends.py.
 from provisioner_db_appends import (
     OperationRef,
     append_range_destroy_result,
     append_range_provision_result,
-    enqueue_event_outbox,
 )
 from state_helpers import (
     _build_instance_state,
@@ -131,18 +126,14 @@ def _append_kwarg_assignment(assignments: list[Any], values: list[Any], key: str
 def update_range_status(
     range_id: int,
     status: str,
-    outbox_event: dict | None = None,
     **kwargs: str | int | None,
 ) -> None:
     """Update range status in database.
 
     Args:
-        range_id:     Primary key of the Range.
-        status:       New status string.
-        outbox_event: Optional event dict to insert into the outbox atomically
-                      with the status update.  When provided, the INSERT and
-                      the UPDATE commit in the same transaction.
-        **kwargs:     Additional column=value pairs for the UPDATE SET clause.
+        range_id: Primary key of the Range.
+        status:   New status string.
+        **kwargs: Additional column=value pairs for the UPDATE SET clause.
     """
     logger.debug("update_range_status: range_id=%s status=%s kwargs=%s", range_id, status, list(kwargs.keys()))
     with get_db_connection() as conn:
@@ -161,9 +152,6 @@ def update_range_status(
             values.append(range_id)
             query = sql.SQL("UPDATE mission_control_range SET {} WHERE id = %s").format(sql.SQL(", ").join(assignments))
             cur.execute(query, values)
-
-            if outbox_event is not None:
-                enqueue_event_outbox(outbox_event, cur=cur)
         conn.commit()
 
 
@@ -238,7 +226,6 @@ def write_provisioned_state(
     instances: list[dict[str, Any]],
     ngfw_instance_id: int | None = None,
     vpn_access_binding: dict[str, object] | None = None,
-    outbox_event: dict | None = None,
     *,
     operation: OperationRef | None = None,
 ) -> None:
@@ -250,8 +237,6 @@ def write_provisioned_state(
         instances:       List of instance data dicts.
         ngfw_instance_id: FK to the NGFW Instance, if any.
         vpn_access_binding: Closed non-secret OpenVPN result, if supported.
-        outbox_event:    Optional event dict to insert into the outbox
-                         atomically with the state writes.
         operation:       ADR-043 operation identity for the shadow result append;
                          ``None`` (or a ref without an operation_id) skips it.
     """
@@ -290,9 +275,6 @@ def write_provisioned_state(
                 range_id,
                 len(provisioned_instances),
             )
-
-            if outbox_event is not None:
-                enqueue_event_outbox(outbox_event, cur=cur)
 
             append_range_provision_result(
                 cur,

@@ -70,6 +70,20 @@ def _install_cloud_secret_store(monkeypatch: pytest.MonkeyPatch, private_key: st
     return get_secret
 
 
+def test_operation_boundary_descriptions_distinguish_cutover_modes() -> None:
+    """Module guidance must distinguish authoritative and compatibility appends."""
+    import ngfw_terraform
+    import provisioner_db_appends
+
+    append_description = provisioner_db_appends.__doc__ or ""
+    ngfw_description = ngfw_terraform.__doc__ or ""
+
+    assert "every append here is best-effort" not in append_description
+    assert "authoritative" in append_description.lower()
+    assert "emits the same SNS events" not in ngfw_description
+    assert "operation result inbox" in ngfw_description.lower()
+
+
 def test_dc_setup_uses_agent_asset_helper(monkeypatch: pytest.MonkeyPatch) -> None:
     from instance_orchestrator import _setup_dc_instances_blocking
 

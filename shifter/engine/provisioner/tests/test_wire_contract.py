@@ -45,11 +45,12 @@ def _dict_get_literal_keys_in_functions(module_path: Path, function_names: froze
 
 
 class TestProvisionerEventsMatchesCyberscript:
-    def test_provisioner_reexports_event_types(self) -> None:
+    def test_provisioner_no_longer_reexports_publish_event_types(self) -> None:
+        """ADR-043 phase 7 (#1839): the provisioner no longer publishes range events."""
         import events as provisioner_events
 
         for name in event_types.__all__:
-            assert getattr(provisioner_events, name) == getattr(event_types, name)
+            assert not hasattr(provisioner_events, name), name
 
     def test_provisioner_status_aliases_match_resource_status(self) -> None:
         import events as provisioner_events
