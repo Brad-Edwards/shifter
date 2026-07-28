@@ -528,4 +528,9 @@ Exceptions are explicit and time-bounded:
 ]
 ```
 
-Expired exceptions fail `adr_guard`.
+Expired exceptions fail `adr_guard`, and they also stop suppressing: once
+`expires_on` has passed, the entry no longer covers its violations and those
+findings resurface on their own. An entry whose `expires_on` is missing or
+unparseable never suppresses anything, so a malformed date cannot buy
+open-ended cover. `expires_on` is inclusive: the exception is live through that
+date and dead the day after.
