@@ -60,7 +60,7 @@ missing required secret fails the deploy up front rather than mid-run.
 | `SMOKE_TEST_USER_EMAIL` | manual | no | Post-deploy smoke user. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | manual | no | Comma-separated emails elevated to Django `is_staff` on first sign-in. Shared across all environments including prod. |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | manual | no | Comma-separated emails elevated to `is_superuser`. Shared across all environments including prod. |
-| `SONAR_TOKEN` | manual | no | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. |
+| `SONAR_TOKEN` | manual | no | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. The project key and organization are not secrets and come from repository variables instead: see [SonarCloud project identity](#sonarcloud-project-identity). |
 | `AWS_IMAGE_ROLE_ARN_DEV` | manual (from global-IAM output) | no | OIDC role the `packer.yml` base-image `build` job assumes (issue #1656), separate from the deploy `AWS_ROLE_ARN_*`. Least-privilege: its trust is pinned to the `dev`/`main` subjects and its `iam:PassRole` is scoped to the exact range instance role. Not checked by the deploy preflight, but the base build fails closed without it. Prod is `AWS_IMAGE_ROLE_ARN` (base builds target dev/proof); proof is `AWS_IMAGE_ROLE_ARN_PROOF`. Set from `terraform output -raw github_actions_image_role_arn` in `platform/terraform/global/iam`. See the [AWS AMI seeding runbook](aws-ami-seeding-runbook.md). |
 
 "Populated by bootstrap" secrets are set once per account. "Populated by
@@ -71,6 +71,28 @@ variables → Actions** and are not written by either script.
 Proof range standup needs `TF_VARS_PROOF_RANGE` and `SHIFTER_CONFIG_PROOF_RANGE`
 as well, but `sync-deploy-secrets.sh` has no proof-range record yet, so set those
 two by hand (see [AWS range](#aws-range-dev--prod)).
+
+### SonarCloud project identity
+
+Two repository **variables**, not secrets, identify the SonarCloud project
+(ADR-003-R7). They are repository-wide, set once, and not written by either sync
+script:
+
+| Variable | Value | Notes |
+|---|---|---|
+| `SONAR_PROJECT_KEY` | `Brad-Edwards_shifter` | Carries the project's entire measure history and new-code baseline. The spelling and case must not change. A different key starts an empty project and loses the baseline. |
+| `SONAR_ORGANIZATION` | `brad-edwards` | SonarCloud organization owning the project. |
+
+The `SonarQube Cloud scan` step in `.github/workflows/_quality.yml` passes both to
+the scanner; the values are public, so they are safe on the command line while
+`SONAR_TOKEN` stays in the step's `env:`. Everything else the scan needs (sources,
+exclusions, suppressions, coverage report paths) is shared analysis configuration
+and stays committed in `sonar-project.properties`.
+
+The scan is gated on `github.repository`, deliberately **not** on these variables
+being set. A missing or renamed variable therefore fails the scanner and the job,
+rather than skipping the scan and quietly removing the SonarCloud quality gate
+from `PR Gate`. Workflows running in a fork skip the scan.
 
 ## Populating and syncing the secrets
 
