@@ -118,7 +118,13 @@ Current mechanisms:
   the version tag is absent, and Terraform resolves that tag to a digest.
 - `.github/dependabot.yml`: weekly dependency PRs across every uv,
   npm, github-actions, and pre-commit package root in the repo; every
-  block targets the `dev` integration branch.
+  block targets the `dev` integration branch. One block per package
+  root, and a block's directory must name a root that actually holds a
+  manifest; Dependabot silently ignores a block whose directory does
+  not exist, leaving that root unwatched. The SPA
+  (`shifter/shifter_platform/frontend`) is a separate npm root from
+  `shifter/shifter_platform` and carries its own block; the latter does
+  not reach it (#1880).
 - `.claude/hooks/adr_guard_hook.py`: Claude post-edit validation
 - `AGENTS.md`: Codex repo-local policy. Points at `.ground-control.yaml`
   and `.gc/plan-rules.md` for Ground Control workflow context
