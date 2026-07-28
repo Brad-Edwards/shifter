@@ -433,6 +433,7 @@ exclusions:
       - scripts/shifter-django-admin-tunnel.sh
       - scripts/smoke-test-windows.sh
       - scripts/smoke-test.sh
+      - scripts/smoke-test-gcp.sh
       - scripts/sync-deploy-secrets.sh
       - scripts/update-coverage-readme.py
 

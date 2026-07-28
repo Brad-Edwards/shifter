@@ -50,6 +50,8 @@ on:
       # fails loud when it is empty.
       SHIFTER_CONFIG_GCP_DEV:
         required: false
+      SMOKE_TEST_USER_EMAIL:
+        required: false
 
 permissions:
   contents: read
@@ -770,4 +772,119 @@ jobs:
             sleep 30
           done
           echo "::error::ManagedCertificate ${EDGE_CERT_NAME} is not Active for ${PUBLIC_HOSTNAME} after 60 minutes; check that DNS for ${PUBLIC_HOSTNAME} points at the ingress IP. Re-run with gcp_require_active_certificate=false only for first-time bootstrap."
+          exit 1
+
+  post-deploy-smoke:
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+    name: Post-deploy smoke (${{ inputs.environment }})
+    runs-on: gcp-dev
+    # Backstop only (see #1220).
+    timeout-minutes: 60
+    environment: ${{ inputs.github_environment }}
+    needs: deploy
+    if: |
+      inputs.deploy_changes &&
+      github.event_name != 'pull_request' &&
+      needs.deploy.result == 'success'
+    continue-on-error: true
+    env:
+      GCP_ENVIRONMENT: ${{ inputs.environment }}
+      USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
+      TF_DIR: platform/terraform/gcp/environments/${{ inputs.environment }}
+      TF_BACKEND_PREFIX: shifter/${{ inputs.environment }}/platform-core
+      SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Ensure GCP deploy auth is configured
+        run: |
+          if [ -z "${{ secrets.GCP_SERVICE_ACCOUNT }}" ] || [ -z "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ]; then
+            echo "::error::GCP_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured for gcp-dev deploys"
+            exit 1
+          fi
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+        with:
+          version: ">= 416.0.0"
+          install_components: gke-gcloud-auth-plugin
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
+        with:
+          version: v1.34.1
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: "1.7.1"
+      - name: Bootstrap Terraform backend metadata
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          if [ -z "${PROJECT_ID}" ]; then
+            echo "::error::Required secret GCP_PROJECT_ID is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          TF_STATE_BUCKET="${PROJECT_ID}-terraform-state"
+          {
+            echo "PROJECT_ID=${PROJECT_ID}"
+            echo "REGION=${REGION}"
+            echo "TF_STATE_BUCKET=${TF_STATE_BUCKET}"
+          } >> "$GITHUB_ENV"
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init \
+            -reconfigure \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="prefix=${TF_BACKEND_PREFIX}"
+      - name: Capture Terraform outputs
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform output -json > /tmp/gcp-terraform-outputs.json
+      - name: Configure kubectl for the GKE cluster
+        run: |
+          CLUSTER=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_name']['value'])")
+          LOCATION=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_location']['value'])")
+          gcloud container fleet memberships get-credentials "${CLUSTER}" \
+            --location "${LOCATION}" --project "${PROJECT_ID}"
+      - name: Run linux post-deploy smoke
+        id: smoke
+        continue-on-error: true
+        run: bash scripts/smoke-test-gcp.sh --variant linux
+
+      - name: Open smoke failure issue
+        if: steps.smoke.outcome == 'failure'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const title = `[smoke-test][${process.env.GCP_ENVIRONMENT}][linux] ${context.sha.slice(0, 12)}`;
+            const body = [
+              '## Post-deploy smoke test failed',
+              '',
+              `- Environment: \`${process.env.GCP_ENVIRONMENT}\``,
+              `- Provider: \`gcp\``,
+              `- Variant: \`linux\``,
+              `- Commit: \`${context.sha}\``,
+              `- Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'See the **Run linux post-deploy smoke** step logs for details.',
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['bug', 'smoke-test'],
+            });
+
+      - name: Fail smoke job after issue creation
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::warning::Post-deploy smoke failed; issue opened and deploy was not blocked (continue-on-error)."
           exit 1
