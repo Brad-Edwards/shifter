@@ -45,6 +45,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+class RaesRealizedAccessError(Exception):
+    """A realized access projection contradicts the immutable declaration (#1710).
+
+    A permanent contract violation, not a transient failure: the dispatcher
+    maps it to ``REJECTED_INVALID`` so the row is refused once rather than
+    retried forever against state that can never satisfy it.
+    """
+
+
 # Steps whose evidence is a runtime snapshot rather than an operation status.
 _SNAPSHOT_STEPS = frozenset({ResultStep.RAES_PROVISION_SNAPSHOT})
 
@@ -120,6 +130,92 @@ def _apply_observation(row: OperationResultInbox, step: ResultStep, payload: dic
     return _apply_lifecycle(range_obj, new_status, str(row.request_id))
 
 
+def _declared_access(range_obj: Range) -> set[tuple[str, str]]:
+    """Return this range's immutable ``(target_address, channel)`` declarations."""
+    from engine.models import RaesParticipantAccessBinding
+
+    return {(row.target_address, row.channel) for row in RaesParticipantAccessBinding.objects.filter(range=range_obj)}
+
+
+def _expected_member_endpoints(declared: set[tuple[str, str]]) -> set[tuple[str, str]]:
+    """Return the exact ``(member uuid, channel)`` pairs a realization may claim.
+
+    The provisioner-side join already refused any interactive target that does
+    not materialize exactly one instance, so the only member that may carry a
+    declared channel is that node's instance ``#0``. Naming the expected uuid
+    here -- rather than reducing a member back to its node address -- is what
+    stops a second instance (``node#1``), an invented suffix (``node#99``), or a
+    duplicated endpoint from satisfying the gate.
+    """
+    return {(f"{target}#0", channel) for target, channel in declared}
+
+
+def _realized_member_endpoints(members: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """Return every ``(member uuid, channel)`` the realization claims, with repeats."""
+    return [(str(member["uuid"]), channel) for member in members for channel in member["participant_access_channels"]]
+
+
+def _validated_member_endpoints(members: list[dict[str, Any]], range_obj: Range) -> None:
+    """Require the realized endpoints to be exactly the declared ones.
+
+    Equality is checked over member identity, not node address, and duplicates
+    are rejected before the comparison: a set alone would collapse two members
+    claiming the same channel into one pair and admit both.
+    """
+    realized = _realized_member_endpoints(members)
+    duplicates = sorted({endpoint for endpoint in realized if realized.count(endpoint) > 1})
+    if duplicates:
+        raise RaesRealizedAccessError(f"raes realized participant access repeats endpoint(s): {duplicates[:3]}")
+    if set(realized) != _expected_member_endpoints(_declared_access(range_obj)):
+        raise RaesRealizedAccessError("raes realized participant access does not match the declared binding")
+
+
+def _provisioned_instance(member: dict[str, Any]) -> dict[str, Any]:
+    """Project one realized member into the portal's instance record."""
+    return {
+        "uuid": member["uuid"],
+        "name": member["name"],
+        "asset_type": "gce_vm",
+        "role": "raes-node",
+        "os_type": member["os_type"],
+        "subnet_name": member["subnet_name"],
+        "instance_id": member["instance_id"],
+        "private_ip": member["private_ip"],
+        "participant_access_channels": list(member["participant_access_channels"]),
+        "participant_access_usernames": dict(member["participant_access_usernames"]),
+        "ssh_key_secret_arn": member.get("ssh_key_secret_arn", ""),
+        "rdp_password_secret_arn": member.get("rdp_password_secret_arn", ""),
+        "gcp_host_public_key": member.get("host_public_key", ""),
+        "cloud_provider": "gcp",
+    }
+
+
+def _apply_ready_with_realized_access(
+    row: OperationResultInbox,
+    payload: dict[str, Any],
+    range_obj: Range,
+) -> str:
+    """Persist this generation's realized access and transition READY atomically.
+
+    The projection travels in the terminal result itself (ADR-032-R10), so the
+    member state written here is always the one this operation generation
+    produced -- there is no window in which an earlier generation's persisted
+    state could satisfy the gate. Everything below commits in the caller's single
+    transaction: a validation failure rolls back the status change with it.
+    Only secret *references* are persisted; no credential value reaches this row.
+    """
+    members = payload["members"]
+    _validated_member_endpoints(members, range_obj)
+    range_obj.provisioned_instances = [_provisioned_instance(member) for member in members]
+    range_obj.save(update_fields=["provisioned_instances", "updated_at"])
+    logger.info(
+        "raes realized access applied: request_id=%s members=%d",
+        row.request_id,
+        len(members),
+    )
+    return _apply_observation(row, ResultStep.RAES_TERMINAL_READY, payload, range_obj)
+
+
 def apply_raes_result(
     row: OperationResultInbox,
     step: ResultStep,
@@ -144,5 +240,8 @@ def apply_raes_result(
         # reason code travels as its reason, never the bounded diagnostic.
         _persist_operation_status(row, RAES_STATE_FAILED, payload["reason_code"])
         return apply_failure(range_obj, payload, str(row.request_id), is_range=True)
+
+    if step is ResultStep.RAES_TERMINAL_READY:
+        return _apply_ready_with_realized_access(row, payload, range_obj)
 
     return _apply_observation(row, step, payload, range_obj)

@@ -45,6 +45,7 @@ def _payload(**overrides):
                 "binding_version": 1,
             }
         ],
+        "access_bindings": [],
         "image_candidates": {
             "gce:kali": [
                 {

@@ -19,7 +19,7 @@ private submodules by domain:
   ``_request.Instantiation``).
 - ``_outbox``: OutboxStatus, RangeEventOutbox.
 - ``_launch``: ProvisionerLaunchStatus, ProvisionerLaunchIntent.
-- ``_raes``: RaesImageMapping, RaesContentDeliveryBinding.
+- ``_raes``: RaesImageMapping, RaesContentDeliveryBinding, RaesParticipantAccessBinding.
 
 All models are re-exported here so Django's app registry discovers them via
 ``engine.models`` and callers keep using ``from engine.models import X``
@@ -36,7 +36,7 @@ from ._operation_io import (
     OperationResultKind,
 )
 from ._outbox import OutboxStatus, RangeEventOutbox
-from ._raes import RaesContentDeliveryBinding, RaesImageMapping
+from ._raes import RaesContentDeliveryBinding, RaesImageMapping, RaesParticipantAccessBinding
 from ._range import Range
 from ._request import App, Instance, Instantiation, Request
 from ._subnet import Subnet, SubnetAllocation
@@ -58,6 +58,7 @@ __all__ = [
     "ProvisionerLaunchStatus",
     "RaesContentDeliveryBinding",
     "RaesImageMapping",
+    "RaesParticipantAccessBinding",
     "Range",
     "RangeEventOutbox",
     "Request",

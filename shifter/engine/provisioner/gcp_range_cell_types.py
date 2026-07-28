@@ -78,6 +78,11 @@ class InstancePlan(TypedDict):
     host_ssh_username: str
     ssh_port: int
     participant_access_channels: list[str]
+    # Resolved per-channel participant login names (#1710). Non-secret
+    # realization metadata, kept per channel because an RAES scenario may broker
+    # SSH and RDP as different authored accounts; the cyberscript path leaves it
+    # empty and keeps using the instance-wide ``ssh_username``.
+    participant_access_usernames: NotRequired[dict[str, str]]
     attach_service_account: bool
 
 

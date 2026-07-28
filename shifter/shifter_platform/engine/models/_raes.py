@@ -144,3 +144,67 @@ class RaesContentDeliveryBinding(models.Model):
     def __str__(self) -> str:
         identity = self.content_address or f"{self.resource_type}:{self.resource_address}"
         return f"RaesContentDeliveryBinding({self.range_id}, {identity})"
+
+
+class RaesParticipantAccessBinding(models.Model):
+    """Immutable, non-secret participant-access identity beside a Range (#1710).
+
+    Mirrors ``shared.raes.participant_access.ParticipantAccessBinding``: one row
+    per authored ``(target, channel)`` the compiled scenario declared, carrying
+    only resolved compiled addresses and the closed channel. It is the
+    declaration of record the realized access binding is later compared against,
+    never authorization on its own.
+
+    No credential, credential reference, login name, address, port, or provider
+    identifier is ever persisted here (ADR-032-R10) -- the provisioner resolves
+    those from provisioning truth after joining this row to the separately
+    parsed plan. The Engine create seam (``engine.services.create_raes_range``)
+    is the sole writer; the provisioner never reads this table directly and
+    receives the rows only through the generation-fenced operation input.
+    """
+
+    range = models.ForeignKey(
+        "engine.Range",
+        on_delete=models.CASCADE,
+        related_name="participant_access_bindings",
+        help_text="Range this participant-access declaration is realized for.",
+    )
+    target_address = models.CharField(
+        max_length=500,
+        help_text="Compiled RAES provisioning node address the participant may reach.",
+    )
+    channel = models.CharField(
+        max_length=32,
+        help_text="Closed participant access channel (ssh/rdp).",
+    )
+    account_address = models.CharField(
+        max_length=500,
+        help_text="Compiled RAES account address the channel is brokered as.",
+    )
+    binding_version = models.PositiveIntegerField(
+        help_text="ParticipantAccessBinding schema version (rolling-deploy seam).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        """Table + uniqueness (one binding per range/target/channel)."""
+
+        db_table = "engine_raes_participant_access_binding"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["range", "target_address", "channel"],
+                name="unique_raes_participant_access_binding",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(binding_version=1)
+                    & ~models.Q(target_address="")
+                    & ~models.Q(account_address="")
+                    & models.Q(channel__in=["ssh", "rdp"])
+                ),
+                name="valid_raes_participant_access_binding_identity",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"RaesParticipantAccessBinding({self.range_id}, {self.target_address}/{self.channel})"

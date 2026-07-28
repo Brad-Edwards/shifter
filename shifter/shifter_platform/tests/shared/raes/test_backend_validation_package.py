@@ -24,7 +24,7 @@ _PACK_ROOT = _SDL_PATH.parents[1]
 class _Port:
     request_id = "req-validation-package"
 
-    def realize(self, compiled_plan: dict) -> ShifterDispatchResult:
+    def realize(self, compiled_plan: dict, participant_access=()) -> ShifterDispatchResult:
         return ShifterDispatchResult(
             request_id=self.request_id,
             accepted=True,

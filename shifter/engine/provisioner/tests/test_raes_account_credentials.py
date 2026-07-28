@@ -24,6 +24,9 @@ def _account(**overrides) -> RaesPlanAccount:
     values = {
         "username": "alice",
         "target_address": "node.web",
+        # The plan parser stamps the compiled resource address; credential
+        # references are returned keyed by it (#1710).
+        "address": "provision.account.alice",
         "auth_method": "password",
         "password_strength": "medium",
     }
@@ -91,7 +94,10 @@ def test_password_strategy_generates_by_strength_and_reuses_password_plan():
         secret_ops=ops,
     )
 
-    assert result is None
+    # The installed credential's secret reference is retained per compiled
+    # account address so participant access (#1710) can be brokered through the
+    # authored account instead of a parallel credential.
+    assert result == {"provision.account.alice": "projects/p/secrets/password"}
     calls.ensure_password.assert_called_once_with(7, "node.web#0", "alice", "strong")
     calls.ensure_public_key.assert_not_called()
     assert len(_Orchestrator.instances[0].calls) == 1
@@ -112,7 +118,7 @@ def test_public_key_strategy_uses_account_specific_plan():
         orchestrator_factory=_Orchestrator,
     )
 
-    install_instance_account_credentials(
+    result = install_instance_account_credentials(
         range_id=7,
         instance_key="node.web#0",
         platform="windows",
@@ -121,6 +127,9 @@ def test_public_key_strategy_uses_account_specific_plan():
         secret_ops=ops,
     )
 
+    # The publickey branch must retain its reference too (#1710); asserting it
+    # only on the password path would leave this assignment uncovered.
+    assert result == {"provision.account.alice": "projects/p/secrets/key"}
     calls.ensure_public_key.assert_called_once_with(7, "node.web#0", "alice")
     calls.ensure_password.assert_not_called()
     assert len(_Orchestrator.instances[0].calls) == 1

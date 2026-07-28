@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from raes_backend_protocols.capabilities import BackendManifest, ProvisionerCapabilities
@@ -48,6 +48,7 @@ from shared.raes.domain_topology import (
 )
 from shared.raes.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
 from shared.raes.network_family import network_address_family_diagnostics
+from shared.raes.participant_access import ParticipantAccessBinding
 
 __all__ = [
     "NETWORK_RESOURCE_TYPE",
@@ -391,6 +392,21 @@ class ShifterProvisioner:
 
     def __init__(self, port: ShifterProvisioningDispatchPort) -> None:
         self._port = port
+        self._participant_access: tuple[ParticipantAccessBinding, ...] = ()
+
+    def bind_participant_access(self, bindings: Sequence[ParticipantAccessBinding]) -> None:
+        """Bind the #1710 participant-access sidecar for the next ``apply``.
+
+        The sidecar is lowered from the compiled ``RuntimeModel``, which the
+        provisioner protocol's ``apply(plan, snapshot)`` never sees, so the
+        launch path (``package_loader.launch_raes_package``) binds it here after
+        planning and before applying. It rides beside the serialized plan and is
+        never merged into it (ADR-032-R10). The default of ``()`` keeps the
+        conformance fixture/probe suites -- which apply a plan directly -- working
+        unchanged, since a scenario authoring no interactive access is the common
+        case.
+        """
+        self._participant_access = tuple(bindings)
 
     @staticmethod
     def validate(plan: ProvisioningPlan) -> list[Diagnostic]:
@@ -406,7 +422,7 @@ class ShifterProvisioner:
 
         # Boundary: never leak a raw dispatch exception past apply.
         try:
-            result = self._port.realize(serialized)
+            result = self._port.realize(serialized, self._participant_access)
         except Exception as exc:
             failure = _diagnostic(
                 "shifter-provisioner.dispatch-failed", "plan", f"provisioning dispatch failed: {safe_log_value(exc)}"

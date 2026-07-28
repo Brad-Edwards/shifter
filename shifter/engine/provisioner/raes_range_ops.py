@@ -242,6 +242,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             _registry_resolver(operation_input),
             options=RaesGceApplyOptions(config=config),
             delivery_bindings=operation_input.binding_transport(),
+            access_bindings=operation_input.access_binding_transport(),
         )
         verified_addresses = apply_result.get("composition_verified_addresses")
         if not isinstance(verified_addresses, list) or not all(
@@ -249,13 +250,52 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
         ):
             raise RaesRealizationError("composition verification proof is invalid")
         resources = snapshot_resources(raes_plan, set(verified_addresses))
+        members = _realized_members(apply_result)
     except Exception as exc:
         reason_code, diagnostic = _classify_failure(exc, "raes range provision")
         logger.error("RAES range provision failed for request_id=%s", request_id)
         _report_failure(ref, operation, diagnostic, reason_code)
         raise
     _report(ref, operation, ResultStep.RAES_PROVISION_SNAPSHOT, {"resources": resources})
-    _report(ref, operation, ResultStep.RAES_TERMINAL_READY, {"raes_status": "succeeded"})
+    # The realized member/access projection rides the terminal result itself, so
+    # the Engine validates it and transitions READY in one transaction against
+    # this generation's own state (#1710, ADR-032-R10).
+    _report(ref, operation, ResultStep.RAES_TERMINAL_READY, {"raes_status": "succeeded", "members": members})
+
+
+def _realized_members(apply_result: dict[str, object]) -> list[dict[str, object]]:
+    """Project realized instances into the bounded member/access result (#1710).
+
+    Carries only what ``Range.provisioned_instances`` needs for the portal to
+    authorize and dial, and secret *references* only -- never a credential value,
+    the reserved management secret, or a raw provider response.
+    """
+    instances = apply_result.get("instances")
+    if not isinstance(instances, list):
+        raise RaesRealizationError("realized instance outputs are invalid")
+    members: list[dict[str, object]] = []
+    for instance in instances:
+        if not isinstance(instance, dict):
+            raise RaesRealizationError("realized instance outputs are invalid")
+        channels = list(instance.get("participant_access_channels") or [])
+        member: dict[str, object] = {
+            "uuid": str(instance.get("uuid", "")),
+            "name": str(instance.get("name", "")),
+            "os_type": str(instance.get("os", "")),
+            "private_ip": str(instance.get("private_ip", "")),
+            "instance_id": str(instance.get("instance_id", "")),
+            "subnet_name": str(instance.get("subnet_name", "")),
+            "participant_access_channels": channels,
+            "participant_access_usernames": dict(instance.get("participant_access_usernames") or {}),
+        }
+        host_public_key = str(instance.get("gcp_host_public_key", ""))
+        if host_public_key:
+            member["host_public_key"] = host_public_key
+        for channel, key in (("ssh", "ssh_key_secret_arn"), ("rdp", "rdp_password_secret_arn")):
+            if channel in channels:
+                member[key] = str(instance.get(key, ""))
+        members.append(member)
+    return members
 
 
 def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) -> None:

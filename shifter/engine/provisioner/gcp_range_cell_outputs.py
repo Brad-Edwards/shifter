@@ -70,6 +70,14 @@ def instance_output(
         "gcp_bootstrap_capability": instance["profile"].bootstrap_capability,
         "gcp_service_account_email": config.service_account_email if instance["attach_service_account"] else "",
     }
+    # Resolved per-channel participant logins (#1710). Emitted only on the
+    # RAES-native path, where SSH and RDP may be brokered as different authored
+    # accounts and the instance-wide ssh_username is the reserved management
+    # user. The key is omitted entirely elsewhere, so the cyberscript/AWS output
+    # contract and its single-seat behaviour are unchanged.
+    access_usernames = instance.get("participant_access_usernames") or {}
+    if access_usernames:
+        output["participant_access_usernames"] = dict(access_usernames)
     if credentials.rdp_password_secret_ref:
         output["gcp_bootstrap_rdp_password_secret_ref"] = credentials.rdp_password_secret_ref
         if "rdp" in instance["participant_access_channels"]:

@@ -227,7 +227,14 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
     captured = {}
 
     def fake_create_raes_range(
-        *, request_id, user_id, compiled_plan, backend_admission=None, delivery_bindings=(), workspace_id=None
+        *,
+        request_id,
+        user_id,
+        compiled_plan,
+        backend_admission=None,
+        delivery_bindings=(),
+        participant_access=(),
+        workspace_id=None,
     ):
         captured["kind"] = compiled_plan.get("kind")
         captured["request_id"] = request_id
@@ -332,7 +339,14 @@ class TestObjectPackageLaunch:
         captured = {}
 
         def fake_create_raes_range(
-            *, request_id, user_id, compiled_plan, backend_admission=None, delivery_bindings=(), workspace_id=None
+            *,
+            request_id,
+            user_id,
+            compiled_plan,
+            backend_admission=None,
+            delivery_bindings=(),
+            participant_access=(),
+            workspace_id=None,
         ):
             captured["kind"] = compiled_plan.get("kind")
             return RaesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")

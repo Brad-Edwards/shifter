@@ -29,7 +29,7 @@ class RecordingPort:
 
     plans: list[dict] = field(default_factory=list)
 
-    def realize(self, compiled_plan: dict) -> ShifterDispatchResult:
+    def realize(self, compiled_plan: dict, participant_access=()) -> ShifterDispatchResult:
         self.plans.append(compiled_plan)
         return ShifterDispatchResult(
             request_id="11111111-1111-1111-1111-111111111111",

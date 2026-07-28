@@ -59,7 +59,7 @@ class _Port:
 
     request_id = "req-e2e-content"
 
-    def realize(self, compiled_plan: dict) -> ShifterDispatchResult:
+    def realize(self, compiled_plan: dict, participant_access=()) -> ShifterDispatchResult:
         return ShifterDispatchResult(request_id=self.request_id, accepted=True, status="accepted", range_id="r1")
 
 
