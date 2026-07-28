@@ -134,6 +134,11 @@
         "checks": [
           "deploy-workflow-runner-exposure"
         ]
+      },
+      {
+        "id": "ADR-003-R7",
+        "description": "SonarCloud scanner identity is repository deployment configuration, not shared source-analysis configuration. The SonarQube Cloud scan step in `.github/workflows/_quality.yml` consumes the project key and organization from the non-secret `SONAR_PROJECT_KEY` and `SONAR_ORGANIZATION` repository variables; `sonar-project.properties` retains shared sources, exclusions, report paths, suppressions, encoding, version, and file-header policy but no `sonar.projectKey`, `sonar.organization`, or `sonar.projectName`. The scan attempt is gated on the canonical `github.repository`, never on either variable being present, so missing or renamed variables fail the scanner loudly on `Brad-Edwards/shifter` while workflows running in forks skip deliberately. The existing `SONAR_TOKEN` reusable-workflow secret boundary, pull-request `sonar.qualitygate.wait=true`, path/coverage routing, and action SHA pinning remain unchanged. Repository-variable activation and readback are part of the same delivery as the workflow change. The `.ground-control.yaml` `sonarcloud` block remains Ground Control integration metadata and is not a scanner runtime input or an alternative source for workflow arguments.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -143,6 +148,9 @@
     "evidence": [
       ".github/workflows/_quality.yml",
       ".github/workflows/deploy.yml",
+      ".ground-control.yaml",
+      ".gc/plan-rules.md",
+      "sonar-project.properties",
       ".github/workflows/_core.yml",
       ".github/workflows/_range.yml",
       ".github/workflows/_shifter-engine.yml",

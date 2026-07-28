@@ -2334,16 +2334,27 @@ jobs:
           java-version: '21'
 
       - name: SonarQube Cloud scan
+        # Gated on repository identity, NOT on the variables below being set
+        # (ADR-003-R7). `vars.SONAR_PROJECT_KEY != ''` would look equivalent but
+        # makes a renamed or deleted variable skip the scan silently, taking the
+        # SonarCloud quality gate out of PR Gate with everything still green. The
+        # canonical repository therefore always attempts the scan and fails loud
+        # on misconfiguration; workflows running in a fork skip deliberately.
+        if: ${{ github.repository == 'Brad-Edwards/shifter' }}
         uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          # Project key, org, sources, exclusions, and coverage report
-          # paths come from the repo-root sonar-project.properties. On
-          # pull requests, wait for the SonarCloud quality gate so a
-          # failing new-code gate fails this job (and, via the Quality
-          # caller, the PR Gate check). Branch runs (push to dev) upload
-          # analysis without blocking on pre-existing debt.
+          # Project key and organization are repository configuration, supplied
+          # from non-secret repository variables (the analysis token stays in
+          # env: and never reaches argv). Sources, exclusions, suppressions, and
+          # coverage report paths remain shared analysis configuration in the
+          # repo-root sonar-project.properties. On pull requests, wait for the
+          # SonarCloud quality gate so a failing new-code gate fails this job
+          # (and, via the Quality caller, the PR Gate check). Branch runs (push
+          # to dev) upload analysis without blocking on pre-existing debt.
           args: >-
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.scanner.skipJreProvisioning=true
             ${{ github.event_name == 'pull_request' && '-Dsonar.qualitygate.wait=true' || '' }}
