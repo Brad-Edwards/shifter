@@ -29,6 +29,7 @@ from shared.raes.status import RAES_OPERATION_STATES, RAES_STATE_SUCCEEDED
 __all__ = [
     "MAX_DIAGNOSTIC_CHARS",
     "MAX_INSTANCE_OUTCOMES",
+    "MAX_RAES_MEMBERS",
     "MAX_SNAPSHOT_RESOURCES",
     "NGFW_STATE_KEYS",
     "PARSERS",
@@ -40,6 +41,7 @@ __all__ = [
     "failure",
     "progress",
     "raes_progress",
+    "raes_ready",
     "raes_snapshot",
     "raes_success",
     "success",
@@ -55,6 +57,7 @@ class Shape(StrEnum):
     FAILURE = "failure"
     RAES_OPERATION = "raes_operation"
     RAES_SNAPSHOT = "raes_snapshot"
+    RAES_READY = "raes_ready"
 
 
 # Result kinds mirror ``engine.models.OperationResultKind`` without importing
@@ -80,6 +83,28 @@ MAX_SNAPSHOT_RESOURCES = 512
 # detail, which is what makes the snapshot safe for the redacted sidecar; an IP,
 # hostname, or provider id appearing here would defeat that.
 SNAPSHOT_ENTRY_KEYS = frozenset({"address", "resource_type", "status"})
+
+# The realized member/access projection an RAES provision returns so the portal
+# has something to authorize and dial (#1710). Bounded and flat: exactly the
+# fields ``Range.provisioned_instances`` needs, and secret *references* only --
+# never a credential value, signed URL, or raw provider response.
+MAX_RAES_MEMBERS = 256
+RAES_MEMBER_REQUIRED_KEYS = frozenset(
+    {
+        "uuid",
+        "name",
+        "os_type",
+        "private_ip",
+        "instance_id",
+        "subnet_name",
+        "participant_access_channels",
+        "participant_access_usernames",
+    }
+)
+RAES_MEMBER_OPTIONAL_KEYS = frozenset({"ssh_key_secret_arn", "rdp_password_secret_arn", "host_public_key"})
+#: Mirrors ``shared.raes.participant_access.SUPPORTED_ACCESS_CHANNELS`` without
+#: importing it, keeping this transport module dependency-light.
+RAES_MEMBER_CHANNELS = frozenset({"ssh", "rdp"})
 
 # Closed failure vocabulary. An authored code, never an exception string.
 REASON_CODES = frozenset(
@@ -155,6 +180,25 @@ def raes_success(rank: int, status: ResourceStatus) -> StepSpec:
         rank=rank,
         result_kind=_TERMINAL_SUCCESS,
         shape=Shape.RAES_OPERATION,
+        status=status,
+        terminal=True,
+        raes_state=RAES_STATE_SUCCEEDED,
+    )
+
+
+def raes_ready(rank: int, status: ResourceStatus) -> StepSpec:
+    """Declare the RAES terminal-success step that carries realized access.
+
+    The realized member/access projection travels *in* this generation's
+    terminal result rather than a separate pre-terminal one (ADR-032-R10), so
+    the applier validates it, persists it, audits, and transitions READY in a
+    single transaction. Splitting them would drop the generation association at
+    persistence, letting stale state satisfy the gate.
+    """
+    return StepSpec(
+        rank=rank,
+        result_kind=_TERMINAL_SUCCESS,
+        shape=Shape.RAES_READY,
         status=status,
         terminal=True,
         raes_state=RAES_STATE_SUCCEEDED,
@@ -333,6 +377,110 @@ def _parse_raes_snapshot(payload: dict[str, Any], _spec_unused: StepSpec) -> dic
     return {"resources": resources}
 
 
+def _member_identity(entry: dict[str, Any], field: str) -> dict[str, Any]:
+    """Return the member's flat, non-empty string identity fields."""
+    identity: dict[str, Any] = {}
+    for key in sorted(RAES_MEMBER_REQUIRED_KEYS - {"participant_access_channels", "participant_access_usernames"}):
+        value = entry[key]
+        if not isinstance(value, str) or not value:
+            raise OperationResultError(f"{field} {key} must be a non-empty string")
+        identity[key] = value
+    return identity
+
+
+def _member_channels(entry: dict[str, Any], field: str) -> list[str]:
+    """Return the member's declared channels, closed on the supported vocabulary."""
+    channels = entry["participant_access_channels"]
+    if not isinstance(channels, list) or not all(isinstance(item, str) for item in channels):
+        raise OperationResultError(f"{field} participant_access_channels must be a list of strings")
+    if len(set(channels)) != len(channels):
+        raise OperationResultError(f"{field} participant_access_channels contains a duplicate")
+    unknown = sorted(set(channels) - RAES_MEMBER_CHANNELS)
+    if unknown:
+        raise OperationResultError(f"{field} declares unsupported channel(s): {', '.join(unknown)}")
+    return list(channels)
+
+
+def _member_usernames(entry: dict[str, Any], channels: list[str], field: str) -> dict[str, str]:
+    """Return the per-channel logins, requiring exactly one per declared channel."""
+    usernames = entry["participant_access_usernames"]
+    if not isinstance(usernames, dict):
+        raise OperationResultError(f"{field} participant_access_usernames must be an object")
+    if sorted(usernames) != sorted(channels):
+        raise OperationResultError(f"{field} participant_access_usernames must name exactly the declared channels")
+    for channel, username in usernames.items():
+        if not isinstance(username, str) or not username:
+            raise OperationResultError(f"{field} participant_access_usernames['{channel}'] must be a non-empty string")
+    return dict(usernames)
+
+
+def _member_credential_refs(entry: dict[str, Any], channels: list[str], field: str) -> dict[str, Any]:
+    """Return the optional secret *references*, one per declared channel.
+
+    A declared channel with no credential reference is an unrealized endpoint,
+    not a credential-less one: the portal would resolve nothing at dial time.
+    """
+    refs: dict[str, Any] = {}
+    for key in sorted(RAES_MEMBER_OPTIONAL_KEYS):
+        if key not in entry:
+            continue
+        value = entry[key]
+        if not isinstance(value, str):
+            raise OperationResultError(f"{field} {key} must be a string")
+        refs[key] = value
+    for channel, key in (("ssh", "ssh_key_secret_arn"), ("rdp", "rdp_password_secret_arn")):
+        if channel in channels and not refs.get(key):
+            raise OperationResultError(f"{field} declares {channel} without a {key} reference")
+    return refs
+
+
+def _parse_raes_member(entry: dict[str, Any], field: str) -> dict[str, Any]:
+    """Parse one realized member, failing closed on shape or channel tamper."""
+    unexpected = sorted(frozenset(entry) - (RAES_MEMBER_REQUIRED_KEYS | RAES_MEMBER_OPTIONAL_KEYS))
+    if unexpected:
+        raise OperationResultError(f"{field} has unexpected field(s): {', '.join(unexpected)}")
+    missing = sorted(RAES_MEMBER_REQUIRED_KEYS - frozenset(entry))
+    if missing:
+        raise OperationResultError(f"{field} is missing field(s): {', '.join(missing)}")
+
+    channels = _member_channels(entry, field)
+    return {
+        **_member_identity(entry, field),
+        "participant_access_channels": channels,
+        "participant_access_usernames": _member_usernames(entry, channels, field),
+        **_member_credential_refs(entry, channels, field),
+    }
+
+
+def _parse_raes_ready(payload: dict[str, Any], spec: StepSpec) -> dict[str, Any]:
+    """Parse an RAES terminal-ready result plus its realized access projection."""
+    required = frozenset({"raes_status", "members"})
+    unexpected = sorted(frozenset(payload) - (required | {"status_reason"}))
+    if unexpected:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} has unexpected field(s): {', '.join(unexpected)}")
+    missing = sorted(required - frozenset(payload))
+    if missing:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} is missing field(s): {', '.join(missing)}")
+
+    operation = _parse_raes_operation(
+        {key: payload[key] for key in payload if key != "members"},
+        spec,
+    )
+    raw = payload["members"]
+    if not isinstance(raw, list):
+        raise OperationResultError(f"{_PAYLOAD_FIELD} members must be a list")
+    if len(raw) > MAX_RAES_MEMBERS:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} carries more than {MAX_RAES_MEMBERS} members")
+    members = []
+    for index, item in enumerate(raw):
+        field = f"{_PAYLOAD_FIELD} members[{index}]"
+        members.append(_parse_raes_member(_require_dict(item, field), field))
+    identities = [member["uuid"] for member in members]
+    if len(set(identities)) != len(identities):
+        raise OperationResultError(f"{_PAYLOAD_FIELD} members contains a duplicate uuid")
+    return {**operation, "members": members}
+
+
 PARSERS = {
     Shape.INSTANCES: _parse_instances,
     Shape.NGFW: _parse_ngfw,
@@ -340,4 +488,5 @@ PARSERS = {
     Shape.FAILURE: _parse_failure,
     Shape.RAES_OPERATION: _parse_raes_operation,
     Shape.RAES_SNAPSHOT: _parse_raes_snapshot,
+    Shape.RAES_READY: _parse_raes_ready,
 }

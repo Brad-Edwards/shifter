@@ -19,6 +19,7 @@ import json
 from engine.models import Instance, Range, Request
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import build_raes_operation_input, candidate_key, plan_image_lookup_keys
+from shared.raes.participant_access import ParticipantAccessBinding
 
 __all__ = ["operation_input_payload"]
 
@@ -121,6 +122,21 @@ def _raes_delivery_bindings(target: Range) -> list[DeliveryBinding]:
     return bindings
 
 
+def _raes_access_bindings(target: Range) -> list[ParticipantAccessBinding]:
+    """Rebuild this range's non-secret participant-access declarations (#1710)."""
+    from engine.models import RaesParticipantAccessBinding
+
+    return [
+        ParticipantAccessBinding(
+            target_address=row.target_address,
+            channel=row.channel,
+            account_address=row.account_address,
+            binding_version=row.binding_version,
+        )
+        for row in RaesParticipantAccessBinding.objects.filter(range=target).order_by("pk")
+    ]
+
+
 def _raes_input_payload(target: Range, request: Request) -> dict[str, object]:
     """Compose the RAES operation input (ADR-043 phase 5, #1837).
 
@@ -132,6 +148,7 @@ def _raes_input_payload(target: Range, request: Request) -> dict[str, object]:
     return build_raes_operation_input(
         plan=plan,
         delivery_bindings=_raes_delivery_bindings(target),
+        access_bindings=_raes_access_bindings(target),
         image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),
         instantiation_purpose=target.instantiation_purpose or None,

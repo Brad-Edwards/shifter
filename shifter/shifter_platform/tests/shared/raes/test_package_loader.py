@@ -10,6 +10,7 @@ gate passes).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,7 +38,7 @@ class _RecordingPort:
     accepted: bool = True
     plans: list = field(default_factory=list)
 
-    def realize(self, compiled_plan) -> ShifterDispatchResult:
+    def realize(self, compiled_plan, participant_access=()) -> ShifterDispatchResult:
         self.plans.append(compiled_plan)
         return ShifterDispatchResult(
             request_id=self.request_id,
@@ -120,3 +121,61 @@ def test_launch_raes_package_bad_sdl_raises_sanitized(tmp_path):
     recording_port = _RecordingPort()
     with pytest.raises(RaesPackageError):
         launch_raes_package(scenario_path=bad, port=recording_port)
+
+
+@dataclass
+class _AccessRecordingPort:
+    """Recording port that captures the #1710 participant-access sidecar."""
+
+    request_id: str = "req-launch-access"
+    accepted: bool = True
+    seen: list = field(default_factory=list)
+
+    def realize(self, compiled_plan, participant_access=()) -> ShifterDispatchResult:
+        self.seen.append(tuple(participant_access))
+        return ShifterDispatchResult(
+            request_id=self.request_id, accepted=True, status="accepted", range_id="rng-access"
+        )
+
+
+def test_launch_projects_authored_interactive_access_beside_the_plan():
+    """The compiled participant declaration reaches dispatch as a bounded sidecar."""
+    port = _AccessRecordingPort()
+    result = launch_raes_package(scenario_path=_FIXTURES / "shifter-launch-access.sdl.yaml", port=port)
+
+    assert result.accepted is True
+    (bindings,) = port.seen
+    assert len(bindings) == 1
+    binding = bindings[0]
+    assert binding.channel == "ssh"
+    assert binding.target_address.endswith("web")
+    assert binding.account_address.endswith("analyst")
+
+
+def test_launch_keeps_participant_access_out_of_the_serialized_plan():
+    """ADR-032-R10: participant intent rides beside the plan, never inside it."""
+    port = _AccessRecordingPort()
+    launch_raes_package(scenario_path=_FIXTURES / "shifter-launch-access.sdl.yaml", port=port)
+
+    port_with_plan = _RecordingPort()
+    launch_raes_package(scenario_path=_FIXTURES / "shifter-launch-access.sdl.yaml", port=port_with_plan)
+    serialized = port_with_plan.plans[0]
+    assert "interactive_access" not in json.dumps(serialized)
+
+
+def test_launch_without_authored_access_projects_an_empty_sidecar():
+    port = _AccessRecordingPort()
+    launch_raes_package(scenario_path=_FIXTURES / _MINIMAL, port=port)
+    assert port.seen == [()]
+
+
+def test_launch_rejects_ambiguous_participant_access_before_dispatch():
+    """Divergent participant policies must fail closed, never be unioned."""
+    port = _AccessRecordingPort()
+    result = launch_raes_package(scenario_path=_FIXTURES / "shifter-launch-access-ambiguous.sdl.yaml", port=port)
+
+    assert result.accepted is False
+    assert result.status == "rejected"
+    assert any("participant-access-unrealizable" in diagnostic for diagnostic in result.diagnostics)
+    # Nothing was dispatched: no range row or cloud resource exists for it.
+    assert port.seen == []

@@ -344,7 +344,7 @@ class _ConformanceProbeDispatchPort:
 
     request_id = "00000000-0000-0000-0000-0000000000ab"
 
-    def realize(self, compiled_plan) -> ShifterDispatchResult:
+    def realize(self, compiled_plan, participant_access=()) -> ShifterDispatchResult:
         return ShifterDispatchResult(request_id=self.request_id, accepted=True, status="accepted")
 
 

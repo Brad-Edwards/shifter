@@ -43,6 +43,7 @@ from gcp_range_cells import (
     _ensure_subnetwork,
     _host_public_key_from_instance,
 )
+from raes_access import RealizedAccessBinding, join_participant_access
 from raes_account_credentials import (
     RaesAccountCredentialOps,
     default_account_credential_ops,
@@ -80,7 +81,7 @@ class RaesGceApplyOptions:
     clients: GCEClients | None = None
     secret_ops: RaesGceSecretOps | None = None
     account_secret_ops: RaesAccountCredentialOps | None = None
-    credential_installer: Callable[..., None] = install_instance_account_credentials
+    credential_installer: Callable[..., dict[str, str]] = install_instance_account_credentials
     directory_secret_ops: RaesDirectorySecretOps | None = None
     directory_realizer: Callable[..., None] = realize_raes_active_directory
     content_delivery_realizer: Callable[..., None] = realize_raes_content_delivery
@@ -95,7 +96,7 @@ class _RaesGceApplyRuntime:
     clients: GCEClients
     secret_ops: RaesGceSecretOps
     account_secret_ops: RaesAccountCredentialOps
-    credential_installer: Callable[..., None]
+    credential_installer: Callable[..., dict[str, str]]
     directory_secret_ops: RaesDirectorySecretOps
     directory_realizer: Callable[..., None]
     content_delivery_realizer: Callable[..., None]
@@ -203,8 +204,14 @@ def _provision_raes_resources(
     runtime: _RaesGceApplyRuntime,
     bootstrap_by_node: dict[str, str],
     accounts_by_node: dict[str, tuple[RaesPlanAccount, ...]],
+    access_by_node: dict[str, tuple[RealizedAccessBinding, ...]],
 ) -> list[ResourceDict]:
-    """Create the network, subnets, firewalls, and instances for an RAES range."""
+    """Create the network, subnets, firewalls, and instances for an RAES range.
+
+    Participant credential references are published (#1710) only *after* the
+    authored account credential installed and verified on the guest, so a
+    declared endpoint never appears with a credential that was never realized.
+    """
     if plan["manage_network"]:
         _ensure_network(plan, runtime.clients)
     for subnet in plan["subnets"]:
@@ -234,18 +241,57 @@ def _provision_raes_resources(
             ),
             runtime.config,
         )
-        accounts = accounts_by_node.get(_node_address_of(instance), ())
+        node_address = _node_address_of(instance)
+        accounts = accounts_by_node.get(node_address, ())
+        account_secret_refs: dict[str, str] = {}
         if accounts:
-            runtime.credential_installer(
-                range_id=plan["range_id"],
-                instance_key=instance["uuid"],
-                platform=instance["os_type"],
-                instance_output=output,
-                accounts=accounts,
-                secret_ops=runtime.account_secret_ops,
+            account_secret_refs = (
+                runtime.credential_installer(
+                    range_id=plan["range_id"],
+                    instance_key=instance["uuid"],
+                    platform=instance["os_type"],
+                    instance_output=output,
+                    accounts=accounts,
+                    secret_ops=runtime.account_secret_ops,
+                )
+                or {}
             )
+        _publish_participant_access(output, access_by_node.get(node_address, ()), account_secret_refs)
         instance_outputs.append(output)
     return instance_outputs
+
+
+def _publish_participant_access(
+    output: ResourceDict,
+    access_bindings: tuple[RealizedAccessBinding, ...],
+    account_secret_refs: dict[str, str],
+) -> None:
+    """Attach the participant credential reference for each declared channel.
+
+    The reference is the one the account realizer already minted and verified for
+    the authored account; the reserved provisioner-management SSH secret is never
+    brokered. A declared channel whose account produced no verified reference is
+    a failed realization, not a silently credential-less endpoint.
+    """
+    for binding in access_bindings:
+        secret_ref = account_secret_refs.get(binding.account_address, "")
+        if not secret_ref:
+            raise RaesGcePlanError(
+                "declared participant access has no verified account credential: "
+                f"{binding.target_address}/{binding.channel}"
+            )
+        field = "ssh_key_secret_arn" if binding.channel == "ssh" else "rdp_password_secret_arn"
+        output[field] = secret_ref
+
+
+def _access_by_node(
+    access_bindings: tuple[RealizedAccessBinding, ...],
+) -> dict[str, tuple[RealizedAccessBinding, ...]]:
+    """Group joined participant access by target node address."""
+    grouped: dict[str, list[RealizedAccessBinding]] = {}
+    for binding in access_bindings:
+        grouped.setdefault(binding.target_address, []).append(binding)
+    return {address: tuple(bindings) for address, bindings in grouped.items()}
 
 
 def _bootstrap_by_node(raes_plan: RaesPlan) -> dict[str, str]:
@@ -335,14 +381,20 @@ def apply_raes_range_cell(
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
     options: RaesGceApplyOptions | None = None,
     delivery_bindings: list[dict[str, Any]] | None = None,
+    access_bindings: list[dict[str, Any]] | None = None,
 ) -> ResourceDict:
     """Provision an RAES GCE range cell and return provisioner outputs.
 
     ``delivery_bindings`` are the byte-free #1564 delivery bindings for the
     range, carried on the immutable operation-input projection (#1837);
     ``None``/empty is the common case of a plan with no source-backed content.
+
+    ``access_bindings`` are the #1710 participant-access sidecar rows from the
+    same projection. They are joined to the parsed plan -- and every unrealizable
+    declaration rejected -- before any cloud or secret mutation.
     """
     runtime = _apply_runtime(options or RaesGceApplyOptions())
+    realized_access = join_participant_access(access_bindings or (), raes_plan)
     _assert_composition_targets_resolve(raes_plan)
     _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
     assert_composition_is_verifiable(raes_plan)
@@ -353,13 +405,14 @@ def apply_raes_range_cell(
     }
     # Build and size-check the complete sanitized evidence shape before cloud mutation.
     snapshot_resources(raes_plan, expected_composition)
-    plan = build_raes_range_cell_plan(request_uuid, range_id, raes_plan, resolve_image, runtime.config)
+    plan = build_raes_range_cell_plan(request_uuid, range_id, raes_plan, resolve_image, runtime.config, realized_access)
     try:
         instance_outputs = _provision_raes_resources(
             plan,
             runtime,
             _bootstrap_by_node(raes_plan),
             _accounts_by_node(raes_plan),
+            _access_by_node(realized_access),
         )
         verified = set(_realize_directory(plan, raes_plan, instance_outputs, runtime))
         verified.update(_realize_content_delivery(raes_plan, instance_outputs, delivery_bindings, runtime))

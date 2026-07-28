@@ -110,7 +110,7 @@ class TestProvisionLifecycle:
 
     def test_terminal_success_moves_the_range_to_ready_and_notifies(self):
         fx = _Fixture(status=ResourceStatus.PROVISIONING.value)
-        row = fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED})
+        row = fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED, "members": []})
 
         apply_pending_operation_results()
 
@@ -236,7 +236,7 @@ class TestFencingAndOwnership:
 
     def test_late_progress_after_a_terminal_is_refused(self):
         fx = _Fixture(status=ResourceStatus.PROVISIONING.value)
-        fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED})
+        fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED, "members": []})
         apply_pending_operation_results()
 
         late = fx.seed(ResultStep.RAES_PROVISION_RUNNING, {"raes_status": RAES_STATE_RUNNING})
@@ -261,7 +261,7 @@ class TestTransactionIntegrity:
         # ADR-043-R3: the audit row is the control, so best-effort auditing is
         # not sufficient. A failed audit must leave nothing half-applied.
         fx = _Fixture(status=ResourceStatus.PROVISIONING.value)
-        row = fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED})
+        row = fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED, "members": []})
 
         class _FailingAuditWriter:
             def write(self, event) -> None:
@@ -286,7 +286,7 @@ class TestTransactionIntegrity:
 
     def test_replaying_a_terminal_result_is_idempotent(self):
         fx = _Fixture(status=ResourceStatus.PROVISIONING.value)
-        fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED})
+        fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED, "members": []})
         apply_pending_operation_results()
         first_events = RangeEventOutbox.objects.count()
 
