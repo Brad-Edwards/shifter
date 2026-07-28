@@ -7,18 +7,18 @@ the product boundary against a positively selected, known-up example range on a
 deployed tenant.
 
 On demand only. It is not in `deploy.yml`, gates no deploy, and takes no cloud
-role — the participant session is the only authority it acts with.
+role—the participant session is the only authority it acts with.
 
 ## Why it exists
 
 | Existing check | Live range | Terminal + Guacamole |
 | --- | --- | --- |
 | Built-image stack smoke (`scripts/stack-smoke/`, #922) | no | no, explicitly out of scope |
-| Post-deploy range smoke (`cms.post_deploy_smoke`, #218) | yes | no — TCP reachability only |
+| Post-deploy range smoke (`cms.post_deploy_smoke`, #218) | yes | no—TCP reachability only |
 | **This** | yes | yes |
 
-The June 2026 failures that reached users — terminal SSH wiring, Guacamole
-bootstrap — sit precisely in that gap. A TCP probe to ports 22 and 3389 cannot
+The June 2026 failures that reached users—terminal SSH wiring, Guacamole
+bootstrap—sit precisely in that gap. A TCP probe to ports 22 and 3389 cannot
 see them.
 
 ## What counts as a pass
@@ -32,20 +32,20 @@ errored check is never a pass.
 | `target_selected` | the authored logical role resolves to an instance the portal offers a terminal for |
 | `terminal_socket_open` | the routed consumer accepted the socket |
 | `terminal_nonce_exchange` | **input produced matching output from the guest's own shell** |
-| `guacamole_bootstrap_accepted` | HTTP 202 — queue admission only |
+| `guacamole_bootstrap_accepted` | HTTP 202—queue admission only |
 | `guacamole_bootstrap_succeeded` | a signed URL was minted |
 | `guacamole_url_delivered` | the one-time URL was consumed by this client |
 | `guacamole_session_connected` | **guacd completed the handshake and opened the session** |
 
 The two bold rows are the ones that mean the product works. Bootstrap success
-proves only that the server minted a credential — accepting it as "Guacamole
+proves only that the server minted a credential—accepting it as "Guacamole
 works" would preserve the exact gap this check exists to close.
 
 ### The echo hazard
 
 An interactive shell echoes what it receives, so a naive `echo <nonce>` probe
 would match its own typed input and pass against a shell that never ran
-anything. The command is therefore split — `echo "SMOKE""<nonce>"` — so the
+anything. The command is therefore split—`echo "SMOKE""<nonce>"`—so the
 echoed input contains `SMOKE""<nonce>` while only real output contains the
 joined `SMOKE<nonce>`. See `tests/test_terminal.py::TestEchoHazard`.
 
@@ -77,7 +77,7 @@ a live event tenant by accident.
 
 **HTTPS is required.** The harness carries a replayable ID token, a live
 `sessionid` cookie (on HTTP *and* in the websocket handshake), and a signed
-Guacamole token in a tunnel query string — all stealable by a passive observer
+Guacamole token in a tunnel query string—all stealable by a passive observer
 over `http`/`ws`. Plaintext is refused for the configured origin and for every
 server-returned URL alike; `--allow-plaintext-loopback` relaxes it for a
 loopback host only, never for a real one.
@@ -99,7 +99,7 @@ Pace repeated runs: Identity Platform rate-limits TOTP sign-in and answers
 
 ## Tests
 
-`uv run pytest -q` covers the deterministic layers — profile safety, target
+`uv run pytest -q` covers the deterministic layers—profile safety, target
 selection, nonce matching, Guacamole state classification, TOTP derivation,
 redaction, and fail-closed verdict composition. The live executor targets a
 deployed tenant and is exercised by operator runs, never by mocking the app
