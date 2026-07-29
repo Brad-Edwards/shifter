@@ -63,6 +63,7 @@ __all__ = [
     "create_shifter_backend_components",
     "create_shifter_backend_target",
     "interpret_provisioning_plan",
+    "is_aces_provisioning_plan",
     "register_shifter_backend",
     "serialize_provisioning_plan",
 ]
@@ -78,6 +79,21 @@ SUPPORTED_RESOURCE_TYPES: frozenset[str] = (
 #: Discriminator for the serialized plan persisted in ``range_config`` so the
 #: provisioner ``aces-range`` path can tell it apart from a cyberscript envelope.
 ACES_PROVISIONING_PLAN_KIND = "aces_provisioning_plan"
+
+
+def is_aces_provisioning_plan(range_config: object) -> bool:
+    """Return whether a persisted ``Range.range_config`` is an ACES provisioning plan.
+
+    The ACES-native create path stores a serialized ProvisioningPlan whose
+    top-level ``kind`` is :data:`ACES_PROVISIONING_PLAN_KIND`; the legacy
+    cyberscript path stores a wrapped-spec envelope with no top-level ``kind``.
+    Provision/status/teardown for an existing range is selected from this
+    persisted, validated discriminator -- never from the current catalog selector
+    or capability flag (ADR-031-R6). Anything that is not positively an ACES plan
+    (``None``, a cyberscript envelope, an unknown ``kind``) is treated as legacy.
+    """
+    return isinstance(range_config, dict) and range_config.get("kind") == ACES_PROVISIONING_PLAN_KIND
+
 
 _MAX_DIAGNOSTIC = 480
 

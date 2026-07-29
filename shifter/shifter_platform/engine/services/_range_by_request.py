@@ -39,18 +39,25 @@ def range_owner_reassignment_available_by_request(request_id: UUID) -> bool:
 def destroy_range_by_request(request_id: UUID) -> bool:
     """Tear down range infrastructure by request_id.
 
-    Follows same pattern as destroy_ngfw(). Looks up Range via Request FK
-    and triggers ECS teardown.
+    Selects the teardown entrypoint from the persisted, validated
+    ``range_config.kind``: an ACES-native range (kind ``aces_provisioning_plan``)
+    dispatches ``start_aces_range_teardown`` (the ``aces-range destroy`` command),
+    while every legacy range keeps ``start_range_teardown``. The choice derives
+    from the persisted plan, never from the current catalog selector or capability
+    flag, so an existing ACES range stays destroyable after a rollback empties the
+    route or disables the native flag (ADR-031-R6).
     """
-    from engine.ecs import start_range_teardown
+    from engine.ecs import start_aces_range_teardown, start_range_teardown
     from engine.models import Range
+    from shared.aces.runtime_target import is_aces_provisioning_plan
 
     logger.debug("destroy_range_by_request: request_id=%s", request_id)
     range_obj = Range.objects.filter(request__request_id=request_id).first()
     if not range_obj:
         logger.warning("destroy_range_by_request: no range for request_id=%s", request_id)
         return False
-    return _apply_destroy_by_request(range_obj, request_id, start_range_teardown)
+    teardown = start_aces_range_teardown if is_aces_provisioning_plan(range_obj.range_config) else start_range_teardown
+    return _apply_destroy_by_request(range_obj, request_id, teardown)
 
 
 def _apply_destroy_by_request(

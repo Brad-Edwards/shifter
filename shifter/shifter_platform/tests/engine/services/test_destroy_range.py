@@ -16,6 +16,7 @@ from django.contrib.auth import get_user_model
 
 from engine import create_range, destroy_range, destroy_range_by_request
 from engine.models import Range
+from shared.aces.runtime_target import ACES_PROVISIONING_PLAN_KIND
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import ResourceStatus
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
@@ -205,3 +206,30 @@ class TestDestroyRangeByRequest:
 
     def test_returns_false_when_request_not_found(self, db):
         assert destroy_range_by_request(uuid4()) is False
+
+    def test_legacy_range_dispatches_legacy_teardown(self, user):
+        """A cyberscript range routes to the legacy teardown command (#1310)."""
+        spec = _request_spec(user.id)
+        create_range(spec)
+        with (
+            patch("engine.ecs.start_aces_range_teardown") as aces_td,
+            patch("engine.ecs.start_range_teardown", return_value=None) as legacy_td,
+        ):
+            assert destroy_range_by_request(spec.request_id) is True
+        legacy_td.assert_called_once_with(spec.request_id)
+        aces_td.assert_not_called()
+
+    def test_aces_range_dispatches_aces_teardown(self, user):
+        """A persisted ACES plan routes to the aces-range teardown, not legacy (#1310)."""
+        spec = _request_spec(user.id)
+        create_range(spec)
+        Range.objects.filter(request__request_id=spec.request_id).update(
+            range_config={"kind": ACES_PROVISIONING_PLAN_KIND, "contract_version": "1", "resources": {}}
+        )
+        with (
+            patch("engine.ecs.start_range_teardown") as legacy_td,
+            patch("engine.ecs.start_aces_range_teardown", return_value=None) as aces_td,
+        ):
+            assert destroy_range_by_request(spec.request_id) is True
+        aces_td.assert_called_once_with(spec.request_id)
+        legacy_td.assert_not_called()
