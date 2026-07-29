@@ -107,17 +107,19 @@ def test_authorized_edit_marks_receipt_drifted(organizer_user) -> None:
     receipt = CTFContentHydrationReceipt.objects.get(event=event)
     assert receipt.state == CTFContentHydrationReceipt.State.DRIFTED
     assert receipt.drift_reason == "challenge_updated"
+    resolved = _resolved()
     with pytest.raises(CTFStateError):
-        hydrate_event_ctf_content(event.pk, _resolved(), actor_id=organizer_user.pk)
+        hydrate_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk)
 
 
 @pytest.mark.django_db
 def test_hydration_rolls_back_complete_graph_on_failure(organizer_user, monkeypatch) -> None:
     event = _event(organizer_user)
     monkeypatch.setattr("ctf.services.hint.add_hint", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError()))
+    resolved = _resolved()
 
     with pytest.raises(RuntimeError):
-        hydrate_event_ctf_content(event.pk, _resolved(), actor_id=organizer_user.pk)
+        hydrate_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk)
 
     assert not CTFChallenge.objects.filter(event=event).exists()
     assert not CTFContentHydrationReceipt.objects.filter(event=event).exists()
@@ -134,8 +136,9 @@ def test_foreign_content_is_not_merged(organizer_user) -> None:
         points=10,
         flag_hash="unusable",
     )
+    resolved = _resolved()
     with pytest.raises(CTFStateError) as error:
-        hydrate_event_ctf_content(event.pk, _resolved(), actor_id=organizer_user.pk)
+        hydrate_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk)
     assert error.value.code == "CTF_CONTENT_FOREIGN_STATE"
     assert CTFChallenge.objects.filter(event=event).count() == 1
 
@@ -219,17 +222,16 @@ def test_event_creation_authorizes_configured_scenario_before_resolution(organiz
     )
     monkeypatch.setattr("ctf.bridges.cms_list_scenarios", lambda _user: [])
     now = timezone.now()
+    event_data = {
+        "name": "Unauthorized Content",
+        "event_start": now + timedelta(hours=1),
+        "event_end": now + timedelta(hours=2),
+        "scenario_id": "scenario-one",
+    }
+    references = _configured_references()
     with (
-        override_settings(CTF_CONTENT_REFERENCES=_configured_references()),
+        override_settings(CTF_CONTENT_REFERENCES=references),
         pytest.raises(CTFValidationError) as error,
     ):
-        create_event(
-            organizer_user,
-            {
-                "name": "Unauthorized Content",
-                "event_start": now + timedelta(hours=1),
-                "event_end": now + timedelta(hours=2),
-                "scenario_id": "scenario-one",
-            },
-        )
+        create_event(organizer_user, event_data)
     assert error.value.code == "CTF_SCENARIO_NOT_AVAILABLE"

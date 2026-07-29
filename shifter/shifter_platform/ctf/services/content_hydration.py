@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.db import transaction
@@ -14,9 +13,6 @@ from ctf.exceptions import CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFContentHydrationReceipt, CTFEvent
 from ctf.services.authorization import assert_actor_owns_event
 from ctf.services.content_resolution import HydrationSourceEvidence, ResolvedCtfContent
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass(frozen=True)
@@ -32,6 +28,7 @@ class ContentHydrationResult:
 
 
 def _flag_payload(flag: BundleFlag) -> dict[str, object]:
+    """Translate a bundle flag into the native challenge-service payload."""
     payload: dict[str, object] = {
         "flag_type": flag.flag_type,
         "case_sensitive": flag.case_sensitive,
@@ -45,6 +42,7 @@ def _flag_payload(flag: BundleFlag) -> dict[str, object]:
 
 
 def _challenge_payload(challenge: BundleChallenge) -> dict[str, object]:
+    """Translate a bundle challenge into the native service payload."""
     return {
         "name": challenge.name,
         "description": challenge.description,
@@ -66,6 +64,7 @@ def _challenge_payload(challenge: BundleChallenge) -> dict[str, object]:
 
 
 def _expected_counts(bundle: CtfContentBundle) -> tuple[int, int, int, int]:
+    """Return the expected challenge, flag, hint, and edge counts."""
     return (
         len(bundle.challenges),
         sum(len(challenge.flags) for challenge in bundle.challenges),
@@ -80,6 +79,7 @@ def _receipt_matches(
     event: CTFEvent,
     resolved: ResolvedCtfContent,
 ) -> bool:
+    """Return whether a receipt exactly describes the resolved bundle."""
     evidence = resolved.evidence
     bundle = resolved.bundle
     counts = _expected_counts(bundle)
@@ -103,6 +103,7 @@ def _receipt_matches(
 
 
 def _content_shape_matches(event: CTFEvent, bundle: CtfContentBundle) -> bool:
+    """Return whether persisted graph identifiers and counts match the bundle."""
     challenges = list(
         CTFChallenge.objects.filter(event=event)
         .prefetch_related("flags", "hints", "prerequisites")
@@ -121,10 +122,12 @@ def _content_shape_matches(event: CTFEvent, bundle: CtfContentBundle) -> bool:
 
 
 def _existing_receipt(event: CTFEvent) -> CTFContentHydrationReceipt | None:
+    """Lock and return an event's hydration receipt, if present."""
     return CTFContentHydrationReceipt.objects.select_for_update().filter(event=event).first()
 
 
 def _result(receipt: CTFContentHydrationReceipt, *, created: bool) -> ContentHydrationResult:
+    """Build the bounded public hydration result from a receipt."""
     return ContentHydrationResult(
         receipt_id=receipt.pk,
         created=created,
@@ -136,6 +139,7 @@ def _result(receipt: CTFContentHydrationReceipt, *, created: bool) -> ContentHyd
 
 
 def _assert_empty_event(event: CTFEvent) -> None:
+    """Reject hydration over content not managed by a bundle receipt."""
     if CTFChallenge.objects.filter(event=event).exists():
         raise CTFStateError(
             "Event already contains content that was not created by this bundle.",
@@ -144,6 +148,7 @@ def _assert_empty_event(event: CTFEvent) -> None:
 
 
 def _create_graph(event: CTFEvent, bundle: CtfContentBundle, *, actor_id: int) -> None:
+    """Create the complete native challenge graph for one event."""
     from ctf.services.challenge import add_prerequisite, create_challenge
     from ctf.services.hint import add_hint
 
@@ -178,6 +183,7 @@ def _create_receipt(
     *,
     actor_id: int,
 ) -> CTFContentHydrationReceipt:
+    """Persist immutable source evidence and expected graph counts."""
     challenge_count, flag_count, hint_count, prerequisite_count = _expected_counts(bundle)
     return CTFContentHydrationReceipt.objects.create(
         event=event,

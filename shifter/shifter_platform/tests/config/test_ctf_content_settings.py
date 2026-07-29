@@ -55,8 +55,9 @@ def test_absent_references_are_inert(monkeypatch) -> None:
 
 
 def test_references_require_explicit_bucket(monkeypatch) -> None:
+    references = _references()
     with pytest.raises(ImproperlyConfigured, match="BUCKET"):
-        _reload(monkeypatch, SHIFTER_CTF_CONTENT_REFERENCES_JSON=_references())
+        _reload(monkeypatch, SHIFTER_CTF_CONTENT_REFERENCES_JSON=references)
 
 
 def test_declared_reference_and_bucket_parse(monkeypatch) -> None:

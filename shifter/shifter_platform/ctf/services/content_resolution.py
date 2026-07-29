@@ -19,6 +19,7 @@ from shared.log_sanitize import safe_log_value
 from shared.schemas.ctf_content_reference import REFERENCE_CONTRACT, CtfContentReference
 
 logger = logging.getLogger(__name__)
+_RESOLUTION_ERROR = "Scenario CTF content could not be resolved."
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class ResolvedCtfContent:
 
 
 def _fingerprint(value: object) -> str:
+    """Return a stable SHA-256 fingerprint for bounded evidence."""
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -55,17 +57,19 @@ def _bounded_identity(identity: dict[str, Any]) -> dict[str, object]:
 
 
 def _read_download(path: Path, *, max_bytes: int) -> bytes:
+    """Read a downloaded object while enforcing the deployment byte limit."""
     with path.open("rb") as handle:
         raw = handle.read(max_bytes + 1)
     if len(raw) > max_bytes:
         raise CTFValidationError(
-            "Scenario CTF content could not be resolved.",
+            _RESOLUTION_ERROR,
             code="CTF_CONTENT_TOO_LARGE",
         )
     return raw
 
 
 def _resolve_reference(reference: CtfContentReference) -> ResolvedCtfContent:
+    """Resolve, verify, and parse one digest-pinned object reference."""
     from shared.cloud import get_object_storage
     from shared.cloud.exceptions import CloudStorageError, ObjectPreconditionError
 
@@ -86,7 +90,7 @@ def _resolve_reference(reference: CtfContentReference) -> ResolvedCtfContent:
             declared_size = int(identity.get("content_length", 0) or 0)
             if declared_size < 0 or declared_size > max_bytes:
                 raise CTFValidationError(
-                    "Scenario CTF content could not be resolved.",
+                    _RESOLUTION_ERROR,
                     code="CTF_CONTENT_TOO_LARGE",
                 )
             realized_identity = storage.download_object(
@@ -103,7 +107,7 @@ def _resolve_reference(reference: CtfContentReference) -> ResolvedCtfContent:
             ) from exc
         except CloudStorageError as exc:
             raise CTFValidationError(
-                "Scenario CTF content could not be resolved.",
+                _RESOLUTION_ERROR,
                 code="CTF_CONTENT_RESOLUTION_FAILED",
             ) from exc
 

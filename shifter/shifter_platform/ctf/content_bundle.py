@@ -82,6 +82,7 @@ class CtfContentBundle:
 
 
 def _reject_duplicate_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Build a JSON object while rejecting duplicate keys."""
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
@@ -91,17 +92,20 @@ def _reject_duplicate_pairs(pairs: list[tuple[str, object]]) -> dict[str, object
 
 
 def _reject_unknown(value: Mapping[str, object], allowed: set[str], what: str) -> None:
+    """Reject fields outside the closed set allowed for an object."""
     if set(value) - allowed:
         raise CtfContentBundleError(f"{what} contains unknown fields")
 
 
 def _require_mapping(value: object, what: str) -> Mapping[str, object]:
+    """Return an object-like value or raise a bundle contract error."""
     if not isinstance(value, Mapping):
         raise CtfContentBundleError(f"{what} must be an object")
     return value
 
 
 def _require_list(value: object, what: str, *, maximum: int, minimum: int = 0) -> list[object]:
+    """Return a list whose item count is within the declared bounds."""
     if not isinstance(value, list):
         raise CtfContentBundleError(f"{what} must be a list")
     if not minimum <= len(value) <= maximum:
@@ -116,12 +120,14 @@ def _require_string(
     maximum: int,
     minimum: int = 1,
 ) -> str:
+    """Return a bounded string without embedded null bytes."""
     if not isinstance(value, str) or not minimum <= len(value) <= maximum or "\x00" in value:
         raise CtfContentBundleError(f"{what} is invalid")
     return value
 
 
 def _require_identifier(value: object, what: str) -> str:
+    """Return a normalized bundle identifier."""
     text = _require_string(value, what, maximum=100)
     if not _IDENTIFIER_RE.fullmatch(text):
         raise CtfContentBundleError(f"{what} is invalid")
@@ -129,18 +135,21 @@ def _require_identifier(value: object, what: str) -> str:
 
 
 def _require_int(value: object, what: str, *, minimum: int, maximum: int) -> int:
+    """Return a non-boolean integer within the declared bounds."""
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise CtfContentBundleError(f"{what} is invalid")
     return value
 
 
 def _require_bool(value: object, what: str) -> bool:
+    """Return a strict JSON boolean."""
     if not isinstance(value, bool):
         raise CtfContentBundleError(f"{what} must be a boolean")
     return value
 
 
 def _require_choice(value: object, what: str, allowed: frozenset[str]) -> str:
+    """Return a string selected from a closed set."""
     text = _require_string(value, what, maximum=32)
     if text not in allowed:
         raise CtfContentBundleError(f"{what} is unsupported")
@@ -148,6 +157,7 @@ def _require_choice(value: object, what: str, allowed: frozenset[str]) -> str:
 
 
 def _check_depth(value: object, depth: int = 0) -> None:
+    """Reject JSON structures deeper than the bundle contract allows."""
     if depth > _MAX_NESTING_DEPTH:
         raise CtfContentBundleError("bundle exceeds its nesting-depth limit")
     if isinstance(value, Mapping):
@@ -159,6 +169,7 @@ def _check_depth(value: object, depth: int = 0) -> None:
 
 
 def _parse_headers(value: object) -> dict[str, str]:
+    """Parse bounded HTTP validator headers."""
     headers = _require_mapping(value, "HTTP flag headers")
     if len(headers) > _MAX_HEADERS:
         raise CtfContentBundleError("HTTP flag headers has too many entries")
@@ -170,6 +181,7 @@ def _parse_headers(value: object) -> dict[str, str]:
 
 
 def _parse_flag(value: object) -> BundleFlag:
+    """Parse one supported native flag declaration."""
     flag = _require_mapping(value, "flag")
     flag_type = _require_choice(flag.get("type"), "flag type", _FLAG_TYPES)
     common = {"type", "order", "case_sensitive"}
@@ -198,6 +210,7 @@ def _parse_flag(value: object) -> BundleFlag:
 
 
 def _parse_hint(value: object) -> BundleHint:
+    """Parse one ordered participant hint."""
     hint = _require_mapping(value, "hint")
     _reject_unknown(hint, {"text", "penalty", "order"}, "hint")
     return BundleHint(
@@ -231,6 +244,7 @@ _CHALLENGE_FIELDS = {
 
 
 def _parse_challenge(value: object) -> BundleChallenge:
+    """Parse one challenge and its bundle-local relationships."""
     challenge = _require_mapping(value, "challenge")
     _reject_unknown(challenge, _CHALLENGE_FIELDS, "challenge")
     raw_flags = _require_list(challenge.get("flags"), "challenge flags", maximum=_MAX_FLAGS, minimum=1)
@@ -319,11 +333,13 @@ def _parse_challenge(value: object) -> BundleChallenge:
 
 
 def _reject_cycles(challenges: Sequence[BundleChallenge]) -> None:
+    """Reject cycles in the challenge prerequisite graph."""
     graph = {challenge.source_id: challenge.prerequisites for challenge in challenges}
     visiting: set[str] = set()
     visited: set[str] = set()
 
     def visit(source_id: str) -> None:
+        """Visit one challenge using depth-first cycle detection."""
         if source_id in visiting:
             raise CtfContentBundleError("challenge prerequisites contain a cycle")
         if source_id in visited:
@@ -339,6 +355,7 @@ def _reject_cycles(challenges: Sequence[BundleChallenge]) -> None:
 
 
 def _validate_graph(challenges: tuple[BundleChallenge, ...]) -> None:
+    """Validate global uniqueness and prerequisite graph integrity."""
     ids = [challenge.source_id for challenge in challenges]
     names = [challenge.name for challenge in challenges]
     orders = [challenge.order for challenge in challenges]

@@ -57,12 +57,14 @@ def _reject_duplicate_pairs(pairs: list[tuple[str, object]]) -> dict[str, object
 
 
 def _reject_unknown_keys(value: Mapping[str, object], allowed: set[str], what: str) -> None:
+    """Reject fields outside the closed set allowed for an object."""
     unknown = set(value) - allowed
     if unknown:
         raise CtfContentReferenceError(f"{what} contains unknown fields")
 
 
 def _normalize_prefix(prefix: str) -> str:
+    """Return a normalized contained object prefix."""
     normalized = prefix.strip().strip("/")
     if not normalized:
         raise CtfContentReferenceError("content object prefix must not be empty")
@@ -72,16 +74,17 @@ def _normalize_prefix(prefix: str) -> str:
     return f"{path.as_posix()}/"
 
 
-def _parse_reference(value: object, *, prefix: str) -> CtfContentReference:
-    if not isinstance(value, Mapping):
-        raise CtfContentReferenceError("each content reference must be an object")
-    _reject_unknown_keys(value, {"scenario_id", "object_key", "digest"}, "content reference")
-
-    scenario_id = value.get("scenario_id")
+def _parse_scenario_id(value: object) -> str:
+    """Return a valid scenario identifier."""
+    scenario_id = value
     if not isinstance(scenario_id, str) or not _IDENTIFIER_RE.fullmatch(scenario_id):
         raise CtfContentReferenceError("content reference scenario_id is invalid")
+    return scenario_id
 
-    object_key = value.get("object_key")
+
+def _parse_object_key(value: object, *, prefix: str) -> str:
+    """Return a normalized object key contained by the configured prefix."""
+    object_key = value
     if not isinstance(object_key, str) or not object_key or len(object_key) > _MAX_KEY_LENGTH:
         raise CtfContentReferenceError("content reference object_key is invalid")
     path = PurePosixPath(object_key)
@@ -89,10 +92,25 @@ def _parse_reference(value: object, *, prefix: str) -> CtfContentReference:
         raise CtfContentReferenceError("content reference object_key must be a normalized contained path")
     if not object_key.startswith(prefix):
         raise CtfContentReferenceError("content reference object_key is outside the configured prefix")
+    return object_key
 
-    digest = value.get("digest")
+
+def _parse_digest(value: object) -> str:
+    """Return a canonical lowercase SHA-256 digest."""
+    digest = value
     if not isinstance(digest, str) or not _DIGEST_RE.fullmatch(digest):
         raise CtfContentReferenceError("content reference digest must be a lowercase sha256 digest")
+    return digest
+
+
+def _parse_reference(value: object, *, prefix: str) -> CtfContentReference:
+    """Parse one immutable scenario-to-object reference."""
+    if not isinstance(value, Mapping):
+        raise CtfContentReferenceError("each content reference must be an object")
+    _reject_unknown_keys(value, {"scenario_id", "object_key", "digest"}, "content reference")
+    scenario_id = _parse_scenario_id(value.get("scenario_id"))
+    object_key = _parse_object_key(value.get("object_key"), prefix=prefix)
+    digest = _parse_digest(value.get("digest"))
     return CtfContentReference(scenario_id=scenario_id, object_key=object_key, digest=digest)
 
 

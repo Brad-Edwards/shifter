@@ -73,8 +73,9 @@ def test_valid_reference_is_indexed_by_scenario() -> None:
     ],
 )
 def test_invalid_reference_fails_closed(reference: dict[str, object]) -> None:
+    raw = _payload(reference)
     with pytest.raises(CtfContentReferenceError):
-        load_ctf_content_references_json(_payload(reference), prefix=PREFIX)
+        load_ctf_content_references_json(raw, prefix=PREFIX)
 
 
 def test_duplicate_json_key_is_rejected() -> None:

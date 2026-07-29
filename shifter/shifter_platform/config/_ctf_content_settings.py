@@ -27,6 +27,7 @@ CTF_CONTENT_PREFIX = os.environ.get("SHIFTER_CTF_CONTENT_PREFIX", "ctf/content-b
 
 
 def _load_max_bytes() -> int:
+    """Load and validate the deployment's content-object byte limit."""
     raw = os.environ.get("SHIFTER_CTF_CONTENT_MAX_BYTES", str(_DEFAULT_MAX_BYTES)).strip()
     try:
         value = int(raw)
@@ -38,6 +39,7 @@ def _load_max_bytes() -> int:
 
 
 def _load_references() -> CtfContentReferenceCatalog:
+    """Load the closed reference catalog and its required bucket binding."""
     try:
         catalog = load_ctf_content_references_json(
             os.environ.get("SHIFTER_CTF_CONTENT_REFERENCES_JSON", ""),
