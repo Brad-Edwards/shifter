@@ -313,11 +313,8 @@ def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
     # Overlay the ADR-031-R6 source routes (see cms.scenarios.cutover); empty route = unchanged.
     result = apply_cutover_routes(yaml_entries + db_entries + raes_entries)
 
-    # Access filtering
     if user is not None and not (user.is_staff or user.is_superuser):
         result = [s for s in result if s["enabled"] and not s["staff_only"]]
-
-    # Sort by name
     result.sort(key=lambda s: s["name"])
     return result
 

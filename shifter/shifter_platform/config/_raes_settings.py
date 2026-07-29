@@ -66,6 +66,28 @@ def _parse_strict_bool(raw: str, *, name: str) -> bool:
     raise ImproperlyConfigured(f"{name} must be a boolean (true/false)")
 
 
+def _validate_cutover_slug(slug: str) -> None:
+    """Reject a route id that is not a bounded, non-empty Django-compatible slug."""
+    if not slug or len(slug) > _MAX_SCENARIO_ID_LEN or _SLUG_RE.match(slug) is None:
+        raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS ids must be bounded, non-empty slugs")
+
+
+def _parse_cutover_pair(pair: str, *, mapping: dict[str, str], seen_sources: set[str]) -> tuple[str, str]:
+    """Validate one ``public=source`` segment against the grammar and the ids already seen."""
+    if not pair or pair.count("=") != 1:
+        raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS must be comma-separated public=source pairs")
+    public_id, source_id = (part.strip() for part in pair.split("="))
+    _validate_cutover_slug(public_id)
+    _validate_cutover_slug(source_id)
+    if public_id == source_id:
+        raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS must map a public id to a distinct source id")
+    if public_id in mapping:
+        raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS has a duplicate public id")
+    if source_id in seen_sources:
+        raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS has a duplicate source id")
+    return public_id, source_id
+
+
 def _parse_catalog_cutovers(raw: str, *, native_enabled: bool) -> Mapping[str, str]:
     """Parse ``SHIFTER_RAES_CATALOG_CUTOVERS`` into an immutable public->source map.
 
@@ -85,19 +107,7 @@ def _parse_catalog_cutovers(raw: str, *, native_enabled: bool) -> Mapping[str, s
     mapping: dict[str, str] = {}
     seen_sources: set[str] = set()
     for segment in text.split(","):
-        pair = segment.strip()
-        if not pair or pair.count("=") != 1:
-            raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS must be comma-separated public=source pairs")
-        public_id, source_id = (part.strip() for part in pair.split("="))
-        for slug in (public_id, source_id):
-            if not slug or len(slug) > _MAX_SCENARIO_ID_LEN or _SLUG_RE.match(slug) is None:
-                raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS ids must be bounded, non-empty slugs")
-        if public_id == source_id:
-            raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS must map a public id to a distinct source id")
-        if public_id in mapping:
-            raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS has a duplicate public id")
-        if source_id in seen_sources:
-            raise ImproperlyConfigured("SHIFTER_RAES_CATALOG_CUTOVERS has a duplicate source id")
+        public_id, source_id = _parse_cutover_pair(segment.strip(), mapping=mapping, seen_sources=seen_sources)
         mapping[public_id] = source_id
         seen_sources.add(source_id)
     if not native_enabled:

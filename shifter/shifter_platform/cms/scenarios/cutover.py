@@ -74,7 +74,8 @@ def apply_cutover_routes(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for entry in entries:
         entry_id = entry["id"]
         if entry_id in suppressed:
-            continue  # routed internal source id is not a second launch choice
+            # A routed internal source id is not offered as a second launch choice.
+            continue
         source_id = route_map.get(entry_id)
         if source_id is None:
             overlaid.append(entry)
@@ -133,16 +134,27 @@ def resolve_launch(scenario_id: str) -> LaunchResolution:
     is legacy. Launchability reflects the fail-closed catalog entry (an
     unresolved/non-conformant RAES route is not launchable).
     """
-    from cms.scenarios.registry import get_catalog_entry
-
     source_id = resolve_cutover_source_id(scenario_id)
     if source_id is not None:
-        entry = get_catalog_entry(scenario_id)
-        return LaunchResolution(
-            scenario_id, source_id, is_raes=True, launchable=bool(entry and entry.get("launchable"))
-        )
+        return _resolve_routed_public(scenario_id, source_id)
     if scenario_id in routed_source_ids():
+        # A routed internal source id is not offered as a direct launch choice.
         return LaunchResolution(scenario_id, None, is_raes=True, launchable=False)
+    return _resolve_unrouted(scenario_id)
+
+
+def _resolve_routed_public(scenario_id: str, source_id: str) -> LaunchResolution:
+    """Resolve a routed public id to its distinct internal RAES source (fail-closed launchability)."""
+    from cms.scenarios.registry import get_catalog_entry
+
+    entry = get_catalog_entry(scenario_id)
+    return LaunchResolution(scenario_id, source_id, is_raes=True, launchable=bool(entry and entry.get("launchable")))
+
+
+def _resolve_unrouted(scenario_id: str) -> LaunchResolution:
+    """Resolve an unrouted id: a registered RAES source launches directly; everything else is legacy."""
+    from cms.scenarios.registry import get_catalog_entry
+
     entry = get_catalog_entry(scenario_id)
     if entry is not None and entry.get("scenario_type") == "raes":
         return LaunchResolution(scenario_id, scenario_id, is_raes=True, launchable=bool(entry.get("launchable")))
