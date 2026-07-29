@@ -236,6 +236,21 @@ def test_dispatch_loads_distinct_routed_source_not_public_id(user, native_on, mo
 
 
 @pytest.mark.django_db
+def test_dispatch_fails_closed_for_route_to_legacy_target(user, native_on, monkeypatch):
+    # ADR-031-R6: a route to an existing legacy id ("basic") has no backing
+    # RaesPackageSource. Dispatch must fail closed -- refuse before any load --
+    # rather than advertise a launch that then crashes on a missing source.
+    from django.conf import settings
+
+    monkeypatch.setattr(settings, "RAES_CATALOG_CUTOVERS", {"polaris": "basic"})
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: pytest.fail("dispatch reached for a fail-closed route"))
+
+    with pytest.raises(CMSError):
+        create_range_dispatch(user, "polaris", {})
+    assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
+
+
+@pytest.mark.django_db
 def test_dispatch_routes_cyberscript_for_non_raes_when_flag_on(user, native_on, monkeypatch):
     routed = {}
     monkeypatch.setattr(

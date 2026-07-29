@@ -86,6 +86,19 @@ class TestCatalogOverlay:
         assert polaris["launchable"] is False
         assert _entry("polaris-raes") is None  # still suppressed while routed
 
+    def test_route_to_legacy_catalog_id_fails_closed(self, settings):
+        # A route whose target is an existing LEGACY scenario ("basic"), not a
+        # registered RAES source, must fail closed: no RaesPackageSource backs it,
+        # so advertising it launchable would promise a launch that necessarily
+        # fails at dispatch. It must not copy the legacy target's launchability.
+        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
+        settings.RAES_CATALOG_CUTOVERS = {"polaris": "basic"}
+        polaris = _entry("polaris")
+        assert polaris["scenario_type"] == "raes"
+        assert polaris["launchable"] is False  # not the legacy target's launchability
+        # The routed target id is still suppressed as a second launch choice.
+        assert _entry("basic") is None
+
     def test_empty_route_leaves_legacy_polaris_and_visible_source(self, staff_user, settings):
         _make_source(staff_user)
         settings.RAES_CATALOG_CUTOVERS = {}
@@ -120,6 +133,18 @@ class TestResolveLaunch:
         assert res.is_raes is False
         assert res.raes_source_id is None
         assert res.launchable is True
+
+    def test_route_to_legacy_catalog_id_resolves_non_launchable(self, settings):
+        # Routing a public id to an existing legacy catalog id resolves as RAES
+        # (the route is authoritative) but non-launchable (fail closed) -- there
+        # is no backing RaesPackageSource, so _assert_scenario_launchable refuses
+        # it at dispatch before any load is attempted.
+        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
+        settings.RAES_CATALOG_CUTOVERS = {"polaris": "basic"}
+        res = resolve_launch("polaris")
+        assert res.is_raes is True
+        assert res.raes_source_id == "basic"
+        assert res.launchable is False
 
     def test_unrouted_registered_source_launches_directly(self, staff_user, settings):
         _make_source(staff_user, scenario_id="standalone-raes")

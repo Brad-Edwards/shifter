@@ -13,8 +13,8 @@ an import cycle with the registry.
 
 Fail-closed posture (ADR-031-R6): while a public id is routed, its internal
 source id is never offered as a second launch choice, and a route whose target
-is absent or non-conformant makes the public id non-launchable rather than
-silently falling back to the legacy path.
+is absent, not a registered RAES source, or non-conformant makes the public id
+non-launchable rather than silently falling back to the legacy path.
 """
 
 from __future__ import annotations
@@ -60,9 +60,10 @@ def apply_cutover_routes(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     RAES-backed launch choice -- inheriting the target source's launchability and
     RAES fields while keeping its public id, display, and ``ScenarioMetadata``
     access overlay -- and the internal source id is suppressed as a second launch
-    choice. A route whose target is absent or non-launchable fails closed: the
-    public id is marked non-launchable rather than silently launching legacy.
-    With an empty route map the projection is returned unchanged.
+    choice. A route whose target is absent, not a registered RAES source, or
+    non-launchable fails closed: the public id is marked non-launchable rather
+    than silently launching legacy. With an empty route map the projection is
+    returned unchanged.
     """
     route_map = active_cutover_map()
     if not route_map:
@@ -86,8 +87,12 @@ def _overlay_raes_route(public_entry: dict[str, Any], source_entry: dict[str, An
     """Return the public entry re-backed by its routed RAES source (fail-closed)."""
     overlaid = dict(public_entry)
     overlaid["scenario_type"] = "raes"
-    if source_entry is None:
-        # Routed target not registered/visible -> fail closed; never legacy fallback.
+    if source_entry is None or source_entry.get("scenario_type") != "raes":
+        # Routed target absent, not visible, or not a registered RAES source ->
+        # fail closed. A route to an existing legacy catalog id (e.g. polaris=basic)
+        # has no backing RaesPackageSource, so advertising it launchable would
+        # promise a launch that necessarily fails at dispatch; treat it exactly
+        # like a missing target rather than copying legacy launchability (ADR-031-R6).
         overlaid["launchable"] = False
         overlaid["source_kind"] = ""
         overlaid["contract_kind"] = ""
