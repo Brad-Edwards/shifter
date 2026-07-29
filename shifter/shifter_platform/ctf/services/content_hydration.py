@@ -280,17 +280,18 @@ def assert_event_content_hydration_ready(event: CTFEvent) -> None:
     reference = settings.CTF_CONTENT_REFERENCES.get(event.scenario_id)
     if reference is None:
         return
-    receipt = CTFContentHydrationReceipt.objects.select_for_update().filter(event=event).first()
-    if (
-        receipt is None
-        or receipt.state != CTFContentHydrationReceipt.State.PRISTINE
-        or receipt.scenario_id != event.scenario_id
-        or receipt.declared_digest != reference.digest
-    ):
-        raise CTFStateError(
-            "Event scenario content is not ready.",
-            code="CTF_CONTENT_NOT_READY",
-        )
+    with transaction.atomic():
+        receipt = CTFContentHydrationReceipt.objects.select_for_update().filter(event=event).first()
+        if (
+            receipt is None
+            or receipt.state != CTFContentHydrationReceipt.State.PRISTINE
+            or receipt.scenario_id != event.scenario_id
+            or receipt.declared_digest != reference.digest
+        ):
+            raise CTFStateError(
+                "Event scenario content is not ready.",
+                code="CTF_CONTENT_NOT_READY",
+            )
 
 
 __all__ = [

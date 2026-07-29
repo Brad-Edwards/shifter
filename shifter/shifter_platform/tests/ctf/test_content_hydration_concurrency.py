@@ -18,7 +18,11 @@ from ctf.enums import EventStatus
 from ctf.exceptions import CTFError
 from ctf.models import CTFChallenge, CTFContentHydrationReceipt, CTFEvent
 from ctf.services.challenge import update_challenge
-from ctf.services.content_hydration import ContentHydrationResult, hydrate_event_ctf_content
+from ctf.services.content_hydration import (
+    ContentHydrationResult,
+    assert_event_content_hydration_ready,
+    hydrate_event_ctf_content,
+)
 from ctf.services.content_resolution import HydrationSourceEvidence, ResolvedCtfContent
 from ctf.services.event import open_registration, start_event
 from shared.schemas.ctf_content_reference import load_ctf_content_references_json
@@ -144,6 +148,14 @@ def test_concurrent_exact_hydration_creates_one_graph(organizer_user) -> None:
     assert sorted(result.created for result in results) == [False, True]
     assert CTFChallenge.objects.filter(event=event).count() == 1
     assert CTFContentHydrationReceipt.objects.filter(event=event).count() == 1
+
+
+def test_readiness_service_owns_its_postgres_lock_transaction(organizer_user) -> None:
+    event = _event(organizer_user)
+    hydrate_event_ctf_content(event.pk, _resolved(), actor_id=organizer_user.pk)
+
+    with override_settings(CTF_CONTENT_REFERENCES=_references()):
+        assert_event_content_hydration_ready(event)
 
 
 def test_activation_and_edit_never_commit_active_stale_content(organizer_user) -> None:
