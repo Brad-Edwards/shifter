@@ -103,6 +103,24 @@ class ObjectStorage(Protocol):
     def tag_object(self, bucket: str, key: str, tags: dict[str, str]) -> None: ...
 
 
+class TaskInterruptDisposition:
+    """Idempotent control outcome of ``TaskRunner.interrupt_task`` (#277).
+
+    A task-control disposition only -- never range lifecycle success. The launcher
+    worker maps these onto the durable ``InterruptState`` and decides when the
+    canonical destroy may be enqueued (only on ``TERMINAL_ABSENT``).
+    """
+
+    #: Stop issued; the workload is not yet observed absent (poll again).
+    STOPPING = "stopping"
+    #: The task is gone / already terminal -- safe to converge to destroy.
+    TERMINAL_ABSENT = "terminal_absent"
+    #: The observed workload is not the reserved intent -- fail closed, do not stop it.
+    IDENTITY_MISMATCH = "identity_mismatch"
+    #: Provider outcome unknown -- reconcile by trusted identity before retrying.
+    UNKNOWN = "unknown"
+
+
 @runtime_checkable
 class TaskRunner(Protocol):
     """Protocol for container/task orchestration (ECS, Kubernetes Jobs, etc.)."""
@@ -119,6 +137,21 @@ class TaskRunner(Protocol):
     ) -> str | None: ...
 
     def get_task_status(self, cluster: str, task_id: str) -> dict[str, Any] | None: ...
+
+    def interrupt_task(
+        self,
+        cluster: str,
+        task_ref: str,
+        expected_identity: dict[str, Any],
+        grace_seconds: int | None = None,
+    ) -> str:
+        """Verify the workload is the reserved intent, then stop it (#277).
+
+        Reads and verifies the provider object against ``expected_identity``
+        before any mutation, then requests termination. Returns a
+        ``TaskInterruptDisposition`` value; it never returns range success.
+        """
+        ...
 
 
 @runtime_checkable

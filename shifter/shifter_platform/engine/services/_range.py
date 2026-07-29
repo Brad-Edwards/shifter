@@ -324,28 +324,32 @@ def cancel_range(range_ref: RangeRef) -> None:
         range_ref.user_id,
         range_ref.status,
     )
+    from engine.launch_intents import request_provision_interrupt
     from engine.models import Range
 
     range_id = range_ref.range_id
-    try:
-        range_obj = Range.objects.get(id=range_id)
-    except Range.DoesNotExist:
-        logger.warning("cancel_range: range not found range_id=%s", range_id)
-        return
+    with _atomic():
+        try:
+            range_obj = Range.objects.select_for_update().get(id=range_id)
+        except Range.DoesNotExist:
+            logger.warning("cancel_range: range not found range_id=%s", range_id)
+            return
 
-    if ResourceStatus(range_obj.status) not in CANCELLABLE_STATUSES:
-        logger.warning(
-            "cancel_range: range not cancellable range_id=%s status=%s",
-            range_id,
-            range_obj.status,
-        )
-        return
+        if ResourceStatus(range_obj.status) not in CANCELLABLE_STATUSES:
+            logger.warning(
+                "cancel_range: range not cancellable range_id=%s status=%s",
+                range_id,
+                range_obj.status,
+            )
+            return
 
-    range_obj.status = Range.Status.DESTROYING
-    range_obj.save(update_fields=["status"])
-    # Provisioner will poll for status and destroy when it sees DESTROYING
-    # accept small risk of race condition. TODO: #465
-    logger.info("cancel_range: cancelled range_id=%s", range_id)
+        range_obj.status = Range.Status.DESTROYING
+        range_obj.save(update_fields=["status"])
+        # Record a durable interrupt against the current provision generation
+        # (#277); the launcher worker stops the in-flight task and converges the
+        # canonical destroy. No teardown is dispatched inline here.
+        request_provision_interrupt(range_obj)
+        logger.info("cancel_range: cancelled range_id=%s", range_id)
 
 
 def get_instance_ips_by_uuid(range_id: int) -> dict[str, str]:
