@@ -209,7 +209,7 @@ def _build_instance_state(instance_data: dict[str, Any], provider: str | None = 
 def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider: str | None = None) -> dict[str, Any]:
     """Build the legacy Range.provisioned_instances entry with provider metadata."""
     resolved_provider = provider or _get_cloud_provider()
-    return {
+    payload = {
         "uuid": instance_data.get("uuid"),
         "name": instance_data.get("name"),
         "asset_type": instance_data.get("asset_type", "vm_runtime_vm"),
@@ -232,3 +232,6 @@ def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider:
         "cloud_provider": resolved_provider,
         "provider_metadata": _build_instance_provider_metadata(instance_data, resolved_provider),
     }
+    if "participant_sftp_enabled" in instance_data:
+        payload["participant_sftp_enabled"] = bool(instance_data["participant_sftp_enabled"])
+    return payload

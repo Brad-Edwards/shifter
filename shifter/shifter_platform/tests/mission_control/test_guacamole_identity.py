@@ -12,6 +12,7 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 
 from mission_control._guacamole_session_builders import _build_rdp_url, guacamole_identity
+from mission_control.guacamole import RDPConnectionParams, create_rdp_connection_params
 
 User = get_user_model()
 
@@ -112,3 +113,39 @@ def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):
     _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
 
     assert captured["security"] == "any"
+
+
+def test_rdp_url_build_disables_sftp_when_endpoint_declares_it_unavailable(monkeypatch):
+    user = User(username="range-abcd1234", email="")
+    captured: dict[str, bool] = {}
+
+    monkeypatch.setattr(
+        "mission_control._guacamole_session_builders._resolve_rdp_conn",
+        lambda _user, _instance_uuid: {**_CONN_INFO, "os_type": "kali", "sftp_enabled": False},
+    )
+
+    def _fake_create(req):
+        captured["sftp_enabled"] = req.sftp_enabled
+        return "https://example/guacamole/#/client/abc?token=t"
+
+    monkeypatch.setattr("mission_control.guacamole.create_guacamole_rdp_url", _fake_create)
+
+    _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
+
+    assert captured["sftp_enabled"] is False
+
+
+def test_rdp_params_keep_desktop_credentials_without_sftp():
+    params = create_rdp_connection_params(
+        RDPConnectionParams(
+            hostname="10.50.2.19",
+            username="desktop-user",
+            password="desktop-password",
+            sftp_enabled=False,
+        )
+    )
+
+    assert params["username"] == "desktop-user"
+    assert params["password"] == "desktop-password"
+    assert "enable-sftp" not in params
+    assert "sftp-password" not in params

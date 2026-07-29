@@ -229,6 +229,7 @@ def render_range_cell_plan(
     *,
     require_images: bool = True,
     vpn_gateway_pool_slot: int | None = None,
+    range_host_pool_slot: int | None = None,
 ) -> RangeCellPlan:
     """Render the deterministic GCE resources for one range cell.
 
@@ -273,6 +274,7 @@ def render_range_cell_plan(
             subnet_plans=cast(list[ResourceDict], subnet_plans),
             access_declarations=cast(list[ResourceDict], realized_variables["access_declarations"]),
             require_images=require_images,
+            range_host_pool_slot=range_host_pool_slot,
         ),
     )
     remote_access = validated_request["remote_access"]

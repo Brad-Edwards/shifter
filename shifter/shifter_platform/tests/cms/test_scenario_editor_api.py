@@ -46,6 +46,7 @@ _DEFINITION = {
         {"name": "Victim", "role": "victim", "os_type": "from_agent", "xdr_agent": False},
     ],
     "subnets": [{"name": "core", "instances": ["Attacker", "Victim"]}],
+    "participant_access": [{"target": "Attacker", "channel": "rdp"}],
 }
 
 
@@ -112,7 +113,8 @@ class TestScenarioCreate:
 
         assert response.status_code == 201
         assert response.json()["scenario_id"] == "my-lab"
-        assert Scenario.objects.filter(scenario_id="my-lab").exists()
+        scenario = Scenario.objects.get(scenario_id="my-lab")
+        assert scenario.definition["participant_access"] == [{"target": "Attacker", "channel": "rdp"}]
 
     def test_invalid_definition_returns_validation_errors(self, api_client, authoring_user):
         api_client.force_authenticate(user=authoring_user)
@@ -165,6 +167,7 @@ class TestScenarioDetail:
         assert payload["editable"] is True
         assert payload["deletable"] is True
         assert [i["name"] for i in payload["instances"]] == ["Attacker", "Victim"]
+        assert payload["participant_access"] == [{"target": "Attacker", "channel": "rdp"}]
 
     def test_builtin_scenario_detail_is_read_only(self, api_client, authoring_user):
         api_client.force_authenticate(user=authoring_user)
@@ -232,6 +235,7 @@ class TestScenarioUpdate:
         assert response.status_code == 200
         custom_scenario.refresh_from_db()
         assert custom_scenario.name == "Renamed Lab"
+        assert custom_scenario.definition["participant_access"] == [{"target": "Attacker", "channel": "rdp"}]
 
     def test_cannot_update_builtin_default(self, api_client, authoring_user):
         api_client.force_authenticate(user=authoring_user)

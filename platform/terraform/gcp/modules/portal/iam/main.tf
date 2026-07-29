@@ -237,6 +237,20 @@ resource "google_service_account_iam_member" "provisioner_vpn_gateway_pool_act_a
   member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }
 
+resource "google_service_account" "range_host_pool" {
+  count        = var.range_host_identity_pool_size
+  project      = var.project_id
+  account_id   = "sh-range-host-${count.index}"
+  display_name = "Shifter preconfigured range host pool member ${count.index}"
+}
+
+resource "google_service_account_iam_member" "provisioner_range_host_pool_act_as" {
+  count              = var.range_host_identity_pool_size
+  service_account_id = google_service_account.range_host_pool[count.index].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+}
+
 resource "google_service_account_iam_member" "workload_identity" {
   for_each = local.workload_identity_members
 

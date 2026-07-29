@@ -261,7 +261,15 @@ def instance_resource(
                 "network_i_p": instance["private_ip"],
             }
         ],
-        "disks": [
+        "deletion_protection": False,
+    }
+    if profile.source_machine_image:
+        # The machine image supplies every captured disk. Network, metadata,
+        # identity, labels, tags, machine type, and external-IP posture are all
+        # explicitly replaced by the body above.
+        body["advanced_machine_features"] = {"enable_nested_virtualization": True}
+    else:
+        body["disks"] = [
             {
                 "boot": True,
                 "auto_delete": True,
@@ -271,18 +279,19 @@ def instance_resource(
                     "disk_type": _disk_type_self_link(plan["zone"], profile.disk_type),
                 },
             }
-        ],
-        "shielded_instance_config": {
+        ]
+        body["shielded_instance_config"] = {
             "enable_secure_boot": True,
             "enable_vtpm": True,
             "enable_integrity_monitoring": True,
-        },
-        "deletion_protection": False,
-    }
-    if config.service_account_email and instance["attach_service_account"]:
+        }
+    service_account_email = str(instance.get("service_account_email") or "")
+    if not service_account_email and config.service_account_email and instance["attach_service_account"]:
+        service_account_email = config.service_account_email
+    if service_account_email:
         body["service_accounts"] = [
             {
-                "email": config.service_account_email,
+                "email": service_account_email,
                 "scopes": list(config.service_account_scopes),
             }
         ]

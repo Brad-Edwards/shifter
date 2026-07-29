@@ -23,6 +23,7 @@ from shared.remote_access import build_openvpn_capability
 from cloud.exceptions import CloudError
 from config import (
     GCE_BOOTSTRAP_POLARIS_HOST,
+    GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCERangeCellConfig,
     GCERangeImageProfile,
@@ -39,6 +40,7 @@ from gcp_range_cells import (
     destroy_range_cell,
     render_range_cell_plan,
 )
+from gcp_range_host_identity import gcp_range_host_pool_service_account_email
 from gcp_vpn_identity import gcp_vpn_gateway_pool_service_account_email
 from state_helpers import _build_instance_state
 
@@ -290,6 +292,102 @@ def test_render_range_cell_plan_vpc_per_range_mints_own_network():
     assert plan["manage_network"] is True
     assert plan["network"]["name"] == "shifter-range-42"
     assert plan["network"]["self_link"] == "projects/test-project/global/networks/shifter-range-42"
+
+
+def test_render_range_cell_plan_selects_bounded_machine_host_identity():
+    base = _sample_config()
+    nested_profile = GCERangeImageProfile(
+        source_machine_image="projects/test-project/global/machineImages/nested-host-v1",
+        machine_type="n2-standard-8",
+        bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+        participant_container_name="participant-desktop",
+        participant_username="operator",
+        host_ssh_username="hostadmin",
+        host_ssh_port=2222,
+    )
+    profiles = {profile_class: dict(entries) for profile_class, entries in base.image_key_profiles.items()}
+    profiles["kali"]["nested-host"] = nested_profile
+    config = dataclasses.replace(base, image_key_profiles=profiles, range_host_identity_pool_size=10)
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "nested-host"
+
+    plan = render_range_cell_plan(
+        "req-123",
+        _variables(payload=payload),
+        config,
+        range_host_pool_slot=4,
+    )
+
+    attacker = next(instance for instance in plan["instances"] if instance["role"] == "attacker")
+    assert attacker["ssh_username"] == "operator"
+    assert attacker["host_ssh_username"] == "hostadmin"
+    assert attacker["ssh_port"] == 2222
+    assert attacker["service_account_email"] == gcp_range_host_pool_service_account_email("test-project", 4)
+
+    output = instance_output(
+        plan,
+        attacker,
+        InstanceCredentials(
+            host_ssh_secret_ref="projects/test/secrets/host-ssh",
+            participant_ssh_secret_ref=None,
+            rdp_password_secret_ref="projects/test/secrets/rdp",
+            ssh_public_key="ssh-ed25519 HOST",
+        ),
+        config,
+    )
+    assert output["participant_sftp_enabled"] is False
+
+
+def test_render_range_cell_plan_shards_machine_hosts_across_bounded_identity_pool():
+    base = _sample_config()
+    nested_profile = GCERangeImageProfile(
+        source_machine_image="projects/test-project/global/machineImages/nested-host-v1",
+        machine_type="n2-standard-8",
+        bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+        participant_container_name="participant-desktop",
+        participant_username="operator",
+        host_ssh_username="hostadmin",
+    )
+    profiles = {profile_class: dict(entries) for profile_class, entries in base.image_key_profiles.items()}
+    profiles["kali"]["nested-host"] = nested_profile
+    config = dataclasses.replace(base, image_key_profiles=profiles, range_host_identity_pool_size=4)
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "nested-host"
+
+    plan = render_range_cell_plan(
+        "req-123",
+        _variables(payload=payload),
+        config,
+        range_host_pool_slot=4,
+    )
+
+    attacker = next(instance for instance in plan["instances"] if instance["role"] == "attacker")
+    assert attacker["service_account_email"] == gcp_range_host_pool_service_account_email("test-project", 0)
+
+
+def test_render_range_cell_plan_rejects_disabled_machine_host_identity_pool():
+    base = _sample_config()
+    nested_profile = GCERangeImageProfile(
+        source_machine_image="projects/test-project/global/machineImages/nested-host-v1",
+        machine_type="n2-standard-8",
+        bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+        participant_container_name="participant-desktop",
+        participant_username="operator",
+        host_ssh_username="hostadmin",
+    )
+    profiles = {profile_class: dict(entries) for profile_class, entries in base.image_key_profiles.items()}
+    profiles["kali"]["nested-host"] = nested_profile
+    config = dataclasses.replace(base, image_key_profiles=profiles, range_host_identity_pool_size=0)
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "nested-host"
+
+    with pytest.raises(CloudError, match="identity pool is disabled"):
+        render_range_cell_plan(
+            "req-123",
+            _variables(payload=payload),
+            config,
+            range_host_pool_slot=4,
+        )
 
 
 def test_render_range_cell_plan_private_google_access_adds_egress_hole():
@@ -873,6 +971,54 @@ def test_existing_keyed_instance_rejects_profile_drift_before_secret_mutation(mo
         _ensure_instance(plan, clients, config, instance, secret_ops)
 
     secret_mocks.ensure_ssh.assert_not_called()
+
+
+def test_machine_image_instance_clone_converges_all_attached_disks_to_auto_delete(mocker):
+    base = _sample_config()
+    nested_profile = GCERangeImageProfile(
+        source_machine_image="projects/test-project/global/machineImages/nested-host-v1",
+        machine_type="n2-standard-8",
+        bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+        participant_container_name="participant-desktop",
+        participant_username="operator",
+        host_ssh_username="hostadmin",
+        host_ssh_port=2222,
+    )
+    profiles = {profile_class: dict(entries) for profile_class, entries in base.image_key_profiles.items()}
+    profiles["kali"]["nested-host"] = nested_profile
+    config = dataclasses.replace(base, image_key_profiles=profiles, range_host_identity_pool_size=10)
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "nested-host"
+    plan = render_range_cell_plan(
+        "req-123",
+        _variables(payload=payload),
+        config,
+        range_host_pool_slot=4,
+    )
+    instance = plan["instances"][0]
+    clients = _mock_clients(exists=False)
+    created = SimpleNamespace(
+        disks=[
+            SimpleNamespace(device_name="boot", auto_delete=True),
+            SimpleNamespace(device_name="nested-data", auto_delete=False),
+        ]
+    )
+    clients.instances.get.side_effect = [NotFound(), created]
+    clients.instances.set_disk_auto_delete.return_value = SimpleNamespace(name="op")
+    secret_ops, _secret_mocks = _mock_secret_ops(mocker)
+
+    _ensure_instance(plan, clients, config, instance, secret_ops)
+
+    request = clients.instances.insert.call_args.kwargs["request"]
+    assert request["source_machine_image"] == nested_profile.source_machine_image
+    assert "disks" not in request["instance_resource"]
+    clients.instances.set_disk_auto_delete.assert_called_once_with(
+        project="test-project",
+        zone="us-central1-b",
+        instance=instance["resource_name"],
+        device_name="nested-data",
+        auto_delete=True,
+    )
 
 
 def test_render_plan_resolves_distinct_images_for_same_role_by_ami_key():
@@ -1622,6 +1768,31 @@ def test_destroy_range_cell_deletes_every_resource(mocker):
         call.delete_subnetwork(project="test-project", region="us-central1", subnetwork="shifter-r-42-polaris"),
         call.delete_network(project="test-project", network="shifter-range-42"),
     ]
+
+
+def test_destroy_range_cell_marks_inherited_disks_for_instance_deletion(mocker):
+    clients = _mock_clients(exists=True)
+    clients.instances.get.side_effect = None
+    clients.instances.get.return_value = SimpleNamespace(
+        disks=[SimpleNamespace(device_name="captured-data", auto_delete=False)]
+    )
+    clients.instances.set_disk_auto_delete.return_value = SimpleNamespace(name="op")
+    secret_ops, _mocks = _mock_secret_ops(mocker)
+    vertex_ops, _vertex_mocks = _mock_vertex_ops(mocker)
+
+    destroy_range_cell(
+        "req-123",
+        _variables(),
+        config=_sample_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    assert clients.instances.set_disk_auto_delete.call_count == 2
+    for call_args in clients.instances.set_disk_auto_delete.call_args_list:
+        assert call_args.kwargs["device_name"] == "captured-data"
+        assert call_args.kwargs["auto_delete"] is True
 
 
 def test_destroy_range_cell_tolerates_missing_cidr_after_pre_mutation_failure(

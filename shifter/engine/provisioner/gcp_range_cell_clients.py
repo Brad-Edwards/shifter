@@ -24,6 +24,13 @@ class ComputeCollectionClient(Protocol):
         """Delete one resource and return a Compute operation."""
 
 
+class ComputeInstancesClient(ComputeCollectionClient, Protocol):
+    """Compute instance operations additionally used by range lifecycle."""
+
+    def set_disk_auto_delete(self, **kwargs: object) -> object:
+        """Set one attached disk's instance-deletion behavior."""
+
+
 class OperationWaitClient(Protocol):
     """Subset of Compute operation clients used by this backend."""
 
@@ -45,7 +52,7 @@ class GCEClients:
     subnetworks: ComputeCollectionClient
     firewalls: ComputeCollectionClient
     addresses: ComputeCollectionClient
-    instances: ComputeCollectionClient
+    instances: ComputeInstancesClient
     global_operations: OperationWaitClient
     region_operations: OperationWaitClient
     zone_operations: OperationWaitClient
