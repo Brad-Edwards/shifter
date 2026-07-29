@@ -13,12 +13,22 @@ drive the result inbox instead, which is the authoritative seam.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
-from engine.models import OperationResultDisposition, OperationResultInbox, Range, RangeEventOutbox, Request
+from engine.models import (
+    InterruptState,
+    OperationResultDisposition,
+    OperationResultInbox,
+    ProvisionerLaunchIntent,
+    Range,
+    RangeEventOutbox,
+    Request,
+)
 from engine.services import apply_pending_operation_results
 from shared.audit import bind_audit_writer, get_audit_writer, reset_audit_writer
 from shared.enums import ResourceStatus
@@ -94,6 +104,74 @@ def _snapshot(count: int = 2) -> dict:
             {"address": f"node.n{index}", "resource_type": "node", "status": "provisioned"} for index in range(count)
         ]
     }
+
+
+def _cancel_generation(fx: _Fixture) -> ProvisionerLaunchIntent:
+    """Record an active interrupt against the fixture's provision generation (#277)."""
+    now = timezone.now()
+    return ProvisionerLaunchIntent.objects.create(
+        operation_id=fx.operation_id,
+        idempotency_key=f"k-{fx.operation_id}",
+        payload={"version": 1, "resource": "raes-range", "operation": "provision", "request_id": str(fx.request_id)},
+        next_attempt_at=now,
+        interrupt_state=InterruptState.REQUESTED,
+        interrupt_requested_at=now,
+        interrupt_next_attempt_at=now,
+        interrupt_deadline=now + timedelta(seconds=1800),
+    )
+
+
+class TestCancelledGenerationFence:
+    """A cancelled provision generation's results are evidence only (#277).
+
+    The range must never be moved out of DESTROYING (no PROVISIONING/READY/FAILED,
+    no provisioned state) by a generation whose provision was cancelled.
+    """
+
+    def test_terminal_ready_is_fenced_evidence_only(self):
+        fx = _Fixture(status=Range.Status.DESTROYING.value)
+        _cancel_generation(fx)
+        row = fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED, "members": []})
+
+        apply_pending_operation_results()
+
+        fx.range.refresh_from_db()
+        # Applied as evidence, but the READY clobber is fenced.
+        assert _disposition(row) == OperationResultDisposition.APPLIED
+        assert fx.range.status == Range.Status.DESTROYING.value
+        assert fx.range.ready_at is None
+        assert not fx.range.provisioned_instances
+        assert RaesOperationRecord.objects.filter(request_id=fx.request_id, operation_id=str(fx.operation_id)).exists()
+
+    def test_running_observation_is_fenced(self):
+        fx = _Fixture(status=Range.Status.DESTROYING.value)
+        _cancel_generation(fx)
+        fx.seed(ResultStep.RAES_PROVISION_RUNNING, {"raes_status": RAES_STATE_RUNNING})
+
+        apply_pending_operation_results()
+
+        fx.range.refresh_from_db()
+        assert fx.range.status == Range.Status.DESTROYING.value  # not PROVISIONING
+
+    def test_terminal_failed_is_fenced(self):
+        fx = _Fixture(status=Range.Status.DESTROYING.value)
+        _cancel_generation(fx)
+        fx.seed(ResultStep.RAES_TERMINAL_FAILED, {"reason_code": "cloud_operation_failed", "diagnostic": ""})
+
+        apply_pending_operation_results()
+
+        fx.range.refresh_from_db()
+        assert fx.range.status == Range.Status.DESTROYING.value  # not FAILED
+
+    def test_uncancelled_generation_still_reaches_ready(self):
+        # Control: without an interrupt, the same READY result applies normally.
+        fx = _Fixture(status=ResourceStatus.PROVISIONING.value)
+        fx.seed(ResultStep.RAES_TERMINAL_READY, {"raes_status": RAES_STATE_SUCCEEDED, "members": []})
+
+        apply_pending_operation_results()
+
+        fx.range.refresh_from_db()
+        assert fx.range.status == ResourceStatus.READY.value
 
 
 class TestProvisionLifecycle:

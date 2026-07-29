@@ -98,6 +98,31 @@ def dispatch_provisioner_command(command: list[str], *, task_identity: str | Non
     )
 
 
+def interrupt_provisioner_task(task_ref: str, command: list[str], task_identity: str) -> str | None:
+    """Interrupt a dispatched provisioner task; callable only by the launcher worker (#277).
+
+    Resolves the provider task runner and verifies the workload against the trusted
+    launch identity (image/command/container/service-account + the deterministic
+    Job identity) before stopping it. Returns a ``TaskInterruptDisposition`` value,
+    or ``None`` when the engine task runner is not configured.
+    """
+    from django.conf import settings
+
+    task_config = _get_engine_task_config()
+    if task_config is None:
+        return None
+    cluster, task_definition, _network_config = task_config
+    runner = get_task_runner()
+    expected_identity = {
+        "task_identity": task_identity,
+        "image": task_definition,
+        "command": command,
+        "container_name": PROVISIONER_CONTAINER_NAME,
+        "service_account_name": str(getattr(settings, "ENGINE_TASK_SERVICE_ACCOUNT_NAME", "") or ""),
+    }
+    return runner.interrupt_task(cluster, task_ref, expected_identity)
+
+
 def _start_ecs_task(range_id: int, user_id: int, command: str) -> str | None:
     """Start an ECS Fargate task for provisioning operations.
 

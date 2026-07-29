@@ -18,7 +18,7 @@ private submodules by domain:
 - ``_subnet``: Subnet, SubnetAllocation (depends on ``_range.Range`` and
   ``_request.Instantiation``).
 - ``_outbox``: OutboxStatus, RangeEventOutbox.
-- ``_launch``: ProvisionerLaunchStatus, ProvisionerLaunchIntent.
+- ``_launch``: ProvisionerLaunchStatus, InterruptState, ProvisionerLaunchIntent.
 - ``_raes``: RaesImageMapping, RaesContentDeliveryBinding, RaesParticipantAccessBinding.
 
 All models are re-exported here so Django's app registry discovers them via
@@ -28,7 +28,7 @@ exactly as before the split.
 
 from ._capacity import CapacityDeclaration
 from ._capacity_assessment import CapacityAssessment, CapacityDraw, CapacityReservation
-from ._launch import ProvisionerLaunchIntent, ProvisionerLaunchStatus
+from ._launch import InterruptState, ProvisionerLaunchIntent, ProvisionerLaunchStatus
 from ._operation_io import (
     OperationInput,
     OperationResultDisposition,
@@ -49,6 +49,7 @@ __all__ = [
     "CapacityReservation",
     "Instance",
     "Instantiation",
+    "InterruptState",
     "OperationInput",
     "OperationResultDisposition",
     "OperationResultInbox",
