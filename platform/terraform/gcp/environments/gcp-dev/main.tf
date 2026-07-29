@@ -60,6 +60,7 @@ module "platform_core" {
   artifact_registry_location        = var.artifact_registry_location
   gke_release_channel               = var.gke_release_channel
   range_network_cidr                = var.range_network_cidr
+  range_host_identity_pool_size     = var.range_host_identity_pool_size
   gke_subnet_cidr                   = var.gke_subnet_cidr
   gke_pods_cidr                     = var.gke_pods_cidr
   gke_services_cidr                 = var.gke_services_cidr

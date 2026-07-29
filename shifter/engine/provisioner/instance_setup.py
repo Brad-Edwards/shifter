@@ -156,6 +156,7 @@ def _set_attacker_container_password_after_bootstrap(
     *,
     container_name: str,
     ssh_user: str = "kali",
+    required: bool = False,
 ) -> None:
     """Set the per-instance password inside a container-backed Kali endpoint."""
     execution = build_guest_execution_context(instance_data, os_type="kali", role="attacker")
@@ -182,6 +183,8 @@ def _set_attacker_container_password_after_bootstrap(
                 target_container=container_name,
             )
         except SetupError as exc:
+            if required:
+                raise
             logger.warning("%s RDP password push non-fatal skip: %s", container_name, exc)
     finally:
         execution.close()

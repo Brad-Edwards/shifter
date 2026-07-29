@@ -287,6 +287,7 @@ module "portal_iam" {
   terraform_state_bucket_name    = "${var.project_id}-terraform-state"
   vmseries_bootstrap_bucket_name = var.vmseries_bootstrap_bucket_name
   raes_package_bucket_name       = var.raes_package_bucket_name
+  range_host_identity_pool_size  = var.range_host_identity_pool_size
 
   depends_on = [module.portal_secrets, module.portal_gcs]
 }

@@ -23,6 +23,20 @@ variable "vpn_gateway_pool_size" {
   }
 }
 
+variable "range_host_identity_pool_size" {
+  type        = number
+  default     = 0
+  description = "Number of pre-created service accounts available to preconfigured range hosts."
+
+  validation {
+    condition = (
+      var.range_host_identity_pool_size >= 0
+      && floor(var.range_host_identity_pool_size) == var.range_host_identity_pool_size
+    )
+    error_message = "range_host_identity_pool_size must be a non-negative integer."
+  }
+}
+
 # ADR-008-R7: resource IDs handed in from the owning modules (portal/secrets,
 # portal/gcs, platform-core) so Secret Manager and Cloud Storage access can be
 # bound per named resource instead of at project scope. No secret inventory or

@@ -13,18 +13,49 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from agent_assets import get_agent_presigned_url
-from config import GCE_BOOTSTRAP_POLARIS_HOST
+from config import GCE_BOOTSTRAP_POLARIS_HOST, GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST
 from dc_setup import _run_dc_setup
+from executors.factory import build_guest_execution_context
 from instance_setup import (
     _DomainJoinSpec,
     _InstanceSetupSpec,
     _run_single_instance_setup,
     _set_attacker_container_password_after_bootstrap,
 )
-from orchestrators.setup_orchestrator import SetupError
+from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
+from plans.preconfigured_machine_host import PreconfiguredMachineHostPlan
 from polaris_bootstrap import _run_polaris_range_bootstrap
 
 logger = logging.getLogger(__name__)
+
+
+def _run_preconfigured_machine_host_setup(inst: dict[str, Any], inst_id: str) -> None:
+    """Wait for the image-owned workload, then set its participant RDP password."""
+    execution = build_guest_execution_context(
+        inst,
+        os_type=inst.get("os", "kali"),
+        role=inst.get("role", "attacker"),
+    )
+    try:
+        execution.wait_for_ready(timeout_seconds=300)
+        plan = PreconfiguredMachineHostPlan()
+        result = SetupOrchestrator(executor=execution.executor).orchestrate(
+            execution.target,
+            plan,
+            plan.get_context(inst),
+            document_name=execution.document_name,
+        )
+        if not result.success:
+            raise SetupError(f"Preconfigured range host {inst_id} failed readiness: {result.error}")
+    finally:
+        execution.close()
+    _set_attacker_container_password_after_bootstrap(
+        instance_data=inst,
+        instance_id=inst_id,
+        container_name=str(inst["gcp_participant_container_name"]),
+        ssh_user=str(inst["ssh_username"]),
+        required=True,
+    )
 
 
 def _build_uuid_to_config(range_spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -115,6 +146,7 @@ def _setup_one_other_instance(
         if gce_bootstrap_capability is not None
         else inst_config.get("ami_key") == "polaris-vm"
     )
+    is_preconfigured_machine_host = gce_bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST
     spec = _InstanceSetupSpec(
         role=inst.get("role", "victim"),
         os_type=inst.get("os", "ubuntu"),
@@ -131,6 +163,9 @@ def _setup_one_other_instance(
         set_local_password=not is_polaris_vm,
     )
     try:
+        if is_preconfigured_machine_host:
+            _run_preconfigured_machine_host_setup(inst, inst_id)
+            return (inst_id, True, None)
         _run_single_instance_setup(instance_data=inst, instance_id=inst_id, spec=spec)
         # Per-scenario post-bootstrap: the polaris VM AMI is pre-baked with
         # a docker compose stack hardcoded to range 0's DC IP and the
