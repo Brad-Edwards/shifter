@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from hashlib import sha256
 from uuid import UUID, uuid4
 
@@ -12,6 +13,7 @@ from django.utils import timezone
 
 from engine.models import (
     Instance,
+    InterruptState,
     OperationInput,
     ProvisionerLaunchIntent,
     ProvisionerLaunchStatus,
@@ -29,6 +31,13 @@ _OPERATIONS = {
     "ngfw": {"provision", "deprovision", "start", "stop"},
 }
 PROVISIONER_DISPATCH_FAILED = "Provisioner dispatch failed"
+
+# Bounded convergence budget for a provision-task interrupt (#277). Safe internal
+# default; promote to a typed deployment setting only if operators need to tune it.
+_INTERRUPT_DEADLINE_SECONDS = 1800
+# Only the RAES provision generation is interruptible in this scope (#277); the
+# AWS legacy ``range`` provision path is #1894.
+_INTERRUPTIBLE_PROVISION = ("raes-range", "provision")
 
 
 def _request_payload(command: list[str]) -> dict[str, object] | None:
@@ -255,6 +264,46 @@ def _operation_identity(payload: dict[str, object]) -> UUID:
         operation_id = row.provisioner_operation_id
         assert operation_id is not None, "operation generation must be reserved"
         return operation_id
+
+
+def request_provision_interrupt(range_obj: Range) -> bool:
+    """Record a durable interrupt against the range's current provision generation (#277).
+
+    Bound under the caller's transaction to the current ``provisioner_operation_id``
+    -- never keyed by ``request_id`` or task reference alone. Scoped to the RAES
+    provision path; the AWS legacy ``range`` path is out of scope (#1894). The
+    launcher worker converges the recorded request (suppress pending / stop running
+    / observe terminal absence / enqueue canonical destroy). Idempotent: returns
+    True without re-stamping when the generation is already marked.
+
+    Returns:
+        True when an interruptible provision generation was (or already is) marked.
+    """
+    op_id = range_obj.provisioner_operation_id
+    if op_id is None:
+        return False
+    intent = ProvisionerLaunchIntent.objects.select_for_update().filter(operation_id=op_id).first()
+    if intent is None:
+        return False
+    payload = intent.payload or {}
+    if (payload.get("resource"), payload.get("operation")) != _INTERRUPTIBLE_PROVISION:
+        return False
+    if intent.interrupt_state != InterruptState.NONE:
+        return True
+    now = timezone.now()
+    intent.interrupt_state = InterruptState.REQUESTED
+    intent.interrupt_requested_at = now
+    intent.interrupt_next_attempt_at = now
+    intent.interrupt_deadline = now + timedelta(seconds=_INTERRUPT_DEADLINE_SECONDS)
+    intent.save(
+        update_fields=[
+            "interrupt_state",
+            "interrupt_requested_at",
+            "interrupt_next_attempt_at",
+            "interrupt_deadline",
+        ]
+    )
+    return True
 
 
 def clear_provisioner_operation_after_failure(row: Range | Instance) -> list[str]:

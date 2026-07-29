@@ -193,12 +193,15 @@ class GuardSuiteReachabilityTests(unittest.TestCase):
         """The lane must actually run the suite, not merely name the path.
 
         Asserting the runner invocation rather than the bare path is what
-        distinguishes a real lane from a recipe that echoes the directory.
+        distinguishes a real lane from a recipe that echoes the directory. The
+        suite runs under `coverage run` so SonarCloud gets an adr_guard coverage
+        report (#998); the ``(?s)`` flag lets the match span the recipe's
+        line-continuations between ``coverage run`` and the discover invocation.
         """
         recipe = _make("--dry-run", "test")
         self.assertRegex(
             recipe,
-            r"python -m unittest discover -s scripts/adr_guard/tests -p 'test_\*\.py'",
+            r"(?s)coverage run\b.*-m unittest discover -s scripts/adr_guard/tests -p 'test_\*\.py'",
         )
 
 

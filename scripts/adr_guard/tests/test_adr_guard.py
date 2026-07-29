@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -3963,6 +3964,86 @@ class PythonComplexityGateTests(unittest.TestCase):
                 msg=f"Expected check to run on adr_guard.py change: {violations}",
             )
 
+    def test_targeted_files_include_package_module_runs_check(self) -> None:
+        """A change to any adr_guard package module - not just the facade - is relevant (#998).
+
+        After the package split (#998) the gate's constants live in
+        checks/complexity.py, so targeted runs must treat package modules as
+        relevant via is_guard_source_path, not only scripts/adr_guard/adr_guard.py.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            target_pkg = ADR_GUARD.PYTHON_COMPLEXITY_GATE_PYPROJECTS[0]
+            packages = {pkg: self.PYPROJECT_OK for pkg in ADR_GUARD.PYTHON_COMPLEXITY_GATE_PYPROJECTS}
+            packages[target_pkg] = self.PYPROJECT_MISSING_C901
+            self._write_packages(repo_root, packages)
+
+            violations = ADR_GUARD.check_python_complexity_gate(
+                repo_root, ["scripts/adr_guard/checks/complexity.py"]
+            )
+
+            self.assertTrue(
+                any("C901" in v.message for v in violations),
+                msg=f"Expected check to run on a package-module change: {violations}",
+            )
+
+    def test_targeted_package_test_file_is_not_relevant(self) -> None:
+        """Package test files carry no gate config, so they stay irrelevant (#998)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            packages = {pkg: self.PYPROJECT_OK for pkg in ADR_GUARD.PYTHON_COMPLEXITY_GATE_PYPROJECTS}
+            packages[ADR_GUARD.PYTHON_COMPLEXITY_GATE_PYPROJECTS[0]] = self.PYPROJECT_MISSING_C901
+            self._write_packages(repo_root, packages)
+
+            violations = ADR_GUARD.check_python_complexity_gate(
+                repo_root, ["scripts/adr_guard/tests/test_adr_guard.py"]
+            )
+
+            self.assertEqual(violations, [], msg=f"Test-file change must be irrelevant: {violations}")
+
+
+class GuardSourcePathTests(unittest.TestCase):
+    """is_guard_source_path classifies adr_guard package source (#998)."""
+
+    def test_classification(self) -> None:
+        f = ADR_GUARD.is_guard_source_path
+        self.assertTrue(f("scripts/adr_guard/adr_guard.py"))
+        self.assertTrue(f("scripts/adr_guard/_guard/_common.py"))
+        self.assertTrue(f("scripts/adr_guard/_guard/checks/deploy_workflow.py"))
+        self.assertFalse(f("scripts/adr_guard/tests/test_adr_guard.py"))
+        self.assertFalse(f("scripts/adr_guard/boundary_mock_baseline.json"))
+        self.assertFalse(f("shifter/shifter_platform/foo.py"))
+
+
+class PackageBoundaryTests(unittest.TestCase):
+    """The `_guard` package resolves its own imports without the facade (#998).
+
+    The facade only bootstraps sys.path and re-exports; the internal wiring must
+    use package-relative imports, so the package is importable on its own with no
+    prior facade execution. Runs in a fresh interpreter so the facade is proven
+    absent, not merely already-cached from this test module's own load.
+    """
+
+    def test_package_imports_without_facade(self) -> None:
+        script_dir = MODULE_PATH.parent  # scripts/adr_guard
+        code = (
+            "import sys; "
+            f"sys.path.insert(0, {str(script_dir)!r}); "
+            "import importlib; "
+            "reg = importlib.import_module('_guard._registry'); "
+            "importlib.import_module('_guard.checks.k8s_security'); "
+            "importlib.import_module('_guard._cli'); "
+            "assert 'adr_guard' not in sys.modules, 'facade must not be loaded'; "
+            "assert 'adr-registry' in reg.CHECKS and 'quality-path-ownership' in reg.CHECKS, "
+            "sorted(reg.CHECKS); "
+            "print('ok')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("ok", result.stdout)
+
 
 class McpOpsTlsStrictTests(unittest.TestCase):
     """Tests for ADR-014-R7: mcp/ops must keep Postgres TLS verification on.
@@ -4216,8 +4297,10 @@ class BoundaryMockPolicyTests(unittest.TestCase):
             reference_baseline = Counter(
                 {("tests/test_ranges.py", "cms.services.create_range"): 1}
             )
+            # Patch the impl module (checks/boundary_mock.py): the facade re-export
+            # keeps its own module globals, so the check resolves this helper there.
             with patch.object(
-                ADR_GUARD,
+                ADR_GUARD.boundary_mock,
                 "_load_boundary_mock_reference_baseline",
                 return_value=(reference_baseline, None),
             ):
@@ -4243,8 +4326,10 @@ class BoundaryMockPolicyTests(unittest.TestCase):
                 ],
             )
 
+            # Patch the impl module (checks/boundary_mock.py): the facade re-export
+            # keeps its own module globals, so the check resolves this helper there.
             with patch.object(
-                ADR_GUARD,
+                ADR_GUARD.boundary_mock,
                 "_load_boundary_mock_reference_baseline",
                 return_value=(Counter(), None),
             ):
@@ -5884,10 +5969,14 @@ class PublishedContractSnapshotsImmutableTests(unittest.TestCase):
 
     def _run(self, repo_root: Path, *, base_refs, ls_tree, base_content, enforce: bool = False):
         env = {ADR_GUARD._PUBLISHED_CONTRACT_ENFORCE_ENV: "1" if enforce else ""}
+        # adr_guard.py is a compatibility facade; check_published_contract_snapshots_immutable
+        # lives in checks/published_contract.py and resolves these git helpers through that
+        # module's own globals, so patch them there rather than on the facade attribute.
+        pc = ADR_GUARD.published_contract
         with (
             patch.dict(os.environ, env),
-            patch.object(ADR_GUARD, "_boundary_mock_base_reference_candidates", return_value=base_refs),
-            patch.object(ADR_GUARD, "_git_text", side_effect=self._fake_git(ls_tree=ls_tree, base_content=base_content)),
+            patch.object(pc, "_boundary_mock_base_reference_candidates", return_value=base_refs),
+            patch.object(pc, "_git_text", side_effect=self._fake_git(ls_tree=ls_tree, base_content=base_content)),
         ):
             return ADR_GUARD.check_published_contract_snapshots_immutable(repo_root, None)
 
