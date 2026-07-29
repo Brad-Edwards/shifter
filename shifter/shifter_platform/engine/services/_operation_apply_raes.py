@@ -216,6 +216,34 @@ def _apply_ready_with_realized_access(
     return _apply_observation(row, ResultStep.RAES_TERMINAL_READY, payload, range_obj)
 
 
+def _generation_cancelled(row: OperationResultInbox) -> bool:
+    """Return True when this provision generation has an active cancellation (#277).
+
+    A cancelled provision generation is fenced from authoritative lifecycle writes:
+    its results are recorded as evidence but must never move the range out of
+    DESTROYING (no PROVISIONING/READY/FAILED, no provisioned state). Once the
+    launcher enqueues the canonical destroy the generation also becomes stale by
+    ``operation_id`` and is rejected earlier; this closes the window before that.
+    """
+    from engine.models import InterruptState, ProvisionerLaunchIntent
+
+    state = (
+        ProvisionerLaunchIntent.objects.filter(operation_id=row.operation_id)
+        .values_list("interrupt_state", flat=True)
+        .first()
+    )
+    return bool(state) and state != InterruptState.NONE
+
+
+def _apply_cancelled_evidence(row: OperationResultInbox, step: ResultStep, payload: dict[str, Any]) -> str:
+    """Record a cancelled generation's result as evidence only -- no lifecycle write."""
+    if step is ResultStep.RAES_TERMINAL_FAILED:
+        _persist_operation_status(row, RAES_STATE_FAILED, payload["reason_code"])
+    else:
+        _persist_operation_status(row, payload["raes_status"], payload.get("status_reason"))
+    return f"raes {step.value} fenced (cancelled generation, evidence only)"
+
+
 def apply_raes_result(
     row: OperationResultInbox,
     step: ResultStep,
@@ -235,6 +263,22 @@ def apply_raes_result(
         _persist_runtime_snapshot(row, payload["resources"])
         return f"raes snapshot ({len(payload['resources'])} resource(s))"
 
+    # Fence a cancelled provision generation (#277): record evidence, never write
+    # lifecycle state that would regress the range out of DESTROYING. Destroy
+    # results carry their own (uncancelled) generation, so they are unaffected.
+    if _generation_cancelled(row):
+        return _apply_cancelled_evidence(row, step, payload)
+    return _apply_uncancelled_raes_result(row, step, payload, range_obj, apply_failure)
+
+
+def _apply_uncancelled_raes_result(
+    row: OperationResultInbox,
+    step: ResultStep,
+    payload: dict[str, Any],
+    range_obj: Range,
+    apply_failure: ApplyFailure,
+) -> str:
+    """Apply a RAES result that is not fenced by a cancellation."""
     if step is ResultStep.RAES_TERMINAL_FAILED:
         # The sidecar still records the failed observation; only the closed
         # reason code travels as its reason, never the bounded diagnostic.

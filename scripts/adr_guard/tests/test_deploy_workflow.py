@@ -976,5 +976,75 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
         )
 
 
+class CloudCredentialClassificationTests(unittest.TestCase):
+    """Broadened ADR-037-R1 credential classification (#998 codex security finding).
+
+    A job or workflow that holds a named secret - static ``env`` / step ``with``
+    values, a ``secrets:`` mapping, ``secrets: inherit``, or a workflow-level
+    ``env`` secret - is credential-bearing, so its remote actions must be
+    SHA-pinned even without OIDC or a recognized auth action. GITHUB_TOKEN alone
+    does not qualify (it is present by default and its elevated uses are already
+    covered by the permission/OIDC markers).
+    """
+
+    DW = ADR_GUARD.deploy_workflow
+
+    def test_static_env_secret_makes_job_credentialed(self):
+        job = {"runs-on": "ubuntu-latest", "env": {"AWS_SECRET_ACCESS_KEY": "${{ secrets.AWS_SECRET }}"}}
+        self.assertTrue(self.DW._dw_job_is_cloud_credentialed(job))
+
+    def test_secret_passed_to_step_with_makes_job_credentialed(self):
+        job = {
+            "runs-on": "ubuntu-latest",
+            "steps": [{"uses": "some/action@v1", "with": {"token": "${{ secrets.DEPLOY_TOKEN }}"}}],
+        }
+        self.assertTrue(self.DW._dw_job_is_cloud_credentialed(job))
+
+    def test_secrets_inherit_makes_job_credentialed(self):
+        self.assertTrue(
+            self.DW._dw_job_is_cloud_credentialed(
+                {"uses": "./.github/workflows/reusable.yml", "secrets": "inherit"}
+            )
+        )
+
+    def test_secrets_mapping_makes_job_credentialed(self):
+        job = {
+            "uses": "./.github/workflows/reusable.yml",
+            "secrets": {"SONAR_TOKEN": "${{ secrets.SONAR_TOKEN }}"},
+        }
+        self.assertTrue(self.DW._dw_job_is_cloud_credentialed(job))
+
+    def test_github_token_alone_is_not_credentialed(self):
+        job = {"runs-on": "ubuntu-latest", "env": {"GH": "${{ secrets.GITHUB_TOKEN }}"}}
+        self.assertFalse(self.DW._dw_job_is_cloud_credentialed(job))
+
+    def test_workflow_level_env_secret_makes_workflow_credentialed(self):
+        wf = {
+            "env": {"TF_TOKEN": "${{ secrets.TF_API_TOKEN }}"},
+            "jobs": {"a": {"runs-on": "ubuntu-latest", "steps": [{"uses": "x/y@v1"}]}},
+        }
+        self.assertTrue(self.DW._dw_workflow_is_cloud_credentialed(wf))
+
+    def test_github_token_only_workflow_stays_uncredentialed(self):
+        wf = {
+            "jobs": {
+                "a": {
+                    "runs-on": "ubuntu-latest",
+                    "env": {"GH": "${{ secrets.GITHUB_TOKEN }}"},
+                    "steps": [{"uses": "x/y@v1"}],
+                }
+            }
+        }
+        self.assertFalse(self.DW._dw_workflow_is_cloud_credentialed(wf))
+
+    def test_quality_workflow_is_credentialed_and_all_actions_pinned(self):
+        # _quality.yml receives SONAR_TOKEN, so it must classify as credentialed;
+        # ADR-037-R1 then requires every remote action across the repo's workflows
+        # to be SHA-pinned. Regression for the #998 finding and its fix.
+        wf = ADR_GUARD._dw_load_workflow(REPO_ROOT, ".github/workflows/_quality.yml")
+        self.assertTrue(self.DW._dw_workflow_is_cloud_credentialed(wf))
+        self.assertEqual(ADR_GUARD.check_workflow_action_sha_pinning(REPO_ROOT, None), [])
+
+
 if __name__ == "__main__":
     unittest.main()

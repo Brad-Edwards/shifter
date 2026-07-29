@@ -94,8 +94,10 @@ test-js: ## Platform JavaScript (Jest) suite with coverage
 # that job from the `adr_guard` quality unit, whose paths exclude the Makefile,
 # so this lane is the only route a Makefile-only change has to it.
 test-adr-guard: ## Repository-guard suite (adr_guard checks, quality ownership, workflow gating, make targets)
-	uv run --python 3.11 --with 'pyyaml==6.0.2' \
-	  python -m unittest discover -s scripts/adr_guard/tests -p 'test_*.py'
+	uv run --python 3.11 --with 'pyyaml==6.0.2' --with coverage \
+	  coverage run --source=scripts/adr_guard --omit='scripts/adr_guard/tests/*' \
+	    -m unittest discover -s scripts/adr_guard/tests -p 'test_*.py'
+	uv run --python 3.11 --with coverage coverage xml -o scripts/adr_guard/coverage.xml
 
 policy: ## Run repository architecture, import, diff, and changed-doc policy
 	python3 scripts/adr_guard/adr_guard.py --all --level ci
