@@ -207,29 +207,27 @@ class TestDestroyRangeByRequest:
     def test_returns_false_when_request_not_found(self, db):
         assert destroy_range_by_request(uuid4()) is False
 
-    def test_legacy_range_dispatches_legacy_teardown(self, user):
-        """A cyberscript range routes to the legacy teardown command (#1310)."""
+    def test_legacy_range_dispatches_legacy_teardown(self, user, ecs_dispatch):
+        """A cyberscript range dispatches the legacy 'range destroy' command (#1310).
+
+        Driven through the real teardown with the ECS client mocked at the boto3
+        boundary; the subcommand is asserted from the command reaching boto3.
+        """
+        from .conftest import ecs_run_task_command
+
         spec = _request_spec(user.id)
         create_range(spec)
-        with (
-            patch("engine.ecs.start_aces_range_teardown") as aces_td,
-            patch("engine.ecs.start_range_teardown", return_value=None) as legacy_td,
-        ):
-            assert destroy_range_by_request(spec.request_id) is True
-        legacy_td.assert_called_once_with(spec.request_id)
-        aces_td.assert_not_called()
+        assert destroy_range_by_request(spec.request_id) is True
+        assert ecs_run_task_command(ecs_dispatch) == ["range", "destroy", "--request-id", str(spec.request_id)]
 
-    def test_aces_range_dispatches_aces_teardown(self, user):
-        """A persisted ACES plan routes to the aces-range teardown, not legacy (#1310)."""
+    def test_aces_range_dispatches_aces_teardown(self, user, ecs_dispatch):
+        """A persisted ACES plan dispatches the 'aces-range destroy' command (#1310)."""
+        from .conftest import ecs_run_task_command
+
         spec = _request_spec(user.id)
         create_range(spec)
         Range.objects.filter(request__request_id=spec.request_id).update(
             range_config={"kind": ACES_PROVISIONING_PLAN_KIND, "contract_version": "1", "resources": {}}
         )
-        with (
-            patch("engine.ecs.start_range_teardown") as legacy_td,
-            patch("engine.ecs.start_aces_range_teardown", return_value=None) as aces_td,
-        ):
-            assert destroy_range_by_request(spec.request_id) is True
-        aces_td.assert_called_once_with(spec.request_id)
-        legacy_td.assert_not_called()
+        assert destroy_range_by_request(spec.request_id) is True
+        assert ecs_run_task_command(ecs_dispatch) == ["aces-range", "destroy", "--request-id", str(spec.request_id)]
