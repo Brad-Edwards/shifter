@@ -193,12 +193,14 @@ def test_dispatch_routes_native_for_raes_when_flag_on(user, native_on, monkeypat
     routed = {}
     monkeypatch.setattr(
         "cms.services._raes_range_create._create_raes_native_range_impl",
-        lambda u, s, *, range_source=None, instantiation_purpose=None: routed.update(
-            scenario=s, purpose=instantiation_purpose
+        lambda u, s, *, range_source=None, instantiation_purpose=None, raes_source_id=None: routed.update(
+            scenario=s, purpose=instantiation_purpose, source=raes_source_id
         ),
     )
     create_range_dispatch(user, "raes-x", {})
     assert routed["scenario"] == "raes-x"
+    # Unrouted direct RAES pick loads its own id as the internal source.
+    assert routed["source"] == "raes-x"
     # The product router always mints live-fire authority (#1354, ADR-030-R6).
     assert routed["purpose"] is InstantiationPurpose.LIVE_FIRE
 

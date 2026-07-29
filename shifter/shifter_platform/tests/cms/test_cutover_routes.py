@@ -13,9 +13,11 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth import get_user_model
 
+from cms.exceptions import CMSError
 from cms.models import RaesPackageSource
 from cms.scenarios.cutover import resolve_launch
 from cms.scenarios.registry import list_all_scenarios
+from cms.services import create_range_dispatch
 
 pytestmark = pytest.mark.django_db
 
@@ -126,3 +128,16 @@ class TestResolveLaunch:
         res = resolve_launch("standalone-raes")
         assert res.is_raes is True
         assert res.raes_source_id == "standalone-raes"
+
+
+class TestDispatchRouting:
+    """The routing decision itself is covered by TestResolveLaunch (the single
+    resolution create_range_dispatch consumes). Here we assert the one dispatch
+    branch with distinct observable behavior: a routed internal source id is
+    refused as a direct launch choice (ADR-031-R5/R6) rather than launched."""
+
+    def test_routed_internal_source_id_is_refused(self, staff_user, settings):
+        _make_source(staff_user)
+        _route(settings)
+        with pytest.raises(CMSError):
+            create_range_dispatch(staff_user, "polaris-raes", {})

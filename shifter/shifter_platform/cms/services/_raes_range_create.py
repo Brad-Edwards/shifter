@@ -64,13 +64,6 @@ _OBJECT_SOURCE_KIND = "object"
 _RAES_REALIZED_BACKEND = "gce"
 
 
-def _is_raes_scenario(scenario: str) -> bool:
-    """Return True if ``scenario`` names a registered RAES package."""
-    from cms.models import RaesPackageSource
-
-    return RaesPackageSource.objects.filter(scenario_id=scenario).exists()
-
-
 def _load_raes_source_or_raise(scenario: str) -> RaesPackageSource:
     """Return the RaesPackageSource for ``scenario`` or raise a clear CMSError."""
     from cms.models import RaesPackageSource
@@ -301,10 +294,16 @@ def _create_raes_native_range_impl(
     *,
     range_source: RangeSource | None,
     instantiation_purpose: InstantiationPurpose,
+    raes_source_id: str | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
-    Not a product facade; see ``_range_create._create_range_impl``.
+    Not a product facade; see ``_range_create._create_range_impl``. ``scenario``
+    is the stable public id used for persistence, correlation, and audit;
+    ``raes_source_id`` (default: ``scenario``) is the internal registered
+    package-source actually loaded, so a routed public id (``polaris``) launches
+    its distinct source (``polaris-raes``) while the range still correlates by the
+    public id (ADR-031-R5/R6).
     """
     from shared.enums import RangeSource
 
@@ -323,7 +322,7 @@ def _create_raes_native_range_impl(
     _assert_raes_adapter_supports(backend_admission)
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
-    source = _load_raes_source_or_raise(scenario)
+    source = _load_raes_source_or_raise(raes_source_id or scenario)
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the RAES RangeInstance (range_spec=None) for the reservation."""
@@ -397,15 +396,23 @@ def dispatch_range_launch(
     the CMS create seam -- ``cms.services`` exports the two facades that wrap it,
     never this function.
     """
-    if settings.RAES_NATIVE_PROVISIONING_ENABLED and _is_raes_scenario(scenario):
-        if remote_access_teardown_at is not None:
-            raise CMSError("The RAES-native range adapter does not support CTF OpenVPN access")
-        return _create_raes_native_range_impl(
-            user,
-            scenario,
-            range_source=range_source,
-            instantiation_purpose=instantiation_purpose,
-        )
+    from cms.scenarios.cutover import resolve_launch
+
+    if settings.RAES_NATIVE_PROVISIONING_ENABLED:
+        resolution = resolve_launch(scenario)
+        if resolution.is_raes:
+            if resolution.raes_source_id is None:
+                # A routed internal source id is not offered as a direct launch choice.
+                raise CMSError(f"Scenario '{scenario}' is not available for launch")
+            if remote_access_teardown_at is not None:
+                raise CMSError("The RAES-native range adapter does not support CTF OpenVPN access")
+            return _create_raes_native_range_impl(
+                user,
+                scenario,
+                range_source=range_source,
+                instantiation_purpose=instantiation_purpose,
+                raes_source_id=resolution.raes_source_id,
+            )
     return _create_range_impl(
         user,
         scenario,
