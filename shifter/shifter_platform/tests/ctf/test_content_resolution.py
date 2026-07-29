@@ -91,11 +91,14 @@ def test_resolver_binds_identity_digest_and_bundle(monkeypatch) -> None:
 def test_digest_mismatch_fails_before_parse(monkeypatch) -> None:
     raw = _raw_bundle()
     monkeypatch.setattr("shared.cloud.get_object_storage", lambda: _storage(raw))
-    with override_settings(
-        CTF_CONTENT_BUCKET="private-content",
-        CTF_CONTENT_MAX_BYTES=1024 * 1024,
-        CTF_CONTENT_REFERENCES=_references(raw, digest=f"sha256:{'0' * 64}"),
-    ), pytest.raises(CTFValidationError) as error:
+    with (
+        override_settings(
+            CTF_CONTENT_BUCKET="private-content",
+            CTF_CONTENT_MAX_BYTES=1024 * 1024,
+            CTF_CONTENT_REFERENCES=_references(raw, digest=f"sha256:{'0' * 64}"),
+        ),
+        pytest.raises(CTFValidationError) as error,
+    ):
         resolve_scenario_ctf_content("scenario-one")
     assert error.value.code == "CTF_CONTENT_DIGEST_MISMATCH"
 

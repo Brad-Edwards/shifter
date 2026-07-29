@@ -33,9 +33,7 @@ def _load_max_bytes() -> int:
     except ValueError as exc:
         raise ImproperlyConfigured("SHIFTER_CTF_CONTENT_MAX_BYTES must be an integer") from exc
     if not 1 <= value <= _MAX_ALLOWED_BYTES:
-        raise ImproperlyConfigured(
-            f"SHIFTER_CTF_CONTENT_MAX_BYTES must be between 1 and {_MAX_ALLOWED_BYTES}"
-        )
+        raise ImproperlyConfigured(f"SHIFTER_CTF_CONTENT_MAX_BYTES must be between 1 and {_MAX_ALLOWED_BYTES}")
     return value
 
 
@@ -48,9 +46,7 @@ def _load_references() -> CtfContentReferenceCatalog:
     except CtfContentReferenceError as exc:
         raise ImproperlyConfigured(f"SHIFTER_CTF_CONTENT_REFERENCES_JSON is invalid: {exc}") from exc
     if catalog.references and not CTF_CONTENT_BUCKET:
-        raise ImproperlyConfigured(
-            "SHIFTER_CTF_CONTENT_BUCKET is required when content references are configured"
-        )
+        raise ImproperlyConfigured("SHIFTER_CTF_CONTENT_BUCKET is required when content references are configured")
     return catalog
 
 
