@@ -1,324 +1,377 @@
-# ACES Controlled Default Cutover Preflight
+# ACES Total Default Cutover Preflight
 
-Issue: GitHub #1310, "ACES migration: execute controlled default cutover and
-rollback selector."
+Issue: GitHub #1310, "ACES migration: total default cutover to ACES-native
+path (temporary rollback switch)."
 
-Status: pre-implementation architecture guidance. This note does not change a
-catalog route, enable ACES-native provisioning, register or rename a package,
-launch or destroy a range, publish cutover evidence, or retire a legacy path.
+Status: pre-implementation architecture guidance. This note does not implement
+the selector, change a runtime default, register or promote a pack, launch or
+destroy a range, deploy a tenant, or publish the required cutover record.
 
 ## Preflight Conclusion
 
-The cutover must not execute from the current checkout. ADR-024 makes parity
-evidence a prerequisite, and the repository does not yet contain the reviewed
-#1294 Polaris evidence bundle. The parity inventory still names unresolved or
-future evidence for multiple cutover surfaces. There is also a lifecycle gap:
-`engine.services.destroy_range_by_request()` always dispatches
-`engine.ecs.start_range_teardown`, while the ACES-native teardown entrypoint is
-`engine.ecs.start_aces_range_teardown`. The #1264 command calls the former
-through `cms.services.destroy_range_by_request_id`, so its claim that it tears
-down an ACES range is not sufficient until live evidence proves the persisted
-ACES plan selects the `aces-range destroy` command.
+#1310 is an authorized default cutover, not another default-off experiment. The
+shipped application and provider configuration must select the ACES-backed
+`polaris`; an explicitly empty route plus the disabled native capability remain
+only as the temporary rollback posture.
 
-These are blocking readiness findings, not permission to fold parity or
-lifecycle repair into an unreviewed selector flip. #1310 may change the default
-only after the owning evidence/fix work is green and reviewed.
+Four repository facts are on the critical path:
 
-## Boundary
+1. `engine.services.destroy_range_by_request()` always calls the legacy
+   `engine.ecs.start_range_teardown`, although
+   `engine.ecs.start_aces_range_teardown` exists. Existing-range lifecycle must
+   dispatch from the persisted, validated `Range.range_config.kind`.
+2. `cms.scenarios.registry` suppresses every `AcesPackageSource` whose
+   `scenario_id` collides with a legacy id, while
+   `create_range_dispatch()` independently queries `AcesPackageSource`. The
+   registry does not yet own one source-resolution result.
+3. The data model and ingestion service currently conflate three identities:
+   the stable public launch id (`polaris`), the internal package-source id
+   (for example `polaris-aces`), and the authored pack identity
+   (`pack.yaml.name == polaris`). `register_pack()` requires its `scenario_id`
+   to equal the authored name and the no-shadow guard rejects `polaris`, so the
+   required distinct internal source cannot currently be registered through
+   the canonical boundary.
+4. The referenced `../shifter-scenarios-panw/polaris` pack is not currently
+   ingestible by Shifter's pinned pack contract: it is marked `draft`, has no
+   `associated_artifact_manifest`, and contains two direct `sdl/*.sdl.yaml`
+   files while `shared.aces.package_loader` requires exactly one launch entry.
+   Shifter's shipped in-box manifest is also empty.
 
-ADR-024 remains the cutover doctrine. ADR-031 and ADR-032 now define a more
-specific runtime shape than the early migration preflights:
+The real Polaris pack and its immutable deploy-time staging/registration are
+therefore a prerequisite to activating the default, not an optional follow-up.
+The dedicated AWS realization follow-up may leave ACES range creation
+non-functional on AWS, as #1310 permits, but AWS still must receive the same
+selector and capability posture across its portal and workers. ADR-024's
+parity, conformance, normal-path lifecycle, rollback, and repository gates
+remain blocking evidence.
 
-- `SHIFTER_ACES_NATIVE_PROVISIONING` is the default-off **capability gate** for
-  the entire ACES-native path. It is not, by itself, a safe selector for which
-  source owns a stable public scenario id.
-- A registered `AcesPackageSource` keeps its immutable package identity, for
-  example `polaris-aces`. It must not be renamed to collide with the legacy
-  `polaris` row, inserted through a migration, or exempted from
-  `cms.scenarios.legacy_ids`.
-- The controlled cutover needs one separate, explicit **catalog source-route
-  selector** that maps a stable public id to an existing ACES package-source
-  id. The initial route is `polaris=polaris-aces` (or the actual reviewed ACES
-  source id in the evidence bundle).
-- The empty route set is the rollback value. It restores the legacy `polaris`
-  route without deleting, renaming, or rewriting either source.
-- ACES routing happens before legacy hydration. The selected ACES package goes
-  through `create_range_dispatch -> create_aces_native_range` and the compiled
-  `ProvisioningPlan` path. It must not enter `cms.scenarios.hydrator`,
-  `RangeSpec`, or `engine.interpreter`. The unselected/rollback route continues
-  through the unchanged legacy loader and hydrator. This is the current
-  ADR-031/032 meaning of the older “hydrator boundary” wording.
+## Architecture Decisions And Boundaries
 
-No new ADR is required while implementation stays within those decisions. A
-different persistence model, a selector inside ACES SDL/backend manifests, or
-ACES-to-`RangeSpec` conversion would change ADR-031/032 and needs an ADR update
-before coding.
+ADR-024 remains the cutover doctrine; ADR-031/032 own the runtime shape.
+ADR-031 is updated with this preflight to record the authorized phase change
+from default-off parallel development to ACES-native default operation.
+
+- `SHIFTER_ACES_NATIVE_PROVISIONING` is the temporary capability/rollback
+  gate. Its shipped default becomes true. It is not source precedence.
+- One catalog source-route setting, `SHIFTER_ACES_CATALOG_CUTOVERS`, maps a
+  stable public id to an internal registered source id. Its shipped default is
+  `polaris=polaris-aces`, where `polaris-aces` is the reviewed internal id used
+  when the real pack is registered.
+- An explicitly empty route set restores legacy source precedence. A complete
+  rollback empties the route before disabling the native flag. A non-empty
+  route with the capability disabled is invalid configuration and fails
+  closed.
+- `cms.scenarios.registry` owns resolution. Catalog listing, launchability, and
+  `create_range_dispatch` consume the same resolved entry; the dispatcher
+  removes its second `_is_aces_scenario()` decision.
+- While selected, the catalog publishes `polaris` exactly once and the
+  internal id is not offered as another launch choice. `ScenarioMetadata`
+  remains keyed by public id, preserving its existing access policy.
+- ACES selection occurs before legacy hydration. ACES continues through the
+  compiled `ProvisioningPlan` path with `RangeInstance.range_spec=None`;
+  rollback continues through the existing CyberScript loader, Pydantic
+  template validation, `RangeSpec`, interpreter, and provisioner path.
+- New launches use current registry resolution. Status and teardown for an
+  existing range use the persisted plan discriminator and never consult the
+  current selector or capability flag.
+
+The selector is a launch-routing seam only. It is not an access-control flag,
+package attribute, conformance verdict, provider selector, backend capability,
+scenario DSL field, or lifecycle discriminator.
+
+## Identity Contract And Polaris Prerequisite
+
+The implementation must separate, not rename or alias implicitly, these
+concepts:
+
+| Concept | Owner | Cutover value |
+| --- | --- | --- |
+| Public launch identity | Registry projection, `ScenarioMetadata`, product workflows | `polaris` |
+| Internal source identity | Existing `AcesPackageSource` registry reference | `polaris-aces` |
+| Authored package identity | Pinned `aces-scenario-packs` validation of `pack.yaml` | `polaris` |
+
+Evolve the existing `AcesPackageSource` / `PackRegistrationRequest` contract
+only enough to hold and validate the internal source identity separately from
+the authored package identity. Do not add an alias table, a second package
+schema, a Polaris model, or a privileged registration path. The authored
+identity remains established by `cms.scenarios.pack_validation`; the internal
+id remains a bounded slug; the full immutable identity remains the existing
+source kind, package ref/version/digest, lock identity, contract/profile, and
+conformance evidence. Preserve no-shadow enforcement for stored source ids.
+
+The real pack must first become a proper, immutable, Shifter-ingestible ACES
+package:
+
+- one explicit direct SDL launch entry, selected by the pack contract rather
+  than path sniffing or a scenario-name branch;
+- an `associated_artifact_manifest` and canonical digest covering its SDL,
+  content packages, contract module, and other required associated artifacts;
+- a passed conformance report for the supported `aces/shifter` profile; and
+- immutable availability under the deployed `ACES_PACKAGE_ROOT` or the
+  existing object-source resolver.
+
+Use the existing `cms.scenarios.inbox` manifest and
+`bootstrap_inbox_catalog` path for a shipped pack. That path deliberately calls
+the same authorized, validated, audited `register_pack` service as operator
+ingestion and is transactionally idempotent. Do not seed the row with a data
+migration, fixture, direct ORM write, or deployment-only bypass. The route may
+be activated only after bootstrap and conformance promotion have made the
+target resolvable. Syntax can be checked at settings import; database/package
+readiness belongs at bootstrap/readiness and registry resolution, never at
+module import or migration discovery.
 
 ## Selector Contract
 
-The canonical runtime setting should be
-`SHIFTER_ACES_CATALOG_CUTOVERS`, parsed by `config/_aces_settings.py` into an
-immutable `public_scenario_id -> aces_package_source_id` mapping. Its default is
-empty. The environment form is a comma-separated list of strict slug pairs,
-for example:
+`config/_aces_settings.py` is the canonical parser. Parse the environment form
+into an immutable `public_id -> source_id` mapping. The comma-separated form is:
 
 ```text
 SHIFTER_ACES_CATALOG_CUTOVERS=polaris=polaris-aces
 ```
 
-This is a non-secret deployment setting. It is the only new selection seam;
-do not add per-view flags, a Polaris boolean, a database “default” bit, a YAML
-marker, or a second route table.
+It must enforce:
 
-The selector must satisfy these invariants:
+- exactly one `=` per pair; bounded, non-empty Django-compatible slugs; unique
+  public ids and unique target ids; no ignored entries or last-wins behavior;
+- a strict boolean for `SHIFTER_ACES_NATIVE_PROVISIONING`; unrecognized values
+  must not become false silently;
+- `ImproperlyConfigured` for malformed syntax or the invalid
+  non-empty-route/native-disabled combination, without echoing arbitrary input;
+- a target that resolves to exactly one registered source and passes the
+  existing source-kind, contract/profile, conformance, reference, digest,
+  package, lock, and backend-realizability gates;
+- a public id with a preserved legacy source, so empty routing is a genuine
+  rollback; and
+- no fallback to legacy after an active ACES route encounters an ACES
+  validation, compilation, dispatch, or provision failure.
 
-- Strictly validate one `=` per pair, non-empty Django-compatible slugs,
-  bounded lengths, and unique public and target ids. Invalid or duplicate
-  input raises `django.core.exceptions.ImproperlyConfigured`; it is never
-  silently ignored.
-- A non-empty mapping requires `ACES_NATIVE_PROVISIONING_ENABLED`. An invalid
-  two-key posture fails startup/readiness rather than silently falling back to
-  legacy. Rollback clears the route mapping; it need not disable the parallel
-  ACES capability or its review/validation surfaces.
-- Before activation, every target must resolve to exactly one existing
-  `AcesPackageSource`, pass `validate_package_source`, name a supported
-  source/contract/profile, have `conformance_status=passed`, satisfy package
-  and lock identity checks, and be realizable by the published
-  `provisioning-only` backend manifest. Missing or stale evidence fails closed;
-  an active route never falls back to legacy on an ACES error.
-- Every public id must resolve to an existing legacy YAML/default or active DB
-  scenario so the empty mapping is a real rollback route, not a promised one.
-- The unified catalog emits the selected public id exactly once. While selected,
-  `polaris` is the ACES-backed entry and the internal target id is not a second
-  launch choice. With the mapping empty, `polaris` is the legacy entry and the
-  distinct ACES source may remain visible only under its existing review/test
-  posture.
-- `ScenarioMetadata` remains keyed by the stable public id. Existing
-  `enabled` and `staff_only` policy therefore survives cutover and rollback;
-  the package row must not duplicate access fields.
-- Range, CTF, Mission Control, audit, and status correlation keep the public id
-  and `request_id`. Package identity remains the package-source id plus
-  ref/version/digest/profile in the existing bounded ACES evidence surfaces.
+Both application defaults and every deployment environment must state the
+ACES posture explicitly. Provider configuration must not rely on an image
+fallback, because mixed old/new processes could otherwise list one source and
+dispatch another. A rollout is ready only when all portal, CMS, Mission
+Control, CTF, scheduler, and worker replicas have the same sanitized selector
+fingerprint and native flag.
 
-The registry should own resolution. Product callers continue to consume
-`cms.services.list_launchable_scenarios` and `create_range_dispatch`; they must
-not read the setting, query `AcesPackageSource`, or implement aliasing
-themselves. `create_range_dispatch` must use the same resolved route as the
-catalog and launchability checks, not `_is_aces_scenario()` as a second routing
-decision.
+## Required Cross-Cutting Reuse
 
-## Required Reuse
-
-| Concern | Canonical incumbent | Cutover guardrail |
+| Concern | Canonical incumbent | Guardrail |
 | --- | --- | --- |
-| Migration and runtime doctrine | ADR-024, ADR-031, ADR-032; `aces-cutover-archive-plan-preflight-1238.md` | Keep capability enablement, source routing, and archive cleanup as distinct concepts. |
-| Catalog and access | `cms.scenarios.registry`, `ScenarioWorkflow`, `ScenarioMetadata`, `cms.services.list_launchable_scenarios` | Resolve the route once and preserve workflow-aware launchability plus the public access overlay. |
-| Package identity and registration | `cms.services.register_pack`, `AcesPackageSource`, `PackageSourceRecord`, `validate_package_source`, `cms.scenarios.legacy_ids` | Route to the already-registered distinct source id; do not rename, raw-update, seed, or exempt a colliding row. |
-| Package content safety | `cms.scenarios.pack_validation`, `shared.aces.package_loader`, `shared.aces.object_source` | Preserve upstream pack validation, root containment, archive bounds, immutable digest binding, object-key policy, and launch-time re-verification. |
-| ACES admission | `shared.aces.manifest`, `shared.aces.runtime_target`, ACES-owned conformance tests | The manifest is capability evidence, not routing configuration. A route may select only an already-supported profile. |
-| Legacy rollback | `cms.scenarios.loader`, `cms.scenarios.hydrator`, `cms.scenarios/templates/polaris.yaml`, `create_range` | Leave loader slug/path/`safe_load`/Pydantic gates and the legacy create body unchanged. |
-| ACES launch | `create_range_dispatch`, `create_aces_native_range`, `CmsAcesDispatchPort`, `engine.services.create_aces_range` | Route before hydration and retain user, active-range, backend-admission, reservation, audit, and failure-status controls. |
-| Persistence | CMS `Request`/`RangeInstance`; engine `Request`/`Range.range_config`; ACES operation sidecars | Keep `range_spec=None` for ACES and the serialized ACES plan as the existing versioned engine payload. Add no selector table or duplicate runtime schema. |
-| Lifecycle and status | persisted `range_config.kind`, `RangeEventOutbox`, `apply_range_status`, `reconcile_range_events`, `ResourceStatus` | Provision/destroy selection for an existing range derives from persisted kind, never the current catalog selector. Keep one lifecycle/status pipeline. |
-| Product boundaries | `ctf.bridges`, `ctf.services.range.*`, Mission Control views/APIs, terminal/Guacamole services | CTF and Mission Control keep calling CMS/engine service facades and retain current ownership, scope, participant, and capacity checks. |
-| Errors | `CMSError`, `shared.errors`, `shared.api.errors`, existing view classifiers | Translate once at service/API boundaries; add no cutover or ACES exception hierarchy. |
-| Logging and audit | `shared.log_sanitize`, provisioner `log_redact`, `shared.audit` / `risk_register` adapter | Record sanitized route ids, request ids, digests, status classes, and evidence refs. Registration and any mutable catalog action retain strict audit behavior. |
-| Runtime config | `config/_aces_settings.py`, generated `config/env-manifest.json`, `installation.runtime_inventory`, AWS deploy env assembly, GCP runtime env/renderer and Helm ConfigMap | Deliver the same validated non-secret selector to every portal/CMS/CTF process; do not rely on a shell-only override. |
-| Repository enforcement | `.importlinter`, `scripts/check_layer_imports/layer_imports.yaml`, `scripts/adr_guard`, stack-native tests | Do not weaken import, conformance, secret, workflow, Terraform, Kubernetes, smoke, or ADR gates. |
+| Doctrine | ADR-024, ADR-031, ADR-032; #1238 preflight and parity inventory | Keep source routing, native capability, lifecycle, and archive as separate concepts. |
+| Catalog/access | `cms.scenarios.registry`, `ScenarioWorkflow`, `ScenarioMetadata`, `cms.services.list_launchable_scenarios` | Resolve once; preserve workflow filtering and public-id access overlays. |
+| Ingestion/identity | `cms.services.register_pack`, `PackRegistrationRequest`, `AcesPackageSource`, `cms.scenarios.inbox`, `bootstrap_inbox_catalog`, `cms.scenarios.legacy_ids` | Extend the existing reference contract; retain one uniform authorized and audited ingestion path. |
+| Source schema | `shared.schemas.aces_package_source.PackageSourceRecord` and `validate_package_source` | Preserve the bounded provenance-only record; do not persist bodies, runtime config, or credentials. |
+| Pack safety | `cms.scenarios.pack_validation`, `shared.aces.package_loader`, `shared.aces.object_source` | Reuse upstream contract validation, canonical digest, containment, archive bounds, and launch-time verification. |
+| ACES admission | Registry allowlists, `shared.aces.manifest`, `shared.aces.runtime_target`, ACES conformance | Selection never substitutes for conformance or backend realizability. |
+| Legacy path | `cms.scenarios.loader`, schema adapters/hydrator, `create_range` | Leave slug/path containment, `yaml.safe_load`, Pydantic validation, and legacy create behavior intact. |
+| Launch | `create_range_dispatch`, `create_aces_native_range`, `CmsAcesDispatchPort`, `engine.services.create_aces_range` | Preserve ownership, active-range, backend admission, transaction/reservation, audit, and failure status. |
+| Persistence | CMS `Request`/`RangeInstance`; engine `Request`/`Range.range_config`; ACES sidecars | Keep the serialized versioned plan as the ACES payload; add no selector snapshot or duplicate runtime schema. |
+| Lifecycle/status | persisted `range_config.kind`, `start_aces_range_teardown`, `RangeEventOutbox`, `apply_range_status`, reconciler | Select teardown from persisted validated kind and reuse one status pipeline. |
+| Product workflow | Mission Control views/APIs and `ctf.bridges` / range services | Continue through CMS service facades with current scopes, ownership, participant, and capacity checks. |
+| Errors | `CMSError`, `shared.errors`, `shared.api.errors`, existing HTML classifiers | Translate once at boundaries; add no cutover exception hierarchy. |
+| Logging/audit | `shared.log_sanitize`, provisioner `log_redact`, `shared.audit` | Emit bounded ids/fingerprints/statuses and strict registration audit; never dump environment or payloads. |
+| Settings/deploy | `_aces_settings.py`, `env-manifest.json`, `shifter/installation/runtime_inventory.py`, provider renderers | One validated key/value contract must reach every relevant process. |
+| Enforcement | `.importlinter`, layer checks, `scripts/adr_guard`, stack-native checks | Keep ACES imports inside `shared.aces` and do not weaken existing gates. |
 
-## Cross-Cutting Layers
+## Cross-Cutting Layers The Design Must Pass
 
-### Security and validation
+### Security, validation, and error surfaces
 
-- **Authentication and authorization:** catalog review/registration remains
-  behind `threat_research_required`, `validate_cms_authoring_user`,
-  `HasCMSAuthoringActor`, and exact CMS authoring scopes. Mission Control keeps
-  `IsAuthenticatedSessionOrApiToken`, `HasMissionControlActor`, exact
-  `mission_control:*` scopes, owner checks, and participant blockers. CTF keeps
-  organizer/participant service checks. The selector is deployment config, not
-  an HTTP field or user preference.
-- **Selector/config shape:** strict parsing lives in `config/_aces_settings.py`.
-  The generated env manifest, runtime inventory, provider renderers, deploy
-  tests, and settings tests must agree on the key and default. All web and
-  worker roles must see one value; a rolling deployment with mixed route maps
-  is an invalid cutover posture because listing and asynchronous launch could
-  disagree.
-- **Legacy input shape:** rollback still passes slug validation, template-path
-  containment, `yaml.safe_load`, and `TypeAdapter(AnyScenarioTemplate)` in the
-  legacy loader/model boundaries.
-- **Package/ACES shape:** the selected row still passes
-  `PackageSourceRecord`/`validate_package_source`, canonical pack validation,
-  package-root or object-archive containment and bounds, digest re-verification,
-  the supported contract/profile allowlists, ACES parser/semantic validation,
-  `shared.aces.runtime_target` admission, and the published backend manifest
-  conformance gate. Selection is not conformance.
-- **Backend policy:** both legacy and ACES creates retain
-  `_assert_live_fire_backend_admitted`; the trusted backend admission result is
-  carried into engine persistence. A GCE-only ACES realization cannot become a
-  global AWS/default claim. Each tenant/provider named in the cutover record
-  needs its own green live evidence.
-- **Secret handling:** the selector contains slugs only. It must not carry
-  package bodies, storage URLs, credentials, flags, provider ids, secret refs,
-  or rendered config. Logs, audit JSON, APIs, events, DLQs, evidence, docs, and
-  workflow summaries retain the existing allowlisted/redacted projections.
-- **OS/process exposure:** the selector is environment config shared by Django
-  roles, never a user-supplied CLI argument. Provisioner dispatch remains
-  structured argv containing `aces-range provision|destroy --request-id`; no
-  package/YAML content, token, provider payload, or shell fragment enters argv.
-- **Error envelopes:** startup/config errors use `ImproperlyConfigured` and
-  name only the invalid key/id. Service failures use `CMSError`; DRF uses
-  `shared.api.errors`; HTML flows use current safe classifiers. Raw parser,
-  storage, Terraform, cloud, SSH/SSM, CTFd, or provider exceptions remain out
-  of client responses and the cutover record.
+- **HTTP authorization:** registration/review remains behind
+  `validate_cms_authoring_user`, `threat_research_required`,
+  `HasCMSAuthoringActor`, and exact authoring scopes. Mission Control retains
+  `IsAuthenticatedSessionOrApiToken`, `HasMissionControlActor`, write scopes,
+  owner checks, participant blockers, and throttles. CTF retains organizer and
+  participant service checks. The selector is deployment config and is never
+  accepted from an HTTP request, user preference, scenario editor, or SDL.
+- **Settings shape:** `_aces_settings.py` validates the strict boolean and
+  route grammar and raises `ImproperlyConfigured`. Literal environment
+  bindings or `_EXPLICIT_BINDINGS` keep generated `config/env-manifest.json`
+  complete. `config/_posture.py` may report only a safe enabled state and route
+  fingerprint/count.
+- **AWS configuration:** Terraform variables, module inputs, SSM parameters,
+  environment `tfvars`, `portal/ec2/user_data.sh`, and
+  `scripts/portal-deploy/deploy_portal.sh` must validate the same boolean and
+  slug-pair grammar before constructing Docker arguments. Both bootstrap and
+  redeploy paths must pass both values to the portal and every CMS/engine/MC/
+  CTF/maintenance worker.
+- **GCP configuration:** `scripts/gcp/render_runtime_env.py`,
+  `shifter/installation/runtime_inventory.py`, the generated
+  `platform-runtime` ConfigMap/Kustomize overlay, and Helm `runtimeEnv` must
+  agree on ownership and values. The web, CMS, engine, MC, CTF scheduler,
+  launcher, reconciler, outbox, and prune deployments consume the same
+  ConfigMap. Do not put these non-secrets in the Secret or forward them as
+  provisioner-job runtime inputs.
+- **Legacy parser:** rollback continues through slug validation, template-root
+  containment, `yaml.safe_load`, and `TypeAdapter(AnyScenarioTemplate)`.
+- **Package parser:** registration and launch continue through the pinned pack
+  validator, `PackageSourceRecord`, repo-root/object-key containment,
+  download/extraction bounds, canonical digest verification, exactly-one-entry
+  enforcement, and supported source/contract/profile allowlists.
+- **ACES/provisioner parser:** compilation remains inside `shared.aces`.
+  `aces_plan.parse_plan` validates the persisted discriminator, contract and
+  producer versions, resources, payloads, and topology before cloud mutation.
+  Backend admission and the published manifest remain required.
+- **Secret and OS exposure:** selectors contain slugs only. GCP ConfigMaps and
+  AWS SSM parameters are non-secret. AWS Docker `-e NAME=value` may expose
+  these non-secret values in host process/container metadata; strict grammar
+  prevents shell content. Credentials and package bodies remain secret
+  references or contained files and never enter the selector, logs, evidence,
+  APIs, or argv. Provisioner argv remains the structured
+  `aces-range provision|destroy --request-id <id>` form.
+- **Error envelopes:** configuration failures name only the key/constraint;
+  service failures use `CMSError`; DRF and HTML use their existing safe
+  classifiers. Raw YAML/pack/parser, object storage, Terraform, cloud, SSM/SSH,
+  CTFd, or provider exceptions do not reach clients or the cutover record.
 
-### Reliability, persistence, and observability
+### Persistence, reliability, and observability
 
-- Source selection is evaluated before any range reservation. Once reserved,
-  the persisted engine `range_config.kind` is the lifecycle discriminator.
-  Selector rollback affects new launches only; existing ACES ranges must still
-  be queryable, reach READY/FAILED, and dispatch `aces-range destroy` while the
-  selector is empty.
-- Do not persist a copy of the route mapping in `Scenario.definition`,
-  `RangeInstance.range_spec`, `Range.range_config`, sidecar payloads, events, or
-  audit JSON. Persist the already-canonical public scenario id, request id, and
-  ACES plan/evidence identities at their existing owners.
-- A selector change is observable as sanitized old/new route ids, deployment
-  revision, environment/provider, readiness verdict, and evidence refs. Do not
-  log an entire environment, provenance object, package body, provider output,
-  terminal stream, command string, credential, token, or flag.
-- The cutover health gate must prove every serving/worker replica reports the
-  same selector fingerprint and that catalog resolution, launch, status,
-  destroy, and rollback resolve consistently. A process-local cache that can
-  outlive a deploy or database/source update is prohibited.
+- Resolve before reservation. After reservation, persist only the existing
+  public scenario/request identities and the canonical legacy or ACES payload.
+  Do not copy the selector into `Scenario.definition`,
+  `RangeInstance.range_spec`, `Range.range_config`, events, or sidecars.
+- Teardown must parse `range_config` fail-closed and dispatch legacy or ACES
+  teardown from its known `kind`. Unknown/malformed kinds fail without cloud
+  mutation. Preserve the existing status rollback when task dispatch fails.
+- Disabling the flag or clearing the route affects only future catalog
+  selection. It must not make existing ACES ranges unqueryable or
+  undestroyable.
+- Emit sanitized startup/readiness posture, source resolution, request id,
+  public/source ids, digest/report refs, lifecycle kind, and status class at
+  their current logging/audit owners. Do not add a parallel telemetry stream or
+  log full settings, provenance, plans, manifests, commands, cloud output, or
+  environment values.
+- Do not retain a process-local route cache across deployment/config or source
+  changes. Readiness and the reviewed cutover record must demonstrate a
+  fleet-uniform fingerprint.
 
 ## Extensibility Seam
 
-The mapping is deliberately parameterized by stable public id and registered
-package-source id. The next scenario cutover adds another pair; it does not add
-a boolean, model field, core-service branch, or CTF/Mission Control change.
-Another ACES source kind/profile still extends the existing package-source,
-registry allowlists, loader/adapter, manifest, and conformance seams before it
-can become a route target.
+The only future-facing seam is the validated
+`public_scenario_id -> package_source_id` mapping at the registry boundary.
+The next scenario cutover adds one pair and one conformant source; it does not
+add a boolean, provider dimension, model flag, view branch, or CTF/Mission
+Control change. New source kinds or contract profiles first extend the existing
+source validator, resolver, registry allowlists, adapter/manifest, and
+conformance evidence. Provider admission remains orthogonal to catalog routing.
 
-Provider selection is orthogonal. Do not add provider to the route key or put
-provider rules in the catalog. Deployment-specific config selects routes only
-after the existing backend admission and manifest evidence is green for that
-environment.
+The pack's one launch entry should use the upstream package contract's explicit
+entry/variant seam. If the pinned contract cannot express the intended Polaris
+entry, that contract capability is the dependency to resolve; Shifter must not
+compensate with filename order, YAML-shape detection, or a Polaris branch.
 
-## Reviewed Cutover Record
+## Reviewed Cutover And Rollback Evidence
 
-The acceptance record is an operational review artifact, not a new runtime
-schema. One reviewed record must name:
+The required cutover record is an operational review artifact, not a runtime
+model. It must identify repository/deployment revision, environment/provider,
+sanitized selector transition, public/source/package identities, immutable
+digests, conformance and backend-manifest refs, parity-inventory reconciliation,
+and evidence for the normal portal -> CMS -> engine -> provisioner launch,
+status, and destroy path.
 
-- repository revision, deployment/environment/provider, timestamp, reviewer,
-  and the exact selector key plus old/new sanitized route values;
-- public id, selected package-source id, contract/profile, immutable
-  package/lock digests, backend-manifest identity, and conformance report ref;
-- parity-inventory review and the #1294 redacted evidence-bundle ref, including
-  normal portal/CMS/engine/provisioner launch, Polaris infrastructure and
-  scenario-verification results, CTFd readback, Mission Control/CTF projection,
-  lifecycle destroy, and full ADR/stack checks;
-- rollback value (empty mapping), the preserved legacy loader/template path,
-  replica restart/readiness expectations, and proof that rollback launches the
-  legacy `polaris` path while an existing ACES range remains destroyable;
-- the rollback window: at least the one proven release required by ADR-024,
-  extended if any live ACES range or retained plan still needs ACES lifecycle
-  support; and
-- stale docs/issues/tests proposed for #1311/#1312 retirement after the window,
-  without deleting them in #1310.
+Rollback evidence must launch an ACES range first, empty the route and disable
+the native launch capability fleet-wide, prove a new `polaris` launch resolves
+to legacy, and destroy the already-existing ACES range through
+`aces-range destroy`. A unit test or selector flip without the persisted-kind
+destroy is not rollback proof. Keep the rollback line for at least the
+ADR-024-required release and while any retained ACES plan needs lifecycle
+support.
 
-The record carries refs, ids, digests, counts, statuses, and sanitized reasons
-only. It must not copy raw evidence, flags, credentials, terminal/Guacamole
-URLs, CTFd tokens, presigned URLs, package bodies, commands, Terraform/cloud
-outputs, or environment values.
+The record contains refs, ids, digests, counts, status classes, and bounded
+reasons only. It does not copy flags, secrets, terminal/Guacamole URLs, tokens,
+presigned URLs, package bodies, plans, commands, Terraform/cloud outputs, or
+raw environment values.
 
 ## Whole-Repository Scope
 
-The later implementation must evaluate all of these owners, even if the final
-diff is smaller:
+The implementation must evaluate these owners even where no edit is necessary:
 
-- ADR-024, ADR-031, ADR-032 in `docs/architecture/aces-migration-adr.md` and
-  `docs/adr/index.yaml`;
-- `docs/architecture/aces-cutover-archive-plan-preflight-1238.md`,
-  `aces-polaris-acceptance-parity-gate-preflight-1237.md`,
-  `aces-cutover-evidence-1264.md`, and
-  `aces-migration-parity-inventory.yaml`;
-- `config/_aces_settings.py`, `config/settings.py`, generated
-  `config/env-manifest.json`, config tests, `installation/runtime_inventory.py`,
-  AWS deploy/runtime env assembly, GCP runtime env renderer/inventory, and Helm
-  ConfigMap consumers;
-- `cms/scenarios/{registry,legacy_ids,loader,pack_validation}.py`,
-  `cms/models/scenarios.py`, `cms/services/{_content_ingestion,_scenarios,
-  _aces_range_create,_range_create,_range_create_validation,
-  _range_destroy}.py`, and catalog/editor/API presentation;
-- `shared/schemas/aces_package_source.py`, `shared/aces/{package_loader,
-  object_source,manifest,runtime_target,dispatch_port,projections}.py`, and
-  shared error/log/audit helpers;
-- `engine/services/{_aces_range,_range,_range_by_request}.py`, `engine/ecs`,
-  persisted `Range.range_config`, provisioner `main.py`, `aces_plan.py`, and
-  `aces_range_ops.py`;
-- Mission Control launch/list/history/lifecycle APIs and views, CTF bridges and
-  range services, `RangeEventOutbox`, status handlers/reconciler, ACES sidecar
-  projections, terminal/Guacamole access, and image registry;
-- `scenario-dev/polaris/**`, the installed scenario-verification plugin report,
-  `scripts/polaris-aws-range/**`, and `scripts/ctfd-workshop/**` as evidence,
-  not routing logic; and
+- `docs/architecture/aces-migration-adr.md`,
+  `aces-cutover-archive-plan-preflight-1238.md`,
+  `aces-migration-parity-inventory.yaml`, and `docs/adr/index.yaml`;
+- `config/_aces_settings.py`, `config/settings.py`,
+  `config/env-manifest.json`, `config/_posture.py`, and settings tests;
+- `cms/scenarios/{registry,legacy_ids,inbox,pack_validation}.py`,
+  `cms/scenarios/inbox_packs/manifest.yaml`, `cms/models/scenarios.py`,
+  `cms/services/{_content_ingestion,_aces_range_create,_range_create,
+  _range_create_validation}.py`, and catalog presentation/API code;
+- `shared/schemas/aces_package_source.py`,
+  `shared/aces/{package_loader,object_source,manifest,runtime_target,
+  dispatch_port}.py`, and shared auth/error/log/audit helpers;
+- `engine/services/{_aces_range,_range_by_request}.py`, `engine/ecs`,
+  `engine.models.Range.range_config`, provisioner `main.py`, `aces_plan.py`,
+  `aces_range_ops.py`, status/outbox handlers, and reconciler;
+- Mission Control launch/list/status/destroy views and APIs, CTF bridges/range
+  services, terminal/Guacamole access boundaries, and capacity admission;
+- `shifter/installation/runtime_inventory.py`,
+  `scripts/gcp/render_runtime_env.py`, GCP generated/static runtime env inputs,
+  base/overlay workload manifests, and the Helm runtime ConfigMap/workloads;
+- `platform/terraform/modules/portal/ssm/{variables,main}.tf`,
+  `platform/terraform/modules/portal/ec2/user_data.sh`,
+  `platform/terraform/environments/{dev,proof,prod}/portal/{variables,main}.tf`
+  and `terraform.tfvars`, plus `scripts/portal-deploy/deploy_portal.sh`;
+- the real `../shifter-scenarios-panw/polaris` package as the upstream content
+  dependency and `scenario-dev/polaris/**` only as retained legacy/evidence,
+  never core routing logic; and
 - `.importlinter`, `scripts/check_layer_imports/layer_imports.yaml`,
-  `scripts/adr_guard/**`, `.github/quality-path-filters.yaml`, and all
-  path-triggered stack checks.
+  `scripts/adr_guard/**`, changed-path workflow filters, Terraform, Kubernetes,
+  conformance, smoke, and lifecycle tests.
 
 ## Gotchas And Anti-Patterns
 
-- Do not use `SHIFTER_ACES_NATIVE_PROVISIONING` alone as source precedence. It
-  enables the parallel capability and several management surfaces; it does not
-  identify which public id should stop resolving to legacy.
-- Do not rename `polaris-aces`, change an authored pack identity, allow a
-  cross-store `scenario_id` collision, or raw-update a row to make the public
-  id look reclaimed. Route the stable public id to the immutable source id.
-- Do not silently fall back to legacy while an ACES route is active. That hides
-  failed conformance and produces environment-dependent behavior under one id.
-- Do not route independently in catalog serializers, CTF forms, Mission Control
-  views, `create_range_dispatch`, or provisioner code. One registry resolution
-  must feed projection and launch.
-- Do not treat the selector as an ACES manifest capability, package field,
-  launchability bit, access flag, backend/provider choice, or scenario DSL term.
-- Do not send an ACES package through the legacy hydrator or wrap it in
-  `RangeSpec`; do not send legacy YAML into the ACES parser.
-- Do not choose destroy/provision behavior from the current selector or public
-  id. In-flight lifecycle dispatch comes from persisted validated kind.
-- Do not accept a rolling mixed-selector fleet, cache a route past deployment
-  convergence, or declare rollback proven by a unit test that never invokes
-  the real `aces-range destroy` command.
-- Do not post a cutover record before the evidence exists, mark inventory rows
-  reconciled by prose alone, or weaken conformance, scopes, secret scanning,
-  import checks, ADR guard, smoke, CTFd readback, Terraform, Kubernetes, or
-  workflow gates.
+- Do not ship default-off settings, a dormant selector, or rely only on
+  framework defaults instead of explicit AWS/GCP deployment values.
+- Do not use the native flag alone as source precedence or let the selector
+  bypass conformance/backend admission.
+- Do not rename the authored `polaris` pack to `polaris-aces`, weaken its
+  identity validation, allow a stored cross-source collision, or insert it
+  directly. Separate public, source, and package identity at their owners.
+- Do not expose the internal source as a second launch choice.
+- Do not route independently in serializers, views, CTF, Mission Control,
+  `create_range_dispatch`, engine, or provisioner. One registry result feeds
+  projection and dispatch.
+- Do not infer routing from YAML shape, source existence, filename, provider,
+  public id, or a Polaris-specific branch. An active ACES failure is not a
+  reason to fall back to legacy.
+- Do not send ACES through `RangeSpec`/CyberScript hydration or legacy YAML
+  through the ACES compiler.
+- Do not choose lifecycle from the current selector, flag, public id, or
+  package-source row. Use persisted validated kind.
+- Do not make the two config values secret, put package/credential data into
+  them, forward them into provisioner jobs, or render unvalidated values into
+  shell command strings.
+- Do not accept a mixed fleet, a partial inbox bootstrap, a mutable package
+  ref, multiple implicit SDL entries, or a route activated before conformance.
+- Do not mark parity rows reconciled by prose, treat generic ACES validation as
+  real Polaris evidence, or weaken ADR/import/security/provider gates.
 
 ## Non-Goals And Implementation Boundaries
 
-- No selector/config/code/model/migration/API/UI implementation in this
-  preflight; no package registration or identity change; no live cutover or
-  rollback operation.
-- No archive or removal of the legacy Polaris template, CyberScript contracts,
-  standalone Polaris evidence, docs, issues, or tests. Those remain #1311/#1312
-  work after the rollback window.
-- No new scenario schema, package schema, launchability model, exception
-  hierarchy, event family, status enum, evidence store, audit store, config
-  framework, or provider abstraction.
-- No expansion of the `provisioning-only` backend claim to orchestrator,
-  evaluator, participant-runtime, or observation protocols.
-- No assumption that a GCE proof authorizes AWS or another provider cutover.
-- No new Ground Control requirement UID for this requirement-free run.
+- This preflight contains no selector/config/model/migration/deploy
+  implementation, package registration, conformance promotion, live cutover,
+  rollback, or evidence publication.
+- #1310 does not archive or remove legacy Polaris, CyberScript contracts,
+  docs, tests, or evidence. Those remain #1311/#1312 after the rollback window.
+- #1310 need not make AWS ACES realization functional, but it must make AWS
+  configuration delivery uniform and must not claim a successful AWS launch.
+- Do not add a new authored scenario schema, provisioning schema, alias table,
+  launchability model, exception hierarchy, event/status family, evidence
+  store, audit store, config framework, or provider abstraction. A minimal
+  distinction inside the existing package-source/registration contract is in
+  scope because the current identity conflation makes the required route
+  impossible.
+- Do not expand the `provisioning-only` backend claim to orchestration,
+  evaluation, participant-runtime, or observation protocols.
+- Do not retire the temporary rollback controls in this issue.
+- No Ground Control requirement UID is created for this requirement-free run.
 
 ## Validation Expectations
 
-This architecture note requires:
+This architecture change requires:
 
 ```bash
 python3 scripts/adr_guard/adr_guard.py --all --level ci
 ```
 
-The later cutover implementation must also run every stack-native and
-provider/evidence check required by `AGENTS.md`, ADR-024, and the changed-path
-quality contract. Passing unit tests without reviewed live evidence is not a
-cutover gate.
+The later cutover implementation must also pass every stack-native,
+changed-path, provider, conformance, normal-path lifecycle, rollback, and live
+evidence gate required by `AGENTS.md` and ADR-024.

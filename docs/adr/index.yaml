@@ -1422,10 +1422,10 @@
   },
   {
     "id": "ADR-031",
-    "title": "ACES-native provisioning core is a feature-flagged parallel path",
+    "title": "ACES-native provisioning core and default-cutover routing",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter builds an ACES-native provisioning path as a parallel, feature-flagged implementation rather than routing ACES through the cyberscript scenario kernel. A compiled ACES ProvisioningPlan (produced by the PyPI-pinned aces-sdl runtime inside shared.aces) is realized directly: the platform serializes the compiled plan and the engine/provisioner realize it by reading the ACES plan payloads via accessors that mirror the reference ACES backends. Shifter introduces no parallel SDL and no re-modeled provisioning schema; see ADR-032 for how realization works. The existing cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is left unchanged and authoritative. The whole ACES-native path is gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off) and stays inert until an explicitly authorized cutover. This is the provisioning-surface instance of ADR-024 (parity-gated parallel cutover); the ACES-owned conformance suite is the primary oracle. It supersedes the #1262 scenario_ref passthrough, which discarded compiled ACES topology and depended on cyberscript scenarios.",
+    "decision": "Shifter realizes ACES scenarios through the ACES-native provisioning path rather than routing ACES through the cyberscript scenario kernel. A compiled ACES ProvisioningPlan (produced by the PyPI-pinned aces-sdl runtime inside shared.aces) is serialized and realized directly by the engine/provisioner via accessors that mirror the reference ACES backends. Shifter introduces no parallel SDL and no re-modeled provisioning schema; see ADR-032 for how realization works. The path was introduced default-off in parallel with the unchanged cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path. Issue #1310 is the explicitly authorized ADR-024 cutover: the shipped posture becomes ACES-native, the stable public scenario id is resolved at the registry boundary to a distinct conformance-passed package source, and the capability flag plus source-route selector remain temporarily configurable only as a rollback line. Existing range lifecycle is selected from the persisted validated range_config.kind, not from current launch routing. The ACES-owned conformance suite is the primary oracle. This supersedes the #1262 scenario_ref passthrough, which discarded compiled ACES topology and depended on cyberscript scenarios.",
     "rules": [
       {
         "id": "ADR-031-R1",
@@ -1434,7 +1434,7 @@
       },
       {
         "id": "ADR-031-R2",
-        "description": "The ACES-native provisioning path — ACES catalog launchability, ACES dispatch, ACES engine consumption, and ACES provisioner realization — must be gated by the SHIFTER_ACES_NATIVE_PROVISIONING feature flag (default off). With the flag off, ACES catalog entries are not launchable and the cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is unchanged and authoritative. The ACES-native path must not modify cyberscript hydration, RangeSpec/InstanceSpec, or the existing create_range body; it may only add parallel modules and additive flag-gated branches.",
+        "description": "The ACES-native provisioning path — ACES catalog launchability, ACES dispatch, ACES engine consumption, and ACES provisioner realization — remains gated by SHIFTER_ACES_NATIVE_PROVISIONING, but #1310 changes the shipped default to enabled. The flag is a temporary capability/rollback gate, not a public-id source selector. Disabling it prevents new ACES launches and leaves the cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path unchanged; it must not disable status or teardown for already-persisted ACES ranges. The ACES-native path must not modify cyberscript hydration, RangeSpec/InstanceSpec, or the existing create_range body.",
         "checks": []
       },
       {
@@ -1449,7 +1449,12 @@
       },
       {
         "id": "ADR-031-R5",
-        "description": "ACES catalog launchability and the ACES-native launch service (cms.services.create_aces_native_range, routed via create_range_dispatch) are gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off); with the flag off no ACES entry is launchable and create_range_dispatch is byte-identical to create_range. The launch service reuses create_range's ownership/active-range/audit helpers and persists the same CMS Request + RangeInstance bookkeeping (range_spec=None -- no cyberscript RangeSpec) so Mission Control visibility, active-range admission, and the range.status.updated -> apply_range_status flow work uniformly keyed by request_id. To be genuinely launch-conformant the Shifter backend manifest must declare all and only terms the backend genuinely realizes -- including 'switch' for networks, since the aces-sdl planner rejects any network resource otherwise. Its provisional PROVISIONING snapshot must echo the authored exact concerns covered by the public CONCERN_PAYLOAD_PATH (os_family, node_type, content spec.type) for the RuntimeManager.apply SEM-218 non-approximation gate. Account features not covered by that public path require an equivalent Shifter validate/apply assertion, using the canonical ACES account-feature extractor and an evidence-backed realization envelope independent of the manifest declaration, before dispatch; account values must not enter diagnostics or snapshot evidence.",
+        "description": "ACES catalog launchability and the ACES-native launch service (cms.services.create_aces_native_range, reached via create_range_dispatch) are gated by SHIFTER_ACES_NATIVE_PROVISIONING and by the registry's resolved source route. create_range_dispatch must consume that same resolution; it must not query AcesPackageSource or make a second _is_aces_scenario routing decision. The launch service reuses create_range's ownership/active-range/audit helpers and persists the same CMS Request + RangeInstance bookkeeping (range_spec=None -- no cyberscript RangeSpec) so Mission Control visibility, active-range admission, and the range.status.updated -> apply_range_status flow work uniformly keyed by request_id. To be genuinely launch-conformant the Shifter backend manifest must declare all and only terms the backend genuinely realizes -- including 'switch' for networks, since the aces-sdl planner rejects any network resource otherwise. Its provisional PROVISIONING snapshot must echo the authored exact concerns covered by the public CONCERN_PAYLOAD_PATH (os_family, node_type, content spec.type) for the RuntimeManager.apply SEM-218 non-approximation gate. Account features not covered by that public path require an equivalent Shifter validate/apply assertion, using the canonical ACES account-feature extractor and an evidence-backed realization envelope independent of the manifest declaration, before dispatch; account values must not enter diagnostics or snapshot evidence.",
+        "checks": []
+      },
+      {
+        "id": "ADR-031-R6",
+        "description": "Default cutover source precedence belongs only to cms.scenarios.registry and is represented as a validated mapping from stable public scenario id to a distinct registered ACES package-source id. The selected public id is emitted exactly once and the internal source id is not a second launch choice. Empty routing restores the preserved legacy source; malformed, dangling, unsupported, non-conformant, or duplicate routes fail closed and an active ACES route never falls back to legacy after an ACES error. Core services must not infer routing from YAML shape, package fields, provider, or Polaris-specific branches. Provision, status, and teardown for an existing range are selected from its persisted, validated range_config.kind and remain independent of the current selector and capability flag.",
         "checks": []
       }
     ],
@@ -1458,7 +1463,9 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1262",
       "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "https://github.com/Brad-Edwards/shifter/issues/1310",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
+      "docs/architecture/aces-controlled-default-cutover-preflight-1310.md",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
