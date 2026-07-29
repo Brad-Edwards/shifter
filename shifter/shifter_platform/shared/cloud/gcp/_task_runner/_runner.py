@@ -108,6 +108,28 @@ class GCPTaskRunner:
             )
             raise CloudTaskError(f"Failed to create Kubernetes Job ({type(e).__name__})") from e
 
+    def interrupt_task(
+        self,
+        cluster: str,
+        task_ref: str,
+        expected_identity: dict[str, Any],
+        grace_seconds: int | None = None,
+    ) -> str:
+        # GCP relies on foreground propagation + pod-absence observation rather
+        # than a provider grace period, so grace_seconds is accepted for the
+        # provider-neutral seam but not consumed here.
+        del grace_seconds
+        logger.debug("interrupt_task: cluster=%s task_ref=%s", cluster, task_ref)
+        from ._interrupt import interrupt_job
+
+        try:
+            return interrupt_job(self, cluster, task_ref, expected_identity)
+        except CloudTaskError:
+            raise
+        except Exception as e:
+            logger.exception("interrupt_task: failed task_ref=%s error_type=%s", task_ref, type(e).__name__)
+            raise CloudTaskError(f"Failed to interrupt Kubernetes Job ({type(e).__name__})") from e
+
     def get_task_status(self, cluster: str, task_id: str) -> dict[str, Any] | None:
         logger.debug("get_task_status: cluster=%s task_id=%s", cluster, task_id)
         namespace, job_name = parse_job_task_id(task_id, cluster) if task_id else ("", "")
