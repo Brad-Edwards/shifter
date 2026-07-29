@@ -2430,10 +2430,17 @@ jobs:
         # context, so the identity test above passes, but GitHub withholds
         # secrets from them — the scan would fail on a missing SONAR_TOKEN and
         # hand an outside contributor a red check they have no way to fix.
-        # Analysis for their code happens on the `dev` run after merge.
+        # Analysis for their code happens on the `dev` run after merge. A
+        # fork-origin PR is detected by head-repo identity — its head repo
+        # differs from this one — NOT by `head.repo.fork`: this repository is
+        # itself a fork of the upstream, so `head.repo.fork` is true for every
+        # PR opened from its own branches and would wrongly skip the scan on
+        # every canonical-repo PR (#1310). `push` events (dev branch runs) carry
+        # no pull_request payload and always scan.
         if: >-
           ${{ github.repository == 'Brad-Edwards/shifter'
-          && github.event.pull_request.head.repo.fork != true }}
+          && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
