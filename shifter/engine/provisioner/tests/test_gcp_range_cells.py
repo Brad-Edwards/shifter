@@ -996,8 +996,9 @@ def test_machine_image_instance_clone_converges_all_attached_disks_to_auto_delet
 
     _ensure_instance(plan, clients, config, instance, secret_ops)
 
-    assert clients.instances.insert.call_args.kwargs["source_machine_image"] == nested_profile.source_machine_image
-    assert "disks" not in clients.instances.insert.call_args.kwargs["instance_resource"]
+    request = clients.instances.insert.call_args.kwargs["request"]
+    assert request["source_machine_image"] == nested_profile.source_machine_image
+    assert "disks" not in request["instance_resource"]
     clients.instances.set_disk_auto_delete.assert_called_once_with(
         project="test-project",
         zone="us-central1-b",
