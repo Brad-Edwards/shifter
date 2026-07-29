@@ -12,6 +12,7 @@ from rest_framework import serializers
 # without drifting from the schema (the legacy form hardcoded stale lists).
 INSTANCE_ROLES = ("attacker", "victim", "dc")
 INSTANCE_OS_TYPES = ("kali", "windows", "ubuntu", "from_agent")
+PARTICIPANT_ACCESS_CHANNELS = ("ssh", "rdp")
 
 
 class YAMLContentSerializer(serializers.Serializer):
@@ -127,6 +128,13 @@ class ScenarioSubnetSerializer(serializers.Serializer):
     connected_to = serializers.ListField(child=serializers.CharField(), required=False, default=list)
 
 
+class ScenarioParticipantAccessSerializer(serializers.Serializer):
+    """One participant-facing channel, mirroring ``ParticipantAccessConfig``."""
+
+    target = serializers.CharField()
+    channel = serializers.ChoiceField(choices=PARTICIPANT_ACCESS_CHANNELS)
+
+
 class ScenarioDetailSerializer(serializers.Serializer):
     """Full scenario detail with source-capability flags for the editor.
 
@@ -151,6 +159,7 @@ class ScenarioDetailSerializer(serializers.Serializer):
     ngfw = serializers.BooleanField(read_only=True)
     instances = ScenarioInstanceSerializer(many=True, read_only=True)
     subnets = ScenarioSubnetSerializer(many=True, read_only=True)
+    participant_access = ScenarioParticipantAccessSerializer(many=True, read_only=True)
     raes = RaesCatalogFieldsSerializer(read_only=True, allow_null=True)
 
 
@@ -162,14 +171,16 @@ class _ScenarioDefinitionSerializer(serializers.Serializer):
     ngfw = serializers.BooleanField(required=False, default=False)
     instances = ScenarioInstanceSerializer(many=True)
     subnets = ScenarioSubnetSerializer(many=True, required=False, default=list)
+    participant_access = ScenarioParticipantAccessSerializer(many=True, required=False, default=list)
 
     def definition(self) -> dict[str, Any]:
-        """Return the persisted structural definition (instances/subnets/ngfw)."""
+        """Return the persisted structural definition."""
         data = self.validated_data
         return {
             "instances": data["instances"],
             "subnets": data.get("subnets", []),
             "ngfw": data.get("ngfw", False),
+            "participant_access": data.get("participant_access", []),
         }
 
 
