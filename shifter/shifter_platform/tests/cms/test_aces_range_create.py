@@ -167,10 +167,12 @@ def test_dispatch_routes_native_for_aces_when_flag_on(user, native_on, monkeypat
     routed = {}
     monkeypatch.setattr(
         "cms.services._aces_range_create.create_aces_native_range",
-        lambda u, s, *, range_source=None: routed.setdefault("scenario", s),
+        lambda u, s, *, range_source=None, aces_source_id=None: routed.update(scenario=s, source=aces_source_id),
     )
     create_range_dispatch(user, "aces-x", {})
     assert routed["scenario"] == "aces-x"
+    # Unrouted direct ACES pick loads its own id as the internal source.
+    assert routed["source"] == "aces-x"
 
 
 @pytest.mark.django_db

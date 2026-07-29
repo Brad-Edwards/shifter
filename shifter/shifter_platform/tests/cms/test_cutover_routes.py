@@ -10,12 +10,16 @@ resolution both the projection and dispatch consume.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from django.contrib.auth import get_user_model
 
+from cms.exceptions import CMSError
 from cms.models import AcesPackageSource
 from cms.scenarios.cutover import resolve_launch
 from cms.scenarios.registry import list_all_scenarios
+from cms.services._aces_range_create import create_range_dispatch
 
 pytestmark = pytest.mark.django_db
 
@@ -127,3 +131,48 @@ class TestResolveLaunch:
         res = resolve_launch("standalone-aces")
         assert res.is_aces is True
         assert res.aces_source_id == "standalone-aces"
+
+
+class TestDispatchRouting:
+    def test_routed_public_dispatches_aces_with_internal_source(self, staff_user, settings):
+        _make_source(staff_user)
+        _route(settings)
+        with (
+            patch("cms.services._aces_range_create.create_aces_native_range") as aces,
+            patch("cms.services._aces_range_create.create_range") as legacy,
+        ):
+            create_range_dispatch(staff_user, "polaris", {})
+        aces.assert_called_once()
+        # Public id persisted/correlated; distinct internal source loaded.
+        assert aces.call_args.args[1] == "polaris"
+        assert aces.call_args.kwargs.get("aces_source_id") == "polaris-aces"
+        legacy.assert_not_called()
+
+    def test_routed_internal_source_id_is_refused(self, staff_user, settings):
+        _make_source(staff_user)
+        _route(settings)
+        with pytest.raises(CMSError):
+            create_range_dispatch(staff_user, "polaris-aces", {})
+
+    def test_legacy_scenario_uses_cyberscript(self, staff_user, settings):
+        settings.ACES_NATIVE_PROVISIONING_ENABLED = True
+        settings.ACES_CATALOG_CUTOVERS = {}
+        with (
+            patch("cms.services._aces_range_create.create_aces_native_range") as aces,
+            patch("cms.services._aces_range_create.create_range") as legacy,
+        ):
+            create_range_dispatch(staff_user, "basic", {})
+        legacy.assert_called_once()
+        aces.assert_not_called()
+
+    def test_native_off_always_cyberscript(self, staff_user, settings):
+        _make_source(staff_user)
+        settings.ACES_NATIVE_PROVISIONING_ENABLED = False
+        settings.ACES_CATALOG_CUTOVERS = {}
+        with (
+            patch("cms.services._aces_range_create.create_aces_native_range") as aces,
+            patch("cms.services._aces_range_create.create_range") as legacy,
+        ):
+            create_range_dispatch(staff_user, "polaris", {})
+        legacy.assert_called_once()
+        aces.assert_not_called()

@@ -60,13 +60,6 @@ _NATIVE_DISABLED = "ACES-native provisioning is not enabled"
 _OBJECT_SOURCE_KIND = "object"
 
 
-def _is_aces_scenario(scenario: str) -> bool:
-    """Return True if ``scenario`` names a registered ACES package."""
-    from cms.models import AcesPackageSource
-
-    return AcesPackageSource.objects.filter(scenario_id=scenario).exists()
-
-
 def _load_aces_source_or_raise(scenario: str) -> AcesPackageSource:
     """Return the AcesPackageSource for ``scenario`` or raise a clear CMSError."""
     from cms.models import AcesPackageSource
@@ -247,8 +240,20 @@ def _build_aces_range_context(request_id: UUID, scenario: str, user: User) -> Ra
     )
 
 
-def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSource | None = None) -> RangeContext:
+def create_aces_native_range(
+    user: User,
+    scenario: str,
+    *,
+    range_source: RangeSource | None = None,
+    aces_source_id: str | None = None,
+) -> RangeContext:
     """Launch a registered ACES package through the native provisioning path.
+
+    ``scenario`` is the stable public id used for persistence, correlation, and
+    audit; ``aces_source_id`` (default: ``scenario``) is the internal registered
+    package-source actually loaded, so a routed public id (``polaris``) launches
+    its distinct source (``polaris-aces``) while the range still correlates by the
+    public id (ADR-031-R5/R6).
 
     Flag-gated (raises if SHIFTER_ACES_NATIVE_PROVISIONING is off). Enforces the
     same user/active-range/launchability admission as ``create_range``, persists
@@ -272,7 +277,7 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     backend_admission = _assert_live_fire_backend_admitted()
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
-    source = _load_aces_source_or_raise(scenario)
+    source = _load_aces_source_or_raise(aces_source_id or scenario)
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the ACES RangeInstance (range_spec=None) for the reservation."""
@@ -309,15 +314,27 @@ def create_range_dispatch(
     """Route a launch to the ACES-native or cyberscript path.
 
     With SHIFTER_ACES_NATIVE_PROVISIONING off, always calls the cyberscript
-    ``create_range`` (byte-identical to today). With it on, a registered ACES
-    scenario is launched through ``create_aces_native_range`` (``agents_by_os`` /
-    ``ngfw_enabled`` do not apply to ACES packages); every other scenario stays
-    on the cyberscript path.
+    ``create_range`` (byte-identical to today). With it on, the registry's single
+    source resolution decides: a routed public id or a directly-registered ACES
+    source launches through ``create_aces_native_range`` (``agents_by_os`` /
+    ``ngfw_enabled`` do not apply to ACES packages), a routed internal source id
+    is refused as a second launch choice, and every other scenario stays on the
+    cyberscript path. Dispatch consumes that one resolution and makes no second
+    routing decision (ADR-031-R5).
     """
-    if settings.ACES_NATIVE_PROVISIONING_ENABLED and _is_aces_scenario(scenario):
-        if remote_access_teardown_at is not None:
-            raise CMSError("The ACES-native range adapter does not support CTF OpenVPN access")
-        return create_aces_native_range(user, scenario, range_source=range_source)
+    from cms.scenarios.cutover import resolve_launch
+
+    if settings.ACES_NATIVE_PROVISIONING_ENABLED:
+        resolution = resolve_launch(scenario)
+        if resolution.is_aces:
+            if resolution.aces_source_id is None:
+                # A routed internal source id is not offered as a direct launch choice.
+                raise CMSError(f"Scenario '{scenario}' is not available for launch")
+            if remote_access_teardown_at is not None:
+                raise CMSError("The ACES-native range adapter does not support CTF OpenVPN access")
+            return create_aces_native_range(
+                user, scenario, range_source=range_source, aces_source_id=resolution.aces_source_id
+            )
     return create_range(
         user,
         scenario,
