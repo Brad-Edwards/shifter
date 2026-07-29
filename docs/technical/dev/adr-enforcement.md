@@ -12,8 +12,21 @@ The current enforcement stack has six parts:
 2. `docs/adr/exceptions.yaml`
    Explicit exceptions. If a rule needs a temporary waiver, record it here with an owner and expiry instead of leaving the exception implicit.
 
-3. `scripts/adr_guard/adr_guard.py`
-   Repo-native policy runner. This is the entrypoint for ADR conformance checks.
+3. `scripts/adr_guard/` (the `adr_guard` tool)
+   Repo-native policy runner and the entrypoint for ADR conformance checks.
+   `adr_guard.py` is the executable CLI entry point and compatibility facade; it
+   bootstraps `sys.path` once and re-exports the internal `_guard` package. The
+   check logic lives in one module per concern family under `_guard/checks/` (for
+   example `_guard/checks/k8s_security.py`, `_guard/checks/secret_hygiene.py`,
+   `_guard/checks/deploy_workflow.py`) on top of the shared kernels
+   `_guard/_common.py` (the `Violation` model, repo/git helpers, exception
+   filtering) and `_guard/_workflow_model.py` (the `_dw_*` workflow-as-data
+   model), with `_guard/_registry.py` holding the deterministic `CHECKS` /
+   `CHECK_LEVELS` registry and `_guard/_cli.py` the argument parsing. The
+   `_guard` package uses package-relative imports internally, so it is importable
+   on its own; the facade re-exports its full public surface, so
+   `python3 scripts/adr_guard/adr_guard.py` and tests that load it by path keep
+   working unchanged.
 
 4. `.pre-commit-config.yaml`
    Fast local enforcement. The ADR guard runs before commit so architectural drift is caught locally.
@@ -150,7 +163,7 @@ The first slice intentionally stays small:
   Enforces ADR-012-R1: every canonical Python package `pyproject.toml`
   must enable Ruff's `C901` rule in `[tool.ruff.lint].select`, set
   `[tool.ruff.lint.mccabe].max-complexity` to the repo-wide threshold
-  (`PYTHON_COMPLEXITY_THRESHOLD` in `scripts/adr_guard/adr_guard.py`,
+  (`PYTHON_COMPLEXITY_THRESHOLD` in `scripts/adr_guard/_guard/checks/complexity.py`,
   currently `15`, matching SonarCloud's default cognitive-complexity
   threshold), AND must not silently disable the rule by listing it in
   `ignore`, `extend-ignore`, or `per-file-ignores`. The check also
@@ -792,7 +805,13 @@ git diff --name-only origin/dev...HEAD -- '*.md' | xargs -r vale
 ## How To Add A Rule
 
 1. Add or update the ADR entry in `docs/adr/index.yaml`.
-2. Implement the check in `scripts/adr_guard/adr_guard.py`.
+2. Implement the `check_<name>(repo_root, files) -> list[Violation]` function in
+   the appropriate `scripts/adr_guard/_guard/checks/<family>.py` module (add a
+   new family module if none fits), reusing the shared kernels in
+   `_guard/_common.py` / `_guard/_workflow_model.py` rather than duplicating
+   helpers, and register it in `scripts/adr_guard/_guard/_registry.py` (`CHECKS`
+   plus the relevant `CHECK_LEVELS`
+   profiles).
 3. Decide where it belongs:
    - fast local gate
    - CI gate
