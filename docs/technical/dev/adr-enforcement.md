@@ -26,7 +26,10 @@ The current enforcement stack has six parts:
    `_guard` package uses package-relative imports internally, so it is importable
    on its own; the facade re-exports its full public surface, so
    `python3 scripts/adr_guard/adr_guard.py` and tests that load it by path keep
-   working unchanged.
+   working unchanged. The package is in the SonarCloud analysis scope
+   (`sonar.sources` in `sonar-project.properties`); the `adr-guard-tests` CI job
+   runs the suite under `coverage` and uploads `scripts/adr_guard/coverage.xml`
+   for the SonarCloud new-code coverage gate.
 
 4. `.pre-commit-config.yaml`
    Fast local enforcement. The ADR guard runs before commit so architectural drift is caught locally.
