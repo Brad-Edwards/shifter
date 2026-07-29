@@ -31,6 +31,7 @@ class DeployPortalScriptTests(unittest.TestCase):
         invalid_terminal_cap: bool = False,
         zero_workers: bool = False,
         zero_terminal_cap: bool = False,
+        raes_cutover_active: bool = False,
     ) -> dict[str, str]:
         bin_dir = root / "bin"
         bin_dir.mkdir()
@@ -207,6 +208,20 @@ class DeployPortalScriptTests(unittest.TestCase):
                     printf '30\\n'
                   fi
                   ;;
+                */shifter-raes-native-provisioning)
+                  if [[ "${RAES_CUTOVER_ACTIVE:-}" == "1" ]]; then
+                    printf 'true\\n'
+                  else
+                    printf '\\n'
+                  fi
+                  ;;
+                */shifter-raes-catalog-cutovers)
+                  if [[ "${RAES_CUTOVER_ACTIVE:-}" == "1" ]]; then
+                    printf 'polaris=polaris-raes\\n'
+                  else
+                    printf '\\n'
+                  fi
+                  ;;
                 *) printf '\\n' ;;
               esac
               exit 0
@@ -262,6 +277,8 @@ class DeployPortalScriptTests(unittest.TestCase):
             env["ZERO_WORKERS"] = "1"
         if zero_terminal_cap:
             env["ZERO_TERMINAL_CAP"] = "1"
+        if raes_cutover_active:
+            env["RAES_CUTOVER_ACTIVE"] = "1"
         return env
 
     def _script_args(
@@ -378,7 +395,7 @@ class DeployPortalScriptTests(unittest.TestCase):
             self.assertLess(
                 log.index("docker run --rm"),
                 log.index(
-                    "docker stop --time 35 portal worker-cms worker-engine worker-mc ctf-scheduler"
+                    "docker stop --time 35 portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune raes-operation-record-prune"
                 ),
             )
             self.assertIn("python manage.py migrate --noinput", log)
@@ -393,7 +410,7 @@ class DeployPortalScriptTests(unittest.TestCase):
             self.assertIn("run_worker --queue mc", log)
             self.assertIn("python manage.py run_ctf_scheduler", log)
             self.assertIn(
-                "docker stop --time 35 portal worker-cms worker-engine worker-mc ctf-scheduler",
+                "docker stop --time 35 portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune raes-operation-record-prune",
                 log,
             )
             self.assertIn(
@@ -497,6 +514,25 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "TERMINAL_READ_POLL_SECONDS=30",
             ):
                 self.assertIn(pair, log)
+
+    def test_raes_cutover_params_emitted_as_docker_env(self) -> None:
+        """The SSM redeploy path delivers the RAES cutover selector + flag when set (#1310)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self._install_stubs(root, raes_cutover_active=True)
+
+            result = subprocess.run(
+                self._script_args(root),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            log = (root / "calls.log").read_text(encoding="utf-8")
+            self.assertIn("SHIFTER_RAES_NATIVE_PROVISIONING=true", log)
+            self.assertIn("SHIFTER_RAES_CATALOG_CUTOVERS=polaris=polaris-raes", log)
 
     def test_non_numeric_terminal_capacity_param_rejected_before_docker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
