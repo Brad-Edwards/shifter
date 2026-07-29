@@ -289,8 +289,7 @@ def build_firewall_plan(
     access_network_cidrs = _validated_boundary_cidrs("access_network_cidrs", config.access_network_cidrs)
     egress_allow_cidrs = _validated_boundary_cidrs("egress_allow_cidrs", config.egress_allow_cidrs)
     allow_public_web_egress = include_optional_cleanup or any(
-        instance["profile"].allow_public_web_egress
-        for instance in (instance_plans or [])
+        instance["profile"].allow_public_web_egress for instance in (instance_plans or [])
     )
     firewalls = _subnet_ingress_rules(range_id, subnet_plans)
     firewalls.extend(_boundary_ingress_rules(range_id, range_tag, access_network_cidrs, portal_network_cidrs, config))
