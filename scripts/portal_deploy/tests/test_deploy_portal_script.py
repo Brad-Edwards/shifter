@@ -31,6 +31,7 @@ class DeployPortalScriptTests(unittest.TestCase):
         invalid_terminal_cap: bool = False,
         zero_workers: bool = False,
         zero_terminal_cap: bool = False,
+        aces_cutover_active: bool = False,
     ) -> dict[str, str]:
         bin_dir = root / "bin"
         bin_dir.mkdir()
@@ -207,6 +208,20 @@ class DeployPortalScriptTests(unittest.TestCase):
                     printf '30\\n'
                   fi
                   ;;
+                */shifter-aces-native-provisioning)
+                  if [[ "${ACES_CUTOVER_ACTIVE:-}" == "1" ]]; then
+                    printf 'true\\n'
+                  else
+                    printf '\\n'
+                  fi
+                  ;;
+                */shifter-aces-catalog-cutovers)
+                  if [[ "${ACES_CUTOVER_ACTIVE:-}" == "1" ]]; then
+                    printf 'polaris=polaris-aces\\n'
+                  else
+                    printf '\\n'
+                  fi
+                  ;;
                 *) printf '\\n' ;;
               esac
               exit 0
@@ -262,6 +277,8 @@ class DeployPortalScriptTests(unittest.TestCase):
             env["ZERO_WORKERS"] = "1"
         if zero_terminal_cap:
             env["ZERO_TERMINAL_CAP"] = "1"
+        if aces_cutover_active:
+            env["ACES_CUTOVER_ACTIVE"] = "1"
         return env
 
     def _script_args(
@@ -497,6 +514,25 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "TERMINAL_READ_POLL_SECONDS=30",
             ):
                 self.assertIn(pair, log)
+
+    def test_aces_cutover_params_emitted_as_docker_env(self) -> None:
+        """The SSM redeploy path delivers the ACES cutover selector + flag when set (#1310)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self._install_stubs(root, aces_cutover_active=True)
+
+            result = subprocess.run(
+                self._script_args(root),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            log = (root / "calls.log").read_text(encoding="utf-8")
+            self.assertIn("SHIFTER_ACES_NATIVE_PROVISIONING=true", log)
+            self.assertIn("SHIFTER_ACES_CATALOG_CUTOVERS=polaris=polaris-aces", log)
 
     def test_non_numeric_terminal_capacity_param_rejected_before_docker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -187,6 +187,18 @@ validate_bool() {
   fi
 }
 
+# validate_slug_pairs accepts empty (the preserved-legacy posture) or a
+# comma-separated list of public=source slug pairs, matching the Django settings
+# parser and user_data.sh. Rejects anything that could inject into docker argv.
+validate_slug_pairs() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && ! "$value" =~ ^[A-Za-z0-9_-]+=[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+=[A-Za-z0-9_-]+)*$ ]]; then
+    echo "Invalid ${name}: expected comma-separated public=source slug pairs" >&2
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -429,6 +441,16 @@ main() {
   # as a non-secret env var (topic ARN, not a credential).
   range_events_topic_id=$(get_optional_param "$PS_PREFIX/range-events-topic-id")
 
+  # ACES default cutover (#1310, ADR-031-R6): capability gate + source-route
+  # selector. Same parameter names user_data.sh reads, so the redeploy path
+  # delivers them fleet-uniform too; validated (boolean + slug-pair grammar)
+  # before docker argv. The route param is absent in the preserved-legacy
+  # posture and simply not emitted.
+  shifter_aces_native_provisioning=$(get_optional_param "$PS_PREFIX/shifter-aces-native-provisioning")
+  shifter_aces_catalog_cutovers=$(get_optional_param "$PS_PREFIX/shifter-aces-catalog-cutovers")
+  validate_bool "SHIFTER_ACES_NATIVE_PROVISIONING" "$shifter_aces_native_provisioning"
+  validate_slug_pairs "SHIFTER_ACES_CATALOG_CUTOVERS" "$shifter_aces_catalog_cutovers"
+
   local image
   image=$(image_ref "$ecr_registry" "$ecr_repository" "$image_digest" "$image_tag")
   echo "Deploying image: $image"
@@ -483,6 +505,8 @@ main() {
   append_env_if_set PORTAL_CAPACITY_METRICS_ENABLED "$portal_capacity_metrics_enabled"
   append_env_if_set PORTAL_WORKER_SOFT_CONCURRENCY "$portal_worker_soft_concurrency"
   append_env_if_set RANGE_EVENTS_TOPIC_ID "$range_events_topic_id"
+  append_env_if_set SHIFTER_ACES_NATIVE_PROVISIONING "$shifter_aces_native_provisioning"
+  append_env_if_set SHIFTER_ACES_CATALOG_CUTOVERS "$shifter_aces_catalog_cutovers"
 
   run_migrations "$image" "${DOCKER_ENV[@]}"
   if [[ "$MIGRATE_ONLY" == "true" ]]; then

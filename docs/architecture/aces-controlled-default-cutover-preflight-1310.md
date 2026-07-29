@@ -9,10 +9,17 @@ destroy a range, deploy a tenant, or publish the required cutover record.
 
 ## Preflight Conclusion
 
-#1310 is an authorized default cutover, not another default-off experiment. The
-shipped application and provider configuration must select the ACES-backed
-`polaris`; an explicitly empty route plus the disabled native capability remain
-only as the temporary rollback posture.
+#1310 is an authorized default cutover, not another default-off experiment: it
+delivers the complete, reversible cutover mechanism (registry-owned source
+routing, persisted-kind lifecycle) and its fleet-uniform config delivery.
+**Per the owner's decision the shipped default stays the preserved-legacy
+posture** (empty route, native disabled), and the *activation* — selecting the
+ACES-backed `polaris` — is a deferred, reviewed per-environment deploy-config
+step gated on a conformance-passed pack from the scenario-pack plugin work
+(ADR-033/034/041). The empty route plus disabled native capability are also the
+temporary rollback posture. The design below describes the target (activated)
+state; see the reviewed cutover record on issue #1310 for the delivered-vs-
+deferred split.
 
 Four repository facts are on the critical path:
 
