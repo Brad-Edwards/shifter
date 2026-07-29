@@ -173,12 +173,20 @@ of four approved image profiles by role and OS (`GCERangeCellConfig.get_profile`
 Instances without an `ami_key` continue to use those four defaults. An instance
 with an `ami_key` requires an exact entry in
 `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` under its derived profile class. Each entry
-is complete: image, machine type, disk size, disk type, and typed bootstrap
-capability. Pre-promoted domain profiles also declare their baked DNS and
-NetBIOS identity. Unknown keys and keys placed under the wrong class fail
+is complete. Normal image profiles declare image, machine type, disk size, disk
+type, and typed bootstrap capability. Exact machine-image profiles declare the
+machine image, machine type, host-management login, and participant
+container/account. Pre-promoted domain profiles also declare their baked DNS
+and NetBIOS identity. Unknown keys and keys placed under the wrong class fail
 before any Compute or secret client is created; they never fall back to the
 default role image. The adapter routes host access and bootstrap from this
 trusted profile metadata, never from a scenario or image-name literal.
+
+Profiles that require participant web research may set
+`"allow_public_web_egress": true`. The range-cell backend then adds a
+range-owned egress rule allowing only TCP 80/443 to public IPv4 through the
+shared VPC's Cloud NAT. The default is `false`; the per-range default-deny rule
+remains in place, and unrelated profiles receive no public egress allowance.
 
 The value is a non-secret JSON object, limited to 32,768 bytes and 64 total
 entries. Profile classes and fields are closed. Logical keys must be lowercase
@@ -210,9 +218,36 @@ letters, digits, and hyphens. For example:
 ```
 
 The supported bootstrap capabilities are `standard`,
-`polaris-docker-host`, and `prepromoted-domain-controller`. Other well-formed
-capability values remain parseable so the adapter can return the stable
-`unsupported-capability` result when a scenario selects them. A
+`polaris-docker-host`, `prepromoted-domain-controller`, and
+`preconfigured-machine-host`. Other well-formed capability values remain
+parseable so the adapter can return the stable `unsupported-capability` result
+when a scenario selects them.
+
+An exact machine-image entry uses this conditional shape:
+
+```json
+{
+  "kali": {
+    "nested-host": {
+      "source_machine_image": "projects/PROJECT/global/machineImages/nested-host-v1",
+      "machine_type": "n2-standard-8",
+      "bootstrap_capability": "preconfigured-machine-host",
+      "participant_container_name": "participant-desktop",
+      "participant_username": "operator",
+      "host_ssh_username": "hostadmin",
+      "host_ssh_port": 2222,
+      "allow_public_web_egress": true
+    }
+  }
+}
+```
+
+Machine-image profiles inherit captured disks only. Clone requests replace
+metadata, network interfaces, external-IP posture, identity, labels, tags, and
+machine type. Every attached disk is set to auto-delete after create and again
+before destroy. The image must publish its participant RDP endpoint on host port
+3389 and create `/run/shifter/preconfigured-range-host.ready` only after its
+contained workload is ready.
 `prepromoted-domain-controller` profile is usable only when both domain fields
 match the scenario's `dc_config` (case-insensitively, with an optional trailing
 DNS dot).
@@ -252,10 +287,11 @@ Terraform outputs; set `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` /
 cell, `GCP_RANGE_CELL_PROJECT_ID`, provisions its own SAs in that project and
 grants the provisioner the equivalent roles there; follow-up tracked in #1509).
 
-The two service accounts:
+The service account categories:
 
-- **Host SA** (`GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`): attached to every range
-  guest. Grant logging write and monitoring write, plus (for Polaris)
+- **Host SA** (`GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`): attached to range hosts
+  whose approved profile uses the deployment-wide host identity. Grant logging
+  write and monitoring write, plus (for Polaris)
   `roles/storage.objectViewer` on the assets bucket so the range host can fetch
   the smoketest tarball (`AGENT_STORAGE_BUCKET`). The host also reads its own
   per-range Vertex key from Secret Manager, but you do not grant that at the
@@ -270,6 +306,15 @@ The two service accounts:
   not just convenient: Secret Manager has no narrower OAuth scope, so a
   narrow logging/monitoring scope makes both the Storage and Secret Manager
   reads fail with a generic 403 regardless of IAM.
+- **Preconfigured host pool** (`GCP_RANGE_HOST_IDENTITY_POOL_SIZE`): optional
+  bounded pool of `sh-range-host-<slot>` service accounts. Set the Terraform
+  `range_host_identity_pool_size` and runtime value to the same count.
+  Terraform grants the provisioner `serviceAccountUser` on each specific pool
+  member. The range allocation index is deterministically sharded across this
+  pool, so the count bounds identities rather than concurrent ranges. Pool
+  members have no roles by default; grant only common host-infrastructure
+  access required by the approved machine image. They are not range-isolation
+  principals.
 - **Vertex SA** (`GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL`): the identity whose
   short-lived, per-range key the a14-kali agent uses for Vertex AI. Grant only
   `roles/aiplatform.user`. The participant container is blocked from the

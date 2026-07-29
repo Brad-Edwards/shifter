@@ -18,11 +18,13 @@ from ._gcp_backend import is_gce_range_cell_backend
 GCE_BOOTSTRAP_STANDARD = "standard"
 GCE_BOOTSTRAP_POLARIS_HOST = "polaris-docker-host"
 GCE_BOOTSTRAP_PREPROMOTED_DC = "prepromoted-domain-controller"
+GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST = "preconfigured-machine-host"
 GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES = frozenset(
     {
         GCE_BOOTSTRAP_STANDARD,
         GCE_BOOTSTRAP_POLARIS_HOST,
         GCE_BOOTSTRAP_PREPROMOTED_DC,
+        GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     }
 )
 
@@ -32,12 +34,18 @@ class GCERangeImageProfile:
     """Image, sizing, and realization contract for one GCE guest family."""
 
     source_image: str = ""
+    source_machine_image: str = ""
     machine_type: str = "e2-medium"
     disk_size_gb: int = 30
     disk_type: str = "pd-balanced"
     bootstrap_capability: str = GCE_BOOTSTRAP_STANDARD
     domain_dns_name: str = ""
     domain_netbios_name: str = ""
+    participant_container_name: str = ""
+    participant_username: str = ""
+    host_ssh_username: str = ""
+    host_ssh_port: int = 22
+    allow_public_web_egress: bool = False
 
 
 def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
@@ -73,6 +81,10 @@ class GCERangeCellConfig:
     # participant-facing container is blocked from the metadata server so it can
     # never read this token (see gcp_range_cell_resources + the Vertex shard).
     service_account_scopes: tuple[str, ...] = ("https://www.googleapis.com/auth/cloud-platform",)
+    # Number of pre-created, no-role range-host service accounts available to
+    # exact machine-image profiles. A range's existing subnet allocation slot
+    # selects one identity deterministically; zero disables the capability.
+    range_host_identity_pool_size: int = 0
     linux: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     kali: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     windows: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
@@ -129,7 +141,7 @@ class GCERangeCellConfig:
             profile = self.dc
         elif os_type == "kali" or role == "attacker":
             profile_class = "kali"
-            profile = self.kali if self.kali.source_image else self.linux
+            profile = self.kali if _profile_has_source(self.kali) else self.linux
         elif os_type == "windows":
             profile_class = "windows"
             profile = self.windows
@@ -150,7 +162,7 @@ class GCERangeCellConfig:
                 )
             profile = mapped_profile
 
-        if not profile.source_image:
+        if not _profile_has_source(profile):
             raise RuntimeError(
                 f"Missing GCE range image for role={role!r} os_type={os_type!r}. "
                 "Set the corresponding GCP_RANGE_*_IMAGE environment variable."
@@ -158,12 +170,18 @@ class GCERangeCellConfig:
         if requested_type:
             return GCERangeImageProfile(
                 source_image=profile.source_image,
+                source_machine_image=profile.source_machine_image,
                 machine_type=requested_type,
                 disk_size_gb=profile.disk_size_gb,
                 disk_type=profile.disk_type,
                 bootstrap_capability=profile.bootstrap_capability,
                 domain_dns_name=profile.domain_dns_name,
                 domain_netbios_name=profile.domain_netbios_name,
+                participant_container_name=profile.participant_container_name,
+                participant_username=profile.participant_username,
+                host_ssh_username=profile.host_ssh_username,
+                host_ssh_port=profile.host_ssh_port,
+                allow_public_web_egress=profile.allow_public_web_egress,
             )
         return profile
 
@@ -173,10 +191,22 @@ class GCERangeCellConfig:
 # sees a clear error before a range attempt (#1343 gap 7).
 _VALID_GCE_DISK_TYPES = frozenset({"pd-standard", "pd-balanced", "pd-ssd", "pd-extreme", "hyperdisk-balanced"})
 _GCE_PROFILE_CLASSES = frozenset({"linux", "kali", "windows", "dc"})
-_GCE_PROFILE_REQUIRED_FIELDS = frozenset(
-    {"source_image", "machine_type", "disk_size_gb", "disk_type", "bootstrap_capability"}
+_GCE_PROFILE_REQUIRED_FIELDS = frozenset({"machine_type", "bootstrap_capability"})
+_GCE_PROFILE_OPTIONAL_FIELDS = frozenset(
+    {
+        "source_image",
+        "source_machine_image",
+        "disk_size_gb",
+        "disk_type",
+        "domain_dns_name",
+        "domain_netbios_name",
+        "participant_container_name",
+        "participant_username",
+        "host_ssh_username",
+        "host_ssh_port",
+        "allow_public_web_egress",
+    }
 )
-_GCE_PROFILE_OPTIONAL_FIELDS = frozenset({"domain_dns_name", "domain_netbios_name"})
 _GCE_PROFILE_FIELDS = _GCE_PROFILE_REQUIRED_FIELDS | _GCE_PROFILE_OPTIONAL_FIELDS
 _GCE_PROFILE_MIN_DISK_SIZE_GB = {"linux": 10, "kali": 30, "windows": 100, "dc": 100}
 _GCE_IMAGE_KEY_PROFILES_MAX_BYTES = 32_768
@@ -202,6 +232,16 @@ _GCE_IMAGE_REFERENCE_RE = re.compile(
     rf"(?:projects/{_GCE_PROJECT}/)?global/images/(?:family/)?{_GCE_NAME}"
     r")$"
 )
+_GCE_MACHINE_IMAGE_REFERENCE_RE = re.compile(
+    rf"^(?:(?:https://[^/]+/compute/(?:v1|beta)/)?)projects/{_GCE_PROJECT}/global/machineImages/{_GCE_NAME}$"
+)
+_GCE_LINUX_USERNAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+_GCE_CONTAINER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+
+
+def _profile_has_source(profile: GCERangeImageProfile) -> bool:
+    """Return whether a profile selects exactly one supported GCE source."""
+    return bool(profile.source_image or profile.source_machine_image)
 
 
 def _validate_gce_image_reference(prefix: str, value: str) -> None:
@@ -214,11 +254,57 @@ def _validate_gce_image_reference(prefix: str, value: str) -> None:
         )
 
 
+def _validate_gce_machine_image_reference(prefix: str, value: str) -> None:
+    """Require an exact, immutable Compute Engine machine-image resource."""
+    if not _GCE_MACHINE_IMAGE_REFERENCE_RE.fullmatch(value):
+        raise RuntimeError(
+            f"{prefix}.source_machine_image is not a valid exact Compute Engine machine-image reference: "
+            f"{value!r}. Use 'projects/<project>/global/machineImages/<name>'."
+        )
+
+
+def _validate_preconfigured_machine_profile(prefix: str, profile: GCERangeImageProfile) -> None:
+    """Validate the closed machine-host capability fields."""
+    machine_host = profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST
+    machine_fields = (
+        profile.participant_container_name,
+        profile.participant_username,
+        profile.host_ssh_username,
+    )
+    if machine_host:
+        if not profile.source_machine_image:
+            raise RuntimeError(f"{prefix} preconfigured-machine-host requires source_machine_image")
+        if not all(machine_fields):
+            raise RuntimeError(
+                f"{prefix} preconfigured-machine-host requires participant_container_name, "
+                "participant_username, and host_ssh_username"
+            )
+        if not _GCE_CONTAINER_NAME_RE.fullmatch(profile.participant_container_name):
+            raise RuntimeError(f"{prefix}.participant_container_name is not a valid container name")
+        for field_name, value in (
+            ("participant_username", profile.participant_username),
+            ("host_ssh_username", profile.host_ssh_username),
+        ):
+            if not _GCE_LINUX_USERNAME_RE.fullmatch(value):
+                raise RuntimeError(f"{prefix}.{field_name} is not a valid Linux username")
+        if profile.host_ssh_port < 1 or profile.host_ssh_port > 65535:
+            raise RuntimeError(f"{prefix}.host_ssh_port must be between 1 and 65535")
+    elif profile.source_machine_image or any(machine_fields) or profile.host_ssh_port != 22:
+        raise RuntimeError(
+            f"{prefix} machine-image and participant-container fields require "
+            f"bootstrap_capability={GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST!r}"
+        )
+
+
 def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, min_disk_size_gb: int) -> None:
     """Fail fast on a malformed image ref, unknown disk type, or too-small boot disk."""
+    if profile.source_image and profile.source_machine_image:
+        raise RuntimeError(f"{prefix} must set exactly one of source_image or source_machine_image")
     if profile.source_image:
         _validate_gce_image_reference(prefix, profile.source_image)
-    if profile.disk_type not in _VALID_GCE_DISK_TYPES:
+    if profile.source_machine_image:
+        _validate_gce_machine_image_reference(prefix, profile.source_machine_image)
+    if profile.source_image and profile.disk_type not in _VALID_GCE_DISK_TYPES:
         raise RuntimeError(
             f"{prefix}_DISK_TYPE {profile.disk_type!r} is not a supported Compute Engine disk type. "
             f"Choose one of: {', '.join(sorted(_VALID_GCE_DISK_TYPES))}."
@@ -229,7 +315,7 @@ def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, m
     # enforces the documented per-role floors (e.g. the Windows/DC images are
     # 100 GB) so an obviously-undersized disk fails at config load instead of
     # only at instance creation.
-    if profile.disk_size_gb < min_disk_size_gb:
+    if profile.source_image and profile.disk_size_gb < min_disk_size_gb:
         raise RuntimeError(
             f"{prefix}_DISK_SIZE_GB {profile.disk_size_gb} is smaller than the {min_disk_size_gb} GB "
             f"role-policy minimum for this guest role."
@@ -244,6 +330,7 @@ def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, m
         raise RuntimeError(f"{prefix}.domain_dns_name exceeds the 253-character DNS-name limit")
     if len(profile.domain_netbios_name) > 15:
         raise RuntimeError(f"{prefix}.domain_netbios_name exceeds the 15-character NetBIOS-name limit")
+    _validate_preconfigured_machine_profile(prefix, profile)
 
 
 def _load_gce_range_profile(
@@ -307,26 +394,48 @@ def _parse_gce_image_key_profile(
     if missing:
         raise RuntimeError(f"{location} is missing required fields: {', '.join(missing)}")
 
-    source_image = _require_profile_string(entry, "source_image", location=location)
+    source_image = _optional_profile_string(entry, "source_image", location=location)
+    source_machine_image = _optional_profile_string(entry, "source_machine_image", location=location)
+    if bool(source_image) == bool(source_machine_image):
+        raise RuntimeError(f"{location} must set exactly one of source_image or source_machine_image")
+    if source_image:
+        missing_image_fields = sorted({"disk_size_gb", "disk_type"} - fields)
+        if missing_image_fields:
+            raise RuntimeError(f"{location} is missing required fields: {', '.join(missing_image_fields)}")
     machine_type = _require_profile_string(entry, "machine_type", location=location)
-    disk_type = _require_profile_string(entry, "disk_type", location=location)
     bootstrap_capability = _require_profile_string(entry, "bootstrap_capability", location=location)
     domain_dns_name = _optional_profile_string(entry, "domain_dns_name", location=location)
     domain_netbios_name = _optional_profile_string(entry, "domain_netbios_name", location=location)
-    disk_size_gb = entry["disk_size_gb"]
+    participant_container_name = _optional_profile_string(entry, "participant_container_name", location=location)
+    participant_username = _optional_profile_string(entry, "participant_username", location=location)
+    host_ssh_username = _optional_profile_string(entry, "host_ssh_username", location=location)
+    disk_type = _optional_profile_string(entry, "disk_type", location=location) or "pd-balanced"
+    disk_size_gb = entry.get("disk_size_gb", 30)
     if isinstance(disk_size_gb, bool) or not isinstance(disk_size_gb, int) or disk_size_gb <= 0:
         raise RuntimeError(f"{location}.disk_size_gb must be a positive integer")
+    host_ssh_port = entry.get("host_ssh_port", 22)
+    if isinstance(host_ssh_port, bool) or not isinstance(host_ssh_port, int):
+        raise RuntimeError(f"{location}.host_ssh_port must be an integer")
+    allow_public_web_egress = entry.get("allow_public_web_egress", False)
+    if not isinstance(allow_public_web_egress, bool):
+        raise RuntimeError(f"{location}.allow_public_web_egress must be a boolean")
     if not _GCE_LOGICAL_NAME_RE.fullmatch(machine_type):
         raise RuntimeError(f"{location}.machine_type is not a valid Compute Engine machine type")
 
     profile = GCERangeImageProfile(
         source_image=source_image,
+        source_machine_image=source_machine_image,
         machine_type=machine_type,
         disk_size_gb=disk_size_gb,
         disk_type=disk_type,
         bootstrap_capability=bootstrap_capability,
         domain_dns_name=domain_dns_name,
         domain_netbios_name=domain_netbios_name,
+        participant_container_name=participant_container_name,
+        participant_username=participant_username,
+        host_ssh_username=host_ssh_username,
+        host_ssh_port=host_ssh_port,
+        allow_public_web_egress=allow_public_web_egress,
     )
     _validate_gce_range_profile(
         location,
@@ -428,6 +537,9 @@ def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellCon
     network_id = (os.environ.get("RANGE_NETWORK_ID") or os.environ.get("RANGE_VPC_ID", "")).strip()
     if network_mode == "shared-vpc" and not network_id:
         raise RuntimeError("shared-vpc range networking requires RANGE_NETWORK_ID or RANGE_VPC_ID")
+    range_host_identity_pool_size = _get_int_env("GCP_RANGE_HOST_IDENTITY_POOL_SIZE", 0)
+    if range_host_identity_pool_size < 0:
+        raise RuntimeError("GCP_RANGE_HOST_IDENTITY_POOL_SIZE must be a non-negative integer")
 
     return GCERangeCellConfig(
         project_id=project_id,
@@ -447,6 +559,7 @@ def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellCon
                 "https://www.googleapis.com/auth/cloud-platform",
             )
         ),
+        range_host_identity_pool_size=range_host_identity_pool_size,
         linux=_load_gce_range_profile(
             "GCP_RANGE_LINUX",
             default_machine_type="e2-standard-2",

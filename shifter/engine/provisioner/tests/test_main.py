@@ -1063,6 +1063,40 @@ class TestGdcProvisioning:
         bootstrap.assert_called_once()
         container_password.assert_called_once()
 
+    def test_gcp_preconfigured_machine_host_skips_generic_guest_bootstrap(self, monkeypatch):
+        from instance_orchestrator import _setup_one_other_instance
+
+        setup = MagicMock()
+        preconfigured_setup = MagicMock()
+        monkeypatch.setattr("instance_orchestrator.get_agent_presigned_url", MagicMock(return_value=""))
+        monkeypatch.setattr("instance_orchestrator._run_single_instance_setup", setup)
+        monkeypatch.setattr(
+            "instance_orchestrator._run_preconfigured_machine_host_setup",
+            preconfigured_setup,
+        )
+
+        result = _setup_one_other_instance(
+            {
+                "uuid": "inst-nested",
+                "asset_type": "gce_vm",
+                "role": "attacker",
+                "os": "kali",
+                "instance_id": "gce-nested",
+                "name": "participant",
+                "ssh_username": "operator",
+                "gcp_participant_container_name": "participant-desktop",
+                "gcp_bootstrap_capability": "preconfigured-machine-host",
+            },
+            {"inst-nested": {"ami_key": "nested-host"}},
+            actual_dc_ip=None,
+            actual_domain=None,
+            range_id=9,
+        )
+
+        assert result == ("gce-nested", True, None)
+        setup.assert_not_called()
+        preconfigured_setup.assert_called_once()
+
     def test_polaris_bootstrap_gcp_routes_ssh_and_uses_gcp_plan(self, monkeypatch):
         """GCP polaris bootstrap uses the routed executor and a gcp plan. No IMDS mutation exists anywhere (#1377)."""
         import polaris_bootstrap

@@ -167,6 +167,7 @@ def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
         "rdp_username": rdp_username,
         "rdp_password": rdp_password,
         "ssh_key": _fetch_sftp_ssh_key(instance, os_type),
+        "sftp_enabled": instance.get("participant_sftp_enabled") is not False,
     }
 
 

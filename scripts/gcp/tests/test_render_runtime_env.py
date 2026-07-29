@@ -63,6 +63,7 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "RANGE_NETWORK_ZONE": "us-central1-b",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@example.iam.gserviceaccount.com",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES": "https://www.googleapis.com/auth/cloud-platform",
+        "GCP_RANGE_HOST_IDENTITY_POOL_SIZE": "200",
         "GCP_RANGE_LINUX_IMAGE": "projects/debian-cloud/global/images/family/debian-12",
         "GCP_RANGE_LINUX_MACHINE_TYPE": "e2-small",
         "GCP_RANGE_LINUX_DISK_SIZE_GB": "20",
@@ -297,6 +298,7 @@ def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
     assert "GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range\n" in rendered
     assert "RANGE_NETWORK_ZONE=us-central1-b\n" in rendered
     assert "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=range-host@example.iam.gserviceaccount.com\n" in rendered
+    assert "GCP_RANGE_HOST_IDENTITY_POOL_SIZE=200\n" in rendered
     assert "GCP_RANGE_LINUX_IMAGE=projects/debian-cloud/global/images/family/debian-12\n" in rendered
     assert "GCP_RANGE_EGRESS_ALLOW_CIDRS=10.60.0.0/16\n" in rendered
     mapping_line = next(line for line in rendered.splitlines() if line.startswith("GCP_RANGE_IMAGE_KEY_PROFILES_JSON="))

@@ -120,6 +120,7 @@ def _structural_detail_payload(detail: dict[str, Any]) -> dict[str, Any]:
         "ngfw": bool(detail.get("ngfw", False)),
         "instances": detail.get("instances", []),
         "subnets": detail.get("subnets", []),
+        "participant_access": detail.get("participant_access", []),
         "raes": None,
     }
 
@@ -145,6 +146,7 @@ def _raes_detail_payload(scenario_id: str) -> dict[str, Any] | None:
         "ngfw": False,
         "instances": [],
         "subnets": [],
+        "participant_access": [],
         "raes": entry.get("raes"),
     }
 

@@ -56,6 +56,12 @@ variable "range_network_cidr" {
   type        = string
 }
 
+variable "range_host_identity_pool_size" {
+  description = "Number of pre-created service accounts available to preconfigured range hosts."
+  type        = number
+  default     = 0
+}
+
 variable "web_machine_type" {
   description = "Machine type for the web node pool."
   type        = string

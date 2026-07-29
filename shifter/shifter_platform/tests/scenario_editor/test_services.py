@@ -402,6 +402,8 @@ class TestExportScenarioYaml:
         assert "enabled:" not in yaml_str
 
     def test_export_custom_round_trips_through_yaml_validation(self, custom_scenario):
+        custom_scenario.definition["participant_access"] = [{"target": "Attacker", "channel": "rdp"}]
+        custom_scenario.save(update_fields=["definition"])
         yaml_str = export_scenario_yaml("custom-test")
 
         parsed, errors = validate_yaml(yaml_str)
@@ -420,6 +422,7 @@ class TestExportScenarioYaml:
             for key, value in expected.items():
                 assert actual[key] == value
         assert parsed["ngfw"] == custom_scenario.definition["ngfw"]
+        assert parsed["participant_access"] == custom_scenario.definition["participant_access"]
 
 
 class TestUserValidation:
@@ -640,13 +643,17 @@ instances:
   - name: A
     role: attacker
     os_type: kali
+participant_access:
+  - target: A
+    channel: rdp
 """
         fields, errors = create_scenario_from_yaml_post(staff_user, yaml_content)
 
         assert errors == []
         assert fields is not None
         assert fields.scenario_id == "yaml-service-test"
-        assert Scenario.objects.filter(scenario_id="yaml-service-test").exists()
+        scenario = Scenario.objects.get(scenario_id="yaml-service-test")
+        assert scenario.definition["participant_access"] == [{"target": "A", "channel": "rdp"}]
 
     def test_update_from_yaml_post_updates_scenario(self, staff_user, custom_scenario):
         yaml_content = """

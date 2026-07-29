@@ -720,6 +720,18 @@ variable "terminal_max_sessions_per_user" {
   default     = 10
 }
 
+variable "shifter_raes_native_provisioning" {
+  description = "RAES-native provisioning capability/rollback gate (SHIFTER_RAES_NATIVE_PROVISIONING). False is the preserved-legacy posture."
+  type        = bool
+  default     = false
+}
+
+variable "shifter_raes_catalog_cutovers" {
+  description = "RAES catalog source-route selector: comma-separated public=source slug pairs (SHIFTER_RAES_CATALOG_CUTOVERS). Empty is the preserved-legacy/rollback posture."
+  type        = string
+  default     = ""
+}
+
 variable "terminal_idle_timeout_seconds" {
   description = "Idle terminal session timeout in seconds (TERMINAL_IDLE_TIMEOUT_SECONDS)."
   type        = number

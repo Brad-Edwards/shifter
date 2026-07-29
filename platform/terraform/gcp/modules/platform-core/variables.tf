@@ -89,6 +89,12 @@ variable "range_network_cidr" {
   type        = string
 }
 
+variable "range_host_identity_pool_size" {
+  description = "Number of pre-created service accounts available to preconfigured range hosts."
+  type        = number
+  default     = 0
+}
+
 variable "gke_pods_secondary_range_name" {
   description = "Secondary range name for GKE pods."
   type        = string

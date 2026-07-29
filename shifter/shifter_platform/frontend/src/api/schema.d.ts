@@ -2674,6 +2674,12 @@ export interface components {
             topics?: string[];
             next_challenge?: string | null;
         };
+        /**
+         * @description * `ssh` - ssh
+         *     * `rdp` - rdp
+         * @enum {string}
+         */
+        ChannelEnum: "ssh" | "rdp";
         /** @description Defer or cancel the pending automated range cleanup (CTF-1003). */
         CleanupControlRequest: {
             action: components["schemas"]["CleanupControlRequestActionEnum"];
@@ -3583,6 +3589,7 @@ export interface components {
             ngfw: boolean;
             instances?: components["schemas"]["ScenarioInstance"][];
             subnets?: components["schemas"]["ScenarioSubnet"][];
+            participant_access?: components["schemas"]["ScenarioParticipantAccess"][];
         };
         /** @description List projection of one challenge prerequisite. */
         Prerequisite: {
@@ -3983,6 +3990,7 @@ export interface components {
             ngfw: boolean;
             instances: components["schemas"]["ScenarioInstance"][];
             subnets?: components["schemas"]["ScenarioSubnet"][];
+            participant_access?: components["schemas"]["ScenarioParticipantAccess"][];
             scenario_id: string;
         };
         /** @description Response for a create/clone: the new scenario's identity. */
@@ -4014,6 +4022,7 @@ export interface components {
             readonly ngfw: boolean;
             readonly instances: components["schemas"]["ScenarioInstance"][];
             readonly subnets: components["schemas"]["ScenarioSubnet"][];
+            readonly participant_access: components["schemas"]["ScenarioParticipantAccess"][];
             readonly raes: components["schemas"]["RaesCatalogFields"] | null;
         };
         /** @description Response for an export: the scenario id and its YAML rendering. */
@@ -4093,6 +4102,11 @@ export interface components {
             readonly scenario_id: string;
             readonly enabled: boolean;
             readonly staff_only: boolean;
+        };
+        /** @description One participant-facing channel, mirroring ``ParticipantAccessConfig``. */
+        ScenarioParticipantAccess: {
+            target: string;
+            channel: components["schemas"]["ChannelEnum"];
         };
         /**
          * @description Backend realizability assessment for one catalog entry (ADR-034-R3).
