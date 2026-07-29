@@ -1,0 +1,145 @@
+name: Quality - guard
+
+on:
+  workflow_call:
+    inputs:
+      skip_tests:
+        required: false
+        type: boolean
+        default: false
+      run_all:
+        required: false
+        type: string
+        default: "false"
+      adr_guard:
+        required: false
+        type: string
+        default: "false"
+      guard_selfcheck:
+        required: false
+        type: string
+        default: "false"
+      ci_workflows:
+        required: false
+        type: string
+        default: "false"
+
+jobs:
+  adr-conformance:
+    permissions:
+      contents: read
+    name: Architecture (adr conformance)
+    # guard_selfcheck is an independent (non-classifier) trigger so a contract or
+    # classifier edit cannot suppress its own conformance run (#1530).
+    if: ${{ (inputs.run_all == 'true' || inputs.adr_guard == 'true' || inputs.guard_selfcheck == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 fetches base-branch history so git-reference guards
+      # (boundary-mock-policy, published-contract-snapshots-immutable) can
+      # resolve the merge base and enforce rather than fail open on a shallow clone.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      # The self-hosted runner ships with Python 3.9, but `adr_guard.py`
+      # imports the stdlib `tomllib` module added in 3.11. `uv` brings its
+      # own Python and is already the Python toolchain every other job in
+      # this workflow uses, so it's the portable fix: no OS-package upgrade
+      # on the runner VMs, no dependency on `actions/setup-python`'s
+      # version manifest (which doesn't cover the runner distro).
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install Helm for ADR guard chart rendering (hermetic, version-pinned, checksum-verified)
+        env:
+          HELM_VERSION: v3.15.4
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/helm-bin"
+          curl -fsSL -o "${RUNNER_TEMP}/helm.tar.gz" \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          # Verify the downloaded tarball against the published SHA256 checksum
+          # before extraction or execution. Trust boundary is get.helm.sh; if
+          # it is compromised both files compare equal, but this prevents
+          # CDN/transport tampering and silent corruption.
+          expected=$(curl -fsSL \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum" \
+            | awk '{print $1}')
+          echo "${expected}  ${RUNNER_TEMP}/helm.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/helm.tar.gz" -C "${RUNNER_TEMP}" linux-amd64/helm
+          mv "${RUNNER_TEMP}/linux-amd64/helm" "${RUNNER_TEMP}/helm-bin/helm"
+          echo "${RUNNER_TEMP}/helm-bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/helm-bin/helm" version --short
+
+      - name: Run ADR guard
+        env:
+          # Fail closed on the git-reference immutability guard now that base history is fetched.
+          ADR_GUARD_SNAPSHOT_ENFORCE: "1"
+        run: |
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python scripts/adr_guard/adr_guard.py --all --level ci
+
+  adr-guard-tests:
+    permissions:
+      contents: read
+    name: Tests (adr_guard)
+    needs: adr-conformance
+    # guard_selfcheck (independent of the classifier) forces the guard's own
+    # tests to run on any contract/classifier/guard-file change (#1530).
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.adr_guard == 'true' || inputs.guard_selfcheck == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      # Same rationale as adr-conformance: `adr_guard` imports `tomllib`
+      # (stdlib 3.11+); the self-hosted runner ships 3.9. Use `uv` to
+      # source Python so the workflow doesn't depend on a system upgrade.
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Run tests
+        run: |
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python -m unittest discover -s scripts/adr_guard/tests -p 'test_*.py' -v
+
+  # ===========================================================================
+  # JavaScript Tests
+  # ===========================================================================
+
+  workflow-lint:
+    permissions:
+      contents: read
+    name: Lint (GitHub Actions)
+    if: ${{ (inputs.run_all == 'true' || inputs.ci_workflows == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: devops-actions/actionlint@467e2ce19b2310e93c9ffa0b50fe31f86b5a7f23 # v0.1.10
+
+  secrets-gitleaks:
+    permissions:
+      contents: read
+    name: Security (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Determine scan range
+        id: range
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          else
+            RANGE="HEAD~1..HEAD"
+          fi
+          echo "log_opts=$RANGE" >> "$GITHUB_OUTPUT"
+
+      - name: Run gitleaks on new commits
+        uses: DariuszPorowski/github-action-gitleaks@a027585cb1f2780aa441f20f4d0aabf8b1a0d90e # v2.1.0
+        with:
+          config: .gitleaks.toml
+          fail: true
+          report_format: json
+          log_opts: ${{ steps.range.outputs.log_opts }}

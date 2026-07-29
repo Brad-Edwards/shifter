@@ -97,6 +97,257 @@ class TestRunnerExposure(unittest.TestCase):
         )
 
 
+class TestEffectiveWorkflowGraph(unittest.TestCase):
+    """#689: the semantic model follows local ``jobs.*.uses`` reusable-workflow
+    calls so a job that moves into a child workflow stays under enforcement."""
+
+    _STUB = (
+        "name: {n}\non:\n  workflow_call: {{}}\njobs:\n"
+        "  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n"
+    )
+
+    def _write(self, root, rel, text):
+        path = Path(root) / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def _write_all_roots(self, tmp, platform_text):
+        for rel, name in (
+            (ADR_GUARD._CORE_WORKFLOW_PATH, "Core"),
+            (ADR_GUARD._RANGE_WORKFLOW_PATH, "Range"),
+            (ADR_GUARD._ENGINE_WORKFLOW_PATH, "Engine"),
+            (ADR_GUARD._GCP_DEV_WORKFLOW_PATH, "Gcp"),
+        ):
+            self._write(tmp, rel, self._STUB.format(n=name))
+        self._write(tmp, ADR_GUARD._PLATFORM_WORKFLOW_PATH, platform_text)
+
+    def test_local_workflow_target_resolution(self):
+        target = ADR_GUARD._dw_local_workflow_target
+        self.assertEqual(
+            target("./.github/workflows/_child.yml"), ".github/workflows/_child.yml"
+        )
+        self.assertEqual(
+            target("./.github/workflows/_child.yaml"), ".github/workflows/_child.yaml"
+        )
+        # A local reusable-workflow call takes no @ref, escapes, or nesting.
+        self.assertIsNone(target("./.github/workflows/_child.yml@main"))
+        self.assertIsNone(target("./.github/workflows/../evil.yml"))
+        self.assertIsNone(target("./.github/workflows/nested/x.yml"))
+        # External reusable workflows and actions are not local calls.
+        self.assertIsNone(target("owner/repo/.github/workflows/x.yml@abc123"))
+        self.assertIsNone(target("actions/checkout@v4"))
+
+    def test_effective_jobs_follows_local_child(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_root.yml",
+                "name: R\non:\n  workflow_call: {}\njobs:\n"
+                "  op:\n    uses: ./.github/workflows/_child.yml\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_child.yml",
+                "name: C\non:\n  workflow_call: {}\njobs:\n"
+                "  work:\n    runs-on: self-hosted\n    steps:\n      - run: 'true'\n",
+            )
+            got = {
+                (src, jid)
+                for src, jid, _ in ADR_GUARD._dw_iter_effective_jobs(
+                    Path(tmp), ".github/workflows/_root.yml"
+                )
+            }
+            self.assertIn((".github/workflows/_root.yml", "op"), got)
+            self.assertIn((".github/workflows/_child.yml", "work"), got)
+
+    def test_effective_jobs_detects_cycle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_a.yml",
+                "name: A\non:\n  workflow_call: {}\njobs:\n"
+                "  toB:\n    uses: ./.github/workflows/_b.yml\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_b.yml",
+                "name: B\non:\n  workflow_call: {}\njobs:\n"
+                "  toA:\n    uses: ./.github/workflows/_a.yml\n",
+            )
+            with self.assertRaises(ADR_GUARD._DwShapeError):
+                list(
+                    ADR_GUARD._dw_iter_effective_jobs(
+                        Path(tmp), ".github/workflows/_a.yml"
+                    )
+                )
+
+    def test_effective_jobs_rejects_path_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_root.yml",
+                "name: R\non:\n  workflow_call: {}\njobs:\n"
+                "  op:\n    uses: ./.github/workflows/../evil.yml\n",
+            )
+            with self.assertRaises(ADR_GUARD._DwShapeError):
+                list(
+                    ADR_GUARD._dw_iter_effective_jobs(
+                        Path(tmp), ".github/workflows/_root.yml"
+                    )
+                )
+
+    def test_effective_job_map_rejects_duplicate_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_root.yml",
+                "name: R\non:\n  workflow_call: {}\njobs:\n"
+                "  shared:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n"
+                "  op:\n    uses: ./.github/workflows/_child.yml\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_child.yml",
+                "name: C\non:\n  workflow_call: {}\njobs:\n"
+                "  shared:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n",
+            )
+            with self.assertRaises(ADR_GUARD._DwShapeError):
+                ADR_GUARD._dw_effective_job_map(Path(tmp), ".github/workflows/_root.yml")
+
+    def test_flattened_text_inlines_all_child_jobs_multi_and_nested(self):
+        # A multi-job child and a nested grandchild must ALL be inlined, each
+        # under the coordinator gate — first-child-only would drop them.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_root.yml",
+                "name: R\non:\n  workflow_call: {}\njobs:\n"
+                "  op:\n    uses: ./.github/workflows/_child.yml\n    if: inputs.go\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_child.yml",
+                "name: C\non:\n  workflow_call: {}\njobs:\n"
+                "  first:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo first-job\n"
+                "  second:\n    uses: ./.github/workflows/_grand.yml\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_grand.yml",
+                "name: G\non:\n  workflow_call: {}\njobs:\n"
+                "  deep:\n    runs-on: self-hosted\n    steps:\n      - run: echo grandchild-job\n",
+            )
+            flat = ADR_GUARD._dw_flattened_workflow_text(
+                Path(tmp), ".github/workflows/_root.yml"
+            )
+            self.assertIn("echo first-job", flat)  # multi-job child, sibling 1
+            self.assertIn("echo grandchild-job", flat)  # nested grandchild inlined
+            self.assertIn("  first:", flat)
+            self.assertIn("  deep:", flat)
+            self.assertNotIn("uses: ./.github/workflows/", flat)  # every stub replaced
+            self.assertEqual(flat.count("if: inputs.go"), 2)  # gate on both executing jobs
+
+    def test_flattened_text_follows_quoted_uses_ref(self):
+        # A quoted local reusable-workflow scalar must still be followed; the
+        # raw-token regex previously kept the caller stub and hid the child.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_root.yml",
+                'name: R\non:\n  workflow_call: {}\njobs:\n'
+                '  op:\n    uses: "./.github/workflows/_child.yml"\n',
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_child.yml",
+                "name: C\non:\n  workflow_call: {}\njobs:\n"
+                "  work:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo quoted-child\n",
+            )
+            flat = ADR_GUARD._dw_flattened_workflow_text(
+                Path(tmp), ".github/workflows/_root.yml"
+            )
+            self.assertIn("echo quoted-child", flat)
+            self.assertNotIn("uses:", flat)  # the stub is replaced, not retained
+
+    def test_flattened_text_fails_closed_on_unresolvable_local_ref(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_root.yml",
+                "name: R\non:\n  workflow_call: {}\njobs:\n"
+                "  op:\n    uses: ./.github/workflows/nested/evil.yml\n",
+            )
+            with self.assertRaises(ADR_GUARD._DwShapeError):
+                ADR_GUARD._dw_flattened_workflow_text(
+                    Path(tmp), ".github/workflows/_root.yml"
+                )
+
+    def test_runner_exposure_catches_moved_self_hosted_job(self):
+        # A self-hosted job relocated into a child that does NOT itself fail
+        # closed on pull_request must still be flagged (defense in depth).
+        child_bad = (
+            "name: Plan\non:\n  workflow_call: {}\njobs:\n"
+            "  plan:\n    runs-on: self-hosted\n    steps:\n      - run: 'true'\n"
+        )
+        platform = (
+            "name: Platform\non:\n  workflow_call: {}\njobs:\n"
+            "  plan-op:\n    uses: ./.github/workflows/_platform-plan.yml\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_all_roots(tmp, platform)
+            self._write(tmp, ".github/workflows/_platform-plan.yml", child_bad)
+            violations = ADR_GUARD.check_deploy_runner_exposure(Path(tmp), None)
+            self.assertTrue(
+                any("plan" in v.message for v in violations),
+                f"moved self-hosted job not caught: {[v.message for v in violations]}",
+            )
+
+    def test_flattened_text_inlines_child_under_coordinator_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_root.yml",
+                "name: R\non:\n  workflow_call: {}\njobs:\n"
+                "  op:\n    uses: ./.github/workflows/_child.yml\n"
+                "    needs: prep\n    if: inputs.go\n"
+                "    with:\n      x: 1\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_child.yml",
+                "name: C\non:\n  workflow_call: {}\njobs:\n"
+                "  op:\n    if: github.event_name != 'pull_request'\n"
+                "    runs-on: self-hosted\n    steps:\n      - run: echo hello-from-child\n",
+            )
+            flat = ADR_GUARD._dw_flattened_workflow_text(
+                Path(tmp), ".github/workflows/_root.yml"
+            )
+            self.assertIn("echo hello-from-child", flat)  # child step inlined
+            self.assertIn("needs: prep", flat)  # coordinator gate kept
+            self.assertIn("if: inputs.go", flat)  # coordinator if kept
+            self.assertNotIn("uses: ./.github/workflows/_child.yml", flat)  # stub replaced
+            # The child's own PR-denial guard is superseded by the coordinator gate.
+            self.assertNotIn("github.event_name != 'pull_request'", flat)
+
+    def test_runner_exposure_passes_when_moved_job_fails_closed(self):
+        child_ok = (
+            "name: Plan\non:\n  workflow_call: {}\njobs:\n"
+            "  plan:\n    runs-on: self-hosted\n"
+            "    if: github.event_name != 'pull_request'\n"
+            "    steps:\n      - run: 'true'\n"
+        )
+        platform = (
+            "name: Platform\non:\n  workflow_call: {}\njobs:\n"
+            "  plan-op:\n    uses: ./.github/workflows/_platform-plan.yml\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_all_roots(tmp, platform)
+            self._write(tmp, ".github/workflows/_platform-plan.yml", child_ok)
+            self.assertEqual(
+                ADR_GUARD.check_deploy_runner_exposure(Path(tmp), None), []
+            )
+
+
 class TestSelfHostedClassLabels(unittest.TestCase):
     """ADR-003-R5 exposure recognizes custom self-hosted-class labels (#1546).
 
@@ -257,12 +508,22 @@ class TestManualDeployDispatch(unittest.TestCase):
 
     def test_aws_platform_uses_the_explicit_eks_bundle_entrypoint(self):
         platform = _load("_shifter-platform.yml")
-        job = platform["jobs"]["eks-deploy"]
-        rendered = str(job)
+        # The eks-deploy operation's steps live in its reusable child (#689);
+        # resolve the executing job through the effective graph.
+        effective = ADR_GUARD._dw_effective_job_map(
+            REPO_ROOT, ".github/workflows/_shifter-platform.yml"
+        )
+        rendered = str(effective["eks-deploy"])
 
         self.assertIn("scripts/bootstrap/deploy.py eks-deploy", rendered)
         self.assertIn("SHIFTER_CONFIG_", rendered)
-        self.assertIn("needs.build.outputs.image_digest", rendered)
+        # The build image digest is forwarded by the coordinator and consumed as
+        # an input inside the child.
+        self.assertIn("inputs.image_digest", rendered)
+        self.assertEqual(
+            platform["jobs"]["eks-deploy"]["with"]["image_digest"],
+            "${{ needs.build.outputs.image_digest }}",
+        )
         self.assertNotIn("github.ref", rendered)
         self.assertIn("__legacy-disabled__", platform["jobs"]["plan"]["if"])
         self.assertIn("__legacy-disabled__", platform["jobs"]["deploy"]["if"])
@@ -357,7 +618,9 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.quality = _load("_quality.yml")
-        cls.jobs = ADR_GUARD._dw_jobs(cls.quality, "_quality.yml")
+        # Resolve across the reusable children (#689) so responsibility jobs that
+        # moved out of the coordinator remain visible with their routing gates.
+        cls.jobs = ADR_GUARD._quality_effective_jobs(REPO_ROOT)
         filter_path = REPO_ROOT / ".github" / "quality-path-filters.yaml"
         raw = yaml.safe_load(filter_path.read_text(encoding="utf-8"))
         # #1530 evolved this file from a flat category->globs map into a
@@ -416,8 +679,7 @@ class TestTflintPluginAuthentication(unittest.TestCase):
     """#1850: TFLint plugin downloads use the job-scoped GitHub token."""
 
     def test_tflint_init_avoids_unauthenticated_api_rate_limit(self):
-        quality = _load("_quality.yml")
-        jobs = ADR_GUARD._dw_jobs(quality, "_quality.yml")
+        jobs = ADR_GUARD._quality_effective_jobs(REPO_ROOT)
         terraform_lint = jobs["terraform-lint"]
         init_step = next(
             step
@@ -467,7 +729,7 @@ class TestSonarScannerIdentity(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        jobs = ADR_GUARD._dw_jobs(_load("_quality.yml"), "_quality.yml")
+        jobs = ADR_GUARD._quality_effective_jobs(REPO_ROOT)
         cls.scan_step = next(
             step
             for step in ADR_GUARD._dw_job_steps(jobs["sonarcloud"])
@@ -588,8 +850,12 @@ class TestGithubEnvironmentBinding(unittest.TestCase):
 
     def test_mutating_jobs_bind_github_environment(self):
         for name, job_ids in self.EXPECTED.items():
-            wf = _load(name)
-            jobs = ADR_GUARD._dw_jobs(wf, name)
+            # Resolve through the effective graph so a mutating job that moved
+            # into a reusable child (#689) still binds the environment. For a
+            # workflow with no children this is identical to its top-level jobs.
+            jobs = ADR_GUARD._dw_effective_job_map(
+                REPO_ROOT, f".github/workflows/{name}"
+            )
             for jid in job_ids:
                 self.assertIn(jid, jobs, f"{name}:{jid} missing")
                 self.assertEqual(
@@ -761,7 +1027,15 @@ class TestEngineImageDigest(unittest.TestCase):
         engine_vars = self._read(
             "platform/terraform/modules/engine-provisioner/variables.tf"
         )
-        platform_wf = self._active_text(".github/workflows/_shifter-platform.yml")
+        # Flatten the platform workflow so plan/apply render steps that moved
+        # into reusable children (#689) are visible to the assertions below.
+        platform_wf = "\n".join(
+            stripped
+            for line in ADR_GUARD._dw_flattened_workflow_text(
+                REPO_ROOT, ".github/workflows/_shifter-platform.yml"
+            ).splitlines()
+            if (stripped := line.strip()) and not stripped.startswith("#")
+        )
         deploy_wf = self._active_text(".github/workflows/deploy.yml")
 
         self.assertNotIn('data "aws_ecr_image"', engine_main)

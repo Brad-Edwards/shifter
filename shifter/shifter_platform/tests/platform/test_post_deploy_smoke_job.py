@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _platform_workflow_graph import reachable_family_text
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PLATFORM_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "_shifter-platform.yml"
 GCP_DEV_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "_gcp-dev.yml"
@@ -14,7 +16,7 @@ WINDOWS_SCRIPT = REPO_ROOT / "scripts" / "smoke-test-windows.sh"
 
 
 def test_platform_workflow_declares_post_deploy_smoke_job() -> None:
-    text = PLATFORM_WORKFLOW.read_text(encoding="utf-8")
+    text = reachable_family_text()
     assert "post-deploy-smoke:" in text
     assert "continue-on-error: true" in text
     assert "scripts/smoke-test.sh" in text

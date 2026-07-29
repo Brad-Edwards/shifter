@@ -52,7 +52,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}'
 
-test: test-platform test-provisioner test-packer test-installation test-bootstrap test-check-layer-imports test-js test-adr-guard ## Run every no-service (SQLite/pure-Python/JS) lane
+test: test-platform test-provisioner test-packer test-installation test-bootstrap test-check-layer-imports test-js test-adr-guard test-trace ## Run every no-service (SQLite/pure-Python/JS) lane
 
 test-platform: ## Platform fast lane (SQLite; sole coverage publisher)
 	cd shifter/shifter_platform && uv sync --group dev && \
@@ -96,6 +96,14 @@ test-js: ## Platform JavaScript (Jest) suite with coverage
 test-adr-guard: ## Repository-guard suite (adr_guard checks, quality ownership, workflow gating, make targets)
 	uv run --python 3.11 --with 'pyyaml==6.0.2' \
 	  python -m unittest discover -s scripts/adr_guard/tests -p 'test_*.py'
+
+# Focused suite for the `.claude/scripts/trace_validation` package (AST trace
+# validator). Pinned interpreter + pytest, mirroring the clean-checkout pattern
+# of test-adr-guard. `.claude/**` is a classifier metadata exclusion, so no CI
+# quality job covers it; this lane runs it at the local completion gate.
+test-trace: ## Trace-validation package suite (.claude/scripts/trace_validation)
+	uv run --python 3.11 --with pytest \
+	  python -m pytest .claude/scripts/trace_validation/tests -q
 
 policy: ## Run repository architecture, import, diff, and changed-doc policy
 	python3 scripts/adr_guard/adr_guard.py --all --level ci

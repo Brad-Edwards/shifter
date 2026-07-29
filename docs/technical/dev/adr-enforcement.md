@@ -18,8 +18,24 @@ The current enforcement stack has six parts:
 4. `.pre-commit-config.yaml`
    Fast local enforcement. The ADR guard runs before commit so architectural drift is caught locally.
 
-5. `.github/workflows/_quality.yml`
-   CI enforcement. ADR conformance runs as its own architecture gate.
+5. `.github/workflows/_quality.yml` (and `.github/workflows/_shifter-platform.yml`)
+   CI enforcement entrypoints. Both are stable reusable **coordinators** that
+   `deploy.yml` calls. Since #689 they delegate cohesive job groups to reusable
+   child workflows (`_quality-*.yml`, `_platform-*.yml`) while the coordinators
+   retain the canonical `paths` classifier, the `sonarcloud` coverage fan-in,
+   the built-image `stack-smoke` gate, and the platform deployment DAG (job ids,
+   `needs`, `if`, outputs, environments). ADR conformance runs as its own
+   architecture gate. Enforcement follows the executing job, not the file it
+   used to live in: the `_dw_*` workflow-as-data model in `adr_guard.py`
+   recursively resolves local `jobs.*.uses` calls from these roots (with cycle
+   and path-escape detection), so a job that moves into a child stays under
+   every deploy/quality guardrail check: runner exposure (ADR-003-R5), plan
+   scope (ADR-003-R2), portal-deploy mode (ADR-003-R4), verify fail-loud
+   (ADR-003-R3), tfvars render (ADR-011-R7), and quality-path ownership
+   (ADR-004-R24). A self-hosted job relocated into a child must still fail
+   closed on `pull_request` in the child itself (defense in depth), and each
+   child forwards only the classifier route inputs and named secrets its jobs
+   consume (no `secrets: inherit`).
 
 6. Existing ecosystem tooling
    - `import-linter` for Python package contracts

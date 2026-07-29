@@ -1,0 +1,123 @@
+name: Platform - build
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      github_environment:
+        required: true
+        type: string
+      portal_image_changes:
+        required: true
+        type: boolean
+      apply_changes:
+        required: true
+        type: boolean
+      platform_changes:
+        required: true
+        type: boolean
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+      AWS_ROLE_ARN_DEV:
+        required: true
+      AWS_ROLE_ARN_PROOF:
+        required: false
+    outputs:
+      image_tag:
+        description: Portal image tag built by this job
+        value: ${{ jobs.build.outputs.image_tag }}
+      image_digest:
+        description: Portal image sha256 digest built by this job
+        value: ${{ jobs.build.outputs.image_digest }}
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request'
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      attestations: write
+    name: Build (${{ inputs.environment }})
+    runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real image-build times.
+    timeout-minutes: 90
+    environment: ${{ inputs.github_environment }}
+    # EKS Terraform is applied by the explicit lifecycle after all image
+    # identities are available. The build must not depend on or mutate the
+    # retained legacy ECS/ASG portal root.
+    outputs:
+      image_tag: ${{ steps.image.outputs.tag }}
+      image_digest: ${{ steps.build.outputs.digest }}
+    env:
+      ECR_REPOSITORY: ${{ inputs.environment == 'prod' && 'shifter-portal' || format('shifter-{0}-portal', inputs.environment) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
+          aws-region: us-east-2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+      - name: Set image tag
+        id: image
+        run: |
+          short_sha="$(echo "${GITHUB_SHA}" | cut -c1-12)"
+          echo "tag=${short_sha}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: ./shifter
+          file: ./shifter/shifter_platform/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.image.outputs.tag }}
+          no-cache: true
+          # Build provenance (ADR-037-R5): embed an SBOM and max provenance,
+          # then attest below with a GitHub OIDC-signed statement.
+          provenance: mode=max
+          sbom: true
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: false

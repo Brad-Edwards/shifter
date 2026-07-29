@@ -3806,9 +3806,21 @@ def check_deploy_workflow_plan_scope(repo_root: Path, files: list[str] | None) -
             )
         )
     elif check_deploy_and_platform:
-        platform_text = platform_path.read_text(encoding="utf-8")
-        violations.extend(_check_terraform_workflow_integrity(platform_text, _PLATFORM_WORKFLOW_PATH))
-        violations.extend(_check_platform_build_portal_image_gate(platform_text))
+        # Read the flattened view so plan/apply Terraform steps are found whether
+        # they live in the coordinator or a reusable child (#689).
+        try:
+            platform_text = _dw_flattened_workflow_text(repo_root, _PLATFORM_WORKFLOW_PATH)
+        except _DwShapeError as exc:
+            platform_text = None
+            violations.append(
+                _plan_scope_violation(
+                    _PLATFORM_WORKFLOW_PATH,
+                    f"reusable-workflow graph could not be resolved for ADR-003-R2: {exc}",
+                )
+            )
+        if platform_text is not None:
+            violations.extend(_check_terraform_workflow_integrity(platform_text, _PLATFORM_WORKFLOW_PATH))
+            violations.extend(_check_platform_build_portal_image_gate(platform_text))
 
     return violations
 
@@ -3966,9 +3978,18 @@ def check_portal_deploy_mode_source_of_truth(
             )
         )
     else:
-        violations.extend(
-            _check_portal_deploy_mode_workflow(platform_path.read_text(encoding="utf-8"))
-        )
+        try:
+            platform_text = _dw_flattened_workflow_text(repo_root, _PLATFORM_WORKFLOW_PATH)
+        except _DwShapeError as exc:
+            platform_text = None
+            violations.append(
+                _portal_deploy_mode_violation(
+                    _PLATFORM_WORKFLOW_PATH,
+                    f"reusable-workflow graph could not be resolved for ADR-003-R4: {exc}",
+                )
+            )
+        if platform_text is not None:
+            violations.extend(_check_portal_deploy_mode_workflow(platform_text))
 
     violations.extend(_check_portal_deploy_mode_outputs(repo_root))
 
@@ -4089,11 +4110,22 @@ def check_platform_renders_deploy_tfvars(repo_root: Path, files: list[str] | Non
         workflow_file = repo_root / workflow_path
         if not workflow_file.exists():
             continue
+        if workflow_path == _PLATFORM_WORKFLOW_PATH:
+            # The plan/apply render steps may live in reusable children (#689).
+            try:
+                workflow_text = _dw_flattened_workflow_text(repo_root, workflow_path)
+            except _DwShapeError as exc:
+                violations.append(
+                    _tfvars_render_violation(
+                        workflow_path,
+                        f"reusable-workflow graph could not be resolved for ADR-011-R7: {exc}",
+                    )
+                )
+                continue
+        else:
+            workflow_text = workflow_file.read_text(encoding="utf-8")
         violations.extend(
-            _tfvars_render_violations_for_workflow(
-                workflow_path,
-                workflow_file.read_text(encoding="utf-8"),
-            )
+            _tfvars_render_violations_for_workflow(workflow_path, workflow_text)
         )
     return violations
 
@@ -4253,7 +4285,18 @@ def check_deploy_verification_fail_loud(repo_root: Path, files: list[str] | None
             )
         )
     else:
-        violations.extend(_check_guacamole_timeout_fails(platform_path.read_text(encoding="utf-8")))
+        try:
+            platform_text = _dw_flattened_workflow_text(repo_root, _PLATFORM_WORKFLOW_PATH)
+        except _DwShapeError as exc:
+            platform_text = None
+            violations.append(
+                _fail_loud_violation(
+                    _PLATFORM_WORKFLOW_PATH,
+                    f"reusable-workflow graph could not be resolved for ADR-003-R3: {exc}",
+                )
+            )
+        if platform_text is not None:
+            violations.extend(_check_guacamole_timeout_fails(platform_text))
 
     if not engine_path.exists():
         violations.append(
@@ -5287,6 +5330,218 @@ def _dw_get_job(wf: dict, job_id: str, name: str = "<workflow>") -> dict:
     return js[job_id]
 
 
+# --- Effective caller/callee graph over local reusable-workflow calls -------- #
+# A stable root workflow (e.g. _shifter-platform.yml, _quality.yml) may delegate
+# a job to a local reusable child via `jobs.<id>.uses: ./.github/workflows/*.yml`
+# (#689). Enforcement that reads only the root file would stop seeing a job the
+# moment it moves into a child - a silent weakening. These helpers resolve the
+# effective job graph by following those local calls, so the semantic model
+# evaluates the jobs that actually execute rather than a static file list.
+_DW_LOCAL_WORKFLOW_PREFIX = "./.github/workflows/"
+
+
+def _dw_local_workflow_target(uses: str) -> str | None:
+    """Repo-relative path for a local reusable-workflow ``uses:`` ref, else None.
+
+    Only ``./.github/workflows/<name>.(yml|yaml)`` refs are resolved: a local
+    reusable-workflow call is a direct child of the workflows directory and
+    carries no ``@ref``. Anything that looks local but escapes that directory
+    (``..`` traversal, an absolute path, a nested segment, an ``@ref``) returns
+    None so the caller can fail closed instead of resolving outside the tree.
+    """
+    ref = uses.strip()
+    if not ref.startswith(_DW_LOCAL_WORKFLOW_PREFIX):
+        return None
+    if "@" in ref:  # local reusable-workflow calls take no @ref
+        return None
+    name = ref[len(_DW_LOCAL_WORKFLOW_PREFIX):]
+    if not name or "/" in name or ".." in name:
+        return None
+    if not name.endswith((".yml", ".yaml")):
+        return None
+    return f".github/workflows/{name}"
+
+
+def _dw_iter_effective_jobs(repo_root: Path, root_rel: str, _seen: tuple = ()):
+    """Yield ``(source_rel, job_id, job)`` for ``root_rel`` and, recursively,
+    every job it invokes through a local ``jobs.<id>.uses`` reusable-workflow
+    call.
+
+    Fail-closed: a reusable-workflow cycle raises ``_DwShapeError``; a
+    ``./``-prefixed ``uses:`` that does not resolve to a
+    ``.github/workflows/*.yml`` child (path escape / bad shape) also raises
+    ``_DwShapeError`` rather than being silently skipped. The caller-stub job
+    (the one carrying ``uses:``) is yielded too; it has no ``runs-on``/``steps``
+    so runner/step checks ignore it while name-based lookups still resolve.
+    """
+    if root_rel in _seen:
+        raise _DwShapeError(
+            f"reusable-workflow cycle: {' -> '.join((*_seen, root_rel))}"
+        )
+    wf = _dw_load_workflow(repo_root, root_rel)
+    jobs = _dw_jobs(wf, root_rel)
+    for jid, job in jobs.items():
+        yield root_rel, jid, job
+        if not isinstance(job, dict):
+            continue
+        uses = job.get("uses")
+        if not isinstance(uses, str):
+            continue
+        target = _dw_local_workflow_target(uses)
+        if target is not None:
+            yield from _dw_iter_effective_jobs(repo_root, target, (*_seen, root_rel))
+        elif uses.strip().startswith("./"):
+            raise _DwShapeError(
+                f"{root_rel}: job {jid!r} uses local workflow ref {uses!r} that "
+                "does not resolve to a .github/workflows/*.yml child"
+            )
+
+
+def _dw_effective_job_map(repo_root: Path, root_rel: str) -> dict:
+    """``{job_id: job}`` across the effective graph rooted at ``root_rel``.
+
+    Raises ``_DwShapeError`` on a cycle, a path-escape ``uses:``, or a job-id
+    collision between the root and a child (ambiguous ownership - names must be
+    unique across the effective quality/deploy graph so responsibility lookups
+    stay unambiguous).
+    """
+    out: dict = {}
+    for source_rel, jid, job in _dw_iter_effective_jobs(repo_root, root_rel):
+        # A job that only delegates to a local reusable child (`uses:`) has no
+        # steps of its own; the child contributes the executing jobs under their
+        # own ids. Skip the stub so ``map[<op>]`` resolves to the executing job
+        # (with steps) and the stub id does not collide with the child's job id -
+        # a coordinator keeps the original op id on its call-job and the child
+        # keeps it on the executing job (#689).
+        if isinstance(job, dict):
+            uses = job.get("uses")
+            if isinstance(uses, str) and _dw_local_workflow_target(uses):
+                continue
+        if jid in out:
+            raise _DwShapeError(
+                f"duplicate job id {jid!r} in the effective graph rooted at "
+                f"{root_rel} (also in {source_rel}); job ids must be unique across "
+                "a workflow and its reusable children"
+            )
+        out[jid] = job
+    return out
+
+
+# --- Flattened (inlined) workflow text over local reusable-workflow calls ----
+# Text-based enforcement (plan-scope, portal deploy mode, tfvars render, verify
+# fail-loud) searches a job's block and steps. When a job moves into a local
+# reusable child, its steps leave the coordinator file. `_dw_flattened_workflow_text`
+# reconstructs the pre-decomposition view: each `uses: ./...` job is replaced by
+# the coordinator's own `needs:`/`if:` gate plus the child job's body (steps,
+# permissions, env). Those checks then read the flattened text and see the same
+# job+step content whether or not the workflow was decomposed (#689).
+_DW_JOB_ID_LINE = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
+
+
+def _dw_split_workflow_lines(text: str):
+    """Return ``(header_lines, [(job_id, block_lines)])`` for a workflow.
+
+    ``header_lines`` is everything through the ``jobs:`` key (and any blank
+    lines before the first job); each block starts at its ``  <id>:`` line.
+    """
+    lines = text.splitlines()
+    try:
+        jobs_idx = next(i for i, ln in enumerate(lines) if ln.rstrip() == "jobs:")
+    except StopIteration:
+        return lines, []
+    header = lines[: jobs_idx + 1]
+    blocks: list[tuple[str, list[str]]] = []
+    cur_id: str | None = None
+    cur: list[str] = []
+    for ln in lines[jobs_idx + 1:]:
+        m = _DW_JOB_ID_LINE.match(ln)
+        if m:
+            if cur_id is not None:
+                blocks.append((cur_id, cur))
+            cur_id, cur = m.group(1), [ln]
+        elif cur_id is not None:
+            cur.append(ln)
+        else:
+            header.append(ln)  # blank lines between `jobs:` and the first job
+    if cur_id is not None:
+        blocks.append((cur_id, cur))
+    return header, blocks
+
+
+def _dw_job_key_lines(block: list[str], names: set, *, keep: bool) -> list[str]:
+    """Filter a job block's top-level (4-space) keys.
+
+    ``keep=True`` returns only the lines belonging to keys in ``names`` (with
+    their block-scalar continuations); ``keep=False`` returns the block with the
+    ``  <id>:`` header line and every key in ``names`` removed.
+    """
+    out: list[str] = [] if keep else [block[0]]
+    i = 1
+    while i < len(block):
+        m = re.match(r"^    ([A-Za-z0-9_-]+):", block[i])
+        selected = bool(m and m.group(1) in names)
+        captured = [block[i]]
+        i += 1
+        while i < len(block):
+            nxt = block[i]
+            if nxt.strip() == "" or (len(nxt) - len(nxt.lstrip())) > 4:
+                captured.append(nxt)
+                i += 1
+            else:
+                break
+        if selected == keep:
+            out.extend(captured)
+    return out
+
+
+def _dw_flattened_workflow_text(repo_root: Path, root_rel: str, _seen: tuple = ()) -> str:
+    """Workflow text with local reusable-workflow calls inlined into their jobs.
+
+    Resolves each job's ``uses:`` from PARSED YAML (so a quoted scalar such as
+    ``uses: "./.github/workflows/_x.yml"`` still follows the child), and fails
+    closed on cycles, path-escape, and any local ``./`` call that does not
+    resolve - a presentation-only YAML edit must not silently remove executing
+    jobs from the plan-scope / portal-mode / tfvars-render / fail-loud checks
+    that read this flattened view.
+    """
+    if root_rel in _seen:
+        raise _DwShapeError(f"reusable-workflow cycle: {' -> '.join((*_seen, root_rel))}")
+    wf = _dw_load_workflow(repo_root, root_rel)
+    parsed_jobs = wf.get("jobs")
+    parsed_jobs = parsed_jobs if isinstance(parsed_jobs, dict) else {}
+    text = (repo_root / root_rel).read_text(encoding="utf-8")
+    header, blocks = _dw_split_workflow_lines(text)
+    out = list(header)
+    for jid, block in blocks:
+        job = parsed_jobs.get(jid)
+        uses = job.get("uses") if isinstance(job, dict) else None
+        target = _dw_local_workflow_target(uses) if isinstance(uses, str) else None
+        if target is None:
+            if isinstance(uses, str) and uses.strip().startswith("./"):
+                raise _DwShapeError(
+                    f"{root_rel}: job {jid!r} uses local workflow ref {uses!r} that "
+                    "does not resolve to a .github/workflows/*.yml child"
+                )
+            out.extend(block)
+            continue
+        gate = _dw_job_key_lines(block, {"needs", "if"}, keep=True)
+        child_text = _dw_flattened_workflow_text(repo_root, target, (*_seen, root_rel))
+        _, child_blocks = _dw_split_workflow_lines(child_text)
+        if not child_blocks:
+            raise _DwShapeError(f"reusable child {target} declares no jobs")
+        # Inline EVERY executing job the child contributes (child_text is already
+        # recursively flattened, so nested children are included), keyed by the
+        # child's own job id. The child's own `if:` is the executing job's
+        # independent guard; the coordinator's gate is authoritative for the
+        # inlined view. First-child-only would silently drop a multi-job child.
+        for child_jid, child_block in child_blocks:
+            child_body = _dw_job_key_lines(child_block, {"if"}, keep=False)[1:]
+            out.append(f"  {child_jid}:")
+            out.extend(gate)
+            out.extend(child_body)
+    return "\n".join(out) + "\n"
+
+
 def _dw_normalize_expr(expr) -> str:
     """Collapse whitespace (incl. block-scalar newlines) to single spaces."""
     return " ".join(str(expr or "").split())
@@ -5669,11 +5924,14 @@ def _runner_exposure_violation(path: str, message: str) -> Violation:
 def _deploy_runner_exposure_relevant(files: list[str] | None) -> bool:
     if files is None:
         return True
-    relevant = set(_DW_REUSABLE_WORKFLOW_PATHS) | {
-        _DEPLOY_WORKFLOW_PATH,
-        _ADR_GUARD_SCRIPT_PATH,
-    }
-    return any(path in relevant for path in files)
+    # Any workflow file may now be a reusable child reached from a deploy root
+    # (#689), so a change to any of them - not just the fixed root list - must
+    # re-run the exposure check. The adr_guard script itself remains relevant
+    # because it carries the check.
+    return any(
+        path.startswith(".github/workflows/") or path == _ADR_GUARD_SCRIPT_PATH
+        for path in files
+    )
 
 
 def check_deploy_runner_exposure(repo_root: Path, files: list[str] | None) -> list[Violation]:
@@ -5697,17 +5955,22 @@ def check_deploy_runner_exposure(repo_root: Path, files: list[str] | None) -> li
                 )
             )
             continue
+        # Follow local reusable-workflow calls so a self-hosted job that moved
+        # into a child workflow is still evaluated (#689). Defense in depth: the
+        # child job that selects the runner must itself fail closed on
+        # pull_request, not merely rely on an ancestor call condition.
         try:
-            wf = _dw_load_workflow(repo_root, rel)
-            job_map = _dw_jobs(wf, rel)
+            effective = list(_dw_iter_effective_jobs(repo_root, rel))
         except _DwShapeError as exc:
             violations.append(
                 _runner_exposure_violation(
-                    rel, f"workflow could not be parsed for ADR-003-R5: {exc}"
+                    rel,
+                    f"reusable-workflow graph could not be resolved for "
+                    f"ADR-003-R5: {exc}",
                 )
             )
             continue
-        for jid, job in job_map.items():
+        for source_rel, jid, job in effective:
             if not _dw_is_self_hosted(job):
                 continue
             expr = _dw_job_if(job)
@@ -5716,7 +5979,7 @@ def check_deploy_runner_exposure(repo_root: Path, files: list[str] | None) -> li
             except _DwShapeError as exc:
                 violations.append(
                     _runner_exposure_violation(
-                        rel,
+                        source_rel,
                         f"self-hosted job '{jid}' has an if-expression "
                         f"ADR-003-R5 cannot evaluate: {exc}",
                     )
@@ -5725,7 +5988,7 @@ def check_deploy_runner_exposure(repo_root: Path, files: list[str] | None) -> li
             if not denied:
                 violations.append(
                     _runner_exposure_violation(
-                        rel,
+                        source_rel,
                         f"self-hosted job '{jid}' is reachable from a "
                         "pull_request event; ADR-003-R5 requires it gate on "
                         "github.event_name != 'pull_request'",
@@ -6851,6 +7114,90 @@ def _quality_package_reconciliation(contract, repo_root, viol):
     return violations
 
 
+def _quality_rewrite_inputs(expr: str, resolver: dict) -> str:
+    """Rewrite ``inputs.<k>`` to the root-level expression the call chain forwarded.
+
+    A responsibility job that moved into a reusable child (#689) reads the
+    classifier via ``inputs.<k>``. ``resolver`` maps an input name to an
+    already-unwrapped, root-level expression (e.g.
+    ``needs.paths.outputs.shifter_platform``), composed across every
+    reusable-workflow call level, so a moved or nested job's reachability is
+    judged against the real classifier outputs. Inputs absent from the resolver
+    (``inputs.skip_tests`` and friends) are left for the routing model to resolve.
+    """
+    def repl(match):
+        return resolver.get(match.group(1), match.group(0))
+
+    return re.sub(r"inputs\.([A-Za-z0-9_]+)", repl, expr)
+
+
+def _quality_compose_if(coord_if: str, child_if: str) -> str:
+    coord_if, child_if = coord_if.strip(), child_if.strip()
+    if coord_if and child_if:
+        return f"({coord_if}) && ({child_if})"
+    return coord_if or child_if
+
+
+def _quality_effective_jobs(repo_root: Path) -> dict:
+    """Resolve the quality jobs across ``_quality.yml`` and its reusable children
+    to any nesting depth (#689).
+
+    One canonical recursive traversal: coordinator uses-stubs are replaced by the
+    executing jobs they reach (through any number of levels), keyed by their own
+    ids. Each executing job's ``inputs.<k>`` gating is rewritten to the
+    root-level classifier output the call chain forwarded, and composed with
+    every caller gate. Rejects reusable-workflow cycles and duplicate job ids. A
+    flat workflow (no children) yields its top-level jobs unchanged, preserving
+    the existing contract.
+    """
+    effective: dict = {}
+
+    def _matrix_rewritten(job: dict, resolver: dict) -> dict:
+        strategy = job.get("strategy")
+        if not (isinstance(strategy, dict) and isinstance(strategy.get("matrix"), dict)):
+            return job
+        matrix = {
+            mk: (_quality_rewrite_inputs(mv, resolver) if isinstance(mv, str) else mv)
+            for mk, mv in strategy["matrix"].items()
+        }
+        return {**job, "strategy": {**strategy, "matrix": matrix}}
+
+    def walk(rel: str, resolver: dict, gate: str, seen: tuple) -> None:
+        if rel in seen:
+            raise _DwShapeError(f"reusable-workflow cycle: {' -> '.join((*seen, rel))}")
+        wf = _dw_load_workflow(repo_root, rel)
+        for jid, job in _dw_jobs(wf, rel).items():
+            uses = job.get("uses") if isinstance(job, dict) else None
+            target = _dw_local_workflow_target(uses) if isinstance(uses, str) else None
+            if target is not None:
+                with_block = job.get("with") or {}
+                call_if = _quality_rewrite_inputs(
+                    _dw_unwrap_expr(_dw_normalize_expr(job.get("if", ""))), resolver
+                )
+                child_resolver = {
+                    k: _quality_rewrite_inputs(_dw_unwrap_expr(str(v)), resolver)
+                    for k, v in with_block.items()
+                }
+                walk(target, child_resolver, _quality_compose_if(gate, call_if), (*seen, rel))
+                continue
+            if jid in effective:
+                raise _DwShapeError(
+                    f"duplicate quality job id {jid!r} in the effective graph"
+                )
+            if not isinstance(job, dict):
+                effective[jid] = job
+                continue
+            eff = _matrix_rewritten(dict(job), resolver)
+            job_if = _quality_rewrite_inputs(
+                _dw_unwrap_expr(_dw_normalize_expr(job.get("if", ""))), resolver
+            )
+            eff["if"] = _quality_compose_if(gate, job_if)
+            effective[jid] = eff
+
+    walk(_QUALITY_WORKFLOW_REL, {}, "", ())
+    return effective
+
+
 def check_quality_path_ownership(repo_root: Path, files: list[str] | None) -> list[Violation]:
     """Reconcile the quality-ownership contract (whole-tree invariant)."""
     del files  # whole-tree invariant
@@ -6877,8 +7224,9 @@ def check_quality_path_ownership(repo_root: Path, files: list[str] | None) -> li
     ]
 
     try:
-        workflow = _dw_load_workflow(repo_root, _QUALITY_WORKFLOW_REL)
-        jobs = _dw_jobs(workflow, _QUALITY_WORKFLOW_REL)
+        # Resolve responsibility jobs across the coordinator and its reusable
+        # children so a moved job stays under ownership/routing enforcement (#689).
+        jobs = _quality_effective_jobs(repo_root)
     except _DwShapeError as exc:
         return violations + [viol(_QUALITY_WORKFLOW_REL, str(exc))]
 

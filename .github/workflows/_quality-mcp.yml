@@ -1,0 +1,87 @@
+name: Quality - mcp
+
+on:
+  workflow_call:
+    inputs:
+      skip_tests:
+        required: false
+        type: boolean
+        default: false
+      mcp_lint_any:
+        required: false
+        type: string
+        default: "false"
+      mcp_lint_packages:
+        required: false
+        type: string
+        default: "false"
+      mcp_test_any:
+        required: false
+        type: string
+        default: "false"
+      mcp_test_packages:
+        required: false
+        type: string
+        default: "false"
+
+jobs:
+  mcp-lint:
+    permissions:
+      contents: read
+    name: Lint JavaScript (mcp/${{ matrix.package }})
+    if: ${{ inputs.mcp_lint_any == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(inputs.mcp_lint_packages) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20.19'
+          cache: 'npm'
+          cache-dependency-path: mcp/${{ matrix.package }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mcp/${{ matrix.package }}
+        run: npm ci
+
+      - name: Lint
+        working-directory: mcp/${{ matrix.package }}
+        run: npm run lint
+
+  mcp-tests:
+    permissions:
+      contents: read
+    name: Tests JavaScript (mcp/${{ matrix.package }})
+    needs: mcp-lint
+    if: ${{ !inputs.skip_tests && inputs.mcp_test_any == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(inputs.mcp_test_packages) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20.19'
+          cache: 'npm'
+          cache-dependency-path: mcp/${{ matrix.package }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mcp/${{ matrix.package }}
+        run: npm ci
+
+      - name: Test
+        working-directory: mcp/${{ matrix.package }}
+        run: npm test
+
+  # ===========================================================================
+  # Security
+  # ===========================================================================

@@ -1,0 +1,178 @@
+name: Quality - k8s
+
+on:
+  workflow_call:
+    inputs:
+      run_all:
+        required: false
+        type: string
+        default: "false"
+      k8s:
+        required: false
+        type: string
+        default: "false"
+
+jobs:
+  k8s-lint:
+    permissions:
+      contents: read
+    name: Lint (k8s manifests)
+    if: ${{ (inputs.run_all == 'true' || inputs.k8s == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install kustomize (hermetic, version-pinned, checksum-verified)
+        env:
+          KUSTOMIZE_VERSION: v5.4.3
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/kustomize-bin"
+          curl -fsSL -o "${RUNNER_TEMP}/kustomize.tar.gz" \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          # Verify the downloaded tarball against the published SHA256 checksum
+          # before extraction or execution. checksums.txt lists every release
+          # artifact; pull the row for our tarball.
+          expected=$(curl -fsSL \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/${KUSTOMIZE_VERSION}/checksums.txt" \
+            | awk -v fname="kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" '$2 == fname {print $1}')
+          echo "${expected}  ${RUNNER_TEMP}/kustomize.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/kustomize.tar.gz" -C "${RUNNER_TEMP}/kustomize-bin" kustomize
+          echo "${RUNNER_TEMP}/kustomize-bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/kustomize-bin/kustomize" version
+
+      - name: Install kube-linter
+        env:
+          # ADR-037-R3: upstream ships a cosign .sig but no SHA256 manifest, so
+          # the reviewed sha256 of v0.7.2's kube-linter-linux.tar.gz is pinned
+          # here and verified before extraction. Bump alongside the version.
+          KUBE_LINTER_SHA256: 8a0f8ba6c28910acd4886cc4d501ed32f3d404a53ac5e72c45a0dd893fcadb03
+        run: |
+          curl -fsSL -o /tmp/kube-linter.tar.gz \
+            "https://github.com/stackrox/kube-linter/releases/download/v0.7.2/kube-linter-linux.tar.gz"
+          echo "${KUBE_LINTER_SHA256}  /tmp/kube-linter.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/kube-linter.tar.gz -C /tmp kube-linter
+
+      # Render every kustomize root before linting. The previous "lint the
+      # raw tree" pattern broke as soon as an overlay added a strategic-merge
+      # patch for a Deployment: the patch file is a partial Deployment by
+      # design (no selector, no resources, no securityContext — those come
+      # from the base), but kube-linter saw it as a full Deployment and
+      # tripped on every required field. Rendering kustomize first validates
+      # what actually gets deployed.
+      - name: Render kustomize roots + run kube-linter
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/rendered-k8s"
+          while IFS= read -r kfile; do
+            root=$(dirname "$kfile")
+            slug=$(echo "$root" | tr '/' '_')
+            kustomize build "$root" > "${RUNNER_TEMP}/rendered-k8s/${slug}.yaml"
+          done < <(find platform/k8s -name kustomization.yaml)
+          /tmp/kube-linter lint --config .kube-linter.yaml "${RUNNER_TEMP}/rendered-k8s/"
+
+  k8s-schema:
+    permissions:
+      contents: read
+    name: Lint (k8s schemas)
+    if: ${{ (inputs.run_all == 'true' || inputs.k8s == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install kustomize (hermetic, version-pinned, checksum-verified)
+        env:
+          KUSTOMIZE_VERSION: v5.4.3
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/kustomize-bin"
+          curl -fsSL -o "${RUNNER_TEMP}/kustomize.tar.gz" \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          expected=$(curl -fsSL \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/${KUSTOMIZE_VERSION}/checksums.txt" \
+            | awk -v fname="kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" '$2 == fname {print $1}')
+          echo "${expected}  ${RUNNER_TEMP}/kustomize.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/kustomize.tar.gz" -C "${RUNNER_TEMP}/kustomize-bin" kustomize
+          echo "${RUNNER_TEMP}/kustomize-bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/kustomize-bin/kustomize" version
+
+      - name: Install kubeconform
+        run: |
+          # ADR-037-R3: verify against the release CHECKSUMS manifest before
+          # extraction; save under the manifest's filename so `sha256sum -c` matches.
+          curl -fsSL -o /tmp/kubeconform-linux-amd64.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz"
+          curl -fsSL -o /tmp/kubeconform.CHECKSUMS \
+            "https://github.com/yannh/kubeconform/releases/download/v0.6.7/CHECKSUMS"
+          (cd /tmp && grep "kubeconform-linux-amd64.tar.gz" kubeconform.CHECKSUMS | sha256sum -c -)
+          tar -xzf /tmp/kubeconform-linux-amd64.tar.gz -C /tmp kubeconform
+
+      # Same rationale as k8s-lint: validate the rendered (kustomized) shape
+      # so overlay patches don't fail schema validation as standalone partial
+      # Deployments.
+      - name: Render kustomize roots + validate schemas
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/rendered-k8s"
+          while IFS= read -r kfile; do
+            root=$(dirname "$kfile")
+            slug=$(echo "$root" | tr '/' '_')
+            kustomize build "$root" > "${RUNNER_TEMP}/rendered-k8s/${slug}.yaml"
+          done < <(find platform/k8s -name kustomization.yaml)
+          /tmp/kubeconform -strict -summary -ignore-missing-schemas \
+            -kubernetes-version 1.31.0 \
+            "${RUNNER_TEMP}/rendered-k8s/"*.yaml
+
+  # ===========================================================================
+  # Type Checking (blocking quality gate, #564)
+  #
+  # mypy is an enforced guardrail, not advisory telemetry. Each job runs the
+  # full package mypy estate (enforced scope = the package minus the
+  # transitional dirs declared in its pyproject.toml `[tool.mypy].exclude`)
+  # and fails the job - and thus the PR Gate - on any error. Like the
+  # architecture and SAST guardrails below, these jobs do NOT honor
+  # `skip_tests`. Do NOT reintroduce `continue-on-error: true` or `|| true`:
+  # exempt a module via an explicit `[[tool.mypy.overrides]]` in the package
+  # pyproject.toml instead, so the enforced/transitional boundary stays in
+  # one place.
+  #
+  # shifter-platform-typecheck also fires on `cyberscript` changes: the
+  # platform mypy run sets `mypy_path = ".."` and type-checks the imported
+  # `cyberscript` modules, so a cyberscript-only change can break the platform
+  # estate. Triggering on that path keeps the blocking gate from having a hole.
+  # ===========================================================================
+
+  security-k8s:
+    permissions:
+      contents: read
+    name: Security (k8s)
+    if: ${{ (inputs.run_all == 'true' || inputs.k8s == 'true') }}
+    runs-on: ubuntu-latest
+    # K8s Checkov is intentionally a separate policy surface from Terraform
+    # Checkov (per ADR-004-R11). It stays soft-fail / continue-on-error
+    # while manifest remediation proceeds under a separate issue;
+    # Terraform soft-fail is NOT permitted to inherit from this.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Cache Checkov
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.local
+          key: ${{ runner.os }}-checkov-k8s-${{ hashFiles('.github/workflows/_quality.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-checkov-k8s-
+
+      - name: Checkov k8s Security
+        uses: bridgecrewio/checkov-action@02a4c5d6a02367e5ea493c34c26b094302fd3f61 # v12
+        with:
+          directory: platform/k8s/
+          framework: kubernetes
+          quiet: true
+          compact: true
+          soft_fail: true
+
+  # Issue #708: advisory container/IaC and lockfile CVE signal. Exit code 0
+  # and artifact-only SARIF — findings do not block merge; gitleaks/bandit/
+  # checkov/Sonar remain the enforcement gates.

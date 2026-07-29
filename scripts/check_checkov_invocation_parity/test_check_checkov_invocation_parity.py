@@ -307,6 +307,135 @@ class CheckCheckovInvocationParityTest(unittest.TestCase):
         )
 
 
+    def test_reachable_security_iac_is_resolved_by_graph_not_filename_glob(self) -> None:
+        # A disconnected, earlier-sorting decoy with GOOD Checkov args must NOT
+        # satisfy the check while the REACHABLE security-iac (in a child called
+        # by _quality.yml) is weakened with soft_fail. Filename-glob first-match
+        # would validate the decoy; graph resolution catches the real gate (#689).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".pre-commit-config.yaml").write_text(_valid_precommit_config(), encoding="utf-8")
+            wf = root / ".github" / "workflows"
+            wf.mkdir(parents=True)
+            (wf / "_quality.yml").write_text(
+                "jobs:\n  terraform:\n    uses: ./.github/workflows/_quality-terraform.yml\n",
+                encoding="utf-8",
+            )
+            (wf / "_quality-terraform.yml").write_text(
+                _security_iac_workflow(soft_fail="true"),  # reachable + weakened
+                encoding="utf-8",
+            )
+            (wf / "_quality-aaa-decoy.yml").write_text(
+                _security_iac_workflow(soft_fail="false"),  # unreachable decoy, good args
+                encoding="utf-8",
+            )
+            violations = check_repo(root)
+        self.assertTrue(
+            any("soft_fail" in v for v in violations),
+            f"graph resolution must catch the weakened reachable gate, got: {violations}",
+        )
+
+    def test_duplicate_reachable_security_iac_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".pre-commit-config.yaml").write_text(_valid_precommit_config(), encoding="utf-8")
+            wf = root / ".github" / "workflows"
+            wf.mkdir(parents=True)
+            (wf / "_quality.yml").write_text(
+                "jobs:\n"
+                "  a:\n    uses: ./.github/workflows/_quality-a.yml\n"
+                "  b:\n    uses: ./.github/workflows/_quality-b.yml\n",
+                encoding="utf-8",
+            )
+            (wf / "_quality-a.yml").write_text(_security_iac_workflow(soft_fail="false"), encoding="utf-8")
+            (wf / "_quality-b.yml").write_text(_security_iac_workflow(soft_fail="false"), encoding="utf-8")
+            violations = check_repo(root)
+        self.assertTrue(
+            any("multiple reachable" in v for v in violations),
+            f"expected a duplicate-invocation violation, got: {violations}",
+        )
+
+    def test_no_reachable_security_iac_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".pre-commit-config.yaml").write_text(_valid_precommit_config(), encoding="utf-8")
+            wf = root / ".github" / "workflows"
+            wf.mkdir(parents=True)
+            (wf / "_quality.yml").write_text(
+                "jobs:\n  paths:\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n",
+                encoding="utf-8",
+            )
+            (wf / "_quality-aaa-decoy.yml").write_text(  # present but unreachable
+                _security_iac_workflow(soft_fail="false"), encoding="utf-8"
+            )
+            violations = check_repo(root)
+        self.assertTrue(
+            any("no reachable security-iac" in v for v in violations),
+            f"expected a missing-invocation violation, got: {violations}",
+        )
+
+
+    def test_uses_inside_run_scalar_is_not_a_call_edge(self) -> None:
+        # A `uses: ./...` line planted inside a run block scalar is not a real
+        # call edge; graph resolution must not treat the decoy as reachable.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".pre-commit-config.yaml").write_text(_valid_precommit_config(), encoding="utf-8")
+            wf = root / ".github" / "workflows"
+            wf.mkdir(parents=True)
+            (wf / "_quality.yml").write_text(
+                "jobs:\n"
+                "  real:\n    uses: ./.github/workflows/_quality-real.yml\n"
+                "  spoof:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n"
+                "          echo 'uses: ./.github/workflows/_quality-decoy.yml'\n",
+                encoding="utf-8",
+            )
+            (wf / "_quality-real.yml").write_text(_security_iac_workflow(soft_fail="true"), encoding="utf-8")
+            (wf / "_quality-decoy.yml").write_text(_security_iac_workflow(soft_fail="false"), encoding="utf-8")
+            violations = check_repo(root)
+        self.assertTrue(
+            any("soft_fail" in v for v in violations),
+            f"a run-scalar decoy must not shadow the weakened reachable gate, got: {violations}",
+        )
+
+    def test_disabled_call_job_does_not_extend_reachability(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".pre-commit-config.yaml").write_text(_valid_precommit_config(), encoding="utf-8")
+            wf = root / ".github" / "workflows"
+            wf.mkdir(parents=True)
+            (wf / "_quality.yml").write_text(
+                "jobs:\n"
+                "  real:\n    uses: ./.github/workflows/_quality-real.yml\n"
+                "  dead:\n    if: false\n    uses: ./.github/workflows/_quality-decoy.yml\n",
+                encoding="utf-8",
+            )
+            (wf / "_quality-real.yml").write_text(_security_iac_workflow(soft_fail="true"), encoding="utf-8")
+            (wf / "_quality-decoy.yml").write_text(_security_iac_workflow(soft_fail="false"), encoding="utf-8")
+            violations = check_repo(root)
+        self.assertTrue(
+            any("soft_fail" in v for v in violations),
+            f"a disabled call job must not make the decoy reachable, got: {violations}",
+        )
+
+
+def _security_iac_workflow(*, soft_fail: str) -> str:
+    return textwrap.dedent(
+        f"""
+        jobs:
+          security-iac:
+            steps:
+              - name: Checkov IaC Security
+                uses: bridgecrewio/checkov-action@v12
+                with:
+                  directory: platform/terraform/
+                  config_file: platform/terraform/.checkov.yaml
+                  download_external_modules: true
+                  soft_fail: {soft_fail}
+        """
+    ).lstrip()
+
+
 def _valid_precommit_config() -> str:
     return textwrap.dedent(
         """

@@ -17,12 +17,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from _platform_workflow_graph import reachable_family_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EC2_MODULE = REPO_ROOT / "platform" / "terraform" / "modules" / "portal" / "ec2"
 AWS_USER_DATA = EC2_MODULE / "user_data.sh"
 AWS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "_shifter-platform.yml"
 AWS_REDEPLOY_SCRIPT = REPO_ROOT / "scripts" / "portal-deploy" / "deploy_portal.sh"
+
+
 WORKER_HEALTH_DIR = EC2_MODULE / "worker-health"
 MONITOR_SCRIPT = WORKER_HEALTH_DIR / "shifter-worker-health.sh"
 MONITOR_SERVICE = WORKER_HEALTH_DIR / "shifter-worker-health.service"
@@ -109,7 +112,7 @@ def test_both_aws_deploy_paths_install_the_monitor(path: Path) -> None:
 
 
 def test_workflow_invokes_tracked_redeploy_script() -> None:
-    text = AWS_WORKFLOW.read_text(encoding="utf-8")
+    text = reachable_family_text()
     assert "scripts/portal-deploy/deploy_portal.sh" in text
     assert "base64 -d > /tmp/shifter-deploy-portal.sh" in text
     assert "--worker-health-monitor-b64" in text

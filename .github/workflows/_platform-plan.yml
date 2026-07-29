@@ -1,0 +1,279 @@
+name: Platform - plan
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      apply_changes:
+        required: true
+        type: boolean
+      engine_image_digest:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+      AWS_ROLE_ARN_DEV:
+        required: true
+      AWS_ROLE_ARN_PROOF:
+        required: false
+      TF_VARS_DEV_PORTAL:
+        required: false
+      TF_VARS_PROOF_PORTAL:
+        required: false
+      TF_VARS_PROD_PORTAL:
+        required: false
+      TF_INFRA_STATE_BUCKET:
+        required: false
+      TF_INFRA_STATE_BUCKET_DEV:
+        required: false
+      TF_INFRA_STATE_BUCKET_PROOF:
+        required: false
+      SHIFTER_CONFIG_DEV_RANGE:
+        required: false
+      SHIFTER_CONFIG_PROOF_RANGE:
+        required: false
+      SHIFTER_CONFIG_PROD_RANGE:
+        required: false
+
+jobs:
+  plan:
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    name: Plan (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    # Backstop only: bound a hung step so it can't hold the self-hosted runner
+    # for GitHub's 6h default (see #1220). Generous vs. real plan times.
+    timeout-minutes: 45
+    # The legacy ECS/ASG portal root is retained for controlled rollback only.
+    # The EKS lifecycle owns its isolated saved plan.
+    defaults:
+      run:
+        working-directory: platform/terraform/environments/${{ inputs.environment }}/portal
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Preflight - validate deploy prerequisites
+        # Shared fail-safe gate (scripts/bootstrap/preflight.py): reports every
+        # missing prerequisite up front before any Terraform apply. See docs/dev/deploy-secrets.md.
+        working-directory: scripts/bootstrap
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
+          TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
+          TF_VARS_DEV_PORTAL: ${{ secrets.TF_VARS_DEV_PORTAL }}
+          TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}
+          TF_VARS_PROD_PORTAL: ${{ secrets.TF_VARS_PROD_PORTAL }}
+        run: uv run python -m preflight --cloud aws --env "$ENVIRONMENT" --component portal --headless
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
+          aws-region: us-east-2
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.13.3"
+      - run: terraform fmt -check -recursive
+        working-directory: platform/terraform
+      - name: Render local.auto.tfvars from deployment secret
+        # The committed terraform.tfvars ships an example.com baseline that
+        # fails-loud on apply. Each deployment provides its real values via the
+        # TF_VARS_<ENV>_PORTAL GitHub secret; this step renders that payload
+        # into a gitignored local.auto.tfvars that Terraform auto-loads over
+        # the baseline before plan and apply. See docs/dev/deploy-secrets.md.
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          ENGINE_IMAGE_DIGEST: ${{ inputs.engine_image_digest }}
+          ENGINE_TASK_FAMILY: ${{ inputs.environment }}-portal-pulumi-provisioner
+          TF_VARS_DEV_PORTAL: ${{ secrets.TF_VARS_DEV_PORTAL }}
+          TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}
+          TF_VARS_PROD_PORTAL: ${{ secrets.TF_VARS_PROD_PORTAL }}
+        run: |
+          # Select strictly on inputs.environment in shell. A GitHub Actions
+          # `is_dev && DEV_SECRET || PROD_SECRET` expression is unsafe: an
+          # empty active-environment secret is falsy and falls through to
+          # the other environment's secret. Selecting in shell keeps an
+          # empty active secret empty so the check below trips fail-loud.
+          case "$ENVIRONMENT" in
+            dev)
+              PORTAL_SECRET_NAME="TF_VARS_DEV_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_DEV_PORTAL}"
+              ;;
+            proof)
+              PORTAL_SECRET_NAME="TF_VARS_PROOF_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_PROOF_PORTAL}"
+              ;;
+            prod)
+              PORTAL_SECRET_NAME="TF_VARS_PROD_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_PROD_PORTAL}"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "${TF_VARS_PORTAL}" ]; then
+            echo "::error::Required secret ${PORTAL_SECRET_NAME} is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          printf '%s\n' "${TF_VARS_PORTAL}" > local.auto.tfvars
+          resolve_engine_image_digest() {
+            local digest="${ENGINE_IMAGE_DIGEST}"
+            if [ -n "${digest}" ]; then
+              if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                echo "::error::Engine build did not produce a valid ECR image digest"
+                exit 1
+              fi
+              printf '%s\n' "${digest}"
+              return
+            fi
+
+            local current_image
+            if ! current_image=$(aws ecs describe-task-definition --task-definition "${ENGINE_TASK_FAMILY}" --query 'taskDefinition.containerDefinitions[0].image' --output text 2>/dev/null); then
+              echo "::error::No engine image digest was provided and ECS task definition ${ENGINE_TASK_FAMILY} could not be read. Run a deploy path that builds the engine image so Terraform receives the build digest."
+              exit 1
+            fi
+            if [[ "${current_image}" =~ @(sha256:[0-9a-f]{64})$ ]]; then
+              printf '%s\n' "${BASH_REMATCH[1]}"
+              return
+            fi
+            echo "::error::Existing ECS task definition ${ENGINE_TASK_FAMILY} is not digest-pinned (${current_image}). Run the engine image deploy first so platform Terraform can preserve a digest."
+            exit 1
+          }
+          printf 'engine_container_image_digest = "%s"\n' "$(resolve_engine_image_digest)" > zz-engine-image.auto.tfvars
+      - name: Render cloud_provider.auto.tfvars from shifter.yaml
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          SHIFTER_CONFIG_DEV_RANGE: ${{ secrets.SHIFTER_CONFIG_DEV_RANGE }}
+          SHIFTER_CONFIG_PROOF_RANGE: ${{ secrets.SHIFTER_CONFIG_PROOF_RANGE }}
+          SHIFTER_CONFIG_PROD_RANGE: ${{ secrets.SHIFTER_CONFIG_PROD_RANGE }}
+        run: |
+          # Select strictly on inputs.environment in shell (same rule as the
+          # local.auto.tfvars step above): an empty active-environment config
+          # must fail loud, never fall through to the other environment's secret.
+          case "$ENVIRONMENT" in
+            dev)
+              CONFIG_SECRET_NAME="SHIFTER_CONFIG_DEV_RANGE"
+              ACTIVE_SHIFTER_CONFIG="${SHIFTER_CONFIG_DEV_RANGE}"
+              ;;
+            proof)
+              CONFIG_SECRET_NAME="SHIFTER_CONFIG_PROOF_RANGE"
+              ACTIVE_SHIFTER_CONFIG="${SHIFTER_CONFIG_PROOF_RANGE}"
+              ;;
+            prod)
+              CONFIG_SECRET_NAME="SHIFTER_CONFIG_PROD_RANGE"
+              ACTIVE_SHIFTER_CONFIG="${SHIFTER_CONFIG_PROD_RANGE}"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "${ACTIVE_SHIFTER_CONFIG}" ]; then
+            echo "::error::Required secret ${CONFIG_SECRET_NAME} is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          # Write the deployment config to an ephemeral file outside the repo tree,
+          # then render its settings.backend into the renderer-owned CLOUD_PROVIDER
+          # tfvars (PLAT-2005), so the deployed backend identity comes from
+          # shifter.yaml, not a hardcoded Terraform literal. shifter.yaml holds
+          # secret *references*, not values, but is still treated as sensitive:
+          # written by redirection, never echoed, passed in argv, or uploaded as
+          # an artifact (#1015).
+          CONFIG_FILE="${RUNNER_TEMP}/shifter.yaml"
+          printf '%s\n' "${ACTIVE_SHIFTER_CONFIG}" > "${CONFIG_FILE}"
+          uv run --project "${GITHUB_WORKSPACE}/shifter/installation" \
+            shifter-config render-runtime "${CONFIG_FILE}" \
+            --output cloud_provider.auto.tfvars
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
+          TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
+          TF_INFRA_STATE_BUCKET_PROD: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          case "$ENVIRONMENT" in
+            dev)
+              BUCKET_SECRET_NAME="TF_INFRA_STATE_BUCKET_DEV"
+              STATE_BUCKET="${TF_INFRA_STATE_BUCKET_DEV}"
+              ;;
+            proof)
+              BUCKET_SECRET_NAME="TF_INFRA_STATE_BUCKET_PROOF"
+              STATE_BUCKET="${TF_INFRA_STATE_BUCKET_PROOF}"
+              ;;
+            prod)
+              BUCKET_SECRET_NAME="TF_INFRA_STATE_BUCKET"
+              STATE_BUCKET="${TF_INFRA_STATE_BUCKET_PROD}"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "${STATE_BUCKET}" ]; then
+            echo "::error::Required secret ${BUCKET_SECRET_NAME} is not set for the ${ENVIRONMENT} Terraform backend"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --bucket "${STATE_BUCKET}" \
+            --env "${{ inputs.environment }}" \
+            --stack portal \
+            --github-env
+      - run: terraform init -backend-config="${SHIFTER_BACKEND_CONFIG_PATH}"
+      - run: terraform validate
+      - run: terraform plan -no-color -lock-timeout=5m -var-file="${SHIFTER_PORTAL_REMOTE_STATE_TFVARS}" -out=tfplan && terraform show -no-color tfplan > plan.txt
+      - name: Comment PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('platform/terraform/environments/${{ inputs.environment }}/portal/plan.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `#### Terraform Plan - Platform (${{ inputs.environment }})\n<details><summary>Show Plan</summary>\n\n\`\`\`terraform\n${plan.substring(0, 60000)}\n\`\`\`\n\n</details>`
+            });

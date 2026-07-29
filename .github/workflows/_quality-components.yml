@@ -1,0 +1,486 @@
+name: Quality - components
+
+on:
+  workflow_call:
+    inputs:
+      skip_tests:
+        required: false
+        type: boolean
+        default: false
+      run_all:
+        required: false
+        type: string
+        default: "false"
+      ctfd_workshop:
+        required: false
+        type: string
+        default: "false"
+      packer:
+        required: false
+        type: string
+        default: "false"
+      gcp_scripts:
+        required: false
+        type: string
+        default: "false"
+      handle_sd_replacement:
+        required: false
+        type: string
+        default: "false"
+      check_rds_pending_modifications:
+        required: false
+        type: string
+        default: "false"
+      assert_portal_inspection:
+        required: false
+        type: string
+        default: "false"
+      event_load_harness:
+        required: false
+        type: string
+        default: "false"
+      range_functional_smoke:
+        required: false
+        type: string
+        default: "false"
+      cyberscript:
+        required: false
+        type: string
+        default: "false"
+      polaris_aws_range:
+        required: false
+        type: string
+        default: "false"
+      polaris_tests:
+        required: false
+        type: string
+        default: "false"
+
+jobs:
+  ctfd-workshop-tests:
+    permissions:
+      contents: read
+    name: Test (ctfd-workshop)
+    if: ${{ !inputs.skip_tests && (inputs.run_all == 'true' || inputs.ctfd_workshop == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Run Polaris CTFd sync tests
+        working-directory: scripts/ctfd-workshop
+        run: python3 -m unittest test_sync_polaris_ctfd
+
+  packer-lint:
+    permissions:
+      contents: read
+    name: Lint (packer)
+    if: ${{ (inputs.run_all == 'true' || inputs.packer == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Lint Python
+        working-directory: shifter/packer
+        run: |
+          uv sync --group dev
+          uv run ruff check .
+          uv run ruff format --check .
+
+  packer-sast:
+    permissions:
+      contents: read
+    name: SAST (packer)
+    if: ${{ (inputs.run_all == 'true' || inputs.packer == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Run Bandit
+        run: |
+          uv tool install bandit
+          bandit -r shifter/packer/ --skip B101 --exclude shifter/packer/tests,shifter/packer/.venv
+
+  packer-tests:
+    permissions:
+      contents: read
+    name: Tests (packer)
+    needs: packer-lint
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.packer == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: shifter/packer
+        run: uv sync --group dev
+
+      # No ``--cov``: this package ships Packer HCL, not owned production Python
+      # (its ``tests/`` validate the HCL/config), so a Python coverage number
+      # would only measure tests covering themselves. It is not a Sonar coverage
+      # publisher (#1529 / REV1 Q6 -- do not manufacture a misleading percentage).
+      - name: Run tests
+        working-directory: shifter/packer
+        run: uv run pytest tests/
+
+  gcp-scripts-lint:
+    permissions:
+      contents: read
+    name: Lint (gcp scripts)
+    if: ${{ (inputs.run_all == 'true' || inputs.gcp_scripts == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Lint Python
+        working-directory: scripts/gcp
+        run: |
+          uv sync --group dev
+          uv run ruff check .
+          uv run ruff format --check .
+
+  gcp-scripts-sast:
+    permissions:
+      contents: read
+    name: SAST (gcp scripts)
+    if: ${{ (inputs.run_all == 'true' || inputs.gcp_scripts == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Run Bandit
+        run: |
+          uv tool install bandit
+          bandit -r scripts/gcp/ --skip B101,B108 --exclude scripts/gcp/tests,scripts/gcp/.venv
+
+  gcp-scripts-tests:
+    permissions:
+      contents: read
+    name: Tests (gcp scripts)
+    needs: gcp-scripts-lint
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.gcp_scripts == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: scripts/gcp
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: scripts/gcp
+        run: uv run pytest tests/
+
+  handle-sd-replacement-lint:
+    permissions:
+      contents: read
+    name: Lint (handle_sd_replacement)
+    if: ${{ (inputs.run_all == 'true' || inputs.handle_sd_replacement == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Lint Python
+        working-directory: scripts/handle_sd_replacement
+        run: |
+          uv sync --group dev
+          uv run ruff check .
+          uv run ruff format --check .
+
+  handle-sd-replacement-tests:
+    permissions:
+      contents: read
+    name: Tests (handle_sd_replacement)
+    needs: handle-sd-replacement-lint
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.handle_sd_replacement == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: scripts/handle_sd_replacement
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: scripts/handle_sd_replacement
+        run: uv run pytest tests/
+
+  check-rds-pending-modifications-lint:
+    permissions:
+      contents: read
+    name: Lint (check_rds_pending_modifications)
+    if: ${{ (inputs.run_all == 'true' || inputs.check_rds_pending_modifications == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Lint Python
+        working-directory: scripts/check_rds_pending_modifications
+        run: |
+          uv sync --group dev
+          uv run ruff check .
+          uv run ruff format --check .
+
+  check-rds-pending-modifications-tests:
+    permissions:
+      contents: read
+    name: Tests (check_rds_pending_modifications)
+    needs: check-rds-pending-modifications-lint
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.check_rds_pending_modifications == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: scripts/check_rds_pending_modifications
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: scripts/check_rds_pending_modifications
+        run: uv run pytest tests/
+
+  assert-portal-inspection-lint:
+    permissions:
+      contents: read
+    name: Lint (assert_portal_inspection)
+    if: ${{ (inputs.run_all == 'true' || inputs.assert_portal_inspection == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Lint Python
+        working-directory: scripts/assert_portal_inspection
+        run: |
+          uv sync --group dev
+          uv run ruff check .
+          uv run ruff format --check .
+
+  assert-portal-inspection-tests:
+    permissions:
+      contents: read
+    name: Tests (assert_portal_inspection)
+    needs: assert-portal-inspection-lint
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.assert_portal_inspection == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: scripts/assert_portal_inspection
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: scripts/assert_portal_inspection
+        run: uv run pytest tests/
+
+  event-load-harness-lint:
+    permissions:
+      contents: read
+    name: Lint (event-load-harness)
+    if: ${{ (inputs.run_all == 'true' || inputs.event_load_harness == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Lint Python
+        working-directory: uat/event-load-harness
+        run: |
+          uv sync --group dev
+          uv run ruff check .
+          uv run ruff format --check .
+
+  # Lints only. The smoke itself drives a deployed tenant and a live range, so it
+  # is operator-invoked (#987) and deliberately has no CI execution job.
+
+  event-load-harness-sast:
+    permissions:
+      contents: read
+    name: SAST (event-load-harness)
+    if: ${{ (inputs.run_all == 'true' || inputs.event_load_harness == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Run Bandit
+        working-directory: uat/event-load-harness
+        run: |
+          uv tool install 'bandit[toml]'
+          bandit -r . -c pyproject.toml
+
+  event-load-harness-tests:
+    permissions:
+      contents: read
+    name: Tests (event-load-harness)
+    needs: event-load-harness-lint
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.event_load_harness == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: uat/event-load-harness
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: uat/event-load-harness
+        run: uv run pytest tests/ -q
+
+  range-functional-smoke-lint:
+    permissions:
+      contents: read
+    name: Lint (range-functional-smoke)
+    if: ${{ (inputs.run_all == 'true' || inputs.range_functional_smoke == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Lint Python
+        working-directory: uat/range-functional-smoke
+        run: |
+          uv sync --group dev
+          uv run ruff check .
+          uv run ruff format --check .
+
+  range-functional-smoke-sast:
+    permissions:
+      contents: read
+    name: SAST (range-functional-smoke)
+    if: ${{ (inputs.run_all == 'true' || inputs.range_functional_smoke == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Run Bandit
+        working-directory: uat/range-functional-smoke
+        run: |
+          uv tool install 'bandit[toml]'
+          bandit -r . -c pyproject.toml
+
+  # ===========================================================================
+  # Python Tests
+  # ===========================================================================
+
+  range-functional-smoke-tests:
+    permissions:
+      contents: read
+    name: Tests (range-functional-smoke)
+    needs: range-functional-smoke-lint
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.range_functional_smoke == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: uat/range-functional-smoke
+        run: uv sync --group dev
+
+      # Deterministic layers only. The live executor targets a deployed tenant
+      # and is exercised by operator runs, never by mocking the app (ADR-019).
+      - name: Run tests
+        working-directory: uat/range-functional-smoke
+        run: uv run pytest tests/ -q
+
+  cyberscript-tests:
+    permissions:
+      contents: read
+    name: Tests (cyberscript)
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.cyberscript == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Run tests
+        working-directory: shifter/cyberscript
+        env:
+          PYTHONPATH: ../shifter_platform
+        run: uv run --with pytest pytest tests/
+
+  polaris-aws-range-tests:
+    permissions:
+      contents: read
+    name: Tests (polaris-aws-range)
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.polaris_aws_range == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Run tests
+        working-directory: scripts/polaris-aws-range
+        run: |
+          uv run --with boto3 python -m unittest \
+            test_common test_provisioning_state test_range_health -v
+
+  polaris-tests:
+    permissions:
+      contents: read
+    name: Tests (polaris smoke scripts)
+    if: ${{ !inputs.skip_tests && ((inputs.run_all == 'true' || inputs.polaris_tests == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Validate Python and shell syntax
+        run: |
+          python3 -m compileall -q scenario-dev/polaris/tests
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find scenario-dev/polaris/tests -type f -name '*.sh' -print0)

@@ -1,0 +1,392 @@
+name: Quality - terraform
+
+on:
+  workflow_call:
+    inputs:
+      run_all:
+        required: false
+        type: string
+        default: "false"
+      terraform:
+        required: false
+        type: string
+        default: "false"
+
+jobs:
+  terraform-lint:
+    permissions:
+      contents: read
+    name: Lint (terraform)
+    if: ${{ (inputs.run_all == 'true' || inputs.terraform == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@6e87008f9dd1fe3e34e66aca6c97b4a69f72a7f4 # v4
+
+      - name: Init TFLint
+        env:
+          # TFLint resolves provider plugins through the GitHub Releases API.
+          # Authenticate those requests so shared hosted-runner IPs do not hit
+          # the unauthenticated 60-request/hour limit.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tflint --init --config "${GITHUB_WORKSPACE}/.tflint.hcl"
+
+      - name: Run TFLint
+        working-directory: platform/terraform
+        run: tflint --recursive --config "${GITHUB_WORKSPACE}/.tflint.hcl"
+
+      # Issue #1377: the per-range Polaris Bedrock agent role's inline
+      # policy must stay scoped to exactly bedrock:InvokeModel /
+      # bedrock:InvokeModelWithResponseStream on the two approved inference
+      # profiles and their backing models (conditioned on
+      # bedrock:InferenceProfileArn), and its trust policy must stay scoped
+      # to the shared range-instance role AND the exact Polaris EC2 source
+      # instance (ec2:SourceInstanceARN). Mirrors the
+      # check-tf-iam-bedrock-agent-scope pre-commit hook so a commit that
+      # skipped pre-commit cannot land the regression.
+      - name: Run check-tf-iam-bedrock-agent-scope
+        run: |
+          python3 scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py \
+            shifter/engine/provisioner/terraform/modules/range/iam.tf
+
+      # ADR-004-R10 / issue #52: the kms:Decrypt grant for the portal
+      # Secrets Manager CMK on roles that read Secrets Manager. Wired
+      # alongside terraform-lint because the inputs are .tf files and
+      # this is the natural "terraform architecture" gate; runs in the
+      # same job to avoid an extra runner pool slot. Pre-commit also
+      # enforces it locally, but CI must enforce it independently so a
+      # commit that didn't run pre-commit cannot land the regression.
+      # Scope must mirror the pre-commit hook's `files:` regex —
+      # every module that defines an IAM role whose attached policies
+      # grant secretsmanager:GetSecretValue on a portal-CMK secret.
+      - name: Run check-tf-kms-secrets-grant
+        run: |
+          python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py \
+            platform/terraform/modules/engine-provisioner/*.tf \
+            platform/terraform/modules/portal/ec2/*.tf \
+            platform/terraform/modules/guacamole/*.tf
+
+      # Issues #46/#1755: action/resource-aware ELBv2 scoping for GWLB and
+      # request-owned VPN NLB resources, including creation-time listener tags.
+      # Pre-commit enforces the same policy/runtime inputs locally.
+      - name: Run check-tf-iam-elb-scope
+        run: |
+          python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
+            platform/terraform/modules/engine-provisioner/iam.tf \
+            shifter/engine/provisioner/terraform/modules/range/vpn.tf
+
+      # Issue #1179: SSM Run Command IAM scoping on the engine provisioner
+      # ECS task role. Mirrors check-tf-iam-ec2-scope: rejects account-wide
+      # ssm:SendCommand / ec2:RebootInstances and requires the range-instance
+      # tag conditions so a provisioner compromise cannot command portal or
+      # runner instances. Pre-commit also enforces it locally.
+      - name: Run check-tf-iam-ssm-scope
+        run: |
+          python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
+            platform/terraform/modules/engine-provisioner/iam.tf
+
+      # Issue #1846: this checker previously ran only in pre-commit and as a
+      # unit test in CI, unlike its elb/ssm siblings above, so a commit that
+      # bypassed pre-commit could land an EC2 lifecycle IAM regression.
+      - name: Run check-tf-iam-ec2-scope
+        run: |
+          python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py \
+            platform/terraform/modules/engine-provisioner/iam.tf
+
+      - name: Run check-tf-iam-role-naming
+        run: |
+          python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
+
+      # ADR-004-R20 / issue #1222: the self-hosted deploy runner must not be
+      # placed in the account default VPC (a range's private-DNS VPC endpoints
+      # can hijack its AWS API resolution). Mirrors the check-tf-runner-network
+      # pre-commit hook so a commit that skipped pre-commit cannot drop the
+      # fail-closed default-VPC precondition from the runner stack.
+      - name: Run check-tf-runner-network
+        run: |
+          python3 scripts/check_tf_runner_network/check_tf_runner_network.py
+
+      # ADR-008 / issue #1546: the GCP-native self-hosted runner must live in a
+      # dedicated custom-mode VPC (never the project default network) and admit
+      # SSH only from Google's IAP range. Mirrors the check-tf-gcp-runner-network
+      # pre-commit hook so a commit that skipped pre-commit cannot weaken the
+      # runner network isolation.
+      - name: Run check-tf-gcp-runner-network
+        run: |
+          python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
+
+      # ADR-004-R23 / issue #1690: the GCP GitHub-Actions WIF trust must pin an
+      # exact protected assertion.ref + literal assertion.sub allow-list (no
+      # repository-only condition, no repository-wide principalSet, no CKV_GCP_125
+      # waiver), with the static condition consistent with local.federated_subjects.
+      # Mirrors the check-tf-gcp-wif-trust pre-commit hook so a commit that skipped
+      # pre-commit cannot re-widen the credentialed-CI federation.
+      - name: Run check-tf-gcp-wif-trust
+        run: |
+          python3 scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py
+
+      # Issue #1178: the shared range guest instance role must not grant SSM
+      # Parameter Store access on a Resource that wildcards the environment or
+      # range segment (parameter/shifter/*/range/*). Mirrors the
+      # check-tf-iam-ssm-range-scope pre-commit hook so a commit that skipped
+      # pre-commit cannot land the cross-range regression.
+      - name: Run check-tf-iam-ssm-range-scope
+        run: |
+          python3 scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py \
+            platform/terraform/modules/range/vpc/iam.tf
+
+      # ADR-004-R12 / issue #140: first-party RDS instances must keep
+      # IAM DB auth enabled and explicitly pin a CA identifier. Checkov
+      # enforces IAM auth, but CKV_AWS_211 currently passes when the CA
+      # attribute is absent, so this repo-native guard closes that gap.
+      - name: Run check-tf-rds-security
+        run: |
+          python3 scripts/check_tf_rds_security/check_tf_rds_security.py \
+            platform/terraform/modules/portal/rds/main.tf \
+            platform/terraform/modules/guacamole/rds.tf
+
+      # ADR-008-R7 / issue #1517: GCP application workload identities must not
+      # receive project-level Secret Manager payload/admin or Cloud Storage
+      # object-admin roles; static access is bound per named secret / bucket, and
+      # only the two dynamic-secret residuals tracked in #1586 are allowlisted.
+      # Mirrors the check-tf-gcp-iam-resource-scope pre-commit hook so a commit
+      # that skipped pre-commit cannot land a broad project-level grant.
+      - name: Run check-tf-gcp-iam-resource-scope
+        run: |
+          python3 scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py \
+            platform/terraform/gcp/modules/portal/iam/*.tf
+
+      # ADR-004-R11 / issue #147: Checkov pre-commit hook args must match
+      # the security-iac job (config, directory, download_external_modules,
+      # soft_fail=false).
+      - name: Run check-checkov-invocation-parity
+        run: python3 scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py
+
+      # #911 NET-2 / #933: the portal target-service SGs (Django:8000,
+      # Guacamole client:8080) must source ingress only from a security-group
+      # reference or the ALB-only alb_ingress_subnet_cidrs output, never the
+      # whole public tier (where CTFd lives). Guards the env-root SG rules so a
+      # future edit cannot re-widen the source back to public_subnet_cidrs.
+      - name: Run check-portal-target-sg-sources
+        run: |
+          python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py \
+            platform/terraform/environments/dev/portal/main.tf \
+            platform/terraform/environments/proof/portal/main.tf \
+            platform/terraform/environments/prod/portal/main.tf
+
+      # Pin the behavior of the check_tf_* IAM/security checkers
+      # themselves. The live-file invocations above only exercise the
+      # happy-path shape; the test suites cover wildcards, list
+      # resources, scoped conditions, missing grants, etc. Run them so
+      # a parser regression can't slip through merely because the
+      # current production .tf files happen to remain in the
+      # happy-path shape. Invoked as fully-qualified modules from the
+      # repo root because each test uses `from .check_tf_X import …`
+      # (relative imports require the package path, which
+      # `unittest discover` doesn't preserve).
+      - name: Run check_tf_* checker tests
+        run: |
+          python3 -m unittest scripts.check_tf_iam_ec2_scope.test_check_tf_iam_ec2_scope
+          python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope
+          python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope
+          python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming
+          python3 -m unittest scripts.check_tf_iam_ssm_range_scope.test_check_tf_iam_ssm_range_scope
+          python3 -m unittest scripts.check_tf_iam_bedrock_agent_scope.test_check_tf_iam_bedrock_agent_scope
+          python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs
+          python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
+          python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
+          python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
+          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
+          python3 -m unittest scripts.check_tf_gcp_runner_network.test_check_tf_gcp_runner_network
+          python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
+          python3 -m unittest scripts.check_tf_gcp_wif_trust.test_check_tf_gcp_wif_trust
+
+  # ===========================================================================
+  # Terraform root validation (issue #1528)
+  #
+  # PR quality never ran a backendless `terraform init` + `terraform validate`,
+  # so a composition error (a renamed module output, an unparseable provider
+  # argument) could merge before any workflow parsed the affected root.
+  # scripts/check_tf_roots/ owns platform/terraform/validation-inventory.yaml
+  # and emits the CI matrix; the per-root job below runs locked, credential-free
+  # init/validate on GitHub-hosted runners. This is a distinct layer from
+  # TFLint / Checkov / the check_tf_* security scanners above.
+  # ===========================================================================
+
+  terraform-matrix:
+    permissions:
+      contents: read
+    name: Terraform validation inventory + matrix
+    if: ${{ (inputs.run_all == 'true' || inputs.terraform == 'true') }}
+    runs-on: ubuntu-latest
+    outputs:
+      roots: ${{ steps.gen.outputs.roots }}
+      module_tests: ${{ steps.gen.outputs.module_tests }}
+      has_module_tests: ${{ steps.gen.outputs.has_module_tests }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      # Fail closed on an invalid inventory (unclassified root/module, provider
+      # drift, missing lockfile) and pin the checker's own behavior before any
+      # matrix is emitted.
+      - name: Validate inventory and run checker tests
+        run: |
+          set -euo pipefail
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --check
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 -m unittest scripts.check_tf_roots.test_check_tf_roots
+
+      - name: Generate validation matrices
+        id: gen
+        run: |
+          set -euo pipefail
+          roots="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --matrix)"
+          module_tests="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --module-tests)"
+          {
+            echo "roots=${roots}"
+            echo "module_tests=${module_tests}"
+          } >> "$GITHUB_OUTPUT"
+          if [ "${module_tests}" = "[]" ]; then
+            echo "has_module_tests=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_module_tests=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  terraform-validate:
+    permissions:
+      contents: read
+    name: Validate (terraform ${{ matrix.root.id }})
+    needs: terraform-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJSON(needs.terraform-matrix.outputs.roots) }}
+    env:
+      TF_IN_AUTOMATION: '1'
+      # No cloud credentials are provided; disabling EC2 metadata discovery
+      # keeps a stray provider call from hanging on the runner metadata IP.
+      AWS_EC2_METADATA_DISABLED: 'true'
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
+      # Pass the (inventory-validated, path-contained) matrix path as
+      # environment data rather than interpolating it into a shell script.
+      ROOT_PATH: ${{ matrix.root.path }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare provider cache directory
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.root.terraform_version }}-${{ hashFiles(format('{0}/.terraform.lock.hcl', matrix.root.path)) }}
+          restore-keys: |
+            terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.root.terraform_version }}-
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ matrix.root.terraform_version }}
+          terraform_wrapper: false
+
+      # Locked, backendless, noninteractive: verifies module/provider
+      # resolution and checksums without a backend or cloud credentials.
+      # -lockfile=readonly makes dependency drift fail instead of rewriting
+      # the reviewed lockfile.
+      - name: terraform init (backendless, locked)
+        run: >-
+          terraform -chdir="${ROOT_PATH}" init
+          -backend=false -input=false -lockfile=readonly -no-color
+
+      - name: terraform validate
+        run: terraform -chdir="${ROOT_PATH}" validate -no-color
+
+  # Reusable-module contract tests (issue #1528 AC3, rollout tracked in #1597).
+  # Only modules whose inventory `contract` ships an executable test appear in
+  # the matrix; when none do, the job is skipped.
+
+  terraform-module-contracts:
+    permissions:
+      contents: read
+    name: Contract test (${{ matrix.module.path }})
+    needs: terraform-matrix
+    if: ${{ needs.terraform-matrix.outputs.has_module_tests == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.terraform-matrix.outputs.module_tests) }}
+    env:
+      TF_IN_AUTOMATION: '1'
+      AWS_EC2_METADATA_DISABLED: 'true'
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
+      # Pass the (inventory-validated, path-contained) matrix path as
+      # environment data rather than interpolating it into a shell script.
+      MODULE_PATH: ${{ matrix.module.path }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare provider cache directory
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ matrix.module.terraform_version }}
+          terraform_wrapper: false
+
+      # Reusable modules carry no lockfile, so init resolves providers fresh
+      # (not readonly). The contract test uses mock providers, so it needs no
+      # cloud credentials.
+      - name: terraform init (backendless)
+        run: >-
+          terraform -chdir="${MODULE_PATH}" init
+          -backend=false -input=false -no-color
+
+      - name: terraform test
+        run: terraform -chdir="${MODULE_PATH}" test -no-color
+
+  # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
+  # shipped 38/39 challenges unsubmittable because flag-row reconciliation
+  # sat behind a category allowlist; these tests exercise the flag/hint
+  # reconciliation, manifest validation, and post-sync verification with a
+  # fake CTFd client. The scripts import siblings by bare name, so the test
+  # runs from the package directory (its name contains a hyphen, so the
+  # `unittest scripts.<pkg>` form the check_tf_* tests use is unavailable).
+  # Pure stdlib — no dependency install needed.
+
+  security-iac:
+    permissions:
+      contents: read
+    name: Security (IaC)
+    if: ${{ (inputs.run_all == 'true' || inputs.terraform == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Cache Checkov
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.local
+          key: ${{ runner.os }}-checkov-${{ hashFiles('.github/workflows/_quality.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-checkov-
+
+      - name: Checkov IaC Security
+        # Blocking gate per ADR-004-R11. Skip-check entries live in
+        # platform/terraform/.checkov.yaml so this job and the local
+        # pre-commit hook consume the same policy boundary. Accepted-risk
+        # waivers are documented in docs/adr/exceptions.yaml with owner,
+        # reason, expires_on, and affected paths.
+        uses: bridgecrewio/checkov-action@02a4c5d6a02367e5ea493c34c26b094302fd3f61 # v12
+        with:
+          directory: platform/terraform/
+          config_file: platform/terraform/.checkov.yaml
+          download_external_modules: true
+          soft_fail: false

@@ -9,6 +9,10 @@ from typing import Any
 
 import pytest
 import yaml
+from _platform_workflow_graph import (
+    reachable_child_text_containing,
+    reachable_family_text,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 AWS_USER_DATA = REPO_ROOT / "platform" / "terraform" / "modules" / "portal" / "ec2" / "user_data.sh"
@@ -111,22 +115,25 @@ def test_aws_deploy_paths_start_ctf_scheduler_container(path: Path) -> None:
 
 
 def test_aws_workflow_invokes_tracked_single_instance_deploy_script() -> None:
-    workflow_text = AWS_WORKFLOW.read_text(encoding="utf-8")
+    workflow_text = reachable_family_text()
     assert "scripts/portal-deploy/deploy_portal.sh" in workflow_text
     assert "base64 -d > /tmp/shifter-deploy-portal.sh" in workflow_text
     assert "--worker-health-name-prefix" in workflow_text
 
 
 def test_aws_workflow_runs_one_asg_migration_before_instance_refresh() -> None:
-    workflow_text = AWS_WORKFLOW.read_text(encoding="utf-8")
+    # Scope the ordering to the reachable child that actually owns the ASG deploy
+    # steps, not a filename-ordered concatenation of every _platform-*.yml file.
+    deploy_text = reachable_child_text_containing("Run database migrations (ASG mode)")
+    assert deploy_text, "no reachable workflow declares the ASG migration step"
 
-    migration_index = workflow_text.index("Run database migrations (ASG mode)")
-    refresh_index = workflow_text.index("aws autoscaling start-instance-refresh")
+    migration_index = deploy_text.index("Run database migrations (ASG mode)")
+    refresh_index = deploy_text.index("aws autoscaling start-instance-refresh")
 
     assert migration_index < refresh_index
-    assert "Instances[?LifecycleState=='InService' && HealthStatus=='Healthy'] | [0].InstanceId" in workflow_text
-    assert "--migrate-only" in workflow_text
-    assert "Migration failed (status=" in workflow_text
+    assert "Instances[?LifecycleState=='InService' && HealthStatus=='Healthy'] | [0].InstanceId" in deploy_text
+    assert "--migrate-only" in deploy_text
+    assert "Migration failed (status=" in deploy_text
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,180 @@
+name: Platform - push-guacamole-images
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      github_environment:
+        required: true
+        type: string
+      apply_changes:
+        required: true
+        type: boolean
+      platform_changes:
+        required: true
+        type: boolean
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+      AWS_ROLE_ARN_DEV:
+        required: true
+      AWS_ROLE_ARN_PROOF:
+        required: false
+
+jobs:
+  push-guacamole-images:
+    if: github.event_name != 'pull_request'
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      attestations: write
+    name: Push Guacamole Images (${{ inputs.environment }})
+    runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real image-push times.
+    timeout-minutes: 60
+    environment: ${{ inputs.github_environment }}
+    env:
+      GUACD_REPO: ${{ inputs.environment == 'prod' && 'shifter-guacd' || format('shifter-{0}-guacd', inputs.environment) }}
+      GUACAMOLE_CLIENT_REPO: ${{ inputs.environment == 'prod' && 'shifter-guacamole-client' || format('shifter-{0}-guacamole-client', inputs.environment) }}
+      # Upstream Apache Guacamole version (documentation / build-arg).
+      GUACAMOLE_VERSION: "1.5.5"
+      # ECR image tag for both guac images. Bump the -rN provenance-rebuild suffix
+      # HERE and in every environment's terraform.tfvars (guacd_image_tag /
+      # guacamole_client_image_tag) together whenever the guac build context
+      # changes: immutable ECR then receives a fresh, attested push (ADR-037-R5),
+      # and the guac module resolves this tag to its @sha256 digest for a verified
+      # deploy (ADR-037-R6). A guac-only change reaches this job through the
+      # terraform.tfvars edit, which is inside the shifter_platform change filter.
+      GUAC_IMAGE_TAG: "1.5.5-r1"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
+          aws-region: us-east-2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Check guacd image tag
+        id: guacd-image
+        run: |
+          if aws ecr describe-images --repository-name "$GUACD_REPO" --image-ids imageTag="$GUAC_IMAGE_TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build and push guacd image (with RDP file transfer support)
+        id: build-guacd
+        if: steps.guacd-image.outputs.exists != 'true'
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: ./shifter/engine/guacd
+          push: true
+          build-args: |
+            GUACAMOLE_VERSION=${{ env.GUACAMOLE_VERSION }}
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.GUACD_REPO }}:${{ env.GUAC_IMAGE_TAG }}
+          no-cache: true
+          # Build provenance (ADR-037-R5) for freshly built guacd images. Guac
+          # images are version-pinned upstream bases on immutable ECR tags, so a
+          # cached image is not re-pushed or re-attested here.
+          provenance: mode=max
+          sbom: true
+      - name: Attest guacd build provenance
+        if: steps.guacd-image.outputs.exists != 'true'
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.login-ecr.outputs.registry }}/${{ env.GUACD_REPO }}
+          subject-digest: ${{ steps.build-guacd.outputs.digest }}
+          push-to-registry: false
+      - name: Check guacamole-client image tag
+        id: guacamole-client-image
+        run: |
+          if aws ecr describe-images --repository-name "$GUACAMOLE_CLIENT_REPO" --image-ids imageTag="$GUAC_IMAGE_TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build and push guacamole-client image (with OIDC extension)
+        id: build-guacamole-client
+        if: steps.guacamole-client-image.outputs.exists != 'true'
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: ./shifter/engine/guacamole
+          push: true
+          build-args: |
+            GUACAMOLE_VERSION=${{ env.GUACAMOLE_VERSION }}
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.GUACAMOLE_CLIENT_REPO }}:${{ env.GUAC_IMAGE_TAG }}
+          no-cache: true
+          # Build provenance (ADR-037-R5) for freshly built guacamole-client
+          # images. See the guacd note above re: cached immutable-tag images.
+          provenance: mode=max
+          sbom: true
+      - name: Attest guacamole-client build provenance
+        if: steps.guacamole-client-image.outputs.exists != 'true'
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.login-ecr.outputs.registry }}/${{ env.GUACAMOLE_CLIENT_REPO }}
+          subject-digest: ${{ steps.build-guacamole-client.outputs.digest }}
+          push-to-registry: false
+      - name: Verify guac image provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          # ADR-037-R6: verify the OIDC-signed attestation for each guac
+          # image@digest (resolved from its pinned GUAC_IMAGE_TAG) before the
+          # apply job (which needs this one) deploys that same digest via the guac
+          # module's data.aws_ecr_image lookup. Covers both freshly built and
+          # cached-but-already-attested images. No bypass.
+          set -euo pipefail
+          verify() {
+            repo="$1"; tag="$2"; label="$3"
+            digest=$(aws ecr describe-images --repository-name "$repo" \
+              --image-ids imageTag="$tag" --query 'imageDetails[0].imageDigest' --output text)
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::could not resolve a valid digest for ${label} (${repo}:${tag})"
+              exit 1
+            fi
+            echo "Verifying provenance for ${label} (${repo}@${digest})"
+            gh attestation verify "oci://${REGISTRY}/${repo}@${digest}" --repo Brad-Edwards/shifter
+          }
+          verify "$GUACD_REPO" "$GUAC_IMAGE_TAG" "guacd"
+          verify "$GUACAMOLE_CLIENT_REPO" "$GUAC_IMAGE_TAG" "guacamole-client"

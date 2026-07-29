@@ -742,8 +742,10 @@ class RealRepositoryTests(unittest.TestCase):
         # preflight forbids): with every classifier-controlled output false and
         # only the independent guard_selfcheck true, the guard's own verification
         # jobs must still run; with guard_selfcheck also false they must not.
-        wf = yaml.safe_load((_REPO_ROOT / ".github" / "workflows" / "_quality.yml").read_text(encoding="utf-8"))
-        jobs = wf["jobs"]
+        # Resolve across the reusable children (#689): the guard verification
+        # jobs moved into _quality-guard.yml, with their routing gates rewritten
+        # back to needs.paths.outputs.* by the effective-graph resolver.
+        jobs = ADR_GUARD._quality_effective_jobs(_REPO_ROOT)
         self.assertIn("steps.selfcheck.outputs", str(jobs["paths"]["outputs"]["guard_selfcheck"]))
         sentinel_on = {"run_all": "false", "adr_guard": "false", "guard_selfcheck": "true"}
         sentinel_off = {"run_all": "false", "adr_guard": "false", "guard_selfcheck": "false"}
@@ -778,6 +780,85 @@ class RealRepositoryTests(unittest.TestCase):
         self.assertTrue(evaluate("false", "true"), "sentinel must force the full matrix")
         self.assertTrue(evaluate("true", "false"), "a normal full run still forces it")
         self.assertFalse(evaluate("false", "false"), "neither trigger means no full matrix")
+
+
+class QualityEffectiveJobsTests(unittest.TestCase):
+    """#689: _quality_effective_jobs resolves responsibility jobs across reusable
+    children and rewrites forwarded `inputs.<k>` gating back to the classifier
+    outputs the routing model evaluates."""
+
+    def _write(self, root, rel, text):
+        path = Path(root) / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def test_child_jobs_rewritten_to_classifier_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_quality.yml",
+                "name: Quality\non:\n  workflow_call: {}\njobs:\n"
+                "  paths:\n    runs-on: ubuntu-latest\n"
+                "    outputs:\n      run_all: ${{ steps.d.outputs.run_all }}\n"
+                "    steps:\n      - run: 'true'\n"
+                "  coverage:\n    uses: ./.github/workflows/_quality-coverage.yml\n"
+                "    needs: paths\n    with:\n"
+                "      run_all: ${{ needs.paths.outputs.run_all }}\n"
+                "      shifter_platform: ${{ needs.paths.outputs.shifter_platform }}\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_quality-coverage.yml",
+                "name: Quality - coverage\non:\n  workflow_call:\n    inputs:\n"
+                "      run_all:\n        type: string\n      shifter_platform:\n        type: string\n"
+                "jobs:\n"
+                "  shifter-platform-lint:\n"
+                "    if: ${{ inputs.run_all == 'true' || inputs.shifter_platform == 'true' }}\n"
+                "    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n",
+            )
+            eff = ADR_GUARD._quality_effective_jobs(Path(tmp))
+            self.assertIn("paths", eff)  # coordinator job retained
+            self.assertIn("shifter-platform-lint", eff)  # child job surfaced
+            self.assertNotIn("coverage", eff)  # delegating stub dropped
+            gate = ADR_GUARD._dw_job_if(eff["shifter-platform-lint"])
+            self.assertIn("needs.paths.outputs.shifter_platform", gate)
+            self.assertIn("needs.paths.outputs.run_all", gate)
+            self.assertNotIn("inputs.shifter_platform", gate)
+
+    def test_nested_child_inputs_resolve_through_the_call_chain(self):
+        # A grandchild's inputs.sp -> mid's inputs.shifter_platform ->
+        # root's needs.paths.outputs.shifter_platform: the recursive resolver
+        # must compose the forwarding across every level (not one level only).
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                tmp,
+                ".github/workflows/_quality.yml",
+                "name: Quality\non:\n  workflow_call: {}\njobs:\n"
+                "  paths:\n    runs-on: ubuntu-latest\n"
+                "    outputs:\n      run_all: ${{ steps.d.outputs.run_all }}\n"
+                "    steps:\n      - run: 'true'\n"
+                "  mid:\n    uses: ./.github/workflows/_quality-mid.yml\n    needs: paths\n"
+                "    with:\n      shifter_platform: ${{ needs.paths.outputs.shifter_platform }}\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_quality-mid.yml",
+                "name: Mid\non:\n  workflow_call:\n    inputs:\n      shifter_platform:\n        type: string\njobs:\n"
+                "  deep:\n    uses: ./.github/workflows/_quality-deep.yml\n"
+                "    with:\n      sp: ${{ inputs.shifter_platform }}\n",
+            )
+            self._write(
+                tmp,
+                ".github/workflows/_quality-deep.yml",
+                "name: Deep\non:\n  workflow_call:\n    inputs:\n      sp:\n        type: string\njobs:\n"
+                "  shifter-platform-lint:\n    if: ${{ inputs.sp == 'true' }}\n"
+                "    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n",
+            )
+            eff = ADR_GUARD._quality_effective_jobs(Path(tmp))
+            self.assertIn("shifter-platform-lint", eff)  # nested job surfaced
+            gate = ADR_GUARD._dw_job_if(eff["shifter-platform-lint"])
+            self.assertIn("needs.paths.outputs.shifter_platform", gate)
+            self.assertNotIn("inputs.sp", gate)
 
 
 if __name__ == "__main__":
