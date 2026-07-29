@@ -93,6 +93,22 @@ def _validate_scoring_mode(event_data: dict[str, Any]) -> None:
         ) from None
 
 
+def _validate_content_scenario_access(user: User, scenario_id: str) -> None:
+    """Authorize configured content through the existing CTF launch catalog."""
+    from django.conf import settings
+
+    if settings.CTF_CONTENT_REFERENCES.get(scenario_id) is None:
+        return
+
+    from ctf.bridges import cms_list_scenarios
+
+    if scenario_id not in {available_id for available_id, _name in cms_list_scenarios(user)}:
+        raise CTFValidationError(
+            "Scenario is not available for CTF event creation.",
+            code="CTF_SCENARIO_NOT_AVAILABLE",
+        )
+
+
 def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     """Create a new CTF event.
 
@@ -132,6 +148,7 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     # created_by, id, timestamps, etc.
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
     scenario_id = str(safe_data.get("scenario_id", CTFEvent._meta.get_field("scenario_id").default))
+    _validate_content_scenario_access(user, scenario_id)
     from ctf.services.content_resolution import resolve_scenario_ctf_content
 
     resolved_content = resolve_scenario_ctf_content(scenario_id)

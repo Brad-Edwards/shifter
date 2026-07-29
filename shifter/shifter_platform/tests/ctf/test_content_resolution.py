@@ -12,6 +12,7 @@ from django.test import override_settings
 
 from ctf.exceptions import CTFValidationError
 from ctf.services.content_resolution import resolve_scenario_ctf_content
+from shared.cloud.exceptions import CloudStorageError, ObjectPreconditionError
 from shared.schemas.ctf_content_reference import load_ctf_content_references_json
 
 
@@ -38,7 +39,7 @@ def _raw_bundle() -> bytes:
     ).encode()
 
 
-def _references(raw: bytes, *, digest: str | None = None):
+def _references(raw: bytes, *, digest: str | None = None, scenario_id: str = "scenario-one"):
     expected = digest or f"sha256:{hashlib.sha256(raw).hexdigest()}"
     return load_ctf_content_references_json(
         json.dumps(
@@ -46,7 +47,7 @@ def _references(raw: bytes, *, digest: str | None = None):
                 "contract": "shifter-ctf-content-references/v1",
                 "references": [
                     {
-                        "scenario_id": "scenario-one",
+                        "scenario_id": scenario_id,
                         "object_key": "ctf/content-bundles/aa/bundle.json",
                         "digest": expected,
                     }
@@ -101,6 +102,80 @@ def test_digest_mismatch_fails_before_parse(monkeypatch) -> None:
     ):
         resolve_scenario_ctf_content("scenario-one")
     assert error.value.code == "CTF_CONTENT_DIGEST_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    ("storage_error", "expected_code"),
+    [
+        (ObjectPreconditionError("changed"), "CTF_CONTENT_CHANGED"),
+        (CloudStorageError("unavailable"), "CTF_CONTENT_RESOLUTION_FAILED"),
+    ],
+)
+def test_storage_failures_are_safely_classified(monkeypatch, storage_error, expected_code) -> None:
+    raw = _raw_bundle()
+    storage = _storage(raw)
+    storage.download_object.side_effect = storage_error
+    monkeypatch.setattr("shared.cloud.get_object_storage", lambda: storage)
+    with (
+        override_settings(
+            CTF_CONTENT_BUCKET="private-content",
+            CTF_CONTENT_MAX_BYTES=1024 * 1024,
+            CTF_CONTENT_REFERENCES=_references(raw),
+        ),
+        pytest.raises(CTFValidationError) as error,
+    ):
+        resolve_scenario_ctf_content("scenario-one")
+    assert error.value.code == expected_code
+
+
+def test_declared_oversized_object_is_rejected_before_download(monkeypatch) -> None:
+    raw = _raw_bundle()
+    storage = _storage(raw)
+    storage.head_object.return_value = {"content_length": len(raw) + 1}
+    monkeypatch.setattr("shared.cloud.get_object_storage", lambda: storage)
+    with (
+        override_settings(
+            CTF_CONTENT_BUCKET="private-content",
+            CTF_CONTENT_MAX_BYTES=len(raw),
+            CTF_CONTENT_REFERENCES=_references(raw),
+        ),
+        pytest.raises(CTFValidationError) as error,
+    ):
+        resolve_scenario_ctf_content("scenario-one")
+    assert error.value.code == "CTF_CONTENT_TOO_LARGE"
+    storage.download_object.assert_not_called()
+
+
+def test_download_larger_than_declared_is_rejected(monkeypatch) -> None:
+    raw = _raw_bundle()
+    storage = _storage(raw)
+    storage.head_object.return_value = {"content_length": 1}
+    monkeypatch.setattr("shared.cloud.get_object_storage", lambda: storage)
+    with (
+        override_settings(
+            CTF_CONTENT_BUCKET="private-content",
+            CTF_CONTENT_MAX_BYTES=len(raw) - 1,
+            CTF_CONTENT_REFERENCES=_references(raw),
+        ),
+        pytest.raises(CTFValidationError) as error,
+    ):
+        resolve_scenario_ctf_content("scenario-one")
+    assert error.value.code == "CTF_CONTENT_TOO_LARGE"
+
+
+def test_bundle_scenario_must_match_selected_reference(monkeypatch) -> None:
+    raw = _raw_bundle()
+    monkeypatch.setattr("shared.cloud.get_object_storage", lambda: _storage(raw))
+    with (
+        override_settings(
+            CTF_CONTENT_BUCKET="private-content",
+            CTF_CONTENT_MAX_BYTES=1024 * 1024,
+            CTF_CONTENT_REFERENCES=_references(raw, scenario_id="scenario-two"),
+        ),
+        pytest.raises(CTFValidationError) as error,
+    ):
+        resolve_scenario_ctf_content("scenario-two")
+    assert error.value.code == "CTF_CONTENT_SCENARIO_MISMATCH"
 
 
 def test_unconfigured_scenario_performs_no_storage_call(monkeypatch) -> None:

@@ -11,10 +11,10 @@ from django.utils import timezone
 
 from ctf.content_bundle import parse_ctf_content_bundle
 from ctf.enums import EventStatus
-from ctf.exceptions import CTFStateError
+from ctf.exceptions import CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFContentHydrationReceipt, CTFEvent, CTFFlag, CTFHint
 from ctf.services.challenge import update_challenge
-from ctf.services.content_hydration import hydrate_event_ctf_content
+from ctf.services.content_hydration import assert_event_content_hydration_ready, hydrate_event_ctf_content
 from ctf.services.content_resolution import HydrationSourceEvidence, ResolvedCtfContent
 from ctf.services.event import activate_event, create_event, open_registration, start_event
 from shared.schemas.ctf_content_reference import load_ctf_content_references_json
@@ -173,21 +173,63 @@ def test_both_activation_paths_require_pristine_receipt(organizer_user) -> None:
 
 
 @pytest.mark.django_db
+def test_removed_reference_does_not_authorize_managed_content(organizer_user) -> None:
+    event = _event(organizer_user)
+    hydrate_event_ctf_content(event.pk, _resolved(), actor_id=organizer_user.pk)
+    assert open_registration(event) is True
+    event.refresh_from_db()
+
+    with override_settings(CTF_CONTENT_REFERENCES=load_ctf_content_references_json("", prefix="ctf/content-bundles")):
+        with pytest.raises(CTFStateError) as error:
+            assert_event_content_hydration_ready(event)
+        assert error.value.code == "CTF_CONTENT_NOT_READY"
+        with pytest.raises(CTFStateError):
+            start_event(event.pk)
+        assert activate_event(event) is False
+
+
+@pytest.mark.django_db
 def test_event_creation_composes_hydration_atomically(organizer_user, monkeypatch) -> None:
     resolved = _resolved()
+    monkeypatch.setattr("ctf.bridges.cms_list_scenarios", lambda _user: [("scenario-one", "Scenario One")])
     monkeypatch.setattr(
         "ctf.services.content_resolution.resolve_scenario_ctf_content",
         lambda scenario_id: resolved if scenario_id == "scenario-one" else None,
     )
     now = timezone.now()
-    event = create_event(
-        organizer_user,
-        {
-            "name": "Created With Content",
-            "event_start": now + timedelta(hours=1),
-            "event_end": now + timedelta(hours=2),
-            "scenario_id": "scenario-one",
-        },
-    )
+    with override_settings(CTF_CONTENT_REFERENCES=_configured_references()):
+        event = create_event(
+            organizer_user,
+            {
+                "name": "Created With Content",
+                "event_start": now + timedelta(hours=1),
+                "event_end": now + timedelta(hours=2),
+                "scenario_id": "scenario-one",
+            },
+        )
     assert event.challenges.count() == 2
     assert CTFContentHydrationReceipt.objects.filter(event=event).exists()
+
+
+@pytest.mark.django_db
+def test_event_creation_authorizes_configured_scenario_before_resolution(organizer_user, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ctf.services.content_resolution.resolve_scenario_ctf_content",
+        lambda _scenario_id: pytest.fail("resolver must not run"),
+    )
+    monkeypatch.setattr("ctf.bridges.cms_list_scenarios", lambda _user: [])
+    now = timezone.now()
+    with (
+        override_settings(CTF_CONTENT_REFERENCES=_configured_references()),
+        pytest.raises(CTFValidationError) as error,
+    ):
+        create_event(
+            organizer_user,
+            {
+                "name": "Unauthorized Content",
+                "event_start": now + timedelta(hours=1),
+                "event_end": now + timedelta(hours=2),
+                "scenario_id": "scenario-one",
+            },
+        )
+    assert error.value.code == "CTF_SCENARIO_NOT_AVAILABLE"

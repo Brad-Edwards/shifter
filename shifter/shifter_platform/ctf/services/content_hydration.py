@@ -278,12 +278,13 @@ def assert_event_content_hydration_ready(event: CTFEvent) -> None:
     from django.conf import settings
 
     reference = settings.CTF_CONTENT_REFERENCES.get(event.scenario_id)
-    if reference is None:
-        return
     with transaction.atomic():
         receipt = CTFContentHydrationReceipt.objects.select_for_update().filter(event=event).first()
+        if reference is None and receipt is None:
+            return
         if (
-            receipt is None
+            reference is None
+            or receipt is None
             or receipt.state != CTFContentHydrationReceipt.State.PRISTINE
             or receipt.scenario_id != event.scenario_id
             or receipt.declared_digest != reference.digest

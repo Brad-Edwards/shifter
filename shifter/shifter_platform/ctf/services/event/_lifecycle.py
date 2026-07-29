@@ -145,18 +145,6 @@ def activate_event(event: CTFEvent) -> bool:
     from ctf.models import CTFEvent
     from ctf.services.content_hydration import assert_event_content_hydration_ready
 
-    # Preserve the long-standing pure lifecycle test surface. Production
-    # callers always pass a persisted CTFEvent and therefore take the locked
-    # readiness path below.
-    if not isinstance(event, CTFEvent):
-        if event.status != EventStatus.REGISTRATION.value:
-            return False
-        try:
-            _transition_event(event, EventStatus.ACTIVE)
-        except CTFStateError:
-            return False
-        return True
-
     with transaction.atomic():
         locked_event = CTFEvent.objects.select_for_update().get(pk=event.pk)
         if locked_event.status != EventStatus.REGISTRATION.value:
