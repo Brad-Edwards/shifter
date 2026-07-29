@@ -121,10 +121,11 @@ variable "oidc_thumbprints" {
 variable "workload_identities" {
   description = "Per-process IRSA identities. Each map entry creates a distinct role bound to one exact namespace/service-account subject."
   type = map(object({
-    namespace       = string
-    service_account = string
-    policy_arns     = optional(set(string), [])
-    secret_names    = optional(set(string), [])
+    namespace        = string
+    service_account  = string
+    policy_arns      = optional(set(string), [])
+    secret_names     = optional(set(string), [])
+    object_read_arns = optional(set(string), [])
   }))
 
   validation {

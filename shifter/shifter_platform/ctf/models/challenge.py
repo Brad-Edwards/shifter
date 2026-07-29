@@ -54,6 +54,12 @@ class CTFChallenge(CTFBaseModel):
         related_name="challenges",
         help_text="Event this challenge belongs to",
     )
+    source_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Stable bundle-local challenge identity for managed event content",
+    )
     name = models.CharField(
         max_length=200,
         help_text="Challenge display name",
@@ -172,6 +178,11 @@ class CTFChallenge(CTFBaseModel):
                 fields=["event", "name"],
                 condition=Q(deleted_at__isnull=True),
                 name="unique_active_challenge_name_per_event",
+            ),
+            models.UniqueConstraint(
+                fields=["event", "source_id"],
+                condition=Q(deleted_at__isnull=True) & ~Q(source_id=""),
+                name="unique_active_challenge_source_per_event",
             ),
         ]
         indexes = [

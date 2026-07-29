@@ -264,6 +264,12 @@ variable "raes_package_bucket_name" {
   default     = ""
 }
 
+variable "ctf_content_bucket_name" {
+  description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Grants the portal read-only access; empty disables the binding."
+  type        = string
+  default     = ""
+}
+
 variable "enable_cicd_github_oidc" {
   description = "Create the GitHub Actions -> GCP Workload Identity federation (pool, provider, packer build SA). Default true. Set false for tenants whose org blocks the GitHub OIDC issuer (constraints on iam.workloadIdentityPoolProviders) or that do not use GitHub Actions CI; the platform itself does not depend on it (#1723)."
   type        = bool

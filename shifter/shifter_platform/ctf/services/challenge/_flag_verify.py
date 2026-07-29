@@ -301,3 +301,8 @@ def _validate_http_config(validator_config: dict[str, Any] | None) -> None:
             "validator_config.timeout must be an integer between 1 and 30",
             details={"timeout": timeout},
         )
+
+
+def validate_http_flag_config(validator_config: dict[str, Any] | None) -> None:
+    """Public pure validation boundary shared by interactive and bundle writes."""
+    _validate_http_config(validator_config)

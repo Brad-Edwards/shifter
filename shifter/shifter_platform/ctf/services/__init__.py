@@ -52,6 +52,11 @@ from ctf.services.challenge import (
     verify_flag,
     verify_single_flag,
 )
+from ctf.services.content_hydration import (
+    assert_event_content_hydration_ready,
+    hydrate_event_ctf_content,
+)
+from ctf.services.content_resolution import resolve_scenario_ctf_content
 from ctf.services.dashboard import active_event_summary
 from ctf.services.event import (
     activate_event,
@@ -132,6 +137,7 @@ __all__ = [
     "add_hint",
     "add_prerequisite",
     "archive_event",
+    "assert_event_content_hydration_ready",
     "assign_participant_bracket",
     "authenticate_ctf_participant",
     "ban_participant",
@@ -183,6 +189,7 @@ __all__ = [
     "get_unlocked_hints",
     "grant_award",
     "hash_flag",
+    "hydrate_event_ctf_content",
     "invite_participant",
     "list_brackets",
     "list_challenges_for_event",
@@ -199,6 +206,7 @@ __all__ = [
     "requalify_participant",
     "request_event_provisioning",
     "resend_invite",
+    "resolve_scenario_ctf_content",
     "resume_event",
     "revoke_award",
     "schedule_event",

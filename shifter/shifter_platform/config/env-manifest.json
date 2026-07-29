@@ -548,6 +548,26 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "''",
+      "name": "SHIFTER_CTF_CONTENT_BUCKET",
+      "source_file": "config/_ctf_content_settings.py"
+    },
+    {
+      "default": "str(_DEFAULT_MAX_BYTES)",
+      "name": "SHIFTER_CTF_CONTENT_MAX_BYTES",
+      "source_file": "config/_ctf_content_settings.py"
+    },
+    {
+      "default": "'ctf/content-bundles'",
+      "name": "SHIFTER_CTF_CONTENT_PREFIX",
+      "source_file": "config/_ctf_content_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "SHIFTER_CTF_CONTENT_REFERENCES_JSON",
+      "source_file": "config/_ctf_content_settings.py"
+    },
+    {
       "default": "'268435456'",
       "name": "SHIFTER_RAES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES",
       "source_file": "config/_raes_settings.py"

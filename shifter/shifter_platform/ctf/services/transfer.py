@@ -181,7 +181,7 @@ def _import_entry(
                 if is_ctfd:
                     _create_from_ctfd(event, entry, actor_id=actor_id)
                 else:
-                    _create_from_shifter(event, entry)
+                    _create_from_shifter(event, entry, actor_id=actor_id)
         except (CTFValidationError, ValueError) as exc:
             logger.info("Challenge import entry %d failed: %s", index, safe_log_value(str(exc)))
             error = {"index": index, "name": name, "error": "Challenge entry failed validation."}
@@ -237,7 +237,7 @@ def _create_ctfd_hints(challenge: CTFChallenge, hints: list[Any]) -> None:
             )
 
 
-def _create_from_shifter(event: CTFEvent, entry: dict[str, Any]) -> CTFChallenge:
+def _create_from_shifter(event: CTFEvent, entry: dict[str, Any], *, actor_id: int) -> CTFChallenge:
     """Create one challenge from a shifter-format entry (hashed verification material)."""
     scalars = {field: entry[field] for field in _CHALLENGE_SCALARS if field in entry and entry[field] is not None}
     flag_hash = str(entry.get("flag_hash") or "")
@@ -246,6 +246,13 @@ def _create_from_shifter(event: CTFEvent, entry: dict[str, Any]) -> CTFChallenge
     challenge = CTFChallenge.objects.create(event=event, flag_hash=flag_hash, **scalars)
     _create_shifter_flags(challenge, entry.get("flags") or [])
     _create_shifter_hints(challenge, entry.get("hints") or [])
+    from ctf.services.content_hydration import mark_content_hydration_drift
+
+    mark_content_hydration_drift(
+        event.pk,
+        actor_id=actor_id,
+        reason="challenge_imported",
+    )
     return challenge
 
 

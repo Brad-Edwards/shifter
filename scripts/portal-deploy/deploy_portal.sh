@@ -187,6 +187,32 @@ validate_bool() {
   fi
 }
 
+validate_ctf_content_location() {
+  local bucket="$1"
+  local prefix="$2"
+  local max_bytes="$3"
+
+  if [[ -z "$bucket" ]]; then
+    if [[ -n "$prefix" || -n "$max_bytes" ]]; then
+      echo "Invalid CTF content configuration: prefix and max bytes require a bucket" >&2
+      exit 1
+    fi
+    return
+  fi
+  if [[ ! "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_BUCKET" >&2
+    exit 1
+  fi
+  if [[ ! "$prefix" =~ ^[A-Za-z0-9._/-]+/$ || "$prefix" == /* || "$prefix" == *..* ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_PREFIX" >&2
+    exit 1
+  fi
+  if [[ -z "$max_bytes" ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_MAX_BYTES: required with bucket" >&2
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -326,6 +352,9 @@ main() {
   local ecr_repository
   local domain_name
   local s3_bucket
+  local ctf_content_bucket
+  local ctf_content_prefix
+  local ctf_content_max_bytes
   local db_secret_arn
   local app_secret_arn
   local cognito_secret_arn
@@ -374,6 +403,9 @@ main() {
   ecr_repository=$(get_param "$PS_PREFIX/ecr-repository")
   domain_name=$(get_param "$PS_PREFIX/domain-name")
   s3_bucket=$(get_param "$PS_PREFIX/s3-bucket")
+  ctf_content_bucket=$(get_optional_param "$PS_PREFIX/ctf-content-bucket")
+  ctf_content_prefix=$(get_optional_param "$PS_PREFIX/ctf-content-prefix")
+  ctf_content_max_bytes=$(get_optional_param "$PS_PREFIX/ctf-content-max-bytes")
   db_secret_arn=$(get_param "$PS_PREFIX/db-secret-arn")
   app_secret_arn=$(get_param "$PS_PREFIX/app-secret-arn")
   cognito_secret_arn=$(get_param "$PS_PREFIX/cognito-secret-arn")
@@ -404,6 +436,8 @@ main() {
   platform_bootstrap_superuser_emails=$(get_optional_param "$PS_PREFIX/platform-bootstrap-superuser-emails")
   validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_STAFF_EMAILS" "$platform_bootstrap_staff_emails"
   validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS" "$platform_bootstrap_superuser_emails"
+  validate_ctf_content_location "$ctf_content_bucket" "$ctf_content_prefix" "$ctf_content_max_bytes"
+  validate_positive_int "SHIFTER_CTF_CONTENT_MAX_BYTES" "$ctf_content_max_bytes"
 
   # Portal runtime capacity tunables (#930). Each is process-local: the
   # per-instance ceiling is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS. Read the
@@ -444,6 +478,11 @@ main() {
   append_env CLOUD_PROVIDER "$cloud_provider"
   append_env AWS_REGION "$AWS_REGION"
   append_env AWS_S3_BUCKET_NAME "$s3_bucket"
+  if [[ -n "$ctf_content_bucket" ]]; then
+    append_env SHIFTER_CTF_CONTENT_BUCKET "$ctf_content_bucket"
+    append_env SHIFTER_CTF_CONTENT_PREFIX "$ctf_content_prefix"
+    append_env SHIFTER_CTF_CONTENT_MAX_BYTES "$ctf_content_max_bytes"
+  fi
   append_env DB_SECRET_ARN "$db_secret_arn"
   append_env APP_SECRET_ARN "$app_secret_arn"
   append_env COGNITO_SECRET_ARN "$cognito_secret_arn"

@@ -452,6 +452,21 @@ resource "aws_iam_role_policy" "raes_package_read" {
   })
 }
 
+resource "aws_iam_role_policy" "ctf_content_read" {
+  count = var.ctf_content_bucket_arn != "" ? 1 : 0
+  name  = "ctf-content-read"
+  role  = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:GetObject"]
+      Resource = "${var.ctf_content_bucket_arn}/${var.ctf_content_prefix}*"
+    }]
+  })
+}
+
 resource "aws_iam_role_policy" "ecs_run_task" {
   name = "ecs-run-task"
   role = aws_iam_role.this.id

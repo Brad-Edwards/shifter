@@ -13,6 +13,11 @@ locals {
     identity_name => identity
     if length(identity.secret_names) > 0
   }
+  workload_object_read_access = {
+    for identity_name, identity in var.workload_identities :
+    identity_name => identity.object_read_arns
+    if length(identity.object_read_arns) > 0
+  }
 }
 
 resource "aws_iam_role" "cluster" {
@@ -151,5 +156,20 @@ resource "aws_iam_role_policy" "workload_secrets" {
         }
       },
     ]
+  })
+}
+
+resource "aws_iam_role_policy" "workload_object_read" {
+  for_each = local.workload_object_read_access
+
+  name = "exact-object-read"
+  role = aws_iam_role.workload[each.key].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:GetObject"]
+      Resource = sort(tolist(each.value))
+    }]
   })
 }

@@ -540,6 +540,13 @@ module "ssm" {
   domain_name       = var.domain_name
   s3_bucket_name    = var.user_storage_bucket
   ctfd_platform_url = var.enable_ctfd ? "${module.ctfd[0].url}/login" : ""
+  ctf_content_bucket_name = (
+    var.ctf_content_bucket_arn == ""
+    ? ""
+    : trimprefix(var.ctf_content_bucket_arn, "arn:aws:s3:::")
+  )
+  ctf_content_prefix    = var.ctf_content_prefix
+  ctf_content_max_bytes = var.ctf_content_max_bytes
 
   # Engine provisioner configuration
   engine_ecs_cluster_arn        = module.engine_provisioner.ecs_cluster_arn
@@ -630,6 +637,8 @@ module "ec2" {
   s3_bucket_arn               = module.s3.bucket_arn
   raes_package_bucket_arn     = var.raes_package_bucket_arn
   raes_package_prefix         = var.raes_package_prefix
+  ctf_content_bucket_arn      = var.ctf_content_bucket_arn
+  ctf_content_prefix          = var.ctf_content_prefix
   app_port                    = var.app_port
   root_volume_size            = var.ec2_root_volume_size
 

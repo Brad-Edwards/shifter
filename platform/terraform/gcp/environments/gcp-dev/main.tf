@@ -94,6 +94,7 @@ module "platform_core" {
   range_egress_mode                 = var.range_egress_mode
   range_egress_allowed_cidrs        = var.range_egress_allowed_cidrs
   raes_package_bucket_name          = var.raes_package_bucket_name
+  ctf_content_bucket_name           = var.ctf_content_bucket_name
   labels                            = local.labels
 
   messaging_enable_dlq                  = var.messaging_enable_dlq
