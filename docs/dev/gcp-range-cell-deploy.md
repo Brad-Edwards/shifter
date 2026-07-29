@@ -182,6 +182,12 @@ before any Compute or secret client is created; they never fall back to the
 default role image. The adapter routes host access and bootstrap from this
 trusted profile metadata, never from a scenario or image-name literal.
 
+Profiles that require participant web research may set
+`"allow_public_web_egress": true`. The range-cell backend then adds a
+range-owned egress rule allowing only TCP 80/443 to public IPv4 through the
+shared VPC's Cloud NAT. The default is `false`; the per-range default-deny rule
+remains in place, and unrelated profiles receive no public egress allowance.
+
 The value is a non-secret JSON object, limited to 32,768 bytes and 64 total
 entries. Profile classes and fields are closed. Logical keys must be lowercase
 letters, digits, and hyphens. For example:
@@ -229,7 +235,8 @@ An exact machine-image entry uses this conditional shape:
       "participant_container_name": "participant-desktop",
       "participant_username": "operator",
       "host_ssh_username": "hostadmin",
-      "host_ssh_port": 2222
+      "host_ssh_port": 2222,
+      "allow_public_web_egress": true
     }
   }
 }

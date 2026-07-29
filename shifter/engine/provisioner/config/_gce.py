@@ -45,6 +45,7 @@ class GCERangeImageProfile:
     participant_username: str = ""
     host_ssh_username: str = ""
     host_ssh_port: int = 22
+    allow_public_web_egress: bool = False
 
 
 def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
@@ -180,6 +181,7 @@ class GCERangeCellConfig:
                 participant_username=profile.participant_username,
                 host_ssh_username=profile.host_ssh_username,
                 host_ssh_port=profile.host_ssh_port,
+                allow_public_web_egress=profile.allow_public_web_egress,
             )
         return profile
 
@@ -202,6 +204,7 @@ _GCE_PROFILE_OPTIONAL_FIELDS = frozenset(
         "participant_username",
         "host_ssh_username",
         "host_ssh_port",
+        "allow_public_web_egress",
     }
 )
 _GCE_PROFILE_FIELDS = _GCE_PROFILE_REQUIRED_FIELDS | _GCE_PROFILE_OPTIONAL_FIELDS
@@ -413,6 +416,9 @@ def _parse_gce_image_key_profile(
     host_ssh_port = entry.get("host_ssh_port", 22)
     if isinstance(host_ssh_port, bool) or not isinstance(host_ssh_port, int):
         raise RuntimeError(f"{location}.host_ssh_port must be an integer")
+    allow_public_web_egress = entry.get("allow_public_web_egress", False)
+    if not isinstance(allow_public_web_egress, bool):
+        raise RuntimeError(f"{location}.allow_public_web_egress must be a boolean")
     if not _GCE_LOGICAL_NAME_RE.fullmatch(machine_type):
         raise RuntimeError(f"{location}.machine_type is not a valid Compute Engine machine type")
 
@@ -429,6 +435,7 @@ def _parse_gce_image_key_profile(
         participant_username=participant_username,
         host_ssh_username=host_ssh_username,
         host_ssh_port=host_ssh_port,
+        allow_public_web_egress=allow_public_web_egress,
     )
     _validate_gce_range_profile(
         location,

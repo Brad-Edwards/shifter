@@ -778,6 +778,7 @@ class TestRangeNetworkEnv:
                     "participant_username": "operator",
                     "host_ssh_username": "hostadmin",
                     "host_ssh_port": 2222,
+                    "allow_public_web_egress": True,
                 }
             }
         }
@@ -805,6 +806,7 @@ class TestRangeNetworkEnv:
         assert profile.source_machine_image == "projects/test/global/machineImages/nested-host-v1"
         assert profile.participant_container_name == "participant-desktop"
         assert profile.host_ssh_port == 2222
+        assert profile.allow_public_web_egress is True
         assert config.range_host_identity_pool_size == 200
 
     @pytest.mark.parametrize(
@@ -834,6 +836,12 @@ class TestRangeNetworkEnv:
                 '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
                 '"disk_size_gb":true,"disk_type":"pd-balanced","bootstrap_capability":"standard"}}}',
                 "positive integer",
+            ),
+            (
+                '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'
+                '"disk_size_gb":210,"disk_type":"pd-balanced","bootstrap_capability":"standard",'
+                '"allow_public_web_egress":"yes"}}}',
+                "allow_public_web_egress must be a boolean",
             ),
             (
                 '{"kali":{"polaris-vm":{"source_image":"family/polaris","machine_type":"e2-standard-8",'

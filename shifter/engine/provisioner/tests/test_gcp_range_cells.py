@@ -399,6 +399,29 @@ def test_render_range_cell_plan_private_google_access_adds_egress_hole():
     assert "shifter-r-42-egress-googleapis" in firewall_names
 
 
+def test_render_range_cell_plan_profile_can_allow_public_web_egress():
+    config = _sample_config()
+    config = dataclasses.replace(
+        config,
+        kali=dataclasses.replace(config.kali, allow_public_web_egress=True),
+    )
+
+    plan = render_range_cell_plan("req-123", _variables(), config)
+    firewalls = {firewall["name"]: firewall for firewall in plan["firewalls"]}
+
+    web = firewalls["shifter-r-42-egress-web"]
+    assert web["priority"] == 1200
+    assert web["destination_ranges"] == ["0.0.0.0/0"]
+    assert web["allowed"] == [{"IPProtocol": "tcp", "ports": ["80", "443"]}]
+    assert firewalls["shifter-r-42-egress-deny"]["denied"] == [{"IPProtocol": "all"}]
+
+
+def test_render_range_cell_plan_default_profile_keeps_public_web_denied():
+    plan = render_range_cell_plan("req-123", _variables(), _sample_config())
+
+    assert not any(firewall["name"].endswith("-egress-web") for firewall in plan["firewalls"])
+
+
 def test_render_range_cell_plan_private_google_access_adds_target_only_vpn_gateway():
     config = dataclasses.replace(_shared_vpc_config(), private_google_access=True)
 
@@ -1750,7 +1773,7 @@ def test_destroy_range_cell_deletes_every_resource(mocker):
 
     assert clients.instances.delete.call_count == 2
     assert clients.addresses.delete.call_count == 2
-    assert clients.firewalls.delete.call_count == 4
+    assert clients.firewalls.delete.call_count == 5
     assert clients.subnetworks.delete.call_count == 1
     clients.networks.delete.assert_called_once()
     assert mocks.delete_ssh.call_count == 2
@@ -1761,6 +1784,7 @@ def test_destroy_range_cell_deletes_every_resource(mocker):
         call.delete_address(project="test-project", region="us-central1", address="shifter-r-42-polaris-dc01-ip"),
         call.delete_instance(project="test-project", zone="us-central1-b", instance="shifter-r-42-polaris-kali"),
         call.delete_address(project="test-project", region="us-central1", address="shifter-r-42-polaris-kali-ip"),
+        call.delete_firewall(project="test-project", firewall="shifter-r-42-egress-web"),
         call.delete_firewall(project="test-project", firewall="shifter-r-42-egress-deny"),
         call.delete_firewall(project="test-project", firewall="shifter-r-42-egress-internal"),
         call.delete_firewall(project="test-project", firewall="shifter-r-42-mgmt"),
@@ -1768,6 +1792,32 @@ def test_destroy_range_cell_deletes_every_resource(mocker):
         call.delete_subnetwork(project="test-project", region="us-central1", subnetwork="shifter-r-42-polaris"),
         call.delete_network(project="test-project", network="shifter-range-42"),
     ]
+
+
+def test_destroy_range_cell_deletes_profile_web_egress_rule(mocker):
+    clients = _mock_clients(exists=True)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+    config = _sample_config()
+    config = dataclasses.replace(
+        config,
+        kali=dataclasses.replace(config.kali, allow_public_web_egress=True),
+    )
+
+    destroy_range_cell(
+        "req-123",
+        _variables(),
+        backend="gce",
+        config=config,
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    clients.firewalls.delete.assert_any_call(
+        project="test-project",
+        firewall="shifter-r-42-egress-web",
+    )
 
 
 def test_destroy_range_cell_marks_inherited_disks_for_instance_deletion(mocker):
