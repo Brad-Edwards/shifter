@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from shared.range_cells import RangeCellContractError, build_gcp_vm_range_cell_result
 
-from config import GCERangeCellConfig
+from config import GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST, GCERangeCellConfig
 from gcp_range_cell_plan import InstancePlan, RangeCellPlan, ResourceDict
 
 
@@ -76,6 +76,12 @@ def instance_output(
     if instance["profile"].source_machine_image:
         output["gcp_source_machine_image"] = instance["profile"].source_machine_image
         output["gcp_participant_container_name"] = instance["profile"].participant_container_name
+        # The participant desktop is inside the nested host, while port 22 is
+        # reserved for key-only host management. Guacamole must not try to use
+        # the desktop password for SFTP against that outer host.
+        output["participant_sftp_enabled"] = (
+            instance["profile"].bootstrap_capability != GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST
+        )
     # Resolved per-channel participant logins (#1710). Emitted only on the
     # RAES-native path, where SSH and RDP may be brokered as different authored
     # accounts and the instance-wide ssh_username is the reserved management

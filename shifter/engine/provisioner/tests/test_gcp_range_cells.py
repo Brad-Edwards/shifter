@@ -324,6 +324,19 @@ def test_render_range_cell_plan_selects_bounded_machine_host_identity():
     assert attacker["ssh_port"] == 2222
     assert attacker["service_account_email"] == gcp_range_host_pool_service_account_email("test-project", 4)
 
+    output = instance_output(
+        plan,
+        attacker,
+        InstanceCredentials(
+            host_ssh_secret_ref="projects/test/secrets/host-ssh",
+            participant_ssh_secret_ref=None,
+            rdp_password_secret_ref="projects/test/secrets/rdp",
+            ssh_public_key="ssh-ed25519 HOST",
+        ),
+        config,
+    )
+    assert output["participant_sftp_enabled"] is False
+
 
 def test_render_range_cell_plan_shards_machine_hosts_across_bounded_identity_pool():
     base = _sample_config()

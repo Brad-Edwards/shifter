@@ -122,6 +122,7 @@ class RDPConnectionParams:
     security: str = "any"
     sftp_root_directory: str | None = None
     sftp_private_key: str | None = None
+    sftp_enabled: bool = True
 
 
 def create_rdp_connection_params(req: RDPConnectionParams) -> dict[str, str]:
@@ -162,7 +163,7 @@ def create_rdp_connection_params(req: RDPConnectionParams) -> dict[str, str]:
 
     # SFTP file transfer - works reliably for both Windows and Linux (xrdp)
     # Uses SSH connection for file transfers via Guacamole menu (Ctrl+Alt+Shift)
-    if username and (password or sftp_private_key):
+    if req.sftp_enabled and username and (password or sftp_private_key):
         params["enable-sftp"] = "true"
         params["sftp-hostname"] = hostname
         params["sftp-port"] = "22"
@@ -340,6 +341,7 @@ class GuacRDPUrlRequest:
     api_base_url: str | None = None
     sftp_root_directory: str | None = None
     sftp_private_key: str | None = None
+    sftp_enabled: bool = True
     security: str = "any"
 
 
@@ -372,6 +374,7 @@ def create_guacamole_rdp_url(req: GuacRDPUrlRequest) -> str:
                     password=req.rdp_password,
                     sftp_root_directory=req.sftp_root_directory,
                     sftp_private_key=req.sftp_private_key,
+                    sftp_enabled=req.sftp_enabled,
                     security=req.security,
                 )
             ),
