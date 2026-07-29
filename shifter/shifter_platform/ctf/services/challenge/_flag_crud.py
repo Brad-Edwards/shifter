@@ -171,6 +171,14 @@ def add_flag(
     )
 
     with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(
+            challenge.event_id,
+            actor_id=actor_id,
+            reason="flag_added",
+            allow_live_repair=challenge.event.is_live_flag_repairable,
+        )
         flag_obj = CTFFlag.objects.create(
             challenge=challenge,
             flag_hash=stored_value,
@@ -179,14 +187,6 @@ def add_flag(
             order=order,
             validator_config=validator_config,
         )
-        from ctf.services.content_hydration import mark_content_hydration_drift
-
-        mark_content_hydration_drift(
-            challenge.event_id,
-            actor_id=actor_id,
-            reason="flag_added",
-        )
-
         if challenge.event.is_live_flag_repairable:
             from ctf.services.audit import audit_live_flag_repair
 
@@ -247,6 +247,14 @@ def update_flag(
     )
 
     with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(
+            challenge.event_id,
+            actor_id=actor_id,
+            reason="flag_updated",
+            allow_live_repair=challenge.event.is_live_flag_repairable,
+        )
         flag_obj.flag_hash = stored_value
         flag_obj.flag_type = flag_type
         flag_obj.case_sensitive = case_sensitive
@@ -262,14 +270,6 @@ def update_flag(
                 "updated_at",
             ]
         )
-        from ctf.services.content_hydration import mark_content_hydration_drift
-
-        mark_content_hydration_drift(
-            challenge.event_id,
-            actor_id=actor_id,
-            reason="flag_updated",
-        )
-
         if challenge.event.is_live_flag_repairable:
             from ctf.services.audit import audit_live_flag_repair
 
@@ -314,6 +314,14 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
         )
 
     with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(
+            flag_obj.challenge.event_id,
+            actor_id=actor_id,
+            reason="flag_removed",
+            allow_live_repair=flag_obj.challenge.event.is_live_flag_repairable,
+        )
         if flag_obj.challenge.event.is_live_flag_repairable:
             from ctf.services.audit import audit_live_flag_repair
 
@@ -326,13 +334,6 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
             )
 
         flag_obj.delete(soft=True)
-        from ctf.services.content_hydration import mark_content_hydration_drift
-
-        mark_content_hydration_drift(
-            flag_obj.challenge.event_id,
-            actor_id=actor_id,
-            reason="flag_removed",
-        )
     logger.info("Removed flag %s", safe_log_value(flag_id))
 
 

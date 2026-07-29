@@ -162,6 +162,11 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | secret | no | Comma-separated list of emails elevated to `is_superuser`. |
 | `SMOKE_TEST_USER_EMAIL` | secret | no | Post-deploy smoke user for the advisory `post-deploy-smoke` job. Same contract as AWS dev smoke; see [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
 
+Native CTF scenario-content references live in the existing application secret,
+not in GitHub variables or the generated ConfigMap. Configure the private
+bucket through the GCP Terraform input and follow the
+[native CTF scenario-content runbook](ctf-scenario-content.md).
+
 For local GCP bootstrap, `scripts/bootstrap/deploy.py` validates the bootstrap
 operator email against the Terraform output `identity_allowed_email_domain`.
 When Terraform outputs are not available yet, it uses
@@ -272,6 +277,12 @@ values the `example.com` baseline deliberately leaves non-operational:
   CTFd SSH ingress closed)
 - `user_storage_bucket` and any other AWS-account-suffixed bucket names
   that vary per environment
+
+For native scenario-provided CTF challenges, the same overlay may also set
+`ctf_content_bucket_arn`, `ctf_content_prefix`, and
+`ctf_content_max_bytes`. The bounded reference catalog belongs in the existing
+application secret, not in the tfvars payload. See the
+[native CTF scenario-content runbook](ctf-scenario-content.md).
 
 For AWS local deploys, write the same HCL to a gitignored
 `local.auto.tfvars` next to the environment's `terraform.tfvars` and run

@@ -243,9 +243,6 @@ def _create_from_shifter(event: CTFEvent, entry: dict[str, Any], *, actor_id: in
     flag_hash = str(entry.get("flag_hash") or "")
     if not flag_hash:
         raise CTFValidationError("Shifter entry has no flag_hash", code="CTF_INVALID_IMPORT")
-    challenge = CTFChallenge.objects.create(event=event, flag_hash=flag_hash, **scalars)
-    _create_shifter_flags(challenge, entry.get("flags") or [])
-    _create_shifter_hints(challenge, entry.get("hints") or [])
     from ctf.services.content_hydration import mark_content_hydration_drift
 
     mark_content_hydration_drift(
@@ -253,6 +250,9 @@ def _create_from_shifter(event: CTFEvent, entry: dict[str, Any], *, actor_id: in
         actor_id=actor_id,
         reason="challenge_imported",
     )
+    challenge = CTFChallenge.objects.create(event=event, flag_hash=flag_hash, **scalars)
+    _create_shifter_flags(challenge, entry.get("flags") or [])
+    _create_shifter_hints(challenge, entry.get("hints") or [])
     return challenge
 
 

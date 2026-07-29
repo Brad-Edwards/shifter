@@ -18,7 +18,12 @@ from django.utils import timezone
 
 from ctf.enums import ChallengeCategory, ChallengeDifficulty, EventStatus
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
-from ctf.models import CTFChallenge, CTFChallengeFile, CTFEvent
+from ctf.models import (
+    CTFChallenge,
+    CTFChallengeFile,
+    CTFContentHydrationReceipt,
+    CTFEvent,
+)
 from ctf.services.attachment import (
     add_challenge_file,
     get_challenge_files,
@@ -64,6 +69,24 @@ def challenge(db, draft_event):
         points=200,
         difficulty=ChallengeDifficulty.MEDIUM.value,
         flag_hash="$2b$12$hash_file_test",
+    )
+
+
+def _add_pristine_receipt(challenge: CTFChallenge) -> CTFContentHydrationReceipt:
+    return CTFContentHydrationReceipt.objects.create(
+        event=challenge.event,
+        scenario_id=challenge.event.scenario_id,
+        reference_contract="shifter-ctf-content-references/v1",
+        bundle_contract="shifter-ctf-content/v1",
+        declared_digest=f"sha256:{'a' * 64}",
+        object_key_fingerprint="b" * 64,
+        object_identity_fingerprint="c" * 64,
+        object_size_bytes=100,
+        challenge_count=1,
+        flag_count=1,
+        hint_count=0,
+        prerequisite_count=0,
+        hydrated_by_id=challenge.event.created_by_id,
     )
 
 
@@ -116,6 +139,20 @@ class TestAddChallengeFile:
         f1 = add_challenge_file(challenge.id, _make_file(), "file1.txt", actor_id=challenge.event.created_by_id)
         f2 = add_challenge_file(challenge.id, _make_file(), "file2.txt", actor_id=challenge.event.created_by_id)
         assert f2.order > f1.order
+
+    def test_upload_marks_managed_content_drifted(self, challenge, mock_s3):
+        receipt = _add_pristine_receipt(challenge)
+
+        add_challenge_file(
+            challenge.id,
+            _make_file(),
+            "evidence.txt",
+            actor_id=challenge.event.created_by_id,
+        )
+
+        receipt.refresh_from_db()
+        assert receipt.state == CTFContentHydrationReceipt.State.DRIFTED
+        assert receipt.drift_reason == "attachment_added"
 
     def test_disallowed_extension_rejected(self, challenge, mock_s3):
         """File with disallowed extension is rejected."""
@@ -280,6 +317,21 @@ class TestRemoveChallengeFile:
         """Removing a nonexistent file raises CTFNotFoundError."""
         with pytest.raises(CTFNotFoundError):
             remove_challenge_file(uuid4(), actor_id=1)
+
+    def test_remove_marks_managed_content_drifted(self, challenge, mock_s3):
+        cf = add_challenge_file(
+            challenge.id,
+            _make_file(),
+            "evidence.txt",
+            actor_id=challenge.event.created_by_id,
+        )
+        receipt = _add_pristine_receipt(challenge)
+
+        remove_challenge_file(cf.id, actor_id=challenge.event.created_by_id)
+
+        receipt.refresh_from_db()
+        assert receipt.state == CTFContentHydrationReceipt.State.DRIFTED
+        assert receipt.drift_reason == "attachment_removed"
 
     def test_s3_delete_failure_still_soft_deletes(self, challenge, mock_s3):
         """If S3 delete fails, the record is still soft-deleted."""

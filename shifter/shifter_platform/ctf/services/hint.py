@@ -60,18 +60,18 @@ def add_hint(challenge_id: UUID, hint_data: dict[str, Any], *, actor_id: int) ->
     order = hint_data.get("order", challenge.hints.count())
 
     with transaction.atomic():
-        hint = CTFHint.objects.create(
-            challenge=challenge,
-            text=text,
-            penalty=penalty,
-            order=order,
-        )
         from ctf.services.content_hydration import mark_content_hydration_drift
 
         mark_content_hydration_drift(
             challenge.event_id,
             actor_id=actor_id,
             reason="hint_added",
+        )
+        hint = CTFHint.objects.create(
+            challenge=challenge,
+            text=text,
+            penalty=penalty,
+            order=order,
         )
 
     logger.info("Added hint %s (order=%d) to challenge %s", hint.id, order, challenge_id)
@@ -113,10 +113,6 @@ def update_hint(hint_id: UUID, hint_data: dict[str, Any], *, actor_id: int) -> C
         )
 
     with transaction.atomic():
-        for field in ("text", "penalty", "order"):
-            if field in hint_data:
-                setattr(hint, field, hint_data[field])
-        hint.save()
         from ctf.services.content_hydration import mark_content_hydration_drift
 
         mark_content_hydration_drift(
@@ -124,6 +120,10 @@ def update_hint(hint_id: UUID, hint_data: dict[str, Any], *, actor_id: int) -> C
             actor_id=actor_id,
             reason="hint_updated",
         )
+        for field in ("text", "penalty", "order"):
+            if field in hint_data:
+                setattr(hint, field, hint_data[field])
+        hint.save()
 
     logger.info("Updated hint %s", hint_id)
     return hint
@@ -160,7 +160,6 @@ def remove_hint(hint_id: UUID, *, actor_id: int) -> None:
         )
 
     with transaction.atomic():
-        hint.delete(soft=True)
         from ctf.services.content_hydration import mark_content_hydration_drift
 
         mark_content_hydration_drift(
@@ -168,6 +167,7 @@ def remove_hint(hint_id: UUID, *, actor_id: int) -> None:
             actor_id=actor_id,
             reason="hint_removed",
         )
+        hint.delete(soft=True)
     logger.info("Removed hint %s", hint_id)
 
 

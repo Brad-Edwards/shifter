@@ -248,10 +248,19 @@ def mark_content_hydration_drift(
     *,
     actor_id: int | None,
     reason: str,
+    allow_live_repair: bool = False,
 ) -> bool:
-    """Mark managed event content drifted inside the caller's transaction."""
+    """Lock and mark managed content before the caller mutates it."""
     receipt = CTFContentHydrationReceipt.objects.select_for_update().filter(event_id=event_id).first()
-    if receipt is None or receipt.state == CTFContentHydrationReceipt.State.DRIFTED:
+    if receipt is None:
+        return False
+    event = CTFEvent.objects.get(pk=event_id)
+    if not event.is_content_modifiable and not (allow_live_repair and event.is_live_flag_repairable):
+        raise CTFStateError(
+            "Event content is not modifiable.",
+            code="CTF_CONTENT_EVENT_STATE",
+        )
+    if receipt.state == CTFContentHydrationReceipt.State.DRIFTED:
         return False
     receipt.state = CTFContentHydrationReceipt.State.DRIFTED
     receipt.drift_reason = reason[:64]
@@ -271,7 +280,7 @@ def assert_event_content_hydration_ready(event: CTFEvent) -> None:
     reference = settings.CTF_CONTENT_REFERENCES.get(event.scenario_id)
     if reference is None:
         return
-    receipt = CTFContentHydrationReceipt.objects.filter(event=event).first()
+    receipt = CTFContentHydrationReceipt.objects.select_for_update().filter(event=event).first()
     if (
         receipt is None
         or receipt.state != CTFContentHydrationReceipt.State.PRISTINE

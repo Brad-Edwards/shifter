@@ -135,16 +135,16 @@ def add_prerequisite(
                 },
             )
 
-        prereq = CTFChallengePrerequisite.objects.create(
-            challenge=challenge,
-            required_challenge=required,
-        )
         from ctf.services.content_hydration import mark_content_hydration_drift
 
         mark_content_hydration_drift(
             challenge.event_id,
             actor_id=actor_id,
             reason="prerequisite_added",
+        )
+        prereq = CTFChallengePrerequisite.objects.create(
+            challenge=challenge,
+            required_challenge=required,
         )
 
     logger.info(
@@ -219,7 +219,6 @@ def remove_prerequisite(prerequisite_id: UUID, *, actor_id: int) -> None:
         )
 
     with transaction.atomic():
-        prereq.delete(soft=True)
         from ctf.services.content_hydration import mark_content_hydration_drift
 
         mark_content_hydration_drift(
@@ -227,6 +226,7 @@ def remove_prerequisite(prerequisite_id: UUID, *, actor_id: int) -> None:
             actor_id=actor_id,
             reason="prerequisite_removed",
         )
+        prereq.delete(soft=True)
     logger.info("Removed prerequisite %s", safe_log_value(prerequisite_id))
 
 

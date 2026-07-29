@@ -164,6 +164,9 @@ def create_challenge(
     safe_data["source_id"] = source_id
 
     with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(event.pk, actor_id=actor_id, reason="challenge_created")
         challenge = CTFChallenge.objects.create(event=event, **safe_data)
         _apply_challenge_m2m(
             challenge,
@@ -173,10 +176,6 @@ def create_challenge(
             flags_list=flags_list,
             actor_id=actor_id,
         )
-        from ctf.services.content_hydration import mark_content_hydration_drift
-
-        mark_content_hydration_drift(event.pk, actor_id=actor_id, reason="challenge_created")
-
         logger.info(
             "Created challenge %s for event %s: %s",
             challenge.id,
@@ -275,17 +274,18 @@ def update_challenge(challenge_id: UUID, challenge_data: dict[str, Any], *, acto
     safe_data = _build_safe_update_payload(data, challenge)
 
     with transaction.atomic():
-        for key, value in safe_data.items():
-            setattr(challenge, key, value)
-        challenge.save()
-        _apply_optional_challenge_associations(challenge, flags_list, tag_names, topic_names, actor_id)
         from ctf.services.content_hydration import mark_content_hydration_drift
 
         mark_content_hydration_drift(
             challenge.event_id,
             actor_id=actor_id,
             reason="challenge_updated",
+            allow_live_repair=challenge.event.is_live_flag_repairable,
         )
+        for key, value in safe_data.items():
+            setattr(challenge, key, value)
+        challenge.save()
+        _apply_optional_challenge_associations(challenge, flags_list, tag_names, topic_names, actor_id)
         logger.info("Updated challenge %s", safe_log_value(challenge_id))
 
         if challenge.event.is_live_flag_repairable and ("flag" in challenge_data or flags_list is not None):
@@ -339,9 +339,6 @@ def delete_challenge(challenge_id: UUID, *, actor_id: int) -> None:
         )
 
     with transaction.atomic():
-        # Soft-delete prerequisite links where this challenge is required
-        CTFChallengePrerequisite.objects.filter(required_challenge=challenge).update(deleted_at=timezone.now())
-        challenge.delete(soft=True)
         from ctf.services.content_hydration import mark_content_hydration_drift
 
         mark_content_hydration_drift(
@@ -349,4 +346,7 @@ def delete_challenge(challenge_id: UUID, *, actor_id: int) -> None:
             actor_id=actor_id,
             reason="challenge_deleted",
         )
+        # Soft-delete prerequisite links where this challenge is required
+        CTFChallengePrerequisite.objects.filter(required_challenge=challenge).update(deleted_at=timezone.now())
+        challenge.delete(soft=True)
     logger.info("Deleted challenge %s", safe_log_value(challenge_id))
