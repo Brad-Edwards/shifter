@@ -373,6 +373,34 @@ resource "aws_ssm_parameter" "terminal_max_sessions_per_user" {
   tags = local.common_tags
 }
 
+# RAES default-cutover selector + capability gate (#1310, ADR-031-R6). Non-secret,
+# fleet-uniform; user_data + the redeploy script read both and put them in the
+# container env so every portal/CMS/engine/MC/CTF/worker sees the same value.
+# Committed at the preserved-legacy posture; the flip (native true + a
+# polaris=polaris-raes route) is a deferred, reviewed per-environment tfvar change
+# once the plugin system + Polaris adapter deliver a conformance-passed pack.
+resource "aws_ssm_parameter" "shifter_raes_native_provisioning" {
+  name        = "${local.ps_prefix}/shifter-raes-native-provisioning"
+  description = "RAES-native provisioning capability/rollback gate (SHIFTER_RAES_NATIVE_PROVISIONING)"
+  type        = "String"
+  value       = tostring(var.shifter_raes_native_provisioning)
+
+  tags = local.common_tags
+}
+
+# SSM parameter values may not be empty, so the route param exists only when a
+# route is configured; the empty (preserved-legacy) posture is the parameter's
+# absence, which the readers resolve to "" via their get_param fallback.
+resource "aws_ssm_parameter" "shifter_raes_catalog_cutovers" {
+  count       = var.shifter_raes_catalog_cutovers != "" ? 1 : 0
+  name        = "${local.ps_prefix}/shifter-raes-catalog-cutovers"
+  description = "RAES catalog source-route selector: comma-separated public=source slug pairs (SHIFTER_RAES_CATALOG_CUTOVERS)"
+  type        = "String"
+  value       = var.shifter_raes_catalog_cutovers
+
+  tags = local.common_tags
+}
+
 resource "aws_ssm_parameter" "terminal_idle_timeout_seconds" {
   name        = "${local.ps_prefix}/terminal-idle-timeout-seconds"
   description = "Idle terminal session timeout in seconds (TERMINAL_IDLE_TIMEOUT_SECONDS)"

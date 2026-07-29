@@ -16,6 +16,7 @@ from django.contrib.auth import get_user_model
 from engine import create_range, destroy_range, destroy_range_by_request
 from engine.models import ProvisionerLaunchIntent, Range
 from shared.enums import ResourceStatus
+from shared.raes.runtime_target import RAES_PROVISIONING_PLAN_KIND
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
 # Opaque #1325 workspace scope binding. engine.services requires one on every
@@ -186,3 +187,30 @@ class TestDestroyRangeByRequest:
 
     def test_returns_false_when_request_not_found(self, db):
         assert destroy_range_by_request(uuid4()) is False
+
+    def test_legacy_range_enqueues_legacy_teardown(self, user, ecs_dispatch):
+        """A cyberscript range enqueues the legacy 'range destroy' launch intent (#1310).
+
+        Driven through the real teardown; the resource is asserted from the
+        persisted ProvisionerLaunchIntent payload, not a mocked internal call.
+        """
+        spec = _request_spec(user.id)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
+        provision_intent = ProvisionerLaunchIntent.objects.get()
+        assert destroy_range_by_request(spec.request_id) is True
+        teardown = ProvisionerLaunchIntent.objects.exclude(pk=provision_intent.pk).get()
+        assert teardown.payload["resource"] == "range"
+        assert teardown.payload["operation"] == "destroy"
+
+    def test_raes_range_enqueues_raes_teardown(self, user, ecs_dispatch):
+        """A persisted RAES plan enqueues the 'raes-range destroy' intent, not legacy (#1310)."""
+        spec = _request_spec(user.id)
+        create_range(spec, workspace_id=_WORKSPACE_ID)
+        provision_intent = ProvisionerLaunchIntent.objects.get()
+        Range.objects.filter(request__request_id=spec.request_id).update(
+            range_config={"kind": RAES_PROVISIONING_PLAN_KIND, "contract_version": "1", "resources": {}}
+        )
+        assert destroy_range_by_request(spec.request_id) is True
+        teardown = ProvisionerLaunchIntent.objects.exclude(pk=provision_intent.pk).get()
+        assert teardown.payload["resource"] == "raes-range"
+        assert teardown.payload["operation"] == "destroy"

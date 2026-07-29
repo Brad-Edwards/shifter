@@ -193,14 +193,61 @@ def test_dispatch_routes_native_for_raes_when_flag_on(user, native_on, monkeypat
     routed = {}
     monkeypatch.setattr(
         "cms.services._raes_range_create._create_raes_native_range_impl",
-        lambda u, s, *, range_source=None, instantiation_purpose=None: routed.update(
-            scenario=s, purpose=instantiation_purpose
+        lambda u, s, *, range_source=None, instantiation_purpose=None, raes_source_id=None: routed.update(
+            scenario=s, purpose=instantiation_purpose, source=raes_source_id
         ),
     )
     create_range_dispatch(user, "raes-x", {})
     assert routed["scenario"] == "raes-x"
+    # Unrouted direct RAES pick loads its own id as the internal source.
+    assert routed["source"] == "raes-x"
     # The product router always mints live-fire authority (#1354, ADR-030-R6).
     assert routed["purpose"] is InstantiationPurpose.LIVE_FIRE
+
+
+@pytest.mark.django_db
+def test_dispatch_loads_distinct_routed_source_not_public_id(user, native_on, monkeypatch):
+    # ADR-031-R6 core deliverable. Drive the real resolve -> load chain for a
+    # routed public id (polaris -> polaris-raes) and observe which source
+    # actually reaches the dispatch seam: it must be the DISTINCT registered
+    # source (polaris-raes), not the public id passed straight through, while the
+    # persisted range still correlates by the stable public id. Unlike the
+    # unrouted case (scenario_id == source id) above, the differing ids make a
+    # straight-through regression observable at the seam.
+    from django.conf import settings
+
+    _make_source(user, scenario_id="polaris-raes")
+    monkeypatch.setattr(settings, "RAES_CATALOG_CUTOVERS", {"polaris": "polaris-raes"})
+    seen = {}
+    monkeypatch.setattr(
+        _DISPATCH,
+        lambda request_id, u, source, backend_admission=None, workspace_id=None: seen.update(
+            loaded_source_id=source.scenario_id
+        ),
+    )
+
+    ctx = create_range_dispatch(user, "polaris", {})
+
+    # The distinct internal source was actually loaded, not the public id.
+    assert seen["loaded_source_id"] == "polaris-raes"
+    # The range still correlates by the stable public id (projection + persistence).
+    assert ctx.scenario_id == "polaris"
+    assert RangeInstance.objects.get(request__request_id=ctx.request_id).scenario_id == "polaris"
+
+
+@pytest.mark.django_db
+def test_dispatch_fails_closed_for_route_to_legacy_target(user, native_on, monkeypatch):
+    # ADR-031-R6: a route to an existing legacy id ("basic") has no backing
+    # RaesPackageSource. Dispatch must fail closed -- refuse before any load --
+    # rather than advertise a launch that then crashes on a missing source.
+    from django.conf import settings
+
+    monkeypatch.setattr(settings, "RAES_CATALOG_CUTOVERS", {"polaris": "basic"})
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: pytest.fail("dispatch reached for a fail-closed route"))
+
+    with pytest.raises(CMSError):
+        create_range_dispatch(user, "polaris", {})
+    assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
 
 
 @pytest.mark.django_db
