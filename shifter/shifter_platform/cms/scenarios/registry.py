@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
+from cms.scenarios.cutover import apply_cutover_routes
 from cms.scenarios.loader import get_all_scenarios as get_yaml_scenarios
 from cms.scenarios.loader import list_scenario_ids as list_yaml_ids
 from cms.scenarios.loader import load_scenario as load_yaml_scenario
@@ -309,13 +310,11 @@ def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
     yaml_entries, yaml_ids = _yaml_source_entries(metadata_map)
     db_entries, db_ids = _db_source_entries(metadata_map, yaml_ids)
     raes_entries = _raes_source_entries(metadata_map, yaml_ids | db_ids)
-    result = yaml_entries + db_entries + raes_entries
+    # Overlay the ADR-031-R6 source routes (see cms.scenarios.cutover); empty route = unchanged.
+    result = apply_cutover_routes(yaml_entries + db_entries + raes_entries)
 
-    # Access filtering
     if user is not None and not (user.is_staff or user.is_superuser):
         result = [s for s in result if s["enabled"] and not s["staff_only"]]
-
-    # Sort by name
     result.sort(key=lambda s: s["name"])
     return result
 
