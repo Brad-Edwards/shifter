@@ -518,6 +518,11 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "''",
+      "name": "SHIFTER_ACES_CATALOG_CUTOVERS",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
       "default": "'False'",
       "name": "SHIFTER_ACES_NATIVE_PROVISIONING",
       "source_file": "config/_aces_settings.py"
