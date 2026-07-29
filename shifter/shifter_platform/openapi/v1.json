@@ -11647,6 +11647,14 @@
           "name"
         ]
       },
+      "ChannelEnum": {
+        "enum": [
+          "ssh",
+          "rdp"
+        ],
+        "type": "string",
+        "description": "* `ssh` - ssh\n* `rdp` - rdp"
+      },
       "CleanupControlRequest": {
         "type": "object",
         "description": "Defer or cancel the pending automated range cleanup (CTF-1003).",
@@ -14576,6 +14584,12 @@
             "items": {
               "$ref": "#/components/schemas/ScenarioSubnet"
             }
+          },
+          "participant_access": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioParticipantAccess"
+            }
           }
         }
       },
@@ -15721,6 +15735,12 @@
               "$ref": "#/components/schemas/ScenarioSubnet"
             }
           },
+          "participant_access": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioParticipantAccess"
+            }
+          },
           "scenario_id": {
             "type": "string"
           }
@@ -15820,6 +15840,13 @@
             },
             "readOnly": true
           },
+          "participant_access": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioParticipantAccess"
+            },
+            "readOnly": true
+          },
           "raes": {
             "allOf": [
               {
@@ -15842,6 +15869,7 @@
           "launchable",
           "name",
           "ngfw",
+          "participant_access",
           "raes",
           "scenario_type",
           "source",
@@ -16027,6 +16055,22 @@
           "enabled",
           "scenario_id",
           "staff_only"
+        ]
+      },
+      "ScenarioParticipantAccess": {
+        "type": "object",
+        "description": "One participant-facing channel, mirroring ``ParticipantAccessConfig``.",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/ChannelEnum"
+          }
+        },
+        "required": [
+          "channel",
+          "target"
         ]
       },
       "ScenarioRealizability": {
