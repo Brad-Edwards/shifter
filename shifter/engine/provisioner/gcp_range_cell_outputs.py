@@ -68,8 +68,14 @@ def instance_output(
         "gcp_image_profile_fingerprint": instance["image_profile_fingerprint"],
         "gcp_source_image": instance["profile"].source_image,
         "gcp_bootstrap_capability": instance["profile"].bootstrap_capability,
-        "gcp_service_account_email": config.service_account_email if instance["attach_service_account"] else "",
+        "gcp_service_account_email": (
+            str(instance.get("service_account_email") or "")
+            or (config.service_account_email if instance["attach_service_account"] else "")
+        ),
     }
+    if instance["profile"].source_machine_image:
+        output["gcp_source_machine_image"] = instance["profile"].source_machine_image
+        output["gcp_participant_container_name"] = instance["profile"].participant_container_name
     # Resolved per-channel participant logins (#1710). Emitted only on the
     # RAES-native path, where SSH and RDP may be brokered as different authored
     # accounts and the instance-wide ssh_username is the reserved management

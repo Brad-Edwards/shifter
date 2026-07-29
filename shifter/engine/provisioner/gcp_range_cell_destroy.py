@@ -12,7 +12,7 @@ from gcp_range_cell_credentials import (
     _default_secret_ops,
     _default_vertex_ops,
 )
-from gcp_range_cell_ops import _delete_resource
+from gcp_range_cell_ops import _delete_resource, _get_or_none, _wait_for_operation
 from gcp_range_cell_plan import render_range_cell_plan
 from gcp_range_cell_types import RangeCellPlan, ResourceDict
 from provisioner_db import get_range_data_by_request_id
@@ -50,6 +50,28 @@ def _destroy_vpn_gateway(plan: RangeCellPlan, clients: GCEClients) -> None:
 def _destroy_instances(plan: RangeCellPlan, clients: GCEClients, secret_ops: GCEGuestSecretOps) -> None:
     """Delete range instances, their addresses, and their guest secrets."""
     for instance in reversed(plan["instances"]):
+        existing = _get_or_none(
+            clients.instances.get,
+            clients.google_exceptions,
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=instance["resource_name"],
+        )
+        if existing is not None:
+            for disk in getattr(existing, "disks", None) or []:
+                if bool(getattr(disk, "auto_delete", False)):
+                    continue
+                device_name = str(getattr(disk, "device_name", "") or "")
+                if not device_name:
+                    raise RuntimeError("GCE range instance has an attached disk without a device name")
+                operation = clients.instances.set_disk_auto_delete(
+                    project=plan["project_id"],
+                    zone=plan["zone"],
+                    instance=instance["resource_name"],
+                    device_name=device_name,
+                    auto_delete=True,
+                )
+                _wait_for_operation(plan, clients, operation, "zone")
         _delete_resource(
             plan,
             clients,
@@ -140,6 +162,9 @@ def destroy_range_cell(
         resolved_config,
         require_images=False,
         vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
+        range_host_pool_slot=(
+            int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+        ),
     )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()

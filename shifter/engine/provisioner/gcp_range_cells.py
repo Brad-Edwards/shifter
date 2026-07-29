@@ -151,6 +151,29 @@ def _assert_instance_image_binding(existing: object, instance: InstancePlan) -> 
         )
 
 
+def _ensure_attached_disks_auto_delete(
+    plan: RangeCellPlan,
+    clients: GCEClients,
+    instance_name: str,
+    existing: object,
+) -> None:
+    """Make every machine-image-cloned disk range-owned and idempotently deletable."""
+    for disk in getattr(existing, "disks", None) or []:
+        if bool(getattr(disk, "auto_delete", False)):
+            continue
+        device_name = str(getattr(disk, "device_name", "") or "")
+        if not device_name:
+            raise RuntimeError("GCE range instance has an attached disk without a device name")
+        operation = clients.instances.set_disk_auto_delete(
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=instance_name,
+            device_name=device_name,
+            auto_delete=True,
+        )
+        _wait_for_operation(plan, clients, operation, "zone")
+
+
 def _ensure_instance(
     plan: RangeCellPlan,
     clients: GCEClients,
@@ -194,6 +217,8 @@ def _ensure_instance(
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
+        if instance["profile"].source_machine_image:
+            _ensure_attached_disks_auto_delete(plan, clients, name, existing)
         return (
             host_secret_ref,
             participant_ssh_secret_ref,
@@ -204,10 +229,10 @@ def _ensure_instance(
 
     host_private_key, host_public_key = generate_ssh_host_keypair()
     host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
-    operation = clients.instances.insert(
-        project=plan["project_id"],
-        zone=plan["zone"],
-        instance_resource=instance_resource(
+    insert_kwargs: dict[str, object] = {
+        "project": plan["project_id"],
+        "zone": plan["zone"],
+        "instance_resource": instance_resource(
             plan,
             instance,
             config,
@@ -215,8 +240,20 @@ def _ensure_instance(
             host_private_key_b64=host_private_key_b64,
             host_public_key=host_public_key,
         ),
+    }
+    if instance["profile"].source_machine_image:
+        insert_kwargs["source_machine_image"] = instance["profile"].source_machine_image
+    operation = clients.instances.insert(
+        **insert_kwargs,
     )
     _wait_for_operation(plan, clients, operation, "zone")
+    if instance["profile"].source_machine_image:
+        created = clients.instances.get(
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=name,
+        )
+        _ensure_attached_disks_auto_delete(plan, clients, name, created)
     return host_secret_ref, participant_ssh_secret_ref, rdp_password_secret_ref, scenario_public_key, host_public_key
 
 
@@ -360,6 +397,9 @@ def apply_range_cell(
         variables,
         resolved_config,
         vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
+        range_host_pool_slot=(
+            int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+        ),
     )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()

@@ -16,6 +16,7 @@ from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE, UNSUPPOR
 from cloud.exceptions import CloudError
 from config import (
     GCE_BOOTSTRAP_POLARIS_HOST,
+    GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES,
     GCERangeCellConfig,
@@ -25,6 +26,7 @@ from config import (
 )
 from executors.factory import get_ssh_username
 from gcp_range_cell_naming import _network_tag, _short_resource_name
+from gcp_range_host_identity import gcp_range_host_pool_service_account_email
 
 _DEFAULT_SSH_PORT = 22
 _DOCKER_HOST_SSH_USERNAME = "ubuntu"
@@ -263,7 +265,25 @@ def _host_access(
     participant_user = get_ssh_username(os_type, role)
     if profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST:
         return participant_user, _DOCKER_HOST_SSH_USERNAME, config.host_mgmt_ssh_port
+    if profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
+        return profile.participant_username, profile.host_ssh_username, profile.host_ssh_port
     return participant_user, participant_user, _DEFAULT_SSH_PORT
+
+
+def _range_host_service_account(
+    config: GCERangeCellConfig,
+    profile: GCERangeImageProfile,
+    range_host_pool_slot: int | None,
+) -> str:
+    """Resolve a bounded pre-created identity for a preconfigured range host."""
+    if profile.bootstrap_capability != GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
+        return ""
+    if range_host_pool_slot is None:
+        raise _missing_prerequisite("A preconfigured GCE range host requires a range allocation slot")
+    if range_host_pool_slot < 0 or config.range_host_identity_pool_size <= 0:
+        raise _missing_prerequisite("The configured GCE range-host identity pool is disabled")
+    identity_slot = range_host_pool_slot % config.range_host_identity_pool_size
+    return gcp_range_host_pool_service_account_email(config.project_id, identity_slot)
 
 
 def _instance_assignment_key(instance: ResourceDict, index: int) -> str:
@@ -278,6 +298,7 @@ def build_instance_plans(
     subnet_plans: list[ResourceDict],
     access_declarations: list[ResourceDict],
     require_images: bool,
+    range_host_pool_slot: int | None = None,
 ) -> list[ResourceDict]:
     """Realize legacy scenario guests into provider-ready instance intents."""
     access_by_ref: dict[str, list[str]] = {}
@@ -291,6 +312,7 @@ def build_instance_plans(
             os_type = str(instance.get("os_type", instance.get("os", "ubuntu")))
             profile = _profile_for_instance(config, instance, require_images=require_images)
             ssh_username, host_ssh_username, ssh_port = _host_access(config, profile, os_type, role)
+            service_account_email = _range_host_service_account(config, profile, range_host_pool_slot)
             image_key = str(instance.get("ami_key") or "").strip()
             resource_name = _short_resource_name(
                 "shifter-r",
@@ -321,6 +343,7 @@ def build_instance_plans(
                     "ssh_port": ssh_port,
                     "participant_access_channels": access_by_ref.get(str(instance.get("uuid", "")), []),
                     "attach_service_account": profile.bootstrap_capability == GCE_BOOTSTRAP_POLARIS_HOST,
+                    "service_account_email": service_account_email,
                 }
             )
     return plans
