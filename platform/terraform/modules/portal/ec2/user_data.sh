@@ -253,6 +253,32 @@ validate_bool() {
   fi
 }
 
+validate_ctf_content_location() {
+  local bucket="$1"
+  local prefix="$2"
+  local max_bytes="$3"
+
+  if [[ -z "$bucket" ]]; then
+    if [[ -n "$prefix" || -n "$max_bytes" ]]; then
+      echo "Invalid CTF content configuration: prefix and max bytes require a bucket"
+      exit 1
+    fi
+    return
+  fi
+  if [[ ! "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_BUCKET"
+    exit 1
+  fi
+  if [[ ! "$prefix" =~ ^[A-Za-z0-9._/-]+/$ || "$prefix" == /* || "$prefix" == *..* ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_PREFIX"
+    exit 1
+  fi
+  if [[ -z "$max_bytes" ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_MAX_BYTES: required with bucket"
+    exit 1
+  fi
+}
+
 # validate_slug_pairs accepts empty (the preserved-legacy posture) or a
 # comma-separated list of public=source slug pairs, matching the Django settings
 # parser. It rejects anything that could inject into the docker -e argument.
@@ -289,6 +315,9 @@ ECR_REGISTRY=$(get_param "$PS_PREFIX/ecr-registry")
 ECR_REPOSITORY=$(get_param "$PS_PREFIX/ecr-repository")
 DOMAIN_NAME=$(get_param "$PS_PREFIX/domain-name")
 S3_BUCKET=$(get_param "$PS_PREFIX/s3-bucket")
+CTF_CONTENT_BUCKET=$(get_param "$PS_PREFIX/ctf-content-bucket" 2>/dev/null || echo "")
+CTF_CONTENT_PREFIX=$(get_param "$PS_PREFIX/ctf-content-prefix" 2>/dev/null || echo "")
+CTF_CONTENT_MAX_BYTES=$(get_param "$PS_PREFIX/ctf-content-max-bytes" 2>/dev/null || echo "")
 DB_SECRET_ARN=$(get_param "$PS_PREFIX/db-secret-arn")
 APP_SECRET_ARN=$(get_param "$PS_PREFIX/app-secret-arn")
 COGNITO_SECRET_ARN=$(get_param "$PS_PREFIX/cognito-secret-arn")
@@ -322,6 +351,8 @@ PLATFORM_BOOTSTRAP_STAFF_EMAILS=$(get_param "$PS_PREFIX/platform-bootstrap-staff
 PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=$(get_param "$PS_PREFIX/platform-bootstrap-superuser-emails" 2>/dev/null || echo "")
 validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_STAFF_EMAILS" "$PLATFORM_BOOTSTRAP_STAFF_EMAILS"
 validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS" "$PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS"
+validate_ctf_content_location "$CTF_CONTENT_BUCKET" "$CTF_CONTENT_PREFIX" "$CTF_CONTENT_MAX_BYTES"
+validate_positive_int "SHIFTER_CTF_CONTENT_MAX_BYTES" "$CTF_CONTENT_MAX_BYTES"
 
 # Portal runtime capacity tunables (#930). Process-local: the per-instance
 # ceiling is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS. Same parameter names the
@@ -373,6 +404,11 @@ COMMON_ENV="$COMMON_ENV -e ENVIRONMENT=$DJANGO_ENVIRONMENT"
 # (rendered from shifter.yaml at deploy time), not a hardcoded literal.
 COMMON_ENV="$COMMON_ENV -e CLOUD_PROVIDER=${cloud_provider}"
 COMMON_ENV="$COMMON_ENV -e AWS_S3_BUCKET_NAME=$S3_BUCKET"
+if [[ -n "$CTF_CONTENT_BUCKET" ]]; then
+  COMMON_ENV="$COMMON_ENV -e SHIFTER_CTF_CONTENT_BUCKET=$CTF_CONTENT_BUCKET"
+  COMMON_ENV="$COMMON_ENV -e SHIFTER_CTF_CONTENT_PREFIX=$CTF_CONTENT_PREFIX"
+  COMMON_ENV="$COMMON_ENV -e SHIFTER_CTF_CONTENT_MAX_BYTES=$CTF_CONTENT_MAX_BYTES"
+fi
 COMMON_ENV="$COMMON_ENV -e DB_SECRET_ARN=$DB_SECRET_ARN"
 COMMON_ENV="$COMMON_ENV -e APP_SECRET_ARN=$APP_SECRET_ARN"
 COMMON_ENV="$COMMON_ENV -e COGNITO_SECRET_ARN=$COGNITO_SECRET_ARN"

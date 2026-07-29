@@ -14,7 +14,12 @@ from shared.audit import (
 )
 
 if TYPE_CHECKING:
-    from ctf.models import CTFParticipant, CTFRangeRecovery
+    from ctf.models import (
+        CTFContentHydrationReceipt,
+        CTFEvent,
+        CTFParticipant,
+        CTFRangeRecovery,
+    )
 
 
 def _entity_id_from_uuid(entity_uuid: UUID) -> int:
@@ -46,6 +51,63 @@ def audit_live_flag_repair(
             },
             context="ctf_live_flag_repair",
         )
+    )
+
+
+def audit_content_hydration(
+    *,
+    actor_id: int,
+    event: CTFEvent,
+    receipt: CTFContentHydrationReceipt,
+    outcome: str,
+) -> None:
+    """Strictly record successful or idempotent native CTF content hydration."""
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event.pk),
+            action=AuditAction.CREATE if outcome == "created" else AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state={
+                "ctf_content_hydration": outcome,
+                "event_id": str(event.pk),
+                "scenario_id": receipt.scenario_id,
+                "declared_digest": receipt.declared_digest,
+                "challenge_count": receipt.challenge_count,
+                "flag_count": receipt.flag_count,
+                "hint_count": receipt.hint_count,
+                "prerequisite_count": receipt.prerequisite_count,
+            },
+            context="ctf_content_hydration",
+        ),
+        strict=True,
+    )
+
+
+def audit_content_hydration_drift(
+    *,
+    actor_id: int | None,
+    receipt: CTFContentHydrationReceipt,
+) -> None:
+    """Strictly record the first authorized mutation of hydrated content."""
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(receipt.event_id),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
+            actor_id=actor_id,
+            previous_state={"ctf_content_state": "pristine"},
+            new_state={
+                "ctf_content_state": "drifted",
+                "event_id": str(receipt.event_id),
+                "scenario_id": receipt.scenario_id,
+                "reason": receipt.drift_reason,
+            },
+            context="ctf_content_hydration_drift",
+        ),
+        strict=True,
     )
 
 

@@ -50,6 +50,19 @@ Additional controls:
 A challenge can carry multiple flags (for multi-stage solves), each validated
 independently.
 
+### Scenario-provided challenges
+
+Some deployments bind a scenario to an immutable native CTF content bundle.
+Selecting that scenario while creating an event automatically populates its
+challenges, flags, hints, and prerequisite graph. Do not manually import or
+duplicate challenges for such an event.
+
+Managed content is fail closed. An organizer edit marks the event content as
+drifted, and the event cannot be activated from registration. Create a new
+event to adopt a revised bundle instead of overwriting or merging the existing
+graph. The selected scenario also cannot be changed after managed content has
+been created.
+
 ## 3. Manage Participants
 
 From an event's **Participants** page you can add participants individually or bulk
@@ -126,3 +139,5 @@ hour offsets you configure.
 - [CTF](ctf): the participant experience.
 - [CTF technical documentation](../technical/shifter_platform/ctf): models, services,
   scheduling, and range provisioning.
+- [Native CTF scenario content](../dev/ctf-scenario-content): publish and bind
+  private, digest-pinned event content.

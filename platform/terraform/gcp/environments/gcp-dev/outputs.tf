@@ -68,6 +68,11 @@ output "assets_bucket_name" {
   value       = module.platform_core.assets_bucket_name
 }
 
+output "ctf_content_bucket_name" {
+  description = "Private bucket configured for digest-pinned native CTF content bundles."
+  value       = var.ctf_content_bucket_name
+}
+
 output "terraform_state_bucket_name" {
   description = "GCS bucket name for provisioner Terraform state."
   value       = module.platform_core.terraform_state_bucket_name

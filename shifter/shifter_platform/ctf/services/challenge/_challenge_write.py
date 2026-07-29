@@ -42,6 +42,9 @@ _CHALLENGE_MUTABLE_FIELDS = frozenset(
         "flag_format",
         "solution",
         "max_attempts",
+        "minimum_points",
+        "decay_function",
+        "decay_solve_count",
         "release_time",
         "order",
         "visibility",
@@ -89,7 +92,13 @@ def _build_challenge_safe_data(data: dict[str, Any]) -> dict[str, Any]:
     return safe_data
 
 
-def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id: int) -> CTFChallenge:
+def create_challenge(
+    event_id: UUID,
+    challenge_data: dict[str, Any],
+    *,
+    actor_id: int,
+    source_id: str = "",
+) -> CTFChallenge:
     """Create a new challenge.
 
     Args:
@@ -101,6 +110,8 @@ def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id
             service refuses unless `actor_id == event.created_by_id`, even
             when the view-layer ownership check has already passed. Pass
             `request.user.pk` from view callers.
+        source_id: Optional stable identity supplied by trusted content
+            hydration. Ordinary challenge payloads cannot set this field.
 
     Returns:
         The created CTFChallenge instance.
@@ -150,8 +161,12 @@ def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id
 
     _compute_legacy_flag_hash(data, flags_list)
     safe_data = _build_challenge_safe_data(data)
+    safe_data["source_id"] = source_id
 
     with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(event.pk, actor_id=actor_id, reason="challenge_created")
         challenge = CTFChallenge.objects.create(event=event, **safe_data)
         _apply_challenge_m2m(
             challenge,
@@ -161,7 +176,6 @@ def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id
             flags_list=flags_list,
             actor_id=actor_id,
         )
-
         logger.info(
             "Created challenge %s for event %s: %s",
             challenge.id,
@@ -260,6 +274,14 @@ def update_challenge(challenge_id: UUID, challenge_data: dict[str, Any], *, acto
     safe_data = _build_safe_update_payload(data, challenge)
 
     with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(
+            challenge.event_id,
+            actor_id=actor_id,
+            reason="challenge_updated",
+            allow_live_repair=challenge.event.is_live_flag_repairable,
+        )
         for key, value in safe_data.items():
             setattr(challenge, key, value)
         challenge.save()
@@ -317,6 +339,13 @@ def delete_challenge(challenge_id: UUID, *, actor_id: int) -> None:
         )
 
     with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(
+            challenge.event_id,
+            actor_id=actor_id,
+            reason="challenge_deleted",
+        )
         # Soft-delete prerequisite links where this challenge is required
         CTFChallengePrerequisite.objects.filter(required_challenge=challenge).update(deleted_at=timezone.now())
         challenge.delete(soft=True)

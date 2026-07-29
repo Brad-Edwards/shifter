@@ -117,6 +117,12 @@ locals {
     var.raes_package_bucket_name == "" ? {} : {
       "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectViewer" }
     },
+    # Native CTF content bundles are a distinct deployment concern from RAES
+    # packages. The portal needs read-only access to the explicitly configured
+    # bucket; content publication stays outside the runtime identity.
+    var.ctf_content_bucket_name == "" ? {} : {
+      "portal:ctf-content" = { workload = "portal", bucket = var.ctf_content_bucket_name, role = "roles/storage.objectViewer" }
+    },
   )
 }
 

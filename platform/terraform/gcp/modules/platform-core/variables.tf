@@ -330,6 +330,12 @@ variable "raes_package_bucket_name" {
   default     = ""
 }
 
+variable "ctf_content_bucket_name" {
+  description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Empty grants the portal no binding on it."
+  type        = string
+  default     = ""
+}
+
 variable "range_provisioner_ports" {
   description = "TCP ports the platform provisioner is allowed to reach on the range VPC. Used to construct the range-allow-platform-provisioner firewall rule. The range VPC otherwise denies all ingress (ADR-008-R4)."
   type        = list(number)

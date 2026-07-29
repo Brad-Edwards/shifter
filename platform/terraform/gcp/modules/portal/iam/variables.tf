@@ -73,3 +73,9 @@ variable "raes_package_bucket_name" {
   default     = ""
   description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Grants the portal read-only (objectViewer) access. Empty disables the binding."
 }
+
+variable "ctf_content_bucket_name" {
+  type        = string
+  default     = ""
+  description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Grants the portal read-only access. Empty disables the binding."
+}
