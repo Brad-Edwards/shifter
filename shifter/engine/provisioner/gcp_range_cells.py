@@ -242,10 +242,16 @@ def _ensure_instance(
         ),
     }
     if instance["profile"].source_machine_image:
-        insert_kwargs["source_machine_image"] = instance["profile"].source_machine_image
-    operation = clients.instances.insert(
-        **insert_kwargs,
-    )
+        # The generated Compute client does not expose source_machine_image as
+        # a flattened keyword. It is accepted only through InsertInstanceRequest.
+        operation = clients.instances.insert(
+            request={
+                **insert_kwargs,
+                "source_machine_image": instance["profile"].source_machine_image,
+            }
+        )
+    else:
+        operation = clients.instances.insert(**insert_kwargs)
     _wait_for_operation(plan, clients, operation, "zone")
     if instance["profile"].source_machine_image:
         created = clients.instances.get(
