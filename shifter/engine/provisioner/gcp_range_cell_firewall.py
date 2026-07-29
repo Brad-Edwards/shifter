@@ -7,7 +7,7 @@ import os
 
 from config import GCERangeCellConfig
 from gcp_range_cell_naming import _network_tag, _short_resource_name
-from gcp_range_cell_types import FirewallPlan, OpenVpnGatewayPlan, SubnetPlan
+from gcp_range_cell_types import FirewallPlan, InstancePlan, OpenVpnGatewayPlan, SubnetPlan
 
 # private.googleapis.com VIP range. Private Google Access on the range subnet,
 # the range VPC's private-googleapis DNS zone, and a route for this /30 (all in
@@ -157,6 +157,7 @@ def _egress_rules(
     range_tag: str,
     subnet_cidrs: list[str],
     egress_allow_cidrs: list[str],
+    allow_public_web_egress: bool,
     config: GCERangeCellConfig,
 ) -> list[FirewallPlan]:
     """Render intra-range egress, the default deny, and configured exceptions."""
@@ -187,6 +188,17 @@ def _egress_rules(
                 "target_tags": [range_tag],
                 "destination_ranges": egress_allow_cidrs,
                 "allowed": [{"IPProtocol": "all"}],
+            }
+        )
+    if allow_public_web_egress:
+        rules.append(
+            {
+                "name": _short_resource_name("shifter-r", range_id, "egress-web"),
+                "direction": "EGRESS",
+                "priority": 1200,
+                "target_tags": [range_tag],
+                "destination_ranges": [_UNIVERSAL_IPV4_CIDR],
+                "allowed": [{"IPProtocol": "tcp", "ports": ["80", "443"]}],
             }
         )
     if config.private_google_access:
@@ -264,6 +276,9 @@ def build_firewall_plan(
     subnet_plans: list[SubnetPlan],
     config: GCERangeCellConfig,
     vpn_gateway: OpenVpnGatewayPlan | None = None,
+    *,
+    instance_plans: list[InstancePlan] | None = None,
+    include_optional_cleanup: bool = False,
 ) -> list[FirewallPlan]:
     """Render the firewall plan for internal range traffic and management."""
     if os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}:
@@ -273,9 +288,21 @@ def build_firewall_plan(
     portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)
     access_network_cidrs = _validated_boundary_cidrs("access_network_cidrs", config.access_network_cidrs)
     egress_allow_cidrs = _validated_boundary_cidrs("egress_allow_cidrs", config.egress_allow_cidrs)
+    allow_public_web_egress = include_optional_cleanup or any(
+        instance["profile"].allow_public_web_egress for instance in (instance_plans or [])
+    )
     firewalls = _subnet_ingress_rules(range_id, subnet_plans)
     firewalls.extend(_boundary_ingress_rules(range_id, range_tag, access_network_cidrs, portal_network_cidrs, config))
-    firewalls.extend(_egress_rules(range_id, range_tag, subnet_cidrs, egress_allow_cidrs, config))
+    firewalls.extend(
+        _egress_rules(
+            range_id,
+            range_tag,
+            subnet_cidrs,
+            egress_allow_cidrs,
+            allow_public_web_egress,
+            config,
+        )
+    )
     if vpn_gateway is not None:
         firewalls.extend(_vpn_gateway_rules(range_id, vpn_gateway, portal_network_cidrs))
     return firewalls

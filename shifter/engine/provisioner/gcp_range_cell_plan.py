@@ -302,7 +302,14 @@ def render_range_cell_plan(
         "manage_network": manage_network,
         "subnets": subnet_plans,
         "instances": instance_plans,
-        "firewalls": build_firewall_plan(range_id, subnet_plans, resolved_config, vpn_gateway),
+        "firewalls": build_firewall_plan(
+            range_id,
+            subnet_plans,
+            resolved_config,
+            vpn_gateway,
+            instance_plans=instance_plans,
+            include_optional_cleanup=not require_images,
+        ),
     }
     if vpn_gateway is not None:
         plan["vpn_gateway"] = vpn_gateway
