@@ -159,7 +159,8 @@ def _generate_rdp_url(
     from mission_control.guacamole import GuacRDPUrlRequest, create_guacamole_rdp_url
 
     os_type = conn_info.get("os_type")
-    sftp_root_directory = _sftp_root_for_os(os_type)
+    sftp_enabled = conn_info.get("sftp_enabled") is not False
+    sftp_root_directory = _sftp_root_for_os(os_type) if sftp_enabled else None
     try:
         return create_guacamole_rdp_url(
             GuacRDPUrlRequest(
@@ -174,6 +175,7 @@ def _generate_rdp_url(
                 api_base_url=guacamole_api_url,
                 sftp_root_directory=sftp_root_directory,
                 sftp_private_key=conn_info.get("ssh_key"),
+                sftp_enabled=sftp_enabled,
                 security=_rdp_security_for_os(os_type),
             )
         )
@@ -196,7 +198,7 @@ def _build_rdp_url(*, user: User, instance_uuid: str, guac_settings: GuacamoleSe
     # (a true ``py/clear-text-logging-sensitive-data`` taint-break). The
     # user/instance correlation IDs go through ``safe_log_value``.
     rdp_os = str(conn_info.get("os_type") or "unknown")
-    file_transfer_available = "yes" if conn_info.get("ssh_key") else "no"
+    file_transfer_available = "yes" if conn_info.get("sftp_enabled") is not False else "no"
     logger.info(
         "Guac RDP request: user=%s instance_uuid=%s os=%s file_transfer_available=%s",
         safe_log_value(user.email),

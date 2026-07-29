@@ -131,6 +131,26 @@ class TestWindowsMixedComposition:
             win = get_rdp_connection_info(user, "comp-b-win")
         assert (win["host"], win["rdp_username"], win["rdp_password"]) == ("10.50.2.20", "Administrator", "WIN-RDP-PW")
 
+    def test_rdp_projects_explicit_sftp_unavailability(self, settings, user):
+        from engine.services import get_rdp_connection_info
+
+        settings.CLOUD_PROVIDER = "aws"
+        instance = _gcp_instance(
+            "comp-b-nested",
+            "kali",
+            "10.50.2.30",
+            "desktop-user",
+            ["rdp"],
+            rdp_secret="projects/test/secrets/comp-b-nested-rdp",
+        )
+        instance["participant_sftp_enabled"] = False
+        _range(user, [instance])
+
+        with boto3_secrets(make_secrets_client(value="RDP-PW")):
+            result = get_rdp_connection_info(user, "comp-b-nested")
+
+        assert result["sftp_enabled"] is False
+
 
 class TestDestroyRevocation:
     """Access revokes once the range leaves READY (destroy / participant removal)."""
