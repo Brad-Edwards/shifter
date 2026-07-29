@@ -309,6 +309,14 @@ def _dw_evaluate_if(
             # `github.repository` alone cannot distinguish them.
             if path == "github.event.pull_request.head.repo.fork":
                 return fork_pr
+            if path == "github.event.pull_request.head.repo.full_name":
+                # The head repo of a same-repo PR IS this repository; a
+                # fork-origin PR's head repo belongs to a different owner. This
+                # is the identity GitHub uses to withhold secrets, and unlike
+                # head.repo.fork it stays correct when the base repository is
+                # itself a fork of an upstream (which makes head.repo.fork true
+                # for every same-repo PR branch).
+                return repository if not fork_pr else "fork-owner/" + repository.split("/", 1)[-1]
             field = parts[1] if len(parts) > 1 else ""
             return {
                 "event_name": event_name,
