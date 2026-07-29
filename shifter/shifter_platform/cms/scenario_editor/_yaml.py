@@ -33,6 +33,7 @@ def export_scenario_yaml(scenario_id: str) -> str:
         "description": data["description"],
         "ngfw": data.get("ngfw", False),
         "instances": data.get("instances", []),
+        "participant_access": data.get("participant_access", []),
     }
     if data.get("subnets"):
         export["subnets"] = data["subnets"]
