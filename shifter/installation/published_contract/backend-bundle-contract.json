@@ -2137,6 +2137,45 @@
           ],
           "sensitivity": "public",
           "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (SHIFTER_CTF_CONTENT_BUCKET) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "SHIFTER_CTF_CONTENT_BUCKET",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (SHIFTER_CTF_CONTENT_MAX_BYTES) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "SHIFTER_CTF_CONTENT_MAX_BYTES",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (SHIFTER_CTF_CONTENT_PREFIX) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "SHIFTER_CTF_CONTENT_PREFIX",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
         }
       ],
       "health_checks": [

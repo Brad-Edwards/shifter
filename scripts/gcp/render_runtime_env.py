@@ -197,8 +197,7 @@ def _ctf_content_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
     return {
         "SHIFTER_CTF_CONTENT_BUCKET": bucket,
         "SHIFTER_CTF_CONTENT_PREFIX": (
-            os.environ.get("SHIFTER_CTF_CONTENT_PREFIX", "ctf/content-bundles").strip()
-            or "ctf/content-bundles"
+            os.environ.get("SHIFTER_CTF_CONTENT_PREFIX", "ctf/content-bundles").strip() or "ctf/content-bundles"
         ),
         "SHIFTER_CTF_CONTENT_MAX_BYTES": (
             os.environ.get("SHIFTER_CTF_CONTENT_MAX_BYTES", "8388608").strip() or "8388608"
