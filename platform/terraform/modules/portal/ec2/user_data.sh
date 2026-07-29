@@ -253,6 +253,18 @@ validate_bool() {
   fi
 }
 
+# validate_slug_pairs accepts empty (the preserved-legacy posture) or a
+# comma-separated list of public=source slug pairs, matching the Django settings
+# parser. It rejects anything that could inject into the docker -e argument.
+validate_slug_pairs() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && ! "$value" =~ ^[A-Za-z0-9_-]+=[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+=[A-Za-z0-9_-]+)*$ ]]; then
+    echo "Invalid $name: expected comma-separated public=source slug pairs"
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -335,6 +347,16 @@ PORTAL_CAPACITY_METRICS_ENABLED=$(get_param "$PS_PREFIX/portal-capacity-metrics-
 PORTAL_WORKER_SOFT_CONCURRENCY=$(get_param "$PS_PREFIX/portal-worker-soft-concurrency" 2>/dev/null || echo "")
 validate_bool "PORTAL_CAPACITY_METRICS_ENABLED" "$PORTAL_CAPACITY_METRICS_ENABLED"
 validate_positive_int "PORTAL_WORKER_SOFT_CONCURRENCY" "$PORTAL_WORKER_SOFT_CONCURRENCY"
+
+# ACES default cutover (#1310, ADR-031-R6): capability gate + source-route
+# selector, non-secret, delivered fleet-uniform into COMMON_ENV so every
+# container sees one value. The native flag defaults to false when absent; the
+# route param is absent in the preserved-legacy posture and resolves to "" here.
+# Validated (same boolean/slug-pair grammar as the app) before the docker argv.
+SHIFTER_ACES_NATIVE_PROVISIONING=$(get_param "$PS_PREFIX/shifter-aces-native-provisioning" 2>/dev/null || echo "false")
+SHIFTER_ACES_CATALOG_CUTOVERS=$(get_param "$PS_PREFIX/shifter-aces-catalog-cutovers" 2>/dev/null || echo "")
+validate_bool "SHIFTER_ACES_NATIVE_PROVISIONING" "$SHIFTER_ACES_NATIVE_PROVISIONING"
+validate_slug_pairs "SHIFTER_ACES_CATALOG_CUTOVERS" "$SHIFTER_ACES_CATALOG_CUTOVERS"
 
 IMAGE=$(image_ref "$ECR_REGISTRY" "$ECR_REPOSITORY" "$IMAGE_DIGEST" "$IMAGE_TAG")
 echo "Deploying image: $IMAGE"
@@ -436,6 +458,12 @@ if [[ -n "$TERMINAL_MAX_SESSIONS" ]]; then
 fi
 if [[ -n "$TERMINAL_MAX_SESSIONS_PER_USER" ]]; then
   COMMON_ENV="$COMMON_ENV -e TERMINAL_MAX_SESSIONS_PER_USER=$TERMINAL_MAX_SESSIONS_PER_USER"
+fi
+if [[ -n "$SHIFTER_ACES_NATIVE_PROVISIONING" ]]; then
+  COMMON_ENV="$COMMON_ENV -e SHIFTER_ACES_NATIVE_PROVISIONING=$SHIFTER_ACES_NATIVE_PROVISIONING"
+fi
+if [[ -n "$SHIFTER_ACES_CATALOG_CUTOVERS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e SHIFTER_ACES_CATALOG_CUTOVERS=$SHIFTER_ACES_CATALOG_CUTOVERS"
 fi
 if [[ -n "$TERMINAL_IDLE_TIMEOUT_SECONDS" ]]; then
   COMMON_ENV="$COMMON_ENV -e TERMINAL_IDLE_TIMEOUT_SECONDS=$TERMINAL_IDLE_TIMEOUT_SECONDS"

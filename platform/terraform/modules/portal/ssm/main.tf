@@ -373,6 +373,34 @@ resource "aws_ssm_parameter" "terminal_max_sessions_per_user" {
   tags = local.common_tags
 }
 
+# ACES default-cutover selector + capability gate (#1310, ADR-031-R6). Non-secret,
+# fleet-uniform; user_data reads both and puts them in COMMON_ENV so every
+# portal/CMS/engine/MC/CTF/worker container sees the same value. Committed at the
+# preserved-legacy posture; the flip (native true + a polaris=polaris-aces route)
+# is a deferred, reviewed per-environment tfvar change once the plugin system +
+# Polaris adapter deliver a conformance-passed pack.
+resource "aws_ssm_parameter" "shifter_aces_native_provisioning" {
+  name        = "${local.ps_prefix}/shifter-aces-native-provisioning"
+  description = "ACES-native provisioning capability/rollback gate (SHIFTER_ACES_NATIVE_PROVISIONING)"
+  type        = "String"
+  value       = tostring(var.shifter_aces_native_provisioning)
+
+  tags = local.common_tags
+}
+
+# SSM parameter values may not be empty, so the route param exists only when a
+# route is configured; the empty (preserved-legacy) posture is the parameter's
+# absence, which user_data resolves to "" via its get_param fallback.
+resource "aws_ssm_parameter" "shifter_aces_catalog_cutovers" {
+  count       = var.shifter_aces_catalog_cutovers != "" ? 1 : 0
+  name        = "${local.ps_prefix}/shifter-aces-catalog-cutovers"
+  description = "ACES catalog source-route selector: comma-separated public=source slug pairs (SHIFTER_ACES_CATALOG_CUTOVERS)"
+  type        = "String"
+  value       = var.shifter_aces_catalog_cutovers
+
+  tags = local.common_tags
+}
+
 resource "aws_ssm_parameter" "terminal_idle_timeout_seconds" {
   name        = "${local.ps_prefix}/terminal-idle-timeout-seconds"
   description = "Idle terminal session timeout in seconds (TERMINAL_IDLE_TIMEOUT_SECONDS)"
