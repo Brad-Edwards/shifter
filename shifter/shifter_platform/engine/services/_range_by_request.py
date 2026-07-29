@@ -90,40 +90,45 @@ def _apply_destroy_by_request(
 def cancel_range_by_request(request_id: UUID) -> bool:
     """Cancel in-progress range provisioning by request_id.
 
-    Only works for ranges in PENDING or PROVISIONING status.
+    Only works for ranges in PENDING or PROVISIONING status. Records a durable
+    interrupt against the current provision generation (#277) so the launcher
+    worker can stop the in-flight task and converge cleanup; the API returns once
+    the cancellation is durably accepted, not once resources are absent.
     """
+    from django.db import transaction
+
+    from engine.launch_intents import request_provision_interrupt
     from engine.models import Range
 
     logger.debug("cancel_range_by_request: request_id=%s", request_id)
-    range_obj = Range.objects.filter(request__request_id=request_id).first()
-    if not range_obj:
-        logger.warning("cancel_range_by_request: no range for request_id=%s", request_id)
-        accepted = False
-    elif range_obj.status == Range.Status.DESTROYING:
-        logger.info(
-            "cancel_range_by_request: already destroying request_id=%s range_id=%s",
-            request_id,
-            range_obj.id,
-        )
-        accepted = True
-    elif range_obj.status not in (Range.Status.PENDING, Range.Status.PROVISIONING):
-        logger.warning(
-            "cancel_range_by_request: not cancellable status=%s request_id=%s",
-            range_obj.status,
-            request_id,
-        )
-        accepted = False
-    else:
+    with transaction.atomic():
+        range_obj = Range.objects.select_for_update().filter(request__request_id=request_id).first()
+        if not range_obj:
+            logger.warning("cancel_range_by_request: no range for request_id=%s", request_id)
+            return False
+        if range_obj.status == Range.Status.DESTROYING:
+            logger.info(
+                "cancel_range_by_request: already destroying request_id=%s range_id=%s",
+                request_id,
+                range_obj.id,
+            )
+            return True
+        if range_obj.status not in (Range.Status.PENDING, Range.Status.PROVISIONING):
+            logger.warning(
+                "cancel_range_by_request: not cancellable status=%s request_id=%s",
+                range_obj.status,
+                request_id,
+            )
+            return False
         range_obj.status = Range.Status.DESTROYING
         range_obj.save(update_fields=["status"])
+        request_provision_interrupt(range_obj)
         logger.info(
             "cancel_range_by_request: cancelled request_id=%s range_id=%s",
             request_id,
             range_obj.id,
         )
-        accepted = True
-
-    return accepted
+        return True
 
 
 def rebind_range_workspace_by_request(request_id: UUID, workspace_id: int) -> bool:
