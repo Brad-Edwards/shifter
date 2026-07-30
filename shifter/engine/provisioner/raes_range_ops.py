@@ -44,7 +44,7 @@ from cloud.exceptions import CloudError
 from config import GCERangeImageProfile, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
 from provisioner_db_operation_input import RaesOperationRun, get_raes_operation_input
-from raes_gce_image import resolve_gce_image
+from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, apply_raes_range_cell, destroy_raes_range_cell
 from raes_plan import RaesPlanNode, parse_plan
 from raes_snapshot import snapshot_resources
@@ -120,7 +120,15 @@ def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPla
     """Return an image resolver bound to the projected candidates + GCE policy."""
 
     def resolve(node: RaesPlanNode) -> GCERangeImageProfile:
-        """Resolve one node's image profile from the projection (authored source, else os_family)."""
+        """Resolve one node's image profile: a fenced artifact binding first, else the registry projection."""
+        # A generation-fenced artifact binding means the Engine already resolved
+        # this node's authored artifact requirement to an exact backend image at
+        # launch; realize it verbatim and never re-resolve (ADR-034-R8). Only a
+        # node with no artifact requirement falls through to the legacy
+        # source-alias registry projection.
+        binding = operation_input.artifact_binding_for(node.address)
+        if binding is not None:
+            return resolve_gce_image_from_binding(node, binding)
         # The lookup key rule is shared with the Engine that scoped the
         # projection; deriving it separately here is what would make an image
         # silently go missing.

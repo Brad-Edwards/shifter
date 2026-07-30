@@ -1658,7 +1658,7 @@
       },
       {
         "id": "ADR-032-R4",
-        "description": "Shifter depends on the exact released PyPI pair raes==2.0.0 and raes-env-packs==3.0.0; the environment-pack distribution itself requires raes==2.0.0. Neither contract may use a range, git ref, non-released build, or alternate name. The provisioner consumer accepts only producer version 2.0.0 and rejects every other producer version; no rolling-read compatibility window remains. The RAES module family is imported only within shared.raes (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing it.",
+        "description": "Shifter depends on the exact released PyPI pair raes==2.0.0 and raes-env-packs==3.1.0; the environment-pack distribution itself requires raes==2.0.0 (env-packs 3.1.0 adds the public environment-pack publication profile consumed by artifact-requirement resolution, #1580, without changing the raes producer version). Neither contract may use a range, git ref, non-released build, or alternate name. The provisioner consumer accepts only producer version 2.0.0 and rejects every other producer version; no rolling-read compatibility window remains. The RAES module family is imported only within shared.raes (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing it.",
         "checks": []
       },
       {
@@ -1812,6 +1812,7 @@
     "evidence": [
       "docs/architecture/uniform-content-ingestion-contract.md",
       "docs/architecture/uniform-content-ingestion-preflight-1578.md",
+      "docs/architecture/raes-artifact-requirement-resolution-preflight-1580.md",
       "docs/architecture/aces-source-content-delivery-preflight-1564.md",
       "docs/architecture/aces-feature-artifact-delivery-preflight-1565.md",
       "docs/architecture/product-development-surfaces.md",

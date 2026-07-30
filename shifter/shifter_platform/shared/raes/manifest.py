@@ -32,17 +32,20 @@ builder to construct a live ``RuntimeTarget``, so ``raes`` is now a
 
 from __future__ import annotations
 
+import hashlib
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as distribution_version
 from typing import Any
 
+from raes._source import ArtifactMechanismProfile
 from raes_backend_protocols.capabilities import (
     BackendCapabilitySet,
     BackendManifest,
     ProvisionerCapabilities,
 )
 from raes_backend_protocols.manifest import backend_manifest_payload
-from raes_contracts.apparatus import ConceptBinding, RealizationSupportDeclaration
+from raes_contracts.apparatus import ApparatusIdentity, ConceptBinding, RealizationSupportDeclaration
+from raes_contracts.contracts import ArtifactAcquisitionTimingModel, ArtifactMechanismCapability
 from raes_contracts.vocabulary import RealizationSupportMode
 
 from shared.raes.contracts import (
@@ -56,7 +59,10 @@ __all__ = [
     "SHIFTER_BACKEND_PROFILE",
     "SHIFTER_SUPPORTED_CONTRACT_VERSIONS",
     "create_shifter_backend_manifest",
+    "exact_artifact_profile",
     "render_shifter_backend_manifest_payload",
+    "shifter_artifact_mechanism_capabilities",
+    "shifter_backend_apparatus",
 ]
 
 #: Shifter's honest provisioning capability envelope (issue #1563: a realizability
@@ -160,6 +166,64 @@ def create_shifter_backend_manifest(**_config: Any) -> BackendManifest:
             ),
         ),
         capabilities=BackendCapabilitySet(provisioner=SHIFTER_PROVISIONER_CAPABILITIES),
+    )
+
+
+def shifter_backend_apparatus() -> ApparatusIdentity:
+    """Return the selected-backend identity recorded in artifact satisfaction disclosures.
+
+    The version is normalised to ``0.0.0`` to match the deterministic published
+    manifest identity (:func:`render_shifter_backend_manifest_payload`).
+    """
+    return ApparatusIdentity(name=SHIFTER_BACKEND_NAME, version="0.0.0")
+
+
+# Shifter's artifact-satisfaction mechanism profile (#1580, ADR-034-R2/R8). The
+# mechanism NAME is the upstream governed vocabulary; the profile id + version
+# identify Shifter's one realization contract (the tenant image registry) and the
+# digest binds that exact contract (a deterministic hash of the identity, so it
+# changes only when the contract does). Shifter declares ONLY ``exact-artifact``:
+# an exact requirement is satisfied when the registry owns the exact authored
+# identity (all four ArtifactIdentity fields) with recorded admission evidence.
+# ``constrained`` (candidate + constraint verification) is NOT declared -- it needs
+# an independent constraint verifier Shifter does not yet have, so a constrained
+# requirement fails closed rather than trusting author-declared membership (codex
+# #1580 review). Open realization and dynamic composition stay undeclared too.
+_EXACT_ARTIFACT_MECHANISM = "exact-artifact"
+_INVENTORY_PROFILE = "shifter-backend-inventory"
+_INVENTORY_VERSION = "1"
+
+
+def exact_artifact_profile() -> ArtifactMechanismProfile:
+    """Return Shifter's ``exact-artifact`` mechanism profile with a stable digest."""
+    identity = f"{_EXACT_ARTIFACT_MECHANISM}/{_INVENTORY_PROFILE}/{_INVENTORY_VERSION}"
+    return ArtifactMechanismProfile(
+        mechanism=_EXACT_ARTIFACT_MECHANISM,
+        profile=_INVENTORY_PROFILE,
+        version=_INVENTORY_VERSION,
+        digest="sha256:" + hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+    )
+
+
+def shifter_artifact_mechanism_capabilities() -> tuple[ArtifactMechanismCapability, ...]:
+    """Return the artifact-satisfaction mechanisms Shifter's backend can execute.
+
+    Exactly one, truthfully: ``exact-artifact``. The genuine adapter is the tenant
+    image registry carrying the complete portable ``ArtifactIdentity`` + admission
+    evidence (:class:`engine.models.RaesImageMapping`, #1580); an ``exact``
+    requirement is satisfied when the registry owns that exact identity. Acquisition
+    is ``local-lookup`` (the image is already present -- nothing is pulled, copied,
+    or built on the provisioning path) and timing is ``backend-preparation`` (never
+    realization), which keeps long-running image construction off the critical path.
+    Constrained, open, and dynamic-composition mechanisms stay undeclared
+    (fail-closed) until their own verifiers/adapters exist.
+    """
+    return (
+        ArtifactMechanismCapability(
+            mechanism=exact_artifact_profile(),
+            supported_requirement_kinds=["exact"],
+            supported_routes=[ArtifactAcquisitionTimingModel(acquisition="local-lookup", timing="backend-preparation")],
+        ),
     )
 
 

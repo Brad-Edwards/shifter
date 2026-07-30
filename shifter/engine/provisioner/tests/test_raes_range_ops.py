@@ -74,6 +74,7 @@ def _projection(**overrides) -> RaesOperationInput:
         "plan": _serialized_plan(),
         "delivery_bindings": (_BINDING,),
         "access_bindings": (),
+        "artifact_bindings": (),
         "range_backend": "gce",
         "instantiation_purpose": "live_fire",
         "legacy_range_id": 7,
@@ -452,3 +453,35 @@ class TestRegistryResolver:
         raes_range_ops._registry_resolver(_projection())(_node(RaesPlanImage(name="nope")))
 
         resolve.assert_called_once_with(_node(RaesPlanImage(name="nope")), [])
+
+    def test_resolver_consumes_a_fenced_artifact_binding(self, monkeypatch):
+        # A generation-fenced binding for the node realizes its image verbatim and
+        # never touches the legacy registry-projection resolver (#1580, ADR-034-R8).
+        from shared.raes.artifact_binding import ArtifactBinding
+
+        binding = ArtifactBinding(
+            target="node.web",
+            requirement_id="r",
+            artifact_id="img-web",
+            version="1.0.0",
+            digest="sha256:" + "a" * 64,
+            media_type="application/vnd.raes.image",
+            mechanism="exact-artifact",
+            acquisition="local-lookup",
+            timing="backend-preparation",
+            image_ref="projects/x/global/images/fenced",
+            machine_type="e2-medium",
+        )
+        legacy_candidate = {"source_version": None, "image_ref": "projects/x/global/images/legacy"}
+        projection = _projection(
+            artifact_bindings=(binding,),
+            _image_candidates={"gce:ubuntu": (legacy_candidate,)},
+        )
+        legacy = MagicMock()
+        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", legacy)
+
+        profile = raes_range_ops._registry_resolver(projection)(_node(RaesPlanImage(name="ubuntu")))
+
+        legacy.assert_not_called()
+        assert profile.source_image == "projects/x/global/images/fenced"
+        assert profile.machine_type == "e2-medium"
