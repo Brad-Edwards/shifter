@@ -13,6 +13,7 @@ import type {
   CtfChallengeDetail,
   CtfChallengeListItem,
   CtfCurrentEvent,
+  CtfEventPage,
   CtfEventPagesResponse,
   CtfOrganizerScoreboard,
   CtfParticipantProfile,
@@ -41,6 +42,7 @@ export const ctfKeys = {
   profile: () => ["ctf", "profile"] as const,
   announcements: () => ["ctf", "announcements"] as const,
   pages: () => ["ctf", "pages"] as const,
+  briefing: () => ["ctf", "briefing"] as const,
   eventPages: (eventId: string) => ["ctf", "event-pages", eventId] as const,
   analytics: (eventId: string) => ["ctf", "analytics", eventId] as const,
   submissions: () => ["ctf", "submissions"] as const,
@@ -273,6 +275,23 @@ export function useCtfPages() {
   return useQuery({
     queryKey: ctfKeys.pages(),
     queryFn: ({ signal }) => apiFetch<CtfEventPagesResponse>(`${BASE}/me/pages/`, { signal }),
+  });
+}
+
+/**
+ * The active event's participant briefing (#1854). A 404 is the server's proof
+ * that the event has no briefing (the caller falls back to generic help),
+ * resolved to `null`; any other error is a real failure and surfaces as an
+ * error state, so a fetch failure never masquerades as "no briefing".
+ */
+export function useCtfBriefing() {
+  return useQuery({
+    queryKey: ctfKeys.briefing(),
+    queryFn: ({ signal }): Promise<CtfEventPage | null> =>
+      apiFetch<CtfEventPage>(`${BASE}/me/briefing/`, { signal }).catch((error: unknown) => {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }),
   });
 }
 

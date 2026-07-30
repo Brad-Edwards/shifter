@@ -25,6 +25,7 @@ urlpatterns = [
     path("me/team/regenerate-code/", team_views.TeamRegenerateCodeView.as_view(), name="api_team_regenerate_code"),
     path("me/announcements/", participant_views.ParticipantAnnouncementsView.as_view(), name="api_me_announcements"),
     path("me/pages/", participant_views.ParticipantPagesView.as_view(), name="api_me_pages"),
+    path("me/briefing/", participant_views.ParticipantBriefingView.as_view(), name="api_me_briefing"),
     path("me/profile/", participant_views.ParticipantProfileView.as_view(), name="api_me_profile"),
     path("me/username/", participant_views.ParticipantUsernameSelfView.as_view(), name="api_me_username"),
     path(

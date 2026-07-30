@@ -15,6 +15,7 @@ from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
+    _actor,
     _raise_bad_request,
     _raise_not_found,
     _resolve_owned_event,
@@ -72,40 +73,42 @@ class EventPagesView(APIView):
 
     @extend_schema(responses=EventPagesResponseSerializer)
     def get(self, request: Request, event_id: UUID) -> Response:
-        """Return the event's pages in display order."""
-        from ctf.models import CTFEventPage
+        """Return the event's pages in display order (incl. the reserved briefing).
+
+        The organizer editor sees every page and separates the reserved briefing
+        into its own affordance; participant reads exclude it (#1854).
+        """
+        from ctf.services.event.pages import list_active_pages
 
         try:
             _resolve_owned_event(request, event_id)
         except _CtfApiError as exc:
             return exc.to_response(request)
-        pages = CTFEventPage.objects.filter(event_id=event_id, deleted_at__isnull=True)
+        pages = list_active_pages(event_id, include_reserved=True)
         return Response({"pages": [_page_payload(p) for p in pages]})
 
     @extend_schema(request=EventPageWriteSerializer, responses=EventPageSerializer)
     def post(self, request: Request, event_id: UUID) -> Response:
-        """Create a page; slugs are unique per event."""
-        from django.core.exceptions import ValidationError
-        from django.utils.text import slugify
-
-        from ctf.models import CTFEventPage
+        """Create a page through the CTF page service; slugs are unique per event."""
+        from ctf.exceptions import CTFValidationError
+        from ctf.services.event.pages import create_event_page
 
         try:
             event = _resolve_owned_event(request, event_id)
             serializer = EventPageWriteSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
-            slug = slugify(data.get("slug") or data["title"])[:140]
             try:
-                page = CTFEventPage.objects.create(
-                    event=event,
+                page = create_event_page(
+                    event,
                     title=data["title"],
-                    slug=slug,
                     body=data["body"],
+                    slug=data.get("slug"),
                     order=data.get("order", 0),
+                    actor_id=_actor(request).pk,
                 )
-            except ValidationError:
-                _raise_bad_request("A page with this slug already exists")
+            except CTFValidationError as exc:
+                _raise_bad_request(str(exc))
             return Response(_page_payload(page), status=status.HTTP_201_CREATED)
         except _CtfApiError as exc:
             return exc.to_response(request)
@@ -129,14 +132,17 @@ class EventPageDetailView(APIView):
     @extend_schema(request=EventPageWriteSerializer, responses=EventPageSerializer)
     def put(self, request: Request, page_id: UUID) -> Response:
         """Update the page's title, body, or order (the slug is stable)."""
+        from ctf.exceptions import CTFValidationError
+        from ctf.services.event.pages import update_event_page
+
         try:
             page = self._resolve(request, page_id)
             serializer = EventPageWriteSerializer(data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
-            for field in ("title", "body", "order"):
-                if field in serializer.validated_data:
-                    setattr(page, field, serializer.validated_data[field])
-            page.save()
+            try:
+                update_event_page(page, fields=serializer.validated_data, actor_id=_actor(request).pk)
+            except CTFValidationError as exc:
+                _raise_bad_request(str(exc))
             return Response(_page_payload(page))
         except _CtfApiError as exc:
             return exc.to_response(request)
@@ -144,9 +150,11 @@ class EventPageDetailView(APIView):
     @extend_schema(responses=ParticipantDeleteResultSerializer)
     def delete(self, request: Request, page_id: UUID) -> Response:
         """Soft-delete the page."""
+        from ctf.services.event.pages import delete_event_page
+
         try:
             page = self._resolve(request, page_id)
-            page.delete(soft=True)
+            delete_event_page(page, actor_id=_actor(request).pk)
             return Response({"deleted": True, "id": str(page_id)})
         except _CtfApiError as exc:
             return exc.to_response(request)

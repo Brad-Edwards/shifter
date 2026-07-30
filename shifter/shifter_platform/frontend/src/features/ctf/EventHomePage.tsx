@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { Flag, Server, Trophy, UserCog, Users } from "lucide-react";
+import { BookOpen, Flag, Server, Trophy, UserCog, Users } from "lucide-react";
 
-import { useCtfAnnouncements, useCtfCurrentEvent, useCtfPages } from "@/api/ctf";
+import { useCtfAnnouncements, useCtfBriefing, useCtfCurrentEvent, useCtfPages } from "@/api/ctf";
 import { ApiError } from "@/api/errors";
 import type { CtfCurrentEvent } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
@@ -16,7 +16,14 @@ import { cn } from "@/lib/utils";
 
 import { titleCase, formatDateTime } from "./format";
 import { MarkdownContent } from "./MarkdownContent";
-import { ctfAccountPath, ctfChallengesPath, ctfRangePath, ctfScoreboardPath, ctfTeamPath } from "./routes";
+import {
+  ctfAccountPath,
+  ctfBriefingPath,
+  ctfChallengesPath,
+  ctfRangePath,
+  ctfScoreboardPath,
+  ctfTeamPath,
+} from "./routes";
 
 const QUICK_LINKS = [
   { to: ctfChallengesPath(), label: "Challenges", icon: Flag },
@@ -143,6 +150,14 @@ function PagesCard() {
 
 function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
   const { event, participant } = data;
+  // A published briefing gets a prominent entry point here (participants used to
+  // open the workspace with no briefing and no starting point, #1854). A fetch
+  // failure is NOT absence: only a resolved briefing shows the banner + quick
+  // link; a failed lookup shows a bounded retry rather than silently hiding the
+  // entry point.
+  const briefingQuery = useCtfBriefing();
+  const briefing = briefingQuery.data;
+  const quickLinks = briefing ? [{ to: ctfBriefingPath(), label: "Briefing", icon: BookOpen }, ...QUICK_LINKS] : QUICK_LINKS;
   return (
     <>
       {event.theme_color ? (
@@ -163,6 +178,31 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
       />
 
       <EventSchedule event={event} />
+
+      {briefingQuery.isError ? (
+        <Alert variant="destructive" className="mb-6">
+          <AlertTitle>Could not check for a briefing</AlertTitle>
+          <AlertDescription>
+            <button
+              type="button"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-2")}
+              onClick={() => briefingQuery.refetch()}
+            >
+              Retry
+            </button>
+          </AlertDescription>
+        </Alert>
+      ) : briefing ? (
+        <Alert className="mb-6">
+          <AlertTitle>Event briefing</AlertTitle>
+          <AlertDescription>
+            The organizer has published a briefing for this event.{" "}
+            <Link className="underline" to={ctfBriefingPath()}>
+              Open the briefing
+            </Link>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <AnnouncementsCard />
 
@@ -196,7 +236,7 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
 
       <h2 className="mb-3 text-sm font-semibold">Quick links</h2>
       <nav aria-label="Workspace quick links" className="flex flex-wrap gap-2">
-        {QUICK_LINKS.map(({ to, label, icon: Icon }) => (
+        {quickLinks.map(({ to, label, icon: Icon }) => (
           <Link key={to} to={to} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
             <Icon className="size-4" />
             {label}
