@@ -19,6 +19,7 @@ import { EventsListPage } from "@/features/ctf/admin/EventsListPage";
 import { MonitoringPage } from "@/features/ctf/admin/MonitoringPage";
 import { ParticipantDetailPage } from "@/features/ctf/admin/ParticipantDetailPage";
 import { ParticipantsPage } from "@/features/ctf/admin/ParticipantsPage";
+import { BriefingPage } from "@/features/ctf/BriefingPage";
 import { EventHomePage } from "@/features/ctf/EventHomePage";
 import { HelpPage } from "@/features/ctf/HelpPage";
 import { RangePage } from "@/features/ctf/RangePage";
@@ -145,6 +146,7 @@ export const router = createBrowserRouter(
             { path: "team", element: <TeamPage /> },
             { path: "account", element: <AccountPage /> },
             { path: "help", element: <HelpPage /> },
+            { path: "briefing", element: <BriefingPage /> },
           ],
         },
         {
