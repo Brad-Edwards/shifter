@@ -184,7 +184,7 @@ class TestProvisionerReaderContract:
     def test_environment_pack_and_raes_release_pair_is_exact(self):
         assert importlib.metadata.version("raes") == "2.0.0"
         assert importlib.metadata.version("raes") == _exact_dependency_pin("raes")
-        assert importlib.metadata.version("raes-env-packs") == "3.0.0"
+        assert importlib.metadata.version("raes-env-packs") == "3.1.0"
         assert importlib.metadata.version("raes-env-packs") == _exact_dependency_pin("raes-env-packs")
         requirements = importlib.metadata.requires("raes-env-packs") or []
         normalized = {requirement.replace(" ", "").lower() for requirement in requirements}

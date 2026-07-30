@@ -10,9 +10,10 @@ A pack is registered as a provenance-only reference: Shifter records where the
 pack lives (`package_ref`), its version and digest, its contract and profile, and
 bounded provenance. It does not copy the pack body into the catalog. Pack content
 is defined by the `raes-env-packs` contract. Shifter pins
-`raes-env-packs==3.0.0` with its required `raes==2.0.0`, and delegates
-validation and canonical content identity to those released libraries. A
-broken, malformed, or non-conformant pack is rejected.
+`raes-env-packs==3.1.0` with its required `raes==2.0.0`, and delegates
+validation, canonical content identity, and the artifact-requirement publication
+profile to those released libraries. A broken, malformed, or non-conformant pack
+is rejected.
 
 There are three entrypoints onto the same registration service. All of them are
 source-agnostic and entitlement-blind; the only access check is who is authorized

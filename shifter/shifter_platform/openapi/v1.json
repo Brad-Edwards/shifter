@@ -14916,6 +14916,36 @@
           "notes": {
             "type": "string",
             "default": ""
+          },
+          "artifact_id": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "artifact_version": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "artifact_digest": {
+            "type": "string",
+            "default": "",
+            "maxLength": 71
+          },
+          "media_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "integrity_ref": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "provenance_ref": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
           }
         },
         "required": [
@@ -14969,6 +14999,30 @@
             "type": "string",
             "readOnly": true
           },
+          "artifact_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "artifact_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "artifact_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "media_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "integrity_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "provenance_ref": {
+            "type": "string",
+            "readOnly": true
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -14981,14 +15035,20 @@
           }
         },
         "required": [
+          "artifact_digest",
+          "artifact_id",
+          "artifact_version",
           "created_at",
           "disk_size_gb",
           "disk_type",
           "enabled",
           "id",
           "image_ref",
+          "integrity_ref",
           "machine_type",
+          "media_type",
           "notes",
+          "provenance_ref",
           "provider",
           "source_name",
           "source_version",

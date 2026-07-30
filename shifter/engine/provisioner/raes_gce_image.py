@@ -35,6 +35,8 @@ from shared.raes.image_policy import is_concrete_image_ref, resolve_from_candida
 from config import GCERangeImageProfile
 
 if TYPE_CHECKING:
+    from shared.raes.artifact_binding import ArtifactBinding
+
     from raes_plan import RaesPlanNode
 
 _DEFAULT_MACHINE_TYPE = "e2-medium"
@@ -70,6 +72,24 @@ def resolve_gce_image(node: RaesPlanNode, candidates: Sequence[dict[str, Any]]) 
     version = image.version or "*"
     raise RaesGceImageError(
         f"no GCE image mapping for source {image.name!r} (version {version}); register an RAES image mapping"
+    )
+
+
+def resolve_gce_image_from_binding(node: RaesPlanNode, binding: ArtifactBinding) -> GCERangeImageProfile:
+    """Build the image profile from a generation-fenced artifact binding (ADR-034-R8).
+
+    The Engine already resolved the authored artifact requirement to this exact
+    backend-owned image at launch; the provisioner realizes it verbatim and never
+    re-resolves, reads the mutable registry, chooses a different candidate, or
+    falls back. Sizing gaps still fill from authored resources then profile
+    defaults, exactly as for a registry-resolved image.
+    """
+    return _profile(
+        node,
+        binding.image_ref,
+        binding.machine_type or None,
+        binding.disk_size_gb,
+        binding.disk_type or None,
     )
 
 
