@@ -241,8 +241,9 @@ def test_fenced_binding_without_disclosure_fails_closed():
         status=ArtifactResolutionStatus.SATISFIED,
         disclosure=None,
     )
+    inventory = [_owned()]
     with pytest.raises(ArtifactSatisfactionError, match="no disclosure"):
-        _fenced_binding(_ADDRESS, resolution, [_owned()])
+        _fenced_binding(_ADDRESS, resolution, inventory)
 
 
 def test_fenced_binding_with_unowned_artifact_fails_closed():
