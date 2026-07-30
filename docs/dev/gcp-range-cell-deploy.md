@@ -182,7 +182,8 @@ before any Compute or secret client is created; they never fall back to the
 default role image. The adapter routes host access and bootstrap from this
 trusted profile metadata, never from a scenario or image-name literal.
 
-Profiles that require participant web research may set
+Profiles resolved for either legacy `RangeSpec` instances or RAES nodes that
+require participant web research may set
 `"allow_public_web_egress": true`. The range-cell backend then adds a
 range-owned egress rule allowing only TCP 80/443 to public IPv4 through the
 shared VPC's Cloud NAT. The default is `false`; the per-range default-deny rule
