@@ -139,13 +139,14 @@ class SSHConsumer(AsyncWebsocketConsumer):
         closes the socket with the matching ``WebSocketCloseCode``. Engine owns
         all ownership / range-status / instance validation.
         """
-        from engine.services import connect_terminal
+        from cms.services import connect_range_terminal
 
         try:
             # Run blocking connect (DB + Secrets Manager) on the dedicated
             # terminal executor so it cannot block page renders (#929).
-            self.ssh_conn = await run_terminal_sync(connect_terminal, user, instance_uuid)
-            await self.ssh_conn.connect()
+            ssh_conn = await run_terminal_sync(connect_range_terminal, user, instance_uuid)
+            self.ssh_conn = ssh_conn
+            await ssh_conn.connect()
             return True
         except TerminalExecutorSaturated:
             await self._release_session_slot()

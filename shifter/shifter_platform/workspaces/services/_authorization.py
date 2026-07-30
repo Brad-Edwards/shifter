@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from workspaces.models import WorkspaceMembership
-from workspaces.roles import role_permits
+from workspaces.roles import WorkspaceRole, role_permits
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -137,3 +137,21 @@ def authorize_bound_workspace(
         raise _deny("no_membership")
     _check_operation(membership.role, operation)
     return _authorization_from(membership)
+
+
+def authorized_workspace_ids(actor: User, operation: object) -> tuple[int, ...]:
+    """Return persisted workspace IDs where ``actor`` may perform ``operation``.
+
+    This is the query-side companion to :func:`authorize_bound_workspace`.
+    Callers use it to omit inaccessible tenant-bound rows from collection
+    surfaces without importing workspace models or role policy.
+    """
+    operation_code = _operation_value(operation)
+    permitted_roles = tuple(role for role in WorkspaceRole.values if role_permits(role, operation_code))
+    if not permitted_roles or getattr(actor, "id", None) is None:
+        return ()
+    return tuple(
+        WorkspaceMembership.objects.filter(user=actor, role__in=permitted_roles)
+        .order_by("workspace_id")
+        .values_list("workspace_id", flat=True)
+    )

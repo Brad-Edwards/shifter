@@ -132,11 +132,11 @@ def _rdp_security_for_os(os_type: str | None) -> str:
 
 def _resolve_rdp_conn(user: User, instance_uuid: str) -> dict[str, Any]:
     """Resolve the RDP connection info or raise ``BootstrapFailure``."""
-    from engine.services import get_rdp_connection_info
+    from cms.services import get_range_rdp_connection_info
 
     try:
-        return get_rdp_connection_info(user, instance_uuid)
-    except ValueError as e:
+        return get_range_rdp_connection_info(user, instance_uuid)
+    except (PermissionError, ValueError) as e:
         logger.exception(
             "RDP connection lookup failed: user=%s instance_uuid=%s",
             safe_log_value(user.email),
@@ -315,10 +315,10 @@ def _build_ngfw_ssh_url(*, user: User, app_id: str, guac_settings: GuacamoleSett
 
 def _resolve_range_ssh(user: User, instance_uuid: str) -> dict[str, Any]:
     """Look up the range SSH connection info or raise ``BootstrapFailure``."""
-    from engine.services import get_ssh_connection_info
+    from cms.services import get_range_ssh_connection_info
 
     try:
-        return get_ssh_connection_info(user, instance_uuid)
+        return get_range_ssh_connection_info(user, instance_uuid)
     except ValueError as e:
         logger.exception(
             "Range SSH access denied (ValueError): user=%s instance_uuid=%s",

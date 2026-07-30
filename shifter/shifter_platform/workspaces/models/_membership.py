@@ -11,7 +11,8 @@ class WorkspaceMembership(models.Model):
 
     Uniqueness on ``(workspace, user)`` is the database-level proof that a user
     holds a single role per workspace. The role vocabulary is closed
-    (:class:`~workspaces.roles.WorkspaceRole`); #1326 extends it.
+    (:class:`~workspaces.roles.WorkspaceRole`) and protected by a database
+    check constraint.
 
     A membership is *workspace-level authorization only*. It is not a grant to
     use another member's range: per-range SSH, RDP, VPN, Guacamole, CTF
@@ -48,6 +49,10 @@ class WorkspaceMembership(models.Model):
             models.UniqueConstraint(
                 fields=["workspace", "user"],
                 name="uniq_membership_per_workspace_user",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(role__in=WorkspaceRole.values),
+                name="workspace_membership_role_valid",
             ),
         ]
 

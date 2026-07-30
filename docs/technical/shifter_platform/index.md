@@ -4,7 +4,7 @@ Django application architecture for the Shifter cyber range platform.
 
 ## Domains
 
-Four bounded contexts, each a Django app with distinct responsibilities.
+Five bounded contexts, each a Django app with distinct responsibilities.
 
 ```mermaid
 graph TB
@@ -113,16 +113,18 @@ CMS::SCMCredential ──referenced by──▶ Engine::UserNGFW
 CMS::NGFWDeploymentProfile ──referenced by──▶ Engine::UserNGFW
 ```
 
-Foreign keys across domains are allowed. Referential integrity via database. Business logic via service calls.
+Foreign keys across domain-owned models are prohibited. Domains exchange
+validated scalar identifiers and call public service facades, which preserves
+model ownership without duplicating persistence.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Inter-domain communication | Python service calls | Same process, no serialization overhead. HTTP only at edge. |
-| Cross-domain foreign keys | Allowed | Pragmatic Django. DB integrity without microservices complexity. |
+| Cross-domain foreign keys | Prohibited | Domain models stay private; scalar bindings cross service boundaries. |
 | Status delivery | Redis pub/sub | Eliminates DB polling. Real-time updates to browser. |
-| API location | Mission Control only | Single HTTP surface. Domains expose services, not endpoints. |
+| API location | Canonical `/api/v1/` router | Domain API modules mount through one versioned HTTP surface. |
 
 ## Capture-the-Flag
 

@@ -61,11 +61,6 @@ from shared.cloud.exceptions import CloudTaskError
 from shared.enums import RangeSource, RequestType, ResourceStatus
 from shared.models import AuditLog
 
-# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
-# exercise tenancy; a fixed scalar stands in for the value the CMS launch
-# facade resolves in production.
-_WORKSPACE_ID = 1
-
 
 def _make_spare_range(*, owner, scenario_id: str = "basic") -> RangeInstance:
     """Create a real, minimal CTF-sourced ``cms.RangeInstance`` + engine ``Range``/``Request``.
@@ -76,15 +71,18 @@ def _make_spare_range(*, owner, scenario_id: str = "basic") -> RangeInstance:
     instead (see module docstring), so no equivalent helper is needed for new
     ranges.
     """
+    from workspaces.services import resolve_personal_workspace
+
+    workspace_id = resolve_personal_workspace(owner).workspace_id
     request_id = CmsRequest.objects.create(
-        workspace_id=_WORKSPACE_ID, request_id=uuid4(), request_type=RequestType.RANGE.value, user=owner
+        workspace_id=workspace_id, request_id=uuid4(), request_type=RequestType.RANGE.value, user=owner
     ).request_id
     engine_request = EngineRequest.objects.create(
         request_id=request_id, request_type=RequestType.RANGE.value, user=owner
     )
     instance_uuid = str(uuid4())
     engine_range = EngineRange.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         uuid=uuid4(),
         user=owner,
         request=engine_request,
@@ -97,7 +95,7 @@ def _make_spare_range(*, owner, scenario_id: str = "basic") -> RangeInstance:
     )
     cms_request = CmsRequest.objects.get(request_id=request_id)
     range_instance = RangeInstance.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request=cms_request,
         scenario_id=scenario_id,
         user_id=owner.id,

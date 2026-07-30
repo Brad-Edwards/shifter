@@ -28,11 +28,6 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
-# exercise tenancy; a fixed scalar stands in for the value the CMS launch
-# facade resolves in production.
-_WORKSPACE_ID = 1
-
 User = get_user_model()
 
 # Exact per-page query budgets. Bump deliberately (with justification) when a
@@ -44,9 +39,9 @@ User = get_user_model()
 # the terminal render — so non-terminal pages pay a single cheap has_active_range
 # query instead of the runtime-IP / scenario / instance-context projection.
 DASHBOARD_NO_RANGE_BUDGET = 4
-DASHBOARD_ACTIVE_RANGE_BUDGET = 4
+DASHBOARD_ACTIVE_RANGE_BUDGET = 5
 TERMINAL_BUDGET = 4
-TERMINAL_ACTIVE_RANGE_BUDGET = 6
+TERMINAL_ACTIVE_RANGE_BUDGET = 7
 CTF_PARTICIPANT_DASHBOARD_BUDGET = 16
 
 
@@ -80,15 +75,18 @@ def active_range(db, user):
     from cms.models import RangeInstance
     from cms.models import Request as CMSRequest
     from shared.enums import RequestType
+    from workspaces.services import resolve_personal_workspace
+
+    workspace_id = resolve_personal_workspace(user).workspace_id
 
     request = CMSRequest.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request_id=uuid.uuid4(),
         request_type=RequestType.RANGE.value,
         user=user,
     )
     return RangeInstance.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request=request,
         scenario_id="test_scenario",
         user_id=user.id,
@@ -193,13 +191,23 @@ class TestPageRenderQueryBudgets:
     def test_terminal_active_range_budget(self, user, client_for, active_range):
         """The terminal render is the one page that still builds the full
         active-range payload (#898 terminal_full tier); this pins its budget so
-        the FK/runtime-IP/scenario work cannot silently regress or migrate to
-        non-terminal pages."""
+        the workspace-authorization, FK/runtime-IP, and scenario work cannot
+        silently regress or migrate to non-terminal pages."""
         client = client_for(user)
         response, queries = _render_query_count(client, "/mission-control/terminal/")
 
         assert response.status_code == 200
         assert queries == TERMINAL_ACTIVE_RANGE_BUDGET
+
+    def test_membership_removal_hides_active_range_from_terminal(self, user, client_for, active_range):
+        from workspaces.models import WorkspaceMembership
+
+        WorkspaceMembership.objects.filter(user=user).delete()
+        response = client_for(user).get("/mission-control/terminal/")
+
+        assert response.status_code == 200
+        assert response.context["has_active_range"] is False
+        assert response.context["active_range"] is None
 
     def test_ctf_participant_dashboard_budget(self, user, client_for, ctf_participant):
         client = client_for(user)

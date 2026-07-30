@@ -2522,6 +2522,11 @@
         "id": "ADR-046-R7",
         "description": "Tenancy scopes principals and range ownership, not platform configuration or catalog. The following remain deployment-global and MUST NOT acquire an organization or workspace binding as an implicit consequence of this layer: the scenario catalog and RAES package sources; the agent, operating-system, instance-type, and app catalogs; NGFW instances and platform network/infrastructure; cloud provider, range-backend, and deployment settings including the environment manifest; identity-provider configuration (issuer, audience, allowlists) and the API-token scope registry; the durable audit store; feature flags; and CTF events, teams, and participants, which stay a separate membership model. Scoping any of these to a workspace is a separate decision requiring its own ADR, because each carries platform-operator authority rather than tenant authority; a workspace-level policy surface (for example the #1171 zero-egress posture) is added by an explicit decision on that surface, never by inheritance from this rule.",
         "checks": []
+      },
+      {
+        "id": "ADR-046-R8",
+        "description": "The initial membership roles are the closed, workspace-scoped owner, admin, and member values. The workspaces service owns their operation matrix and every interactive operation on a workspace-bound resource must pass that service in addition to existing owner, source, lifecycle, CTF, participant-channel, and remote-access checks. Owner/admin/member must not be derived from Django staff/groups, identity-provider claims/groups, CTF authority, API-token scopes, or cloud roles. Personal-workspace ownership is immutable compatibility state; all other membership and role mutations are locked, transactional, and strict-audited, with an owner-only ownership boundary and at least one owner retained. There is no OrganizationMembership or organization-wide role in this iteration: encoding org_admin on workspace rows, copying it across workspaces, or inferring it from one workspace is forbidden until a separate authority model is accepted.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2531,7 +2536,9 @@
     ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1325",
+      "https://github.com/Brad-Edwards/shifter/issues/1326",
       "docs/architecture/organization-workspace-preflight-1325.md",
+      "docs/architecture/workspace-membership-roles-preflight-1326.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",
@@ -2540,7 +2547,14 @@
       "shifter/shifter_platform/config/oidc.py",
       "shifter/shifter_platform/config/identity_platform.py",
       "shifter/shifter_platform/shared/api/errors.py",
-      "shifter/shifter_platform/shared/audit"
+      "shifter/shifter_platform/shared/audit",
+      "shifter/shifter_platform/workspaces/roles.py",
+      "shifter/shifter_platform/workspaces/services/_memberships.py",
+      "shifter/shifter_platform/workspaces/api",
+      "shifter/shifter_platform/tests/workspaces/test_memberships.py",
+      "shifter/shifter_platform/tests/workspaces/test_api.py",
+      "docs/features/workspaces.md",
+      "docs/technical/shifter_platform/workspaces.md"
     ]
   },
   {

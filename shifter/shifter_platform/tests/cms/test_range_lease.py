@@ -16,25 +16,23 @@ from cms.models import RangeInstance
 from cms.models import Request as CMSRequest
 from shared.enums import RangeSource, RequestType, ResourceStatus
 
-# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
-# exercise tenancy; a fixed scalar stands in for the value the CMS launch
-# facade resolves in production.
-_WORKSPACE_ID = 1
-
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
 
 
 def _range(user, *, source=RangeSource.MISSION_CONTROL, expires_at=None, maximum_expires_at=None):
+    from workspaces.services import resolve_personal_workspace
+
+    workspace_id = resolve_personal_workspace(user).workspace_id
     request = CMSRequest.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request_id=uuid4(),
         request_type=RequestType.RANGE.value,
         user=user,
     )
     return RangeInstance.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         user_id=user.id,
         request=request,
         status=ResourceStatus.READY.value,
@@ -107,6 +105,28 @@ def test_extend_mission_control_range_advances_one_bounded_increment():
     assert audit.actor_type == AuditActorType.USER
     assert audit.actor_id == user.pk
     assert audit.previous_state["expires_at"] < audit.new_state["expires_at"]
+
+
+def test_membership_removal_revokes_lease_reads_and_updates():
+    from cms.services._range_lease import (
+        RangeLeaseNotFound,
+        extend_mission_control_range,
+        get_mission_control_range_lease,
+    )
+    from workspaces.models import WorkspaceMembership
+
+    user = User.objects.create_user(username="lease-revoked@example.com")
+    now = timezone.now()
+    _range(
+        user,
+        expires_at=now + timedelta(days=5),
+        maximum_expires_at=now + timedelta(days=40),
+    )
+    WorkspaceMembership.objects.filter(user=user).delete()
+
+    assert get_mission_control_range_lease(user) is None
+    with pytest.raises(RangeLeaseNotFound, match="not found"):
+        extend_mission_control_range(user)
 
 
 def test_extend_mission_control_range_caps_at_the_hard_deadline():
@@ -248,7 +268,7 @@ def test_expire_due_ranges_uses_canonical_destroy_and_system_audit():
         user=user,
     )
     engine_range = EngineRange.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=instance.workspace_id,
         request=engine_request,
         user=user,
         status=ResourceStatus.READY.value,
@@ -272,11 +292,12 @@ def test_expire_due_ranges_uses_canonical_destroy_and_system_audit():
 
 def test_expire_due_ranges_counts_a_row_without_a_request_as_failed():
     from cms.services._range_lease import expire_due_ranges
+    from workspaces.services import resolve_personal_workspace
 
     user = User.objects.create_user(username="lease-missing-request@example.com")
     now = timezone.now()
     instance = RangeInstance.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=resolve_personal_workspace(user).workspace_id,
         user_id=user.id,
         request=None,
         status=ResourceStatus.READY.value,

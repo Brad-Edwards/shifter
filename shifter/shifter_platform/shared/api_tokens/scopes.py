@@ -37,6 +37,10 @@ CTF_VPN_PROFILE_READ = "ctf:vpn-profile:read"
 CMS_AUTHORING_READ = "cms:authoring:read"
 CMS_AUTHORING_WRITE = "cms:authoring:write"
 
+# --- Workspace membership API (#1326) ----------------------------------------
+WORKSPACES_MEMBERSHIP_READ = "workspaces:membership:read"
+WORKSPACES_MEMBERSHIP_WRITE = "workspaces:membership:write"
+
 KNOWN_SCOPES: frozenset[str] = frozenset(
     {
         MISSION_CONTROL_RANGE_READ,
@@ -54,6 +58,8 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         CTF_VPN_PROFILE_READ,
         CMS_AUTHORING_READ,
         CMS_AUTHORING_WRITE,
+        WORKSPACES_MEMBERSHIP_READ,
+        WORKSPACES_MEMBERSHIP_WRITE,
     }
 )
 

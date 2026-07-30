@@ -1,12 +1,10 @@
-"""Read-only range/instance queries (system-level, no user-ownership enforcement).
-
-Used by CTF to query range state without requiring the range owner's User.
-"""
+"""Read-only range/instance queries for system and participant workflows."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
+from cms.exceptions import CMSError
 from cms.models import RangeInstance
 
 
@@ -57,7 +55,7 @@ def find_range_instance_id_by_request(request_id: str | UUID) -> int | None:
     return int(pk) if pk is not None else None
 
 
-def get_range_target_instances(user_id: int) -> list[dict[str, str]]:
+def get_range_target_instances(user) -> list[dict[str, str]]:
     """Get the accessible provisioned instances for a user's ready range.
 
     Explicit participant-access channels are authoritative when present. For
@@ -67,14 +65,45 @@ def get_range_target_instances(user_id: int) -> list[dict[str, str]]:
     seats for single-workstation labs.
 
     Args:
-        user_id: PK of the user.
+        user: User whose participant-accessible instances are requested.
 
     Returns:
         List of dicts with name, private_ip, os_type for each accessible instance.
     """
     from engine.services import get_user_ready_range_instances
+    from shared.enums import RangeSource, ResourceStatus
+    from workspaces.services import WorkspaceOperation
 
-    instances = list(get_user_ready_range_instances(user_id))
+    from ._range_workspace import authorize_range_workspace
+
+    user_id = getattr(user, "id", None)
+    if user_id is None:
+        return []
+    cms_range = (
+        RangeInstance.objects.filter(
+            user_id=user_id,
+            range_source=RangeSource.CTF.value,
+            status=ResourceStatus.READY.value,
+            request__isnull=False,
+        )
+        .select_related("request")
+        .order_by("-created_at")
+        .first()
+    )
+    if cms_range is None:
+        return []
+    try:
+        authorize_range_workspace(user, cms_range.workspace_id, WorkspaceOperation.ACCESS_RANGE)
+    except CMSError:
+        return []
+
+    instances = list(
+        get_user_ready_range_instances(
+            user_id,
+            request_id=cms_range.request.request_id,
+            workspace_id=cms_range.workspace_id,
+        )
+    )
     declared_targets = [inst for inst in instances if _has_participant_access_channel(inst)]
     if declared_targets:
         return declared_targets

@@ -12,11 +12,6 @@ from engine.models import Request as EngineRequest
 from shared.enums import RangeSource, RequestType, ResourceStatus
 from tests.engine.services.conftest import boto3_secrets, make_secrets_client
 
-# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
-# exercise tenancy; a fixed scalar stands in for the value the CMS launch
-# facade resolves in production.
-_WORKSPACE_ID = 1
-
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -28,12 +23,15 @@ PROFILE = (
 
 
 def _range_pair(user, *, source=RangeSource.CTF, cms_status=ResourceStatus.READY):
+    from workspaces.services import resolve_personal_workspace
+
+    workspace_id = resolve_personal_workspace(user).workspace_id
     request_id = uuid4()
     cms_request = CMSRequest.objects.create(
-        workspace_id=_WORKSPACE_ID, request_id=request_id, request_type=RequestType.RANGE.value, user=user
+        workspace_id=workspace_id, request_id=request_id, request_type=RequestType.RANGE.value, user=user
     )
     cms_range = RangeInstance.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request=cms_request,
         scenario_id="basic",
         user_id=user.id,
@@ -54,7 +52,7 @@ def _range_pair(user, *, source=RangeSource.CTF, cms_status=ResourceStatus.READY
         status=Range.Status.READY,
     )
     engine_range = Range.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request=engine_request,
         user=user,
         status=Range.Status.READY,
@@ -85,6 +83,19 @@ def test_ctf_profile_access_validates_cms_ownership_and_delegates_to_engine(sett
         result = get_ctf_openvpn_profile(user, cms_range.pk)
 
     assert result.content == PROFILE.encode()
+
+
+def test_membership_removal_revokes_vpn_before_secret_resolution(settings):
+    from cms.services import OpenVpnProfileNotFound, get_ctf_openvpn_profile
+    from workspaces.models import WorkspaceMembership
+
+    settings.CLOUD_PROVIDER = "aws"
+    user = User.objects.create_user(username="cms-vpn-revoked@example.test")
+    cms_range, _engine_range = _range_pair(user)
+    WorkspaceMembership.objects.filter(user=user).delete()
+
+    with pytest.raises(OpenVpnProfileNotFound, match="not found"):
+        get_ctf_openvpn_profile(user, cms_range.pk)
 
 
 @pytest.mark.parametrize(
@@ -142,8 +153,10 @@ def test_profile_access_rejects_unsaved_users_and_missing_requests():
         get_mission_control_openvpn_profile(unsaved_user)
 
     user = User.objects.create_user(username="cms-vpn-missing-request@example.test")
+    from workspaces.services import resolve_personal_workspace
+
     RangeInstance.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=resolve_personal_workspace(user).workspace_id,
         request=None,
         scenario_id="basic",
         user_id=user.id,
