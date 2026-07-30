@@ -241,6 +241,11 @@ def _to_view(mapping: RaesImageMapping) -> RaesImageMappingView:
 _SHA256_DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 
 
+def _stripped(value: str | None) -> str:
+    """Return ``value`` stripped, or ``""`` when it is None/blank."""
+    return (value or "").strip()
+
+
 def _validate_portable_identity(opts: RaesImageMappingOptions) -> dict[str, str]:
     """Return the normalized portable-identity fields, or raise on a half-populated set.
 
@@ -250,12 +255,12 @@ def _validate_portable_identity(opts: RaesImageMappingOptions) -> dict[str, str]
     be a canonical ``sha256:`` value so a disclosure built from it is well-formed.
     """
     fields = {
-        "artifact_id": (opts.artifact_id or "").strip(),
-        "artifact_version": (opts.artifact_version or "").strip(),
-        "artifact_digest": (opts.artifact_digest or "").strip(),
-        "media_type": (opts.media_type or "").strip(),
-        "integrity_ref": (opts.integrity_ref or "").strip(),
-        "provenance_ref": (opts.provenance_ref or "").strip(),
+        "artifact_id": _stripped(opts.artifact_id),
+        "artifact_version": _stripped(opts.artifact_version),
+        "artifact_digest": _stripped(opts.artifact_digest),
+        "media_type": _stripped(opts.media_type),
+        "integrity_ref": _stripped(opts.integrity_ref),
+        "provenance_ref": _stripped(opts.provenance_ref),
     }
     present = [key for key, value in fields.items() if value]
     if not present:

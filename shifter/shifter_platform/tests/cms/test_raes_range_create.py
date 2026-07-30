@@ -279,14 +279,12 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
         user_id,
         compiled_plan,
         backend_admission=None,
-        delivery_bindings=(),
-        participant_access=(),
-        artifact_bindings=(),
+        bindings=None,
         workspace_id=None,
     ):
         captured["kind"] = compiled_plan.get("kind")
         captured["request_id"] = request_id
-        captured["delivery_bindings"] = delivery_bindings
+        captured["delivery_bindings"] = bindings.delivery if bindings else ()
         return RaesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
 
     monkeypatch.setattr("cms.raes.dispatch.create_raes_range", fake_create_raes_range)
@@ -419,9 +417,7 @@ class TestObjectPackageLaunch:
             user_id,
             compiled_plan,
             backend_admission=None,
-            delivery_bindings=(),
-            participant_access=(),
-            artifact_bindings=(),
+            bindings=None,
             workspace_id=None,
         ):
             captured["kind"] = compiled_plan.get("kind")

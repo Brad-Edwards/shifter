@@ -23,10 +23,15 @@ from raes_contracts.apparatus import ApparatusIdentity
 from shared.raes.artifact_inventory import (
     ArtifactSatisfactionError,
     BackendArtifact,
+    _fenced_binding,
     build_artifact_availability,
     resolve_plan_artifact_bindings,
 )
-from shared.raes.artifact_resolution import ArtifactResolutionStatus, resolve_artifact_requirement
+from shared.raes.artifact_resolution import (
+    ArtifactResolution,
+    ArtifactResolutionStatus,
+    resolve_artifact_requirement,
+)
 from shared.raes.manifest import (
     exact_artifact_profile,
     shifter_artifact_mechanism_capabilities,
@@ -136,8 +141,10 @@ def test_manifest_declares_only_exact_artifact_mechanism():
 
 
 def test_exact_mechanism_profile_digest_is_stable_and_well_formed():
-    assert exact_artifact_profile() == exact_artifact_profile()
-    digest = exact_artifact_profile().digest
+    first = exact_artifact_profile()
+    second = exact_artifact_profile()
+    assert first == second  # two independent builds produce an equal, deterministic profile
+    digest = first.digest
     assert digest.startswith("sha256:") and len(digest) == len("sha256:") + 64
 
 
@@ -216,9 +223,40 @@ def test_resolve_plan_bindings_satisfies_registered_node():
 
 
 def test_resolve_plan_bindings_unsatisfiable_fails_closed():
+    plan = _plan_with_source(_exact_requirement())
     with pytest.raises(ArtifactSatisfactionError):
-        _resolve_plan(_plan_with_source(_exact_requirement()), [])  # empty inventory
+        _resolve_plan(plan, [])  # empty inventory
 
 
 def test_resolve_plan_bindings_absent_requirement_is_empty():
     assert _resolve_plan(_plan_with_source(None), [_owned()]) == ()
+
+
+def test_fenced_binding_without_disclosure_fails_closed():
+    # A SATISFIED resolution is expected to carry a disclosure; a missing one fails
+    # the launch closed rather than emitting a binding built from nothing.
+    resolution = ArtifactResolution(
+        requirement_id="req-1",
+        address=_ADDRESS,
+        status=ArtifactResolutionStatus.SATISFIED,
+        disclosure=None,
+    )
+    with pytest.raises(ArtifactSatisfactionError, match="no disclosure"):
+        _fenced_binding(_ADDRESS, resolution, [_owned()])
+
+
+def test_fenced_binding_with_unowned_artifact_fails_closed():
+    # The disclosed artifact must join to an owned inventory row by complete identity;
+    # an empty inventory means the row is gone, so it fails closed instead of guessing.
+    requirement = _exact_requirement()
+    availability = build_artifact_availability({_ADDRESS: requirement}, [_owned()])
+    resolution = resolve_artifact_requirement(
+        requirement,
+        address=_ADDRESS,
+        capabilities=shifter_artifact_mechanism_capabilities(),
+        availability=availability[_ADDRESS],
+        backend=shifter_backend_apparatus(),
+    )
+    assert resolution.status is ArtifactResolutionStatus.SATISFIED
+    with pytest.raises(ArtifactSatisfactionError, match="not in inventory"):
+        _fenced_binding(_ADDRESS, resolution, [])

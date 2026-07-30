@@ -19,7 +19,12 @@ import json
 from engine.models import Instance, Range, Request
 from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
-from shared.raes.operation_input import build_raes_operation_input, candidate_key, plan_image_lookup_keys
+from shared.raes.operation_input import (
+    RaesInputBindings,
+    build_raes_operation_input,
+    candidate_key,
+    plan_image_lookup_keys,
+)
 from shared.raes.participant_access import ParticipantAccessBinding
 
 __all__ = ["operation_input_payload"]
@@ -179,9 +184,11 @@ def _raes_input_payload(target: Range, request: Request) -> dict[str, object]:
     plan = target.range_config or {}
     return build_raes_operation_input(
         plan=plan,
-        delivery_bindings=_raes_delivery_bindings(target),
-        access_bindings=_raes_access_bindings(target),
-        artifact_bindings=_raes_artifact_bindings(target),
+        bindings=RaesInputBindings(
+            delivery=_raes_delivery_bindings(target),
+            access=_raes_access_bindings(target),
+            artifact=_raes_artifact_bindings(target),
+        ),
         image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),
         instantiation_purpose=target.instantiation_purpose or None,

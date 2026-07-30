@@ -2,6 +2,10 @@
 
 from django.db import models
 
+#: Swappable-safe string reference to the Range model, shared by every RAES
+#: sidecar binding FK so the literal is defined once (Sonar python:S1192).
+_RANGE_MODEL = "engine.Range"
+
 
 class RaesImageMapping(models.Model):
     """Tenant-managed mapping from an authored RAES image identity to a concrete provider image.
@@ -156,7 +160,7 @@ class RaesContentDeliveryBinding(models.Model):
     """
 
     range = models.ForeignKey(
-        "engine.Range",
+        _RANGE_MODEL,
         on_delete=models.CASCADE,
         related_name="content_delivery_bindings",
         help_text="Range this delivery binding is realized for.",
@@ -233,7 +237,7 @@ class RaesParticipantAccessBinding(models.Model):
     """
 
     range = models.ForeignKey(
-        "engine.Range",
+        _RANGE_MODEL,
         on_delete=models.CASCADE,
         related_name="participant_access_bindings",
         help_text="Range this participant-access declaration is realized for.",
@@ -297,7 +301,7 @@ class RaesArtifactSatisfactionBinding(models.Model):
     """
 
     range = models.ForeignKey(
-        "engine.Range",
+        _RANGE_MODEL,
         on_delete=models.CASCADE,
         related_name="artifact_satisfaction_bindings",
         help_text="Range this artifact-satisfaction decision is realized for.",

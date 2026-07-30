@@ -23,13 +23,14 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
-from engine.services import create_raes_range
+from engine.services import RangeBindings, create_raes_range
 from shared.raes.dispatch_port import ShifterDispatchResult
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from shared.raes.artifact_binding import ArtifactBinding
+    from shared.raes.artifact_inventory import BackendArtifact
     from shared.raes.content_delivery import DeliveryBinding
     from shared.raes.participant_access import ParticipantAccessBinding
     from shared.range_instantiation_policy import BackendAdmission
@@ -89,9 +90,11 @@ class CmsRaesDispatchPort:
             user_id=self.user_id,
             compiled_plan=compiled_plan,
             backend_admission=self.backend_admission,
-            delivery_bindings=delivery_bindings,
-            participant_access=tuple(participant_access),
-            artifact_bindings=artifact_bindings,
+            bindings=RangeBindings(
+                delivery=delivery_bindings,
+                participant_access=tuple(participant_access),
+                artifact=artifact_bindings,
+            ),
             workspace_id=self.workspace_id,
         )
         return ShifterDispatchResult(
@@ -121,7 +124,7 @@ class CmsRaesDispatchPort:
             backend=shifter_backend_apparatus(),
         )
 
-    def _backend_inventory(self) -> tuple:
+    def _backend_inventory(self) -> tuple[BackendArtifact, ...]:
         """Return the selected backend's owned artifact inventory, or empty when it has none.
 
         A backend outside the artifact-registry set (or an absent admission) owns no

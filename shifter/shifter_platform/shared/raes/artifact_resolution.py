@@ -152,10 +152,12 @@ def resolve_artifact_requirement(
     facts = availability or _empty_availability(address)
     posture = requirement.explicitness
     if posture is ExplicitnessClass.EXACT:
-        return _resolve_exact(requirement, address, capabilities, facts, backend)
-    if posture is ExplicitnessClass.CONSTRAINED:
-        return _resolve_constrained(requirement, address, capabilities, facts, backend)
-    return _resolve_open(requirement, address, capabilities)
+        result = _resolve_exact(requirement, address, capabilities, facts, backend)
+    elif posture is ExplicitnessClass.CONSTRAINED:
+        result = _resolve_constrained(requirement, address, capabilities, facts, backend)
+    else:
+        result = _resolve_open(requirement, address, capabilities)
+    return result
 
 
 def _resolve_exact(
@@ -209,24 +211,14 @@ def _resolve_constrained(
         return _fail(requirement, address, ArtifactResolutionFailure.UNSUPPORTED_BACKEND_MECHANISM)
     mechanism, route = selection
 
-    unmet_constraints = [
-        c.constraint_id for c in requirement.constraints if c.constraint_id not in facts.satisfied_constraint_ids
-    ]
-    if unmet_constraints:
-        return _fail(requirement, address, ArtifactResolutionFailure.UNSATISFIED_CONSTRAINT)
-
-    unverified_inputs = [
-        li.input_id for li in requirement.locked_inputs if li.input_id not in facts.verified_locked_input_ids
-    ]
-    if unverified_inputs:
-        return _fail(requirement, address, ArtifactResolutionFailure.MISSING_LOCKED_INPUT)
-
     candidate = next((c for c in requirement.candidates if c.candidate_id in facts.available_candidate_ids), None)
-    if candidate is None or not _trust_admissible(facts):
-        # A candidate is admissibly available only once its owning integrity and
-        # provenance gates have recorded evidence (trust stays separate from
-        # selection, AC9).
-        return _fail(requirement, address, ArtifactResolutionFailure.UNAVAILABLE_CANDIDATE)
+    failure = _constrained_failure(requirement, facts, candidate_available=candidate is not None)
+    if failure is not None or candidate is None:
+        # An unmet constraint, an unverified locked input, or an unavailable /
+        # non-trust-admissible candidate each fails closed (trust stays separate
+        # from selection, AC9). ``candidate is None`` here always coincides with a
+        # non-None failure; the explicit check narrows the type for the return below.
+        return _fail(requirement, address, failure or ArtifactResolutionFailure.UNAVAILABLE_CANDIDATE)
 
     return ArtifactResolution(
         requirement_id=requirement.requirement_id,
@@ -246,6 +238,40 @@ def _resolve_constrained(
             **_trust_refs(facts),
         ),
     )
+
+
+def _constrained_failure(
+    requirement: ArtifactRequirement,
+    facts: ArtifactRequirementAvailability,
+    *,
+    candidate_available: bool,
+) -> ArtifactResolutionFailure | None:
+    """Return why a constrained requirement is unsatisfiable, or None if admissible.
+
+    Every declared constraint must be independently satisfied and every locked
+    input independently verified, and a trust-admissible authored candidate must
+    be available; each maps to a stable failure code. Absent an independent
+    verifier the availability facts leave these empty, so the requirement fails
+    closed (ADR-034-R8).
+    """
+    checks = (
+        (
+            any(c.constraint_id not in facts.satisfied_constraint_ids for c in requirement.constraints),
+            ArtifactResolutionFailure.UNSATISFIED_CONSTRAINT,
+        ),
+        (
+            any(li.input_id not in facts.verified_locked_input_ids for li in requirement.locked_inputs),
+            ArtifactResolutionFailure.MISSING_LOCKED_INPUT,
+        ),
+        (
+            not candidate_available or not _trust_admissible(facts),
+            ArtifactResolutionFailure.UNAVAILABLE_CANDIDATE,
+        ),
+    )
+    for failed, failure in checks:
+        if failed:
+            return failure
+    return None
 
 
 def _resolve_open(

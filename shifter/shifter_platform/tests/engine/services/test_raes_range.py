@@ -16,7 +16,7 @@ from django.contrib.auth import get_user_model
 from raes_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 
 from engine.models import RaesContentDeliveryBinding, Range
-from engine.services import RaesRangeRef, create_raes_range
+from engine.services import RaesRangeRef, RangeBindings, create_raes_range
 from shared.models import RaesOperationRecord
 from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
@@ -29,9 +29,14 @@ _WORKSPACE_ID = 1
 
 
 def _create_raes_range(**kwargs):
-    """Call the real seam with the workspace binding these suites do not vary."""
+    """Call the real seam, assembling the grouped bindings these suites pass by name."""
     kwargs.setdefault("workspace_id", _WORKSPACE_ID)
-    return create_raes_range(**kwargs)
+    bindings = RangeBindings(
+        delivery=kwargs.pop("delivery_bindings", ()),
+        participant_access=kwargs.pop("participant_access", ()),
+        artifact=kwargs.pop("artifact_bindings", ()),
+    )
+    return create_raes_range(bindings=bindings, **kwargs)
 
 
 pytestmark = pytest.mark.django_db

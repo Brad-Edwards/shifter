@@ -48,6 +48,7 @@ __all__ = [
     "MAX_DELIVERY_BINDINGS",
     "MAX_IMAGE_CANDIDATES",
     "MAX_IMAGE_KEYS",
+    "RaesInputBindings",
     "RaesOperationInput",
     "RaesOperationInputError",
     "build_raes_operation_input",
@@ -60,6 +61,21 @@ __all__ = [
 
 class RaesOperationInputError(Exception):
     """The RAES operation input is not a valid, bounded projection."""
+
+
+@dataclass(frozen=True)
+class RaesInputBindings:
+    """The byte-free binding identities that ride beside the plan in one input.
+
+    Groups the three sidecar binding collections a RAES generation carries --
+    content delivery (#1564), participant access (#1710), and generation-fenced
+    artifacts (#1580) -- so the input builder takes one cohesive argument instead
+    of three parallel ones. ``delivery`` is required; the other two default empty.
+    """
+
+    delivery: Sequence[DeliveryBinding]
+    access: Sequence[ParticipantAccessBinding] = ()
+    artifact: Sequence[ArtifactBinding] = ()
 
 
 # Bounded per ADR-043-R2/R7: the input is a reference-only projection, never a
@@ -411,9 +427,7 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
 def build_raes_operation_input(
     *,
     plan: Mapping[str, Any],
-    delivery_bindings: Sequence[DeliveryBinding],
-    access_bindings: Sequence[ParticipantAccessBinding] = (),
-    artifact_bindings: Sequence[ArtifactBinding] = (),
+    bindings: RaesInputBindings,
     image_candidates: Mapping[str, Sequence[Mapping[str, Any]]],
     range_backend: str | None,
     instantiation_purpose: str | None,
@@ -427,8 +441,8 @@ def build_raes_operation_input(
     """
     payload = {
         "plan": dict(plan),
-        "delivery_bindings": [binding.to_transport() for binding in delivery_bindings],
-        "access_bindings": [binding.to_transport() for binding in access_bindings],
+        "delivery_bindings": [binding.to_transport() for binding in bindings.delivery],
+        "access_bindings": [binding.to_transport() for binding in bindings.access],
         "image_candidates": {key: [dict(row) for row in image_candidates[key]] for key in sorted(image_candidates)},
         "range_backend": range_backend,
         "instantiation_purpose": instantiation_purpose,
@@ -437,7 +451,7 @@ def build_raes_operation_input(
     # Emit artifact_bindings only when a plan actually carries an artifact
     # requirement, so the common no-requirement input is byte-identical to the
     # pre-#1580 shape and an older consumer never sees an unexpected key.
-    if artifact_bindings:
-        payload["artifact_bindings"] = [binding.to_transport() for binding in artifact_bindings]
+    if bindings.artifact:
+        payload["artifact_bindings"] = [binding.to_transport() for binding in bindings.artifact]
     parse_raes_operation_input(payload)
     return payload

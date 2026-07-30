@@ -20,7 +20,7 @@ asserts trust the registry did not record (trust stays a separate decision, AC9)
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from raes._source import ArtifactIdentity, ArtifactRequirement
@@ -28,7 +28,11 @@ from raes_contracts.apparatus import ApparatusIdentity
 from raes_contracts.contracts import ArtifactMechanismCapability, ArtifactRequirementAvailability
 
 from shared.raes.artifact_binding import ArtifactBinding
-from shared.raes.artifact_resolution import ArtifactResolutionStatus, resolve_artifact_requirement
+from shared.raes.artifact_resolution import (
+    ArtifactResolution,
+    ArtifactResolutionStatus,
+    resolve_artifact_requirement,
+)
 
 __all__ = [
     "ArtifactSatisfactionError",
@@ -154,7 +158,7 @@ def _match_identity(inventory: Sequence[BackendArtifact], identity: ArtifactIden
     return None
 
 
-def _unique(values) -> list[str]:
+def _unique(values: Iterable[str]) -> list[str]:
     """Return the values de-duplicated in stable sorted order."""
     return sorted(set(values))
 
@@ -197,36 +201,47 @@ def resolve_plan_artifact_bindings(
         )
         if resolution.status is ArtifactResolutionStatus.UNRESOLVABLE:
             raise ArtifactSatisfactionError(f"artifact requirement at {address} is unsatisfiable: {resolution.code}")
-        if resolution.status is not ArtifactResolutionStatus.SATISFIED:
-            # DELEGATED (open, realized at apply time) fences no concrete image.
-            continue
-        disclosure = resolution.disclosure
-        if disclosure is None:  # pragma: no cover - SATISFIED always carries a disclosure; guard fails closed
-            raise ArtifactSatisfactionError(f"satisfied artifact requirement at {address} has no disclosure")
-        # Join the disclosed artifact back to its owned row by COMPLETE identity
-        # (never digest alone) so the fenced image_ref is the one admitted for
-        # exactly that identity.
-        owned = _match_identity(inventory, disclosure.artifact)
-        if owned is None:  # pragma: no cover - SATISFIED implies the identity is owned
-            raise ArtifactSatisfactionError(f"satisfied artifact for {address} is not in inventory")
-        bindings.append(
-            ArtifactBinding(
-                target=address,
-                requirement_id=disclosure.requirement_id,
-                artifact_id=disclosure.artifact.artifact_id,
-                version=disclosure.artifact.version,
-                digest=disclosure.artifact.digest,
-                media_type=disclosure.artifact.media_type,
-                mechanism=disclosure.mechanism.mechanism,
-                acquisition=disclosure.acquisition,
-                timing=disclosure.timing,
-                image_ref=owned.image_ref,
-                machine_type=owned.machine_type,
-                disk_size_gb=owned.disk_size_gb,
-                disk_type=owned.disk_type,
-            )
-        )
+        # DELEGATED (open, realized at apply time) and SKIPPED fence no concrete image.
+        if resolution.status is ArtifactResolutionStatus.SATISFIED:
+            bindings.append(_fenced_binding(address, resolution, inventory))
     return tuple(bindings)
+
+
+def _fenced_binding(
+    address: str,
+    resolution: ArtifactResolution,
+    inventory: Sequence[BackendArtifact],
+) -> ArtifactBinding:
+    """Build the generation-fenced binding for a SATISFIED resolution, or fail closed.
+
+    Joins the disclosed artifact back to its owned inventory row by COMPLETE
+    identity (never digest alone) so the fenced ``image_ref`` is the one admitted
+    for exactly that identity. Either guard fails the launch closed rather than
+    emit a binding built from incomplete data (defensive: a SATISFIED resolution
+    from :func:`resolve_artifact_requirement` always carries a disclosure whose
+    artifact is owned, so neither guard trips on that path).
+    """
+    disclosure = resolution.disclosure
+    if disclosure is None:
+        raise ArtifactSatisfactionError(f"satisfied artifact requirement at {address} has no disclosure")
+    owned = _match_identity(inventory, disclosure.artifact)
+    if owned is None:
+        raise ArtifactSatisfactionError(f"satisfied artifact for {address} is not in inventory")
+    return ArtifactBinding(
+        target=address,
+        requirement_id=disclosure.requirement_id,
+        artifact_id=disclosure.artifact.artifact_id,
+        version=disclosure.artifact.version,
+        digest=disclosure.artifact.digest,
+        media_type=disclosure.artifact.media_type,
+        mechanism=disclosure.mechanism.mechanism,
+        acquisition=disclosure.acquisition,
+        timing=disclosure.timing,
+        image_ref=owned.image_ref,
+        machine_type=owned.machine_type,
+        disk_size_gb=owned.disk_size_gb,
+        disk_type=owned.disk_type,
+    )
 
 
 def _plan_artifact_requirements(plan: Mapping[str, object]) -> dict[str, ArtifactRequirement]:
@@ -238,7 +253,7 @@ def _plan_artifact_requirements(plan: Mapping[str, object]) -> dict[str, Artifac
     provisioner's ``parse_plan`` uses -- so a fenced binding keyed by it matches at
     realization. Nodes with no artifact requirement are absent concerns and skipped.
     """
-    resources = plan.get("resources") if isinstance(plan, Mapping) else None
+    resources = _nested_get(plan, "resources")
     if not isinstance(resources, Mapping):
         return {}
     requirements: dict[str, ArtifactRequirement] = {}
@@ -246,12 +261,18 @@ def _plan_artifact_requirements(plan: Mapping[str, object]) -> dict[str, Artifac
         if not isinstance(entry, Mapping) or entry.get("resource_type") != _NODE_RESOURCE_TYPE:
             continue
         address = entry.get("address")
-        payload = entry.get("payload")
-        spec = payload.get("spec") if isinstance(payload, Mapping) else None
-        node = spec.get("node") if isinstance(spec, Mapping) else None
-        source = node.get("source") if isinstance(node, Mapping) else None
-        raw = source.get("artifact_requirement") if isinstance(source, Mapping) else None
+        raw = _nested_get(entry, "payload", "spec", "node", "source", "artifact_requirement")
         if raw is None or not isinstance(address, str) or not address:
             continue
         requirements[address] = ArtifactRequirement.model_validate(raw)
     return requirements
+
+
+def _nested_get(mapping: object, *keys: str) -> object:
+    """Walk a chain of mapping keys, returning None if any level is absent or not a mapping."""
+    current = mapping
+    for key in keys:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current

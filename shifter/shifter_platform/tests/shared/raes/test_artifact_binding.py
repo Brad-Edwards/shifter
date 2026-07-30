@@ -46,8 +46,9 @@ def test_optional_sizing_defaults():
 
 
 def test_rejects_unknown_key_so_a_secret_cannot_ride_along():
+    row = _row(signed_url="https://secret")
     with pytest.raises(ArtifactBindingError, match="unexpected"):
-        ArtifactBinding.from_transport(_row(signed_url="https://secret"))
+        ArtifactBinding.from_transport(row)
 
 
 def test_rejects_missing_required_field():
@@ -58,20 +59,24 @@ def test_rejects_missing_required_field():
 
 
 def test_rejects_non_canonical_digest():
+    row = _row(digest="deadbeef")
     with pytest.raises(ArtifactBindingError, match="digest"):
-        ArtifactBinding.from_transport(_row(digest="deadbeef"))
+        ArtifactBinding.from_transport(row)
 
 
 def test_rejects_unknown_acquisition_and_timing():
+    bad_acquisition = _row(acquisition="teleport")
     with pytest.raises(ArtifactBindingError, match="acquisition"):
-        ArtifactBinding.from_transport(_row(acquisition="teleport"))
+        ArtifactBinding.from_transport(bad_acquisition)
+    bad_timing = _row(timing="whenever")
     with pytest.raises(ArtifactBindingError, match="timing"):
-        ArtifactBinding.from_transport(_row(timing="whenever"))
+        ArtifactBinding.from_transport(bad_timing)
 
 
 def test_rejects_non_positive_disk_size():
+    row = _row(disk_size_gb=0)
     with pytest.raises(ArtifactBindingError, match="disk_size_gb"):
-        ArtifactBinding.from_transport(_row(disk_size_gb=0))
+        ArtifactBinding.from_transport(row)
 
 
 def test_bound_is_declared():

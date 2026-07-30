@@ -48,7 +48,7 @@ from ._raes_image import (
     list_raes_image_mappings,
     upsert_raes_image_mapping,
 )
-from ._raes_range import RaesRangeRef, create_raes_range
+from ._raes_range import RaesRangeRef, RangeBindings, create_raes_range
 from ._raes_status import project_raes_operation_status
 from ._range import (
     cancel_range,
@@ -95,6 +95,7 @@ __all__ = (
     "RaesImageMappingOptions",
     "RaesImageMappingView",
     "RaesRangeRef",
+    "RangeBindings",
     "RangeMembership",
     "RangeOwnershipTransferBlocked",
     "SSHConnection",

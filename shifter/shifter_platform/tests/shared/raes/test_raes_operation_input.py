@@ -18,6 +18,7 @@ from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import (
     MAX_DELIVERY_BINDINGS,
     MAX_IMAGE_CANDIDATES,
+    RaesInputBindings,
     RaesOperationInputError,
     build_raes_operation_input,
     image_lookup_key,
@@ -111,7 +112,12 @@ def _built(**overrides: object) -> dict:
         "legacy_range_id": 7,
     }
     kwargs.update(overrides)
-    return build_raes_operation_input(**kwargs)  # type: ignore[arg-type]
+    bindings = RaesInputBindings(
+        delivery=kwargs.pop("delivery_bindings"),  # type: ignore[arg-type]
+        access=kwargs.pop("access_bindings", ()),  # type: ignore[arg-type]
+        artifact=kwargs.pop("artifact_bindings", ()),  # type: ignore[arg-type]
+    )
+    return build_raes_operation_input(bindings=bindings, **kwargs)  # type: ignore[arg-type]
 
 
 class TestImageLookupKey:
@@ -202,8 +208,9 @@ class TestArtifactBindings:
         assert binding.image_ref == "projects/p/global/images/web"
 
     def test_duplicate_target_fails_closed(self):
+        duplicate = [_artifact_binding(), _artifact_binding()]
         with pytest.raises(RaesOperationInputError, match="duplicates target"):
-            _built(artifact_bindings=[_artifact_binding(), _artifact_binding()])
+            _built(artifact_bindings=duplicate)
 
 
 class TestFailsClosed:
