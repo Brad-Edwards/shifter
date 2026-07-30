@@ -8,12 +8,15 @@ from django.core.exceptions import ValidationError
 
 from cms.exceptions import CMSError
 from cms.models import Instance
+from shared.remote_access import TerminalConnection
 from workspaces.services import WorkspaceOperation
 
 from ._range_workspace import authorize_range_workspace
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
+
+_INSTANCE_NOT_FOUND = "Instance not found"
 
 
 def _authorize_instance_access(user: User, instance_uuid: str) -> None:
@@ -25,16 +28,16 @@ def _authorize_instance_access(user: User, instance_uuid: str) -> None:
             .first()
         )
     except (ValidationError, ValueError) as exc:
-        raise ValueError("Instance not found") from exc
+        raise ValueError(_INSTANCE_NOT_FOUND) from exc
     if instance is None:
-        raise ValueError("Instance not found")
+        raise ValueError(_INSTANCE_NOT_FOUND)
     try:
         authorize_range_workspace(user, instance.request.workspace_id, WorkspaceOperation.ACCESS_RANGE)
     except CMSError as exc:
-        raise PermissionError("Instance not found") from exc
+        raise PermissionError(_INSTANCE_NOT_FOUND) from exc
 
 
-def connect_range_terminal(user: User, instance_uuid: str) -> Any:
+def connect_range_terminal(user: User, instance_uuid: str) -> TerminalConnection:
     """Open an Engine terminal only after workspace authorization succeeds."""
     from engine.services import connect_terminal
 

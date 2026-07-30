@@ -234,8 +234,9 @@ class TestPauseResumeByRequestIdValidation:
         ri = provision_range(user, range_id=42)
         _revoke_workspace_membership(user)
 
+        request_id = str(ri.request.request_id)
         with pytest.raises(CMSError, match="not found"):
-            operation(user, str(ri.request.request_id))
+            operation(user, request_id)
 
 
 class TestCreateRangeInputValidation:

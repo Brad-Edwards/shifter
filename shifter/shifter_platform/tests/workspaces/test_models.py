@@ -143,9 +143,10 @@ def test_membership_role_is_a_closed_vocabulary():
 
 def test_membership_role_is_enforced_by_the_database():
     workspace = _workspace()
+    user = _user()
 
     with pytest.raises(IntegrityError), transaction.atomic():
-        WorkspaceMembership.objects.create(workspace=workspace, user=_user(), role="superuser")
+        WorkspaceMembership.objects.create(workspace=workspace, user=user, role="superuser")
 
 
 def test_deleting_a_workspace_removes_its_memberships():

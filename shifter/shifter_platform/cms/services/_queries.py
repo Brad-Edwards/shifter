@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 
 def get_range_status_by_id(range_instance_id: int) -> str:
@@ -55,7 +60,7 @@ def find_range_instance_id_by_request(request_id: str | UUID) -> int | None:
     return int(pk) if pk is not None else None
 
 
-def get_range_target_instances(user) -> list[dict[str, str]]:
+def get_range_target_instances(user: User) -> list[dict[str, str]]:
     """Get the accessible provisioned instances for a user's ready range.
 
     Explicit participant-access channels are authoritative when present. For
@@ -76,34 +81,39 @@ def get_range_target_instances(user) -> list[dict[str, str]]:
 
     from ._range_workspace import authorize_range_workspace
 
+    targets: list[dict[str, str]] = []
     user_id = getattr(user, "id", None)
-    if user_id is None:
-        return []
-    cms_range = (
-        RangeInstance.objects.filter(
-            user_id=user_id,
-            range_source=RangeSource.CTF.value,
-            status=ResourceStatus.READY.value,
-            request__isnull=False,
+    if user_id is not None:
+        cms_range = (
+            RangeInstance.objects.filter(
+                user_id=user_id,
+                range_source=RangeSource.CTF.value,
+                status=ResourceStatus.READY.value,
+                request__isnull=False,
+            )
+            .select_related("request")
+            .order_by("-created_at")
+            .first()
         )
-        .select_related("request")
-        .order_by("-created_at")
-        .first()
-    )
-    if cms_range is None:
-        return []
-    try:
-        authorize_range_workspace(user, cms_range.workspace_id, WorkspaceOperation.ACCESS_RANGE)
-    except CMSError:
-        return []
+        if cms_range is not None:
+            try:
+                authorize_range_workspace(user, cms_range.workspace_id, WorkspaceOperation.ACCESS_RANGE)
+            except CMSError:
+                pass
+            else:
+                instances = list(
+                    get_user_ready_range_instances(
+                        user_id,
+                        request_id=cms_range.request.request_id,
+                        workspace_id=cms_range.workspace_id,
+                    )
+                )
+                targets = _select_participant_targets(instances)
+    return targets
 
-    instances = list(
-        get_user_ready_range_instances(
-            user_id,
-            request_id=cms_range.request.request_id,
-            workspace_id=cms_range.workspace_id,
-        )
-    )
+
+def _select_participant_targets(instances: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Select explicitly accessible targets, preserving legacy fallbacks."""
     declared_targets = [inst for inst in instances if _has_participant_access_channel(inst)]
     if declared_targets:
         return declared_targets
@@ -118,7 +128,7 @@ def get_range_target_instances(user) -> list[dict[str, str]]:
     return targets if targets else instances
 
 
-def _has_participant_access_channel(instance: dict[str, object]) -> bool:
+def _has_participant_access_channel(instance: Mapping[str, object]) -> bool:
     """Return whether a provisioned instance has an explicit user access channel."""
     channels = instance.get("participant_access_channels")
     if not isinstance(channels, list | tuple | set):
@@ -126,7 +136,7 @@ def _has_participant_access_channel(instance: dict[str, object]) -> bool:
     return any(isinstance(channel, str) and channel.strip() for channel in channels)
 
 
-def _is_aws_open_access_attacker(instance: dict[str, object]) -> bool:
+def _is_aws_open_access_attacker(instance: Mapping[str, object]) -> bool:
     """Return whether current AWS state exposes an attacker seat without a closed binding."""
     return (
         instance.get("cloud_provider") == "aws"

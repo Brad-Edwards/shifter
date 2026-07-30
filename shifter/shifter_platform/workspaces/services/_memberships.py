@@ -60,10 +60,12 @@ class WorkspaceMembershipError(Exception):
 
 
 def _error(code: str, message: str) -> WorkspaceMembershipError:
+    """Build a classified membership command error."""
     return WorkspaceMembershipError(code, message)
 
 
 def _role_value(role: object) -> str:
+    """Normalize and validate a workspace role value."""
     candidate = str(getattr(role, "value", role))
     if candidate not in WorkspaceRole.values:
         raise _error("invalid_role", "Invalid workspace role")
@@ -71,10 +73,12 @@ def _role_value(role: object) -> str:
 
 
 def _display_name(user: User) -> str:
+    """Return the stable human-readable name exposed by membership projections."""
     return user.get_full_name() or user.get_username()
 
 
 def _projection(membership: WorkspaceMembership) -> WorkspaceMembershipProjection:
+    """Project a persisted membership into its immutable service contract."""
     return WorkspaceMembershipProjection(
         membership_id=membership.pk,
         workspace_uuid=membership.workspace.uuid,
@@ -86,6 +90,7 @@ def _projection(membership: WorkspaceMembership) -> WorkspaceMembershipProjectio
 
 
 def _parsed_uuid(workspace_uuid: str | uuid.UUID) -> uuid.UUID:
+    """Parse a workspace UUID while preserving opaque authorization failures."""
     try:
         return workspace_uuid if isinstance(workspace_uuid, uuid.UUID) else uuid.UUID(str(workspace_uuid))
     except (AttributeError, TypeError, ValueError) as exc:
@@ -113,6 +118,7 @@ def _lock_workspace_and_actor(
 
 
 def _membership_state(membership: WorkspaceMembership) -> dict[str, int | str]:
+    """Return the bounded membership state recorded in audit events."""
     return {
         "workspace_id": membership.workspace_id,
         "user_id": membership.user_id,
@@ -128,6 +134,7 @@ def _write_audit(
     previous_state: dict[str, int | str] | None = None,
     new_state: dict[str, int | str] | None = None,
 ) -> None:
+    """Write a strict membership audit event within the caller's transaction."""
     audit_log(
         AuditEvent(
             entity_type=AuditEntityType.WORKSPACE_MEMBERSHIP,
@@ -147,11 +154,13 @@ def _write_audit(
 
 
 def _require_owner_authority(actor_membership: WorkspaceMembership) -> None:
+    """Require owner authority for commands that manage another owner."""
     if actor_membership.role != WorkspaceRole.OWNER.value:
         raise _error("owner_authority_required", "Only a workspace owner may manage owners")
 
 
 def _require_owner_can_depart(workspace: Workspace, target: WorkspaceMembership) -> None:
+    """Reject removal or demotion of a workspace's last owner."""
     if target.role != WorkspaceRole.OWNER.value:
         return
     owner_count = WorkspaceMembership.objects.filter(
@@ -163,6 +172,7 @@ def _require_owner_can_depart(workspace: Workspace, target: WorkspaceMembership)
 
 
 def _require_not_personal_owner(workspace: Workspace, target: WorkspaceMembership) -> None:
+    """Protect the immutable owner binding of a personal workspace."""
     if workspace.personal_for_user_id == target.user_id:
         raise _error("personal_workspace_protected", "Personal workspace ownership cannot be changed")
 

@@ -214,5 +214,6 @@ class TestGetRangeByRequestId:
         _range_instance(user, range_id=None, range_spec=_FLAT_SPEC, request=req)
         WorkspaceMembership.objects.filter(user=user).delete()
 
+        request_id = str(req.request_id)
         with pytest.raises(CMSError, match="not found"):
-            get_range_by_request_id(user, str(req.request_id))
+            get_range_by_request_id(user, request_id)

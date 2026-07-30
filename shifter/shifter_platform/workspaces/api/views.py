@@ -27,13 +27,16 @@ if TYPE_CHECKING:
 
 
 def _actor(request: Request) -> User:
+    """Return the authenticated active user established by the permission gate."""
     actor = active_actor_user(request)
-    if actor is None:  # permission_classes reject this before a handler runs
+    # Permission classes reject this before a handler runs.
+    if actor is None:
         raise RuntimeError("active workspace actor missing after permission gate")
     return actor
 
 
 def _audit(request: Request) -> services.MembershipAuditContext:
+    """Build trusted membership audit attribution from the current request."""
     actor_type, actor_id = get_actor_from_request(request)
     return services.MembershipAuditContext(
         actor_type=actor_type,
@@ -98,6 +101,8 @@ class _WorkspaceAPIError(Exception):
 
 
 class _WorkspaceAPIView(APIView):
+    """Base view that maps bounded workspace service failures to API errors."""
+
     permission_classes = WORKSPACE_MEMBERSHIP_PERMISSIONS
 
     def handle_exception(self, exc: Exception) -> Response:

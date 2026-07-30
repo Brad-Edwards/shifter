@@ -31,7 +31,7 @@ from shared.audit import (
 from shared.enums import WebSocketCloseCode
 
 if TYPE_CHECKING:
-    from engine.services import SSHConnection
+    from shared.remote_access import TerminalConnection
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.instance_uuid: str | None = None
-        self.ssh_conn: SSHConnection | None = None
+        self.ssh_conn: TerminalConnection | None = None
         self._read_task: asyncio.Task[None] | None = None
         self.session_id: str = str(uuid.uuid4())[:8]
         self._user_id: int | None = None

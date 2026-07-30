@@ -307,8 +307,9 @@ class TestRangeInstanceLookupIntegration:
             status="ready",
         )
 
+        request_id = str(cms_request.request_id)
         with pytest.raises(CMSError, match="not found"):
-            get_range_by_request_id(other_user, str(cms_request.request_id))
+            get_range_by_request_id(other_user, request_id)
 
 
 # =============================================================================

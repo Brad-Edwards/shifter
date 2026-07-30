@@ -200,13 +200,15 @@ def test_add_fails_closed_when_active_accounts_share_an_email():
     second.email = duplicate_email.upper()
     second.save(update_fields=["email"])
 
+    workspace_uuid = workspace.uuid
+    audit = _audit(owner)
     with pytest.raises(services.WorkspaceMembershipError) as exc:
         services.add_workspace_member(
             owner,
-            workspace.uuid,
+            workspace_uuid,
             duplicate_email,
             WorkspaceRole.MEMBER,
-            audit=_audit(owner),
+            audit=audit,
         )
 
     assert exc.value.code == "member_add_failed"
@@ -442,13 +444,15 @@ def test_audit_failure_rolls_back_membership_change():
     reset_audit_writer()
     bind_audit_writer(_FailingAuditWriter())
     try:
+        workspace_uuid = workspace.uuid
+        audit = _audit(owner)
         with pytest.raises(RuntimeError, match="audit unavailable"):
             services.add_workspace_member(
                 owner,
-                workspace.uuid,
+                workspace_uuid,
                 target.email,
                 WorkspaceRole.MEMBER,
-                audit=_audit(owner),
+                audit=audit,
             )
     finally:
         reset_audit_writer()
