@@ -7,6 +7,12 @@ the assessment, API, editor UI, persistence, or publication gate. The GitHub
 issue is the shipping contract for this requirement-free run. ADR-034 is the
 governing decision; no new ADR is needed.
 
+The source-name/version image-supply guidance in this note predates the portable
+RAES artifact-requirement contract. For portable artifact requirements,
+`raes-artifact-requirement-resolution-preflight-1580.md` supersedes that narrow
+guidance; the authorization, API, catalog, and publication-boundary guidance
+here still applies.
+
 ## Boundary
 
 Realizability answers one question: can the selected Shifter backend realize the

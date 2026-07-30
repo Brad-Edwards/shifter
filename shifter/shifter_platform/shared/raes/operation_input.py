@@ -34,6 +34,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from shared.raes.artifact_binding import MAX_ARTIFACT_BINDINGS, ArtifactBinding, ArtifactBindingError
 from shared.raes.content_delivery import ContentDeliveryError, DeliveryBinding
 from shared.raes.participant_access import (
     MAX_ACCESS_BINDINGS,
@@ -43,6 +44,7 @@ from shared.raes.participant_access import (
 
 __all__ = [
     "MAX_ACCESS_BINDINGS",
+    "MAX_ARTIFACT_BINDINGS",
     "MAX_DELIVERY_BINDINGS",
     "MAX_IMAGE_CANDIDATES",
     "MAX_IMAGE_KEYS",
@@ -71,12 +73,19 @@ _INPUT_KEYS = frozenset(
         "plan",
         "delivery_bindings",
         "access_bindings",
+        "artifact_bindings",
         "image_candidates",
         "range_backend",
         "instantiation_purpose",
         "legacy_range_id",
     }
 )
+
+# Optional for rolling-deploy compatibility (#1580 / codex review): a newer producer
+# emits ``artifact_bindings`` only when a plan actually carries an artifact
+# requirement, and a newer consumer tolerates its absence in an older queued input.
+# The field is never required, so no OperationInput/envelope version bump is needed.
+_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings"})
 
 # Exactly the registry columns the resolver consumes. Anything else -- row id,
 # enabled flag, notes, timestamps -- is management metadata and stays server-side.
@@ -125,12 +134,20 @@ def _require_mapping(value: object, field: str) -> dict[str, Any]:
     return dict(value)
 
 
-def _require_exact_keys(value: Mapping[str, Any], allowed: frozenset[str], field: str) -> None:
-    """Fail closed unless ``value`` carries exactly ``allowed``."""
+def _require_exact_keys(
+    value: Mapping[str, Any], allowed: frozenset[str], field: str, *, optional: frozenset[str] = frozenset()
+) -> None:
+    """Fail closed unless ``value`` carries exactly ``allowed`` (minus any ``optional``).
+
+    ``optional`` keys may be present or absent; every other allowed key is required.
+    This is the rolling-deploy compatibility seam: an ``optional`` key a newer
+    producer emits is accepted, and its absence in an older queued input is also
+    accepted, so producer and consumer can deploy independently.
+    """
     actual = frozenset(value)
     unexpected = sorted(actual - allowed)
     _require(not unexpected, f"{field} has unexpected field(s): {', '.join(unexpected)}")
-    missing = sorted(allowed - actual)
+    missing = sorted((allowed - optional) - actual)
     _require(not missing, f"{field} is missing field(s): {', '.join(missing)}")
 
 
@@ -181,10 +198,24 @@ class RaesOperationInput:
     plan: dict[str, Any]
     delivery_bindings: tuple[DeliveryBinding, ...]
     access_bindings: tuple[ParticipantAccessBinding, ...]
+    artifact_bindings: tuple[ArtifactBinding, ...]
     range_backend: str | None
     instantiation_purpose: str | None
     legacy_range_id: int
     _image_candidates: dict[str, tuple[dict[str, Any], ...]]
+
+    def artifact_binding_for(self, target: str) -> ArtifactBinding | None:
+        """Return the fenced artifact binding for a node address, or None.
+
+        A binding means the Engine resolved an authored artifact requirement to a
+        concrete backend image at launch; the provisioner realizes exactly that
+        image and never re-resolves. ``None`` means the node had no artifact
+        requirement and the legacy source-alias resolution applies.
+        """
+        for binding in self.artifact_bindings:
+            if binding.target == target:
+                return binding
+        return None
 
     def image_candidates_for(self, provider: str, source_name: str) -> list[dict[str, Any]]:
         """Return the projected registry candidates for one lookup key.
@@ -287,6 +318,39 @@ def _validated_access_bindings(value: object) -> tuple[ParticipantAccessBinding,
     return tuple(bindings)
 
 
+def _validated_artifact_bindings(value: object) -> tuple[ArtifactBinding, ...]:
+    """Rebuild every fenced artifact binding through its own closed parser.
+
+    ``ArtifactBinding.from_transport`` is the gate: it rejects unknown keys, so a
+    smuggled credential, URL, or byte payload cannot ride along, and it
+    re-validates the digest, acquisition, and timing vocabulary. A duplicate
+    ``target`` is rejected because the provisioner resolves one binding per node,
+    and a second binding for the same node is ambiguous.
+    """
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        raise RaesOperationInputError("raes operation input artifact_bindings must be a list")
+    rows = list(value)
+    _require(
+        len(rows) <= MAX_ARTIFACT_BINDINGS,
+        f"raes operation input carries more than {MAX_ARTIFACT_BINDINGS} artifact bindings",
+    )
+    bindings: list[ArtifactBinding] = []
+    seen: set[str] = set()
+    for index, row in enumerate(rows):
+        raw = _require_mapping(row, f"raes operation input artifact_bindings[{index}]")
+        try:
+            binding = ArtifactBinding.from_transport(raw)
+        except ArtifactBindingError as exc:
+            raise RaesOperationInputError(f"raes operation input artifact_bindings[{index}]: {exc}") from None
+        _require(
+            binding.target not in seen,
+            f"raes operation input artifact_bindings[{index}] duplicates target {binding.target}",
+        )
+        seen.add(binding.target)
+        bindings.append(binding)
+    return tuple(bindings)
+
+
 def _validated_candidate(raw: object, field: str) -> dict[str, Any]:
     """Return one registry candidate row closed on exactly the resolver's columns."""
     candidate = _require_mapping(raw, field)
@@ -331,11 +395,12 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
     unknown backend, or a non-positive legacy naming key.
     """
     obj = _require_mapping(payload, "raes operation input")
-    _require_exact_keys(obj, _INPUT_KEYS, "raes operation input")
+    _require_exact_keys(obj, _INPUT_KEYS, "raes operation input", optional=_OPTIONAL_INPUT_KEYS)
     return RaesOperationInput(
         plan=_require_mapping(obj["plan"], "raes operation input plan"),
         delivery_bindings=_validated_bindings(obj["delivery_bindings"]),
         access_bindings=_validated_access_bindings(obj["access_bindings"]),
+        artifact_bindings=_validated_artifact_bindings(obj.get("artifact_bindings", [])),
         range_backend=_validated_backend(obj["range_backend"]),
         instantiation_purpose=_optional_str(obj["instantiation_purpose"]),
         legacy_range_id=_validated_legacy_range_id(obj["legacy_range_id"]),
@@ -348,6 +413,7 @@ def build_raes_operation_input(
     plan: Mapping[str, Any],
     delivery_bindings: Sequence[DeliveryBinding],
     access_bindings: Sequence[ParticipantAccessBinding] = (),
+    artifact_bindings: Sequence[ArtifactBinding] = (),
     image_candidates: Mapping[str, Sequence[Mapping[str, Any]]],
     range_backend: str | None,
     instantiation_purpose: str | None,
@@ -368,5 +434,10 @@ def build_raes_operation_input(
         "instantiation_purpose": instantiation_purpose,
         "legacy_range_id": legacy_range_id,
     }
+    # Emit artifact_bindings only when a plan actually carries an artifact
+    # requirement, so the common no-requirement input is byte-identical to the
+    # pre-#1580 shape and an older consumer never sees an unexpected key.
+    if artifact_bindings:
+        payload["artifact_bindings"] = [binding.to_transport() for binding in artifact_bindings]
     parse_raes_operation_input(payload)
     return payload

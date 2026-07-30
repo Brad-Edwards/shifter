@@ -59,6 +59,12 @@ class RaesImageMappingViewSerializer(serializers.Serializer):
     disk_type = serializers.CharField(read_only=True, allow_blank=True)
     enabled = serializers.BooleanField(read_only=True)
     notes = serializers.CharField(read_only=True, allow_blank=True)
+    artifact_id = serializers.CharField(read_only=True, allow_blank=True)
+    artifact_version = serializers.CharField(read_only=True, allow_blank=True)
+    artifact_digest = serializers.CharField(read_only=True, allow_blank=True)
+    media_type = serializers.CharField(read_only=True, allow_blank=True)
+    integrity_ref = serializers.CharField(read_only=True, allow_blank=True)
+    provenance_ref = serializers.CharField(read_only=True, allow_blank=True)
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
 
@@ -81,6 +87,14 @@ class RaesImageMappingRegisterSerializer(serializers.Serializer):
     disk_type = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     enabled = serializers.BooleanField(required=False, default=True)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
+    # Portable RAES artifact identity + admission evidence (#1580); supply all five
+    # for a portable mapping or none for a legacy alias-only mapping (service validates).
+    artifact_id = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
+    artifact_version = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
+    artifact_digest = serializers.CharField(max_length=71, required=False, allow_blank=True, default="")
+    media_type = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
+    integrity_ref = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
+    provenance_ref = serializers.CharField(max_length=256, required=False, allow_blank=True, default="")
 
 
 class RaesImageMappingDisableSerializer(serializers.Serializer):
@@ -173,6 +187,12 @@ class RaesImageMappingListCreateView(APIView):
                     disk_type=data["disk_type"],
                     enabled=data["enabled"],
                     notes=data["notes"],
+                    artifact_id=data["artifact_id"],
+                    artifact_version=data["artifact_version"],
+                    artifact_digest=data["artifact_digest"],
+                    media_type=data["media_type"],
+                    integrity_ref=data["integrity_ref"],
+                    provenance_ref=data["provenance_ref"],
                 ),
             )
         except RaesImageMappingError as exc:

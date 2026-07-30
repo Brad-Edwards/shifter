@@ -48,6 +48,81 @@ class TestRealizableScenario:
         assert assessment.gaps == ()
 
 
+class TestArtifactRequirementRealizability:
+    """Authored artifact requirements enter the realizability outcome (#1580, ADR-034-R2/R8).
+
+    The minimal fixture declares no artifact requirement, so the artifact
+    contributor is exercised by monkeypatching the upstream extractor -- the
+    scenario itself compiles and stays realizable on the capability axis, which
+    isolates the new artifact-driven behaviour from the existing capability path.
+    """
+
+    _REQUIREMENT_ADDRESS = "provision.node.web.source.artifact_requirement"
+
+    @staticmethod
+    def _unsupported_exact_requirement():
+        from raes._source import (
+            ArtifactIdentity,
+            ArtifactMechanismProfile,
+            ArtifactRequirement,
+            ArtifactSatisfactionRoute,
+            ExplicitnessClass,
+        )
+
+        route = ArtifactSatisfactionRoute(
+            mechanism=ArtifactMechanismProfile(
+                mechanism="exact-artifact", profile="shifter-gce", version="1", digest="sha256:" + "a" * 64
+            ),
+            acquisition="local-lookup",
+            timing="backend-preparation",
+        )
+        return ArtifactRequirement(
+            requirement_id="req-1",
+            explicitness=ExplicitnessClass.EXACT,
+            exact_artifact=ArtifactIdentity(
+                artifact_id="img-web",
+                version="1.0.0",
+                digest="sha256:" + "b" * 64,
+                media_type="application/vnd.raes.image",
+            ),
+            permitted_routes=[route],
+        )
+
+    def test_without_artifact_requirements_outcome_is_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("shared.raes.realizability.authored_artifact_requirements", lambda scenarios: {})
+        assessment = assess_scenario_capability(_MINIMAL)
+        assert assessment.outcome is RealizabilityOutcome.REALIZABLE
+        assert not any(gap.category is GapCategory.ARTIFACT for gap in assessment.gaps)
+
+    def test_unsupported_authored_requirement_flips_outcome_to_not_realizable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "shared.raes.realizability.authored_artifact_requirements",
+            lambda scenarios: {self._REQUIREMENT_ADDRESS: self._unsupported_exact_requirement()},
+        )
+        assessment = assess_scenario_capability(_MINIMAL)
+        assert assessment.outcome is RealizabilityOutcome.NOT_REALIZABLE
+        artifact_gaps = [gap for gap in assessment.gaps if gap.category is GapCategory.ARTIFACT]
+        assert len(artifact_gaps) == 1
+        # Fail-closed: the backend declares no artifact mechanism, so an authored
+        # requirement is unsupported rather than silently satisfied.
+        assert artifact_gaps[0].code == "shifter-realizability.artifact-unsupported-mechanism"
+        assert artifact_gaps[0].address == self._REQUIREMENT_ADDRESS
+
+    def test_ambiguous_authored_address_is_surfaced_as_a_gap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A None value marks an ambiguous compiled address that bypasses the resolver.
+        monkeypatch.setattr(
+            "shared.raes.realizability.authored_artifact_requirements",
+            lambda scenarios: {self._REQUIREMENT_ADDRESS: None},
+        )
+        assessment = assess_scenario_capability(_MINIMAL)
+        assert assessment.outcome is RealizabilityOutcome.NOT_REALIZABLE
+        artifact_gaps = [gap for gap in assessment.gaps if gap.category is GapCategory.ARTIFACT]
+        assert len(artifact_gaps) == 1
+        assert artifact_gaps[0].code == "shifter-realizability.artifact-ambiguous-address"
+
+
 class TestCapabilityGaps:
     """Out-of-envelope authored terms become bounded capability gaps."""
 

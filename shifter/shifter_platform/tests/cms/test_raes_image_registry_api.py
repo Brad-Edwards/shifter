@@ -37,6 +37,12 @@ _VIEW_FIELDS = {
     "disk_type",
     "enabled",
     "notes",
+    "artifact_id",
+    "artifact_version",
+    "artifact_digest",
+    "media_type",
+    "integrity_ref",
+    "provenance_ref",
     "created_at",
     "updated_at",
 }
@@ -147,6 +153,58 @@ class TestRegister:
         )
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "invalid"
+
+    _PORTABLE = {
+        "artifact_id": "img-kali",
+        "artifact_version": "1.0.0",
+        "artifact_digest": "sha256:" + "a" * 64,
+        "media_type": "application/vnd.raes.image",
+        "integrity_ref": "integrity-1",
+        "provenance_ref": "provenance-1",
+    }
+
+    def test_register_full_portable_identity_persists(self, api_client, threat_research_user):
+        api_client.force_authenticate(user=threat_research_user)
+        response = api_client.post(
+            LIST_CREATE_URL,
+            {"provider": "gce", "source_name": "kali", "image_ref": "img", **self._PORTABLE},
+            format="json",
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["artifact_digest"] == self._PORTABLE["artifact_digest"]
+        assert body["artifact_version"] == "1.0.0"
+        row = RaesImageMapping.objects.get(provider="gce", source_name="kali")
+        assert row.artifact_digest == self._PORTABLE["artifact_digest"]
+        assert row.integrity_ref == "integrity-1"
+
+    def test_register_half_populated_portable_identity_is_domain_400(self, api_client, threat_research_user):
+        api_client.force_authenticate(user=threat_research_user)
+        response = api_client.post(
+            LIST_CREATE_URL,
+            {"provider": "gce", "source_name": "kali", "image_ref": "img", **{**self._PORTABLE, "provenance_ref": ""}},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid"
+        assert "provenance_ref" in response.json()["error"]["message"]
+        assert RaesImageMapping.objects.count() == 0
+
+    def test_register_non_canonical_digest_is_domain_400(self, api_client, threat_research_user):
+        api_client.force_authenticate(user=threat_research_user)
+        response = api_client.post(
+            LIST_CREATE_URL,
+            {
+                "provider": "gce",
+                "source_name": "kali",
+                "image_ref": "img",
+                **{**self._PORTABLE, "artifact_digest": "deadbeef"},
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid"
+        assert RaesImageMapping.objects.count() == 0
 
     def test_missing_required_field_is_shape_400(self, api_client, threat_research_user):
         api_client.force_authenticate(user=threat_research_user)

@@ -2467,15 +2467,15 @@ wheels = [
 
 [[package]]
 name = "raes-env-packs"
-version = "3.0.0"
+version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyyaml" },
     { name = "raes" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/82/e2a571f7b7a9e1183c6e2cc5d92e5571bd00b95becfc78237219fca80a5f/raes_env_packs-3.0.0.tar.gz", hash = "sha256:a3d228f2219865c4366b6bf41149b7545ba566848a9f74e63831c1db652c8385", size = 212780, upload-time = "2026-07-28T04:07:19.746Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/5c/2eaa627b120ecab918262c11d3a81897761150773c132a1dccb350d6fe18/raes_env_packs-3.1.0.tar.gz", hash = "sha256:bbece7f93d0d20624e42ab66a1b48c2265625c8efa0d99f8240e111af23d2546", size = 286552, upload-time = "2026-07-29T23:57:32.911Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/10/5f31d30dd1807cc664046112947344fe4fa7f73fa66375b199107f45e53c/raes_env_packs-3.0.0-py3-none-any.whl", hash = "sha256:9f25db0d26e5daba1bcedb026eeec013f0158e8566fc8e3d06172902b633ffdf", size = 97106, upload-time = "2026-07-28T04:07:18.435Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/e6/4b20597ebd4644ba6c1cb09659270e78db1ea847132e5f285d8c7496a199/raes_env_packs-3.1.0-py3-none-any.whl", hash = "sha256:23206284e8e44d14328faa1569782d6315b55b70bab5e567b99c3a3ee57e7e70", size = 127280, upload-time = "2026-07-29T23:57:31.492Z" },
 ]
 
 [[package]]
@@ -2883,7 +2883,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "raes", specifier = "==2.0.0" },
-    { name = "raes-env-packs", specifier = "==3.0.0" },
+    { name = "raes-env-packs", specifier = "==3.1.0" },
     { name = "redis", specifier = ">=5.0" },
     { name = "regex", specifier = ">=2026.6.28" },
     { name = "requests" },

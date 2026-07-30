@@ -64,6 +64,7 @@ def test_raes_launch_binds_cms_rows_and_carries_the_scope_to_engine(user, native
         backend_admission=None,
         delivery_bindings=(),
         participant_access=(),
+        artifact_bindings=(),
         workspace_id=None,
     ):
         captured["workspace_id"] = workspace_id

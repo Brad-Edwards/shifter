@@ -44,6 +44,7 @@ from ._raes_image import (
     RaesImageMappingOptions,
     RaesImageMappingView,
     disable_raes_image_mapping,
+    list_backend_artifacts,
     list_raes_image_mappings,
     upsert_raes_image_mapping,
 )
@@ -130,6 +131,7 @@ __all__ = (
     "get_user_ready_range_instances",
     "has_openvpn_profile",
     "latest_capacity_declaration",
+    "list_backend_artifacts",
     "list_raes_image_mappings",
     "pause_range",
     "project_raes_operation_status",

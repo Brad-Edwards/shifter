@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 
 from engine.models import Instance, Range, Request
+from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import build_raes_operation_input, candidate_key, plan_image_lookup_keys
 from shared.raes.participant_access import ParticipantAccessBinding
@@ -137,18 +138,50 @@ def _raes_access_bindings(target: Range) -> list[ParticipantAccessBinding]:
     ]
 
 
+def _raes_artifact_bindings(target: Range) -> list[ArtifactBinding]:
+    """Rebuild this range's generation-fenced artifact-satisfaction bindings (#1580).
+
+    The CMS launch resolved each authored artifact requirement to a concrete
+    backend image and persisted it; the provisioner realizes exactly these,
+    never re-resolving. Byte-free by construction -- no credential, URL, or
+    payload is persisted or shipped.
+    """
+    from engine.models import RaesArtifactSatisfactionBinding
+
+    return [
+        ArtifactBinding(
+            target=row.target_address,
+            requirement_id=row.requirement_id,
+            artifact_id=row.artifact_id,
+            version=row.artifact_version,
+            digest=row.digest,
+            media_type=row.media_type,
+            mechanism=row.mechanism,
+            acquisition=row.acquisition,
+            timing=row.timing,
+            image_ref=row.image_ref,
+            machine_type=row.machine_type,
+            disk_size_gb=row.disk_size_gb,
+            disk_type=row.disk_type,
+        )
+        for row in RaesArtifactSatisfactionBinding.objects.filter(range=target).order_by("pk")
+    ]
+
+
 def _raes_input_payload(target: Range, request: Request) -> dict[str, object]:
     """Compose the RAES operation input (ADR-043 phase 5, #1837).
 
-    Replaces four direct provisioner reads with one immutable row: the
-    serialized plan, the delivery bindings, the plan-scoped image candidates,
-    and the normalized backend ownership.
+    Replaces direct provisioner reads with one immutable row: the serialized
+    plan, the delivery bindings, the participant-access bindings, the fenced
+    artifact bindings, the plan-scoped image candidates, and the normalized
+    backend ownership.
     """
     plan = target.range_config or {}
     return build_raes_operation_input(
         plan=plan,
         delivery_bindings=_raes_delivery_bindings(target),
         access_bindings=_raes_access_bindings(target),
+        artifact_bindings=_raes_artifact_bindings(target),
         image_candidates=_raes_image_candidates(plan),
         range_backend=_resolved_range_backend(target, request),
         instantiation_purpose=target.instantiation_purpose or None,

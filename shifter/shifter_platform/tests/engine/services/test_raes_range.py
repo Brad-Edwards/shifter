@@ -18,6 +18,7 @@ from raes_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDo
 from engine.models import RaesContentDeliveryBinding, Range
 from engine.services import RaesRangeRef, create_raes_range
 from shared.models import RaesOperationRecord
+from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.runtime_target import RAES_PROVISIONING_PLAN_KIND, serialize_provisioning_plan
 
@@ -225,6 +226,60 @@ class TestCreateRaesRangeDeliveryBindings:
         assert row.resource_address == "provision.feature.agent"
         assert row.payload_kind == "file"
         assert row.install_policy == "executable"
+
+
+@pytest.mark.django_db
+class TestArtifactBindingPersistence:
+    """create_raes_range persists each fenced artifact binding beside the Range (#1580)."""
+
+    @pytest.fixture(autouse=True)
+    def _ecs_noop(self, settings):
+        settings.LOCAL_PROVISIONER = None
+        settings.ENGINE_TASK_CLUSTER = ""
+        settings.ENGINE_ECS_CLUSTER_ARN = ""
+
+    def make_binding(self, target="provision.node.web") -> ArtifactBinding:
+        return ArtifactBinding(
+            target=target,
+            requirement_id="req-1",
+            artifact_id="img-web",
+            version="1.0.0",
+            digest="sha256:" + "a" * 64,
+            media_type="application/vnd.raes.image",
+            mechanism="exact-artifact",
+            acquisition="local-lookup",
+            timing="backend-preparation",
+            image_ref="projects/p/global/images/web",
+            machine_type="e2-medium",
+        )
+
+    def test_persists_one_row_per_binding_with_faithful_fields(self, user):
+        from engine.models import RaesArtifactSatisfactionBinding
+
+        request_id = uuid4()
+        binding = self.make_binding()
+        _create_raes_range(
+            request_id=request_id,
+            user_id=user.id,
+            compiled_plan=make_compiled_plan(),
+            artifact_bindings=(binding,),
+        )
+
+        row = RaesArtifactSatisfactionBinding.objects.get(range__request__request_id=request_id)
+        assert row.target_address == binding.target
+        assert row.digest == binding.digest
+        assert row.image_ref == binding.image_ref
+        assert row.mechanism == "exact-artifact"
+        assert row.artifact_version == "1.0.0"
+
+    def test_no_bindings_persists_none(self, user):
+        from engine.models import RaesArtifactSatisfactionBinding
+
+        request_id = uuid4()
+        _create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
+
+        range_obj = Range.objects.get(request__request_id=request_id)
+        assert RaesArtifactSatisfactionBinding.objects.filter(range=range_obj).count() == 0
 
 
 # The old synchronous "provider dispatch failed -> range FAILED" path no

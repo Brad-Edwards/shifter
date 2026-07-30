@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.operation_input import (
     MAX_DELIVERY_BINDINGS,
@@ -23,6 +24,22 @@ from shared.raes.operation_input import (
     parse_raes_operation_input,
     plan_image_lookup_keys,
 )
+
+
+def _artifact_binding(target: str = "provision.node.web") -> ArtifactBinding:
+    return ArtifactBinding(
+        target=target,
+        requirement_id="req-1",
+        artifact_id="img-web",
+        version="1.0.0",
+        digest="sha256:" + "a" * 64,
+        media_type="application/vnd.raes.image",
+        mechanism="exact-artifact",
+        acquisition="local-lookup",
+        timing="backend-preparation",
+        image_ref="projects/p/global/images/web",
+    )
+
 
 _SHA = "a" * 64
 
@@ -158,6 +175,35 @@ class TestRoundTrip:
     def test_build_rejects_an_unnormalized_backend(self):
         with pytest.raises(RaesOperationInputError):
             _built(range_backend="GCE-legacy")
+
+
+class TestArtifactBindings:
+    """The optional artifact_bindings key: omitted when empty, round-trips when present (#1580)."""
+
+    def test_omitted_from_payload_when_empty(self):
+        # Rolling-deploy compat: a no-requirement plan produces no key at all, so an
+        # older consumer never sees an unexpected field.
+        payload = _built()
+        assert "artifact_bindings" not in payload
+        assert parse_raes_operation_input(payload).artifact_bindings == ()
+
+    def test_payload_without_the_key_still_parses(self):
+        # An older queued input has no key; the newer parser tolerates its absence.
+        payload = _built()
+        payload.pop("artifact_bindings", None)
+        parsed = parse_raes_operation_input(payload)
+        assert parsed.artifact_binding_for("provision.node.web") is None
+
+    def test_round_trips_and_is_addressable_by_node(self):
+        payload = _built(artifact_bindings=[_artifact_binding()])
+        assert payload["artifact_bindings"]  # present when non-empty
+        binding = parse_raes_operation_input(payload).artifact_binding_for("provision.node.web")
+        assert binding is not None
+        assert binding.image_ref == "projects/p/global/images/web"
+
+    def test_duplicate_target_fails_closed(self):
+        with pytest.raises(RaesOperationInputError, match="duplicates target"):
+            _built(artifact_bindings=[_artifact_binding(), _artifact_binding()])
 
 
 class TestFailsClosed:

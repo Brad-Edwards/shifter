@@ -281,6 +281,7 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
         backend_admission=None,
         delivery_bindings=(),
         participant_access=(),
+        artifact_bindings=(),
         workspace_id=None,
     ):
         captured["kind"] = compiled_plan.get("kind")
@@ -296,6 +297,33 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
     assert captured["kind"] == "raes_provisioning_plan"
     assert captured["request_id"] == str(ctx.request_id)
     assert RangeInstance.objects.get(request__request_id=ctx.request_id).status == ResourceStatus.PROVISIONING.value
+
+
+@pytest.mark.django_db
+def test_unsatisfiable_artifact_requirement_fails_launch_closed(user, native_on, make_pack, tmp_path, monkeypatch):
+    # An authored artifact requirement the backend cannot satisfy raises
+    # ArtifactSatisfactionError in the dispatch resolver (ADR-034-R8, fail closed).
+    # The launch must surface a domain CMSError -- the range is not accepted -- and
+    # the engine seam is never reached, rather than an unhandled 500 or a fall-through.
+    from django.conf import settings
+
+    from shared.raes.artifact_inventory import ArtifactSatisfactionError
+
+    root = make_pack(tmp_path / _PACK_REF, name="raes-launch")
+    monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path))
+
+    def _unsatisfiable(*_args, **_kwargs):
+        raise ArtifactSatisfactionError("artifact requirement at provision.node.web is unsatisfiable")
+
+    monkeypatch.setattr("shared.raes.artifact_inventory.resolve_plan_artifact_bindings", _unsatisfiable)
+    monkeypatch.setattr(
+        "cms.raes.dispatch.create_raes_range",
+        lambda **_kwargs: pytest.fail("an unsatisfiable requirement must not reach the engine seam"),
+    )
+    _make_source(user, package_digest=pack_digest(root))
+
+    with pytest.raises(CMSError):
+        create_raes_native_range(user, "raes-launch")
 
 
 @pytest.mark.django_db
@@ -393,6 +421,7 @@ class TestObjectPackageLaunch:
             backend_admission=None,
             delivery_bindings=(),
             participant_access=(),
+            artifact_bindings=(),
             workspace_id=None,
         ):
             captured["kind"] = compiled_plan.get("kind")

@@ -24,6 +24,7 @@ from django.utils import timezone
 
 from engine.ecs import start_raes_range_provisioning
 from shared.enums import RequestType
+from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.participant_access import ParticipantAccessBinding
 
@@ -54,6 +55,7 @@ def create_raes_range(
     backend_admission: BackendAdmission | None = None,
     delivery_bindings: tuple[DeliveryBinding, ...] = (),
     participant_access: tuple[ParticipantAccessBinding, ...] = (),
+    artifact_bindings: tuple[ArtifactBinding, ...] = (),
 ) -> RaesRangeRef:
     """Create + dispatch an RAES-native range from a serialized RAES plan.
 
@@ -89,10 +91,18 @@ def create_raes_range(
     is later compared against, an idempotent replay of the same ``request_id``
     carrying *different* access intent is rejected rather than silently reusing
     the first declaration.
+
+    ``artifact_bindings`` are the #1580 generation-fenced ``ArtifactBinding``
+    decisions -- each authored artifact requirement the CMS launch resolved to a
+    concrete backend image -- persisted as ``engine.models.RaesArtifactSatisfactionBinding``
+    rows in the same transaction (ADR-034-R8). The provisioner realizes exactly
+    these and never re-resolves; on the idempotent reuse path they are not
+    re-created.
     """
     # Imported lazily (like the cyberscript ``create_range`` path) so importing
     # the ``engine`` app does not define models before the app registry is ready.
     from engine.models import (
+        RaesArtifactSatisfactionBinding,
         RaesContentDeliveryBinding,
         RaesParticipantAccessBinding,
         Range,
@@ -151,6 +161,26 @@ def create_raes_range(
                 binding_version=binding.binding_version,
             )
             for binding in participant_access
+        )
+        RaesArtifactSatisfactionBinding.objects.bulk_create(
+            RaesArtifactSatisfactionBinding(
+                range=range_obj,
+                target_address=binding.target,
+                requirement_id=binding.requirement_id,
+                artifact_id=binding.artifact_id,
+                artifact_version=binding.version,
+                digest=binding.digest,
+                media_type=binding.media_type,
+                mechanism=binding.mechanism,
+                acquisition=binding.acquisition,
+                timing=binding.timing,
+                image_ref=binding.image_ref,
+                machine_type=binding.machine_type,
+                disk_size_gb=binding.disk_size_gb,
+                disk_type=binding.disk_type,
+                binding_version=1,
+            )
+            for binding in artifact_bindings
         )
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
