@@ -3,27 +3,37 @@ import { render } from "@testing-library/react";
 
 import { MarkdownContent } from "./MarkdownContent";
 
+/** The href the first rendered anchor carries, or "" when the element/attribute is absent. */
+function anchorHref(container: HTMLElement): string {
+  return container.querySelector("a")?.getAttribute("href") ?? "";
+}
+
 describe("MarkdownContent (safe render)", () => {
   it("does not inject raw HTML script tags", () => {
     const { container } = render(<MarkdownContent text={"Hi <script>alert(1)</script> there"} />);
     expect(container.querySelector("script")).toBeNull();
   });
 
-  it("neutralizes javascript: link hrefs", () => {
+  // The renderer neutralizes any non-allowlisted scheme to an empty href, so the
+  // tests assert that exact safe outcome rather than a per-scheme prefix check.
+  it("neutralizes a javascript: link to an empty href", () => {
     const { container } = render(<MarkdownContent text={"[click](javascript:alert(1))"} />);
-    const anchors = Array.from(container.querySelectorAll("a"));
-    expect(anchors.every((a) => !(a.getAttribute("href") ?? "").toLowerCase().startsWith("javascript:"))).toBe(true);
+    expect(anchorHref(container)).toBe("");
   });
 
-  it("neutralizes data: link hrefs", () => {
+  it("neutralizes a data: link to an empty href", () => {
     const { container } = render(<MarkdownContent text={"[x](data:text/html;base64,PHNjcmlwdD4=)"} />);
-    const anchors = Array.from(container.querySelectorAll("a"));
-    expect(anchors.every((a) => !(a.getAttribute("href") ?? "").toLowerCase().startsWith("data:"))).toBe(true);
+    expect(anchorHref(container)).toBe("");
+  });
+
+  it("neutralizes a vbscript: link to an empty href", () => {
+    const { container } = render(<MarkdownContent text={"[x](vbscript:msgbox(1))"} />);
+    expect(anchorHref(container)).toBe("");
   });
 
   it("keeps safe https links intact", () => {
     const { container } = render(<MarkdownContent text={"[docs](https://example.test/guide)"} />);
-    expect(container.querySelector("a")?.getAttribute("href")).toBe("https://example.test/guide");
+    expect(anchorHref(container)).toBe("https://example.test/guide");
   });
 
   it("renders images by default for existing consumers", () => {
@@ -38,23 +48,20 @@ describe("MarkdownContent (safe render)", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
-  it("never yields a javascript: image source", () => {
+  it("neutralizes an unsafe image source to an empty src", () => {
     const { container } = render(<MarkdownContent text={"![x](javascript:alert(1))"} />);
-    const src = container.querySelector("img")?.getAttribute("src") ?? "";
-    expect(src.toLowerCase().startsWith("javascript:")).toBe(false);
+    expect(container.querySelector("img")?.getAttribute("src") ?? "").toBe("");
   });
 
   it("neutralizes a scheme smuggled past a naive prefix test with an entity-encoded tab", () => {
     // `jav<TAB>ascript:` — a browser strips the tab and executes it; the URL
-    // policy must reject it before it reaches the DOM.
+    // policy must reject it (empty href) before it reaches the DOM.
     const { container } = render(<MarkdownContent text={"[open](<jav&#x09;ascript:alert(1)>)"} />);
-    const href = container.querySelector("a")?.getAttribute("href") ?? "";
-    expect(/javascript:/i.test(href.replace(/[\t\n\r]/g, ""))).toBe(false);
+    expect(anchorHref(container)).toBe("");
   });
 
   it("neutralizes a scheme smuggled with an entity-encoded newline", () => {
     const { container } = render(<MarkdownContent text={"[open](<jav&#x0a;ascript:alert(1)>)"} />);
-    const href = container.querySelector("a")?.getAttribute("href") ?? "";
-    expect(/javascript:/i.test(href.replace(/[\t\n\r]/g, ""))).toBe(false);
+    expect(anchorHref(container)).toBe("");
   });
 });
