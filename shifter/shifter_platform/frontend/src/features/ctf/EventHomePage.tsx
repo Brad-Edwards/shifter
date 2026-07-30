@@ -148,6 +148,44 @@ function PagesCard() {
   );
 }
 
+/**
+ * Briefing entry point on the event home: a bounded retry when the lookup
+ * failed, the banner when a briefing is present, nothing otherwise. A fetch
+ * failure is never treated as absence (#1854).
+ */
+function BriefingEntry({ query }: Readonly<{ query: ReturnType<typeof useCtfBriefing> }>) {
+  if (query.isError) {
+    return (
+      <Alert variant="destructive" className="mb-6">
+        <AlertTitle>Could not check for a briefing</AlertTitle>
+        <AlertDescription>
+          <button
+            type="button"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-2")}
+            onClick={() => query.refetch()}
+          >
+            Retry
+          </button>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  if (query.data) {
+    return (
+      <Alert className="mb-6">
+        <AlertTitle>Event briefing</AlertTitle>
+        <AlertDescription>
+          The organizer has published a briefing for this event.{" "}
+          <Link className="underline" to={ctfBriefingPath()}>
+            Open the briefing
+          </Link>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return null;
+}
+
 function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
   const { event, participant } = data;
   // A published briefing gets a prominent entry point here (participants used to
@@ -179,30 +217,7 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
 
       <EventSchedule event={event} />
 
-      {briefingQuery.isError ? (
-        <Alert variant="destructive" className="mb-6">
-          <AlertTitle>Could not check for a briefing</AlertTitle>
-          <AlertDescription>
-            <button
-              type="button"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-2")}
-              onClick={() => briefingQuery.refetch()}
-            >
-              Retry
-            </button>
-          </AlertDescription>
-        </Alert>
-      ) : briefing ? (
-        <Alert className="mb-6">
-          <AlertTitle>Event briefing</AlertTitle>
-          <AlertDescription>
-            The organizer has published a briefing for this event.{" "}
-            <Link className="underline" to={ctfBriefingPath()}>
-              Open the briefing
-            </Link>
-          </AlertDescription>
-        </Alert>
-      ) : null}
+      <BriefingEntry query={briefingQuery} />
 
       <AnnouncementsCard />
 
