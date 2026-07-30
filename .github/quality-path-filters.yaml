@@ -326,7 +326,7 @@ quality_units:
     responsibilities:
       lint: []
       security: []
-      test: []
+      test: [chart-tests]
 
   - id: cloudformation
     paths:

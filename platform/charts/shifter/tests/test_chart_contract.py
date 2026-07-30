@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -15,6 +16,27 @@ CHART_DIR = Path(__file__).resolve().parents[1]
 VALUES_FILES = {
     path.stem.removeprefix("values-"): path
     for path in CHART_DIR.glob("values-*.yaml")
+}
+
+# Placeholder AWS edge identity carried by the non-operational values-aws-dev.yaml
+# scaffold. Production values are projected by scripts/bootstrap/aws_eks.py from
+# Terraform outputs; these are the checked-in stand-ins (account 000000000000).
+AWS_DEV_CERTIFICATE_ARN = (
+    "arn:aws:acm:us-east-2:000000000000:certificate/"
+    "00000000-0000-0000-0000-000000000000"
+)
+AWS_DEV_WAF_ACL_ARN = (
+    "arn:aws:wafv2:us-east-2:000000000000:regional/webacl/shifter-dev/"
+    "00000000-0000-0000-0000-000000000000"
+)
+
+# GCP rendering is a literal byte contract (#1823): the AWS edge work must not
+# change either GCP profile's rendered bytes. Frozen with Helm 3.15.4 and release
+# name "contract-test"; regenerate deliberately only when GCP output is meant to
+# change.
+GCP_RENDER_SHA256 = {
+    "gcp-dev": "79e284e9145afad833f6e58e6b2a45188908558d83b0155926ea45e0935adcb7",
+    "gcp-prod": "aaf01034765cca95ce9813115bff8c5382bff82493676c33c70bf10036658589",
 }
 
 
@@ -186,6 +208,113 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         self.assertIn('DB_SECRET_ID: "shifter/dev/database"', rendered)
         self.assertNotIn("kind: Secret", rendered)
         self.assertNotIn(("Deployment", "worker-provisioner-launcher"), {_identity(d) for d in documents})
+
+    def test_aws_dev_scaffold_renders_alb_edge_with_acm_and_waf(self) -> None:
+        rendered, documents = _render(VALUES_FILES["aws-dev"])
+        identities = {_identity(document) for document in documents}
+        kinds = {kind for kind, _ in identities}
+
+        # A single standard Ingress carrying the ALB class -- no second ingress
+        # template, no provider.name branch.
+        self.assertIn(("Ingress", "platform-external"), identities)
+        ingress = next(
+            document
+            for document in documents
+            if _identity(document) == ("Ingress", "platform-external")
+        )
+        self.assertEqual(ingress["spec"]["ingressClassName"], "alb")
+
+        # ACM certificate + AWS WAF association ride on ALB controller
+        # annotations (Terraform-owned identity, not invented K8s objects), and
+        # the public listener is HTTPS only.
+        annotations = ingress["metadata"]["annotations"]
+        self.assertEqual(
+            annotations["alb.ingress.kubernetes.io/certificate-arn"],
+            AWS_DEV_CERTIFICATE_ARN,
+        )
+        self.assertEqual(
+            annotations["alb.ingress.kubernetes.io/wafv2-acl-arn"],
+            AWS_DEV_WAF_ACL_ARN,
+        )
+        self.assertEqual(
+            annotations["alb.ingress.kubernetes.io/listen-ports"],
+            '[{"HTTPS":443}]',
+        )
+
+        # No GCP edge objects or identifiers when the GCP capabilities are off.
+        for gcp_kind in ("BackendConfig", "ManagedCertificate", "FrontendConfig"):
+            self.assertNotIn(gcp_kind, kinds)
+        self.assertNotIn("cloud.google.com/", rendered)
+        self.assertNotIn("networking.gke.io/", rendered)
+
+        # IRSA is projected onto the workload service accounts.
+        self.assertIn("eks.amazonaws.com/role-arn", rendered)
+
+    def test_aws_dev_edge_identity_fields_match_alb_annotations(self) -> None:
+        # The renderer and this scaffold keep the explicit edge identity fields
+        # equal to their ALB annotation copies; there is no third representation.
+        values = yaml.safe_load(VALUES_FILES["aws-dev"].read_text())
+        edge = values["edge"]
+        annotations = edge["ingress"]["annotations"]
+        self.assertEqual(
+            edge["certificateArn"],
+            annotations["alb.ingress.kubernetes.io/certificate-arn"],
+        )
+        self.assertEqual(
+            edge["wafAclArn"],
+            annotations["alb.ingress.kubernetes.io/wafv2-acl-arn"],
+        )
+        self.assertEqual(edge["hostname"], edge["ingress"]["host"])
+
+    def test_aws_alb_edge_fails_closed_on_incomplete_config(self) -> None:
+        # An ALB edge missing its certificate, WAF, hostname, HTTPS-only
+        # listener, or the ALB class itself must be rejected by the schema
+        # rather than rendering a silently-insecure Ingress.
+        base = ["template", "contract-test", str(CHART_DIR), "-f", str(VALUES_FILES["aws-dev"])]
+        cases = {
+            "missing certificate": ["--set-string", "edge.certificateArn="],
+            "missing waf": ["--set-string", "edge.wafAclArn="],
+            "missing hostname": ["--set-string", "edge.hostname="],
+            "non-https listener": [
+                "--set-string",
+                r'edge.ingress.annotations.alb\.ingress\.kubernetes\.io/listen-ports=[{"HTTP":80}]',
+            ],
+            "certificate without alb class": ["--set-string", "edge.ingress.className=nginx"],
+            # The ALB controller consumes the annotation values, not the parallel
+            # edge.* identity fields, so an empty/malformed annotation value must
+            # fail closed even while edge.certificateArn/wafAclArn stay populated.
+            "empty certificate annotation": [
+                "--set-string",
+                r"edge.ingress.annotations.alb\.ingress\.kubernetes\.io/certificate-arn=",
+            ],
+            "empty waf annotation": [
+                "--set-string",
+                r"edge.ingress.annotations.alb\.ingress\.kubernetes\.io/wafv2-acl-arn=",
+            ],
+            "malformed certificate annotation": [
+                "--set-string",
+                r"edge.ingress.annotations.alb\.ingress\.kubernetes\.io/certificate-arn=not-an-arn",
+            ],
+        }
+        for label, overrides in cases.items():
+            with self.subTest(case=label):
+                result = _helm(*base, *overrides, check=False)
+                self.assertNotEqual(
+                    result.returncode,
+                    0,
+                    f"incomplete AWS edge ({label}) should fail schema validation",
+                )
+
+    def test_gcp_renders_are_byte_identical_to_frozen_baseline(self) -> None:
+        for profile, expected in GCP_RENDER_SHA256.items():
+            with self.subTest(profile=profile):
+                rendered, _ = _render(VALUES_FILES[profile])
+                actual = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+                self.assertEqual(
+                    actual,
+                    expected,
+                    f"{profile} render drifted from the frozen GCP byte contract",
+                )
 
     def test_security_and_default_deny_are_preserved_for_every_profile(self) -> None:
         for profile, values_file in VALUES_FILES.items():

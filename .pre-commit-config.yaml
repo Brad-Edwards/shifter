@@ -446,8 +446,9 @@ repos:
       - id: helm-lint-shifter-chart
         name: helm lint (shifter chart)
         entry: >-
-          bash -c 'helm lint platform/charts/shifter -f platform/charts/shifter/values-gcp-dev.yaml &&
-          helm lint platform/charts/shifter -f platform/charts/shifter/values-gcp-prod.yaml'
+          bash -c 'for profile in aws-dev aws-proof aws-prod gcp-dev gcp-prod; do
+          helm lint platform/charts/shifter -f "platform/charts/shifter/values-$profile.yaml" || exit 1;
+          done'
         language: system
         files: ^platform/charts/shifter/
         pass_filenames: false
