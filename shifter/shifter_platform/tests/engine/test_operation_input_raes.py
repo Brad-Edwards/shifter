@@ -20,6 +20,7 @@ from engine.launch_intents import enqueue_provisioner_launch
 from engine.models import (
     Instance,
     OperationInput,
+    RaesArtifactSatisfactionBinding,
     RaesContentDeliveryBinding,
     RaesImageMapping,
     RaesParticipantAccessBinding,
@@ -104,6 +105,23 @@ class _RaesRange:
             binding_version=1,
         )
 
+    def bind_artifact(self, target: str = "node.web") -> RaesArtifactSatisfactionBinding:
+        return RaesArtifactSatisfactionBinding.objects.create(
+            range=self.range,
+            target_address=target,
+            requirement_id="req-1",
+            artifact_id="img-web",
+            artifact_version="1.0.0",
+            digest="sha256:" + "a" * 64,
+            media_type="application/vnd.raes.image",
+            mechanism="exact-artifact",
+            acquisition="local-lookup",
+            timing="backend-preparation",
+            image_ref="projects/p/global/images/web",
+            machine_type="e2-medium",
+            binding_version=1,
+        )
+
     def launch(self, operation: str = "provision") -> OperationInput:
         enqueue_provisioner_launch(["raes-range", operation, "--request-id", str(self.request_id)])
         return OperationInput.objects.get(request_id=self.request_id, operation=operation)
@@ -123,6 +141,24 @@ def _mapping(source_name: str, *, version: str = "", enabled: bool = True, provi
         disk_type="pd-balanced",
         enabled=enabled,
     )
+
+
+class TestArtifactBindings:
+    """Persisted artifact-satisfaction bindings cross into the immutable input (#1580)."""
+
+    def test_fenced_binding_round_trips_to_the_provisioner_projection(self):
+        fx = _RaesRange()
+        fx.bind_artifact(target="node.web")
+        binding = fx.payload().artifact_binding_for("node.web")
+        assert binding is not None
+        assert binding.image_ref == "projects/p/global/images/web"
+        assert binding.digest == "sha256:" + "a" * 64
+        assert binding.mechanism == "exact-artifact"
+        assert binding.machine_type == "e2-medium"
+
+    def test_no_binding_for_an_unbound_node(self):
+        fx = _RaesRange()
+        assert fx.payload().artifact_binding_for("node.web") is None
 
 
 class TestPlanAndIdentity:

@@ -50,6 +50,7 @@ from django.conf import settings
 from cms.scenarios.catalog_presentation import RAES_SCENARIO_TYPE
 from cms.scenarios.registry import get_catalog_entry
 from shared.log_sanitize import safe_log_value
+from shared.raes.artifact_inventory import BackendArtifact, build_artifact_availability
 from shared.raes.image_policy import is_concrete_image_ref, resolve_from_candidates
 from shared.raes.realizability import (
     GapCategory,
@@ -60,7 +61,7 @@ from shared.raes.realizability import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
     from contextlib import AbstractContextManager
 
     from cms.models import RaesPackageSource
@@ -128,7 +129,9 @@ def _assess_registered_pack(scenario_id: str, source: RaesPackageSource, target_
 
 def _assess_trusted_path(scenario_id: str, scenario_path: Path, target_id: str) -> dict[str, Any]:
     """Combine capability and backend-supply contributors into one ordered answer."""
-    capability = assess_scenario_capability(scenario_path)
+    capability = assess_scenario_capability(
+        scenario_path, artifact_availability_provider=_availability_provider(target_id)
+    )
     supply_gaps = _supply_gaps(capability.image_demands, target_id=target_id)
     supply_outcome = RealizabilityOutcome.NOT_REALIZABLE if supply_gaps else RealizabilityOutcome.REALIZABLE
 
@@ -355,6 +358,35 @@ def _registry_candidates(names: set[str], *, target_id: str) -> dict[str, list[d
             }
         )
     return grouped
+
+
+def _availability_provider(target_id: str) -> Callable[[Mapping[str, Any]], dict[str, Any]]:
+    """Return a provider that answers artifact availability from the tenant registry.
+
+    Injected into :func:`assess_scenario_capability` so the artifact-resolution
+    seam sees the backend-owned inventory without ``shared.raes`` ever reaching
+    into the engine registry (the catalog layer owns that read, exactly like the
+    image-supply contributor). The provider is typed with boundary-safe ``Any`` so
+    this catalog layer never has to name upstream RAES contract types (ADR-031-R1).
+    """
+
+    def provider(requirements: Mapping[str, Any]) -> dict[str, Any]:
+        """Answer per-requirement artifact availability for ``requirements`` from the registry."""
+        return build_artifact_availability(requirements, _backend_inventory(target_id))
+
+    return provider
+
+
+def _backend_inventory(target_id: str) -> list[BackendArtifact]:
+    """Read the backend-owned portable artifacts for ``target_id`` from the registry.
+
+    Delegates to the one shared projection (``engine.services.list_backend_artifacts``)
+    so the editor realizability contributor and the launch-time fencing resolver
+    agree on exactly what the backend owns.
+    """
+    from engine.services import list_backend_artifacts
+
+    return list_backend_artifacts(provider=target_id)
 
 
 def _lookup_name(demand: ImageDemand) -> str:

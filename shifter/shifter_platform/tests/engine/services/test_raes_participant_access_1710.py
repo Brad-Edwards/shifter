@@ -24,7 +24,7 @@ from engine.models import (
     Range,
     Request,
 )
-from engine.services import apply_pending_operation_results, create_raes_range
+from engine.services import RangeBindings, apply_pending_operation_results, create_raes_range
 from shared.enums import ResourceStatus
 from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
 from shared.operation_results import ResultStep, build_result_identity, result_kind_for
@@ -116,7 +116,7 @@ class TestDeclarationPersistence:
             user_id=user.id,
             compiled_plan={"kind": "raes_provisioning_plan", "resources": {}},
             workspace_id=_WORKSPACE_ID,
-            participant_access=(_binding(),),
+            bindings=RangeBindings(participant_access=(_binding(),)),
         )
         rows = RaesParticipantAccessBinding.objects.all()
         assert [(row.target_address, row.channel, row.account_address) for row in rows] == [
@@ -133,15 +133,16 @@ class TestDeclarationPersistence:
             user_id=user.id,
             compiled_plan=plan,
             workspace_id=_WORKSPACE_ID,
-            participant_access=(_binding(),),
+            bindings=RangeBindings(participant_access=(_binding(),)),
         )
+        replay_bindings = RangeBindings(participant_access=(_binding(channel="rdp"),))
         with pytest.raises(ValueError, match="participant access intent"):
             create_raes_range(
                 request_id=request_id,
                 user_id=user.id,
                 compiled_plan=plan,
                 workspace_id=_WORKSPACE_ID,
-                participant_access=(_binding(channel="rdp"),),
+                bindings=replay_bindings,
             )
 
     def test_replay_with_identical_access_intent_is_idempotent(self):
@@ -153,14 +154,14 @@ class TestDeclarationPersistence:
             user_id=user.id,
             compiled_plan=plan,
             workspace_id=_WORKSPACE_ID,
-            participant_access=(_binding(),),
+            bindings=RangeBindings(participant_access=(_binding(),)),
         )
         second = create_raes_range(
             request_id=request_id,
             user_id=user.id,
             compiled_plan=plan,
             workspace_id=_WORKSPACE_ID,
-            participant_access=(_binding(),),
+            bindings=RangeBindings(participant_access=(_binding(),)),
         )
         assert first.range_id == second.range_id
         assert RaesParticipantAccessBinding.objects.count() == 1

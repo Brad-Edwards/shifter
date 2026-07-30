@@ -3716,6 +3716,18 @@ export interface components {
             enabled: boolean;
             /** @default  */
             notes: string;
+            /** @default  */
+            artifact_id: string;
+            /** @default  */
+            artifact_version: string;
+            /** @default  */
+            artifact_digest: string;
+            /** @default  */
+            media_type: string;
+            /** @default  */
+            integrity_ref: string;
+            /** @default  */
+            provenance_ref: string;
         };
         /**
          * @description Allowlisted read projection shared by the register, list, and disable responses.
@@ -3734,6 +3746,12 @@ export interface components {
             readonly disk_type: string;
             readonly enabled: boolean;
             readonly notes: string;
+            readonly artifact_id: string;
+            readonly artifact_version: string;
+            readonly artifact_digest: string;
+            readonly media_type: string;
+            readonly integrity_ref: string;
+            readonly provenance_ref: string;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */

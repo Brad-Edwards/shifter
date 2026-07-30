@@ -50,13 +50,15 @@ dependencies = [
     # provisioner consumer accepts (raes_plan.SUPPORTED_RAES_VERSION, kept in
     # agreement by tests/shared/raes/test_plan_provisioner_parity.py); changing
     # it requires passing the RAES conformance gate.
-    # raes-env-packs 3.0.0 requires this exact RAES release.
+    # raes-env-packs 3.1.0 requires this exact RAES release.
     "raes==2.0.0",
     # RAES environment-pack contract and canonical content-digest implementation
-    # used by the uniform content-ingestion path (#1578, ADR-034). Keep this
-    # exact: its schemas, validator, digest profile, and raes dependency are
-    # one versioned consumer contract.
-    "raes-env-packs==3.0.0",
+    # used by the uniform content-ingestion path (#1578, ADR-034). 3.1.0 adds the
+    # public environment-pack publication profile consumed by artifact-requirement
+    # resolution (#1580, env-packs #141); it still requires raes==2.0.0. Keep this
+    # exact: its schemas, validator, digest profile, publication profile, and raes
+    # dependency are one versioned consumer contract.
+    "raes-env-packs==3.1.0",
     "uvicorn-worker",
     # uvicorn's WebSocket protocol backend. Not imported directly: the
     # Gunicorn/Uvicorn ASGI workers (entrypoint.sh) need websockets (or wsproto)
