@@ -111,6 +111,44 @@ def audit_content_hydration_drift(
     )
 
 
+def audit_event_page(
+    *,
+    actor_id: int,
+    event_id: UUID,
+    page_id: UUID,
+    slug: str,
+    body_length: int,
+    action: str,
+) -> None:
+    """Record an organizer event-page mutation without storing the page body.
+
+    Only identifiers, the slug, the source length, and the action are recorded;
+    organizer-authored guidance content never enters the audit surface (#1854).
+    """
+    action_map = {
+        "create": AuditAction.CREATE,
+        "update": AuditAction.UPDATE,
+        "delete": AuditAction.DELETE,
+    }
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            action=action_map[action],
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state={
+                "ctf_event_page": action,
+                "event_id": str(event_id),
+                "page_id": str(page_id),
+                "slug": slug,
+                "body_length": body_length,
+            },
+            context="ctf_event_page",
+        )
+    )
+
+
 def audit_range_recovery(
     *,
     actor_id: int | None,

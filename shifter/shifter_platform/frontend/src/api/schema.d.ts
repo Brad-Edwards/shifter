@@ -776,10 +776,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the event's pages in display order. */
+        /**
+         * @description Return the event's pages in display order (incl. the reserved briefing).
+         *
+         *     The organizer editor sees every page and separates the reserved briefing
+         *     into its own affordance; participant reads exclude it (#1854).
+         */
         get: operations["ctf_events_pages_retrieve"];
         put?: never;
-        /** @description Create a page; slugs are unique per event. */
+        /** @description Create a page through the CTF page service; slugs are unique per event. */
         post: operations["ctf_events_pages_create"];
         delete?: never;
         options?: never;
@@ -1079,6 +1084,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/me/briefing/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the reserved briefing page for the active event, or 404. */
+        get: operations["ctf_me_briefing_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/me/challenges/": {
         parameters: {
             query?: never;
@@ -1137,7 +1159,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the active event's pages in display order. */
+        /**
+         * @description Return the active event's generic pages in display order.
+         *
+         *     The reserved briefing page is excluded here; it owns the dedicated
+         *     briefing surface (``ParticipantBriefingView``) and must not appear a
+         *     second time in the generic event-pages list (#1854).
+         */
         get: operations["ctf_me_pages_retrieve"];
         put?: never;
         post?: never;
@@ -7780,6 +7808,50 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiError"];
                 };
+            };
+        };
+    };
+    ctf_me_briefing_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The active event has no briefing; the client falls back to generic help. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
