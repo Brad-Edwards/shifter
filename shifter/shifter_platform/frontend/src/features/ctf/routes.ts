@@ -24,6 +24,7 @@ export const ctfScoreboardPath = (): string => `${CTF_BASE}/scoreboard/`;
 export const ctfTeamPath = (): string => `${CTF_BASE}/team/`;
 export const ctfAccountPath = (): string => `${CTF_BASE}/account/`;
 export const ctfHelpPath = (): string => `${CTF_BASE}/help/`;
+export const ctfBriefingPath = (): string => `${CTF_BASE}/briefing/`;
 
 /**
  * Organizer (admin) client-route paths, under `/ctf/admin/`.

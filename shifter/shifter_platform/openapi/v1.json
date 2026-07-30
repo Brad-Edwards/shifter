@@ -3998,7 +3998,7 @@
     "/api/v1/ctf/events/{event_id}/pages/": {
       "get": {
         "operationId": "ctf_events_pages_retrieve",
-        "description": "Return the event's pages in display order.",
+        "description": "Return the event's pages in display order (incl. the reserved briefing).\n\nThe organizer editor sees every page and separates the reserved briefing\ninto its own affordance; participant reads exclude it (#1854).",
         "parameters": [
           {
             "in": "path",
@@ -4056,7 +4056,7 @@
       },
       "post": {
         "operationId": "ctf_events_pages_create",
-        "description": "Create a page; slugs are unique per event.",
+        "description": "Create a page through the CTF page service; slugs are unique per event.",
         "parameters": [
           {
             "in": "path",
@@ -5420,6 +5420,58 @@
         }
       }
     },
+    "/api/v1/ctf/me/briefing/": {
+      "get": {
+        "operationId": "ctf_me_briefing_retrieve",
+        "description": "Return the reserved briefing page for the active event, or 404.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "The active event has no briefing; the client falls back to generic help."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/me/challenges/": {
       "get": {
         "operationId": "ctf_me_challenges_list",
@@ -5584,7 +5636,7 @@
     "/api/v1/ctf/me/pages/": {
       "get": {
         "operationId": "ctf_me_pages_retrieve",
-        "description": "Return the active event's pages in display order.",
+        "description": "Return the active event's generic pages in display order.\n\nThe reserved briefing page is excluded here; it owns the dedicated\nbriefing surface (``ParticipantBriefingView``) and must not appear a\nsecond time in the generic event-pages list (#1854).",
         "tags": [
           "ctf"
         ],
@@ -12260,7 +12312,8 @@
             "pattern": "^[-a-zA-Z0-9_]+$"
           },
           "body": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "order": {
             "type": "integer",

@@ -440,6 +440,20 @@ class CTFEventStaff(CTFBaseModel):
         return f"{self.user_id}@{self.event_id}: {self.role}"
 
 
+# Reserved event-page slug carrying the per-event participant briefing (#1854).
+# Defined once so views, services, and serializers key behaviour on the slug
+# constant rather than the mutable display title; the existing conditional
+# ``(event, slug)`` uniqueness constraint makes it a per-event singleton.
+RESERVED_BRIEFING_SLUG = "briefing"
+
+# Organizer-authored page source is untrusted input rendered to other
+# participants, so bound the stored source (characters) and the number of pages
+# an event may carry. This keeps request, database, and render work bounded
+# regardless of the render allowlist (#1854).
+MAX_EVENT_PAGE_BODY_CHARS = 20_000
+MAX_EVENT_PAGES_PER_EVENT = 50
+
+
 class CTFEventPage(CTFBaseModel):
     """One organizer-authored informational page for an event (CTF-1303)."""
 
