@@ -52,7 +52,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}'
 
-test: test-platform test-provisioner test-packer test-installation test-bootstrap test-check-layer-imports test-js test-adr-guard ## Run every no-service (SQLite/pure-Python/JS) lane
+test: test-platform test-provisioner test-packer test-installation test-bootstrap test-check-layer-imports test-charts test-js test-adr-guard ## Run every no-service (SQLite/pure-Python/JS) lane
 
 test-platform: ## Platform fast lane (SQLite; sole coverage publisher)
 	cd shifter/shifter_platform && uv sync --group dev && \
@@ -85,6 +85,13 @@ test-bootstrap: ## Bootstrap deployment-scripts suite
 
 test-check-layer-imports: ## Layer-import checker suite
 	cd scripts/check_layer_imports && uv sync --group dev && uv run pytest tests/ --cov
+
+# Mirrors the `chart-tests` CI job. No --cov: the suite validates rendered Helm
+# YAML (schema, ALB edge, GCP byte contract), not owned production Python, so a
+# coverage number would only measure the tests covering themselves (cf. the
+# packer lane). Requires helm on PATH (as the helm-lint pre-commit hook does).
+test-charts: ## Helm chart contract suite (renders every backend profile)
+	uv run --python 3.12 --with pyyaml --with pytest python -m pytest platform/charts/shifter/tests/ -q
 
 test-js: ## Platform JavaScript (Jest) suite with coverage
 	cd shifter/shifter_platform && npm ci && npm run test:coverage
