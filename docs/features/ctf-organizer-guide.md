@@ -63,7 +63,30 @@ event to adopt a revised bundle instead of overwriting or merging the existing
 graph. The selected scenario also cannot be changed after managed content has
 been created.
 
-## 3. Manage Participants
+## 3. Participant Briefing
+
+Give participants event-specific orientation: what environment they are in, how their
+range is reached, and where to start. This is the guidance a shared help page cannot
+carry—for example, that they are a red-team operator on a Kali workstation inside a
+target network, reached from that box, with the public website, DNS server, and domain
+controller as useful first objectives.
+
+Author it from the event's admin page in the **Participant briefing** editor. It is
+Markdown: headings, lists, code, and links render; raw HTML, scripts, and images do
+not, and unsafe link schemes (such as `javascript:` and `data:`) are stripped when the
+briefing is shown. Editing updates the published briefing in place; removing it
+restores the generic help.
+
+The briefing is stored and shown verbatim in the language you write it—the platform
+does not translate it, so you own its wording. Because it is visible to every
+participant, never put flags, passwords, invitation or reset links, range credentials,
+or any other secret in it.
+
+When a briefing exists, participants get a **Briefing** entry on their event home and a
+dedicated briefing page. An event with no briefing shows the standard help unchanged,
+so nothing regresses if you do not author one.
+
+## 4. Manage Participants
 
 From an event's **Participants** page you can add participants individually or bulk
 import a roster. Each participant is tracked through registration, range assignment,
@@ -85,7 +108,7 @@ password, and forces another password change.
 Accounts stop authenticating at event end and are anonymized after the configured
 participant-account retention window.
 
-## 4. Ranges
+## 5. Ranges
 
 The **Ranges** page shows the provisioning state of every participant's range. The
 platform provisions ranges automatically around the spin-up window and, when auto
@@ -120,13 +143,13 @@ and failed counts. The pool only grows on request; it does not shrink automatica
 Unconsumed spares are torn down along with the rest of the event's ranges during
 event cleanup.
 
-## 5. Notifications
+## 6. Notifications
 
 Use **Notifications** to send announcements during the event and **Email Templates**
 to configure reminder messages. Events can also send registration reminders at the
 hour offsets you configure.
 
-## 6. During and After the Event
+## 7. During and After the Event
 
 - The **Scoreboard** updates as submissions land. Freeze it near the end to keep final
   standings suspended until close.
