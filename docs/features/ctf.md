@@ -19,6 +19,13 @@ platform login or staff/operator surfaces. Platform credentials cannot use the C
 login. Access stops at event end and the temporary account is anonymized after the
 configured retention window.
 
+## Briefing
+
+Some events include a **Briefing**—event-specific orientation from the organizer:
+what environment you are in, how to reach your range, and where to start. When one is
+published, a **Briefing** entry appears on your event home and opens a dedicated
+briefing page. If the event has no briefing, the standard help applies instead.
+
 ## Your Range
 
 Each participant gets a dedicated range built from the event's scenario. The range is
