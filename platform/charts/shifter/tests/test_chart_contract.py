@@ -350,7 +350,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
             check=False,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("images.platform", result.stderr)
+        # Helm names the offending field with either dot ("images.platform") or
+        # JSON-pointer ("/images/platform") path syntax depending on the schema
+        # validator its build links; match both so the check is not brittle to a
+        # helm patch/build difference between local and CI.
+        self.assertRegex(result.stderr, r"images[./]platform")
 
     def test_schema_rejects_provider_feature_without_capability(self) -> None:
         result = _helm(
