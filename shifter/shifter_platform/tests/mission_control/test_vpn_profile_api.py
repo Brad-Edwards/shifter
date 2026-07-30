@@ -20,11 +20,6 @@ from shared.enums import RangeSource, RequestType, ResourceStatus
 from shared.models import AuditLog
 from tests.engine.services.conftest import boto3_secrets, make_secrets_client
 
-# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
-# exercise tenancy; a fixed scalar stands in for the value the CMS launch
-# facade resolves in production.
-_WORKSPACE_ID = 1
-
 pytestmark = pytest.mark.django_db
 User = get_user_model()
 
@@ -55,15 +50,18 @@ def _token(user, *granted_scopes: str) -> str:
 
 
 def _ready_range(user, *, source=RangeSource.MISSION_CONTROL, secret_ref=None):
+    from workspaces.services import resolve_personal_workspace
+
+    workspace_id = resolve_personal_workspace(user).workspace_id
     request_id = uuid4()
     cms_request = CmsRequest.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request_id=request_id,
         request_type=RequestType.RANGE.value,
         user=user,
     )
     cms_range = RangeInstance.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request=cms_request,
         scenario_id="basic",
         user_id=user.id,
@@ -86,7 +84,7 @@ def _ready_range(user, *, source=RangeSource.MISSION_CONTROL, secret_ref=None):
         status=Range.Status.READY,
     )
     Range.objects.create(
-        workspace_id=_WORKSPACE_ID,
+        workspace_id=workspace_id,
         request=engine_request,
         user=user,
         status=Range.Status.READY,
@@ -172,6 +170,24 @@ def test_endpoint_is_bodyless_and_non_enumerating(standard_user):
 
     assert client.post(URL, {"range_id": 42}, format="json").status_code == 400
     assert client.post(URL).status_code == 404
+
+
+def test_membership_removal_revokes_profile_before_secret_resolution(settings, standard_user):
+    from workspaces.models import WorkspaceMembership
+
+    settings.CLOUD_PROVIDER = "aws"
+    _ready_range(standard_user)
+    WorkspaceMembership.objects.filter(user=standard_user).delete()
+    raw = _token(standard_user, scopes.MISSION_CONTROL_VPN_PROFILE_READ)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+    secrets = make_secrets_client(PROFILE)
+
+    with boto3_secrets(secrets):
+        response = client.post(URL)
+
+    assert response.status_code == 404
+    secrets.get_secret_value.assert_not_called()
 
 
 def test_rate_limit_blocks_before_secret_resolution(settings, standard_user):

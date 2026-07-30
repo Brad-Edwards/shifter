@@ -56,6 +56,16 @@ class TestDestroyRange:
             entity_type=AuditEntityType.RANGE, entity_id=ri.pk, action=AuditAction.DEPROVISION
         ).exists()
 
+    def test_membership_removal_revokes_destroy_before_dispatch(self, user, provision_range):
+        from workspaces.models import WorkspaceMembership
+
+        ri = provision_range(user, range_id=42)
+        WorkspaceMembership.objects.filter(user=user).delete()
+
+        with pytest.raises(CMSError, match="not found"):
+            services.destroy_range(user, ri.pk)
+        assert _reload(42).status == ResourceStatus.PROVISIONING.value
+
     # The old synchronous "provider dispatch failed -> range reverted" path no
     # longer exists: dispatch enqueues a launch intent and the drainer owns
     # provider-dispatch failure (DLQ -> FAILED), covered by

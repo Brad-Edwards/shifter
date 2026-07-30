@@ -31,6 +31,7 @@ Invariants enforced in the database:
 - a workspace belongs to exactly one organization (non-null FK);
 - a workspace name is unique within its organization;
 - a user has at most one membership per workspace;
+- membership role is one of `owner`, `admin`, or `member`;
 - a user has at most one *personal* workspace (`personal_for_user` is unique).
 
 Both `Organization` and `Workspace` carry an internal integer primary key and an
@@ -52,20 +53,49 @@ import `workspaces.models`, and they must not hold a ForeignKey to a workspace
 | `resolve_personal_workspace(user)` | Return the user's personal workspace, creating it on first use |
 | `authorize_workspace(actor, workspace_uuid, operation)` | Authorize against an untrusted, externally supplied workspace UUID |
 | `authorize_bound_workspace(actor, workspace_id, operation)` | Authorize against a trusted, already-persisted internal binding |
+| `get_self_membership(actor, workspace_uuid)` | Return the actor's minimum membership projection |
+| `list_workspace_memberships(actor, workspace_uuid)` | Return the roster to an owner or admin |
+| `add_workspace_member(...)` | Add an existing active account with a closed role |
+| `change_workspace_member_role(...)` | Change a role under the owner boundary |
+| `remove_workspace_member(...)` | Remove another member while retaining an owner |
+| `leave_workspace(...)` | Remove the actor's own non-personal membership |
+
+Authorization functions return a frozen `WorkspaceAuthorization` (workspace
+ID, public UUID, organization ID, role) and never an ORM instance. Membership
+queries and commands return frozen minimum projections.
 
 `engine.services.rebind_range_workspace_by_request` is the Engine half of the
 rehoming operation; CMS owns the decision and calls it so the Engine range's
 scope moves with the CMS projections.
 
-All three return a frozen `WorkspaceAuthorization` (workspace id, public UUID,
-organization id, role) and never an ORM instance. Denials raise
+Denials raise
 `WorkspaceAuthorizationError` with a single message. A missing workspace, a
 non-membership, and a role that does not permit the operation are deliberately
 indistinguishable, because the difference is a tenant-enumeration oracle.
 
-Membership mutation—invite, add, remove, change role—is not part of this
-interface yet. It lands with issue #1326 along with the last-owner invariant
-that must guard it.
+Membership commands lock the workspace as their transaction mutex and recheck
+the actor's live grant while locked. They retain at least one owner, reserve
+owner changes to owners, protect personal-workspace ownership, and write a
+strict audit record in the same transaction.
+
+## Role policy and API
+
+The closed role policy is owned in `workspaces.roles`; callers ask the service
+about an operation and do not compare role strings themselves. All roles can
+act on their own workspace-bound resources, subject to the existing range
+owner, source, lifecycle, CTF, and remote-access checks. Owners and admins can
+manage the roster, but only owners can grant or revoke ownership.
+
+This iteration has no `OrganizationMembership`, organization-wide role, or
+`org_admin` override. Organization-level authority needs a separate accepted
+model instead of being copied onto workspace membership rows.
+
+The DRF routes are mounted below `/api/v1/workspaces/{workspace_uuid}/`. Reads
+require the exact `workspaces:membership:read` API-token scope and changes
+require `workspaces:membership:write`. Session authentication and API-token
+scope checks establish the actor but never replace the service-layer role
+check. The API returns minimum projections and the shared sanitized error
+envelope.
 
 ## How ranges are scoped
 
@@ -81,6 +111,14 @@ or authorizes a workspace itself.
 `Range.user`, `cms.Request.user`, and `cms.RangeInstance.user_id` remain the
 range's owner. **Workspace membership is workspace-level authorization only: it
 grants no SSH, RDP, VPN, Guacamole, or CTF access to another member's range.**
+
+Every interactive CMS operation on a persisted range binding also asks the
+workspace service for `read_range`, `manage_range`, or `access_range`.
+Collection reads omit ranges whose membership has been revoked; point and
+mutation operations return a non-enumerating denial. Mission Control reaches
+terminal, SSH, and RDP through CMS's authorized facade before Engine resolves
+credentials. System-attributed expiry and provider callbacks bypass this human
+role gate so cleanup cannot be stranded by membership removal.
 
 Reassigning a range's owner requires the new owner to be a member of the range's
 workspace, so a range is never left scoped to a tenant its owner cannot reach.

@@ -43,6 +43,7 @@ SPECTACULAR_SETTINGS = {
     "PREPROCESSING_HOOKS": ["shared.api.schema.exclude_unpublished_endpoints"],
     "ENUM_NAME_OVERRIDES": {
         "ResourceStatusEnum": "mission_control.api.serializers.RESOURCE_STATUS_VALUES",
+        "WorkspaceRoleEnum": "workspaces.roles.WorkspaceRole",
     },
 }
 

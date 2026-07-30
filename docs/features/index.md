@@ -15,6 +15,7 @@ Detailed guides for each Shifter feature.
 
 ## Governance
 
+- [Workspace Membership](workspaces) - Manage workspace members and fixed roles
 
 ## Advanced Features
 

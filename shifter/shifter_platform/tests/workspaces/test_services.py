@@ -54,6 +54,26 @@ def test_resolve_personal_workspace_is_idempotent():
     assert WorkspaceMembership.objects.filter(user=user).count() == 1
 
 
+def test_resolve_personal_workspace_refuses_a_missing_persisted_owner_membership():
+    user = _user()
+    result = services.resolve_personal_workspace(user)
+    WorkspaceMembership.objects.filter(workspace_id=result.workspace_id, user=user).delete()
+
+    with pytest.raises(services.WorkspaceAuthorizationError, match="Workspace access denied"):
+        services.resolve_personal_workspace(user)
+
+
+def test_resolve_personal_workspace_refuses_a_demoted_persisted_owner_membership():
+    user = _user()
+    result = services.resolve_personal_workspace(user)
+    WorkspaceMembership.objects.filter(workspace_id=result.workspace_id, user=user).update(
+        role=WorkspaceRole.MEMBER.value
+    )
+
+    with pytest.raises(services.WorkspaceAuthorizationError, match="Workspace access denied"):
+        services.resolve_personal_workspace(user)
+
+
 def test_each_user_gets_a_distinct_personal_organization_not_a_shared_default():
     first_user = _user("one")
     second_user = _user("two")
@@ -124,6 +144,73 @@ def test_unknown_operation_is_denied_fail_closed():
 
     with pytest.raises(services.WorkspaceAuthorizationError):
         services.authorize_workspace(user, personal.workspace_uuid, "delete_everything")
+
+
+@pytest.mark.parametrize("role", [WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        WorkspaceOperation.LAUNCH_RANGE,
+        WorkspaceOperation.REASSIGN_RANGE,
+        WorkspaceOperation.READ_RANGE,
+        WorkspaceOperation.MANAGE_RANGE,
+        WorkspaceOperation.ACCESS_RANGE,
+        WorkspaceOperation.LEAVE_WORKSPACE,
+    ],
+)
+def test_every_role_can_use_its_own_product_authorized_workspace_resources(role, operation):
+    owner = _user("owner")
+    actor = _user(f"actor-{role.value}")
+    personal = services.resolve_personal_workspace(owner)
+    WorkspaceMembership.objects.create(workspace_id=personal.workspace_id, user=actor, role=role.value)
+
+    result = services.authorize_workspace(actor, personal.workspace_uuid, operation)
+
+    assert result.role == role.value
+
+
+@pytest.mark.parametrize("role", [WorkspaceRole.OWNER, WorkspaceRole.ADMIN])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        WorkspaceOperation.READ_MEMBERS,
+        WorkspaceOperation.ADD_MEMBER,
+        WorkspaceOperation.CHANGE_MEMBER_ROLE,
+        WorkspaceOperation.REMOVE_MEMBER,
+    ],
+)
+def test_owner_and_admin_can_request_membership_management_operations(role, operation):
+    owner = _user("owner")
+    actor = _user(f"actor-{role.value}")
+    personal = services.resolve_personal_workspace(owner)
+    WorkspaceMembership.objects.create(workspace_id=personal.workspace_id, user=actor, role=role.value)
+
+    result = services.authorize_workspace(actor, personal.workspace_uuid, operation)
+
+    assert result.role == role.value
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        WorkspaceOperation.READ_MEMBERS,
+        WorkspaceOperation.ADD_MEMBER,
+        WorkspaceOperation.CHANGE_MEMBER_ROLE,
+        WorkspaceOperation.REMOVE_MEMBER,
+    ],
+)
+def test_member_cannot_request_membership_management_operations(operation):
+    owner = _user("owner")
+    member = _user("member")
+    personal = services.resolve_personal_workspace(owner)
+    WorkspaceMembership.objects.create(
+        workspace_id=personal.workspace_id,
+        user=member,
+        role=WorkspaceRole.MEMBER.value,
+    )
+
+    with pytest.raises(services.WorkspaceAuthorizationError):
+        services.authorize_workspace(member, personal.workspace_uuid, operation)
 
 
 def test_a_malformed_workspace_uuid_is_denied_rather_than_raising_a_value_error():

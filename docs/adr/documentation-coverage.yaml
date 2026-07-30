@@ -45,6 +45,13 @@
       "technical_docs": ["technical/shifter_platform/ctf.md"]
     },
     {
+      "id": "workspaces",
+      "title": "Workspace membership",
+      "requirement": "PLAT-2011",
+      "user_docs": ["features/workspaces.md"],
+      "technical_docs": ["technical/shifter_platform/workspaces.md"]
+    },
+    {
       "id": "aws-eks-backend-bundle",
       "title": "AWS EKS backend bundle",
       "requirement": "GEN-001",

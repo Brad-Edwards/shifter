@@ -242,16 +242,19 @@ class TestGetRangeStatus:
     @pytest.mark.django_db
     def test_projects_vpn_profile_availability_from_cms(self, ctf_participant):
         """Project readiness through the real CTF -> CMS -> Engine boundary."""
+        from workspaces.services import resolve_personal_workspace
+
         user = ctf_participant.user
+        workspace_id = resolve_personal_workspace(user).workspace_id
         request_id = uuid4()
         cms_request = CMSRequest.objects.create(
-            workspace_id=_WORKSPACE_ID,
+            workspace_id=workspace_id,
             request_id=request_id,
             request_type=RequestType.RANGE.value,
             user=user,
         )
         cms_range = RangeInstance.objects.create(
-            workspace_id=_WORKSPACE_ID,
+            workspace_id=workspace_id,
             request=cms_request,
             scenario_id="basic",
             user_id=user.id,
@@ -272,7 +275,7 @@ class TestGetRangeStatus:
             status=Range.Status.READY,
         )
         Range.objects.create(
-            workspace_id=_WORKSPACE_ID,
+            workspace_id=workspace_id,
             request=engine_request,
             user=user,
             status=Range.Status.READY,

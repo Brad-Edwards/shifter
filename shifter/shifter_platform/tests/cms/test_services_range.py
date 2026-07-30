@@ -18,9 +18,6 @@ from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from tests.conftest import INVALID_RANGE_IDS, INVALID_USERS
 
-# Opaque #1325 workspace scope binding; this suite does not exercise tenancy.
-_WORKSPACE_ID = 1
-
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -32,13 +29,15 @@ def user(db):
 
 
 def _range_instance(user, *, range_id=None, scenario_id="basic", status="provisioning", agent=None, range_source=None):
+    from workspaces.services import resolve_personal_workspace
+
     kwargs = {
         "scenario_id": scenario_id,
         "user_id": user.id,
         "range_id": range_id,
         "status": status,
         "agent": agent,
-        "workspace_id": _WORKSPACE_ID,
+        "workspace_id": resolve_personal_workspace(user).workspace_id,
     }
     if range_source is not None:
         kwargs["range_source"] = range_source
@@ -70,6 +69,16 @@ class TestListRanges:
     def test_returns_a_list(self, user):
         _range_instance(user, range_id=1)
         assert type(services.list_ranges(user)) is list
+
+    def test_membership_removal_revokes_range_reads(self, user):
+        from workspaces.models import WorkspaceMembership
+
+        _range_instance(user, range_id=1)
+        WorkspaceMembership.objects.filter(user=user).delete()
+
+        assert services.list_ranges(user) == []
+        with pytest.raises(CMSError, match="not found"):
+            services.get_range(user, 1)
 
     def test_requires_user_argument(self):
         with pytest.raises(TypeError):
@@ -279,7 +288,10 @@ class TestHasReadyActiveRange:
         _range_instance(user, range_id=1, status="ready")
         with CaptureQueriesContext(connection) as ctx:
             services.has_ready_active_range(user)
-        assert len(ctx.captured_queries) == 1
+        # One workspace-grant query plus one status-only range query. The
+        # authorization service returns immutable scalar IDs rather than
+        # leaking a lazy cross-domain QuerySet.
+        assert len(ctx.captured_queries) == 2
 
 
 class TestRangeSourceAdmission:
@@ -483,10 +495,13 @@ class TestActiveRangeConstraintBackstop:
         from cms.models import Request
         from cms.services._range_create import _reserve_active_range_slot
         from shared.enums import RangeSource
+        from workspaces.services import resolve_personal_workspace
+
+        workspace_id = resolve_personal_workspace(user).workspace_id
 
         def _persist(cms_request):
             return RangeInstance.objects.create(
-                workspace_id=_WORKSPACE_ID,
+                workspace_id=workspace_id,
                 request=cms_request,
                 scenario_id="basic",
                 user_id=user.id,
@@ -494,14 +509,14 @@ class TestActiveRangeConstraintBackstop:
             )
 
         # First reservation takes the (user, MISSION_CONTROL) slot.
-        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist, _WORKSPACE_ID)
+        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist, workspace_id)
         requests_before = Request.objects.filter(user=user).count()
 
         # A second reservation collides on the active-range constraint; the named
         # violation is translated to the authored CMSError and the whole atomic
         # rolls back, so no orphan Request is left behind.
         with pytest.raises(CMSError, match="already have an active range"):
-            _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist, _WORKSPACE_ID)
+            _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist, workspace_id)
 
         assert Request.objects.filter(user=user).count() == requests_before
         assert RangeInstance.objects.filter(user_id=user.id).count() == 1

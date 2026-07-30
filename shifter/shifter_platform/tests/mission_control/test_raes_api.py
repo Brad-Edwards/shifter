@@ -26,11 +26,6 @@ from shared.schemas.raes_participant_runtime import (
     canonical_raes_payload_digest as canonical_participant_payload_digest,
 )
 
-# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
-# exercise tenancy; a fixed scalar stands in for the value the CMS launch
-# facade resolves in production.
-_WORKSPACE_ID = 1
-
 pytestmark = pytest.mark.django_db
 
 _CONTRACT_VERSION = {
@@ -74,13 +69,22 @@ def client():
 
 def _owned_range(user):
     """Create a RangeInstance + Request owned by ``user``; return the request_id."""
+    from workspaces.services import resolve_personal_workspace
+
+    workspace_id = resolve_personal_workspace(user).workspace_id
     request = Request.objects.create(
-        workspace_id=_WORKSPACE_ID, request_id=uuid4(), request_type=RequestType.RANGE.value, user=user
+        workspace_id=workspace_id, request_id=uuid4(), request_type=RequestType.RANGE.value, user=user
     )
     RangeInstance.objects.create(
-        workspace_id=_WORKSPACE_ID, scenario_id="basic", user_id=user.id, status="ready", request=request
+        workspace_id=workspace_id, scenario_id="basic", user_id=user.id, status="ready", request=request
     )
     return request.request_id
+
+
+def _revoke_workspace_membership(user) -> None:
+    from workspaces.models import WorkspaceMembership
+
+    WorkspaceMembership.objects.filter(user=user).delete()
 
 
 def _seed_record(request_id, *, record_kind, payload, source_timestamp=None):
@@ -185,6 +189,18 @@ class TestOperationStatusRead:
         response = client.get(_status_url(request_id))
         assert response.status_code == 404
 
+    def test_membership_removal_revokes_status_read(self, client, user):
+        request_id = _owned_range(user)
+        _seed_record(
+            request_id,
+            record_kind=RaesOperationRecord.RecordKind.OPERATION_STATUS,
+            payload={"operation_id": "op-1", "status": "running"},
+        )
+        _revoke_workspace_membership(user)
+        client.force_authenticate(user=user)
+
+        assert client.get(_status_url(request_id)).status_code == 404
+
     def test_unknown_request_id_is_not_found(self, client, user):
         client.force_authenticate(user=user)
         response = client.get(_status_url(uuid4()))
@@ -261,6 +277,13 @@ class TestReceiptsAndSnapshotsRead:
     def test_snapshots_do_not_leak_other_users_range(self, client, user, other_user):
         request_id = _owned_range(other_user)
         client.force_authenticate(user=user)
+        assert client.get(_snapshots_url(request_id)).status_code == 404
+
+    def test_membership_removal_revokes_snapshot_read(self, client, user):
+        request_id = _owned_range(user)
+        _revoke_workspace_membership(user)
+        client.force_authenticate(user=user)
+
         assert client.get(_snapshots_url(request_id)).status_code == 404
 
 

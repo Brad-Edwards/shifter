@@ -226,7 +226,7 @@ def cms_get_range_target_instances(user: User) -> list[dict[str, str]]:
             "private_ip": str(instance.get("private_ip") or ""),
             "os_type": str(instance.get("os_type") or ""),
         }
-        for instance in cms_services.get_range_target_instances(user.pk)
+        for instance in cms_services.get_range_target_instances(user)
     ]
 
 
