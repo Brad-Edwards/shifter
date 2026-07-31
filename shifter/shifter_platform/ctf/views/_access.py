@@ -139,14 +139,14 @@ def _get_active_participant(request: HttpRequest) -> CTFParticipant | None:
     and B can wind up acting as the wrong participant when their first
     row belongs to a different event than the active one.
     """
-    from ctf.bridges import get_user_role
     from ctf.services.participant import get_participant_by_user
+    from management.services import get_user_profile
 
     user = _get_user(request)
-    role = get_user_role(user)
-    if role.active_ctf_event is None:
+    active_event_id = get_user_profile(user).active_ctf_event_id
+    if active_event_id is None:
         return None
-    return get_participant_by_user(user, event_id=role.active_ctf_event.id)
+    return get_participant_by_user(user, event_id=active_event_id)
 
 
 def _get_participant_for_challenge(request: HttpRequest, challenge: CTFChallenge) -> CTFParticipant | None:
