@@ -3,7 +3,9 @@
 Organization/workspace tenancy above user-owned ranges.
 
 Governing decision: [ADR-046](../../adr/index.yaml). Design guardrails:
-[organization/workspace preflight](../../architecture/organization-workspace-preflight-1325.md).
+[organization/workspace preflight](../../architecture/organization-workspace-preflight-1325.md),
+[membership/roles preflight](../../architecture/workspace-membership-roles-preflight-1326.md),
+and [range-scoping preflight](../../architecture/range-workspace-scoping-preflight-1327.md).
 
 ## What this domain is for
 
@@ -53,6 +55,7 @@ import `workspaces.models`, and they must not hold a ForeignKey to a workspace
 | `resolve_personal_workspace(user)` | Return the user's personal workspace, creating it on first use |
 | `authorize_workspace(actor, workspace_uuid, operation)` | Authorize against an untrusted, externally supplied workspace UUID |
 | `authorize_bound_workspace(actor, workspace_id, operation)` | Authorize against a trusted, already-persisted internal binding |
+| `authorize_launch_workspace_locked(actor, workspace_id, operation)` | Authorize a bound scope under the workspace mutex; run inside the reservation transaction so membership cannot be revoked mid-launch |
 | `get_self_membership(actor, workspace_uuid)` | Return the actor's minimum membership projection |
 | `list_workspace_memberships(actor, workspace_uuid)` | Return the roster to an owner or admin |
 | `add_workspace_member(...)` | Add an existing active account with a closed role |
@@ -107,6 +110,25 @@ convention, because cross-layer ForeignKeys are prohibited.
 The CMS range-create facade resolves and authorizes the scope once, then carries
 it beside the `RequestSpec`—the same shape as the `backend_admission` binding—so Engine persists it in the range's create transaction. Engine never resolves
 or authorizes a workspace itself.
+
+An interactive launch may select a workspace by supplying its **public UUID**
+(`workspace_uuid`) on the launch command; omission binds the launcher's personal
+compatibility workspace, so existing single-user clients are unchanged. Only the
+public UUID is accepted—an internal integer, role, organization ID, or name is
+never trusted from HTTP—and a malformed, unknown, unauthorized, or non-member
+selection is denied with the single non-enumerating message rather than falling
+back to the personal workspace. Because a shared-workspace membership can be
+revoked concurrently, the reservation reauthorizes the resolved scope under the
+workspace row mutex (`authorize_launch_workspace_locked`) and holds that lock
+across the request/range insert, so a removal committing mid-launch cannot leave
+a range scoped where its owner cannot reach it. A single pre-reservation
+workspace launch-admission seam (`admit_workspace_launch`) that both the
+cyberscript and RAES paths pass through is the one attachment point for a future
+durable per-workspace quota or effective workspace egress policy; the initial
+policy admits with no additional limit and does not change the
+`(user_id, range_source)` active-range constraint. Engine idempotent create is
+defense in depth: a create replay whose `workspace_id` differs from the persisted
+range is refused as a binding conflict rather than silently reused.
 
 `Range.user`, `cms.Request.user`, and `cms.RangeInstance.user_id` remain the
 range's owner. **Workspace membership is workspace-level authorization only: it

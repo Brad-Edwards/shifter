@@ -193,8 +193,8 @@ def test_dispatch_routes_native_for_raes_when_flag_on(user, native_on, monkeypat
     routed = {}
     monkeypatch.setattr(
         "cms.services._raes_range_create._create_raes_native_range_impl",
-        lambda u, s, *, range_source=None, instantiation_purpose=None, raes_source_id=None: routed.update(
-            scenario=s, purpose=instantiation_purpose, source=raes_source_id
+        lambda u, s, *, range_source=None, instantiation_purpose=None, raes_source_id=None, workspace_uuid=None: (
+            routed.update(scenario=s, purpose=instantiation_purpose, source=raes_source_id)
         ),
     )
     create_range_dispatch(user, "raes-x", {})

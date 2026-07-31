@@ -13412,6 +13412,11 @@
           "scenario": {
             "type": "string",
             "default": "basic"
+          },
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         }
       },

@@ -14,6 +14,7 @@ from ._authorization import (
     WorkspaceAuthorization,
     WorkspaceAuthorizationError,
     authorize_bound_workspace,
+    authorize_launch_workspace_locked,
     authorize_workspace,
     authorized_workspace_ids,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "WorkspaceOperation",
     "add_workspace_member",
     "authorize_bound_workspace",
+    "authorize_launch_workspace_locked",
     "authorize_workspace",
     "authorized_workspace_ids",
     "change_workspace_member_role",

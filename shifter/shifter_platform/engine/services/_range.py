@@ -14,7 +14,12 @@ from shared.schemas import RangeRef, RangeSpec, RequestSpec
 from shared.schemas.persistence import wrap_persisted_spec
 
 from ._common import EngineError, _persist_task_arn, _resolve_instance_host
-from ._range_backend_binding import backend_binding_fields, require_workspace_binding, verify_existing_binding
+from ._range_backend_binding import (
+    backend_binding_fields,
+    require_workspace_binding,
+    verify_existing_binding,
+    verify_existing_workspace_binding,
+)
 from ._range_by_request import cancel_range_by_request, destroy_range_by_request
 
 if TYPE_CHECKING:
@@ -105,6 +110,7 @@ def create_range(
     if existing_range is not None:
         logger.info("create_range: reusing existing range request_id=%s", request_spec.request_id)
         verify_existing_binding(existing_range, request_spec.request_id, backend_admission)
+        verify_existing_workspace_binding(existing_range, request_spec.request_id, workspace_id)
         if existing_range.remote_access_capability != normalized_remote_access:
             raise EngineError("Existing range remote-access capability does not match the create request")
         return _range_ref_from_range(existing_range, request_spec, range_spec)
