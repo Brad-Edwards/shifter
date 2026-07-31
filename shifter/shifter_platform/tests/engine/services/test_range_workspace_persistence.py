@@ -100,3 +100,42 @@ def test_create_raes_range_refuses_a_missing_workspace_and_persists_nothing(user
         create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=plan, workspace_id=None)
 
     assert not Range.objects.filter(request__request_id=request_id).exists()
+
+
+# ---------------------------------------------------------------------------
+# Idempotent-create replay: a conflicting workspace binding is refused (ADR-046-R9)
+# ---------------------------------------------------------------------------
+
+
+def test_create_range_rejects_a_replay_that_names_a_different_workspace(user):
+    """A differently scoped replay must not silently reuse the first range."""
+    spec = _spec(user)
+    create_range(spec, workspace_id=101)
+
+    with pytest.raises(EngineError):
+        create_range(spec, workspace_id=202)
+
+    # The persisted range keeps its original scope; the replay did not rebind it.
+    assert Range.objects.get(request__request_id=spec.request_id).workspace_id == 101
+
+
+def test_create_range_reuses_the_range_on_a_matching_workspace_replay(user):
+    spec = _spec(user)
+    first = create_range(spec, workspace_id=101)
+
+    second = create_range(spec, workspace_id=101)
+
+    assert first.request_id == second.request_id
+    assert Range.objects.filter(request__request_id=spec.request_id).count() == 1
+
+
+def test_create_raes_range_rejects_a_replay_that_names_a_different_workspace(user):
+    request_id = uuid4()
+    plan = _raes_plan()
+    create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=plan, workspace_id=11)
+    replay_plan = _raes_plan()
+
+    with pytest.raises(EngineError):
+        create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=replay_plan, workspace_id=22)
+
+    assert Range.objects.get(request__request_id=request_id).workspace_id == 11

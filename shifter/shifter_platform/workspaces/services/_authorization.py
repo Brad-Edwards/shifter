@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from workspaces.models import WorkspaceMembership
+from workspaces.models import Workspace, WorkspaceMembership
 from workspaces.roles import WorkspaceRole, role_permits
 
 if TYPE_CHECKING:
@@ -130,6 +130,44 @@ def authorize_bound_workspace(
     if workspace_id is None:
         raise _deny("unbound_workspace")
 
+    membership = (
+        WorkspaceMembership.objects.select_related("workspace").filter(workspace_id=workspace_id, user=actor).first()
+    )
+    if membership is None:
+        raise _deny("no_membership")
+    _check_operation(membership.role, operation)
+    return _authorization_from(membership)
+
+
+def authorize_launch_workspace_locked(
+    actor: User,
+    workspace_id: int | None,
+    operation: object,
+) -> WorkspaceAuthorization:
+    """Authorize a launch against a bound ``workspace_id`` under the workspace mutex.
+
+    Identical in outcome to :func:`authorize_bound_workspace`, but it first takes
+    ``SELECT ... FOR UPDATE`` on the workspace row -- the same row mutation
+    commands lock in :func:`workspaces.services._memberships._lock_workspace_and_actor`
+    -- before reading the membership. A concurrent removal therefore either has
+    already committed (and this read denies) or blocks behind this lock until the
+    launch's enclosing transaction commits.
+
+    It MUST run inside a ``transaction.atomic()`` block: the row lock is held
+    until that transaction commits, so a caller that reserves the range in the
+    same transaction (ADR-046-R9) cannot have the membership revoked underneath
+    it after this check. A ``None`` binding is denied, never treated as "any
+    workspace".
+
+    Raises:
+        WorkspaceAuthorizationError: The binding is absent or unknown, the actor
+            holds no membership, or the role does not permit the operation.
+    """
+    if workspace_id is None:
+        raise _deny("unbound_workspace")
+
+    if Workspace.objects.select_for_update().filter(pk=workspace_id).first() is None:
+        raise _deny("unknown_workspace")
     membership = (
         WorkspaceMembership.objects.select_related("workspace").filter(workspace_id=workspace_id, user=actor).first()
     )

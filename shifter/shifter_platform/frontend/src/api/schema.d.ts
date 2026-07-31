@@ -3226,6 +3226,8 @@ export interface components {
             agent_id?: number | null;
             /** @default basic */
             scenario: string;
+            /** Format: uuid */
+            workspace_uuid?: string | null;
         };
         /** @description Response body for ``LaunchRangeView.post``. */
         LaunchRangeResponse: {

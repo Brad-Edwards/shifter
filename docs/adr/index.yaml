@@ -2528,6 +2528,16 @@
         "id": "ADR-046-R8",
         "description": "The initial membership roles are the closed, workspace-scoped owner, admin, and member values. The workspaces service owns their operation matrix and every interactive operation on a workspace-bound resource must pass that service in addition to existing owner, source, lifecycle, CTF, participant-channel, and remote-access checks. Owner/admin/member must not be derived from Django staff/groups, identity-provider claims/groups, CTF authority, API-token scopes, or cloud roles. Personal-workspace ownership is immutable compatibility state; all other membership and role mutations are locked, transactional, and strict-audited, with an owner-only ownership boundary and at least one owner retained. There is no OrganizationMembership or organization-wide role in this iteration: encoding org_admin on workspace rows, copying it across workspaces, or inferring it from one workspace is forbidden until a separate authority model is accepted.",
         "checks": []
+      },
+      {
+        "id": "ADR-046-R9",
+        "description": "An interactive range launch may select a workspace only by its public UUID; omission resolves the actor's personal compatibility workspace. CMS resolves and authorizes that scope through workspaces.services, then reauthorizes while holding the existing workspace mutation mutex through the atomic CMS request/range reservation so concurrent membership removal cannot create a range outside its owner's authority. The same internal workspace_id is persisted on CMS Request, CMS RangeInstance, and Engine Range before dispatch. Engine idempotent create must reject a replay whose workspace binding differs from the persisted range; neither a supplied invalid scope nor a conflicting replay may fall back, rehome, or reuse silently.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R10",
+        "description": "Workspace quota and workspace range-policy evaluation compose at one CMS pre-reservation launch-admission seam parameterized by authorized workspace, individual owner, server-derived range source, trusted instantiation purpose, and stable request correlation. The initial decision may add no hard tenant limit, but callers may not duplicate the hook. A future enforcing workspace quota must use durable idempotent reservation rather than a count-then-create race, and must remain distinct from Engine's event/provider-capacity ledger. A future workspace egress override extends the canonical installation RangeEgressPolicy, resolves and pins one closed effective decision on the Engine range, and is replay-verified; workspace identity, membership, role, or policy documents never enter scenario/RAES contracts, provisioner argv/environment, events, provider labels, or guest metadata.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2538,8 +2548,10 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1325",
       "https://github.com/Brad-Edwards/shifter/issues/1326",
+      "https://github.com/Brad-Edwards/shifter/issues/1327",
       "docs/architecture/organization-workspace-preflight-1325.md",
       "docs/architecture/workspace-membership-roles-preflight-1326.md",
+      "docs/architecture/range-workspace-scoping-preflight-1327.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",
