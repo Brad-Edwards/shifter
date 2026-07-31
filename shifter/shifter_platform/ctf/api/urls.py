@@ -98,6 +98,11 @@ urlpatterns = [
         name="api_participant_resend_invite",
     ),
     path(
+        "participants/<uuid:participant_id>/password/",
+        organizer.ParticipantPasswordView.as_view(),
+        name="api_participant_password_reset",
+    ),
+    path(
         "participants/<uuid:participant_id>/ban/",
         organizer.ParticipantBanView.as_view(),
         name="api_participant_ban",

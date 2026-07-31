@@ -398,5 +398,16 @@
       ".github/quality-path-filters.yaml#branding_assets:security",
       ".github/quality-path-filters.yaml#branding_assets:test"
     ]
+  },
+  {
+    "rule_id": "ADR-040-R3",
+    "owner": "@Brad-Edwards",
+    "reason": "Issue #1924 deliberately narrows POST /api/v1/ctf/participants/{participant_id}/resend-invite/ from reset-and-email credentials to resend non-secret login information while preserving its operation, status, and response shape. The semantic break ends existing-password disclosure and reset-by-email behavior. The additive POST /api/v1/ctf/participants/{participant_id}/password/ operation is the replacement for explicit generated or organizer-set resets, and the organizer SPA list/detail flows migrate to it. Remove this exception after external consumers have migrated and the deprecated resend operation can be versioned or removed.",
+    "expires_on": "2026-10-29",
+    "paths": [
+      "shifter/shifter_platform/ctf/api/organizer/participants.py",
+      "shifter/shifter_platform/ctf/services/participant/accounts.py",
+      "shifter/shifter_platform/frontend/src/features/ctf/admin/ParticipantPasswordDialog.tsx"
+    ]
   }
 ]

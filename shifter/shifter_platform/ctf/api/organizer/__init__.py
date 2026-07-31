@@ -71,6 +71,7 @@ from ctf.api.organizer.participants import (
     ParticipantDetailView,
     ParticipantImportView,
     ParticipantListView,
+    ParticipantPasswordView,
     ParticipantResendInviteView,
 )
 from ctf.api.organizer.play import (
@@ -148,6 +149,7 @@ __all__ = [
     "ParticipantHiddenView",
     "ParticipantImportView",
     "ParticipantListView",
+    "ParticipantPasswordView",
     "ParticipantRangeAccessView",
     "ParticipantRangeDestroyView",
     "ParticipantRangeProvisionView",

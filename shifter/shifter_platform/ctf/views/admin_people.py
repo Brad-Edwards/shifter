@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
-from django.views.decorators.debug import sensitive_variables
+from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods
 
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import User
     from django.http import HttpRequest
 
 
@@ -157,7 +158,6 @@ def admin_participant_email(request: HttpRequest, participant_id: UUID) -> HttpR
 @login_required
 @ctf_organizer_required
 @never_cache
-@sensitive_variables("bootstrap_password")
 def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> HttpResponse:
     """Participant detail view.
 
@@ -168,10 +168,9 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     """
     from django.http import Http404
 
-    from ctf.exceptions import CTFNotFoundError, CTFValidationError
+    from ctf.exceptions import CTFNotFoundError
     from ctf.models import CTFSubmission
     from ctf.services import get_participant
-    from ctf.services.participant.accounts import effective_bootstrap_password
 
     try:
         participant = get_participant(participant_id)
@@ -191,13 +190,6 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     total_score = participant.total_score
     solved_count = submissions.filter(is_correct=True).count()
     total_attempts = submissions.count()
-    # Fail closed (issue #1665): when no secure bootstrap credential is
-    # configured, disable the reveal action rather than 500 the organizer page.
-    try:
-        bootstrap_password = effective_bootstrap_password(participant.event)
-    except CTFValidationError:
-        bootstrap_password = None
-
     context = {
         "participant": participant,
         "event": participant.event,
@@ -205,10 +197,79 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
         "total_score": total_score,
         "solved_count": solved_count,
         "total_attempts": total_attempts,
-        "bootstrap_password": bootstrap_password,
+        "generated_issuance_kind": "generated",
+        "supplied_issuance_kind": "set",
     }
 
     return render(request, "ctf/admin/participant_detail.html", context)
+
+
+@login_required
+@ctf_organizer_required
+@never_cache
+@sensitive_post_parameters("password", "password_confirm")
+@require_http_methods(["POST"])
+def admin_participant_password(request: HttpRequest, participant_id: UUID) -> HttpResponse:
+    """Issue one participant password and render it only in this response."""
+    from django.http import Http404
+
+    from ctf.exceptions import CTFNotFoundError, CTFValidationError
+    from ctf.services import get_participant, reset_participant_password
+    from ctf.services.event import actor_has_event_capability
+    from ctf.views._access import _check_credential_delivery_rate_limit
+    from shared.audit import RequestAudit, get_client_ip, get_request_id
+
+    try:
+        participant = get_participant(participant_id)
+    except CTFNotFoundError:
+        raise Http404(_PARTICIPANT_NOT_FOUND_MSG) from None
+    if not actor_has_event_capability(request.user, participant.event, "participants"):
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
+    actor = cast("User", request.user)
+    actor_id = actor.pk
+    if actor_id is None:
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
+    try:
+        allowed = _check_credential_delivery_rate_limit(actor_id)
+    except Exception:
+        return HttpResponse("Credential service is temporarily unavailable.", status=503)
+    if not allowed:
+        response = HttpResponse("Too many credential operations. Try again later.", status=429)
+        response["Retry-After"] = "3600"
+        return response
+
+    kind = request.POST.get("kind", "")
+    password = request.POST.get("password") if kind == "set" else None
+    if kind == "set" and password != request.POST.get("password_confirm"):
+        return HttpResponse("Passwords do not match.", status=400)
+    try:
+        issuance = reset_participant_password(
+            participant_id,
+            actor=actor,
+            kind=kind,
+            password=password,
+            request_audit=RequestAudit(
+                source_ip=get_client_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", "")[:512],
+                request_id=get_request_id(request),
+            ),
+        )
+    except CTFValidationError:
+        return HttpResponse("Invalid participant password request.", status=400)
+
+    response = render(
+        request,
+        "ctf/admin/participant_password_result.html",
+        {
+            "participant": participant,
+            "event": participant.event,
+            "issuance": issuance,
+        },
+    )
+    response["Cache-Control"] = "private, no-store"
+    response["Pragma"] = "no-cache"
+    response["Vary"] = "Cookie"
+    return response
 
 
 @login_required

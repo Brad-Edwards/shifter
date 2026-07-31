@@ -94,17 +94,22 @@ and scoring. Use **Brackets** to group participants into ranked cohorts, and (in
 mode) manage team membership.
 
 Participants use isolated temporary accounts on the dedicated CTF login page.
-Generate accounts before an event, hand out the generated username and bootstrap
-password manually, or attach an optional delivery email. A secure bootstrap
-credential is required before accounts can be provisioned: set a per-event
-password override on the event form, or configure the platform-wide
-`CTF_DEFAULT_PARTICIPANT_PASSWORD`. There is no built-in default. If neither is
-configured, account creation, credential reset, and the participant-detail reveal
-refuse rather than assign a shared, guessable password. A participant detail page
-lets you rename a generated username; names remain globally unique and start with
-`range-`. Email delivery sends the login URL and username separately from the
-password. A reset invalidates the current password, restores the event bootstrap
-password, and forces another password change.
+Generate accounts before an event and hand out each generated username and initial
+password manually, or attach an optional delivery email for non-secret login
+information. By default, every new account receives its own strong generated
+password. If an event explicitly needs one shared initial password, set it on the
+event form; leaving that field blank while editing preserves the existing policy,
+and **Disable the event shared participant password** returns new accounts to unique
+generated passwords.
+
+Use **Manage password** on the participant list or detail page to generate a new
+password or set a policy-compliant one. The result is displayed once and cannot be
+retrieved later. Resetting a participant does not change the event-wide policy for
+new accounts. A reset invalidates the participant's existing web sessions and API
+tokens and requires a password change on next login. Invitation resend sends only
+the login URL and username; it never resets or emails a password. Generated
+usernames remain globally unique and start with `range-`.
+
 Accounts stop authenticating at event end and are anonymized after the configured
 participant-account retention window.
 

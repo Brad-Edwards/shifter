@@ -108,11 +108,6 @@
       "source_file": "config/settings.py"
     },
     {
-      "default": "''",
-      "name": "CTF_DEFAULT_PARTICIPANT_PASSWORD",
-      "source_file": "config/_oidc_settings.py"
-    },
-    {
       "default": "'30'",
       "name": "CTF_DEFAULT_RANGE_SPINUP_MINUTES",
       "source_file": "config/settings.py"

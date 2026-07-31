@@ -11,6 +11,9 @@ from rest_framework import serializers
 from ctf.api.serializers._common import _NamedRefSerializer
 from ctf.api.serializers.organizer import AwardSerializer
 
+_SET_MODE_REQUIRED = "This field is required for set mode."
+_GENERATED_MODE_REJECTS_VALUE = "Do not supply a password for generated mode."
+
 # ---------------------------------------------------------------------------
 # Organizer serializers (participant management)
 # ---------------------------------------------------------------------------
@@ -129,11 +132,44 @@ class ParticipantDeleteResultSerializer(serializers.Serializer):
 
 
 class ResendInviteResultSerializer(serializers.Serializer):
-    """Confirmation returned after resetting and resending a participant invite."""
+    """Confirmation returned after resending non-secret login information."""
 
     success = serializers.BooleanField(read_only=True)
     id = serializers.CharField(read_only=True)
     invited = serializers.BooleanField(read_only=True)
+
+
+class ParticipantPasswordRequestSerializer(serializers.Serializer):
+    """Closed write-only request for generated or supplied issuance."""
+
+    kind = serializers.ChoiceField(choices=["generated", "set"])
+    password = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        trim_whitespace=False,
+        write_only=True,
+        style={"input_type": "password"},
+    )
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Require a password only for ``set`` and reject one for ``generated``."""
+        kind = attrs["kind"]
+        password = attrs.get("password")
+        if kind == "set" and not isinstance(password, str):
+            raise serializers.ValidationError({"password": _SET_MODE_REQUIRED})
+        if kind == "generated" and password is not None:
+            raise serializers.ValidationError({"password": _GENERATED_MODE_REJECTS_VALUE})
+        return attrs
+
+
+class ParticipantPasswordResultSerializer(serializers.Serializer):
+    """One-time participant password issuance returned by the mutation only."""
+
+    participant_id = serializers.CharField(read_only=True)
+    event_id = serializers.CharField(read_only=True)
+    username = serializers.CharField(read_only=True)
+    password = serializers.CharField(read_only=True)
+    kind = serializers.ChoiceField(choices=["generated", "set"], read_only=True)
 
 
 class AssignBracketRequestSerializer(serializers.Serializer):

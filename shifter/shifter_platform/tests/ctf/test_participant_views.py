@@ -16,8 +16,6 @@ from django.utils import timezone
 from ctf.enums import ParticipantStatus
 from ctf.models import CTFChallenge, CTFParticipant
 
-from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
-
 # The team_join error path renders a template that uses {% static %}; force the
 # non-manifest static storage so the render does not require a built manifest.
 _SIMPLE_STORAGES = {
@@ -606,10 +604,10 @@ class TestAPIParticipantImport:
 
 
 class TestAPIParticipantResendInvite:
-    """Tests for resetting and delivering participant credentials."""
+    """Compatibility invitation resend never mutates participant credentials."""
 
-    def test_resend_resets_password(self, authenticated_organizer_client, ctf_event, monkeypatch):
-        """The compatibility endpoint performs an explicit credential reset."""
+    def test_resend_preserves_password(self, authenticated_organizer_client, ctf_event, monkeypatch):
+        """The compatibility endpoint sends login information without a secret."""
         from ctf.services.participant.accounts import create_participant_accounts
 
         monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -630,10 +628,10 @@ class TestAPIParticipantResendInvite:
 
         assert response.status_code == 200
         participant.user.refresh_from_db()
-        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
+        assert participant.user.check_password("ChangedPassword-42")
 
     def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_event, monkeypatch):
-        """Reset works for an already registered isolated account."""
+        """Resend works for an already registered isolated account."""
         from ctf.services.participant.accounts import create_participant_accounts
 
         monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -651,8 +649,7 @@ class TestAPIParticipantResendInvite:
         data = response.json()
         assert data["success"] is True
         participant.user.refresh_from_db()
-        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
-        assert participant.user.profile.must_change_password is True
+        assert participant.user.check_password("PreviouslyChangedPassword-42")
 
 
 class TestTeamJoinCapacityGuard:
