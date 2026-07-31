@@ -166,7 +166,7 @@ def delete_participant(participant_id: UUID) -> bool:
 
 def resend_invite(participant_id: UUID) -> CTFParticipant:
     """Compatibility facade for resending non-secret login information."""
-    from ctf.services.participant.accounts import reset_participant_credentials
+    from ctf.services.participant.credentials import reset_participant_credentials
 
     return reset_participant_credentials(participant_id)
 

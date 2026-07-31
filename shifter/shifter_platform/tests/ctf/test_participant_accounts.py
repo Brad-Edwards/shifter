@@ -18,8 +18,8 @@ from ctf.services.participant.accounts import (
     create_participant_accounts,
     purge_expired_participant_accounts,
     rename_participant_username,
-    reset_participant_credentials,
 )
+from ctf.services.participant.credentials import reset_participant_credentials
 from ctf.services.participant.lifecycle import invite_participant
 from ctf.services.participant.moderation import disqualify_participant
 from management.services import get_user_profile

@@ -64,7 +64,7 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
         if not participant.email:
             continue
         try:
-            from ctf.services.participant.accounts import reset_participant_credentials
+            from ctf.services.participant.credentials import reset_participant_credentials
 
             reset_participant_credentials(participant.pk)
 

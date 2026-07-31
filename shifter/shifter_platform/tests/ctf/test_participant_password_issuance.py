@@ -15,10 +15,8 @@ from django.views.debug import SafeExceptionReporterFilter
 
 from ctf.exceptions import CTFValidationError
 from ctf.forms import CTFEventForm
-from ctf.services.participant.accounts import (
-    create_participant_accounts,
-    reset_participant_password,
-)
+from ctf.services.participant.accounts import create_participant_accounts
+from ctf.services.participant.credentials import reset_participant_password
 from management.services import get_user_profile, set_ctf_password_change_required
 from shared.api_tokens.models import ApiToken
 from shared.audit import AuditAction, AuditEntityType, RequestAudit

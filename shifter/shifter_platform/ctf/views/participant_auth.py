@@ -107,7 +107,7 @@ def _bootstrap_credential_reused(request: HttpRequest, new_password: str) -> boo
     password to differ from the current one). The explicit event-shared value is
     the only additional known credential that must be rejected.
     """
-    from ctf.services.participant.accounts import participant_password_is_reused
+    from ctf.services.participant.credentials import participant_password_is_reused
 
     if not request.user.is_authenticated:
         return False
