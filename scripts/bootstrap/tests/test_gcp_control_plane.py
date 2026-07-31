@@ -1152,6 +1152,40 @@ class TestGdcControlPlaneImages:
 class TestGdcControlPlaneHelmChart:
     """Tests for the Helm chart that packages the GCP Shifter deployment."""
 
+    def test_gcp_dev_guacd_renders_playtest_capacity(self):
+        """The GCP dev profile must retain enough guacd capacity for concurrent desktops."""
+        helm = shutil.which("helm")
+        if helm is None:
+            pytest.skip("helm is required for chart render validation")
+
+        chart_dir = Path(__file__).resolve().parents[3] / "platform" / "charts" / "shifter"
+        rendered = subprocess.Popen(  # nosec B603 B607
+            [
+                helm,
+                "template",
+                "shifter",
+                str(chart_dir),
+                "--namespace",
+                "shifter-system",
+                "--values",
+                str(chart_dir / "values-gcp-dev.yaml"),
+                "--show-only",
+                "templates/guacd-deployment.yaml",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        stdout, stderr = rendered.communicate()
+
+        assert rendered.returncode == 0, stderr
+
+        assert "  replicas: 3\n" in stdout
+        assert '              cpu: "4"\n' in stdout
+        assert "              memory: 2Gi\n" in stdout
+        assert '              cpu: "1"\n' in stdout
+        assert "              memory: 512Mi\n" in stdout
+
     def test_chart_renders_restricted_security_contexts_and_numeric_runtime_ids(self, tmp_path):
         """The chart must render restricted-compatible workloads with pinned runtime IDs."""
         helm = shutil.which("helm")

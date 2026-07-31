@@ -31,7 +31,18 @@ workers:
     replicas: 1
 
 guacd:
-  replicas: 1
+  # Five concurrent playtest desktops demonstrated sustained cgroup throttling
+  # at the chart defaults. Keep capacity distributed and allow encoder bursts.
+  replicas: 3
+  resources:
+    requests:
+      cpu: "1"
+      memory: 512Mi
+      ephemeral-storage: 128Mi
+    limits:
+      cpu: "4"
+      memory: 2Gi
+      ephemeral-storage: 256Mi
 
 guacamoleClient:
   replicas: 1
