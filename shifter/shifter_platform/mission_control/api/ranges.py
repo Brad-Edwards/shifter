@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from typing import Any, cast
+from uuid import UUID
 
 from django.contrib.auth.models import User
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from cms.services import list_mission_control_range_history
+from cms.services import WorkspaceLaunchDenied, list_mission_control_range_history
 from mission_control.api._base import (
     MissionControlAPIView,
     MissionControlReadAPIView,
@@ -167,7 +168,7 @@ class LaunchRangeView(MissionControlAPIView):
         if agents_error is not None:
             return agents_error
 
-        return self._create_range(request, user, scenario, agents_by_os)
+        return self._create_range(request, user, scenario, agents_by_os, data.get("workspace_uuid"))
 
     def _resolve_agents_by_os(self, user: User, data: dict[str, Any]) -> tuple[dict[str, int] | None, Response | None]:
         """Resolve either the explicit agent map or a legacy single agent id."""
@@ -193,10 +194,21 @@ class LaunchRangeView(MissionControlAPIView):
         user: User,
         scenario: str,
         agents_by_os: dict[str, int] | None,
+        workspace_uuid: UUID | None = None,
     ) -> Response:
         """Create a range and record the launch audit event."""
         try:
-            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os or {})
+            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
+        except WorkspaceLaunchDenied:
+            # Authorized-shape UUID but an unavailable scope (unknown, non-member,
+            # or role-denied) is one opaque 403 (ADR-046-R9). The malformed-shape
+            # case is a 400 caught earlier by the serializer's UUIDField.
+            _logger().info("Range launch workspace denied: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+            return self.error_response(
+                code="workspace_not_available",
+                message="Selected workspace is not available.",
+                status_code=403,
+            )
         except CMSError as exc:
             _logger().exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
             text = str(exc).lower()

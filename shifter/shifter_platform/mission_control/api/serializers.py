@@ -165,6 +165,11 @@ class LaunchRangeSerializer(serializers.Serializer):
     agents = serializers.DictField(child=serializers.IntegerField(min_value=1), required=False)
     agent_id = serializers.IntegerField(required=False, allow_null=True)
     scenario = serializers.CharField(required=False, default="basic", allow_blank=False, trim_whitespace=True)
+    # Optional workspace selection (ADR-046-R9). Only the public UUID is accepted;
+    # omission binds the range to the launcher's personal compatibility workspace.
+    # The internal workspace_id is resolved and authorized in cms.services, never
+    # trusted from HTTP.
+    workspace_uuid = serializers.UUIDField(required=False, allow_null=True)
 
     def validate_agent_id(self, value: int | None) -> int:
         if not value:

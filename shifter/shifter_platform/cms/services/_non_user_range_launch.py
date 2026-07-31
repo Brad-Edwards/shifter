@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 from cms.exceptions import CMSError
 from cms.services._raes_range_create import dispatch_range_launch
+from cms.services._range_create import LaunchOptions
 from shared.range_instantiation_policy import POLICY_DENIAL_CODE, InstantiationPurpose
 
 if TYPE_CHECKING:
@@ -132,8 +133,7 @@ def create_non_user_range(
         user,
         scenario,
         agents_by_os or {},
-        ngfw_enabled=ngfw_enabled,
         range_source=RangeSource.MISSION_CONTROL,
-        remote_access_teardown_at=None,
         instantiation_purpose=purpose,
+        options=LaunchOptions(ngfw_enabled=ngfw_enabled),
     )
