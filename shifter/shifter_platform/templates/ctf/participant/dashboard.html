@@ -25,6 +25,38 @@
                 {% endif %}
             </div>
         </div>
+        <!-- Getting Started -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    {% trans "Getting started" %}
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if event_pages %}
+                    {% for page in event_pages %}
+                        <section class="{% if not forloop.first %}border-top pt-3 mt-3{% endif %}">
+                            <h6>
+                                {{ page.title }}
+                            </h6>
+                            <div class="small">
+                                {{ page.body|linebreaksbr }}
+                            </div>
+                        </section>
+                    {% endfor %}
+                {% else %}
+                    <p class="mb-2">
+                        {% trans "Open Range to launch your workstation." %}
+                    </p>
+                    <p class="mb-2">
+                        {% trans "Use Challenges for objectives and submissions." %}
+                    </p>
+                    <p class="mb-0">
+                        {% trans "Use Scoreboard, Team, and Account as needed during the event." %}
+                    </p>
+                {% endif %}
+            </div>
+        </div>
         <!-- Stats Row -->
         <div class="row mb-4">
             <div class="col-md-4 mb-3">

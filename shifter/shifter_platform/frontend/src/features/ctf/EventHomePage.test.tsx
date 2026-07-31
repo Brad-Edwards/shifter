@@ -73,6 +73,50 @@ describe("EventHomePage", () => {
     expect(screen.getByText("fast")).toBeInTheDocument();
   });
 
+  it("renders organizer event pages as prominent getting-started content", async () => {
+    mockApi.mockImplementation((...args: unknown[]) => {
+      const url = String(args[0] ?? "");
+      if (url.includes("/me/pages/")) {
+        return Promise.resolve({
+          pages: [
+            {
+              id: "pg1",
+              title: "Start Here",
+              slug: "start-here",
+              body: "Report to the staging table before opening challenges.",
+              order: 0,
+            },
+          ],
+        });
+      }
+      if (url.includes("/me/announcements/")) return Promise.resolve({ announcements: [] });
+      return Promise.resolve(currentEvent());
+    });
+
+    renderRoute(<EventHomePage />);
+
+    const pageHeading = await screen.findByRole("heading", { name: "Start Here" });
+    expect(screen.getByRole("heading", { name: "Getting started" })).toBeInTheDocument();
+    expect(pageHeading.closest("details")).toBeNull();
+    expect(screen.getByText("Report to the staging table before opening challenges.")).toBeInTheDocument();
+  });
+
+  it("renders fallback getting-started content when no event pages exist", async () => {
+    mockApi.mockImplementation((...args: unknown[]) => {
+      const url = String(args[0] ?? "");
+      if (url.includes("/me/pages/")) return Promise.resolve({ pages: [] });
+      if (url.includes("/me/announcements/")) return Promise.resolve({ announcements: [] });
+      return Promise.resolve(currentEvent());
+    });
+
+    renderRoute(<EventHomePage />);
+
+    expect(await screen.findByRole("heading", { name: "Getting started" })).toBeInTheDocument();
+    expect(await screen.findByText("Open Range to launch your workstation.")).toBeInTheDocument();
+    expect(screen.getByText("Use Challenges for objectives and submissions.")).toBeInTheDocument();
+    expect(screen.getByText("Use Scoreboard, Team, and Account as needed during the event.")).toBeInTheDocument();
+  });
+
   it("shows the countdown, schedule, and rules", async () => {
     mockApi.mockResolvedValue(withSchedule());
     renderRoute(<EventHomePage />);

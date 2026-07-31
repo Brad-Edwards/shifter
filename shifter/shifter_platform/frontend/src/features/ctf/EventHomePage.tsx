@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { BookOpen, Flag, Server, Trophy, UserCog, Users } from "lucide-react";
+import { BookOpen, Flag, Server, Trophy, UserCog, Users, type LucideIcon } from "lucide-react";
 
 import { useCtfAnnouncements, useCtfBriefing, useCtfCurrentEvent, useCtfPages } from "@/api/ctf";
 import { ApiError } from "@/api/errors";
@@ -25,13 +25,15 @@ import {
   ctfTeamPath,
 } from "./routes";
 
-const QUICK_LINKS = [
+type QuickLink = { to: string; label: string; icon: LucideIcon };
+
+const QUICK_LINKS: ReadonlyArray<QuickLink> = [
   { to: ctfChallengesPath(), label: "Challenges", icon: Flag },
   { to: ctfScoreboardPath(), label: "Scoreboard", icon: Trophy },
   { to: ctfTeamPath(), label: "Team", icon: Users },
   { to: ctfRangePath(), label: "Range", icon: Server },
   { to: ctfAccountPath(), label: "Account", icon: UserCog },
-] as const;
+];
 
 function Stat({ label, value }: Readonly<{ label: string; value: string | number }>) {
   return (
@@ -124,25 +126,38 @@ function AnnouncementsCard() {
   );
 }
 
-/** Custom informational pages authored by the organizer (CTF-1303). */
-function PagesCard() {
+/** Getting-started content authored by the organizer, with a generic fallback. */
+function GettingStartedCard() {
   const query = useCtfPages();
   const pages = query.data?.pages ?? [];
-  if (!pages.length) return null;
   return (
     <Card className="mb-6">
       <CardContent>
-        <h2 className="text-sm font-semibold">Event pages</h2>
-        <div className="mt-2 space-y-2">
-          {pages.map((page) => (
-            <details key={page.id} className="rounded border border-border/60 p-2">
-              <summary className="cursor-pointer text-sm font-medium">{page.title}</summary>
-              <div className="mt-2 text-sm">
-                <MarkdownContent text={page.body} />
-              </div>
-            </details>
-          ))}
-        </div>
+        <h2 className="text-sm font-semibold">Getting started</h2>
+        {query.isLoading ? (
+          <div className="mt-3 space-y-3">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </div>
+        ) : pages.length ? (
+          <div className="mt-3 space-y-5">
+            {pages.map((page) => (
+              <article key={page.id} className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
+                <h3 className="text-base font-semibold">{page.title}</h3>
+                <div className="mt-2">
+                  <MarkdownContent text={page.body} />
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+            <p>Open Range to launch your workstation.</p>
+            <p>Use Challenges for objectives and submissions.</p>
+            <p>Use Scoreboard, Team, and Account as needed during the event.</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -186,6 +201,22 @@ function BriefingEntry({ query }: Readonly<{ query: ReturnType<typeof useCtfBrie
   return null;
 }
 
+function QuickLinks({ links }: Readonly<{ links: ReadonlyArray<QuickLink> }>) {
+  return (
+    <section className="mb-8">
+      <h2 className="mb-3 text-sm font-semibold">Next actions</h2>
+      <nav aria-label="Workspace quick links" className="flex flex-wrap gap-2">
+        {links.map(({ to, label, icon: Icon }) => (
+          <Link key={to} to={to} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            <Icon className="size-4" />
+            {label}
+          </Link>
+        ))}
+      </nav>
+    </section>
+  );
+}
+
 function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
   const { event, participant } = data;
   // A published briefing gets a prominent entry point here (participants used to
@@ -219,9 +250,11 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
 
       <BriefingEntry query={briefingQuery} />
 
-      <AnnouncementsCard />
+      <GettingStartedCard />
 
-      <PagesCard />
+      <QuickLinks links={quickLinks} />
+
+      <AnnouncementsCard />
 
       {event.description ? (
         <Card className="mb-6">
@@ -248,16 +281,6 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
         <Stat label="Solves" value={participant.cached_solve_count} />
         <Stat label="Status" value={titleCase(participant.status)} />
       </dl>
-
-      <h2 className="mb-3 text-sm font-semibold">Quick links</h2>
-      <nav aria-label="Workspace quick links" className="flex flex-wrap gap-2">
-        {quickLinks.map(({ to, label, icon: Icon }) => (
-          <Link key={to} to={to} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-            <Icon className="size-4" />
-            {label}
-          </Link>
-        ))}
-      </nav>
     </>
   );
 }

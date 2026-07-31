@@ -94,6 +94,23 @@ def test_ctf_login_forces_password_change(client, ctf_event_active, monkeypatch)
     assert str(participant.user_id) == client.session["_auth_user_id"]
 
 
+def test_ctf_login_redirects_changed_password_participant_to_dashboard(client, ctf_event_active, monkeypatch):
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+
+    response = client.post(
+        reverse("ctf:ctf_login"),
+        {"username": participant.user.username, "password": TEST_CTF_BOOTSTRAP_PASSWORD},
+    )
+
+    assert response.status_code == 302
+    assert response.url == reverse("ctf:participant_dashboard")
+    assert str(participant.user_id) == client.session["_auth_user_id"]
+
+
 def test_organizer_can_rename_participant_username(ctf_event, organizer_user, monkeypatch):
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
     participant = create_participant_accounts(ctf_event.id, count=1)[0]
@@ -457,6 +474,29 @@ def test_first_password_change_rejects_bootstrap_reuse(client, ctf_event_active,
     assert response.status_code == 200
     assert "Choose a password different from the event bootstrap password" in response.content.decode()
     assert get_user_profile(participant.user).must_change_password is True
+
+
+def test_first_password_change_redirects_to_dashboard(client, ctf_event_active, monkeypatch):
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    client.post(
+        reverse("ctf:ctf_login"),
+        {"username": participant.user.username, "password": TEST_CTF_BOOTSTRAP_PASSWORD},
+    )
+
+    response = client.post(
+        reverse("ctf:ctf_change_password"),
+        {
+            "old_password": TEST_CTF_BOOTSTRAP_PASSWORD,
+            "new_password1": "ChangedParticipantPassword-42",
+            "new_password2": "ChangedParticipantPassword-42",
+        },
+    )
+
+    participant.user.refresh_from_db()
+    assert response.status_code == 302
+    assert response.url == reverse("ctf:participant_dashboard")
+    assert get_user_profile(participant.user).must_change_password is False
 
 
 def test_organizer_can_render_and_generate_participant_batch(

@@ -88,7 +88,7 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
             else:
                 login(request, user, backend="config.auth.CTFParticipantBackend")
                 destination = (
-                    "ctf:ctf_change_password" if user.profile.must_change_password else "ctf:participant_range"
+                    "ctf:ctf_change_password" if user.profile.must_change_password else "ctf:participant_dashboard"
                 )
                 response = redirect(reverse(destination))
     if response is None:
@@ -144,7 +144,7 @@ def ctf_change_password(request: HttpRequest) -> HttpResponse:
                 user = form.save()
                 set_ctf_password_change_required(user, False)
                 update_session_auth_hash(request, user)
-                response = redirect("ctf:participant_range")
+                response = redirect("ctf:participant_dashboard")
         if response is None:
             response = render(request, _CTF_CHANGE_CREDENTIAL_TEMPLATE, {"form": form})
     assert response is not None

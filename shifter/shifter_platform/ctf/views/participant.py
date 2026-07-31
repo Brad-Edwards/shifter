@@ -41,6 +41,7 @@ def participant_dashboard(request: HttpRequest) -> HttpResponse:
 
     Shows event overview, challenge progress, and quick links.
     """
+    from ctf.models import CTFEventPage
     from ctf.services.challenge import get_available_challenges
     from ctf.services.scoring import calculate_score, get_participant_rank
 
@@ -53,10 +54,12 @@ def participant_dashboard(request: HttpRequest) -> HttpResponse:
     rank = get_participant_rank(participant.id)
     solved_count = participant.solved_challenge_count
     total_challenges = get_available_challenges(event.id).count()
+    event_pages = CTFEventPage.objects.filter(event_id=event.id, deleted_at__isnull=True)
 
     context = {
         "participant": participant,
         "event": event,
+        "event_pages": event_pages,
         "score": score,
         "rank": rank,
         "solved_count": solved_count,
