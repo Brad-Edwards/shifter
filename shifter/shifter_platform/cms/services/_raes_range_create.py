@@ -30,6 +30,7 @@ from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from cms.services._range_backend_admission import assert_backend_admitted
 from cms.services._range_create import (
+    LaunchOptions,
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
@@ -401,11 +402,13 @@ def create_range_dispatch(
         user,
         scenario,
         agents_by_os,
-        ngfw_enabled=ngfw_enabled,
         range_source=range_source,
-        remote_access_teardown_at=remote_access_teardown_at,
         instantiation_purpose=InstantiationPurpose.LIVE_FIRE,
-        workspace_uuid=workspace_uuid,
+        options=LaunchOptions(
+            ngfw_enabled=ngfw_enabled,
+            remote_access_teardown_at=remote_access_teardown_at,
+            workspace_uuid=workspace_uuid,
+        ),
     )
 
 
@@ -414,17 +417,16 @@ def dispatch_range_launch(
     scenario: str,
     agents_by_os: dict[str, int],
     *,
-    ngfw_enabled: bool,
     range_source: RangeSource | None,
-    remote_access_teardown_at: datetime | None,
     instantiation_purpose: InstantiationPurpose,
-    workspace_uuid: str | UUID | None = None,
+    options: LaunchOptions,
 ) -> RangeContext:
     """Shared RAES/cyberscript routing body, parameterized by minted launch authority.
 
     Not a product facade; see ``_range_create._create_range_impl``. Internal to
     the CMS create seam -- ``cms.services`` exports the two facades that wrap it,
-    never this function.
+    never this function. ``options`` bundles the optional launch-shaping inputs
+    (see :class:`cms.services._range_create.LaunchOptions`).
     """
     from cms.scenarios.cutover import resolve_launch
 
@@ -434,7 +436,7 @@ def dispatch_range_launch(
             if resolution.raes_source_id is None:
                 # A routed internal source id is not offered as a direct launch choice.
                 raise CMSError(f"Scenario '{scenario}' is not available for launch")
-            if remote_access_teardown_at is not None:
+            if options.remote_access_teardown_at is not None:
                 raise CMSError("The RAES-native range adapter does not support CTF OpenVPN access")
             return _create_raes_native_range_impl(
                 user,
@@ -442,15 +444,13 @@ def dispatch_range_launch(
                 range_source=range_source,
                 instantiation_purpose=instantiation_purpose,
                 raes_source_id=resolution.raes_source_id,
-                workspace_uuid=workspace_uuid,
+                workspace_uuid=options.workspace_uuid,
             )
     return _create_range_impl(
         user,
         scenario,
         agents_by_os,
-        ngfw_enabled,
         range_source,
-        remote_access_teardown_at,
         instantiation_purpose,
-        workspace_uuid=workspace_uuid,
+        options,
     )

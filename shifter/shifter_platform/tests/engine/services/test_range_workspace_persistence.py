@@ -131,9 +131,11 @@ def test_create_range_reuses_the_range_on_a_matching_workspace_replay(user):
 
 def test_create_raes_range_rejects_a_replay_that_names_a_different_workspace(user):
     request_id = uuid4()
-    create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=_raes_plan(), workspace_id=11)
+    plan = _raes_plan()
+    create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=plan, workspace_id=11)
+    replay_plan = _raes_plan()
 
     with pytest.raises(EngineError):
-        create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=_raes_plan(), workspace_id=22)
+        create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=replay_plan, workspace_id=22)
 
     assert Range.objects.get(request__request_id=request_id).workspace_id == 11

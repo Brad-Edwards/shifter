@@ -66,9 +66,10 @@ def test_lifecycle_mutations_deny_a_stranded_range_before_any_status_write(provi
     range_instance = provision_range(user)
     status_before = range_instance.status
     _strand_outside_membership(range_instance)
+    service = getattr(services, service_name)
 
     with pytest.raises(CMSError):
-        getattr(services, service_name)(user, range_instance.pk)
+        service(user, range_instance.pk)
 
     range_instance.refresh_from_db()
     assert range_instance.status == status_before
@@ -82,9 +83,10 @@ def test_lifecycle_by_request_id_denies_a_stranded_range(provision_range, user, 
     range_instance = provision_range(user)
     request_id = str(range_instance.request.request_id)
     _strand_outside_membership(range_instance)
+    service = getattr(services, service_name)
 
     with pytest.raises(CMSError):
-        getattr(services, service_name)(user, request_id)
+        service(user, request_id)
 
 
 def test_remote_access_and_lease_deny_a_stranded_range(provision_range, user):
