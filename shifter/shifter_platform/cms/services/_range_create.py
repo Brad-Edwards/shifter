@@ -30,7 +30,11 @@ from cms.services._range_create_validation import (
     _validate_create_range_user,
 )
 from cms.services._range_remote_access import _build_remote_access_capability
-from cms.services._range_workspace import resolve_launch_workspace
+from cms.services._range_workspace import (
+    admit_workspace_launch,
+    reauthorize_launch_workspace_locked,
+    resolve_launch_workspace,
+)
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -158,23 +162,35 @@ def _reserve_active_range_slot(
     range_source: RangeSource,
     persist_instance: Callable[[Request], RangeInstance],
     workspace_id: int,
+    request_id: UUID | None = None,
 ) -> tuple[UUID, Request, RangeInstance]:
     """Atomically reserve the single active-range slot for ``(user, range_source)``.
 
-    One transaction creates the CMS ``Request``, persists the ``RangeInstance``
-    (built by ``persist_instance``), and sets it PROVISIONING. The partial
-    unique constraint on ``(user_id, range_source)`` for active rows is the
-    race-proof backstop: a losing concurrent caller's INSERT raises
+    One transaction reauthorizes the workspace scope under the workspace mutex
+    (ADR-046-R9), creates the CMS ``Request``, persists the ``RangeInstance``
+    (built by ``persist_instance``), and sets it PROVISIONING. Holding the
+    workspace row lock across the insert means a concurrent membership removal
+    cannot leave a newly created range scoped somewhere its owner cannot reach.
+    The partial unique constraint on ``(user_id, range_source)`` for active rows
+    is the race-proof backstop: a losing concurrent caller's INSERT raises
     ``IntegrityError``, the whole transaction rolls back (so no orphan
     ``Request`` is left behind), and the *named* violation is translated into the
     authored active-range ``CMSError``. Unrelated integrity errors propagate.
 
+    ``request_id`` is the caller's pre-minted correlation key (so workspace
+    admission and reservation share one id); it is minted here when omitted.
+
     Cloud/engine dispatch MUST happen outside this call — never hold the
     transaction open across an Engine/RAES/broker call (#307 preflight).
     """
+    from uuid import uuid4
+
+    if request_id is None:
+        request_id = uuid4()
     try:
         with transaction.atomic():
-            request_id, cms_request = _create_cms_request(user, workspace_id)
+            reauthorize_launch_workspace_locked(user, workspace_id)
+            cms_request = _create_cms_request(user, workspace_id, request_id)
             range_instance = persist_instance(cms_request)
             _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
     except IntegrityError as exc:
@@ -194,14 +210,11 @@ def _lookup_agents_by_os(user: User, agents_by_os: dict[str, int]) -> dict[str, 
     return {os_type: _get_agent_call(user, aid) for os_type, aid in agents_by_os.items()}
 
 
-def _create_cms_request(user: User, workspace_id: int) -> tuple[UUID, Request]:
-    """Create the CMS Request row and return (request_id, cms_request)."""
-    from uuid import uuid4
-
+def _create_cms_request(user: User, workspace_id: int, request_id: UUID) -> Request:
+    """Create the CMS Request row for the pre-minted ``request_id``."""
     from cms.models import Request
     from shared.enums import RequestType
 
-    request_id = uuid4()
     cms_request = Request.objects.create(
         request_id=request_id,
         request_type=RequestType.RANGE.value,
@@ -213,7 +226,7 @@ def _create_cms_request(user: User, workspace_id: int) -> tuple[UUID, Request]:
         request_id,
         user.id,
     )
-    return request_id, cms_request
+    return cms_request
 
 
 def _dispatch_engine_range(
@@ -340,6 +353,7 @@ def create_range(
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,
     remote_access_teardown_at: datetime | None = None,
+    workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Validate, hydrate, and trigger range provisioning.
 
@@ -381,6 +395,7 @@ def create_range(
         range_source,
         remote_access_teardown_at,
         InstantiationPurpose.LIVE_FIRE,
+        workspace_uuid=workspace_uuid,
     )
 
 
@@ -392,6 +407,7 @@ def _create_range_impl(
     range_source: RangeSource | None,
     remote_access_teardown_at: datetime | None,
     instantiation_purpose: InstantiationPurpose,
+    workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Shared cyberscript creation body, parameterized by minted launch authority.
 
@@ -456,9 +472,19 @@ def _create_range_impl(
                 range_source,
             )
 
-        workspace_id = resolve_launch_workspace(user)
-        request_id, _cms_request, range_instance = _reserve_active_range_slot(
-            user, range_source, _persist, workspace_id
+        from uuid import uuid4
+
+        request_id = uuid4()
+        workspace_id = resolve_launch_workspace(user, workspace_uuid)
+        admit_workspace_launch(
+            workspace_id=workspace_id,
+            user=user,
+            range_source=range_source,
+            instantiation_purpose=instantiation_purpose,
+            correlation_key=request_id,
+        )
+        _request_id, _cms_request, range_instance = _reserve_active_range_slot(
+            user, range_source, _persist, workspace_id, request_id
         )
         try:
             _dispatch_engine_range(

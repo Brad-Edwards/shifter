@@ -10,6 +10,7 @@ from django.contrib.auth.models import User
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
+from cms.services import WorkspaceLaunchDenied
 from mission_control.utils import build_connection_urls
 from shared.audit import AuditAction
 from shared.auth import block_ctf_participant_only
@@ -123,7 +124,14 @@ def launch_range(request: HttpRequest) -> JsonResponse:
             raise _RangeError(JsonResponse({"error": "Invalid scenario"}, status=400))
         agents_by_os = _resolve_launch_agents(user, data)
         try:
-            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os)
+            # Optional public workspace selection (ADR-046-R9); the internal
+            # workspace_id is resolved and authorized in cms.services, and a
+            # malformed/unauthorized UUID is denied there rather than trusted.
+            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os, workspace_uuid=data.get("workspace_uuid"))
+        except WorkspaceLaunchDenied as e:
+            # Authorized-shape but unavailable scope is one opaque 403 (ADR-046-R9);
+            # a malformed UUID would be a 400 at input validation.
+            raise _RangeError(JsonResponse({"error": "Selected workspace is not available."}, status=403)) from e
         except CMSError as e:
             _logger().exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
             # Preserve the "already have an active range" guidance for the UI

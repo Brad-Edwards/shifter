@@ -44,3 +44,18 @@ conflict, and the role-change endpoint must be used instead.
 Membership and role changes are transactional and recorded in the audit log.
 Removing membership immediately revokes access to that workspace's bound range
 surfaces, including lifecycle, lease, VPN, terminal, SSH, and RDP operations.
+This applies to subsequent platform requests, downloads, and new sessions. It
+does not terminate an already established terminal or Guacamole session or
+invalidate a VPN profile that was already downloaded; range expiry and
+system-owned cleanup continue even after membership removal.
+
+## Launch a range in a workspace
+
+A range launch accepts an optional `workspace_uuid` naming the workspace the new
+range belongs to. Omitting it launches into your personal workspace, so nothing
+changes for a single-user install. When you supply it, you must be a member of
+that workspace with a role that permits launching; an unknown or non-member
+workspace is refused rather than quietly launched somewhere else. The launched
+range still belongs to you individually—putting it in a shared workspace does
+not let other members open, change, or destroy it. Only the workspace's public
+UUID is accepted, never an internal identifier.

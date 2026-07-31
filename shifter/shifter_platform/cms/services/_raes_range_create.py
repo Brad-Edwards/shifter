@@ -39,7 +39,7 @@ from cms.services._range_create import (
     _validate_create_range_scenario,
     _validate_create_range_user,
 )
-from cms.services._range_workspace import resolve_launch_workspace
+from cms.services._range_workspace import admit_workspace_launch, resolve_launch_workspace
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -270,7 +270,13 @@ def _assert_raes_adapter_supports(backend_admission: BackendAdmission | None) ->
     )
 
 
-def create_raes_native_range(user: User, scenario: str, *, range_source: RangeSource | None = None) -> RangeContext:
+def create_raes_native_range(
+    user: User,
+    scenario: str,
+    *,
+    range_source: RangeSource | None = None,
+    workspace_uuid: str | UUID | None = None,
+) -> RangeContext:
     """Launch a registered RAES package through the native provisioning path.
 
     The generic RAES product facade, permanently live-fire and taking no
@@ -284,7 +290,11 @@ def create_raes_native_range(user: User, scenario: str, *, range_source: RangeSo
     error propagates.
     """
     return _create_raes_native_range_impl(
-        user, scenario, range_source=range_source, instantiation_purpose=InstantiationPurpose.LIVE_FIRE
+        user,
+        scenario,
+        range_source=range_source,
+        instantiation_purpose=InstantiationPurpose.LIVE_FIRE,
+        workspace_uuid=workspace_uuid,
     )
 
 
@@ -295,6 +305,7 @@ def _create_raes_native_range_impl(
     range_source: RangeSource | None,
     instantiation_purpose: InstantiationPurpose,
     raes_source_id: str | None = None,
+    workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
@@ -339,8 +350,20 @@ def _create_raes_native_range_impl(
             maximum_expires_at=lease.maximum_expires_at,
         )
 
-    workspace_id = resolve_launch_workspace(user)
-    request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist, workspace_id)
+    from uuid import uuid4
+
+    request_id = uuid4()
+    workspace_id = resolve_launch_workspace(user, workspace_uuid)
+    admit_workspace_launch(
+        workspace_id=workspace_id,
+        user=user,
+        range_source=range_source,
+        instantiation_purpose=instantiation_purpose,
+        correlation_key=request_id,
+    )
+    _request_id, _cms_request, range_instance = _reserve_active_range_slot(
+        user, range_source, _persist, workspace_id, request_id
+    )
 
     try:
         _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id)
@@ -359,6 +382,7 @@ def create_range_dispatch(
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,
     remote_access_teardown_at: datetime | None = None,
+    workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Route a launch to the RAES-native or cyberscript path.
 
@@ -368,6 +392,10 @@ def create_range_dispatch(
     scenario is launched through ``create_raes_native_range`` (``agents_by_os`` /
     ``ngfw_enabled`` do not apply to RAES packages); every other scenario stays
     on the cyberscript path.
+
+    ``workspace_uuid`` is the optional public workspace selection (ADR-046-R9),
+    threaded to whichever create path runs. Server-derived callers (e.g. the CTF
+    bridge) omit it, so their ranges bind to the launcher's personal workspace.
     """
     return dispatch_range_launch(
         user,
@@ -377,6 +405,7 @@ def create_range_dispatch(
         range_source=range_source,
         remote_access_teardown_at=remote_access_teardown_at,
         instantiation_purpose=InstantiationPurpose.LIVE_FIRE,
+        workspace_uuid=workspace_uuid,
     )
 
 
@@ -389,6 +418,7 @@ def dispatch_range_launch(
     range_source: RangeSource | None,
     remote_access_teardown_at: datetime | None,
     instantiation_purpose: InstantiationPurpose,
+    workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Shared RAES/cyberscript routing body, parameterized by minted launch authority.
 
@@ -412,6 +442,7 @@ def dispatch_range_launch(
                 range_source=range_source,
                 instantiation_purpose=instantiation_purpose,
                 raes_source_id=resolution.raes_source_id,
+                workspace_uuid=workspace_uuid,
             )
     return _create_range_impl(
         user,
@@ -421,4 +452,5 @@ def dispatch_range_launch(
         range_source,
         remote_access_teardown_at,
         instantiation_purpose,
+        workspace_uuid=workspace_uuid,
     )

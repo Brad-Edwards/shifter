@@ -28,7 +28,12 @@ from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.participant_access import ParticipantAccessBinding
 
-from ._range_backend_binding import backend_binding_fields, require_workspace_binding, verify_existing_binding
+from ._range_backend_binding import (
+    backend_binding_fields,
+    require_workspace_binding,
+    verify_existing_binding,
+    verify_existing_workspace_binding,
+)
 
 if TYPE_CHECKING:
     from shared.range_instantiation_policy import BackendAdmission
@@ -130,6 +135,7 @@ def create_raes_range(
     existing = Range.objects.filter(request__request_id=request_uuid).first()
     if existing is not None:
         verify_existing_binding(existing, request_uuid, backend_admission)
+        verify_existing_workspace_binding(existing, request_uuid, workspace_id)
         _verify_existing_participant_access(existing, bindings.participant_access)
         return RaesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
