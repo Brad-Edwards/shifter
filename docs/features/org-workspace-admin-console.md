@@ -30,7 +30,7 @@ scoping, policy, quota, and audit) attach to as they ship.
   a different workspace.
 - Within a selected workspace, the section navigation reflects what your role
   permits: sections your role cannot use are shown but disabled. This is a
-  display aid only — the underlying endpoints enforce access regardless of what
+  display aid only; the underlying endpoints enforce access regardless of what
   the navigation shows.
 
 ## What is not here yet
