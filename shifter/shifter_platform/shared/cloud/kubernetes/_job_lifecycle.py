@@ -12,7 +12,7 @@ from shared.cloud.exceptions import CloudTaskError
 
 from ._helpers import (
     _KUBERNETES_REQUEST_TIMEOUT_SECONDS,
-    _SENSITIVE_SECRET_NAME_INFIX,
+    _SENSITIVE_ENV_NAME_INFIX,
     _SHIFTER_ANNOTATION_TASK_IDENTITY,
     _api_call,
 )
@@ -32,7 +32,7 @@ def _job_sensitive_secret_name(job: object) -> str | None:
         for entry in getattr(container, "env", None) or []:
             secret_ref = getattr(getattr(entry, "value_from", None), "secret_key_ref", None)
             name = getattr(secret_ref, "name", None)
-            if isinstance(name, str) and _SENSITIVE_SECRET_NAME_INFIX in name:
+            if isinstance(name, str) and _SENSITIVE_ENV_NAME_INFIX in name:
                 return name
     return None
 

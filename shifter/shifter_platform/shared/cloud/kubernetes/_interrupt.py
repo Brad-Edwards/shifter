@@ -89,6 +89,23 @@ def _deleting(job: object) -> bool:
     return getattr(getattr(job, "metadata", None), "deletion_timestamp", None) is not None
 
 
+def _absent_or(
+    core_api: object,
+    namespace: str,
+    job_name: str,
+    api_exception: type[Exception],
+    otherwise: str,
+) -> str:
+    """``TERMINAL_ABSENT`` once the Job's pods are gone, else ``otherwise``.
+
+    The workload is only terminally absent once its pods are gone, so this is the
+    single place that maps pod presence to the caller's non-terminal disposition.
+    """
+    if _pods_gone(core_api, namespace, job_name, api_exception):
+        return TaskInterruptDisposition.TERMINAL_ABSENT
+    return otherwise
+
+
 def interrupt_job(runner: KubernetesTaskRunner, cluster: str, task_ref: str, expected_identity: dict[str, Any]) -> str:
     """Verify identity and stop the reserved task Job. Returns a disposition."""
     namespace, job_name = parse_job_task_id(task_ref, cluster) if task_ref else ("", "")
@@ -101,30 +118,23 @@ def interrupt_job(runner: KubernetesTaskRunner, cluster: str, task_ref: str, exp
     job = _read_idempotent_job(batch_api, api_exception, namespace, job_name)
     if job is None:
         # Job object already gone; the workload is absent only once its pods are.
-        if _pods_gone(core_api, namespace, job_name, api_exception):
-            return TaskInterruptDisposition.TERMINAL_ABSENT
-        return TaskInterruptDisposition.UNKNOWN
+        return _absent_or(core_api, namespace, job_name, api_exception, TaskInterruptDisposition.UNKNOWN)
 
     # Never mutate a workload that is not this exact reserved intent (fail closed).
     if not _is_reserved_intent(job, job_name, expected_identity):
         logger.warning("interrupt_task: identity mismatch job=%s namespace=%s", job_name, namespace)
         return TaskInterruptDisposition.IDENTITY_MISMATCH
 
-    if _deleting(job):
-        # Deletion already requested; converge on terminal absence without re-issuing.
-        if _pods_gone(core_api, namespace, job_name, api_exception):
-            return TaskInterruptDisposition.TERMINAL_ABSENT
-        return TaskInterruptDisposition.STOPPING
+    # Issue the foreground delete unless an interrupt is already in flight; either
+    # way converge on terminal absence once the pods are gone.
+    if not _deleting(job):
+        _api_call(
+            batch_api,
+            "delete_namespaced_job",
+            name=job_name,
+            namespace=namespace,
+            body=client_lib.V1DeleteOptions(propagation_policy="Foreground"),
+            _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
+        )
 
-    _api_call(
-        batch_api,
-        "delete_namespaced_job",
-        name=job_name,
-        namespace=namespace,
-        body=client_lib.V1DeleteOptions(propagation_policy="Foreground"),
-        _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
-    )
-
-    if _pods_gone(core_api, namespace, job_name, api_exception):
-        return TaskInterruptDisposition.TERMINAL_ABSENT
-    return TaskInterruptDisposition.STOPPING
+    return _absent_or(core_api, namespace, job_name, api_exception, TaskInterruptDisposition.STOPPING)

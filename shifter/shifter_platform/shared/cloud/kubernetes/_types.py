@@ -50,6 +50,22 @@ class _JobIdentity:
 
 
 @dataclass(frozen=True)
+class _TaskLaunchRequest:
+    """The already-validated inputs for one ``run_task`` invocation.
+
+    Bundling these keeps ``_build_run_context`` within the parameter budget and
+    reads as one cohesive "what to launch" descriptor.
+    """
+
+    namespace: str
+    image: str
+    command: list[str]
+    container_name: str
+    env_overrides: dict[str, str] | None
+    task_identity: str | None
+
+
+@dataclass(frozen=True)
 class _JobLaunch:
     """Inputs shared by create and ambiguous-create recovery."""
 

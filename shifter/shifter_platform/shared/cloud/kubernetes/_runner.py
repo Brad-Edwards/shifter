@@ -24,7 +24,7 @@ from ._profile import KubernetesTaskProfile
 from ._run_task_flow import _build_run_context, _run_task
 from ._secrets import _build_secret_name as _build_secret_name_impl
 from ._status import _build_status_payload, _read_job_status
-from ._types import _KubernetesApis
+from ._types import _KubernetesApis, _TaskLaunchRequest
 from .naming import parse_job_task_id
 
 logger = logging.getLogger(__name__)
@@ -78,16 +78,15 @@ class KubernetesTaskRunner:
 
         try:
             apis = _KubernetesApis(*self._load_kubernetes_api())
-            context = _build_run_context(
-                apis,
-                namespace,
-                image,
-                command,
-                container_name,
-                env_overrides,
-                task_identity,
-                self._resolve_profile(),
+            request = _TaskLaunchRequest(
+                namespace=namespace,
+                image=image,
+                command=command,
+                container_name=container_name,
+                env_overrides=env_overrides,
+                task_identity=task_identity,
             )
+            context = _build_run_context(apis, request, self._resolve_profile())
             return _run_task(context)
         except CloudTaskError:
             raise

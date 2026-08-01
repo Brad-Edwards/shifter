@@ -24,7 +24,7 @@ from ._secrets import (
     _ensure_sensitive_secret,
     _install_owner_reference_or_unwind,
 )
-from ._types import _JobIdentity, _JobLaunch, _KubernetesApis, _RunTaskContext
+from ._types import _JobIdentity, _JobLaunch, _KubernetesApis, _RunTaskContext, _TaskLaunchRequest
 from .naming import build_idempotent_job_name
 
 logger = logging.getLogger(__name__)
@@ -32,36 +32,31 @@ logger = logging.getLogger(__name__)
 
 def _build_run_context(
     apis: _KubernetesApis,
-    namespace: str,
-    image: str,
-    command: list[str],
-    container_name: str,
-    env_overrides: dict[str, str] | None,
-    task_identity: str | None,
+    request: _TaskLaunchRequest,
     profile: KubernetesTaskProfile,
 ) -> _RunTaskContext:
     """Derive deterministic launch identities for one TaskRunner invocation."""
-    sensitive_env, _plain_env = split_env(env_overrides or {})
-    secret_name = _build_secret_name(container_name, task_identity) if sensitive_env else None
+    sensitive_env, _plain_env = split_env(request.env_overrides or {})
+    secret_name = _build_secret_name(request.container_name, request.task_identity) if sensitive_env else None
     identity = None
-    if task_identity:
+    if request.task_identity:
         identity = _JobIdentity(
-            job_name=build_idempotent_job_name(container_name, task_identity),
-            task_identity=task_identity,
-            image=image,
-            command=command,
-            container_name=container_name,
+            job_name=build_idempotent_job_name(request.container_name, request.task_identity),
+            task_identity=request.task_identity,
+            image=request.image,
+            command=request.command,
+            container_name=request.container_name,
             service_account_name=profile.service_account_name,
             secret_name=secret_name,
         )
     return _RunTaskContext(
         apis=apis,
-        namespace=namespace,
-        image=image,
-        command=command,
-        container_name=container_name,
-        env_overrides=env_overrides,
-        task_identity=task_identity,
+        namespace=request.namespace,
+        image=request.image,
+        command=request.command,
+        container_name=request.container_name,
+        env_overrides=request.env_overrides,
+        task_identity=request.task_identity,
         identity=identity,
         sensitive_env=sensitive_env,
         secret_name=secret_name,
