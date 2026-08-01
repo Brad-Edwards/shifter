@@ -90,7 +90,7 @@ Review controls:
   unaffected and keep running at core-count workers, while multi-core dev/CI
   machines get the added parallelism (which shortens the `pytest (shifter_platform)`
   pre-commit hook, the slowest step of an `/implement` publish). The cap also
-  bounds peak memory — each worker loads the Django app — so it is raised only
+  bounds peak memory (each worker loads the Django app), so it is raised only
   with headroom in mind given the suite's documented OOM history at high worker
   counts.
 - `.github/workflows/_gcp-dev.yml` now pins `platform/k8s/gcp/overlays/gcp-dev/kustomization.yaml` image `newTag` values to `${SHORT_SHA}` before `kubectl apply -k`, preventing mutable `:latest` restarts from drifting to a different image than the commit being deployed.
