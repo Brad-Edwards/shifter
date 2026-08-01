@@ -140,6 +140,18 @@ def test_ordering_query_param_does_not_error(django_user_model):
     assert len(response.json()["results"]) == 1
 
 
+def test_get_queryset_returns_empty_without_an_actor(rf, monkeypatch):
+    # Defensive branch: IsStaffSession guarantees an actor in the real flow, but
+    # get_queryset fails closed to an empty projection if none is resolved.
+    from workspaces.api import views as views_module
+
+    monkeypatch.setattr(views_module, "active_actor_user", lambda request: None)
+    view = views_module.PrincipalWorkspaceContextView()
+    view.request = rf.get(CONTEXT_URL)
+
+    assert view.get_queryset() == []
+
+
 def test_get_creates_no_tenancy_rows(django_user_model):
     staff = _user(django_user_model, "sidefx", is_staff=True)
     workspace = _workspace("Acme", "Blue")

@@ -9,7 +9,7 @@
  * any client store is authority: child API calls send the public UUID and are
  * reauthorized server-side, and cached capabilities only shape presentation.
  */
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import type { PrincipalWorkspaceContext } from "@/api/types";
 
@@ -31,7 +31,10 @@ export function WorkspaceContextProvider({
   selected: PrincipalWorkspaceContext | null;
   children: ReactNode;
 }>) {
-  return <WorkspaceContext.Provider value={{ workspaces, selected }}>{children}</WorkspaceContext.Provider>;
+  // Memoize so the context value is stable across renders when its inputs are
+  // unchanged (a fresh object every render would re-render all consumers).
+  const value = useMemo(() => ({ workspaces, selected }), [workspaces, selected]);
+  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }
 
 export function useWorkspaceContext(): WorkspaceContextValue {

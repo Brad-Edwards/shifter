@@ -139,7 +139,7 @@ class PrincipalWorkspaceContextView(ListAPIView):
     # the globally configured OrderingFilter/SearchFilter backends (which call
     # queryset.order_by / .filter) cannot apply. Opt out so the generated contract
     # does not advertise ?ordering=/?search= parameters this view cannot honor.
-    filter_backends: list = []
+    filter_backends: list[type] = []
 
     @extend_schema(
         responses={200: PrincipalWorkspaceContextSerializer(many=True), 403: ApiErrorSerializer},
@@ -150,8 +150,8 @@ class PrincipalWorkspaceContextView(ListAPIView):
 
     def get_queryset(self) -> list[services.ActorWorkspaceContext]:
         actor = active_actor_user(self.request)
-        # IsStaffSession guarantees an authenticated staff session before this runs.
-        if actor is None:  # pragma: no cover - defensive; the permission gate rejects first
+        if actor is None:
+            # Defensive: IsStaffSession admits only an authenticated staff session.
             return []
         return services.list_actor_workspace_contexts(actor)
 
