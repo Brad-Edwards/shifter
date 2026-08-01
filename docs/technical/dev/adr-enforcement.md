@@ -69,6 +69,30 @@ Review controls:
   full ADR guard, import-linter contracts, diff whitespace validation, and Vale
   against Markdown changed from `origin/dev`; `tools/install-vale.sh` supplies
   the pinned local Vale binary when it is not already installed.
+- `.ground-control.yaml` `workflow.precommit_command` is set to `pre-commit run`
+  (staged-files scope) rather than the reader's `pre-commit run --all-files`
+  default. Every hook in `.pre-commit-config.yaml` is already `files:`-scoped, so
+  the staged run fires only the hooks whose module a `/implement` change actually
+  touches (a `shifter/shifter_platform/**`-only change skips the
+  packer/provisioner/bootstrap/installation/terraform/mcp test+lint hooks
+  entirely, which dominate a full-repo `--all-files` run). This is not a gate
+  weakening: CI's quality-path-ownership contract
+  (`.github/quality-path-filters.yaml`, enforced by the `quality-path-ownership`
+  adr_guard check) is the authoritative full-matrix gate and guarantees a
+  blocking lint **and** security **and** test job for every production path, so
+  the local publish pre-commit is scoped to the changed files to avoid
+  re-running suites CI already owns. Developers may still run
+  `pre-commit run --all-files` by hand.
+- The `shifter_platform` pytest worker cap (`--maxprocesses` in
+  `shifter/shifter_platform/pyproject.toml` `addopts`) is 8. Because `-n auto`
+  already limits workers to the host core count, this cap only takes effect on
+  hosts with more cores than the cap: CI runners (`ubuntu-latest`, ≤4 cores) are
+  unaffected and keep running at core-count workers, while multi-core dev/CI
+  machines get the added parallelism (which shortens the `pytest (shifter_platform)`
+  pre-commit hook, the slowest step of an `/implement` publish). The cap also
+  bounds peak memory (each worker loads the Django app), so it is raised only
+  with headroom in mind given the suite's documented OOM history at high worker
+  counts.
 - `.github/workflows/_gcp-dev.yml` now pins `platform/k8s/gcp/overlays/gcp-dev/kustomization.yaml` image `newTag` values to `${SHORT_SHA}` before `kubectl apply -k`, preventing mutable `:latest` restarts from drifting to a different image than the commit being deployed.
 
 Deploy-time enforcement (ADR-035):

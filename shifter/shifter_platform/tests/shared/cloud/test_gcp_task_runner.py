@@ -10,8 +10,8 @@ import pytest
 
 from shared.cloud import PROVISIONER_CONTAINER_NAME
 from shared.cloud.exceptions import CloudTaskError
-from shared.cloud.gcp.base import build_idempotent_job_name
 from shared.cloud.gcp.task_runner import GCPTaskRunner
+from shared.cloud.kubernetes.naming import build_idempotent_job_name
 
 
 class _ApiException(Exception):

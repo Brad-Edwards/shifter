@@ -22,7 +22,7 @@ from engine.models import (
 )
 from engine.operation_inputs import operation_input_payload
 from shared.cloud import PROVISIONER_CONTAINER_NAME
-from shared.cloud.gcp.base import build_idempotent_job_name
+from shared.cloud.kubernetes.naming import build_idempotent_job_name
 from shared.operation_envelope import build_operation_envelope
 
 _OPERATIONS = {
