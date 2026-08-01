@@ -9,7 +9,7 @@ recover. Correct submissions earn points and move you up the scoreboard.
 ## Joining an Event
 
 1. Open the dedicated CTF login page from the URL your organizer provides.
-2. Sign in with the temporary username and bootstrap password. On first login, choose
+2. Sign in with the temporary username and initial password. On first login, choose
    a new password before opening any other CTF page.
 3. When the event opens, your dashboard shows the event status, your score, and the
    time remaining.

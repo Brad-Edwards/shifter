@@ -89,6 +89,7 @@ from ctf.services.hint import (
     use_hint,
 )
 from ctf.services.participant import (
+    ParticipantPasswordIssuance,
     authenticate_ctf_participant,
     ban_participant,
     bulk_import_participants,
@@ -100,6 +101,7 @@ from ctf.services.participant import (
     list_participants_for_event,
     requalify_participant,
     resend_invite,
+    reset_participant_password,
     set_participant_hidden,
     set_participant_role,
     unban_participant,
@@ -130,6 +132,7 @@ from ctf.services.submission import (
 )
 
 __all__ = [
+    "ParticipantPasswordIssuance",
     "activate_event",
     "active_event_summary",
     "add_challenge_file",
@@ -206,6 +209,7 @@ __all__ = [
     "requalify_participant",
     "request_event_provisioning",
     "resend_invite",
+    "reset_participant_password",
     "resolve_scenario_ctf_content",
     "resume_event",
     "revoke_award",

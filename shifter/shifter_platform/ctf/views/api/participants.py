@@ -239,7 +239,7 @@ def api_participant_detail(request: HttpRequest, participant_id: UUID) -> JsonRe
 
 
 def _resend_invite_response(participant_id: UUID) -> JsonResponse:
-    """Regenerate and resend a participant invite, returning success or a 400."""
+    """Resend non-secret participant login information."""
     from ctf.exceptions import CTFStateError, CTFValidationError
     from ctf.services import resend_invite
 
@@ -263,9 +263,9 @@ def _resend_invite_response(participant_id: UUID) -> JsonResponse:
 @ctf_organizer_required
 @require_POST
 def api_participant_resend_invite(request: HttpRequest, participant_id: UUID) -> JsonResponse:
-    """API: Reset and resend participant credentials.
+    """API: Resend non-secret participant login information.
 
-    Regenerates the invite token and sends a new email.
+    Preserves the current password and sends a new email.
     Works for any participant regardless of registration status.
 
     Args:

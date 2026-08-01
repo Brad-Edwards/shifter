@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def send_invitations(event_id: UUID) -> dict[str, Any]:
-    """Reset and queue credentials for participants with delivery email.
+    """Queue non-secret login information for participants with delivery email.
 
     Args:
         event_id: UUID of the event.
@@ -64,7 +64,7 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
         if not participant.email:
             continue
         try:
-            from ctf.services.participant.accounts import reset_participant_credentials
+            from ctf.services.participant.credentials import reset_participant_credentials
 
             reset_participant_credentials(participant.pk)
 

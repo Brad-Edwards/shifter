@@ -204,6 +204,11 @@ admin_patterns = [
         views.admin_participant_email,
         name="admin_participant_email",
     ),
+    path(
+        "admin/participants/<uuid:participant_id>/password/",
+        views.admin_participant_password,
+        name="admin_participant_password",
+    ),
     # Teams
     path("admin/events/<uuid:event_id>/teams/", _page(views.admin_team_list), name="admin_team_list"),
     # Scoreboard

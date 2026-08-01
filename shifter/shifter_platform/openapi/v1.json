@@ -7210,6 +7210,86 @@
         }
       }
     },
+    "/api/v1/ctf/participants/{participant_id}/password/": {
+      "post": {
+        "operationId": "ctf_participants_password_create",
+        "description": "Authorize, rate-limit, issue, and return the password once.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantPasswordRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantPasswordRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantPasswordResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/participants/{participant_id}/range/destroy/": {
       "post": {
         "operationId": "ctf_participants_range_destroy_create",
@@ -7653,7 +7733,7 @@
     "/api/v1/ctf/participants/{participant_id}/resend-invite/": {
       "post": {
         "operationId": "ctf_participants_resend_invite_create",
-        "description": "Rate-limit, enforce ownership, then reset and resend the invite.",
+        "description": "Rate-limit, enforce ownership, then resend non-secret login information.",
         "parameters": [
           {
             "in": "path",
@@ -7676,6 +7756,7 @@
             "cookieAuth": []
           }
         ],
+        "deprecated": true,
         "responses": {
           "200": {
             "content": {
@@ -13394,6 +13475,14 @@
         "type": "string",
         "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc\n* `ngfw` - ngfw"
       },
+      "KindEnum": {
+        "enum": [
+          "generated",
+          "set"
+        ],
+        "type": "string",
+        "description": "* `generated` - generated\n* `set` - set"
+      },
       "LaunchRange": {
         "type": "object",
         "description": "Validate range launch requests.",
@@ -14842,6 +14931,59 @@
             "maxLength": 2000
           }
         }
+      },
+      "ParticipantPasswordRequest": {
+        "type": "object",
+        "description": "Closed write-only request for generated or supplied issuance.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/KindEnum"
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "ParticipantPasswordResult": {
+        "type": "object",
+        "description": "One-time participant password issuance returned by the mutation only.",
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "event_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "username": {
+            "type": "string",
+            "readOnly": true
+          },
+          "password": {
+            "type": "string",
+            "readOnly": true
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KindEnum"
+              }
+            ],
+            "readOnly": true
+          }
+        },
+        "required": [
+          "event_id",
+          "kind",
+          "participant_id",
+          "password",
+          "username"
+        ]
       },
       "ParticipantProfile": {
         "type": "object",
@@ -16330,7 +16472,7 @@
       },
       "ResendInviteResult": {
         "type": "object",
-        "description": "Confirmation returned after resetting and resending a participant invite.",
+        "description": "Confirmation returned after resending non-secret login information.",
         "properties": {
           "success": {
             "type": "boolean",

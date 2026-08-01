@@ -35,6 +35,8 @@ import type {
   CtfParticipantImportResult,
   CtfParticipantInvite,
   CtfParticipantListResponse,
+  CtfParticipantPasswordRequest,
+  CtfParticipantPasswordResult,
   CtfParticipantRangeActionResult,
   CtfPrerequisiteListResponse,
   CtfPrerequisiteWrite,
@@ -359,6 +361,18 @@ export function useResendCtfInvite(participantId: string) {
   return useMutation({
     mutationFn: () => apiFetch<unknown>(`${BASE}/participants/${participantId}/resend-invite/`, { method: "POST" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) }),
+  });
+}
+
+export function useResetCtfParticipantPassword(participantId: string) {
+  return useMutation({
+    mutationFn: (body: CtfParticipantPasswordRequest) =>
+      apiFetch<CtfParticipantPasswordResult>(`${BASE}/participants/${participantId}/password/`, {
+        method: "POST",
+        body,
+      }),
+    retry: false,
+    gcTime: 0,
   });
 }
 

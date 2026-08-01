@@ -18,8 +18,8 @@ from ctf.services.participant.accounts import (
     create_participant_accounts,
     purge_expired_participant_accounts,
     rename_participant_username,
-    reset_participant_credentials,
 )
+from ctf.services.participant.credentials import reset_participant_credentials
 from ctf.services.participant.lifecycle import invite_participant
 from ctf.services.participant.moderation import disqualify_participant
 from management.services import get_user_profile
@@ -310,12 +310,19 @@ def test_platform_password_backend_rejects_ctf_credentials(ctf_event_active, mon
 
 def test_single_invite_accepts_no_email_and_creates_isolated_account(ctf_event, monkeypatch):
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    ctf_event.participant_password_override = ""
+    ctf_event.save(update_fields=["participant_password_override", "updated_at"])
+    monkeypatch.setattr(
+        "ctf.services.participant.accounts.generate_participant_password",
+        lambda *, user=None: "Generated-Invite-Password-42",
+    )
 
     participant = invite_participant(ctf_event.id, "", "Walk-in")
 
     assert participant.email == ""
     assert participant.user is not None
     assert participant.user.profile.is_ctf_account is True
+    assert participant.user.check_password("Generated-Invite-Password-42")
 
 
 def test_delivery_email_unique_per_event_not_global(ctf_event, ctf_event_active, monkeypatch):
@@ -330,18 +337,7 @@ def test_delivery_email_unique_per_event_not_global(ctf_event, ctf_event_active,
     assert first.user_id != other_event.user_id
 
 
-def test_event_bootstrap_password_override_is_used(ctf_event, monkeypatch):
-    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-    ctf_event.participant_password_override = "EventOnly-Password-42"
-    ctf_event.save(update_fields=["participant_password_override", "updated_at"])
-
-    participant = create_participant_accounts(ctf_event.id, count=1)[0]
-
-    assert participant.user.check_password("EventOnly-Password-42")
-    assert not participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
-
-
-def test_credential_reset_restores_bootstrap_and_sends_two_messages(ctf_event, monkeypatch):
+def test_legacy_resend_preserves_password_and_sends_login_information(ctf_event, monkeypatch):
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
     sent = []
     monkeypatch.setattr("ctf.services.notification._send_email", lambda **kwargs: sent.append(kwargs))
@@ -360,12 +356,12 @@ def test_credential_reset_restores_bootstrap_and_sends_two_messages(ctf_event, m
 
     participant.user.refresh_from_db()
     profile.refresh_from_db()
-    assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
-    assert profile.must_change_password is True
-    assert len(sent) == 2
+    assert participant.user.check_password("PrivateChangedPassword-42")
+    assert profile.must_change_password is False
+    assert len(sent) == 1
     assert participant.user.username in sent[0]["text_content"]
     assert TEST_CTF_BOOTSTRAP_PASSWORD not in sent[0]["text_content"]
-    assert TEST_CTF_BOOTSTRAP_PASSWORD in sent[1]["text_content"]
+    assert "PrivateChangedPassword-42" not in sent[0]["text_content"]
 
 
 def test_disqualification_keeps_account_live_for_view_access(ctf_event, monkeypatch):
@@ -437,28 +433,6 @@ def test_ctf_login_allows_event_users_behind_shared_source(client, settings):
     assert response["Retry-After"] == "300"
 
 
-def test_first_password_change_rejects_bootstrap_reuse(client, ctf_event_active, monkeypatch):
-    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
-    client.post(
-        reverse("ctf:ctf_login"),
-        {"username": participant.user.username, "password": TEST_CTF_BOOTSTRAP_PASSWORD},
-    )
-
-    response = client.post(
-        reverse("ctf:ctf_change_password"),
-        {
-            "old_password": TEST_CTF_BOOTSTRAP_PASSWORD,
-            "new_password1": TEST_CTF_BOOTSTRAP_PASSWORD,
-            "new_password2": TEST_CTF_BOOTSTRAP_PASSWORD,
-        },
-    )
-
-    assert response.status_code == 200
-    assert "Choose a password different from the event bootstrap password" in response.content.decode()
-    assert get_user_profile(participant.user).must_change_password is True
-
-
 def test_organizer_can_render_and_generate_participant_batch(
     authenticated_organizer_client,
     ctf_event,
@@ -494,19 +468,3 @@ def test_organizer_can_rename_and_attach_delivery_email(authenticated_organizer_
     assert email_response.status_code == 302
     assert participant.user.username == "range-renamed-seat"
     assert participant.email == "delivery@example.test"
-
-
-def test_organizer_participant_detail_reveals_current_bootstrap_password(
-    authenticated_organizer_client,
-    ctf_event,
-    monkeypatch,
-):
-    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-    participant = create_participant_accounts(ctf_event.id, count=1)[0]
-
-    response = authenticated_organizer_client.get(
-        reverse("ctf:admin_participant_detail", kwargs={"participant_id": participant.id})
-    )
-
-    assert response.status_code == 200
-    assert TEST_CTF_BOOTSTRAP_PASSWORD in response.content.decode()

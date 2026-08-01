@@ -1519,6 +1519,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/participants/{participant_id}/password/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Authorize, rate-limit, issue, and return the password once. */
+        post: operations["ctf_participants_password_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/participants/{participant_id}/range/destroy/": {
         parameters: {
             query?: never;
@@ -1647,7 +1664,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Rate-limit, enforce ownership, then reset and resend the invite. */
+        /**
+         * @deprecated
+         * @description Rate-limit, enforce ownership, then resend non-secret login information.
+         */
         post: operations["ctf_participants_resend_invite_create"];
         delete?: never;
         options?: never;
@@ -3192,6 +3212,12 @@ export interface components {
          * @enum {string}
          */
         InstancePresentationRoleEnum: "attacker" | "victim" | "dc" | "ngfw";
+        /**
+         * @description * `generated` - generated
+         *     * `set` - set
+         * @enum {string}
+         */
+        KindEnum: "generated" | "set";
         /** @description Validate range launch requests. */
         LaunchRange: {
             agents?: {
@@ -3628,6 +3654,19 @@ export interface components {
         /** @description Optional reason accompanying a ban or disqualification. */
         ParticipantModerationRequest: {
             reason?: string;
+        };
+        /** @description Closed write-only request for generated or supplied issuance. */
+        ParticipantPasswordRequest: {
+            kind: components["schemas"]["KindEnum"];
+            password?: string;
+        };
+        /** @description One-time participant password issuance returned by the mutation only. */
+        ParticipantPasswordResult: {
+            readonly participant_id: string;
+            readonly event_id: string;
+            readonly username: string;
+            readonly password: string;
+            readonly kind: components["schemas"]["KindEnum"];
         };
         /** @description Event-scoped self profile (CTF-610). */
         ParticipantProfile: {
@@ -4101,7 +4140,7 @@ export interface components {
             readonly category: string;
             readonly message: string;
         };
-        /** @description Confirmation returned after resetting and resending a participant invite. */
+        /** @description Confirmation returned after resending non-secret login information. */
         ResendInviteResult: {
             readonly success: boolean;
             readonly id: string;
@@ -8989,6 +9028,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ParticipantDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_participants_password_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                participant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantPasswordRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ParticipantPasswordRequest"];
+                "multipart/form-data": components["schemas"]["ParticipantPasswordRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantPasswordResult"];
                 };
             };
             /** @description Authentication failed. */

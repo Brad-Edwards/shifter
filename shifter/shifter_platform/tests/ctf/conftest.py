@@ -41,22 +41,10 @@ if TYPE_CHECKING:
 User = get_user_model()
 
 
-# Explicit, clearly synthetic CTF bootstrap credential for tests. Production code
-# fails closed (issue #1665): no repository literal may authenticate an account,
-# so tests configure this value explicitly through the autouse fixture below.
-# Chosen to satisfy the canonical ``AUTH_PASSWORD_VALIDATORS``.
+# Explicit, clearly synthetic per-event shared credential for tests that need a
+# stable login value. Production events default to unique generated credentials;
+# individual tests clear the event override when exercising that path.
 TEST_CTF_BOOTSTRAP_PASSWORD = "test-ctf-bootstrap-pw"  # nosec B105
-
-
-@pytest.fixture(autouse=True)
-def _ctf_bootstrap_password(settings):
-    """Supply an explicit test-only bootstrap credential for every CTF test.
-
-    Fail-closed tests set ``settings.CTF_DEFAULT_PARTICIPANT_PASSWORD = ""`` in
-    their own body (running after this autouse fixture) to exercise the
-    no-source-configured path.
-    """
-    settings.CTF_DEFAULT_PARTICIPANT_PASSWORD = TEST_CTF_BOOTSTRAP_PASSWORD
 
 
 # -----------------------------------------------------------------------------
@@ -285,6 +273,7 @@ def ctf_event(db, organizer_user) -> CTFEvent:
         auto_cleanup=True,
         cleanup_delay_hours=24,
         team_mode=False,
+        participant_password_override=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
 
@@ -299,6 +288,7 @@ def ctf_event_draft(db, organizer_user) -> CTFEvent:
         event_start=timezone.now() + timedelta(days=7),
         event_end=timezone.now() + timedelta(days=7, hours=8),
         scenario_id="basic",
+        participant_password_override=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
 
@@ -313,6 +303,7 @@ def ctf_event_active(db, organizer_user) -> CTFEvent:
         event_start=timezone.now() - timedelta(hours=1),
         event_end=timezone.now() + timedelta(hours=7),
         scenario_id="basic",
+        participant_password_override=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
 
@@ -329,6 +320,7 @@ def ctf_event_team(db, organizer_user) -> CTFEvent:
         scenario_id="basic",
         team_mode=True,
         team_size_limit=4,
+        participant_password_override=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
 

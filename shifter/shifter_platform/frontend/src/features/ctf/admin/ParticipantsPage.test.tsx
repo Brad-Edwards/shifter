@@ -36,12 +36,15 @@ function render() {
 beforeEach(() => mockApi.mockReset());
 
 describe("ParticipantsPage", () => {
-  it("renders participants with a resend action", async () => {
+  it("opens password management for a participant", async () => {
     mockApi.mockResolvedValue({ participants: [participant()], total: 1 });
+    const user = userEvent.setup();
     render();
     expect(await screen.findByRole("link", { name: "Ada Lovelace" })).toBeInTheDocument();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Resend" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Manage password" }));
+    expect(await screen.findByRole("dialog", { name: "Reset participant password" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate new password" })).toBeInTheDocument();
   });
 
   it("opens the invite dialog", async () => {

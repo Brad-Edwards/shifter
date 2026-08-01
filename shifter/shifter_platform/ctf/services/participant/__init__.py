@@ -19,10 +19,14 @@ from .accounts import (
     create_participant_accounts,
     rename_own_participant_username,
     rename_participant_username,
-    reset_participant_credentials,
 )
 from .auth import authenticate_ctf_participant
 from .bulk_import import bulk_import_participants
+from .credentials import (
+    ParticipantPasswordIssuance,
+    reset_participant_credentials,
+    reset_participant_password,
+)
 from .lifecycle import (
     delete_participant,
     invite_participant,
@@ -51,6 +55,7 @@ from .queries import (
 )
 
 __all__ = [
+    "ParticipantPasswordIssuance",
     "assert_participant_can_compete",
     "authenticate_ctf_participant",
     "ban_participant",
@@ -72,6 +77,7 @@ __all__ = [
     "requalify_participant",
     "resend_invite",
     "reset_participant_credentials",
+    "reset_participant_password",
     "set_participant_hidden",
     "set_participant_role",
     "unban_participant",
