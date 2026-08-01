@@ -144,6 +144,17 @@ runner. Core ships no scenario adapters or answer material.
   types, plugin factories, operator selection, execution, status/exit behavior,
   and report redaction.
 
+## Organization/workspace admin console
+
+The `/administer` SPA hosts a staff-only console shell over the workspace
+tenancy layer, backed by a read-only current-principal context endpoint. It adds
+routing, a workspace context/switcher, and capability-aware navigation without a
+new authority model or feature flag.
+
+- [Organization/workspace admin console](org-workspace-admin-console.md): the
+  `/api/v1/workspaces/context/` projection, staff-session boundary, and SPA
+  shell/routing/selection.
+
 ## Audit logging
 
 The shared platform layer owns the durable audit store and writer. Audit rows

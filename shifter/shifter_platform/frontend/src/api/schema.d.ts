@@ -2461,6 +2461,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/context/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Read the caller's own organization/workspace context for the admin console.
+         *
+         *     A side-effect-free projection of the caller's existing workspace memberships
+         *     (organization, workspace, role, and role-permitted operations), used by the
+         *     ``/administer`` organization console shell and switcher (ADR-046-R11, #1938).
+         *
+         *     Staff-session only and deliberately **not** token-capable: the bearer-first,
+         *     fail-closed authentication ordering parses an invalid token before session
+         *     fallback, and ``IsStaffSession`` rejects any valid platform token (including
+         *     one owned by a staff user). Staff admission and workspace authority stay
+         *     additive -- staff admits the console, but each child resource endpoint still
+         *     reauthorizes its own workspace operation. The read never creates or repairs
+         *     tenancy state, so a staff caller with no membership receives an empty page.
+         */
+        get: operations["api_v1_workspaces_principal_context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3331,6 +3362,12 @@ export interface components {
             readonly notification_id: string;
             readonly status: string;
         };
+        /** @description Public organization projection (uuid + display name only). */
+        OrganizationRef: {
+            /** Format: uuid */
+            readonly uuid: string;
+            readonly name: string;
+        };
         /** @description Full organizer-facing challenge detail projection. */
         OrganizerChallengeDetail: {
             readonly id: string;
@@ -3449,6 +3486,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["AuditLog"][];
+        };
+        PaginatedPrincipalWorkspaceContextList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["PrincipalWorkspaceContext"][];
         };
         /** @description One sent announcement on the participant surface (CTF-803). */
         ParticipantAnnouncement: {
@@ -3778,6 +3830,22 @@ export interface components {
         PrerequisiteWrite: {
             /** Format: uuid */
             required_challenge_id: string;
+        };
+        /**
+         * @description One workspace the caller belongs to, with role and advisory capabilities.
+         *
+         *     ``role`` and ``capabilities`` are display/presentation hints derived from the
+         *     central role-to-operation policy; every resource endpoint still reauthorizes
+         *     the operation it performs (ADR-046-R11).
+         */
+        PrincipalWorkspaceContext: {
+            readonly organization: components["schemas"]["OrganizationRef"];
+            /** Format: uuid */
+            readonly workspace_uuid: string;
+            readonly workspace_name: string;
+            readonly is_personal: boolean;
+            readonly role: components["schemas"]["WorkspaceRoleEnum"];
+            readonly capabilities: string[];
         };
         /**
          * @description Public scoreboard read surface.
@@ -11598,6 +11666,45 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspaces_principal_context: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedPrincipalWorkspaceContextList"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -5,7 +5,8 @@ Organization/workspace tenancy above user-owned ranges.
 Governing decision: [ADR-046](../../adr/index.yaml). Design guardrails:
 [organization/workspace preflight](../../architecture/organization-workspace-preflight-1325.md),
 [membership/roles preflight](../../architecture/workspace-membership-roles-preflight-1326.md),
-and [range-scoping preflight](../../architecture/range-workspace-scoping-preflight-1327.md).
+[range-scoping preflight](../../architecture/range-workspace-scoping-preflight-1327.md),
+and [administration-console preflight](../../architecture/organization-workspace-admin-console-preflight-1938.md).
 
 ## What this domain is for
 

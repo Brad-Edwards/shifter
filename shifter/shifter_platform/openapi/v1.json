@@ -11173,6 +11173,66 @@
           "workspaces:membership:write"
         ]
       }
+    },
+    "/api/v1/workspaces/context/": {
+      "get": {
+        "operationId": "api_v1_workspaces_principal_context",
+        "description": "Read the caller's own organization/workspace context for the admin console.\n\nA side-effect-free projection of the caller's existing workspace memberships\n(organization, workspace, role, and role-permitted operations), used by the\n``/administer`` organization console shell and switcher (ADR-046-R11, #1938).\n\nStaff-session only and deliberately **not** token-capable: the bearer-first,\nfail-closed authentication ordering parses an invalid token before session\nfallback, and ``IsStaffSession`` rejects any valid platform token (including\none owned by a staff user). Staff admission and workspace authority stay\nadditive -- staff admits the console, but each child resource endpoint still\nreauthorizes its own workspace operation. The read never creates or repairs\ntenancy state, so a staff caller with no membership receives an empty page.",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedPrincipalWorkspaceContextList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -13789,6 +13849,25 @@
           "status"
         ]
       },
+      "OrganizationRef": {
+        "type": "object",
+        "description": "Public organization projection (uuid + display name only).",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "name",
+          "uuid"
+        ]
+      },
       "OrganizerChallengeDetail": {
         "type": "object",
         "description": "Full organizer-facing challenge detail projection.",
@@ -14148,6 +14227,37 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AuditLog"
+            }
+          }
+        }
+      },
+      "PaginatedPrincipalWorkspaceContextList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrincipalWorkspaceContext"
             }
           }
         }
@@ -15431,6 +15541,56 @@
         },
         "required": [
           "required_challenge_id"
+        ]
+      },
+      "PrincipalWorkspaceContext": {
+        "type": "object",
+        "description": "One workspace the caller belongs to, with role and advisory capabilities.\n\n``role`` and ``capabilities`` are display/presentation hints derived from the\ncentral role-to-operation policy; every resource endpoint still reauthorizes\nthe operation it performs (ADR-046-R11).",
+        "properties": {
+          "organization": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrganizationRef"
+              }
+            ],
+            "readOnly": true
+          },
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "workspace_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_personal": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceRoleEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "capabilities",
+          "is_personal",
+          "organization",
+          "role",
+          "workspace_name",
+          "workspace_uuid"
         ]
       },
       "PublicScoreboardResponse": {
