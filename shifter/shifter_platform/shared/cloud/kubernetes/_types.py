@@ -1,7 +1,7 @@
-"""Shared dataclasses and protocols for the GCP task-runner package.
+"""Shared dataclasses and protocols for the neutral Kubernetes task-runner package.
 
 These types describe transient, per-launch state passed between the
-``GCPTaskRunner`` class (see ``_runner``) and the module-level helper
+``KubernetesTaskRunner`` class (see ``_runner``) and the module-level helper
 functions the launch/observe/reconcile logic is split across
 (``_job_manifest``, ``_job_lifecycle``, ``_secrets``, ``_run_task_flow``).
 None of them carry behavior of their own.
@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
+
+from ._profile import KubernetesTaskProfile
 
 
 @dataclass(frozen=True)
@@ -36,7 +38,7 @@ class _OwnerReference(Protocol):
 
 @dataclass(frozen=True)
 class _JobIdentity:
-    """Expected immutable identity of a deterministic provisioner Job."""
+    """Expected immutable identity of a deterministic task Job."""
 
     job_name: str
     task_identity: str
@@ -72,3 +74,4 @@ class _RunTaskContext:
     identity: _JobIdentity | None
     sensitive_env: dict[str, str]
     secret_name: str | None
+    profile: KubernetesTaskProfile

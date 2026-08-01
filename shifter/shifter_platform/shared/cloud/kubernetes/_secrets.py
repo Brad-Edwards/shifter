@@ -1,9 +1,10 @@
 """Secret + ownership lifecycle for the ephemeral per-Job sensitive-env Secret.
 
-Split out of the historical monolithic ``task_runner.py`` (#561). Handles
-naming, creating/recovering the Secret, wiring an owner reference to the Job
-that consumes it, and unwinding both objects when a launch fails partway
-through.
+Extracted from the GCP task-runner package (#1824). Handles naming,
+creating/recovering the Secret, wiring an owner reference to the Job that
+consumes it, and unwinding both objects when a launch fails partway through.
+The mechanism is generic Kubernetes; the runner label value arrives via the
+injected profile.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build_secret_name(container_name: str, task_identity: str | None = None) -> str:
-    """Derive a unique Secret name for a provisioner Job.
+    """Derive a unique Secret name for a task Job.
 
     Kubernetes object names cap at 253 characters and follow DNS
     subdomain rules. We keep the prefix under 50 characters and
@@ -47,9 +48,10 @@ def _ensure_sensitive_secret(
     sensitive_env: dict[str, str],
     container_name: str,
     task_identity: str | None,
+    runner_label_value: str,
 ) -> None:
     """Create a per-intent Secret, or recover it after an ambiguous create."""
-    secret_body = _build_sensitive_secret(apis.client, secret_name, sensitive_env, container_name)
+    secret_body = _build_sensitive_secret(apis.client, secret_name, sensitive_env, container_name, runner_label_value)
     try:
         _api_call(
             apis.core,
@@ -141,7 +143,9 @@ def _install_owner_reference_or_unwind(
                 secret_name,
                 detail="created Job lacks a uid we can use as ownerReference target",
             )
-        raise CloudTaskError(f"GCP task runner: cannot install Secret ownerReference (Job {job_name} returned no uid)")
+        raise CloudTaskError(
+            f"Kubernetes task runner: cannot install Secret ownerReference (Job {job_name} returned no uid)"
+        )
 
     owner_ref = cast(
         _OwnerReference,
@@ -177,7 +181,8 @@ def _install_owner_reference_or_unwind(
                 detail=f"ownerReference patch failed ({type(patch_err).__name__})",
             )
         raise CloudTaskError(
-            f"GCP task runner: failed to install Secret ownerReference for Job {job_name} ({type(patch_err).__name__})"
+            f"Kubernetes task runner: failed to install Secret ownerReference for Job {job_name} "
+            f"({type(patch_err).__name__})"
         ) from patch_err
 
 

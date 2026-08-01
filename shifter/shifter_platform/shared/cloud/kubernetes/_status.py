@@ -1,7 +1,7 @@
 """``get_task_status`` support: reading Job status and building the
 ECS-shaped status payload TaskRunner callers expect.
 
-Split out of the historical monolithic ``task_runner.py`` (#561).
+Extracted from the GCP task-runner package (#1824).
 """
 
 from __future__ import annotations

@@ -1,28 +1,38 @@
-"""Observe/validate/create-or-observe logic for deterministic provisioner Jobs.
+"""Observe/validate/create-or-observe logic for deterministic task Jobs.
 
-Split out of the historical monolithic ``task_runner.py`` (#561). This module
-owns the "did we already accept this exact Job" reconciliation path used by
-both the idempotent pre-check in ``_run_task_flow._existing_task_ref`` and the
-ambiguous-create recovery in ``_create_or_observe_job``.
+Extracted from the GCP task-runner package (#1824). This module owns the "did we
+already accept this exact Job" reconciliation path used by both the idempotent
+pre-check in ``_run_task_flow._existing_task_ref`` and the ambiguous-create
+recovery in ``_create_or_observe_job``.
 """
 
 from __future__ import annotations
 
 from shared.cloud.exceptions import CloudTaskError
 
-from ._helpers import _KUBERNETES_REQUEST_TIMEOUT_SECONDS, _SHIFTER_ANNOTATION_TASK_IDENTITY, _api_call
+from ._helpers import (
+    _KUBERNETES_REQUEST_TIMEOUT_SECONDS,
+    _SENSITIVE_SECRET_NAME_INFIX,
+    _SHIFTER_ANNOTATION_TASK_IDENTITY,
+    _api_call,
+)
 from ._secrets import _cleanup_sensitive_secret, _install_owner_reference_or_unwind
 from ._types import _JobIdentity, _JobLaunch, _KubernetesApis
 
 
 def _job_sensitive_secret_name(job: object) -> str | None:
-    """Return the per-Job sensitive-env Secret referenced by a Job."""
+    """Return the per-Job sensitive-env Secret referenced by a Job.
+
+    Detection keys on the neutral Secret-name convention minted by
+    ``_build_secret_name`` (``<prefix>-secrets-<suffix>``) rather than a
+    provider-specific prefix, so the reconcile path stays cloud-neutral.
+    """
     pod_spec = getattr(getattr(getattr(job, "spec", None), "template", None), "spec", None)
     for container in getattr(pod_spec, "containers", None) or []:
         for entry in getattr(container, "env", None) or []:
             secret_ref = getattr(getattr(entry, "value_from", None), "secret_key_ref", None)
             name = getattr(secret_ref, "name", None)
-            if isinstance(name, str) and name.startswith("pulumi-provisioner-secrets-"):
+            if isinstance(name, str) and _SENSITIVE_SECRET_NAME_INFIX in name:
                 return name
     return None
 
