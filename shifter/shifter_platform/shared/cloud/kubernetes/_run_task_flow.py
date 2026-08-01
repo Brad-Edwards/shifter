@@ -1,16 +1,13 @@
 """``run_task`` orchestration: resolve inputs, reconcile an existing
 deterministic Job, or build and submit a new one.
 
-Split out of the historical monolithic ``task_runner.py`` (#561).
+Extracted from the GCP task-runner package (#1824).
 """
 
 from __future__ import annotations
 
 import logging
 
-from django.conf import settings
-
-from shared.cloud.gcp.base import build_idempotent_job_name
 from shared.cloud.sensitive_env import split_env
 
 from ._job_lifecycle import (
@@ -20,52 +17,50 @@ from ._job_lifecycle import (
     _validate_observed_job,
 )
 from ._job_manifest import _build_env, _build_job
+from ._profile import KubernetesTaskProfile
 from ._secrets import (
     _build_secret_name,
     _cleanup_sensitive_secret,
     _ensure_sensitive_secret,
     _install_owner_reference_or_unwind,
 )
-from ._types import _JobIdentity, _JobLaunch, _KubernetesApis, _RunTaskContext
+from ._types import _JobIdentity, _JobLaunch, _KubernetesApis, _RunTaskContext, _TaskLaunchRequest
+from .naming import build_idempotent_job_name
 
 logger = logging.getLogger(__name__)
 
 
 def _build_run_context(
     apis: _KubernetesApis,
-    namespace: str,
-    image: str,
-    command: list[str],
-    container_name: str,
-    env_overrides: dict[str, str] | None,
-    task_identity: str | None,
+    request: _TaskLaunchRequest,
+    profile: KubernetesTaskProfile,
 ) -> _RunTaskContext:
     """Derive deterministic launch identities for one TaskRunner invocation."""
-    service_account_name = str(getattr(settings, "ENGINE_TASK_SERVICE_ACCOUNT_NAME", "") or "")
-    sensitive_env, _plain_env = split_env(env_overrides or {})
-    secret_name = _build_secret_name(container_name, task_identity) if sensitive_env else None
+    sensitive_env, _plain_env = split_env(request.env_overrides or {})
+    secret_name = _build_secret_name(request.container_name, request.task_identity) if sensitive_env else None
     identity = None
-    if task_identity:
+    if request.task_identity:
         identity = _JobIdentity(
-            job_name=build_idempotent_job_name(container_name, task_identity),
-            task_identity=task_identity,
-            image=image,
-            command=command,
-            container_name=container_name,
-            service_account_name=service_account_name,
+            job_name=build_idempotent_job_name(request.container_name, request.task_identity),
+            task_identity=request.task_identity,
+            image=request.image,
+            command=request.command,
+            container_name=request.container_name,
+            service_account_name=profile.service_account_name,
             secret_name=secret_name,
         )
     return _RunTaskContext(
         apis=apis,
-        namespace=namespace,
-        image=image,
-        command=command,
-        container_name=container_name,
-        env_overrides=env_overrides,
-        task_identity=task_identity,
+        namespace=request.namespace,
+        image=request.image,
+        command=request.command,
+        container_name=request.container_name,
+        env_overrides=request.env_overrides,
+        task_identity=request.task_identity,
         identity=identity,
         sensitive_env=sensitive_env,
         secret_name=secret_name,
+        profile=profile,
     )
 
 
@@ -91,6 +86,7 @@ def _existing_task_ref(context: _RunTaskContext) -> str | None:
             sensitive_env=context.sensitive_env,
             container_name=context.container_name,
             task_identity=context.task_identity,
+            runner_label_value=context.profile.runner_label_value,
         )
     _reconcile_observed_job(
         job=observed,
@@ -112,6 +108,7 @@ def _build_launch_job(context: _RunTaskContext) -> object:
             sensitive_env=context.sensitive_env,
             container_name=context.container_name,
             task_identity=context.task_identity,
+            runner_label_value=context.profile.runner_label_value,
         )
     try:
         env = _build_env(
@@ -125,6 +122,7 @@ def _build_launch_job(context: _RunTaskContext) -> object:
             context.container_name,
             context.command,
             env,
+            context.profile,
             task_identity=context.task_identity,
         )
     except Exception:

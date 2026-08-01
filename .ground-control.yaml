@@ -6,6 +6,16 @@ workflow:
   # consumed by the synchronized /implement workflow.
   completion_command: make test
   lint_command: python3 scripts/adr_guard/adr_guard.py --all --level ci
+  # Scope the /implement publish pre-commit gate to the staged (changed) files
+  # instead of the whole repo. Every pre-commit hook is already `files:`-scoped,
+  # so `pre-commit run` fires only the changed module's hooks (e.g. a
+  # shifter_platform-only change skips the packer/provisioner/bootstrap/
+  # installation/terraform/mcp test+lint hooks). CI's quality-path-ownership
+  # contract (ADR, `.github/quality-path-filters.yaml`) remains the authoritative
+  # full-matrix gate that guarantees blocking lint+security+test coverage for
+  # every production path, so this only removes redundant local re-runs. A
+  # developer may still run `pre-commit run --all-files` by hand.
+  precommit_command: pre-commit run
   codex_review:
     pre_push_cap: 1
   test_quality_review:
