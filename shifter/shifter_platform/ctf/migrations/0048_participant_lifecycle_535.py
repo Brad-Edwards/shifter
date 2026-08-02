@@ -27,7 +27,7 @@ def reconcile_invited_to_registered(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("ctf", "0046_content_hydration_receipt"),
+        ("ctf", "0047_drop_challenge_flag_hash"),
     ]
 
     operations = [
