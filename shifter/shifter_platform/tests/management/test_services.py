@@ -20,12 +20,12 @@ from django.utils import timezone
 
 from management import services
 from management.models import ActivityLog, UserProfile
-from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
 from shared.constants import USER_CANNOT_BE_NONE
+from shared.models import AuditLog
 
 pytestmark = pytest.mark.django_db
 

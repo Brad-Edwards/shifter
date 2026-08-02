@@ -7,10 +7,11 @@ the commands here reproduce its posture from a clean checkout.
 
 ## Running tests from a clean checkout
 
-The repository `Makefile` is the entrypoint. Each target syncs the package's
+The repository `Makefile` is the entrypoint. Each test target syncs the package's
 pinned dependencies (`uv sync --group dev` / `npm ci`) and establishes the same
 environment CI uses, so a fresh clone runs tests without hand-setting variables.
-`make help` lists every target.
+`make help` lists every target, including the non-test `devmain` promotion
+command (see `docs/DEVELOPMENT_WORKFLOW.md`).
 
 | Command | Lane |
 | --- | --- |
@@ -20,6 +21,7 @@ environment CI uses, so a fresh clone runs tests without hand-setting variables.
 | `make test-provisioner` | Engine provisioner suite |
 | `make test-installation` / `test-bootstrap` / `test-check-layer-imports` | Package suites |
 | `make test-js` | Platform JavaScript (Jest) with coverage |
+| `make test-adr-guard` | Repository-guard suite; mirrors the `adr-guard-tests` CI job |
 | `make test` | Every no-service lane at once |
 
 Running a package directly (`cd <pkg> && uv run pytest`) also works from a clean
@@ -67,7 +69,7 @@ time-bounded exception.
 | `scripts/check_layer_imports` | 96% | 95 |
 | `shifter/packer` | n/a (Packer HCL; no owned production Python) | not a coverage publisher |
 
-**Changed-code floor**, owned by the SonarCloud `aces-strict` quality gate,
+**Changed-code floor**, owned by the SonarCloud `raes-strict` quality gate,
 which fails a PR when `new_coverage < 80` (80% coverage on changed lines), plus
 `new_violations > 0`, new duplicated-lines density > 3%, any new rating worse than
 A, and new security hotspots not fully reviewed. PR analysis waits for the gate

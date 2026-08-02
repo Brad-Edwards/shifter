@@ -108,6 +108,10 @@ participant_patterns = [
     path("challenges/<uuid:challenge_id>/", _page(views.challenge_detail), name="challenge_detail"),
     # Range
     path("range/", _page(views.participant_range), name="participant_range"),
+    # CTF-owned terminal landing. The SPA opens the visible range target in the
+    # participant shell; legacy mode falls back to Range rather than crossing
+    # into the operator Mission Control shell.
+    path("terminal/", _page(views.participant_range), name="participant_terminal"),
     # Scoreboard
     path("scoreboard/", _page(views.scoreboard), name="scoreboard"),
     path(
@@ -199,6 +203,11 @@ admin_patterns = [
         "admin/participants/<uuid:participant_id>/delivery-email/",
         views.admin_participant_email,
         name="admin_participant_email",
+    ),
+    path(
+        "admin/participants/<uuid:participant_id>/password/",
+        views.admin_participant_password,
+        name="admin_participant_password",
     ),
     # Teams
     path("admin/events/<uuid:event_id>/teams/", _page(views.admin_team_list), name="admin_team_list"),

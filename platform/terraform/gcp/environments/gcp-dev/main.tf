@@ -60,6 +60,7 @@ module "platform_core" {
   artifact_registry_location        = var.artifact_registry_location
   gke_release_channel               = var.gke_release_channel
   range_network_cidr                = var.range_network_cidr
+  range_host_identity_pool_size     = var.range_host_identity_pool_size
   gke_subnet_cidr                   = var.gke_subnet_cidr
   gke_pods_cidr                     = var.gke_pods_cidr
   gke_services_cidr                 = var.gke_services_cidr
@@ -93,7 +94,8 @@ module "platform_core" {
   email_sender_domain               = var.email_sender_domain
   range_egress_mode                 = var.range_egress_mode
   range_egress_allowed_cidrs        = var.range_egress_allowed_cidrs
-  aces_package_bucket_name          = var.aces_package_bucket_name
+  raes_package_bucket_name          = var.raes_package_bucket_name
+  ctf_content_bucket_name           = var.ctf_content_bucket_name
   labels                            = local.labels
 
   messaging_enable_dlq                  = var.messaging_enable_dlq

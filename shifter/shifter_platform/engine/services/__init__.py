@@ -17,26 +17,39 @@ from django.db import transaction
 from engine.secrets import SecretsError, get_rdp_password, get_ssh_key
 from engine.ssh import SSHConnection
 
-from ._aces_evidence import record_aces_operation_status, record_aces_runtime_snapshot
-from ._aces_image import (
-    AcesImageMappingError,
-    AcesImageMappingOptions,
-    AcesImageMappingView,
-    disable_aces_image_mapping,
-    list_aces_image_mappings,
-    upsert_aces_image_mapping,
-)
-from ._aces_range import AcesRangeRef, create_aces_range
-from ._aces_status import project_aces_operation_status
 from ._capacity import (
     EventCapacitySignal,
     latest_capacity_declaration,
     record_capacity_declaration,
 )
+from ._capacity_admit import (
+    admit_range_capacity,
+    reconcile_capacity_budgets,
+    release_range_capacity,
+)
+from ._capacity_plan import (
+    EventCapacityRequest,
+    assess_declared_event_capacity,
+    assess_event_capacity,
+    release_capacity_reservations,
+)
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
+from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
 from ._queries import get_authoritative_range_status, get_ranges_for_ngfw, get_user_ready_range_instances
+from ._raes_evidence import record_raes_operation_status, record_raes_runtime_snapshot
+from ._raes_image import (
+    RaesImageMappingError,
+    RaesImageMappingOptions,
+    RaesImageMappingView,
+    disable_raes_image_mapping,
+    list_backend_artifacts,
+    list_raes_image_mappings,
+    upsert_raes_image_mapping,
+)
+from ._raes_range import RaesRangeRef, RangeBindings, create_raes_range
+from ._raes_status import project_raes_operation_status
 from ._range import (
     cancel_range,
     create_range,
@@ -50,8 +63,14 @@ from ._range_by_request import (
     destroy_range_by_request,
     range_owner_reassignment_available_by_request,
     reassign_range_owner_by_request,
+    rebind_range_workspace_by_request,
 )
 from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
+from ._subnet_coordination import (
+    read_subnet_reservation,
+    release_subnet_reservation,
+    reserve_subnet_cidrs,
+)
 from ._terminal import (
     connect_ngfw_terminal,
     connect_terminal,
@@ -67,14 +86,16 @@ from ._vpn import (
 )
 
 __all__ = (
-    "AcesImageMappingError",
-    "AcesImageMappingOptions",
-    "AcesImageMappingView",
-    "AcesRangeRef",
     "EngineError",
+    "EventCapacityRequest",
     "EventCapacitySignal",
     "GuestProbeError",
     "GuestProbeRequest",
+    "RaesImageMappingError",
+    "RaesImageMappingOptions",
+    "RaesImageMappingView",
+    "RaesRangeRef",
+    "RangeBindings",
     "RangeMembership",
     "RangeOwnershipTransferBlocked",
     "SSHConnection",
@@ -82,17 +103,22 @@ __all__ = (
     "VpnProfileConflict",
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
+    "admit_range_capacity",
+    "apply_pending_operation_results",
+    "assess_declared_event_capacity",
+    "assess_event_capacity",
     "cancel_range",
     "cancel_range_by_request",
     "connect_ngfw_terminal",
     "connect_terminal",
-    "create_aces_range",
     "create_ngfw",
+    "create_raes_range",
     "create_range",
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request",
-    "disable_aces_image_mapping",
+    "disable_raes_image_mapping",
+    "evaluate_operation_result",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
     "get_openvpn_profile",
@@ -106,18 +132,26 @@ __all__ = (
     "get_user_ready_range_instances",
     "has_openvpn_profile",
     "latest_capacity_declaration",
-    "list_aces_image_mappings",
+    "list_backend_artifacts",
+    "list_raes_image_mappings",
     "pause_range",
-    "project_aces_operation_status",
+    "project_raes_operation_status",
     "range_owner_reassignment_available_by_request",
+    "read_subnet_reservation",
     "reassign_range_owner_by_request",
-    "record_aces_operation_status",
-    "record_aces_runtime_snapshot",
+    "rebind_range_workspace_by_request",
+    "reconcile_capacity_budgets",
     "record_capacity_declaration",
+    "record_raes_operation_status",
+    "record_raes_runtime_snapshot",
+    "release_capacity_reservations",
+    "release_range_capacity",
+    "release_subnet_reservation",
+    "reserve_subnet_cidrs",
     "resume_range",
     "run_guest_probe",
     "start_ngfw",
     "stop_ngfw",
     "transaction",
-    "upsert_aces_image_mapping",
+    "upsert_raes_image_mapping",
 )

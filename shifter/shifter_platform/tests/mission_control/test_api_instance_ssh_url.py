@@ -149,6 +149,20 @@ class TestApiInstanceSSHURL:
         assert status.status_code == 400
         assert "not found" in _json(status)["error"].lower()
 
+    def test_membership_removal_revokes_instance_access(self, rf, user, guac_configured, range_ssh_instance):
+        from workspaces.models import WorkspaceMembership
+
+        range_ssh_instance(user)
+        WorkspaceMembership.objects.filter(user=user).delete()
+        request = _post_request(rf, user)
+
+        response = guacamole_ssh_url(request)
+
+        assert response.status_code == 202
+        status = _status_response(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
+        assert "permission denied" in _json(status)["error"].lower()
+
     def test_returns_503_when_guacamole_not_configured(self, rf, user, settings, range_ssh_instance, secrets_boundary):
         settings.GUACAMOLE_JSON_AUTH_SECRET = ""
         range_ssh_instance(user)

@@ -92,12 +92,12 @@ def get_user_profile(user: User) -> UserProfile:
     try:
         profile, created = UserProfile.objects.get_or_create(user=user)
         if created:
-            logger.debug("Created new profile for user %s", safe_log_value(user.email))
+            logger.debug("Created new profile for user id %s", user.pk)
         else:
-            logger.debug("Retrieved profile for user %s", safe_log_value(user.email))
+            logger.debug("Retrieved profile for user id %s", user.pk)
         return profile
     except Exception:
-        logger.exception("Failed to get/create profile for user %s", safe_log_value(user.email))
+        logger.exception("Failed to get/create profile for user id %s", user.pk)
         raise
 
 

@@ -61,6 +61,9 @@ class EventDetailSerializer(serializers.Serializer):
     reminder_hours = serializers.ListField(child=serializers.IntegerField(), read_only=True)
     event_timezone = serializers.CharField(read_only=True, allow_blank=True)
     capacity_hints = serializers.DictField(read_only=True)
+    logo_url = serializers.CharField(read_only=True, allow_blank=True)
+    visible_os_types = serializers.ListField(child=serializers.CharField(), read_only=True)
+    theme_color = serializers.CharField(read_only=True, allow_blank=True)
 
 
 class EventWriteSerializer(serializers.Serializer):
@@ -97,6 +100,9 @@ class EventWriteSerializer(serializers.Serializer):
     )
     event_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     capacity_hints = serializers.DictField(required=False)
+    logo_url = serializers.URLField(required=False, allow_blank=True, max_length=500)
+    visible_os_types = serializers.ListField(child=serializers.CharField(max_length=32), required=False, max_length=16)
+    theme_color = serializers.RegexField(r"^(#[0-9a-fA-F]{6})?$", required=False, allow_blank=True)
 
 
 class EventLifecycleRequestSerializer(serializers.Serializer):
@@ -185,7 +191,7 @@ class ChallengeWriteSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=200)
     description = serializers.CharField(required=False, allow_blank=True)
-    category = serializers.CharField(required=False, allow_blank=True)
+    category = serializers.CharField(required=False, allow_blank=True, max_length=100)
     points = serializers.IntegerField(required=False)
     difficulty = serializers.CharField(required=False, allow_blank=True)
     flag_format = serializers.CharField(required=False, allow_blank=True)

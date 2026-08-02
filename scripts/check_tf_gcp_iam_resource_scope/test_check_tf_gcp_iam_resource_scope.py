@@ -197,6 +197,37 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             f"expected provisioner custom-role violation, got: {reasons}",
         )
 
+    def test_custom_role_with_service_account_setiampolicy_bound_to_workload_is_rejected(self) -> None:
+        # ADR-008-R7 gateway-identity escalation: a project-level custom role
+        # granting the provisioner iam.serviceAccounts.setIamPolicy lets it seize
+        # any service account. The pool model removes this; re-adding it must fail.
+        module = _CLEAN_MODULE + textwrap.dedent(
+            """
+            resource "google_project_iam_custom_role" "prov_sa_admin" {
+              role_id     = "shifterProvSaAdmin"
+              title       = "prov sa admin"
+              permissions = [
+                "iam.serviceAccounts.create",
+                "iam.serviceAccounts.delete",
+                "iam.serviceAccounts.setIamPolicy",
+              ]
+            }
+
+            resource "google_project_iam_member" "prov_sa_admin" {
+              project = var.project_id
+              role    = google_project_iam_custom_role.prov_sa_admin.id
+              member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+            }
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(
+            any("custom role" in r and "provisioner" in r for r in reasons),
+            f"expected provisioner SA-admin custom-role violation, got: {reasons}",
+        )
+
     def test_custom_role_with_benign_permissions_is_allowed(self) -> None:
         module = _CLEAN_MODULE + textwrap.dedent(
             """
@@ -394,8 +425,8 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
             {workload: roles for workload, roles in self.bucket_roles.items()},
             {
                 # portal: objectAdmin on the assets bucket, and read-only
-                # objectViewer on the optional object-backed ACES package bucket
-                # (#1567, gated on aces_package_bucket_name).
+                # objectViewer on the optional object-backed RAES package bucket
+                # (#1567, gated on raes_package_bucket_name).
                 "portal": {"roles/storage.objectAdmin", "roles/storage.objectViewer"},
                 "workers": {"roles/storage.objectViewer"},
                 "provisioner": {"roles/storage.objectViewer", "roles/storage.objectAdmin"},
@@ -431,22 +462,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1).strip(), 'key != "guacamole-db"')
 
-    def test_literal_project_grants_are_exactly_the_residuals_and_scoped_vpn_act_as(self) -> None:
+    def test_literal_project_grants_are_exactly_the_residuals(self) -> None:
         # Secret/storage literals remain exactly the two ALLOWLIST residuals.
-        # The only additional literal is actAs, condition-scoped to generation
-        # OpenVPN identities rather than all project service accounts.
-        expected = set(ALLOWLIST.keys()) | {("provisioner", "roles/iam.serviceAccountUser")}
-        self.assertEqual(self.literal_project_grants, expected)
-        vpn_blocks = [
-            body
-            for name, _line, body in _extract_resource_blocks(self.lines, _PROJECT_IAM_MEMBER_RE)
-            if name == "provisioner_vpn_gateway_user"
-        ]
-        self.assertEqual(len(vpn_blocks), 1)
-        self.assertIn(
-            "resource.name.startsWith('projects/${var.project_id}/serviceAccounts/sh-vpn-')",
-            vpn_blocks[0],
-        )
+        self.assertEqual(self.literal_project_grants, set(ALLOWLIST.keys()))
         self.assertEqual(check_paths(sorted(LIVE_IAM_DIR.glob("*.tf"))), [])
 
 

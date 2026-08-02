@@ -13,12 +13,14 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from django.db import transaction
+
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag
 from ctf.services.authorization import assert_actor_owns_event as _assert_actor_owns_event
 from shared.log_sanitize import safe_log_value
 
-from ._flag_verify import _validate_http_config, _validate_programmable_config, hash_flag
+from ._flag_verify import _validate_programmable_config, hash_flag, validate_http_flag_config
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +79,7 @@ def _flag_hash_for_payload(
         _validate_programmable_config(validator_config)
         return "programmable"
 
-    _validate_http_config(validator_config)
+    validate_http_flag_config(validator_config)
     return "http"
 
 
@@ -168,25 +170,33 @@ def add_flag(
         validator_config=validator_config,
     )
 
-    flag_obj = CTFFlag.objects.create(
-        challenge=challenge,
-        flag_hash=stored_value,
-        flag_type=flag_type,
-        case_sensitive=case_sensitive,
-        order=order,
-        validator_config=validator_config,
-    )
+    with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
 
-    if challenge.event.is_live_flag_repairable:
-        from ctf.services.audit import audit_live_flag_repair
-
-        audit_live_flag_repair(
+        mark_content_hydration_drift(
+            challenge.event_id,
             actor_id=actor_id,
-            challenge_id=challenge.pk,
-            flag_id=flag_obj.pk,
-            event_id=challenge.event_id,
-            action="add",
+            reason="flag_added",
+            allow_live_repair=challenge.event.is_live_flag_repairable,
         )
+        flag_obj = CTFFlag.objects.create(
+            challenge=challenge,
+            flag_hash=stored_value,
+            flag_type=flag_type,
+            case_sensitive=case_sensitive,
+            order=order,
+            validator_config=validator_config,
+        )
+        if challenge.event.is_live_flag_repairable:
+            from ctf.services.audit import audit_live_flag_repair
+
+            audit_live_flag_repair(
+                actor_id=actor_id,
+                challenge_id=challenge.pk,
+                flag_id=flag_obj.pk,
+                event_id=challenge.event_id,
+                action="add",
+            )
 
     logger.info("Added flag %s to challenge %s", flag_obj.id, safe_log_value(challenge_id))
     return flag_obj
@@ -236,32 +246,40 @@ def update_flag(
         validator_config=validator_config,
     )
 
-    flag_obj.flag_hash = stored_value
-    flag_obj.flag_type = flag_type
-    flag_obj.case_sensitive = case_sensitive
-    flag_obj.order = order
-    flag_obj.validator_config = validator_config
-    flag_obj.save(
-        update_fields=[
-            "flag_hash",
-            "flag_type",
-            "case_sensitive",
-            "order",
-            "validator_config",
-            "updated_at",
-        ]
-    )
+    with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
 
-    if challenge.event.is_live_flag_repairable:
-        from ctf.services.audit import audit_live_flag_repair
-
-        audit_live_flag_repair(
+        mark_content_hydration_drift(
+            challenge.event_id,
             actor_id=actor_id,
-            challenge_id=challenge.pk,
-            flag_id=flag_obj.pk,
-            event_id=challenge.event_id,
-            action="update",
+            reason="flag_updated",
+            allow_live_repair=challenge.event.is_live_flag_repairable,
         )
+        flag_obj.flag_hash = stored_value
+        flag_obj.flag_type = flag_type
+        flag_obj.case_sensitive = case_sensitive
+        flag_obj.order = order
+        flag_obj.validator_config = validator_config
+        flag_obj.save(
+            update_fields=[
+                "flag_hash",
+                "flag_type",
+                "case_sensitive",
+                "order",
+                "validator_config",
+                "updated_at",
+            ]
+        )
+        if challenge.event.is_live_flag_repairable:
+            from ctf.services.audit import audit_live_flag_repair
+
+            audit_live_flag_repair(
+                actor_id=actor_id,
+                challenge_id=challenge.pk,
+                flag_id=flag_obj.pk,
+                event_id=challenge.event_id,
+                action="update",
+            )
 
     logger.info("Updated flag %s on challenge %s", flag_obj.id, challenge.pk)
     return flag_obj
@@ -295,18 +313,27 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
             details={"flag_id": str(flag_id), "event_status": flag_obj.challenge.event.status},
         )
 
-    if flag_obj.challenge.event.is_live_flag_repairable:
-        from ctf.services.audit import audit_live_flag_repair
+    with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
 
-        audit_live_flag_repair(
+        mark_content_hydration_drift(
+            flag_obj.challenge.event_id,
             actor_id=actor_id,
-            challenge_id=flag_obj.challenge_id,
-            flag_id=flag_obj.pk,
-            event_id=flag_obj.challenge.event_id,
-            action="remove",
+            reason="flag_removed",
+            allow_live_repair=flag_obj.challenge.event.is_live_flag_repairable,
         )
+        if flag_obj.challenge.event.is_live_flag_repairable:
+            from ctf.services.audit import audit_live_flag_repair
 
-    flag_obj.delete(soft=True)
+            audit_live_flag_repair(
+                actor_id=actor_id,
+                challenge_id=flag_obj.challenge_id,
+                flag_id=flag_obj.pk,
+                event_id=flag_obj.challenge.event_id,
+                action="remove",
+            )
+
+        flag_obj.delete(soft=True)
     logger.info("Removed flag %s", safe_log_value(flag_id))
 
 

@@ -71,14 +71,28 @@ variable "gke_master_authorized_cidrs" {
       can(cidrhost(cidr, 0))
       && can(regex("/[0-9]+$", cidr))
       && tonumber(regex("/([0-9]+)$", cidr)[0]) > 0
+      && (
+        (can(regex("^10\\.", cidr)) && tonumber(regex("/([0-9]+)$", cidr)[0]) >= 8)
+        || (
+          can(regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.", cidr))
+          && tonumber(regex("/([0-9]+)$", cidr)[0]) >= 12
+        )
+        || (can(regex("^192\\.168\\.", cidr)) && tonumber(regex("/([0-9]+)$", cidr)[0]) >= 16)
+      )
     ])
-    error_message = "Every gke_master_authorized_cidrs entry must be a valid CIDR with an explicit /N suffix (e.g. 10.0.0.0/24) and may not be a /0 (world-open) range. The control-plane endpoint is private (enable_private_endpoint = true) and reached over the IAM-authenticated DNS endpoint, so the list is optional and defaults to empty (see ADR-008 and docs/architecture/gke-control-plane-access-preflight.md)."
+    error_message = "Every gke_master_authorized_cidrs entry must be a valid RFC1918 IPv4 CIDR with an explicit /N suffix contained within 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16. The control-plane endpoint is private (enable_private_endpoint = true) and reached over Connect Gateway, so public CIDRs are rejected and the list should normally be empty (see ADR-008 and docs/architecture/gke-control-plane-access-preflight.md)."
   }
 }
 
 variable "range_network_cidr" {
   description = "Base CIDR reserved for Compute Engine range subnet allocation."
   type        = string
+}
+
+variable "range_host_identity_pool_size" {
+  description = "Number of pre-created service accounts available to preconfigured range hosts."
+  type        = number
+  default     = 0
 }
 
 variable "gke_pods_secondary_range_name" {
@@ -310,8 +324,14 @@ variable "vmseries_bootstrap_bucket_name" {
   default     = ""
 }
 
-variable "aces_package_bucket_name" {
-  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Empty grants the portal no binding on it (ADR-008-R7); set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) when a deployment enables object-backed ACES packages."
+variable "raes_package_bucket_name" {
+  description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Empty grants the portal no binding on it (ADR-008-R7); set it (with SHIFTER_RAES_PACKAGE_BUCKET on the app) when a deployment enables object-backed RAES packages."
+  type        = string
+  default     = ""
+}
+
+variable "ctf_content_bucket_name" {
+  description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Empty grants the portal no binding on it."
   type        = string
   default     = ""
 }

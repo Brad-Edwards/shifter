@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 from mission_control.api._vpn import MissionControlVpnProfileView
-from mission_control.api.aces import (
-    AcesOperationReceiptListView,
-    AcesOperationStatusListView,
-    AcesRuntimeSnapshotListView,
-)
-from mission_control.api.aces_participant import (
-    AcesParticipantImplementationListView,
-    AcesParticipantRuntimeListView,
-)
 from mission_control.api.guacamole import (
     GuacamoleBootstrapOpenView,
     GuacamoleBootstrapStatusView,
     GuacamoleNGFWSSHURLView,
     GuacamoleRangeSSHURLView,
     GuacamoleRDPURLView,
+)
+from mission_control.api.raes import (
+    RaesOperationReceiptListView,
+    RaesOperationStatusListView,
+    RaesRuntimeSnapshotListView,
+)
+from mission_control.api.raes_participant import (
+    RaesParticipantImplementationListView,
+    RaesParticipantRuntimeListView,
 )
 from mission_control.api.ranges import (
     AgentListView,
@@ -39,7 +39,6 @@ from mission_control.api.resources import (
     NGFWListView,
 )
 from mission_control.api.uploads import UploadCancelView, UploadCompleteView, UploadInitiateView
-from mission_control.views._guacamole import _get_guac_settings
 
 # Function-style handles for the Mission Control DRF views, used by unit tests
 # that exercise view behaviour directly. The ``/api/v1/mission-control/`` URLconf
@@ -69,11 +68,6 @@ api_credential_create = CredentialCreateView.as_view()
 api_credential_delete = CredentialDeleteView.as_view()
 
 __all__ = (
-    "AcesOperationReceiptListView",
-    "AcesOperationStatusListView",
-    "AcesParticipantImplementationListView",
-    "AcesParticipantRuntimeListView",
-    "AcesRuntimeSnapshotListView",
     "AgentListView",
     "CancelRangeView",
     "CredentialCreateView",
@@ -92,13 +86,17 @@ __all__ = (
     "NGFWDestroyView",
     "NGFWListView",
     "PauseRangeView",
+    "RaesOperationReceiptListView",
+    "RaesOperationStatusListView",
+    "RaesParticipantImplementationListView",
+    "RaesParticipantRuntimeListView",
+    "RaesRuntimeSnapshotListView",
     "RangeHistoryView",
     "ResumeRangeView",
     "ScenarioListView",
     "UploadCancelView",
     "UploadCompleteView",
     "UploadInitiateView",
-    "_get_guac_settings",
     "api_credential_create",
     "api_credential_delete",
     "api_ngfw_create",

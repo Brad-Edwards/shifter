@@ -28,10 +28,13 @@ from __future__ import annotations
 from cms.assets.services import AgentUploadSpec
 from cms.assets.services import create_agent as assets_create_agent
 from cms.assets.services import delete_agent as assets_delete_agent
-from cms.exceptions import CMSError
+from cms.exceptions import CMSError, WorkspaceLaunchDenied
 from cms.models import AgentConfig, RangeInstance
+from cms.scenarios.images import project_scenario_images
 from cms.signals import range_status_changed as range_status_changed
 from engine.services import EventCapacitySignal as EngineEventCapacitySignal
+from engine.services import admit_range_capacity as engine_admit_range_capacity
+from engine.services import assess_declared_event_capacity as engine_assess_declared_event_capacity
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
 from engine.services import create_range as engine_create_range
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
@@ -43,16 +46,17 @@ from engine.services import (
     range_owner_reassignment_available_by_request as engine_range_owner_reassignment_available,
 )
 from engine.services import reassign_range_owner_by_request as engine_reassign_range_owner
+from engine.services import rebind_range_workspace_by_request as engine_rebind_range_workspace
 from engine.services import (
     record_capacity_declaration as engine_record_capacity_declaration,
 )
+from engine.services import release_capacity_reservations as engine_release_capacity_reservations
+from engine.services import release_range_capacity as engine_release_range_capacity
 from engine.services import resume_range as engine_resume_range
 from shared.audit import (
     AuditEvent,
     audit_log,
 )
-
-from ._aces_range_create import create_aces_native_range, create_range_dispatch
 
 # --- Public service functions ------------------------------------------------
 from ._agents import (
@@ -75,11 +79,18 @@ from ._ngfws import (
     get_ngfw,
     list_ngfws,
 )
+from ._non_user_range_launch import NonUserWorkflow, create_non_user_range
 from ._queries import (
     find_range_instance_id_by_request,
     get_range_spec_by_id,
     get_range_status_by_id,
     get_range_target_instances,
+)
+from ._raes_range_create import create_raes_native_range, create_range_dispatch
+from ._range_access import (
+    connect_range_terminal,
+    get_range_rdp_connection_info,
+    get_range_ssh_connection_info,
 )
 from ._range_create import create_range
 from ._range_destroy import (
@@ -145,6 +156,7 @@ __all__ = (
     "CtfOpenVpnProfileNotFound",
     "CtfOpenVpnProfileUnavailable",
     "EngineEventCapacitySignal",
+    "NonUserWorkflow",
     "OpenVpnProfileConflict",
     "OpenVpnProfileNotFound",
     "OpenVpnProfileUnavailable",
@@ -153,6 +165,7 @@ __all__ = (
     "RangeLeaseConflict",
     "RangeLeaseNotFound",
     "RegisteredPack",
+    "WorkspaceLaunchDenied",
     "assets_create_agent",
     "assets_delete_agent",
     "audit_log",
@@ -160,10 +173,12 @@ __all__ = (
     "cancel_range_by_request_id",
     "cancel_upload",
     "complete_upload",
-    "create_aces_native_range",
+    "connect_range_terminal",
     "create_agent",
     "create_credential",
     "create_ngfw",
+    "create_non_user_range",
+    "create_raes_native_range",
     "create_range",
     "create_range_dispatch",
     "delete_agent",
@@ -171,6 +186,8 @@ __all__ = (
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request_id",
+    "engine_admit_range_capacity",
+    "engine_assess_declared_event_capacity",
     "engine_cancel_range_by_request",
     "engine_create_range",
     "engine_destroy_range_by_request",
@@ -180,7 +197,10 @@ __all__ = (
     "engine_pause_range",
     "engine_range_owner_reassignment_available",
     "engine_reassign_range_owner",
+    "engine_rebind_range_workspace",
     "engine_record_capacity_declaration",
+    "engine_release_capacity_reservations",
+    "engine_release_range_capacity",
     "engine_resume_range",
     "expire_due_ranges",
     "extend_mission_control_range",
@@ -195,7 +215,9 @@ __all__ = (
     "get_ngfw",
     "get_range",
     "get_range_by_request_id",
+    "get_range_rdp_connection_info",
     "get_range_spec_by_id",
+    "get_range_ssh_connection_info",
     "get_range_status_by_id",
     "get_range_target_instances",
     "get_scenario",
@@ -213,6 +235,7 @@ __all__ = (
     "list_scenarios",
     "pause_range",
     "pause_range_by_request_id",
+    "project_scenario_images",
     "range_owner_reassignment_available",
     "range_status_changed",
     "reassign_range_owner",

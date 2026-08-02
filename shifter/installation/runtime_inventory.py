@@ -20,6 +20,32 @@ GCP_GENERATED_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platfor
 GCP_SECRET_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platform-runtime-secrets.env")
 GCP_BACKEND_OWNER = "gcp backend"
 
+# Public settings and secret references that an AWS EKS deployment must project
+# into the shared chart. The EKS lifecycle validates this inventory before Helm
+# can mutate a release, so a new runtime consumer cannot silently disappear from
+# the provider renderer.
+AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
+    {
+        "AWS_REGION",
+        "ENGINE_TASK_CLUSTER",
+        "ENGINE_TASK_DEFINITION",
+        "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID",
+        "ENGINE_TASK_NETWORK_SUBNET_IDS",
+        "OIDC_AUTH_DOMAIN",
+        "OIDC_ISSUER_URL",
+        "OIDC_RP_CLIENT_ID",
+        "OIDC_SECRET_ID",
+        "QUEUE_CMS_CONSUMER_ID",
+        "QUEUE_CMS_PUBLISHER_ID",
+        "QUEUE_ENGINE_CONSUMER_ID",
+        "QUEUE_ENGINE_PUBLISHER_ID",
+        "QUEUE_MC_CONSUMER_ID",
+        "QUEUE_MC_PUBLISHER_ID",
+        "RANGE_EVENTS_TOPIC_ID",
+        "STORAGE_BUCKET_NAME",
+    }
+)
+
 GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "APP_SECRET_ID",
@@ -99,6 +125,7 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # value. MAILGUN_SENDER_DOMAIN is emitted only for the Mailgun backend.
         "DEFAULT_FROM_EMAIL",
         "EMAIL_API_KEY_SECRET_ID",
+        "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL",
         "GCP_RANGE_CELL_NETWORK_MODE",
         "GCP_RANGE_DC_DISK_SIZE_GB",
         "GCP_RANGE_DC_DISK_TYPE",
@@ -106,6 +133,7 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GCP_RANGE_DC_MACHINE_TYPE",
         "GCP_RANGE_EGRESS_ALLOW_CIDRS",
         "GCP_RANGE_HOST_MGMT_SSH_PORT",
+        "GCP_RANGE_HOST_IDENTITY_POOL_SIZE",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
         "GCP_RANGE_KALI_ANTHROPIC_MODEL",
@@ -113,6 +141,7 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GCP_RANGE_KALI_DISK_SIZE_GB",
         "GCP_RANGE_KALI_DISK_TYPE",
         "GCP_RANGE_KALI_IMAGE",
+        "GCP_RANGE_IMAGE_KEY_PROFILES_JSON",
         "GCP_RANGE_KALI_MACHINE_TYPE",
         "GCP_RANGE_LINUX_DISK_SIZE_GB",
         "GCP_RANGE_LINUX_DISK_TYPE",
@@ -131,6 +160,9 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "POLARIS_TESTS_BUCKET",
         "POLARIS_TESTS_KEY",
         "RANGE_NETWORK_ZONE",
+        "SHIFTER_CTF_CONTENT_BUCKET",
+        "SHIFTER_CTF_CONTENT_MAX_BYTES",
+        "SHIFTER_CTF_CONTENT_PREFIX",
     }
 )
 
@@ -157,6 +189,7 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "DB_USER",
         "ENGINE_TASK_IMAGE",
         "GCP_PROJECT_ID",
+        "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL",
         "GCP_RANGE_BACKEND",
         "GCP_RANGE_CELL_NETWORK_MODE",
         "GCP_RANGE_DC_DISK_SIZE_GB",
@@ -165,6 +198,7 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GCP_RANGE_DC_MACHINE_TYPE",
         "GCP_RANGE_EGRESS_ALLOW_CIDRS",
         "GCP_RANGE_HOST_MGMT_SSH_PORT",
+        "GCP_RANGE_HOST_IDENTITY_POOL_SIZE",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
         "GCP_RANGE_KALI_ANTHROPIC_MODEL",
@@ -172,6 +206,7 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "GCP_RANGE_KALI_DISK_SIZE_GB",
         "GCP_RANGE_KALI_DISK_TYPE",
         "GCP_RANGE_KALI_IMAGE",
+        "GCP_RANGE_IMAGE_KEY_PROFILES_JSON",
         "GCP_RANGE_KALI_MACHINE_TYPE",
         "GCP_RANGE_LINUX_DISK_SIZE_GB",
         "GCP_RANGE_LINUX_DISK_TYPE",
@@ -195,7 +230,6 @@ GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "POLARIS_TESTS_BUCKET",
         "POLARIS_TESTS_KEY",
         "PORTAL_NETWORK_CIDRS",
-        "RANGE_EVENTS_TOPIC_ID",
         "RANGE_NETWORK_CIDR",
         "RANGE_NETWORK_ID",
         "RANGE_NETWORK_REGION",

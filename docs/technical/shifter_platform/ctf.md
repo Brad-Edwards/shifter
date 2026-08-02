@@ -44,6 +44,7 @@ inherit `CTFBaseModel` with a `SoftDeleteManager` (soft delete by default).
 | `CTFChallengeRating` | Participant difficulty ratings |
 | `CTFHint`, `CTFHintUsage` | Optional, point-reducing hints and usage tracking |
 | `CTFNotification`, `CTFEmailTemplate`, `CTFScheduledTask` | Announcements, reminder templates, and scheduled work |
+| `CTFContentHydrationReceipt` | Digest, object-identity fingerprints, bounded counts, and pristine/drifted state for scenario-managed event content |
 
 Flags are persisted only as hashes (`flag_hash`); plaintext is never stored after
 challenge creation, and submission checking compares against the hash.
@@ -59,6 +60,41 @@ Business logic lives under `ctf.services` (views stay thin):
   fallback (`get_scoreboard`, `calculate_score`, ranks, stats, timeline, and the
   `recompute_*` maintenance helpers).
 - `authorization`, `audit`: access checks and audit trail.
+
+### Scenario content hydration
+
+`ctf.services.content_resolution` resolves a deployment-owned scenario
+reference through the provider-neutral `shared.cloud.ObjectStorage` protocol.
+It performs a bounded head/download with an ETag, generation, or version
+precondition, verifies the declared SHA-256 digest before parsing, and removes
+temporary bytes in `finally`. Provider errors, object coordinates, validator
+configuration, and bundle bodies do not cross the public error boundary.
+
+`ctf.content_bundle` is a closed, data-only
+`shifter-ctf-content/v1` contract. It validates resource bounds, challenge
+identities and orders, native flag policy, prerequisite references, and the
+complete DAG before a database transaction begins. It supports native static,
+regex, and HTTPS HTTP validators; it does not execute package code or enable
+programmable validators.
+
+Event creation composes the resolver with
+`ctf.services.hydrate_event_ctf_content`. The service locks the event, checks
+ownership and state, writes the graph through native challenge/hint/prerequisite
+services, creates one receipt, and records a strict audit event in one atomic
+transaction. An exact pristine replay is a no-op. Foreign rows, changed source
+evidence, shape mismatch, or a drifted receipt fail closed.
+
+All native organizer mutation paths mark an existing receipt drifted inside
+their transaction. Both manual and scheduled activation require a pristine
+receipt whose scenario and digest match current deployment configuration.
+Scenarios without a configured content reference retain existing behavior.
+
+The deployment reference catalog is the separate closed contract
+`shifter-ctf-content-references/v1`, parsed at startup from private deployment
+configuration. This feature does not reuse the RAES package catalog or persist
+bundle bodies in scenario/event JSON. See the
+[operator runbook](../../dev/ctf-scenario-content) for publication, provider
+IAM, runtime settings, rotation, and failure recovery.
 
 ### Range Provisioning
 
@@ -85,7 +121,7 @@ CMS range services, the same path Mission Control uses to launch a range.
   row keyed on participant + old range + strategy; resumption after a partial failure is
   data-driven (recorded replacement id and the live old-range status), so retries never
   duplicate the replacement or the audit row. The old range is always destroyed; there
-  is no disposition/forensics-retention choice. Recovery writes one `risk_register` audit
+  is no disposition/forensics-retention choice. Recovery writes one shared audit
   row.
 - `spares.py`: `provision_event_spares(event_id, target_count, *, operator=None)` tops up
   an event's prewarmed spare-range pool (`CTFEvent.spare_range_count`), each spare owned by
@@ -148,3 +184,5 @@ Two management commands operate the event runtime:
 
 - [CTF](../../features/ctf): participant guide.
 - [CTF Organizer Guide](../../features/ctf-organizer-guide): running an event.
+- [Native CTF scenario content](../../dev/ctf-scenario-content): private
+  publication and deployment binding.

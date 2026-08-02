@@ -1,0 +1,59 @@
+/**
+ * Organization admin console surface manifest and selection resolution (#1938,
+ * PLAT-231). This slice owns the shell, routing, switcher, context, and
+ * capability-aware navigation only; each surface here is a route *slot* whose
+ * behavior lands with its own issue (PLAT-232–240).
+ *
+ * `requiredOperation`, when present, names a `WorkspaceOperation` code the
+ * selected workspace's role must permit for the surface to be enabled in the
+ * in-console navigation. It is advisory presentation only: the server derives
+ * capabilities centrally and every future endpoint reauthorizes. TypeScript must
+ * never compare role strings to reconstruct policy.
+ */
+import type { PrincipalWorkspaceContext } from "@/api/types";
+
+/** A workspace-scoped console slot, optionally gated on a workspace capability. */
+export interface WorkspaceSurface {
+  readonly key: string;
+  readonly label: string;
+  /** Advisory capability code; absent means "always shown (later slice)". */
+  readonly requiredOperation?: string;
+}
+
+/** Workspace-scoped slots reached under a selected workspace UUID. */
+export const WORKSPACE_SURFACES: readonly WorkspaceSurface[] = [
+  { key: "membership", label: "Membership", requiredOperation: "read_members" },
+  { key: "invitations", label: "Invitations" },
+  { key: "users", label: "Users" },
+  { key: "range-scoping", label: "Range scoping" },
+  { key: "policy", label: "Policy" },
+  { key: "quota", label: "Quota" },
+  { key: "audit", label: "Audit" },
+];
+
+/** True when the selected workspace's advisory capabilities permit the surface. */
+export function surfaceEnabled(surface: WorkspaceSurface, selected: PrincipalWorkspaceContext | null): boolean {
+  if (!surface.requiredOperation) return true;
+  return Boolean(selected?.capabilities.includes(surface.requiredOperation));
+}
+
+/**
+ * Resolve the selected workspace from a route UUID against the loaded contexts.
+ *
+ * - An exact UUID match wins.
+ * - A missing route UUID falls back to the first (deterministically ordered)
+ *   workspace so the console always opens on a real workspace.
+ * - An *invalid or stale* supplied UUID never silently becomes another workspace
+ *   (in particular never the personal one): it resolves to `null` so the caller
+ *   renders an honest "workspace not found" state instead of leaking a different
+ *   tenant's scope.
+ * - No workspaces at all resolves to `null` (honest empty state).
+ */
+export function resolveSelectedWorkspace(
+  contexts: readonly PrincipalWorkspaceContext[],
+  workspaceUuid: string | undefined,
+): PrincipalWorkspaceContext | null {
+  if (contexts.length === 0) return null;
+  if (workspaceUuid === undefined) return contexts[0];
+  return contexts.find((ctx) => ctx.workspace_uuid === workspaceUuid) ?? null;
+}

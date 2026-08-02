@@ -187,6 +187,44 @@ validate_bool() {
   fi
 }
 
+validate_ctf_content_location() {
+  local bucket="$1"
+  local prefix="$2"
+  local max_bytes="$3"
+
+  if [[ -z "$bucket" ]]; then
+    if [[ -n "$prefix" || -n "$max_bytes" ]]; then
+      echo "Invalid CTF content configuration: prefix and max bytes require a bucket" >&2
+      exit 1
+    fi
+    return
+  fi
+  if [[ ! "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_BUCKET" >&2
+    exit 1
+  fi
+  if [[ ! "$prefix" =~ ^[A-Za-z0-9._/-]+/$ || "$prefix" == /* || "$prefix" == *..* ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_PREFIX" >&2
+    exit 1
+  fi
+  if [[ -z "$max_bytes" ]]; then
+    echo "Invalid SHIFTER_CTF_CONTENT_MAX_BYTES: required with bucket" >&2
+    exit 1
+  fi
+}
+
+# validate_slug_pairs accepts empty (the preserved-legacy posture) or a
+# comma-separated list of public=source slug pairs, matching the Django settings
+# parser and user_data.sh. Rejects anything that could inject into docker argv.
+validate_slug_pairs() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && ! "$value" =~ ^[A-Za-z0-9_-]+=[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+=[A-Za-z0-9_-]+)*$ ]]; then
+    echo "Invalid ${name}: expected comma-separated public=source slug pairs" >&2
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -276,14 +314,14 @@ run_containers() {
   # (issue #931). DOCKER_STOP_TIMEOUT must stay below the ASG termination drain.
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
-  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
+  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
   # Force-remove so a redeploy is idempotent. `docker stop` above does the
   # graceful drain (#931); a plain `docker rm` then fails for any container
   # still running (e.g. one the stop did not fully stop / a restart-policy
   # race), the failure is swallowed by `|| true`, and the subsequent
   # `docker run --name <x>` aborts with "name already in use". `-f` removes
   # regardless of state so the new containers always get their names.
-  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune aces-operation-record-prune 2>/dev/null || true
+  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
@@ -300,15 +338,21 @@ run_containers() {
   docker run -d --name worker-reconciler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-reconciler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py reconcile_range_events --loop --interval 60
+  docker run -d --name worker-provisioner-launcher --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/worker-provisioner-launcher-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py drain_provisioner_launch_outbox --loop --interval 10
+  docker run -d --name worker-operation-result-applier --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/worker-operation-result-applier-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py apply_operation_results --loop --interval 10
   docker run -d --name ctf-scheduler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_ctf_scheduler
   docker run -d --name guacamole-bootstrap-prune --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/guacamole-bootstrap-prune-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_guacamole_bootstrap_prune
-  docker run -d --name aces-operation-record-prune --restart unless-stopped "${worker_health_base[@]}" \
-    "--health-cmd=find /tmp/aces-operation-record-prune-heartbeat -mmin -2 | grep -q ." \
-    "${common_env[@]}" "$image" python manage.py run_aces_operation_record_prune
+  docker run -d --name raes-operation-record-prune --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/raes-operation-record-prune-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py run_raes_operation_record_prune
   docker ps
 }
 
@@ -320,6 +364,9 @@ main() {
   local ecr_repository
   local domain_name
   local s3_bucket
+  local ctf_content_bucket
+  local ctf_content_prefix
+  local ctf_content_max_bytes
   local db_secret_arn
   local app_secret_arn
   local cognito_secret_arn
@@ -368,6 +415,9 @@ main() {
   ecr_repository=$(get_param "$PS_PREFIX/ecr-repository")
   domain_name=$(get_param "$PS_PREFIX/domain-name")
   s3_bucket=$(get_param "$PS_PREFIX/s3-bucket")
+  ctf_content_bucket=$(get_optional_param "$PS_PREFIX/ctf-content-bucket")
+  ctf_content_prefix=$(get_optional_param "$PS_PREFIX/ctf-content-prefix")
+  ctf_content_max_bytes=$(get_optional_param "$PS_PREFIX/ctf-content-max-bytes")
   db_secret_arn=$(get_param "$PS_PREFIX/db-secret-arn")
   app_secret_arn=$(get_param "$PS_PREFIX/app-secret-arn")
   cognito_secret_arn=$(get_param "$PS_PREFIX/cognito-secret-arn")
@@ -398,6 +448,8 @@ main() {
   platform_bootstrap_superuser_emails=$(get_optional_param "$PS_PREFIX/platform-bootstrap-superuser-emails")
   validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_STAFF_EMAILS" "$platform_bootstrap_staff_emails"
   validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS" "$platform_bootstrap_superuser_emails"
+  validate_ctf_content_location "$ctf_content_bucket" "$ctf_content_prefix" "$ctf_content_max_bytes"
+  validate_positive_int "SHIFTER_CTF_CONTENT_MAX_BYTES" "$ctf_content_max_bytes"
 
   # Portal runtime capacity tunables (#930). Each is process-local: the
   # per-instance ceiling is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS. Read the
@@ -429,6 +481,16 @@ main() {
   # as a non-secret env var (topic ARN, not a credential).
   range_events_topic_id=$(get_optional_param "$PS_PREFIX/range-events-topic-id")
 
+  # RAES default cutover (#1310, ADR-031-R6): capability gate + source-route
+  # selector. Same parameter names user_data.sh reads, so the redeploy path
+  # delivers them fleet-uniform too; validated (boolean + slug-pair grammar)
+  # before docker argv. The route param is absent in the preserved-legacy
+  # posture and simply not emitted.
+  shifter_raes_native_provisioning=$(get_optional_param "$PS_PREFIX/shifter-raes-native-provisioning")
+  shifter_raes_catalog_cutovers=$(get_optional_param "$PS_PREFIX/shifter-raes-catalog-cutovers")
+  validate_bool "SHIFTER_RAES_NATIVE_PROVISIONING" "$shifter_raes_native_provisioning"
+  validate_slug_pairs "SHIFTER_RAES_CATALOG_CUTOVERS" "$shifter_raes_catalog_cutovers"
+
   local image
   image=$(image_ref "$ecr_registry" "$ecr_repository" "$image_digest" "$image_tag")
   echo "Deploying image: $image"
@@ -438,6 +500,11 @@ main() {
   append_env CLOUD_PROVIDER "$cloud_provider"
   append_env AWS_REGION "$AWS_REGION"
   append_env AWS_S3_BUCKET_NAME "$s3_bucket"
+  if [[ -n "$ctf_content_bucket" ]]; then
+    append_env SHIFTER_CTF_CONTENT_BUCKET "$ctf_content_bucket"
+    append_env SHIFTER_CTF_CONTENT_PREFIX "$ctf_content_prefix"
+    append_env SHIFTER_CTF_CONTENT_MAX_BYTES "$ctf_content_max_bytes"
+  fi
   append_env DB_SECRET_ARN "$db_secret_arn"
   append_env APP_SECRET_ARN "$app_secret_arn"
   append_env COGNITO_SECRET_ARN "$cognito_secret_arn"
@@ -483,6 +550,8 @@ main() {
   append_env_if_set PORTAL_CAPACITY_METRICS_ENABLED "$portal_capacity_metrics_enabled"
   append_env_if_set PORTAL_WORKER_SOFT_CONCURRENCY "$portal_worker_soft_concurrency"
   append_env_if_set RANGE_EVENTS_TOPIC_ID "$range_events_topic_id"
+  append_env_if_set SHIFTER_RAES_NATIVE_PROVISIONING "$shifter_raes_native_provisioning"
+  append_env_if_set SHIFTER_RAES_CATALOG_CUTOVERS "$shifter_raes_catalog_cutovers"
 
   run_migrations "$image" "${DOCKER_ENV[@]}"
   if [[ "$MIGRATE_ONLY" == "true" ]]; then

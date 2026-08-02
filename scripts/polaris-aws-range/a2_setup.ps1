@@ -293,7 +293,7 @@ $adminFlagRoot = "C:\Shares\admin_flag"
 New-Item -ItemType Directory -Path $adminFlagRoot -Force | Out-Null
 Set-Content -Path "$adminFlagRoot\flag.txt" -Value "FLAG{6c0a9d4e7f2b8135}" -Encoding UTF8
 
-# NTFS: disable inheritance and strip non-admin ACEs.
+# NTFS: disable inheritance and strip non-admin access-control entries.
 $ntfs = Get-Acl $adminFlagRoot
 $ntfs.SetAccessRuleProtection($true, $false)
 foreach ($rule in $ntfs.Access) { $ntfs.RemoveAccessRule($rule) | Out-Null }

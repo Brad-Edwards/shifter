@@ -18,10 +18,15 @@ from django.contrib.auth import get_user_model
 from cms.exceptions import CMSError
 from cms.scenarios.hydrator import hydrate_scenario
 from shared.schemas import RangeSpec
+from shared.schemas.persistence import validate_persisted_spec, wrap_persisted_spec
 
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
+
+# The portal-visible POLARIS scenario shipped at
+# `cms/scenarios/templates/polaris.yaml`.
+POLARIS_SCENARIO_ID = "polaris"
 
 BASIC_DEF = {
     "instances": [
@@ -258,3 +263,85 @@ class TestHydrateScenarioSerialization:
         assert isinstance(dumped, dict)
         assert dumped["scenario_id"] == basic_scenario.scenario_id
         assert dumped["user_id"] == user.id
+
+
+class TestHydratePolarisPortalTemplate:
+    """Shifter-path regression coverage for the shipped POLARIS portal template.
+
+    POLARIS is the parity-proving Polaris surface (#1237/#1239), but its parity
+    evidence was the standalone `scripts/polaris-aws-range` script — the exact
+    "do not rely on the standalone path" anti-pattern the legacy-stability
+    guardrails call out — so the portal-visible template could break in the
+    operator path with nothing catching it. These tests drive the shipped YAML
+    through the path an operator actually launches (registry → loader → hydrator)
+    and on into the persisted-spec envelope the Engine writes, with no live
+    cloud, AMI, or credential dependency.
+    """
+
+    @pytest.fixture
+    def polaris_range_spec(self, user):
+        """Hydrate the shipped `polaris` template through the real Shifter path."""
+        from cms.models import Scenario
+
+        # DB customs take precedence in `registry.load_scenario_template`, so a
+        # stray `polaris` row would make this class silently cover the wrong
+        # source. Fail loudly instead of testing a fixture.
+        assert not Scenario.objects.filter(scenario_id=POLARIS_SCENARIO_ID).exists()
+        # POLARIS authors no `xdr_agent` or `from_agent` instance, so it hydrates
+        # with an empty agent mapping and needs no credentials.
+        return hydrate_scenario(POLARIS_SCENARIO_ID, user.id, {})
+
+    def test_hydrates_the_boreas_topology(self, user, polaris_range_spec):
+        """The shipped template yields the BOREAS.LOCAL attacker + domain-controller pair."""
+        assert isinstance(polaris_range_spec, RangeSpec)
+        assert polaris_range_spec.scenario_id == POLARIS_SCENARIO_ID
+        assert polaris_range_spec.user_id == user.id
+
+        by_name = {instance.name: instance for instance in polaris_range_spec.all_instances}
+        assert set(by_name) == {"kali", "dc01"}
+        assert (by_name["kali"].role, by_name["kali"].os_type) == ("attacker", "kali")
+        assert (by_name["dc01"].role, by_name["dc01"].os_type) == ("dc", "windows")
+        assert by_name["dc01"].dc_config is not None
+        assert by_name["dc01"].dc_config.domain_name == "boreas.local"
+        assert by_name["dc01"].dc_config.netbios_name == "BOREAS"
+
+    def test_preserves_the_authored_provisioning_overrides(self, polaris_range_spec):
+        """`ami_key` and the Kali `instance_type` override survive hydration.
+
+        Dropping either silently provisions POLARIS from the wrong image, or onto
+        a box too small for the 17-container docker-compose stack the Kali host
+        runs.
+        """
+        by_name = {instance.name: instance for instance in polaris_range_spec.all_instances}
+        assert by_name["kali"].ami_key == "polaris-vm"
+        assert by_name["dc01"].ami_key == "polaris-dc"
+        assert by_name["kali"].instance_type == "m5.2xlarge"
+
+    def test_places_both_instances_on_the_polaris_subnet(self, polaris_range_spec):
+        """Both authored instances land on the single `polaris` subnet."""
+        assert [subnet.name for subnet in polaris_range_spec.subnets] == ["polaris"]
+        assert {instance.name for instance in polaris_range_spec.subnets[0].instances} == {"kali", "dc01"}
+
+    def test_binds_participant_access_to_the_hydrated_kali_uuid(self, polaris_range_spec):
+        """The authored ssh/rdp channels resolve to Kali's hydrated member UUID."""
+        kali = next(instance for instance in polaris_range_spec.all_instances if instance.name == "kali")
+
+        assert {(binding.target_ref, binding.channel) for binding in polaris_range_spec.participant_access} == {
+            (kali.uuid, "ssh"),
+            (kali.uuid, "rdp"),
+        }
+
+    def test_wraps_into_a_valid_persisted_range_spec(self, polaris_range_spec):
+        """The hydrated spec survives the Engine's persisted-spec envelope.
+
+        Mirrors `engine.services._range._persist_range_atomically`, which wraps the
+        RangeSpec with `wrap_persisted_spec("range_spec", ...)` before storing it on
+        the Range. Re-validating the envelope proves the POLARIS spec is persistable,
+        without creating Engine rows or dispatching provisioning.
+        """
+        wrapped = wrap_persisted_spec("range_spec", polaris_range_spec)
+        assert wrapped["spec_schema"] == "range_spec"
+
+        revalidated = validate_persisted_spec(wrapped, "range_spec")
+        assert isinstance(revalidated, RangeSpec)
+        assert revalidated == polaris_range_spec

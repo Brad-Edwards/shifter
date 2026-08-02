@@ -78,6 +78,21 @@ class AWSTaskRunner:
         failure_reasons = [f.get("reason", "unknown") for f in failures]
         raise CloudTaskError(f"No tasks started for {task_definition}: {failure_reasons}")
 
+    @staticmethod
+    def interrupt_task(
+        cluster: str,
+        task_ref: str,
+        expected_identity: dict[str, Any],
+        grace_seconds: int | None = None,
+    ) -> str:
+        # ECS StopTask-based interruption is deferred to #1894; this scope wires
+        # only the GCP path. Fail closed rather than silently no-op, so an AWS
+        # cancellation never converges to a false "destroyed" — the range stays
+        # DESTROYING and retryable. (Cancel does not record an interrupt for AWS
+        # generations today, so this stub is not reached on the RAES/GCP path.)
+        del cluster, task_ref, expected_identity, grace_seconds
+        raise CloudTaskError("AWS ECS task interruption is not supported in this scope (#1894)")
+
     def get_task_status(self, cluster: str, task_id: str) -> dict[str, Any] | None:
         logger.debug("get_task_status: cluster=%s task_id=%s", cluster, task_id)
         try:

@@ -119,6 +119,37 @@ class TestSelfHostedClassLabels(unittest.TestCase):
         self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": ["ubuntu-latest"]}))
 
 
+class TestExpressionOperandCoverage(unittest.TestCase):
+    """#1874: the evaluator resolves the operands `_quality.yml` conditions use.
+
+    That workflow writes its conditions in the wrapped ``${{ }}`` form, and the
+    Sonar scan gate is an exact comparison against ``github.repository`` that
+    must stay independent of whether ``vars.SONAR_*`` are set. Without unwrap,
+    repository, and ``vars`` support the gate could only be substring-matched -
+    the failure mode this whole suite exists to avoid.
+    """
+
+    def test_wrapped_expressions_are_unwrapped_before_evaluation(self):
+        self.assertTrue(ADR_GUARD._dw_evaluate_if("${{ always() }}"))
+        self.assertFalse(
+            ADR_GUARD._dw_evaluate_if(
+                "${{ github.event_name == 'pull_request' }}", event_name="push"
+            )
+        )
+
+    def test_repository_identity_is_resolvable(self):
+        expr = "github.repository == 'Brad-Edwards/shifter'"
+        # The permissive default is the canonical repository, so only the
+        # scenario under test flips the outcome.
+        self.assertTrue(ADR_GUARD._dw_evaluate_if(expr))
+        self.assertFalse(ADR_GUARD._dw_evaluate_if(expr, repository="a-fork/shifter"))
+
+    def test_repository_variables_are_resolvable_and_can_be_unset(self):
+        expr = "vars.SONAR_PROJECT_KEY != ''"
+        self.assertTrue(ADR_GUARD._dw_evaluate_if(expr))
+        self.assertFalse(ADR_GUARD._dw_evaluate_if(expr, vars_set=False))
+
+
 class TestUpstreamGating(unittest.TestCase):
     """#781: a failed/cancelled upstream must block every deploy job."""
 
@@ -223,6 +254,18 @@ class TestManualDeployDispatch(unittest.TestCase):
         # The Set environment step keys on the workflow_dispatch `environment`
         # input; the old branch-name `case` router (and prod path) are gone.
         self.assertIn('case "$ENVIRONMENT"', self.script)
+
+    def test_aws_platform_uses_the_explicit_eks_bundle_entrypoint(self):
+        platform = _load("_shifter-platform.yml")
+        job = platform["jobs"]["eks-deploy"]
+        rendered = str(job)
+
+        self.assertIn("scripts/bootstrap/deploy.py eks-deploy", rendered)
+        self.assertIn("SHIFTER_CONFIG_", rendered)
+        self.assertIn("needs.build.outputs.image_digest", rendered)
+        self.assertNotIn("github.ref", rendered)
+        self.assertIn("__legacy-disabled__", platform["jobs"]["plan"]["if"])
+        self.assertIn("__legacy-disabled__", platform["jobs"]["deploy"]["if"])
         self.assertNotIn("GITHUB_REF#refs/heads/", self.script)
         self.assertNotIn("aws-prod", self.script)
 
@@ -369,6 +412,169 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
         self.assertNotIn("scenario-smoketest-tests", self.jobs)
 
 
+class TestTflintPluginAuthentication(unittest.TestCase):
+    """#1850: TFLint plugin downloads use the job-scoped GitHub token."""
+
+    def test_tflint_init_avoids_unauthenticated_api_rate_limit(self):
+        quality = _load("_quality.yml")
+        jobs = ADR_GUARD._dw_jobs(quality, "_quality.yml")
+        terraform_lint = jobs["terraform-lint"]
+        init_step = next(
+            step
+            for step in terraform_lint.get("steps", [])
+            if step.get("name") == "Init TFLint"
+        )
+        self.assertEqual(
+            init_step.get("env", {}).get("GITHUB_TOKEN"),
+            "${{ github.token }}",
+        )
+
+
+class TestSonarScannerIdentity(unittest.TestCase):
+    """#1874 / ADR-003-R7: Sonar project identity is repository configuration.
+
+    The project key and organization come from non-secret repository variables
+    instead of the committed properties file, and the scan attempt is gated on
+    the canonical repository rather than on those variables being set. The
+    gating half is the security-relevant one: `if: vars.SONAR_PROJECT_KEY != ''`
+    would make a renamed or deleted variable delete the SonarCloud quality gate
+    from `PR Gate` with a green check and no failure anywhere. Evaluating the
+    condition (rather than matching its text) is what proves a presence guard
+    has not crept back in.
+    """
+
+    CANONICAL_REPOSITORY = "Brad-Edwards/shifter"
+    IDENTITY_PROPERTIES = (
+        "sonar.projectKey",
+        "sonar.organization",
+        "sonar.projectName",
+    )
+    # Shared analysis configuration that must stay committed - the guard against
+    # over-deleting while removing identity.
+    SHARED_PROPERTIES = (
+        "sonar.projectVersion",
+        "sonar.sources",
+        "sonar.tests",
+        "sonar.exclusions",
+        "sonar.security.exclusions",
+        "sonar.coverage.exclusions",
+        "sonar.python.coverage.reportPaths",
+        "sonar.javascript.lcov.reportPaths",
+        "sonar.sourceEncoding",
+        "sonar.issue.ignore.multicriteria",
+        "sonar.html.fileHeader",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        jobs = ADR_GUARD._dw_jobs(_load("_quality.yml"), "_quality.yml")
+        cls.scan_step = next(
+            step
+            for step in ADR_GUARD._dw_job_steps(jobs["sonarcloud"])
+            if step.get("name") == "SonarQube Cloud scan"
+        )
+        cls.scan_if = cls.scan_step.get("if", "")
+        cls.args = str(cls.scan_step.get("with", {}).get("args", ""))
+        cls.property_keys = {
+            line.split("=", 1)[0].strip()
+            for line in (REPO_ROOT / "sonar-project.properties")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if "=" in line and not line.lstrip().startswith("#")
+        }
+
+    def test_identity_properties_are_not_committed(self):
+        for prop in self.IDENTITY_PROPERTIES:
+            self.assertNotIn(
+                prop,
+                self.property_keys,
+                f"{prop} must not travel with the source (ADR-003-R7)",
+            )
+
+    def test_shared_analysis_configuration_stays_committed(self):
+        for prop in self.SHARED_PROPERTIES:
+            self.assertIn(
+                prop,
+                self.property_keys,
+                f"{prop} is shared analysis configuration and belongs in the repo",
+            )
+
+    def test_scan_reads_identity_from_repository_variables(self):
+        self.assertIn("-Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}", self.args)
+        self.assertIn("-Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}", self.args)
+
+    def test_canonical_repository_always_attempts_the_scan(self):
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if, repository=self.CANONICAL_REPOSITORY
+            ),
+            "the canonical repository must always attempt the Sonar scan",
+        )
+
+    def test_unset_variables_do_not_skip_the_scan(self):
+        # The regression this test exists for: a presence guard makes the
+        # scanner no-op and the quality gate vanish silently. With the identity
+        # gate the scanner receives an empty key and fails loudly instead.
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if,
+                repository=self.CANONICAL_REPOSITORY,
+                vars_set=False,
+            ),
+            "the scan must not be gated on SONAR_PROJECT_KEY / SONAR_ORGANIZATION "
+            "being set - an unset variable has to fail the scanner, not skip it",
+        )
+
+    def test_other_repositories_skip_the_scan(self):
+        self.assertFalse(
+            ADR_GUARD._dw_evaluate_if(self.scan_if, repository="someone/shifter"),
+            "SonarCloud is this project's tooling choice, not a dependency "
+            "imposed on anyone who cloned the repo — their runs must skip it",
+        )
+
+    def test_fork_origin_pull_requests_skip_the_scan(self):
+        # A fork PR runs in the base repository's context, so the identity test
+        # passes, but GitHub withholds secrets from it. Without this the scan
+        # fails on an empty SONAR_TOKEN and an outside contributor gets a red
+        # check they cannot fix.
+        self.assertFalse(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if,
+                repository=self.CANONICAL_REPOSITORY,
+                event_name="pull_request",
+                fork_pr=True,
+            ),
+            "a fork-origin pull request must skip the scan, not fail on a "
+            "secret it can never be given",
+        )
+
+    def test_same_repository_pull_requests_still_scan(self):
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(
+                self.scan_if,
+                repository=self.CANONICAL_REPOSITORY,
+                event_name="pull_request",
+                fork_pr=False,
+            ),
+            "a branch PR inside the canonical repository must still be analyzed",
+        )
+
+    def test_token_stays_out_of_scanner_argv(self):
+        self.assertEqual(
+            self.scan_step.get("env", {}).get("SONAR_TOKEN"),
+            "${{ secrets.SONAR_TOKEN }}",
+        )
+        self.assertNotIn(
+            "SONAR_TOKEN",
+            self.args,
+            "the analysis token must never reach the scanner's argv",
+        )
+
+    def test_pull_request_quality_gate_wait_survives(self):
+        self.assertIn("-Dsonar.qualitygate.wait=true", self.args)
+        self.assertIn("github.event_name == 'pull_request'", self.args)
+
+
 class TestGithubEnvironmentBinding(unittest.TestCase):
     """#935 / ADR-003-R5: mutating deploy jobs bind a GitHub Environment."""
 
@@ -391,6 +597,22 @@ class TestGithubEnvironmentBinding(unittest.TestCase):
                     "${{ inputs.github_environment }}",
                     f"{name}:{jid} must bind the github_environment input (ADR-003-R5)",
                 )
+
+
+class TestGcpPrivateControlPlaneAccess(unittest.TestCase):
+    """#1850: every GCP deploy credential refresh stays on Connect Gateway."""
+
+    def test_gcp_deploy_never_reverts_to_direct_endpoint_credentials(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("google-github-actions/get-gke-credentials@", workflow)
+        self.assertGreaterEqual(
+            workflow.count("gcloud container fleet memberships get-credentials"),
+            2,
+            "GCP deploy must configure Connect Gateway before bootstrap work and "
+            "refresh it before applying workloads",
+        )
 
 
 class TestProvisionerDeployTestGate(unittest.TestCase):
@@ -752,6 +974,76 @@ class TestWorkflowActionShaPinning(unittest.TestCase):
             ),
             [],
         )
+
+
+class CloudCredentialClassificationTests(unittest.TestCase):
+    """Broadened ADR-037-R1 credential classification (#998 codex security finding).
+
+    A job or workflow that holds a named secret - static ``env`` / step ``with``
+    values, a ``secrets:`` mapping, ``secrets: inherit``, or a workflow-level
+    ``env`` secret - is credential-bearing, so its remote actions must be
+    SHA-pinned even without OIDC or a recognized auth action. GITHUB_TOKEN alone
+    does not qualify (it is present by default and its elevated uses are already
+    covered by the permission/OIDC markers).
+    """
+
+    DW = ADR_GUARD.deploy_workflow
+
+    def test_static_env_secret_makes_job_credentialed(self):
+        job = {"runs-on": "ubuntu-latest", "env": {"AWS_SECRET_ACCESS_KEY": "${{ secrets.AWS_SECRET }}"}}
+        self.assertTrue(self.DW._dw_job_is_cloud_credentialed(job))
+
+    def test_secret_passed_to_step_with_makes_job_credentialed(self):
+        job = {
+            "runs-on": "ubuntu-latest",
+            "steps": [{"uses": "some/action@v1", "with": {"token": "${{ secrets.DEPLOY_TOKEN }}"}}],
+        }
+        self.assertTrue(self.DW._dw_job_is_cloud_credentialed(job))
+
+    def test_secrets_inherit_makes_job_credentialed(self):
+        self.assertTrue(
+            self.DW._dw_job_is_cloud_credentialed(
+                {"uses": "./.github/workflows/reusable.yml", "secrets": "inherit"}
+            )
+        )
+
+    def test_secrets_mapping_makes_job_credentialed(self):
+        job = {
+            "uses": "./.github/workflows/reusable.yml",
+            "secrets": {"SONAR_TOKEN": "${{ secrets.SONAR_TOKEN }}"},
+        }
+        self.assertTrue(self.DW._dw_job_is_cloud_credentialed(job))
+
+    def test_github_token_alone_is_not_credentialed(self):
+        job = {"runs-on": "ubuntu-latest", "env": {"GH": "${{ secrets.GITHUB_TOKEN }}"}}
+        self.assertFalse(self.DW._dw_job_is_cloud_credentialed(job))
+
+    def test_workflow_level_env_secret_makes_workflow_credentialed(self):
+        wf = {
+            "env": {"TF_TOKEN": "${{ secrets.TF_API_TOKEN }}"},
+            "jobs": {"a": {"runs-on": "ubuntu-latest", "steps": [{"uses": "x/y@v1"}]}},
+        }
+        self.assertTrue(self.DW._dw_workflow_is_cloud_credentialed(wf))
+
+    def test_github_token_only_workflow_stays_uncredentialed(self):
+        wf = {
+            "jobs": {
+                "a": {
+                    "runs-on": "ubuntu-latest",
+                    "env": {"GH": "${{ secrets.GITHUB_TOKEN }}"},
+                    "steps": [{"uses": "x/y@v1"}],
+                }
+            }
+        }
+        self.assertFalse(self.DW._dw_workflow_is_cloud_credentialed(wf))
+
+    def test_quality_workflow_is_credentialed_and_all_actions_pinned(self):
+        # _quality.yml receives SONAR_TOKEN, so it must classify as credentialed;
+        # ADR-037-R1 then requires every remote action across the repo's workflows
+        # to be SHA-pinned. Regression for the #998 finding and its fix.
+        wf = ADR_GUARD._dw_load_workflow(REPO_ROOT, ".github/workflows/_quality.yml")
+        self.assertTrue(self.DW._dw_workflow_is_cloud_credentialed(wf))
+        self.assertEqual(ADR_GUARD.check_workflow_action_sha_pinning(REPO_ROOT, None), [])
 
 
 if __name__ == "__main__":

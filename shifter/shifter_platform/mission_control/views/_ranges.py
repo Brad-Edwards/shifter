@@ -10,13 +10,14 @@ from django.contrib.auth.models import User
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
+from cms.services import WorkspaceLaunchDenied
 from mission_control.utils import build_connection_urls
-from shared.aces.presentation import build_range_aces_projection, build_range_participant_runtime_projection
 from shared.audit import AuditAction
 from shared.auth import block_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
+from shared.raes.presentation import build_range_participant_runtime_projection, build_range_raes_projection
 
 from ._common import _audit_range_lifecycle, _get_user, _logger, _pkg
 
@@ -56,20 +57,20 @@ def get_range(request: HttpRequest) -> JsonResponse:
                 "has_range": False,
                 "range": None,
                 "connection_urls": [],
-                "aces_projection": None,
-                "aces_participant_runtime": None,
+                "raes_projection": None,
+                "raes_participant_runtime": None,
             }
         )
 
-    projection = build_range_aces_projection(active_range.request_id)
+    projection = build_range_raes_projection(active_range.request_id)
     participant_runtime = build_range_participant_runtime_projection(active_range.request_id, active_range.instances)
     return JsonResponse(
         {
             "has_range": True,
             "range": active_range.model_dump(mode="json"),
             "connection_urls": build_connection_urls(active_range.instances),
-            "aces_projection": projection.to_payload() if projection else None,
-            "aces_participant_runtime": participant_runtime.to_payload() if participant_runtime else None,
+            "raes_projection": projection.to_payload() if projection else None,
+            "raes_participant_runtime": participant_runtime.to_payload() if participant_runtime else None,
         }
     )
 
@@ -123,7 +124,14 @@ def launch_range(request: HttpRequest) -> JsonResponse:
             raise _RangeError(JsonResponse({"error": "Invalid scenario"}, status=400))
         agents_by_os = _resolve_launch_agents(user, data)
         try:
-            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os)
+            # Optional public workspace selection (ADR-046-R9); the internal
+            # workspace_id is resolved and authorized in cms.services, and a
+            # malformed/unauthorized UUID is denied there rather than trusted.
+            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os, workspace_uuid=data.get("workspace_uuid"))
+        except WorkspaceLaunchDenied as e:
+            # Authorized-shape but unavailable scope is one opaque 403 (ADR-046-R9);
+            # a malformed UUID would be a 400 at input validation.
+            raise _RangeError(JsonResponse({"error": "Selected workspace is not available."}, status=403)) from e
         except CMSError as e:
             _logger().exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
             # Preserve the "already have an active range" guidance for the UI

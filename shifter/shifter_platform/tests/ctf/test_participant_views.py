@@ -14,9 +14,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from ctf.enums import ParticipantStatus
-from ctf.models import CTFParticipant
-
-from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
+from ctf.models import CTFChallenge, CTFParticipant
 
 # The team_join error path renders a template that uses {% static %}; force the
 # non-manifest static storage so the render does not require a built manifest.
@@ -24,6 +22,79 @@ _SIMPLE_STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
+
+
+class TestParticipantChallengeListView:
+    @override_settings(
+        PLATFORM_SPA_ENABLED=False,
+        CTF_WORKSPACE_SPA_ENABLED=False,
+        STORAGES=_SIMPLE_STORAGES,
+    )
+    def test_renders_category_filters(
+        self, authenticated_participant_client, participant_user, ctf_participant, ctf_challenge
+    ):
+        from management.services import set_active_ctf_event
+
+        set_active_ctf_event(participant_user, ctf_participant.event_id)
+
+        response = authenticated_participant_client.get(reverse("ctf:challenges"))
+
+        assert response.status_code == 200
+        assert response.context["categories"] == [("web", "Web Exploitation")]
+        assert b"Web Exploitation" in response.content
+        assert ctf_challenge.name.encode() in response.content
+
+    @override_settings(
+        PLATFORM_SPA_ENABLED=False,
+        CTF_WORKSPACE_SPA_ENABLED=False,
+        STORAGES=_SIMPLE_STORAGES,
+    )
+    def test_renders_authored_mission_category(
+        self, authenticated_participant_client, participant_user, ctf_participant, ctf_challenge
+    ):
+        from management.services import set_active_ctf_event
+
+        ctf_challenge.category = "Mission 2 — Inside Boreas"
+        ctf_challenge.save(update_fields=["category"])
+        set_active_ctf_event(participant_user, ctf_participant.event_id)
+
+        response = authenticated_participant_client.get(reverse("ctf:challenges"))
+
+        assert response.status_code == 200
+        assert response.context["categories"] == [("Mission 2 — Inside Boreas", "Mission 2 — Inside Boreas")]
+        assert "Mission 2 — Inside Boreas" in response.content.decode()
+
+    @override_settings(
+        PLATFORM_SPA_ENABLED=False,
+        CTF_WORKSPACE_SPA_ENABLED=False,
+        STORAGES=_SIMPLE_STORAGES,
+    )
+    def test_pins_start_here_before_authored_missions(
+        self, authenticated_participant_client, participant_user, ctf_participant, ctf_challenge
+    ):
+        from management.services import set_active_ctf_event
+
+        ctf_challenge.category = "Mission 1 — Boreas"
+        ctf_challenge.save(update_fields=["category"])
+        CTFChallenge.objects.create(
+            event=ctf_participant.event,
+            name="Start Here — Kali Warm-Up",
+            description="Read the orientation note.",
+            category="Start Here",
+            points=50,
+            difficulty="easy",
+            flag_hash="$2b$12$warmup_hash_placeholder",
+        )
+        set_active_ctf_event(participant_user, ctf_participant.event_id)
+
+        response = authenticated_participant_client.get(reverse("ctf:challenges"))
+
+        assert response.status_code == 200
+        assert response.context["categories"] == [
+            ("Start Here", "Start Here"),
+            ("Mission 1 — Boreas", "Mission 1 — Boreas"),
+        ]
+        assert list(response.context["challenges_by_category"]) == ["Start Here", "Mission 1 — Boreas"]
 
 
 class TestAdminParticipantListView:
@@ -533,10 +604,10 @@ class TestAPIParticipantImport:
 
 
 class TestAPIParticipantResendInvite:
-    """Tests for resetting and delivering participant credentials."""
+    """Compatibility invitation resend never mutates participant credentials."""
 
-    def test_resend_resets_password(self, authenticated_organizer_client, ctf_event, monkeypatch):
-        """The compatibility endpoint performs an explicit credential reset."""
+    def test_resend_preserves_password(self, authenticated_organizer_client, ctf_event, monkeypatch):
+        """The compatibility endpoint sends login information without a secret."""
         from ctf.services.participant.accounts import create_participant_accounts
 
         monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -557,10 +628,10 @@ class TestAPIParticipantResendInvite:
 
         assert response.status_code == 200
         participant.user.refresh_from_db()
-        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
+        assert participant.user.check_password("ChangedPassword-42")
 
     def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_event, monkeypatch):
-        """Reset works for an already registered isolated account."""
+        """Resend works for an already registered isolated account."""
         from ctf.services.participant.accounts import create_participant_accounts
 
         monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -578,8 +649,7 @@ class TestAPIParticipantResendInvite:
         data = response.json()
         assert data["success"] is True
         participant.user.refresh_from_db()
-        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
-        assert participant.user.profile.must_change_password is True
+        assert participant.user.check_password("PreviouslyChangedPassword-42")
 
 
 class TestTeamJoinCapacityGuard:

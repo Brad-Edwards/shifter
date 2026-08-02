@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from django.utils.decorators import method_decorator
+from django.views.decorators.debug import sensitive_post_parameters
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.request import Request
@@ -22,6 +24,7 @@ from ctf.api.organizer._base import (
     _pagination_window,
     _participant_detail_payload,
     _raise_bad_request,
+    _raise_forbidden,
     _raise_not_found,
     _raise_throttled,
     _resolve_owned_event,
@@ -37,6 +40,8 @@ from ctf.api.serializers import (
     ParticipantInviteResultSerializer,
     ParticipantInviteSerializer,
     ParticipantListResponseSerializer,
+    ParticipantPasswordRequestSerializer,
+    ParticipantPasswordResultSerializer,
     ResendInviteResultSerializer,
 )
 from shared.log_sanitize import safe_log_value
@@ -205,14 +210,14 @@ class ParticipantDetailView(APIView):
 
 
 class ParticipantResendInviteView(APIView):
-    """Reset and resend a participant's credentials (POST)."""
+    """Deprecated invitation-information resend (POST, no credential mutation)."""
 
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(request=None, responses=ResendInviteResultSerializer)
+    @extend_schema(request=None, responses=ResendInviteResultSerializer, deprecated=True)
     def post(self, request: Request, participant_id: UUID) -> Response:
-        """Rate-limit, enforce ownership, then reset and resend the invite."""
+        """Rate-limit, enforce ownership, then resend non-secret login information."""
         from ctf.exceptions import CTFStateError, CTFValidationError
         from ctf.services import resend_invite
         from ctf.views._access import _check_credential_delivery_rate_limit
@@ -229,6 +234,73 @@ class ParticipantResendInviteView(APIView):
                 # as a controlled 400, never an uncaught 500.
                 _raise_bad_request(_INVALID_PARTICIPANT_REQUEST)
             return Response({"success": True, "id": str(updated.id), "invited": True})
+        except _CtfApiError as exc:
+            return exc.to_response(request)
+
+
+@method_decorator(sensitive_post_parameters("password"), name="dispatch")
+class ParticipantPasswordView(APIView):
+    """Issue one generated or organizer-supplied participant password."""
+
+    permission_classes = CTF_ORGANIZER_PERMISSIONS
+    required_write_scopes = _EVENT_WRITE
+
+    @extend_schema(
+        request=ParticipantPasswordRequestSerializer,
+        responses={200: ParticipantPasswordResultSerializer},
+    )
+    def post(self, request: Request, participant_id: UUID) -> Response:
+        """Authorize, rate-limit, issue, and return the password once."""
+        from ctf.exceptions import CTFNotFoundError, CTFValidationError
+        from ctf.services import reset_participant_password
+        from ctf.views._access import _check_credential_delivery_rate_limit
+        from shared.audit import RequestAudit, get_client_ip, get_request_id
+
+        try:
+            _resolve_owned_participant(request, participant_id, capability="participants")
+            try:
+                allowed = _check_credential_delivery_rate_limit(_actor(request).pk)
+            except Exception as exc:
+                raise _CtfApiError(
+                    code="service_unavailable",
+                    message="Credential service is temporarily unavailable.",
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                ) from exc
+            if not allowed:
+                _raise_throttled("Too many credential operations. Try again later.")
+            serializer = ParticipantPasswordRequestSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            try:
+                issuance = reset_participant_password(
+                    participant_id,
+                    actor=_actor(request),
+                    kind=serializer.validated_data["kind"],
+                    password=serializer.validated_data.get("password"),
+                    request_audit=RequestAudit(
+                        source_ip=get_client_ip(request),
+                        user_agent=request.META.get("HTTP_USER_AGENT", "")[:512],
+                        request_id=get_request_id(request),
+                    ),
+                )
+            except CTFNotFoundError:
+                _raise_not_found(_PARTICIPANT_NOT_FOUND)
+            except CTFValidationError as exc:
+                if exc.code == "CTF_PERMISSION_DENIED":
+                    _raise_forbidden()
+                _raise_bad_request(_INVALID_PARTICIPANT_REQUEST)
+            response = Response(
+                {
+                    "participant_id": str(issuance.participant_id),
+                    "event_id": str(issuance.event_id),
+                    "username": issuance.username,
+                    "password": issuance.password,
+                    "kind": issuance.kind,
+                }
+            )
+            response["Cache-Control"] = "private, no-store"
+            response["Pragma"] = "no-cache"
+            response["Vary"] = "Cookie, Authorization"
+            return response
         except _CtfApiError as exc:
             return exc.to_response(request)
 

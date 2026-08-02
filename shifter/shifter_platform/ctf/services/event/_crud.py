@@ -59,6 +59,9 @@ _EVENT_MUTABLE_FIELDS = frozenset(
         "reminder_hours",
         "event_timezone",
         "capacity_hints",
+        "logo_url",
+        "visible_os_types",
+        "theme_color",
     }
 )
 
@@ -71,8 +74,11 @@ def _validate_scoring_mode(event_data: dict[str, Any]) -> None:
     than persisting an invalid value that would later fall back to standard.
     """
     from ctf.enums import ScoringMode
+    from ctf.extensions import registered_scoring_modes
 
     if "scoring_mode" not in event_data:
+        return
+    if event_data["scoring_mode"] in registered_scoring_modes():
         return
     try:
         ScoringMode(event_data["scoring_mode"])
@@ -85,6 +91,22 @@ def _validate_scoring_mode(event_data: dict[str, Any]) -> None:
                 "valid_modes": [m.value for m in ScoringMode],
             },
         ) from None
+
+
+def _validate_content_scenario_access(user: User, scenario_id: str) -> None:
+    """Authorize configured content through the existing CTF launch catalog."""
+    from django.conf import settings
+
+    if settings.CTF_CONTENT_REFERENCES.get(scenario_id) is None:
+        return
+
+    from ctf.bridges import cms_list_scenarios
+
+    if scenario_id not in {available_id for available_id, _name in cms_list_scenarios(user)}:
+        raise CTFValidationError(
+            "Scenario is not available for CTF event creation.",
+            code="CTF_SCENARIO_NOT_AVAILABLE",
+        )
 
 
 def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
@@ -125,6 +147,11 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     # Filter to allowed fields only — prevent mass assignment of status,
     # created_by, id, timestamps, etc.
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
+    scenario_id = str(safe_data.get("scenario_id", CTFEvent._meta.get_field("scenario_id").default))
+    _validate_content_scenario_access(user, scenario_id)
+    from ctf.services.content_resolution import resolve_scenario_ctf_content
+
+    resolved_content = resolve_scenario_ctf_content(scenario_id)
 
     with transaction.atomic():
         event = CTFEvent.objects.create(
@@ -132,6 +159,10 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
             status=EventStatus.DRAFT.value,
             **safe_data,
         )
+        if resolved_content is not None:
+            from ctf.services.content_hydration import hydrate_event_ctf_content
+
+            hydrate_event_ctf_content(event.pk, resolved_content, actor_id=user.pk)
 
         logger.info("Created CTF event %s: %s", event.id, event.name)
 
@@ -235,6 +266,14 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     _validate_scoring_mode(event_data)
 
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
+    if "scenario_id" in safe_data and safe_data["scenario_id"] != event.scenario_id:
+        from ctf.models import CTFContentHydrationReceipt
+
+        if CTFContentHydrationReceipt.objects.filter(event=event).exists():
+            raise CTFStateError(
+                "A hydrated event cannot change scenarios.",
+                code="CTF_CONTENT_SCENARIO_IMMUTABLE",
+            )
     old_event_start = event.event_start
     old_event_end = event.event_end
     cleanup_may_change = bool({"event_end", "cleanup_delay_hours"} & safe_data.keys())

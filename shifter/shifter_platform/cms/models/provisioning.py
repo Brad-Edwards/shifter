@@ -100,6 +100,18 @@ class Request(SoftDeleteMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="requests",
     )
+    # Soft reference to workspaces.Workspace (ADR-046-R3, #1325). A scalar, not a
+    # ForeignKey: cross-layer FKs are prohibited (ADR-001-R2), so CMS carries the
+    # workspace's internal ID and resolves it through workspaces.services.
+    # Non-null with no default: every request carries a real tenancy scope. The
+    # column was introduced nullable so historical rows could be validated and
+    # backfilled, then made mandatory once that completed (cms migration 0040).
+    # A default would let a creation path persist a placeholder tenant, which is
+    # exactly what the non-null constraint exists to prevent.
+    workspace_id = models.IntegerField(
+        db_index=True,
+        help_text="Workspace this request was launched in (soft reference; see ADR-046).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
 

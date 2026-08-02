@@ -52,6 +52,10 @@ class Range(models.Model):
         blank=True,
         help_text="User ID from CMS (may differ from Django user.id)",
     )
+    # Soft reference to workspaces.Workspace (ADR-046-R3, #1325): a scalar, not a
+    # cross-layer FK (ADR-001-R2), supplied by the trusted CMS launch path. Non-null
+    # with no default -- unlike the backend binding below, NULL is not a sentinel.
+    workspace_id = models.IntegerField(db_index=True, help_text="Workspace scope (soft reference; ADR-046).")
     ngfw_instance = models.ForeignKey(
         "Instance",
         on_delete=models.SET_NULL,
@@ -115,6 +119,11 @@ class Range(models.Model):
         help_text="Subnet CIDR (e.g., 10.1.5.0/24)",
     )
     subnet_index = models.PositiveIntegerField(null=True, blank=True, help_text="Unique index for CIDR allocation")
+    # ADR-008-R7: reserved slot into the pre-provisioned GCP OpenVPN gateway SA
+    # pool (sh-vpn-pool-<slot>); freed implicitly by the destroy/failed status.
+    vpn_gateway_pool_slot = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Reserved GCP OpenVPN gateway SA pool slot (single-project pool)"
+    )
     victim_ip = models.GenericIPAddressField(null=True, blank=True)
     victim_instance_id = models.CharField(
         max_length=50,
@@ -370,6 +379,46 @@ class Range(models.Model):
             raise ValueError(
                 f"No subnet indices available. Maximum {cls.SUBNET_INDEX_MAX} "
                 "concurrent ranges supported. Destroy some ranges first."
+            )
+
+    @classmethod
+    def allocate_vpn_gateway_slot(cls) -> int:
+        """Reserve the next free GCP OpenVPN gateway SA pool slot (ADR-008-R7).
+
+        Uses the same table-level EXCLUSIVE lock as ``allocate_subnet_index`` to
+        serialize concurrent allocations. The pool is bounded by
+        ``settings.VPN_GATEWAY_POOL_SIZE`` and must match the number of
+        ``sh-vpn-pool-<slot>`` service accounts Terraform pre-creates. A slot is
+        freed implicitly when its range reaches a terminal (DESTROYED/FAILED)
+        status, so no explicit release path is needed. Returns the 0-based slot;
+        raises ValueError if the pool is unset or exhausted.
+        """
+        from django.conf import settings
+        from django.db import connection
+
+        pool_size = int(getattr(settings, "VPN_GATEWAY_POOL_SIZE", 0))
+        if pool_size <= 0:
+            raise ValueError("VPN_GATEWAY_POOL_SIZE must be a positive integer to provision OpenVPN ranges")
+
+        with transaction.atomic():
+            if connection.vendor != "sqlite":
+                with connection.cursor() as cursor:
+                    cursor.execute("LOCK TABLE mission_control_range IN EXCLUSIVE MODE")
+
+            used_slots = set(
+                cls.objects.exclude(status__in=[cls.Status.DESTROYED, cls.Status.FAILED])
+                .exclude(vpn_gateway_pool_slot__isnull=True)
+                .values_list("vpn_gateway_pool_slot", flat=True)
+            )
+
+            for slot in range(pool_size):
+                if slot not in used_slots:
+                    return slot
+
+            raise ValueError(
+                f"OpenVPN gateway pool exhausted. Maximum {pool_size} concurrent OpenVPN "
+                "ranges supported; increase VPN_GATEWAY_POOL_SIZE (and the Terraform pool) "
+                "or destroy some ranges first."
             )
 
     # The ``provisioned_instances`` traversal below delegates to the pure,

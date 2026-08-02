@@ -182,11 +182,19 @@ def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
     Returns:
         True if the flag matches.
     """
-    if flag_obj.flag_type == "regex":
-        return _verify_regex_flag(flag_obj, submitted_flag)
-    if flag_obj.flag_type in ("programmable", "http"):
-        return _verify_programmable_or_http_flag(flag_obj, submitted_flag)
-    return _verify_static_flag(flag_obj, submitted_flag)
+    # CTF-1401: extension-registered validators win over built-in dispatch.
+    from ctf.extensions import get_flag_validator
+
+    custom = get_flag_validator(flag_obj.flag_type)
+    if custom is not None:
+        is_valid = bool(custom(flag_obj, submitted_flag))
+    elif flag_obj.flag_type == "regex":
+        is_valid = _verify_regex_flag(flag_obj, submitted_flag)
+    elif flag_obj.flag_type in ("programmable", "http"):
+        is_valid = _verify_programmable_or_http_flag(flag_obj, submitted_flag)
+    else:
+        is_valid = _verify_static_flag(flag_obj, submitted_flag)
+    return is_valid
 
 
 def verify_flag(challenge: CTFChallenge, submitted_flag: str) -> bool:
@@ -293,3 +301,8 @@ def _validate_http_config(validator_config: dict[str, Any] | None) -> None:
             "validator_config.timeout must be an integer between 1 and 30",
             details={"timeout": timeout},
         )
+
+
+def validate_http_flag_config(validator_config: dict[str, Any] | None) -> None:
+    """Public pure validation boundary shared by interactive and bundle writes."""
+    _validate_http_config(validator_config)

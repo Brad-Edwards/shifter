@@ -111,11 +111,17 @@ locals {
     var.vmseries_bootstrap_bucket_name == "" ? {} : {
       "provisioner:vmseries" = { workload = "provisioner", bucket = var.vmseries_bootstrap_bucket_name, role = "roles/storage.objectAdmin" }
     },
-    # Object-storage-backed ACES packages (#1567, ADR-034-R5): the portal reads
+    # Object-storage-backed RAES packages (#1567, ADR-034-R5): the portal reads
     # (never writes) the single immutable pack archive at launch. Least-privilege
     # objectViewer, bound per named bucket (ADR-008-R7); empty disables it.
-    var.aces_package_bucket_name == "" ? {} : {
-      "portal:aces-packages" = { workload = "portal", bucket = var.aces_package_bucket_name, role = "roles/storage.objectViewer" }
+    var.raes_package_bucket_name == "" ? {} : {
+      "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectViewer" }
+    },
+    # Native CTF content bundles are a distinct deployment concern from RAES
+    # packages. The portal needs read-only access to the explicitly configured
+    # bucket; content publication stays outside the runtime identity.
+    var.ctf_content_bucket_name == "" ? {} : {
+      "portal:ctf-content" = { workload = "portal", bucket = var.ctf_content_bucket_name, role = "roles/storage.objectViewer" }
     },
   )
 }
@@ -209,40 +215,46 @@ resource "google_project_iam_member" "provisioner_dynamic_secret_admin" {
   member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }
 
-# The provisioner creates and removes one no-role service account per OpenVPN
-# range generation. This custom role intentionally excludes key creation,
-# policy administration, and every non-service-account IAM permission.
-resource "google_project_iam_custom_role" "provisioner_vpn_gateway_identity_admin" {
-  project     = var.project_id
-  role_id     = "${replace(var.name_prefix, "-", "")}_vpnGatewayIdentityAdmin"
-  title       = "Shifter VPN gateway identity admin"
-  description = "Create and delete generation-isolated OpenVPN gateway service accounts"
-  permissions = [
-    "iam.serviceAccounts.create",
-    "iam.serviceAccounts.delete",
-  ]
+# OpenVPN gateway identity pool (ADR-008-R7). Each active range that requests
+# OpenVPN reserves one member of this pre-provisioned, no-role service-account
+# pool (Range.vpn_gateway_pool_slot -> sh-vpn-pool-<slot>) and the range VM runs
+# as it, isolated to that range's server secret. The provisioner holds
+# serviceAccountUser on each *specific* pool member (a resource-scoped binding),
+# so it can attach a pool identity WITHOUT any project-wide
+# create/delete/setIamPolicy grant. This deletes the former project-level
+# `vpnGatewayIdentityAdmin` custom role, which let the runtime provisioner call
+# setIamPolicy against any service account in the project (e.g. the build SA) and
+# escalate cross-identity -- GCP IAM cannot condition setIamPolicy on a service
+# account's resource name, so a dynamic-creation grant could not be name-scoped.
+# The pool assumes a single isolated tenant/project (no cross-project SA usage,
+# no org-policy change); `vpn_gateway_pool_size` bounds concurrent OpenVPN ranges
+# and must match VPN_GATEWAY_POOL_SIZE in the engine runtime env.
+resource "google_service_account" "vpn_gateway_pool" {
+  count        = var.vpn_gateway_pool_size
+  project      = var.project_id
+  account_id   = "sh-vpn-pool-${count.index}"
+  display_name = "Shifter OpenVPN gateway pool member ${count.index}"
 }
 
-resource "google_project_iam_member" "provisioner_vpn_gateway_identity_admin" {
-  project = var.project_id
-  role    = google_project_iam_custom_role.provisioner_vpn_gateway_identity_admin.name
-  member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+resource "google_service_account_iam_member" "provisioner_vpn_gateway_pool_act_as" {
+  count              = var.vpn_gateway_pool_size
+  service_account_id = google_service_account.vpn_gateway_pool[count.index].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }
 
-# Compute requires iam.serviceAccounts.actAs when attaching an identity. Scope
-# that permission to the deterministic sh-vpn-* principals only.
-resource "google_project_iam_member" "provisioner_vpn_gateway_user" {
-  # checkov:skip=CKV_GCP_41:The conditional grant permits Service Account User only for deterministic sh-vpn-* gateway identities; see ADR-039-R10 exception registry.
-  # checkov:skip=CKV_GCP_49:The provisioner cannot impersonate other project service accounts because resource.name is restricted to sh-vpn-*; see ADR-039-R10 exception registry.
-  project = var.project_id
-  role    = "roles/iam.serviceAccountUser"
-  member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+resource "google_service_account" "range_host_pool" {
+  count        = var.range_host_identity_pool_size
+  project      = var.project_id
+  account_id   = "sh-range-host-${count.index}"
+  display_name = "Shifter preconfigured range host pool member ${count.index}"
+}
 
-  condition {
-    title       = "generation_openvpn_gateways_only"
-    description = "Permit attachment only of provisioner-owned OpenVPN gateway identities"
-    expression  = "resource.name.startsWith('projects/${var.project_id}/serviceAccounts/sh-vpn-')"
-  }
+resource "google_service_account_iam_member" "provisioner_range_host_pool_act_as" {
+  count              = var.range_host_identity_pool_size
+  service_account_id = google_service_account.range_host_pool[count.index].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }
 
 resource "google_service_account_iam_member" "workload_identity" {

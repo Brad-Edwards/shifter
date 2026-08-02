@@ -28,8 +28,10 @@ from shared.audit import (
 )
 from shared.constants import USER_CANNOT_BE_NONE
 from shared.enums import ResourceStatus
+from workspaces.services import WorkspaceOperation
 
 from ._common import _validate_caller_user
+from ._range_workspace import authorize_range_workspace
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -187,6 +189,7 @@ def run_by_instance_pk(user: User, range_instance_pk: int, op: _LifecycleOp) -> 
             user.id,
         )
         raise CMSError(f"Range {range_instance_pk} not found")
+    authorize_range_workspace(user, instance.workspace_id, WorkspaceOperation.MANAGE_RANGE)
 
     try:
         request_id = instance.request.request_id if instance.request else None
@@ -249,6 +252,7 @@ def run_by_request_id(user: User, request_id: str, op: _LifecycleOp) -> None:
     if not instance:
         logger.warning("%s: not found: request_id=%s user_id=%s", label, request_id, user.id)
         raise CMSError("Range not found")
+    authorize_range_workspace(user, instance.workspace_id, WorkspaceOperation.MANAGE_RANGE)
 
     if instance.request is None:
         raise CMSError("Range has no associated request")

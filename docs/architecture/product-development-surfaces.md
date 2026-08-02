@@ -8,6 +8,10 @@ Accepted.
 
 2026-07-11
 
+Amended 2026-07-27 to separate portable artifact requirements from acquisition,
+preparation, and distribution mechanisms. The original pull-or-bake and
+universal dogfood claims were too narrow.
+
 ## Context
 
 Shifter is moving to OSS. Today there is no architectural distinction between
@@ -25,13 +29,14 @@ That conflation has concrete failure modes:
   deploys AWS, and vice versa).
 - There is no path for an external operator who does not have the maintainers'
   GitHub org, runner fleet, OIDC, or secrets.
-- Capabilities that an operator genuinely needs, most sharply **image baking**,
-  are implemented as maintainer-only CI constructs. Baking is not a
-  development-only concern: operators must bake to extend their own catalog, and
-  some shipped scenarios can never ship a pullable public image (licensed base
-  images, private scenario content, per-tenant secrets, size) and are therefore
-  bake-required in the operator's tenant. Baking is load-bearing product
-  surface, not a maintainer convenience.
+- Capabilities that an operator may need to satisfy portable artifact
+  requirements, including backend-supported image preparation, are implemented
+  today as maintainer-only CI constructs. A product tenant must be able to
+  extend its catalog and use whatever artifact-satisfaction capabilities
+  Shifter actually supports without depending on maintainer infrastructure.
+  That does not make every requirement image-shaped or buildable: a scenario
+  may require one exact artifact, constrain a set of acceptable artifacts,
+  delegate a realizable concern to the backend, or require no image at all.
 
 A clean split by "pipeline" is wrong in shape, because the most important
 capabilities are dual-use. The split has to be by **surface**, classifying each
@@ -47,16 +52,17 @@ extend* Shifter?"**
 
 1. **Tenant / product plane.** Everything an operator needs to run and extend
    Shifter in their own account with zero maintainer infrastructure: install and
-   bootstrap, run the platform, provision and destroy ranges, **bake images and
-   extend the catalog**, upgrade, and observe. Content ingestion and bake live
+   bootstrap, run the platform, provision and destroy ranges, extend the
+   catalog, prepare artifacts through supported product capabilities, upgrade,
+   and observe. Content ingestion and operator-facing artifact preparation live
    here.
 
 2. **Distribution plane.** The maintainer-to-public bridge that publishes the
    consumable artifacts: platform container images, blessed scenario
    packs/images (where they can be published), scenario content, and the
-   installer. Its governing principle is that **content is the source of truth
-   and a published image is a cache** of a bake; anything published can be
-   rebuilt from source.
+   installer. A published artifact may be an exact authored requirement, one
+   allowed candidate, or a distribution optimization. It is not necessarily a
+   cache, substitute, or rebuildable output.
 
 3. **Development / engineering plane.** Everything that only concerns evolving
    Shifter's own code: CI build and test, PR gating, maintainer environments,
@@ -65,12 +71,14 @@ extend* Shifter?"**
 
 The following principles are binding:
 
-- **Dual-use capabilities are product-plane and maintainer-dogfooded.** A
-  capability an operator needs (baking, content ingestion) is built once as a
-  tenant-plane capability, and maintainers produce the shipped/blessed artifacts
-  by consuming that same capability. A maintainer-bespoke implementation of a
-  product capability is the anti-pattern this ADR exists to prevent; divergence
-  between the two is what produced the dev == deploy conflation.
+- **Shared capabilities are product-plane when operators need them.** A
+  capability an operator needs, such as content ingestion or a supported
+  artifact-preparation path, is productized rather than hidden in maintainer CI.
+  Maintainers reuse that capability when it satisfies the same contract and
+  policy. Distribution-only publication, promotion, replication, or
+  credentialed preparation may use separate operated workflows; dogfooding is a
+  reuse preference, not authority to change a RAES requirement or proof that
+  every published artifact is reproducible.
 
 - **The CI runner fleet is development-plane and must not live in a
   product/operator deploy-target account.** The mechanism that deploys or bakes
@@ -101,23 +109,25 @@ The following principles are binding:
   platform. The platform never contains an entitlement system.
 
 This ADR defines and enforces the surface boundary. The existing execution
-programs run *under* it: ACES Backend (ADR-024), Backend Bundles & Substrate
+programs run *under* it: RAES Backend (ADR-024), Backend Bundles & Substrate
 (ADR-011, and the substrate-interface work in issue #1322), and Workspaces &
 Platform API. Program tracking issue: #1584.
 
 ## Consequences
 
-- Baking and content ingestion are first-class product capabilities that must
-  work in a bare operator tenant; they are not deferred to a maintainer path.
+- Content ingestion and supported operator artifact-preparation capabilities
+  work in a bare operator tenant; an operator is not promised an image builder
+  for requirements that are exact, non-buildable, or satisfied by another
+  backend mechanism.
 - The maintainer runner fleet is relocated out of deploy-target accounts
   (#1437), so environments can be wiped and rebuilt without touching CI, and CI
   never spans one environment's teardown into another's outage.
 - Distribution gains explicit public and private tiers whose entitlement is
-  handled out-of-band, and container-first distribution is preferred because VM
-  images (AMIs/GCP images/qcow2) are region/project-scoped and lean toward
-  bake-in-tenant for the long tail.
-- Maintainers accept a dogfood obligation: the blessed catalog is produced
-  through the product bake/ingestion path, not a separate internal one.
+  handled out-of-band. Artifact availability and provider/location bindings are
+  distribution facts, separate from portable requirement semantics.
+- Maintainers reuse product ingestion and preparation capabilities where the
+  same inputs, policy, timing, and output contract apply. This does not prohibit
+  distribution-plane workflows whose responsibilities are genuinely different.
 - This is a framing/policy ADR; it introduces no CI check of its own yet.
   Downstream issues under #1584 operationalize it and may add enforceable rules
   in later ADRs.
@@ -125,9 +135,11 @@ Platform API. Program tracking issue: #1584.
 ## Alternatives considered
 
 - **Keep one pipeline, document an operator path on top.** Rejected: leaves the
-  deploy mechanism coupled to the environment and provides no productized bake
-  or ingestion, so operators still cannot extend a tenant.
-- **Treat baking as development-only and pre-publish every image.** Rejected:
-  some shipped scenarios can never ship a public image, and operators must be
-  able to bake their own content, so in-tenant bake is unavoidable product
-  surface.
+  deploy mechanism coupled to the environment and provides no productized
+  ingestion or supported artifact-preparation path, so operators still cannot
+  extend a tenant.
+- **Treat every artifact as either pre-published or built in-tenant.** Rejected:
+  RAES author intent may be exact, constrained, open, or absent. Backends may
+  satisfy permitted requirements through an existing artifact, dynamic
+  composition, an explicit preparation step, or another declared capability;
+  acquisition transport and materialization are separate axes.

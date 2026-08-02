@@ -1,7 +1,7 @@
 """Write-once range-backend ownership binding helpers (#1666).
 
-Shared by the cyberscript (:mod:`engine.services._range`) and ACES
-(:mod:`engine.services._aces_range`) create services: map the trusted CMS
+Shared by the cyberscript (:mod:`engine.services._range`) and RAES
+(:mod:`engine.services._raes_range`) create services: map the trusted CMS
 ``BackendAdmission`` to the Range binding columns and enforce write-once
 ownership on an idempotent create reuse.
 """
@@ -11,7 +11,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from shared.range_instantiation_policy import InstantiationPurpose, normalize_gcp_range_backend
+from shared.range_instantiation_policy import (
+    InstantiationPurpose,
+    evaluate_gcp_backend_admission,
+    normalize_gcp_range_backend,
+)
 
 from ._common import EngineError
 
@@ -20,20 +24,67 @@ if TYPE_CHECKING:
     from shared.range_instantiation_policy import BackendAdmission
 
 
+def require_workspace_binding(workspace_id: int | None) -> None:
+    """Refuse to create a range with no tenancy scope (#1325, ADR-046-R3).
+
+    The binding is supplied by the trusted CMS launch facade, like
+    ``BackendAdmission`` above. Accepting ``None`` here would let a new or
+    refactored caller persist an unscoped range indistinguishable from a legacy
+    pre-#1325 row -- the ambiguity the non-null scope columns and this guard
+    exist to remove.
+    """
+    if workspace_id is None:
+        raise EngineError("A range cannot be created without a workspace binding")
+
+
 def backend_binding_fields(backend_admission: BackendAdmission | None) -> dict[str, str]:
     """Map an admitted ``BackendAdmission`` to the write-once Range binding columns.
 
     Returns ``{}`` for a non-GCP launch (``backend_admission is None``) so the
-    columns stay NULL. Backend and purpose are re-normalized through the single
-    shared policy parser/enum so only closed policy values are ever persisted; the
-    admission already holds normalized values, this is defense in depth.
+    columns stay NULL.
+
+    ``BackendAdmission`` is a plain constructible dataclass, so ``admitted=True``
+    from an arbitrary in-process caller is not by itself authority (#1354). The
+    pair is re-evaluated here against the closed default-deny policy -- without
+    rereading the environment selector -- so a fabricated, denied, or malformed
+    pair can never be persisted as ownership. This is the Engine-side half of the
+    admission the CMS service boundary already performed.
     """
     if backend_admission is None:
         return {}
-    return {
-        "range_backend": normalize_gcp_range_backend(backend_admission.backend),
-        "instantiation_purpose": InstantiationPurpose(backend_admission.purpose).value,
-    }
+    try:
+        backend = normalize_gcp_range_backend(backend_admission.backend)
+        purpose = InstantiationPurpose(backend_admission.purpose)
+    except ValueError as exc:
+        raise EngineError(f"Range backend binding is not a closed policy value: {exc}") from exc
+    admission = evaluate_gcp_backend_admission(backend, None, purpose)
+    if not admission.admitted:
+        raise EngineError(f"Range backend binding is not admitted by policy: {admission.reason}")
+    return {"range_backend": backend, "instantiation_purpose": purpose.value}
+
+
+def verify_existing_workspace_binding(
+    existing_range: Range,
+    request_id: UUID,
+    workspace_id: int,
+) -> None:
+    """Reject an idempotent create replay whose workspace scope differs (ADR-046-R9).
+
+    Engine create is idempotent on ``request_id``; a replay must carry the same
+    tenancy scope the range was created with. A replay that names a *different*
+    ``workspace_id`` is a cross-tenant binding conflict -- silently reusing the
+    first range for the differently scoped replay would leak a range across
+    workspaces -- so it is refused here rather than reused, exactly as a
+    conflicting backend/participant/remote-access replay is. This is Engine's
+    defense-in-depth half of the scope resolved and authorized by CMS; Engine
+    still never resolves or authorizes a workspace itself (ADR-046-R1).
+    """
+    if existing_range.workspace_id != workspace_id:
+        raise EngineError(
+            f"Range workspace binding conflict for request {request_id}: persisted "
+            f"workspace {existing_range.workspace_id} differs from requested workspace "
+            f"{workspace_id} (ADR-046-R9 conflict; a scoped range is never silently reused)"
+        )
 
 
 def verify_existing_binding(

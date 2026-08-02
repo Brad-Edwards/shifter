@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from typing import Any, cast
+from uuid import UUID
 
 from django.contrib.auth.models import User
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from cms.services import list_mission_control_range_history
+from cms.services import WorkspaceLaunchDenied, list_mission_control_range_history
 from mission_control.api._base import (
     MissionControlAPIView,
     MissionControlReadAPIView,
@@ -33,14 +34,14 @@ from mission_control.api.serializers import (
 )
 from mission_control.utils import build_connection_urls
 from mission_control.views._common import _audit_range_lifecycle, _logger, _pkg
-from shared.aces.presentation import build_range_aces_projection, build_range_participant_runtime_projection
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api.schema import ApiErrorSerializer
 from shared.audit import AuditAction
-from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
+from shared.raes.presentation import build_range_participant_runtime_projection, build_range_raes_projection
+from shared.range_visibility import filter_visible_instances
 
 
 class CurrentRangeView(MissionControlReadAPIView):
@@ -57,18 +58,16 @@ class CurrentRangeView(MissionControlReadAPIView):
                     "has_range": False,
                     "range": None,
                     "connection_urls": [],
-                    "aces_projection": None,
-                    "aces_participant_runtime": None,
+                    "raes_projection": None,
+                    "raes_participant_runtime": None,
                     "lifecycle": None,
                     "vpn_profile_available": False,
                 }
             )
-        # CTF participants only see Kali (attacker) instances — mirrors the
-        # ``mission_control.context_processors.active_range`` filter so this
-        # canonical DRF read matches the legacy template-rendered behavior.
-        if is_ctf_participant_only(actor):
-            active_range.instances = [inst for inst in active_range.instances if inst.os_type == "kali"]
-        projection = build_range_aces_projection(active_range.request_id)
+        # Use the same domain-owned visibility policy as the legacy context
+        # processor so both Mission Control read paths expose identical instances.
+        active_range.instances = filter_visible_instances(actor, active_range.instances)
+        projection = build_range_raes_projection(active_range.request_id)
         participant_runtime = build_range_participant_runtime_projection(
             active_range.request_id, active_range.instances
         )
@@ -78,8 +77,8 @@ class CurrentRangeView(MissionControlReadAPIView):
                 "has_range": True,
                 "range": active_range.model_dump(mode="json"),
                 "connection_urls": build_connection_urls(active_range.instances),
-                "aces_projection": projection.to_payload() if projection else None,
-                "aces_participant_runtime": participant_runtime.to_payload() if participant_runtime else None,
+                "raes_projection": projection.to_payload() if projection else None,
+                "raes_participant_runtime": participant_runtime.to_payload() if participant_runtime else None,
                 "lifecycle": lease.to_payload() if lease else None,
                 "vpn_profile_available": _pkg().has_mission_control_openvpn_profile(actor),
             }
@@ -169,7 +168,7 @@ class LaunchRangeView(MissionControlAPIView):
         if agents_error is not None:
             return agents_error
 
-        return self._create_range(request, user, scenario, agents_by_os)
+        return self._create_range(request, user, scenario, agents_by_os, data.get("workspace_uuid"))
 
     def _resolve_agents_by_os(self, user: User, data: dict[str, Any]) -> tuple[dict[str, int] | None, Response | None]:
         """Resolve either the explicit agent map or a legacy single agent id."""
@@ -195,10 +194,21 @@ class LaunchRangeView(MissionControlAPIView):
         user: User,
         scenario: str,
         agents_by_os: dict[str, int] | None,
+        workspace_uuid: UUID | None = None,
     ) -> Response:
         """Create a range and record the launch audit event."""
         try:
-            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os or {})
+            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
+        except WorkspaceLaunchDenied:
+            # Authorized-shape UUID but an unavailable scope (unknown, non-member,
+            # or role-denied) is one opaque 403 (ADR-046-R9). The malformed-shape
+            # case is a 400 caught earlier by the serializer's UUIDField.
+            _logger().info("Range launch workspace denied: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+            return self.error_response(
+                code="workspace_not_available",
+                message="Selected workspace is not available.",
+                status_code=403,
+            )
         except CMSError as exc:
             _logger().exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
             text = str(exc).lower()

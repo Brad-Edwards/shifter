@@ -16,6 +16,7 @@ urlpatterns = [
     path("docs/", SpectacularSwaggerView.as_view(url_name="v1:openapi-schema"), name="api-docs"),
     path("bootstrap/", BootstrapView.as_view(), name="bootstrap"),
     path("dashboard/summary/", DashboardSummaryView.as_view(), name="dashboard-summary"),
+    path("workspaces/", include("workspaces.api.urls")),
     path("cms/", include("cms.api.urls", namespace="cms")),
     path("ctf/", include("ctf.api.urls")),
     path("mission-control/", include("mission_control.api.urls")),
@@ -29,5 +30,5 @@ urlpatterns = [
         name="administer-grant-organizer",
     ),
     path("administer/", include("management.api.urls")),
-    path("", include("risk_register.api.urls")),
+    path("", include("shared.api.urls")),
 ]

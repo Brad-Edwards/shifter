@@ -16,6 +16,9 @@ from cms.models import RangeInstance
 from shared.audit import AuditAction, AuditActorType, AuditEntityType, AuditEvent
 from shared.enums import RangeSource, ResourceStatus
 from shared.log_sanitize import safe_log_id
+from workspaces.services import WorkspaceOperation
+
+from ._range_workspace import authorize_range_workspace, authorized_range_workspace_ids
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -115,6 +118,7 @@ def get_mission_control_range_lease(user: User) -> RangeLeaseProjection | None:
         return None
     instance = (
         RangeInstance.objects.filter(user_id=user.id, range_source=RangeSource.MISSION_CONTROL.value)
+        .filter(workspace_id__in=authorized_range_workspace_ids(user, WorkspaceOperation.MANAGE_RANGE))
         .exclude(status=ResourceStatus.DESTROYING.value)
         .first()
     )
@@ -129,6 +133,7 @@ def extend_mission_control_range(user: User) -> RangeLeaseProjection:
         instance = (
             RangeInstance.objects.select_for_update()
             .filter(user_id=user.id, range_source=RangeSource.MISSION_CONTROL.value)
+            .filter(workspace_id__in=authorized_range_workspace_ids(user, WorkspaceOperation.MANAGE_RANGE))
             .exclude(
                 status__in=(
                     ResourceStatus.DESTROYING.value,
@@ -140,6 +145,7 @@ def extend_mission_control_range(user: User) -> RangeLeaseProjection:
         )
         if instance is None:
             raise RangeLeaseNotFound("Range not found")
+        authorize_range_workspace(user, instance.workspace_id, WorkspaceOperation.MANAGE_RANGE)
         if instance.expires_at is None or instance.maximum_expires_at is None:
             raise RangeLeaseConflict("Range lease is unavailable")
         if instance.expires_at <= timezone.now():

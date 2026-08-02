@@ -10,7 +10,6 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
-from django.views.decorators.debug import sensitive_variables
 from django.views.decorators.http import require_http_methods
 
 from shared.log_sanitize import safe_log_value
@@ -157,7 +156,6 @@ def admin_participant_email(request: HttpRequest, participant_id: UUID) -> HttpR
 @login_required
 @ctf_organizer_required
 @never_cache
-@sensitive_variables("bootstrap_password")
 def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> HttpResponse:
     """Participant detail view.
 
@@ -168,10 +166,9 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     """
     from django.http import Http404
 
-    from ctf.exceptions import CTFNotFoundError, CTFValidationError
+    from ctf.exceptions import CTFNotFoundError
     from ctf.models import CTFSubmission
     from ctf.services import get_participant
-    from ctf.services.participant.accounts import effective_bootstrap_password
 
     try:
         participant = get_participant(participant_id)
@@ -191,13 +188,6 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     total_score = participant.total_score
     solved_count = submissions.filter(is_correct=True).count()
     total_attempts = submissions.count()
-    # Fail closed (issue #1665): when no secure bootstrap credential is
-    # configured, disable the reveal action rather than 500 the organizer page.
-    try:
-        bootstrap_password = effective_bootstrap_password(participant.event)
-    except CTFValidationError:
-        bootstrap_password = None
-
     context = {
         "participant": participant,
         "event": participant.event,
@@ -205,7 +195,8 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
         "total_score": total_score,
         "solved_count": solved_count,
         "total_attempts": total_attempts,
-        "bootstrap_password": bootstrap_password,
+        "generated_issuance_kind": "generated",
+        "supplied_issuance_kind": "set",
     }
 
     return render(request, "ctf/admin/participant_detail.html", context)

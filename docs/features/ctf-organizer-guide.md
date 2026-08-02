@@ -50,7 +50,43 @@ Additional controls:
 A challenge can carry multiple flags (for multi-stage solves), each validated
 independently.
 
-## 3. Manage Participants
+### Scenario-provided challenges
+
+Some deployments bind a scenario to an immutable native CTF content bundle.
+Selecting that scenario while creating an event automatically populates its
+challenges, flags, hints, and prerequisite graph. Do not manually import or
+duplicate challenges for such an event.
+
+Managed content is fail closed. An organizer edit marks the event content as
+drifted, and the event cannot be activated from registration. Create a new
+event to adopt a revised bundle instead of overwriting or merging the existing
+graph. The selected scenario also cannot be changed after managed content has
+been created.
+
+## 3. Participant Briefing
+
+Give participants event-specific orientation: what environment they are in, how their
+range is reached, and where to start. This is the guidance a shared help page cannot
+carry—for example, that they are a red-team operator on a Kali workstation inside a
+target network, reached from that box, with the public website, DNS server, and domain
+controller as useful first objectives.
+
+Author it from the event's admin page in the **Participant briefing** editor. It is
+Markdown: headings, lists, code, and links render; raw HTML, scripts, and images do
+not, and unsafe link schemes (such as `javascript:` and `data:`) are stripped when the
+briefing is shown. Editing updates the published briefing in place; removing it
+restores the generic help.
+
+The briefing is stored and shown verbatim in the language you write it—the platform
+does not translate it, so you own its wording. Because it is visible to every
+participant, never put flags, passwords, invitation or reset links, range credentials,
+or any other secret in it.
+
+When a briefing exists, participants get a **Briefing** entry on their event home and a
+dedicated briefing page. An event with no briefing shows the standard help unchanged,
+so nothing regresses if you do not author one.
+
+## 4. Manage Participants
 
 From an event's **Participants** page you can add participants individually or bulk
 import a roster. Each participant is tracked through registration, range assignment,
@@ -58,21 +94,26 @@ and scoring. Use **Brackets** to group participants into ranked cohorts, and (in
 mode) manage team membership.
 
 Participants use isolated temporary accounts on the dedicated CTF login page.
-Generate accounts before an event, hand out the generated username and bootstrap
-password manually, or attach an optional delivery email. A secure bootstrap
-credential is required before accounts can be provisioned: set a per-event
-password override on the event form, or configure the platform-wide
-`CTF_DEFAULT_PARTICIPANT_PASSWORD`. There is no built-in default. If neither is
-configured, account creation, credential reset, and the participant-detail reveal
-refuse rather than assign a shared, guessable password. A participant detail page
-lets you rename a generated username; names remain globally unique and start with
-`range-`. Email delivery sends the login URL and username separately from the
-password. A reset invalidates the current password, restores the event bootstrap
-password, and forces another password change.
+Generate accounts before an event and hand out each generated username and initial
+password manually, or attach an optional delivery email for non-secret login
+information. By default, every new account receives its own strong generated
+password. If an event explicitly needs one shared initial password, set it on the
+event form; leaving that field blank while editing preserves the existing policy,
+and **Disable the event shared participant password** returns new accounts to unique
+generated passwords.
+
+Use **Manage password** on the participant list or detail page to generate a new
+password or set a policy-compliant one. The result is displayed once and cannot be
+retrieved later. Resetting a participant does not change the event-wide policy for
+new accounts. A reset invalidates the participant's existing web sessions and API
+tokens and requires a password change on next login. Invitation resend sends only
+the login URL and username; it never resets or emails a password. Generated
+usernames remain globally unique and start with `range-`.
+
 Accounts stop authenticating at event end and are anonymized after the configured
 participant-account retention window.
 
-## 4. Ranges
+## 5. Ranges
 
 The **Ranges** page shows the provisioning state of every participant's range. The
 platform provisions ranges automatically around the spin-up window and, when auto
@@ -107,13 +148,13 @@ and failed counts. The pool only grows on request; it does not shrink automatica
 Unconsumed spares are torn down along with the rest of the event's ranges during
 event cleanup.
 
-## 5. Notifications
+## 6. Notifications
 
 Use **Notifications** to send announcements during the event and **Email Templates**
 to configure reminder messages. Events can also send registration reminders at the
 hour offsets you configure.
 
-## 6. During and After the Event
+## 7. During and After the Event
 
 - The **Scoreboard** updates as submissions land. Freeze it near the end to keep final
   standings suspended until close.
@@ -126,3 +167,5 @@ hour offsets you configure.
 - [CTF](ctf): the participant experience.
 - [CTF technical documentation](../technical/shifter_platform/ctf): models, services,
   scheduling, and range provisioning.
+- [Native CTF scenario content](../dev/ctf-scenario-content): publish and bind
+  private, digest-pinned event content.

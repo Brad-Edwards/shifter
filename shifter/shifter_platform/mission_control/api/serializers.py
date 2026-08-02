@@ -6,21 +6,21 @@ from typing import Any
 
 from rest_framework import serializers
 
-from shared.aces.projections import DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT
 from shared.enums import ResourceStatus
+from shared.raes.projections import DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT
 
 AGENT_TYPE_CHOICES = ("xdr", "xdr_collector", "cloud_identity_engine")
 
 # Single source for the range-status choice set, shared by every serializer that
 # exposes a ``status`` field AND referenced by ``ENUM_NAME_OVERRIDES`` in
 # ``config._drf_settings`` so drf-spectacular names this enum ``ResourceStatusEnum``
-# (stable) instead of a hash-suffixed collision name against the Risk Register
+# (stable) instead of a hash-suffixed collision name
 # ``status`` enum. Keep the field ``choices`` and the override pointing at THIS list.
 RESOURCE_STATUS_VALUES = [s.value for s in ResourceStatus]
 
 
-class AcesRecordQuerySerializer(serializers.Serializer):
-    """Validate query params for ACES operation-record read endpoints (#1275)."""
+class RaesRecordQuerySerializer(serializers.Serializer):
+    """Validate query params for RAES operation-record read endpoints (#1275)."""
 
     limit = serializers.IntegerField(
         required=False,
@@ -30,8 +30,8 @@ class AcesRecordQuerySerializer(serializers.Serializer):
     )
 
 
-class AcesParticipantRecordQuerySerializer(serializers.Serializer):
-    """Validate query params for ACES participant-runtime record read endpoints (#1288)."""
+class RaesParticipantRecordQuerySerializer(serializers.Serializer):
+    """Validate query params for RAES participant-runtime record read endpoints (#1288)."""
 
     limit = serializers.IntegerField(
         required=False,
@@ -47,10 +47,10 @@ class AcesParticipantRecordQuerySerializer(serializers.Serializer):
     )
 
 
-class AcesParticipantRuntimeRecordSerializer(serializers.Serializer):
-    """Read-only projection of one ACES participant-runtime sidecar record (#1288).
+class RaesParticipantRuntimeRecordSerializer(serializers.Serializer):
+    """Read-only projection of one RAES participant-runtime sidecar record (#1288).
 
-    Serializes an ``AcesParticipantRuntimeRecordProjection`` (already redacted
+    Serializes an ``RaesParticipantRuntimeRecordProjection`` (already redacted
     by the shared read seam); it never touches the raw model ``payload``.
     """
 
@@ -72,10 +72,10 @@ class AcesParticipantRuntimeRecordSerializer(serializers.Serializer):
     diagnostic_refs = serializers.DictField(read_only=True)
 
 
-class AcesOperationRecordSerializer(serializers.Serializer):
-    """Read-only projection of one ACES operation sidecar record (#1275).
+class RaesOperationRecordSerializer(serializers.Serializer):
+    """Read-only projection of one RAES operation sidecar record (#1275).
 
-    Serializes an ``AcesOperationRecordProjection`` (already redacted by the
+    Serializes an ``RaesOperationRecordProjection`` (already redacted by the
     shared read seam); it never touches the raw model ``payload``.
     """
 
@@ -94,20 +94,20 @@ class AcesOperationRecordSerializer(serializers.Serializer):
     diagnostic_refs = serializers.DictField(read_only=True)
 
 
-class AcesOperationRecordListResponseSerializer(serializers.Serializer):
-    """Response body shared by ``mission_control.api.aces`` list endpoints."""
+class RaesOperationRecordListResponseSerializer(serializers.Serializer):
+    """Response body shared by ``mission_control.api.raes`` list endpoints."""
 
     request_id = serializers.UUIDField()
     record_kind = serializers.CharField()
-    results = AcesOperationRecordSerializer(many=True)
+    results = RaesOperationRecordSerializer(many=True)
 
 
-class AcesParticipantRuntimeRecordListResponseSerializer(serializers.Serializer):
-    """Response body shared by ``mission_control.api.aces_participant`` list endpoints."""
+class RaesParticipantRuntimeRecordListResponseSerializer(serializers.Serializer):
+    """Response body shared by ``mission_control.api.raes_participant`` list endpoints."""
 
     request_id = serializers.UUIDField()
     record_kind = serializers.CharField()
-    results = AcesParticipantRuntimeRecordSerializer(many=True)
+    results = RaesParticipantRuntimeRecordSerializer(many=True)
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +165,11 @@ class LaunchRangeSerializer(serializers.Serializer):
     agents = serializers.DictField(child=serializers.IntegerField(min_value=1), required=False)
     agent_id = serializers.IntegerField(required=False, allow_null=True)
     scenario = serializers.CharField(required=False, default="basic", allow_blank=False, trim_whitespace=True)
+    # Optional workspace selection (ADR-046-R9). Only the public UUID is accepted;
+    # omission binds the range to the launcher's personal compatibility workspace.
+    # The internal workspace_id is resolved and authorized in cms.services, never
+    # trusted from HTTP.
+    workspace_uuid = serializers.UUIDField(required=False, allow_null=True)
 
     def validate_agent_id(self, value: int | None) -> int:
         if not value:
@@ -220,8 +225,8 @@ class CurrentRangeResponseSerializer(serializers.Serializer):
     has_range = serializers.BooleanField()
     range = RangePresentationSerializer(allow_null=True)
     connection_urls = ConnectionUrlSerializer(many=True)
-    aces_projection = serializers.DictField(allow_null=True)
-    aces_participant_runtime = serializers.DictField(allow_null=True)
+    raes_projection = serializers.DictField(allow_null=True)
+    raes_participant_runtime = serializers.DictField(allow_null=True)
     lifecycle = RangeLeaseSerializer(allow_null=True)
     vpn_profile_available = serializers.BooleanField()
 
@@ -273,10 +278,10 @@ class AgentListResponseSerializer(serializers.Serializer):
 class ScenarioListItemSerializer(serializers.Serializer):
     """One entry from ``cms.services.list_launchable_scenarios``.
 
-    Legacy YAML/DB scenarios and ACES-derived catalog entries share this
+    Legacy YAML/DB scenarios and RAES-derived catalog entries share this
     projection but are not fully homogeneous; fields the SPA does not render
     stay loosely typed (``DictField``/``ListField(DictField)``) rather than
-    modeling the full ``ScenarioTemplate``/ACES catalog schema here.
+    modeling the full ``ScenarioTemplate``/RAES catalog schema here.
     """
 
     id = serializers.CharField()

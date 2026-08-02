@@ -1,5 +1,21 @@
 releaseNamespace: shifter-system
 
+provider:
+  name: neutral
+profile: default
+
+deployment:
+  name: shifter
+  profile: default
+
+# Provider bundles project their supported Kubernetes capabilities explicitly.
+# Templates gate optional provider resources on these switches and never infer
+# behavior from provider or profile names.
+capabilities:
+  gcpBackendConfig: false
+  gcpManagedTls: false
+  kubernetesJobLauncher: false
+
 namespaces:
   platform: shifter-platform
   jobs: shifter-jobs
@@ -21,7 +37,14 @@ serviceAccounts:
     name: provisioner
     annotations: {}
 
-runtimeEnv: {}
+# Fleet-uniform non-secret runtime env rendered into the platform-runtime
+# ConfigMap that every deployment envFroms. RAES default-cutover selector
+# (#1310, ADR-031-R6): delivery seam prepared at the preserved-legacy posture;
+# the flip (native=true + a polaris=polaris-raes route) is a deferred, reviewed
+# change once the plugin system + Polaris adapter deliver a conformant pack.
+runtimeEnv:
+  SHIFTER_RAES_NATIVE_PROVISIONING: "false"
+  SHIFTER_RAES_CATALOG_CUTOVERS: ""
 
 # The guacamole-runtime Kubernetes Secret is created out of band by the deploy
 # bootstrap (kubectl apply from the provider secret store), not by this chart.
@@ -31,18 +54,17 @@ guacamoleRuntimeSecret:
   name: guacamole-runtime
 
 images:
-  portal:
-    repository: "us-docker.pkg.dev/placeholder-project/shifter/portal"
-    tag: "0.0.0"
-    pullPolicy: Always
-  guacd:
-    repository: "us-docker.pkg.dev/placeholder-project/shifter/guacd"
-    tag: "0.0.0"
-    pullPolicy: Always
-  guacamoleClient:
-    repository: "us-docker.pkg.dev/placeholder-project/shifter/guacamole-client"
-    tag: "0.0.0"
-    pullPolicy: Always
+  platform: "registry.example.invalid/shifter/platform@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  guacd: "registry.example.invalid/shifter/guacd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  guacamoleClient: "registry.example.invalid/shifter/guacamole-client@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+imagePullPolicy: IfNotPresent
+
+identity:
+  serviceAccountRoleArns: {}
+
+runtime:
+  secretReferences: {}
 
 portal:
   replicas: 2
@@ -112,7 +134,7 @@ workers:
         cpu: 250m
         memory: 256Mi
         ephemeral-storage: 256Mi
-  acesOperationRecordPrune:
+  raesOperationRecordPrune:
     replicas: 1
     resources:
       requests:
@@ -122,6 +144,17 @@ workers:
       limits:
         cpu: 250m
         memory: 256Mi
+        ephemeral-storage: 256Mi
+  operationResultApplier:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
         ephemeral-storage: 256Mi
   outboxDrainer:
     replicas: 1
@@ -159,6 +192,8 @@ workers:
 
 guacd:
   replicas: 1
+  freerdpConfigVolume:
+    sizeLimit: 16Mi
   resources:
     requests:
       cpu: 100m
@@ -204,10 +239,9 @@ mediaVolume:
 
 services:
   portal:
-    annotations:
-      cloud.google.com/neg: '{"ingress": true}'
+    annotations: {}
     backendConfig:
-      enabled: true
+      enabled: false
       name: portal-web
       securityPolicyName: ""
       healthCheck:
@@ -219,21 +253,16 @@ services:
         healthyThreshold: 1
         unhealthyThreshold: 2
   guacamoleClient:
-    annotations:
-      cloud.google.com/neg: '{"ingress": true}'
+    annotations: {}
     backendConfig:
       enabled: false
       name: guacamole-client
       securityPolicyName: ""
 
-networkPolicy:
+network:
   enabled: true
-  gclbSourceRanges:
-    - 35.191.0.0/16 # NOSONAR - Google Cloud Load Balancer health check/proxy range.
-    - 130.211.0.0/22 # NOSONAR - Google Cloud Load Balancer health check/proxy range.
-  googleApiCidrs:
-    - 199.36.153.4/30 # NOSONAR - restricted.googleapis.com VIP range.
-    - 199.36.153.8/30 # NOSONAR - private.googleapis.com VIP range.
+  ingressSourceCidrs: []
+  providerApiCidrs: []
   privateServiceCidrs: []
   # GKE service CIDR containing kubernetes.default.svc. Scoped only to the
   # dedicated launcher pod so other platform workloads remain API-tokenless.
@@ -257,12 +286,19 @@ networkPolicy:
     - 22
     - 3389
 
-ingress:
-  enabled: true
-  class: gce
-  staticIpName: ""
-  host: ""
-  managedTls:
+edge:
+  hostname: ""
+  certificateArn: ""
+  wafAclArn: ""
+  ingress:
     enabled: false
-    certificateName: platform-managed-cert
-    frontendConfigName: platform-frontend-config
+    className: ""
+    annotations: {}
+    host: ""
+    tls:
+      enabled: false
+      secretName: ""
+    gcpManagedTls:
+      enabled: false
+      certificateName: platform-managed-cert
+      frontendConfigName: platform-frontend-config

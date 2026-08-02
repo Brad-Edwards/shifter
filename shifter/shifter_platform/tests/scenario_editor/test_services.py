@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
 
 import cms.scenario_editor.services as scenario_services
-from cms.models import AcesPackageSource, Scenario, ScenarioMetadata
+from cms.models import RaesPackageSource, Scenario, ScenarioMetadata
 from cms.scenario_editor._validation import structural_definition_from_detail
 from cms.scenario_editor.services import (
     ScenarioEditorError,
@@ -207,10 +207,10 @@ class TestCreateScenario:
             )
 
     def test_collision_with_registered_pack(self, staff_user, valid_definition):
-        AcesPackageSource.objects.create(
+        RaesPackageSource.objects.create(
             scenario_id="pack-owned-id",
             source_kind="object",
-            contract_kind="aces",
+            contract_kind="raes",
             contract_profile="shifter",
             package_ref="packs/pack-owned-id",
             package_version="1.0.0",
@@ -219,7 +219,7 @@ class TestCreateScenario:
             registered_by=staff_user,
         )
 
-        with pytest.raises(ScenarioEditorError, match="registered ACES pack"):
+        with pytest.raises(ScenarioEditorError, match="registered RAES pack"):
             create_scenario(
                 staff_user,
                 scenario_id="pack-owned-id",
@@ -402,6 +402,8 @@ class TestExportScenarioYaml:
         assert "enabled:" not in yaml_str
 
     def test_export_custom_round_trips_through_yaml_validation(self, custom_scenario):
+        custom_scenario.definition["participant_access"] = [{"target": "Attacker", "channel": "rdp"}]
+        custom_scenario.save(update_fields=["definition"])
         yaml_str = export_scenario_yaml("custom-test")
 
         parsed, errors = validate_yaml(yaml_str)
@@ -420,6 +422,7 @@ class TestExportScenarioYaml:
             for key, value in expected.items():
                 assert actual[key] == value
         assert parsed["ngfw"] == custom_scenario.definition["ngfw"]
+        assert parsed["participant_access"] == custom_scenario.definition["participant_access"]
 
 
 class TestUserValidation:
@@ -640,13 +643,17 @@ instances:
   - name: A
     role: attacker
     os_type: kali
+participant_access:
+  - target: A
+    channel: rdp
 """
         fields, errors = create_scenario_from_yaml_post(staff_user, yaml_content)
 
         assert errors == []
         assert fields is not None
         assert fields.scenario_id == "yaml-service-test"
-        assert Scenario.objects.filter(scenario_id="yaml-service-test").exists()
+        scenario = Scenario.objects.get(scenario_id="yaml-service-test")
+        assert scenario.definition["participant_access"] == [{"target": "A", "channel": "rdp"}]
 
     def test_update_from_yaml_post_updates_scenario(self, staff_user, custom_scenario):
         yaml_content = """

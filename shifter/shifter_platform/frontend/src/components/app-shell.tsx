@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 
 import {
   Bot,
@@ -16,7 +16,6 @@ import {
   Server,
   Settings,
   Shield,
-  ShieldAlert,
   Sun,
   Terminal,
   Trophy,
@@ -48,7 +47,6 @@ const ICONS: Record<NavIconKey, ComponentType<{ className?: string }>> = {
   terminal: Terminal,
   settings: Settings,
   "file-code": FileCode,
-  "shield-alert": ShieldAlert,
   "user-cog": UserCog,
   "circle-dollar-sign": CircleDollarSign,
 };
@@ -67,7 +65,8 @@ function isActive(pathname: string, entry: NavEntry): boolean {
   // Only in-SPA entries can be "current"; external legacy links never match.
   if (entry.external) return false;
   if (entry.routePath === "/") return pathname === "/";
-  return pathname === entry.routePath || pathname.startsWith(`${entry.routePath}/`);
+  const routePrefix = entry.routePath.endsWith("/") ? entry.routePath : `${entry.routePath}/`;
+  return pathname === entry.routePath || pathname.startsWith(routePrefix);
 }
 
 function NavLink({ entry }: Readonly<{ entry: NavEntry }>) {

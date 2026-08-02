@@ -36,6 +36,7 @@ from gcp_range_cell_types import (
     SubnetPlan,
 )
 from log_redact import safe_log_fingerprint
+from provisioner_db import get_range_data_by_request_id
 from utils.crypto import generate_ssh_host_keypair
 
 __all__ = [
@@ -127,6 +128,52 @@ def _host_public_key_from_instance(existing: object) -> str:
     return ""
 
 
+def _existing_label(existing: object, key: str) -> str:
+    """Read one label from a dict-like Compute instance response."""
+    labels = getattr(existing, "labels", None)
+    getter = getattr(labels, "get", None)
+    if callable(getter):
+        return str(getter(key, "") or "")
+    return ""
+
+
+def _assert_instance_image_binding(existing: object, instance: InstancePlan) -> None:
+    """Reject a keyed deterministic VM whose recorded profile differs from the plan."""
+    expected_key = instance["image_key"]
+    if not expected_key:
+        return
+    actual_key = _existing_label(existing, "image-key")
+    actual_profile = _existing_label(existing, "image-profile")
+    if actual_key != expected_key or actual_profile != instance["image_profile_fingerprint"]:
+        raise RuntimeError(
+            "Existing GCE range instance has an image-profile binding that differs from the current plan; "
+            f"ami_key={expected_key!r}. Recreate the range instead of reusing the drifted instance."
+        )
+
+
+def _ensure_attached_disks_auto_delete(
+    plan: RangeCellPlan,
+    clients: GCEClients,
+    instance_name: str,
+    existing: object,
+) -> None:
+    """Make every machine-image-cloned disk range-owned and idempotently deletable."""
+    for disk in getattr(existing, "disks", None) or []:
+        if bool(getattr(disk, "auto_delete", False)):
+            continue
+        device_name = str(getattr(disk, "device_name", "") or "")
+        if not device_name:
+            raise RuntimeError("GCE range instance has an attached disk without a device name")
+        operation = clients.instances.set_disk_auto_delete(
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=instance_name,
+            device_name=device_name,
+            auto_delete=True,
+        )
+        _wait_for_operation(plan, clients, operation, "zone")
+
+
 def _ensure_instance(
     plan: RangeCellPlan,
     clients: GCEClients,
@@ -149,6 +196,8 @@ def _ensure_instance(
         zone=plan["zone"],
         instance=name,
     )
+    if existing is not None:
+        _assert_instance_image_binding(existing, instance)
     host_secret_ref, host_management_public_key = secret_ops.ensure_ssh(plan["range_id"], instance["source"])
     access_channels = set(instance["participant_access_channels"])
     participant_ssh_secret_ref: str | None = None
@@ -168,6 +217,8 @@ def _ensure_instance(
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
+        if instance["profile"].source_machine_image:
+            _ensure_attached_disks_auto_delete(plan, clients, name, existing)
         return (
             host_secret_ref,
             participant_ssh_secret_ref,
@@ -178,10 +229,10 @@ def _ensure_instance(
 
     host_private_key, host_public_key = generate_ssh_host_keypair()
     host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
-    operation = clients.instances.insert(
-        project=plan["project_id"],
-        zone=plan["zone"],
-        instance_resource=instance_resource(
+    insert_kwargs: dict[str, object] = {
+        "project": plan["project_id"],
+        "zone": plan["zone"],
+        "instance_resource": instance_resource(
             plan,
             instance,
             config,
@@ -189,8 +240,26 @@ def _ensure_instance(
             host_private_key_b64=host_private_key_b64,
             host_public_key=host_public_key,
         ),
-    )
+    }
+    if instance["profile"].source_machine_image:
+        # The generated Compute client does not expose source_machine_image as
+        # a flattened keyword. It is accepted only through InsertInstanceRequest.
+        operation = clients.instances.insert(
+            request={
+                **insert_kwargs,
+                "source_machine_image": instance["profile"].source_machine_image,
+            }
+        )
+    else:
+        operation = clients.instances.insert(**insert_kwargs)
     _wait_for_operation(plan, clients, operation, "zone")
+    if instance["profile"].source_machine_image:
+        created = clients.instances.get(
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=name,
+        )
+        _ensure_attached_disks_auto_delete(plan, clients, name, created)
     return host_secret_ref, participant_ssh_secret_ref, rdp_password_secret_ref, scenario_public_key, host_public_key
 
 
@@ -326,8 +395,18 @@ def apply_range_cell(
     """Create or reconcile a live-fire GCE range cell and return provisioner outputs."""
     resolved_config = config or load_gce_range_cell_config()
     # Validate the closed contract and scenario binding before constructing any
-    # provider or secret client, let alone mutating a cloud resource.
-    plan = render_range_cell_plan(request_uuid, variables, resolved_config)
+    # provider or secret client, let alone mutating a cloud resource. The gateway
+    # VM runs as the range's reserved pool identity (ADR-008-R7).
+    range_data = get_range_data_by_request_id(request_uuid)
+    plan = render_range_cell_plan(
+        request_uuid,
+        variables,
+        resolved_config,
+        vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
+        range_host_pool_slot=(
+            int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+        ),
+    )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()

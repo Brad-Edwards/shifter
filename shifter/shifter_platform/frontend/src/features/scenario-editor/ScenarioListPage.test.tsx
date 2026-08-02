@@ -8,7 +8,7 @@ import { renderRoute } from "@/test/utils";
 vi.mock("@/app/bootstrap-context", () => ({
   useBootstrapContext: () => ({
     principal: { id: 1, username: "author", display_name: "Author", is_authenticated: true, is_staff: true, is_superuser: false },
-    permissions: { can_access_risk_register: false, can_access_threat_research: true },
+    permissions: { can_access_threat_research: true },
     feature_flags: { scenario_editor_spa: true },
   }),
 }));
@@ -31,7 +31,7 @@ function entry(overrides: Record<string, unknown> = {}) {
     enabled: true,
     staff_only: false,
     launchable: true,
-    aces: null,
+    raes: null,
     ...overrides,
   };
 }

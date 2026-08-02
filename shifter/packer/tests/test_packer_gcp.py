@@ -9,6 +9,8 @@ template set so the AWS `packer build .` / `-only='*.<type>'` flow never sees a
 Run with: pytest shifter/packer/tests/test_packer_gcp.py -v
 """
 
+import json
+import os
 import re
 import shutil
 import subprocess
@@ -127,7 +129,8 @@ class TestGcpDcPrebaked:
 
     def test_promote_bake_reads_domain_from_env(self):
         content = (GCP_SCRIPTS_DIR / "dc-prebaked" / "promote-bake.ps1").read_text()
-        assert "DC_DOMAIN_NAME" in content and "DC_NETBIOS_NAME" in content
+        assert "DC_DOMAIN_NAME" in content
+        assert "DC_NETBIOS_NAME" in content
         assert "-DomainName $DomainName" in content
 
     def test_variables_declare_dc_prebaked_knobs(self):
@@ -228,6 +231,93 @@ class TestGcpPolarisVerifyStackWiring:
         assert content.index("host-setup.sh") < content.index("verify-stack.sh")
 
 
+class TestGcpPromotionEvidenceBinding:
+    """Promotion verifies trusted run evidence instead of trusting a mutable label."""
+
+    @pytest.fixture
+    def promote(self):
+        return (WORKFLOWS_DIR / "packer-gcp-promote.yml").read_text()
+
+    def test_workflow_reads_validation_run_and_revision_labels(self, promote):
+        assert "labels.validated-run" in promote
+        assert "labels.validated-revision" in promote
+
+    def test_workflow_downloads_and_verifies_validation_evidence(self, promote):
+        assert "actions: read" in promote
+        assert "gh run download" in promote
+        assert "verify-promotion-evidence.sh" in promote
+
+    def test_verifier_script_exists(self):
+        assert (GCP_SCRIPTS_DIR / "validate" / "verify-promotion-evidence.sh").exists()
+
+    def _run_verifier(self, tmp_path, *, evidence_updates=None, run_updates=None):
+        evidence = {
+            "candidate_image": "shifter-polaris-vm-123",
+            "project": "dev-project",
+            "image_family": "shifter-polaris-vm",
+            "image_type": "polaris-vm",
+            "source_revision": "a" * 40,
+            "validation_run": "12345",
+            "result": "passed",
+        }
+        run = {
+            "id": 12345,
+            "name": "Packer GCE Image Validate",
+            "path": ".github/workflows/packer-gcp-validate.yml",
+            "event": "workflow_dispatch",
+            "head_branch": "dev",
+            "head_sha": "a" * 40,
+            "conclusion": "success",
+        }
+        evidence.update(evidence_updates or {})
+        run.update(run_updates or {})
+        evidence_file = tmp_path / "validation-evidence.json"
+        run_file = tmp_path / "validation-run.json"
+        evidence_file.write_text(json.dumps(evidence))
+        run_file.write_text(json.dumps(run))
+        env = dict(os.environ)
+        env.update(
+            {
+                "SRC_IMAGE": "shifter-polaris-vm-123",
+                "SRC_PROJECT": "dev-project",
+                "IMAGE_FAMILY": "shifter-polaris-vm",
+                "IMAGE_TYPE": "polaris-vm",
+                "VALIDATED_RUN": "12345",
+                "VALIDATED_REVISION": "a" * 40,
+                "EVIDENCE_FILE": str(evidence_file),
+                "RUN_FILE": str(run_file),
+            }
+        )
+        bash_path = shutil.which("bash")
+        assert bash_path is not None
+        return subprocess.run(  # noqa: S603
+            [bash_path, str(GCP_SCRIPTS_DIR / "validate" / "verify-promotion-evidence.sh")],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def test_verifier_accepts_exact_successful_protected_run_evidence(self, tmp_path):
+        result = self._run_verifier(tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    @pytest.mark.parametrize(
+        ("evidence_updates", "run_updates"),
+        [
+            ({"candidate_image": "other-image"}, None),
+            ({"project": "other-project"}, None),
+            ({"result": "failed"}, None),
+            (None, {"head_branch": "feature"}),
+            (None, {"head_sha": "b" * 40}),
+            (None, {"conclusion": "failure"}),
+            (None, {"path": ".github/workflows/other.yml"}),
+        ],
+    )
+    def test_verifier_rejects_mismatched_or_untrusted_evidence(self, tmp_path, evidence_updates, run_updates):
+        result = self._run_verifier(tmp_path, evidence_updates=evidence_updates, run_updates=run_updates)
+        assert result.returncode != 0
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 class TestGcpPolarisVerifyStackBehavior:
     """verify-stack.sh actually fails the build on each fail-closed condition.
@@ -238,7 +328,19 @@ class TestGcpPolarisVerifyStackBehavior:
 
     VERIFY_STACK = GCP_SCRIPTS_DIR / "polaris" / "verify-stack.sh"
 
-    def _run(self, tmp_path, env, *, with_stub_bin=True, docker_ok=True, images="img:latest"):
+    def _run(
+        self,
+        tmp_path,
+        env,
+        *,
+        with_stub_bin=True,
+        docker_ok=True,
+        images="img:latest",
+        services="svc-a svc-b",
+        running_services="svc-a running\nsvc-b running\n",
+        fail_compose_up=False,
+        config_json='{"services":{"svc-a":{"build":"."},"svc-b":{"build":"."}}}',
+    ):
         import os
 
         stub = tmp_path / "bin"
@@ -252,16 +354,32 @@ class TestGcpPolarisVerifyStackBehavior:
             # other subcommand (config/build/pull/image inspect) exits docker_rc.
             (stub / "docker").write_text(
                 "#!/bin/bash\n"
+                'printf "docker %s\\n" "$*" >> "$DOCKER_LOG"\n'
                 'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--images" ]; then\n'
                 f'  printf "%s\\n" {images}; exit 0\nfi\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--format" ]; then\n'
+                '  printf "%s\\n" "$DOCKER_STUB_CONFIG_JSON"; exit 0\nfi\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--services" ]; then\n'
+                '  printf "%s\\n" $DOCKER_STUB_SERVICES; exit 0\nfi\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "ps" ]; then\n'
+                '  printf "%b" "$DOCKER_STUB_RUNNING_SERVICES"; exit 0\nfi\n'
+                'if [ "$1" = "compose" ] && [ "$2" = "up" ] && [ "$DOCKER_STUB_FAIL_UP" = "1" ]; then\n'
+                "  exit 1\nfi\n"
                 f"exit {docker_rc}\n"
             )
-            for f in ("gcloud", "docker"):
+            (stub / "iptables").write_text('#!/bin/bash\nprintf "iptables %s\\n" "$*" >> "$DOCKER_LOG"\nexit 0\n')
+            for f in ("gcloud", "docker", "iptables"):
                 (stub / f).chmod(0o755)
         run_env = dict(os.environ)
         run_env["PATH"] = f"{stub}:{run_env['PATH']}"
         run_env["POLARIS_ROOT"] = str(tmp_path / "polaris")
         run_env["COMPOSE_DIR"] = str(tmp_path / "polaris" / "build")
+        run_env["DOCKER_LOG"] = str(tmp_path / "docker.log")
+        run_env["DOCKER_STUB_SERVICES"] = services
+        run_env["DOCKER_STUB_RUNNING_SERVICES"] = running_services
+        run_env["DOCKER_STUB_FAIL_UP"] = "1" if fail_compose_up else "0"
+        run_env["DOCKER_STUB_CONFIG_JSON"] = config_json
+        run_env["POLARIS_STACK_START_TIMEOUT_SECONDS"] = "0"
         run_env.update(env)
         bash_path = shutil.which("bash")
         return subprocess.run(  # noqa: S603
@@ -320,6 +438,78 @@ class TestGcpPolarisVerifyStackBehavior:
         )
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
 
+    def test_valid_stack_starts_all_declared_services_before_capture(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        assert "docker compose up -d" in (tmp_path / "docker.log").read_text()
+
+    def test_installs_metadata_isolation_before_starting_services(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+        )
+        assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
+        commands = (tmp_path / "docker.log").read_text()
+        assert "iptables -I OUTPUT 1 -d 169.254.169.254/32 -j DROP" in commands
+        assert "iptables -I DOCKER-USER 1 -d 169.254.169.254/32 -j DROP" in commands
+        assert commands.index("iptables -I OUTPUT") < commands.index("docker compose up -d")
+
+    @pytest.mark.parametrize(
+        "config_json,error",
+        [
+            ('{"services":{"svc-a":{"image":"registry.example/a:latest"}}}', "immutable sha256 digest"),
+            ('{"services":{"svc-a":{"build":".","privileged":true}}}', "privileged/host namespace"),
+        ],
+    )
+    def test_rejects_unsafe_external_workload_before_execution(self, tmp_path, config_json, error):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            config_json=config_json,
+        )
+        assert r.returncode != 0
+        assert error in r.stderr
+        assert "docker compose up" not in (tmp_path / "docker.log").read_text()
+
+    def test_missing_declared_service_fails_before_capture(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            running_services="svc-a running\n",
+        )
+        assert r.returncode != 0, r.stdout
+
+    def test_failed_compose_up_fails_before_capture(self, tmp_path):
+        import hashlib
+
+        sha = hashlib.sha256(b"polaris-stack-bytes").hexdigest()
+        self._stub_tar(tmp_path)
+        r = self._run(
+            tmp_path,
+            {"POLARIS_REQUIRE_STACK": "1", "POLARIS_STACK_BUCKET": "b", "POLARIS_STACK_SHA256": sha},
+            fail_compose_up=True,
+        )
+        assert r.returncode != 0, r.stdout
+
     def test_failed_docker_step_fails(self, tmp_path):
         import hashlib
 
@@ -341,6 +531,52 @@ class TestGcpValidationWorkflow:
     @pytest.fixture
     def workflow(self):
         return (WORKFLOWS_DIR / "packer-gcp-validate.yml").read_text()
+
+    @staticmethod
+    def _run_linux_validator(tmp_path, *, running_services):
+        import os
+
+        stub = tmp_path / "bin"
+        stub.mkdir()
+        command_log = tmp_path / "validator-docker.log"
+        compose_dir = tmp_path / "compose"
+        compose_dir.mkdir()
+        (compose_dir / "docker-compose.yml").write_text("services: {}\n")
+        (stub / "systemctl").write_text("#!/bin/bash\nexit 0\n")
+        (stub / "ss").write_text('#!/bin/bash\nprintf "LISTEN 0 128 0.0.0.0:2222 0.0.0.0:*\\n"\n')
+        (stub / "docker").write_text(
+            "#!/bin/bash\n"
+            'printf "%s\\n" "$*" >> "$VALIDATOR_DOCKER_LOG"\n'
+            'if [ "$1" = "compose" ] && { [ "$2" = "up" ] || [ "$2" = "start" ]; }; then exit 90; fi\n'
+            'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--images" ]; then\n'
+            '  printf "img:latest\\n"; exit 0\nfi\n'
+            'if [ "$1" = "compose" ] && [ "$2" = "config" ] && [ "$3" = "--services" ]; then\n'
+            '  printf "svc-a\\nsvc-b\\n"; exit 0\nfi\n'
+            'if [ "$1" = "compose" ] && [ "$2" = "ps" ]; then\n'
+            '  printf "%b" "$VALIDATOR_RUNNING_SERVICES"; exit 0\nfi\n'
+            "exit 0\n"
+        )
+        for command in ("systemctl", "ss", "docker"):
+            (stub / command).chmod(0o755)
+        run_env = dict(os.environ)
+        run_env.update(
+            {
+                "PATH": f"{stub}:{run_env['PATH']}",
+                "VALIDATE_IMAGE_TYPE": "polaris-vm",
+                "MGMT_SSH_PORT": "2222",
+                "COMPOSE_DIR": str(compose_dir),
+                "STACK_START_TIMEOUT_SECONDS": "0",
+                "VALIDATOR_DOCKER_LOG": str(command_log),
+                "VALIDATOR_RUNNING_SERVICES": running_services,
+            }
+        )
+        result = subprocess.run(  # noqa: S603
+            [shutil.which("bash"), str(GCP_SCRIPTS_DIR / "validate" / "linux.sh")],
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        return result, command_log.read_text()
 
     def test_validate_workflow_exists(self):
         assert (WORKFLOWS_DIR / "packer-gcp-validate.yml").exists()
@@ -426,7 +662,31 @@ class TestGcpValidationWorkflow:
         assert "google-guest-agent" in linux
         assert "docker compose config --images" in linux
         # Exits non-zero on failure so the runner gates on the exit code.
-        assert "exit 1" in linux and "exit 0" in linux
+        assert "exit 1" in linux
+        assert "exit 0" in linux
+
+    def test_linux_validation_observes_without_creating_the_stack(self):
+        linux = (GCP_SCRIPTS_DIR / "validate" / "linux.sh").read_text()
+        assert "docker compose up -d" not in linux
+
+    def test_linux_validation_passes_only_when_every_existing_service_runs(self, tmp_path):
+        result, commands = self._run_linux_validator(
+            tmp_path,
+            running_services="svc-a running\nsvc-b running\n",
+        )
+        assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+        assert "compose up" not in commands
+        assert "compose start" not in commands
+
+    def test_linux_validation_fails_without_creating_a_missing_service(self, tmp_path):
+        result, commands = self._run_linux_validator(
+            tmp_path,
+            running_services="svc-a running\n",
+        )
+        assert result.returncode == 1
+        assert "svc-b(absent)" in result.stderr
+        assert "compose up" not in commands
+        assert "compose start" not in commands
 
     def test_dc_probe_reads_ad_without_promoting(self):
         probe = (GCP_SCRIPTS_DIR / "validate" / "dc-probe.sh").read_text()

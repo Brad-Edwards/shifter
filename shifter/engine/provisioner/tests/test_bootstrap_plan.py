@@ -224,6 +224,7 @@ class TestPolarisRangeBootstrapPlan:
         # rendering never raises a missing-template-variable error (#1377).
         assert context["aws_agent_setup_block"] == ""
         assert context["aws_agent_compose_block"] == ""
+        assert "oauth2.googleapis.com:199.36.153.8" in context["gcp_agent_compose_block"]
 
     def test_gcp_context_requires_vertex_project(self, monkeypatch):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
@@ -554,12 +555,9 @@ class TestPolarisAwsAgentSecurity:
                 )
             assert result.returncode == 0, f"{name} failed bash -n: {result.stderr}"
 
-    def test_gcp_compose_rewrite_is_byte_identical_to_pre_slice5(self):
-        """The AWS-only fragments are Python-computed and substituted via
-        plain {{ }} tokens (never a bash-runtime `if`), so with both tokens
-        empty (GCP's actual context) rendering must reproduce, byte for byte,
-        both insertion points exactly as they were before #1377 slice 5:
-        the compose YAML block, and the blank line before `cd .../build`."""
+    def test_empty_provider_fragments_preserve_pre_slice5_compose(self):
+        """With every provider fragment empty, the shared template preserves
+        the original compose block and blank line before ``cd .../build``."""
         from orchestrators.setup_orchestrator import SetupOrchestrator
         from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
 
@@ -568,6 +566,7 @@ class TestPolarisAwsAgentSecurity:
             "public_key": "ssh-rsa AAAA",
             "aws_agent_setup_block": "",
             "aws_agent_compose_block": "",
+            "gcp_agent_compose_block": "",
         }
         rendered = SetupOrchestrator._render_script(POLARIS_RANGE_BOOTSTRAP_SCRIPT, context, "polaris_range_bootstrap")
 
@@ -576,10 +575,67 @@ class TestPolarisAwsAgentSecurity:
         assert "/run/shifter-agent" not in rendered
         assert "credential_process" not in rendered
 
+    def test_bootstrap_explicitly_stages_splice_key_and_fails_closed(self):
+        """The provisioner must not depend on the baked a14/a9 entrypoints to
+        understand the splice key env vars. It generates the per-range keypair,
+        writes both halves into the recreated containers, and aborts if either
+        file is still missing."""
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
+        assert "base64 -d | docker exec -i a14-kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "cat > /home/kali/.ssh/splice_relay" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "Host splice-relay" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "cat > /root/.ssh/authorized_keys" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "splice_staged=0" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "polaris bootstrap: splice key staging failed" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
+    def test_bootstrap_enforces_kali_sudo_and_xrdp_prerequisites(self):
+        """Polaris users land in a14-kali, so the bootstrap owns the user-facing
+        Kali contract instead of assuming the standalone Kali image applied."""
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
+        assert "install -d -o kali -g kali -m 0755 /home/kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "usermod -aG sudo kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "kali ALL=(ALL:ALL) NOPASSWD: ALL" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "allowed_users=anybody" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "needs_root_rights=yes" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "repair_xrdp_file /etc/xrdp/cert.pem 0644" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "repair_xrdp_file /etc/xrdp/key.pem 0640" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "security_layer=tls" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "crypt_level=high" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "ssl_protocols=TLSv1.2" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "docker cp /etc/ssh/ssh_host_ed25519_key a14-kali:/etc/ssh/ssh_host_ed25519_key" in (
+            POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        )
+        assert "ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "docker restart a14-kali" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "kali sudo entitlement missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "kali sudoers policy missing after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "Xwrapper allowed_users was not repaired" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        assert "XRDP key is not readable by xrdp after repair" in POLARIS_RANGE_BOOTSTRAP_SCRIPT
+
+    def test_gcp_bootstrap_persists_private_google_routes_in_compose(self, monkeypatch):
+        from orchestrators.setup_orchestrator import SetupOrchestrator
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        monkeypatch.setenv("POLARIS_TESTS_BUCKET", "gcs-bucket")
+        monkeypatch.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "proj-123")
+        context = PolarisRangeBootstrapPlan(provider="gcp").get_context(MockPolarisInstance())
+        rendered = SetupOrchestrator._render_script(
+            POLARIS_RANGE_BOOTSTRAP_SCRIPT,
+            context,
+            "polaris_range_bootstrap",
+        )
+
+        assert '"oauth2.googleapis.com:199.36.153.8"' in rendered
+        assert '"aiplatform.googleapis.com:199.36.153.8"' in rendered
+        assert '"us-central1-aiplatform.googleapis.com:199.36.153.8"' in rendered
+
     # --- Fail-closed verification (AWS-only verify_step variant) ----------
 
     def test_gcp_verify_script_is_byte_identical_to_pre_slice5(self):
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aux import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
         assert VERIFY_POLARIS_BOOTSTRAP_SCRIPT == _ORIGINAL_VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
@@ -587,7 +643,7 @@ class TestPolarisAwsAgentSecurity:
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 
         plan = PolarisRangeBootstrapPlan(provider="gcp")
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aux import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
         assert plan.verify_step.script == VERIFY_POLARIS_BOOTSTRAP_SCRIPT
 
@@ -595,7 +651,7 @@ class TestPolarisAwsAgentSecurity:
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 
         plan = PolarisRangeBootstrapPlan(provider="aws")
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aux import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
         from plans._polaris_scripts_aws import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
         assert plan.verify_step.script == VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS

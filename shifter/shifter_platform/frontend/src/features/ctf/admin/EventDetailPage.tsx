@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { Flag, Radar, Users } from "lucide-react";
 
@@ -28,6 +28,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 
 import { EventLifecycleCard } from "./EventLifecycleCard";
 import { EventStaffCard } from "./EventStaffCard";
+import { EventPagesCard } from "./EventPagesCard";
 import { EventWebhooksCard } from "./EventWebhooksCard";
 import { formatDateTime, titleCase } from "../format";
 import {
@@ -222,6 +223,7 @@ export function EventDetailPage() {
         <EventOverview event={event} />
         <EventStaffCard eventId={event.id} />
         <EventWebhooksCard eventId={event.id} />
+        <EventPagesCard eventId={event.id} />
         <EventLinks eventId={event.id} />
       </div>
 

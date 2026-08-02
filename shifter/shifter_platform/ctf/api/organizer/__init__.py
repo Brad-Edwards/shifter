@@ -39,6 +39,11 @@ from ctf.api.organizer.events import (
     ForceDeleteEventView,
     ScenarioListView,
 )
+from ctf.api.organizer.insights import (
+    EventAnalyticsView,
+    EventPageDetailView,
+    EventPagesView,
+)
 from ctf.api.organizer.lifecycle import (
     EventCleanupControlView,
     EventLifecycleView,
@@ -66,6 +71,7 @@ from ctf.api.organizer.participants import (
     ParticipantDetailView,
     ParticipantImportView,
     ParticipantListView,
+    ParticipantPasswordView,
     ParticipantResendInviteView,
 )
 from ctf.api.organizer.play import (
@@ -113,11 +119,14 @@ __all__ = [
     "ChallengeImportView",
     "ChallengeListView",
     "ChallengePrerequisitesView",
+    "EventAnalyticsView",
     "EventCleanupControlView",
     "EventDetailView",
     "EventEmailTemplateView",
     "EventLifecycleView",
     "EventListView",
+    "EventPageDetailView",
+    "EventPagesView",
     "EventRangeListView",
     "EventRangeProvisionView",
     "EventResultsExportView",
@@ -140,6 +149,7 @@ __all__ = [
     "ParticipantHiddenView",
     "ParticipantImportView",
     "ParticipantListView",
+    "ParticipantPasswordView",
     "ParticipantRangeAccessView",
     "ParticipantRangeDestroyView",
     "ParticipantRangeProvisionView",

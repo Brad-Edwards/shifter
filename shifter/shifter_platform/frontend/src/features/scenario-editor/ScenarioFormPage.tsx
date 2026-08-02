@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { Loader2 } from "lucide-react";
 
@@ -190,7 +190,7 @@ export function ScenarioFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>
       <Alert variant="destructive">
         <AlertTitle>This scenario cannot be edited here</AlertTitle>
         <AlertDescription>
-          Built-in, ACES, and CTF scenarios are read-only in the editor. You can clone it to a custom scenario instead.{" "}
+          Built-in, RAES, and CTF scenarios are read-only in the editor. You can clone it to a custom scenario instead.{" "}
           <Link className="underline" to={scenarioPath(scenarioId)}>
             Back to scenario
           </Link>

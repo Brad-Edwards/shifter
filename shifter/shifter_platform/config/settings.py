@@ -31,6 +31,7 @@ from config._cache_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
+from config._ctf_content_settings import *  # NOSONAR  # noqa: E402
 from config._drf_settings import *  # NOSONAR  # noqa: E402
 from config._email import *  # NOSONAR  # noqa: E402
 from config._guacamole_settings import *  # NOSONAR  # noqa: E402
@@ -139,12 +140,12 @@ INSTALLED_APPS = [
     # GCP SendGrid/Mailgun email backends (AWS uses django-ses); see config/_email.py.
     "anymail",
     "mission_control.apps.MissionControlConfig",
-    "risk_register.apps.RiskRegisterConfig",
     "engine.apps.EngineConfig",
     "cms.apps.CMSConfig",
     "management.apps.ManagementConfig",
     "shared.apps.SharedConfig",
     "ctf.apps.CtfConfig",
+    "workspaces.apps.WorkspacesConfig",
 ]
 
 if AUTH_PROVIDER == "oidc":
@@ -257,9 +258,12 @@ CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 
 CTF_RANGE_CLEANUP_BATCH_SIZE = _env_int("CTF_RANGE_CLEANUP_BATCH_SIZE", 10)
 CTF_RANGE_CLEANUP_BATCH_PAUSE_SECONDS = _env_int("CTF_RANGE_CLEANUP_BATCH_PAUSE_SECONDS", 5)
 
-# ACES operation-record retention/cleanup knobs (issue #1277): snapshot TTL days
+# RAES operation-record retention/cleanup knobs (issue #1277): snapshot TTL days
 # plus the dedicated prune service cadence/batch size. Non-secret integers.
-from config._aces_settings import *  # noqa: E402  # NOSONAR
+# Capacity-aware provisioning (PLAT-201, #680): the deployment-owned partition
+# and metric catalog plus the read-only identities used to observe provider
+# headroom. Distinct from the portal saturation emitter imported above.
+from config._capacity_planning_settings import *  # noqa: E402  # NOSONAR
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
 # CTF regex-flag safety tunables (issue #1183): pattern/submission length caps
@@ -270,6 +274,7 @@ from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
 # Split into config/_database_settings.py to keep this module under the S104
 # 500-line cap; the IAM-auth DB path lives there (issue #159).
 from config._database_settings import *  # noqa: E402  # NOSONAR
+from config._raes_settings import *  # noqa: E402  # NOSONAR
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -435,6 +440,13 @@ RANGE_RECONCILE_STALE_SECONDS: int = int(os.environ.get("RANGE_RECONCILE_STALE_S
 
 # Maximum RangeInstance rows the reconciler processes per run (bounded batch).
 RANGE_RECONCILE_BATCH_SIZE: int = int(os.environ.get("RANGE_RECONCILE_BATCH_SIZE", "100"))
+
+# ADR-008-R7: size of the pre-provisioned GCP OpenVPN gateway service-account
+# pool. Each active range that requests OpenVPN reserves one slot
+# (Range.allocate_vpn_gateway_slot -> sh-vpn-pool-<slot>); this bounds concurrent
+# OpenVPN ranges and MUST match the Terraform `vpn_gateway_pool_size` that
+# pre-creates the pool SAs. Single isolated tenant / single project.
+VPN_GATEWAY_POOL_SIZE: int = int(os.environ.get("VPN_GATEWAY_POOL_SIZE", "24"))
 
 # ------------------------------------------------------------------------------
 # CTF Configuration

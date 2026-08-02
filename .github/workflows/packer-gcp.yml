@@ -57,6 +57,17 @@ jobs:
       IMAGE_TYPE: ${{ inputs.image_type }}
       DC_PROFILE: ${{ inputs.dc_profile }}
     steps:
+      - name: Reject non-protected dispatch refs
+        working-directory: ${{ github.workspace }}
+        run: |
+          case "${GITHUB_REF}" in
+            refs/heads/dev|refs/heads/main) ;;
+            *)
+              echo "::error::packer-gcp builds may only run from dev or main; got '${GITHUB_REF}'."
+              exit 1
+              ;;
+          esac
+
       # Build from the dispatched ref (github.sha), which GitHub already gates
       # by workflow_dispatch permission. No free-form `inputs.ref` is accepted:
       # a privileged, cloud-credentialed build must not run code from an
@@ -130,6 +141,7 @@ jobs:
           # The builder VM runs as the Packer service account if configured,
           # otherwise the WIF-impersonated deploy service account.
           BUILDER_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+          MACHINE_TYPE="${GCP_PACKER_MACHINE_TYPE}"
           # Export as PKR_VAR_* so Packer reads them from the environment — never
           # as -var CLI flags (which would expose values in the process list).
           {
@@ -139,7 +151,7 @@ jobs:
             echo "PKR_VAR_subnetwork=${GCP_PACKER_SUBNETWORK}"
             echo "PKR_VAR_service_account_email=${BUILDER_SA}"
             echo "PKR_VAR_image_prefix=shifter"
-            echo "PKR_VAR_machine_type=${GCP_PACKER_MACHINE_TYPE}"
+            echo "PKR_VAR_machine_type=${MACHINE_TYPE}"
             echo "PKR_VAR_use_internal_ip=${GCP_PACKER_USE_INTERNAL_IP}"
             echo "PKR_VAR_polaris_stack_bucket=${GCP_POLARIS_STACK_BUCKET}"
             echo "PKR_VAR_polaris_stack_sha256=${GCP_POLARIS_STACK_SHA256}"

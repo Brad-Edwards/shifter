@@ -216,7 +216,6 @@ jobs:
               - '.github/pull_request_template.md'
               - '.github/copilot-instructions.md'
               - '.gc/plan-rules.md'
-              - 'changelog.d/README.md'
               - 'docs/adr/**'
               - 'docs/technical/dev/adr-enforcement.md'
 
@@ -294,10 +293,6 @@ jobs:
           . "${RUNNER_TEMP}/precommit-venv/bin/activate"
           python -m pip install --upgrade pip
           python -m pip install 'pre-commit==4.3.0'
-          # adr-guard-parity-inventory (ADR-024-R4 / #1313) is a global invariant
-          # that must run even when the Quality workflow's adr_guard path filter is
-          # false (e.g. a docs-only change that deletes an inventory-referenced
-          # file), so it rides this always-present pre-commit job.
           hooks=(
             trailing-whitespace
             end-of-file-fixer
@@ -307,7 +302,6 @@ jobs:
             check-merge-conflict
             detect-private-key
             gitleaks
-            adr-guard-parity-inventory
           )
           for hook in "${hooks[@]}"; do
             pre-commit run "$hook" --all-files --show-diff-on-failure
@@ -408,7 +402,8 @@ jobs:
     needs: [changes, quality]
     # `_gcp-dev.yml::deploy` requests `id-token: write` (GCP OIDC via
     # workload identity federation) and `attestations: write` (SBOM +
-    # provenance attestation, ADR-037-R5/R6). Reusable workflows can't request
+    # provenance attestation, ADR-037-R5/R6). `post-deploy-smoke` requests
+    # `issues: write` (smoke failure issues). Reusable workflows can't request
     # higher GITHUB_TOKEN scopes than the caller grants — without this
     # block the workflow fails at startup with
     # `nested job 'deploy' is requesting 'id-token: write', but is only
@@ -417,6 +412,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+      issues: write
     if: |
       always() &&
       github.event_name != 'pull_request' &&
@@ -447,11 +443,13 @@ jobs:
       GCP_PUBLIC_HOSTNAME: ${{ secrets.GCP_PUBLIC_HOSTNAME }}
       GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
       GCP_MASTER_AUTHORIZED_CIDRS: ${{ secrets.GCP_MASTER_AUTHORIZED_CIDRS }}
+      GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
       SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
       GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
       GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
       PLATFORM_BOOTSTRAP_STAFF_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_STAFF_EMAILS }}
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
+      SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
 
   core:
     name: Core
@@ -591,6 +589,14 @@ jobs:
       # deliberate full-deploy path for both concerns.
       platform_changes: ${{ needs.changes.outputs.shifter_platform == 'true' || github.event_name == 'workflow_dispatch' }}
       portal_image_changes: ${{ needs.changes.outputs.portal_image == 'true' || github.event_name == 'workflow_dispatch' }}
+      # Existing ECS tenants must opt into EKS only after the serialized
+      # migration prerequisites are ready. An unset variable is fail-safe false.
+      eks_enabled: >-
+        ${{
+          (needs.changes.outputs.aws_environment == 'dev' && vars.AWS_EKS_DEV_ENABLED == 'true') ||
+          (needs.changes.outputs.aws_environment == 'proof' && vars.AWS_EKS_PROOF_ENABLED == 'true') ||
+          (needs.changes.outputs.aws_environment == 'prod' && vars.AWS_EKS_PROD_ENABLED == 'true')
+        }}
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
@@ -603,6 +609,9 @@ jobs:
       TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
       TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
       TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}
+      TF_VARS_DEV_EKS: ${{ secrets.TF_VARS_DEV_EKS }}
+      TF_VARS_PROOF_EKS: ${{ secrets.TF_VARS_PROOF_EKS }}
+      TF_VARS_PROD_EKS: ${{ secrets.TF_VARS_PROD_EKS }}
       SHIFTER_CONFIG_DEV_RANGE: ${{ secrets.SHIFTER_CONFIG_DEV_RANGE }}
       SHIFTER_CONFIG_PROOF_RANGE: ${{ secrets.SHIFTER_CONFIG_PROOF_RANGE }}
       SHIFTER_CONFIG_PROD_RANGE: ${{ secrets.SHIFTER_CONFIG_PROD_RANGE }}

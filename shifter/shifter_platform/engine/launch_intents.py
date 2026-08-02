@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from hashlib import sha256
 from uuid import UUID, uuid4
 
@@ -10,16 +11,33 @@ from django.db import transaction
 from django.db.models import Model, QuerySet
 from django.utils import timezone
 
-from engine.models import Instance, ProvisionerLaunchIntent, ProvisionerLaunchStatus, Range, Request
+from engine.models import (
+    Instance,
+    InterruptState,
+    OperationInput,
+    ProvisionerLaunchIntent,
+    ProvisionerLaunchStatus,
+    Range,
+    Request,
+)
+from engine.operation_inputs import operation_input_payload
 from shared.cloud import PROVISIONER_CONTAINER_NAME
-from shared.cloud.gcp.base import build_idempotent_job_name
+from shared.cloud.kubernetes.naming import build_idempotent_job_name
+from shared.operation_envelope import build_operation_envelope
 
 _OPERATIONS = {
     "range": {"provision", "destroy", "pause", "resume"},
-    "aces-range": {"provision", "destroy", "pause", "resume"},
+    "raes-range": {"provision", "destroy", "pause", "resume"},
     "ngfw": {"provision", "deprovision", "start", "stop"},
 }
 PROVISIONER_DISPATCH_FAILED = "Provisioner dispatch failed"
+
+# Bounded convergence budget for a provision-task interrupt (#277). Safe internal
+# default; promote to a typed deployment setting only if operators need to tune it.
+_INTERRUPT_DEADLINE_SECONDS = 1800
+# Only the RAES provision generation is interruptible in this scope (#277); the
+# AWS legacy ``range`` provision path is #1894.
+_INTERRUPTIBLE_PROVISION = ("raes-range", "provision")
 
 
 def _request_payload(command: list[str]) -> dict[str, object] | None:
@@ -62,14 +80,35 @@ def _legacy_range_payload(command: list[str]) -> dict[str, object] | None:
     }
 
 
+def _split_operation_id(command: list[str]) -> tuple[list[str], str | None]:
+    """Split an optional trailing ``--operation-id <uuid>`` correlation pair.
+
+    The generation fence (``operation_id``) is carried on the launched argv so the
+    provisioner tags its input read and result appends with exactly the operation
+    it is executing, never "latest by request" (ADR-043). It is optional so the
+    engine can validate the canonical command before the id is minted, and add it
+    only when reconstructing the dispatch argv from a persisted intent.
+    """
+    if len(command) >= 2 and command[-2] == "--operation-id":
+        try:
+            operation_id = str(UUID(command[-1]))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("operation_id must be a UUID") from exc
+        return command[:-2], operation_id
+    return command, None
+
+
 def validate_provisioner_command(command: list[str]) -> dict[str, object]:
     """Return a versioned, secret-free payload for one canonical CLI command."""
     if not isinstance(command, list) or any(not isinstance(part, str) for part in command):
         raise ValueError("provisioner command must be a list of strings")
-    payload = _request_payload(command) or _legacy_range_payload(command)
-    if payload is not None:
-        return payload
-    raise ValueError("command does not match a canonical provisioner launch shape")
+    base, operation_id = _split_operation_id(command)
+    payload = _request_payload(base) or _legacy_range_payload(base)
+    if payload is None:
+        raise ValueError("command does not match a canonical provisioner launch shape")
+    if operation_id is not None:
+        payload["operation_id"] = operation_id
+    return payload
 
 
 def command_from_payload(payload: dict[str, object]) -> list[str]:
@@ -89,6 +128,8 @@ def command_from_payload(payload: dict[str, object]) -> list[str]:
             "--user-id",
             str(payload.get("user_id")),
         ]
+    if payload.get("operation_id"):
+        command = [*command, "--operation-id", str(payload["operation_id"])]
     if validate_provisioner_command(command) != payload:
         raise ValueError("provisioner launch intent payload is not canonical")
     return command
@@ -132,7 +173,7 @@ def _authorize_request_range(
     target: Range | Instance | None,
     expected_operation_id: UUID | str | None,
 ) -> None:
-    """Authorize a request-based Range or ACES Range payload."""
+    """Authorize a request-based Range or RAES Range payload."""
     range_rows = _lock_for_generation(Range.objects.all(), expected_operation_id)
     row = target if isinstance(target, Range) else range_rows.filter(request=request).first()
     if row is None:
@@ -183,7 +224,7 @@ def authorize_provisioner_payload(
     request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
     if request is None:
         raise ValueError("launch intent request does not exist")
-    if payload.get("resource") in {"range", "aces-range"}:
+    if payload.get("resource") in {"range", "raes-range"}:
         _authorize_request_range(payload, request, target, expected_operation_id)
     else:
         _authorize_request_ngfw(payload, request, target, expected_operation_id)
@@ -194,7 +235,7 @@ def _lock_operation_target(payload: dict[str, object]) -> Range | Instance:
     if "request_id" not in payload:
         return Range.objects.select_for_update().get(pk=int(str(payload["range_id"])))
     request = Request.objects.get(request_id=UUID(str(payload["request_id"])))
-    if payload["resource"] in {"range", "aces-range"}:
+    if payload["resource"] in {"range", "raes-range"}:
         return Range.objects.select_for_update().get(request=request)
     return Instance.objects.select_for_update().get(request=request, role=Instance.Role.NGFW)
 
@@ -225,6 +266,61 @@ def _operation_identity(payload: dict[str, object]) -> UUID:
         return operation_id
 
 
+def request_provision_interrupt(range_obj: Range) -> bool:
+    """Record a durable interrupt against the range's current provision generation (#277).
+
+    Bound under the caller's transaction to the current ``provisioner_operation_id``
+    -- never keyed by ``request_id`` or task reference alone. Scoped to the RAES
+    provision path; the AWS legacy ``range`` path is out of scope (#1894). The
+    launcher worker converges the recorded request (suppress pending / stop running
+    / observe terminal absence / enqueue canonical destroy). Idempotent: returns
+    True without re-stamping when the generation is already marked.
+
+    Returns:
+        True when an interruptible provision generation was (or already is) marked.
+    """
+    intent = _interruptible_provision_intent(range_obj)
+    if intent is None:
+        return False
+    if intent.interrupt_state != InterruptState.NONE:
+        return True
+    now = timezone.now()
+    intent.interrupt_state = InterruptState.REQUESTED
+    intent.interrupt_requested_at = now
+    intent.interrupt_next_attempt_at = now
+    intent.interrupt_deadline = now + timedelta(seconds=_INTERRUPT_DEADLINE_SECONDS)
+    intent.save(
+        update_fields=[
+            "interrupt_state",
+            "interrupt_requested_at",
+            "interrupt_next_attempt_at",
+            "interrupt_deadline",
+        ]
+    )
+    return True
+
+
+def _interruptible_provision_intent(range_obj: Range) -> ProvisionerLaunchIntent | None:
+    """Return the range's current launch intent when its generation can be interrupted.
+
+    ``None`` when the range has no reserved generation, no intent is recorded for
+    it, or the recorded intent is not the RAES provision operation the interrupt
+    path converges.
+    """
+    op_id = range_obj.provisioner_operation_id
+    intent = (
+        ProvisionerLaunchIntent.objects.select_for_update().filter(operation_id=op_id).first()
+        if op_id is not None
+        else None
+    )
+    if intent is None:
+        return None
+    payload = intent.payload or {}
+    if (payload.get("resource"), payload.get("operation")) != _INTERRUPTIBLE_PROVISION:
+        return None
+    return intent
+
+
 def clear_provisioner_operation_after_failure(row: Range | Instance) -> list[str]:
     """Close a failed lifecycle episode so the same operation can be retried."""
     if row.provisioner_operation_id is None and not row.provisioner_operation:
@@ -243,7 +339,7 @@ def _resolve_failure_target(payload: dict[str, object]) -> Range | Instance | No
         request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
         if request is None:
             target = None
-        elif payload.get("resource") in {"range", "aces-range"}:
+        elif payload.get("resource") in {"range", "raes-range"}:
             target = Range.objects.select_for_update().filter(request=request).first()
         else:
             target = Instance.objects.select_for_update().filter(request=request, role=Instance.Role.NGFW).first()
@@ -331,6 +427,39 @@ def fail_current_provisioner_operation(
     return True
 
 
+def _materialize_operation_input(payload: dict[str, object], operation_id: UUID) -> None:
+    """Persist the immutable operation input keyed by ``operation_id``.
+
+    Runs inside the launch-intent transaction so the input and intent commit
+    atomically (ADR-043). The provisioner reads exactly this row by
+    ``operation_id``. Immutable: created once per operation generation.
+    """
+    target = _lock_operation_target(payload)
+    request: Request | None = getattr(target, "request", None)
+    request_id = getattr(request, "request_id", None)
+    if request is None or request_id is None:
+        # Deprecated legacy range with no linked request: no request-keyed input
+        # projection to materialize in shadow. Skip rather than fabricate one.
+        return
+    resource = str(payload["resource"])
+    operation = str(payload["operation"])
+    envelope = build_operation_envelope(
+        operation_id=operation_id,
+        request_id=request_id,
+        resource=resource,
+        operation=operation,
+        payload=operation_input_payload(target, resource, request),
+    )
+    OperationInput.objects.create(
+        operation_id=operation_id,
+        request_id=request_id,
+        resource=resource,
+        operation=operation,
+        contract_version=envelope["contract_version"],
+        envelope=envelope,
+    )
+
+
 def enqueue_provisioner_launch(command: list[str]) -> str:
     """Persist one durable intent per authorized operation and return its UUID."""
     payload = validate_provisioner_command(command)
@@ -357,6 +486,7 @@ def enqueue_provisioner_launch(command: list[str]) -> str:
             task_ref=task_ref,
             next_attempt_at=timezone.now(),
         )
+        _materialize_operation_input(payload, operation_id)
         return str(row.intent_id)
 
 

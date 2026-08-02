@@ -32,57 +32,53 @@ else:
 _HANDLE_RE = re.compile(r"^range-[a-z0-9][a-z0-9-]{2,42}$")
 _MAX_GENERATED_ACCOUNTS = 100
 _HANDLE_ATTEMPTS = 8
+_PASSWORD_GENERATION_ATTEMPTS = 8
+_PASSWORD_BYTES = 24
 
 
-@sensitive_variables()
-def _validate_bootstrap_credential(candidate: str) -> None:
-    """Fail closed when a configured bootstrap source violates password policy.
-
-    The organizer form already validates ``participant_password_override``, but
-    settings, scripts, direct model writes, and pre-existing rows all bypass that
-    form, so the service resolver re-applies the canonical validators. A
-    non-conforming source raises a controlled CTF error instead of surfacing a
-    Django ``ValidationError`` as a 500.
-    """
+@sensitive_variables("candidate")
+def _validate_participant_password(candidate: str, *, user: User | None = None) -> None:
+    """Apply Django's canonical password policy and expose a stable domain error."""
     from django.contrib.auth.password_validation import validate_password
 
     try:
-        validate_password(candidate)
+        validate_password(candidate, user=user)
     except ValidationError as exc:
         raise CTFValidationError(
-            "Configured CTF participant bootstrap credential does not meet the password policy.",
-            code="CTF_BOOTSTRAP_CREDENTIAL_INVALID",
+            "Participant password does not meet the password policy.",
+            code="CTF_PARTICIPANT_PASSWORD_INVALID",
         ) from exc
 
 
-@sensitive_variables()
-def effective_bootstrap_password(event: CTFEvent) -> str:
-    """Resolve the event or platform bootstrap credential, failing closed.
-
-    Accepted sources, in order: the event's encrypted
-    ``participant_password_override`` and an explicitly configured
-    ``CTF_DEFAULT_PARTICIPANT_PASSWORD``. Each non-blank source is validated
-    against the canonical password policy before use. No repository literal,
-    settings constant, or implicit default may ever authenticate an account:
-    when neither source is configured this raises ``CTFValidationError`` so
-    account creation, attachment, reset, reveal, and the bootstrap-reuse check
-    all refuse rather than fall back to a shared, guessable credential.
-    """
-    override = getattr(event, "participant_password_override", "") or ""
-    # Presence is decided on the stripped value so a whitespace-only source is
-    # treated as unconfigured (blank means unavailable, not a valid password);
-    # the original candidate is preserved for validation and use.
-    if override.strip():
-        _validate_bootstrap_credential(override)
-        return override
-    platform_default = getattr(settings, "CTF_DEFAULT_PARTICIPANT_PASSWORD", "") or ""
-    if platform_default.strip():
-        _validate_bootstrap_credential(platform_default)
-        return platform_default
+@sensitive_variables("candidate")
+def generate_participant_password(*, user: User | None = None) -> str:
+    """Return a CSPRNG password accepted by the configured Django validators."""
+    for _ in range(_PASSWORD_GENERATION_ATTEMPTS):
+        candidate = secrets.token_urlsafe(_PASSWORD_BYTES)
+        try:
+            _validate_participant_password(candidate, user=user)
+        except CTFValidationError:
+            continue
+        return candidate
     raise CTFValidationError(
-        "No secure CTF participant bootstrap credential is configured for this event.",
-        code="CTF_BOOTSTRAP_CREDENTIAL_UNAVAILABLE",
+        "Unable to generate a compliant participant password.",
+        code="CTF_PARTICIPANT_PASSWORD_GENERATION_FAILED",
     )
+
+
+@sensitive_variables("override")
+def _event_shared_participant_password(event: CTFEvent) -> str | None:
+    """Return a validated explicit event-shared password, or ``None``."""
+    override = getattr(event, "participant_password_override", "") or ""
+    if not override.strip():
+        return None
+    _validate_participant_password(override)
+    return override
+
+
+def _password_for_new_participant(event: CTFEvent) -> str:
+    """Select explicit event-shared policy or generated-by-default creation."""
+    return _event_shared_participant_password(event) or generate_participant_password()
 
 
 def generate_participant_username() -> str:
@@ -161,9 +157,9 @@ def create_participant_accounts(
     with transaction.atomic():
         event, active_count = _event_for_account_creation(event_id, count)
         group, _ = Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)
-        password = effective_bootstrap_password(event)
         now = timezone.now()
         for index in range(count):
+            password = _password_for_new_participant(event)
             user = _new_user(password, generate_participant_username)
             user.groups.set([group])
             configure_temporary_ctf_account(user, event.pk)
@@ -185,7 +181,7 @@ def attach_isolated_account(participant: CTFParticipant) -> CTFParticipant:
     """Attach a fresh marked account to an existing unlinked participant."""
     if participant.user_id is not None:
         raise CTFValidationError("Participant already has an account", code="CTF_ACCOUNT_EXISTS")
-    password = effective_bootstrap_password(participant.event)
+    password = _password_for_new_participant(participant.event)
     user = _new_user(password, generate_participant_username)
     group, _ = Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)
     user.groups.set([group])
@@ -274,53 +270,6 @@ def rename_own_participant_username(
         if participant.user_id != actor.pk:
             raise CTFValidationError("You may only change your own username", code="CTF_PERMISSION_DENIED")
         _apply_username_rename(participant, normalized, actor)
-    return participant
-
-
-@sensitive_variables("password")
-def reset_participant_credentials(participant_id: UUID) -> CTFParticipant:
-    """Reset to the event bootstrap password and optionally deliver it."""
-    with transaction.atomic():
-        try:
-            participant = (
-                CTFParticipant.objects.select_for_update(of=("self",))
-                .select_related("event", "user")
-                .get(pk=participant_id, deleted_at__isnull=True)
-            )
-        except CTFParticipant.DoesNotExist:
-            raise CTFNotFoundError("Participant not found", details={"participant_id": str(participant_id)}) from None
-        if participant.user is None or not participant.user.profile.is_ctf_account:
-            raise CTFValidationError("Participant has no account", code="CTF_ACCOUNT_REQUIRED")
-        password = effective_bootstrap_password(participant.event)
-        participant.user.set_password(password)
-        participant.user.save(update_fields=["password"])
-        from management.services import set_ctf_password_change_required
-        from shared.api_tokens.models import ApiToken
-
-        set_ctf_password_change_required(participant.user, True)
-        ApiToken.objects.filter(created_by=participant.user, revoked_at__isnull=True).update(revoked_at=timezone.now())
-
-    if participant.email:
-        from django.utils.html import escape
-
-        from ctf.services.notification import _build_ctf_login_url, _send_email
-
-        login_url = _build_ctf_login_url()
-        username = participant.user.username
-        _send_email(
-            recipient=participant.email,
-            subject=f"CTF login for {participant.event.name}",
-            html_content=f"<p>Username: {escape(username)}</p><p>Login: {escape(login_url)}</p>",
-            text_content=f"Username: {username}\nLogin: {login_url}",
-        )
-        _send_email(
-            recipient=participant.email,
-            subject=f"CTF password for {participant.event.name}",
-            # The credential is operator-controlled (event override or configured
-            # platform value, issue #1665), so escape it before HTML interpolation.
-            html_content=f"<p>Password: {escape(password)}</p>",
-            text_content=f"Password: {password}",
-        )
     return participant
 
 

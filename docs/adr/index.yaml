@@ -9,26 +9,39 @@
       {
         "id": "ADR-001-R1",
         "description": "Cross-layer imports must conform to scripts/check_layer_imports/layer_imports.yaml; service-package imports expose only the public facade (for example, cms.services), not private split-package implementation submodules such as cms.services._range_pause or from cms.services import _range_pause; only shared may import cyberscript directly.",
-        "checks": ["layer-imports"]
+        "checks": [
+          "layer-imports"
+        ]
       },
       {
         "id": "ADR-001-R2",
         "description": "Direct cross-layer model imports are disallowed by default and must be introduced intentionally.",
-        "checks": ["cross-layer-model-imports"]
+        "checks": [
+          "cross-layer-model-imports"
+        ]
       },
       {
         "id": "ADR-001-R3",
         "description": "Every first-party Django app is classified in scripts/check_layer_imports/layer_imports.yaml as a domain, presentation, support/contracts, or support/composition layer. An unclassified first-party app in INSTALLED_APPS, a stale classification entry with no local AppConfig, or a dynamic INSTALLED_APPS entry the checker cannot resolve fails closed. The retired documentation package (ADR-038) is not classified.",
-        "checks": ["installed-apps-classified"]
+        "checks": [
+          "installed-apps-classified"
+        ]
       },
       {
         "id": "ADR-001-R4",
         "description": "Mission Control calls the public service facade of the domain that owns the operation: cms.services for catalog, desired-state lifecycle, and control-plane orchestration; engine.services directly only for realized runtime/data-plane access such as terminal creation, SSH/RDP connection resolution, and NGFW terminal access. The mission_control -> engine.services seam is narrowed to a per-symbol allowlist in the allowed_symbols block of scripts/check_layer_imports/layer_imports.yaml (SSHConnection, connect_terminal, connect_ngfw_terminal, get_ssh_connection_info, get_rdp_connection_info, get_ranges_for_ngfw); importing any other engine.services symbol, or a bare engine.services module import that hides the symbol, is a violation, so control-plane engine operations still front through cms.services. A CMS pass-through must not be added solely to give presentation one downstream dependency; both paths remain limited to their public service facades.",
-        "checks": ["layer-imports"]
+        "checks": [
+          "layer-imports"
+        ]
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "ci", "claude-hook", "agent-policy"],
+    "enforcement": [
+      "pre-commit",
+      "ci",
+      "claude-hook",
+      "agent-policy"
+    ],
     "evidence": [
       "scripts/check_layer_imports/layer_imports.yaml",
       "scripts/check_layer_imports/check_layer_imports.py",
@@ -48,16 +61,23 @@
       {
         "id": "ADR-002-R1",
         "description": "Guardrail file changes must update docs/adr or the developer ADR enforcement docs in the same change.",
-        "checks": ["guardrail-docs"]
+        "checks": [
+          "guardrail-docs"
+        ]
       },
       {
         "id": "ADR-002-R2",
         "description": "Commit messages and tracked text must not contain AI/agent attribution markers (Co-authored-by agent lines, Cursor marketing footers, Claude Code branding, etc.).",
-        "checks": ["no-agent-attribution"]
+        "checks": [
+          "no-agent-attribution"
+        ]
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "agent-policy"],
+    "enforcement": [
+      "pre-commit",
+      "agent-policy"
+    ],
     "evidence": [
       "docs/adr/README.md",
       "docs/technical/dev/adr-enforcement.md"
@@ -73,39 +93,64 @@
       {
         "id": "ADR-003-R1",
         "description": "ADR conformance must run in CI even when tests are skipped.",
-        "checks": ["adr-registry", "layer-imports", "cross-layer-model-imports"]
+        "checks": [
+          "adr-registry",
+          "layer-imports",
+          "cross-layer-model-imports"
+        ]
       },
       {
         "id": "ADR-003-R2",
         "description": "AWS Terraform plan routing must stay scoped to Terraform-consumed files, while Quality routing must run by exclusion for pull requests and dev pushes: a dedicated quality_relevant output runs Quality unless the diff is ordinary docs-only, and guardrail docs such as .github/pull_request_template.md, .github/copilot-instructions.md, docs/adr/**, and adr-enforcement.md must remain quality-relevant. Non-deploy support/test paths such as scripts/polaris-aws-range/** and scenario-dev/polaris/tests/** must stay categorized through a dedicated quality_only filter/output without launching Terraform plans, image builds, or environment deploys. Commit-message or label-based test skips are not accepted. AWS deploy runs that can apply infrastructure must queue instead of cancelling an in-flight apply. Core, range, and platform Terraform plan and apply commands must wait for the backend state lock. Their apply jobs must create a local saved tfplan and apply that exact file instead of uploading raw binary plans as artifacts or running a fresh unplanned apply; platform Service Discovery replacement handling must inspect that same saved plan before apply. When the saved plan deletes an aws_service_discovery_service, the pre-apply handler must drain every ECS service registered against it (scale to desiredCount=0, wait for tasks to stop and Cloud Map to deregister all instances, failing the run on timeout rather than warning), snapshot the original desired counts, and restore them after apply; restoration is mandatory because aws_ecs_service.guacd sets lifecycle.ignore_changes=[desired_count], so Terraform will not bring the service back on its own. Portal application changes must keep reaching the portal image build/deploy path through the dedicated portal_image filter wired into the shifter_platform job trigger and the platform build job's portal_image_changes input, without widening the Terraform-scoped plan trigger.",
-        "checks": ["deploy-workflow-plan-scope"]
+        "checks": [
+          "deploy-workflow-plan-scope"
+        ]
       },
       {
         "id": "ADR-003-R3",
         "description": "Deploy-verification steps must fail the run when the thing they verify did not happen, instead of warning and exiting 0. The Guacamole stabilization wait in _shifter-platform.yml must exit 1 on timeout (raise the timeout if first boot needs longer rather than downgrading the result). The engine ECS task-definition update in _shifter-engine.yml must exit 1 when the task-definition family cannot be described, with the only skip gated on the explicit first_deploy bootstrap input (surfaced as the aws_first_deploy workflow_dispatch input in deploy.yml, strict by default and settable only on manual dispatch). After portal deploy, the Verify job in _shifter-platform.yml must fail when portal ALB target health, /health/, Guacamole ECS rollouts, Guacamole target health, or /guacamole/ smoke probes are not satisfied; scripts/portal_deploy/portal_deploy.py verify-post-deploy must treat a non-ACTIVE Guacamole cluster as failure when Guacamole outputs are present.",
-        "checks": ["deploy-verification-fail-loud"]
+        "checks": [
+          "deploy-verification-fail-loud"
+        ]
       },
       {
         "id": "ADR-003-R6",
-        "description": "After successful AWS dev portal deploy verification, _shifter-platform.yml may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes scripts/smoke-test.sh via scripts/portal_deploy/portal_deploy.py run-manage-on-portal. The job must remain dev-only (inputs.is_dev), continue-on-error so deploy success is not blocked, request issues: write only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. Long-running portal manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit aws ssm wait command-executed waiter. The smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED.",
-        "checks": ["deploy-verification-fail-loud", "deploy-workflow-runner-exposure"]
+        "description": "After successful dev portal deploy verification, provider-specific reusable deploy workflows may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes the shared run_post_deploy_smoke manage command through the provider's portal-exec transport. The job must remain dev-only (`inputs.is_dev` or the provider-equivalent dev-environment gate), continue-on-error so deploy success is not blocked, request `issues: write` only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. AWS keeps its existing `scripts/smoke-test.sh` -> `scripts/portal_deploy/portal_deploy.py run-manage-on-portal` SSM transport, and long-running AWS portal-manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit `aws ssm wait command-executed` waiter. The shared smoke readiness loop must return only on READY and fail immediately on every canonical terminal ResourceStatus while preserving request-id cleanup, rather than waiting for the provision timeout after FAILED or DESTROYED. Provider parity must reuse the shared smoke command/variant contract rather than forking smoke lifecycle logic by cloud.",
+        "checks": [
+          "deploy-verification-fail-loud",
+          "deploy-workflow-runner-exposure"
+        ]
       },
       {
         "id": "ADR-003-R4",
         "description": "AWS portal deployment mode must have one authoritative source: the deploy workflow derives single-instance vs. ASG mode from Terraform outputs, not from a GitHub Actions variable. The single-instance path must fail unless exactly one running tagged portal instance matches Terraform state, and the ASG path must verify the deployed image digest on every in-service instance after refresh.",
-        "checks": ["portal-deploy-mode-source-of-truth"]
+        "checks": [
+          "portal-deploy-mode-source-of-truth"
+        ]
       },
       {
         "id": "ADR-003-R5",
         "description": "Deploy workflows must keep pull_request events on GitHub-hosted PR validation only. Jobs that can reach self-hosted deploy runners, assume deploy roles, push ECR images, mutate infrastructure, or restart runtime services must be gated to trusted push/workflow_dispatch runs and bind a separate GitHub Environment name such as aws-dev, aws-prod, or gcp-dev. AWS ECR repositories are immutable; AWS deploy consumers use repo@sha256 image digests instead of mutable latest/short-SHA image identity. The deploy-workflow-runner-exposure check enforces the pull_request half by evaluating each reusable workflow's self-hosted job if-expression for a pull_request event and requiring it to fail closed (semantic evaluation, not substring matching).",
-        "checks": ["deploy-workflow-runner-exposure"]
+        "checks": [
+          "deploy-workflow-runner-exposure"
+        ]
+      },
+      {
+        "id": "ADR-003-R7",
+        "description": "SonarCloud scanner identity is repository deployment configuration, not shared source-analysis configuration. The SonarQube Cloud scan step in `.github/workflows/_quality.yml` consumes the project key and organization from the non-secret `SONAR_PROJECT_KEY` and `SONAR_ORGANIZATION` repository variables; `sonar-project.properties` retains shared sources, exclusions, report paths, suppressions, encoding, version, and file-header policy but no `sonar.projectKey`, `sonar.organization`, or `sonar.projectName`. The scan attempt is gated on the canonical `github.repository`, never on either variable being present, so missing or renamed variables fail the scanner loudly on `Brad-Edwards/shifter`. Runs under any other repository slug skip: SonarCloud is this project's tooling choice and is not imposed on anyone who cloned the repository. Fork-origin pull requests also skip, because they execute in the base repository's context (passing the identity test) but receive no secrets, and a scan that cannot be given `SONAR_TOKEN` would hand an outside contributor an unfixable red check; their code is analyzed on the `dev` run after merge. The existing `SONAR_TOKEN` reusable-workflow secret boundary, pull-request `sonar.qualitygate.wait=true`, path/coverage routing, and action SHA pinning remain unchanged. Repository-variable activation and readback are part of the same delivery as the workflow change. The `.ground-control.yaml` `sonarcloud` block remains Ground Control integration metadata and is not a scanner runtime input or an alternative source for workflow arguments.",
+        "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["ci"],
+    "enforcement": [
+      "ci"
+    ],
     "evidence": [
       ".github/workflows/_quality.yml",
       ".github/workflows/deploy.yml",
+      ".ground-control.yaml",
+      ".gc/plan-rules.md",
+      "sonar-project.properties",
       ".github/workflows/_core.yml",
       ".github/workflows/_range.yml",
       ".github/workflows/_shifter-engine.yml",
@@ -157,26 +202,32 @@
       {
         "id": "ADR-004-R7",
         "description": "Committed Terraform variable files under platform/terraform/environments/ and platform/terraform/global/ must not assign string literals to secret-bearing suffixes: password, secret, token, key, credentials, authcode, or pin_value. Bare authcode and pin_value names are also blocked. Reference an out-of-band secret store (Secrets Manager, SSM, environment) instead. Backstops gitleaks for low-entropy committed credentials it ignores.",
-        "checks": ["no-plaintext-secrets-in-tfvars"]
+        "checks": [
+          "no-plaintext-secrets-in-tfvars"
+        ]
       },
       {
         "id": "ADR-004-R8",
         "description": "Generated and pre-staging sensitive artifacts must not be tracked in source: Terraform plan outputs (tfplan, tfplan.binary, plan.out, *.tfplan) under platform/terraform/environments/ and platform/terraform/gcp/environments/, Polaris range build output under scenario-dev/polaris/build/, Polaris AWS operator run outputs (provisioning_state.json, provisioning_status.md, health_report.md, postprovision_status.md) under scripts/polaris-aws-range/, and license/authcode bootstrap material (authcodes, *.authcodes) under temp/bootstrap/. The blocked path/name set is centralized in scripts/adr_guard/adr_guard.py; the guardrail fails closed and emits repo-relative paths only, never file contents.",
-        "checks": ["no-tracked-generated-artifacts"]
+        "checks": [
+          "no-tracked-generated-artifacts"
+        ]
       },
       {
         "id": "ADR-004-R9",
         "description": "Tracked *-secrets.env files under platform/k8s/ must contain only comments, blank lines, empty assignments (KEY=), or a small fixed synthetic-placeholder allowlist (REPLACE_AT_DEPLOY, CHANGE_ME, PLACEHOLDER, EXAMPLE, plus the matching bracketed forms <replace-at-deploy>, <change-me>, <placeholder>, <example>). The bracketed forms are an explicit fixed set, NOT a <...> pattern, to prevent hiding a real credential as <attacker-known-password>. Real runtime secrets must flow in at deploy time from GCP Secret Manager, a gitignored local env file, or a deploy-time Kubernetes Secret. Containment uses git ls-files so gitignored local-dev files (e.g. *.local.env) are intentionally not scanned. The parser splits on the first '=' so non-identifier key shapes (db.password=..., api-token=..., export DB_PASSWORD=...) still flow through the value check. Inline '# comment' is NOT honored (Kustomize env_file format treats '#' as a comment only at the start of a line). Non-comment lines without '=' are flagged as malformed. The blocked condition is centralized in scripts/adr_guard/adr_guard.py; violation messages name the repo-relative path and the variable name only, never the rejected value. Backstops gitleaks for low-entropy committed credentials it ignores and prevents reintroduction of the failure mode resolved by #1207 / #1195.",
-        "checks": ["no-populated-secret-env-files"]
+        "checks": [
+          "no-populated-secret-env-files"
+        ]
       },
       {
         "id": "ADR-004-R10",
-        "description": "Every Terraform module that defines an `aws_iam_role` whose attached `aws_iam_role_policy` grants `secretsmanager:GetSecretValue` (or any wildcard that covers it — `secretsmanager:*`, `secretsmanager:Get*`, `*`) on a secret encrypted with the portal Secrets Manager CMK must also attach a single `aws_iam_role_policy` statement granting `kms:Decrypt` on that CMK. The grant must satisfy all three predicates in the SAME IAM Statement: Action covering `kms:Decrypt`; Resource set to `var.secrets_manager_kms_key_arn` or `var.secrets_kms_key_arn` (both are accepted module-input names referring to the portal CMK; preferred) or `\"*\"` (accepted when the same statement carries the service condition); Condition `StringEquals` (or `StringLike`) `kms:ViaService = \"secretsmanager.<region>.amazonaws.com\"`. Spreading the three predicates across separate statements does NOT satisfy IAM evaluation. Additionally, any IAM statement granting `kms:Decrypt` on `Resource=\"*\"` (or `[\"*\"]`) must carry a `kms:ViaService` condition pinning to some service — unconditioned wildcard `kms:Decrypt` is too broad. The check is implemented in `scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py` and wired as the `check-tf-kms-secrets-grant` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`. Currently scoped to `platform/terraform/modules/engine-provisioner/iam.tf`, `platform/terraform/modules/portal/ec2/main.tf`, and `platform/terraform/modules/guacamole/iam.tf`; expand the hook's `files:` regex and the CI invocation when a new module starts reading portal Secrets Manager secrets. Backstops the silent failure mode resolved by #52 where a fresh Secrets Manager CMK rotation left multiple roles without `kms:Decrypt` and ECS task secrets injection aborted at startup with `AccessDeniedException: Access to KMS is not allowed`.",
+        "description": "Every Terraform module that defines an `aws_iam_role` whose attached `aws_iam_role_policy` grants `secretsmanager:GetSecretValue` (or any wildcard that covers it \u2014 `secretsmanager:*`, `secretsmanager:Get*`, `*`) on a secret encrypted with the portal Secrets Manager CMK must also attach a single `aws_iam_role_policy` statement granting `kms:Decrypt` on that CMK. The grant must satisfy all three predicates in the SAME IAM Statement: Action covering `kms:Decrypt`; Resource set to `var.secrets_manager_kms_key_arn` or `var.secrets_kms_key_arn` (both are accepted module-input names referring to the portal CMK; preferred) or `\"*\"` (accepted when the same statement carries the service condition); Condition `StringEquals` (or `StringLike`) `kms:ViaService = \"secretsmanager.<region>.amazonaws.com\"`. Spreading the three predicates across separate statements does NOT satisfy IAM evaluation. Additionally, any IAM statement granting `kms:Decrypt` on `Resource=\"*\"` (or `[\"*\"]`) must carry a `kms:ViaService` condition pinning to some service \u2014 unconditioned wildcard `kms:Decrypt` is too broad. The check is implemented in `scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py` and wired as the `check-tf-kms-secrets-grant` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`. Currently scoped to `platform/terraform/modules/engine-provisioner/iam.tf`, `platform/terraform/modules/portal/ec2/main.tf`, and `platform/terraform/modules/guacamole/iam.tf`; expand the hook's `files:` regex and the CI invocation when a new module starts reading portal Secrets Manager secrets. Backstops the silent failure mode resolved by #52 where a fresh Secrets Manager CMK rotation left multiple roles without `kms:Decrypt` and ECS task secrets injection aborted at startup with `AccessDeniedException: Access to KMS is not allowed`.",
         "checks": []
       },
       {
         "id": "ADR-004-R11",
-        "description": "Checkov is a blocking gate for first-party Terraform under `platform/terraform/`. The pre-commit hook (`.pre-commit-config.yaml` `checkov`) and the GitHub Actions security-iac job (`.github/workflows/_quality.yml`) both consume the same canonical config at `platform/terraform/.checkov.yaml`; `--soft-fail` is not set on either surface. Accepted-risk waivers (Checkov `skip-check` entries in `.checkov.yaml` or inline `# checkov:skip=CKV_X:...` comments on individual resources) MUST have a matching entry in `docs/adr/exceptions.yaml` with `rule_id: ADR-004-R11`, owner, reason (containing the Checkov policy ID), `expires_on`, and the affected `paths`. `adr_guard.py` rejects expired exceptions, forcing owner re-review. Terraform Checkov policy and Kubernetes Checkov policy are separate surfaces: the `security-k8s` job intentionally remains `soft_fail: true` while manifest hardening proceeds under a separate issue, and Kubernetes soft-fail debt does NOT justify Terraform soft-fail. If rule-level policy grows beyond a flat skip list, centralize it in `platform/terraform/.checkov.yaml` only — do NOT duplicate skip semantics across pre-commit args and workflow inputs.",
+        "description": "Checkov is a blocking gate for first-party Terraform under `platform/terraform/`. The pre-commit hook (`.pre-commit-config.yaml` `checkov`) and the GitHub Actions security-iac job (`.github/workflows/_quality.yml`) both consume the same canonical config at `platform/terraform/.checkov.yaml`; `--soft-fail` is not set on either surface. Accepted-risk waivers (Checkov `skip-check` entries in `.checkov.yaml` or inline `# checkov:skip=CKV_X:...` comments on individual resources) MUST have a matching entry in `docs/adr/exceptions.yaml` with `rule_id: ADR-004-R11`, owner, reason (containing the Checkov policy ID), `expires_on`, and the affected `paths`. `adr_guard.py` rejects expired exceptions, forcing owner re-review. Terraform Checkov policy and Kubernetes Checkov policy are separate surfaces: the `security-k8s` job intentionally remains `soft_fail: true` while manifest hardening proceeds under a separate issue, and Kubernetes soft-fail debt does NOT justify Terraform soft-fail. If rule-level policy grows beyond a flat skip list, centralize it in `platform/terraform/.checkov.yaml` only \u2014 do NOT duplicate skip semantics across pre-commit args and workflow inputs.",
         "checks": []
       },
       {
@@ -191,22 +242,29 @@
       },
       {
         "id": "ADR-004-R14",
-        "description": "Tracked files MUST NOT contain live AWS infrastructure identifiers: 12-digit AWS account IDs, VPC IDs (`vpc-<hex>`), subnet IDs (`subnet-<hex>`), or Shifter S3 bucket names that are account-ID-suffixed (`shifter-...-<12 digits>`) or UUID-suffixed infra/state buckets (`shifter-[dev-]infra-<uuid>`); and, in IaC files (`.tf`/`.tfvars`/`.hcl`) only, globally-routable public IPv4 addresses in code (comments excluded), which are almost always an operator/participant allow-CIDR — a home/office IP, i.e. PII. Public-IP detection uses `ipaddress.is_global`, so private (RFC1918), loopback, link-local, CGNAT, and documentation (RFC5737: 192.0.2/198.51.100/203.0.113) ranges pass; a small in-code allowlist covers well-known public infra constants (Google/Cloudflare public DNS; GCP load-balancer health-check, IAP, and googleapis VIP ranges). These are low-entropy but reconnaissance-sensitive in a public repo and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary backstop. Detection is by pattern in the centralized `no-live-cloud-identifiers` check in `scripts/adr_guard/adr_guard.py`, never by a denylist of real values. The allowlist is a small fixed set of 12-digit runs that are not Shifter accounts: AWS documentation example account IDs (123456789012, 111122223333), the all-zero placeholder, and public AMI-publisher account IDs (Canonical 099720109477, OffSec/Kali 679593333241). Placeholder and example forms (`vpc-xxxxxxxx`, `<your-account-id>`) are not matched because the patterns require hex / 12 literal digits, so there is no universal `<...>` wildcard a real value can hide behind. Real values that MUST stay committed are cleared via scoped `docs/adr/exceptions.yaml` entries with `rule_id: ADR-004-R14`, owner, reason, `expires_on`, and `paths`: vendor connector templates under `platform/cloudformation/` (Prisma Cloud account IDs must be exact), S3 backend/state buckets read directly by `terraform init` (`*.s3.tfbackend`, the remote-state data sources in `platform/terraform/environments/*/portal/main.tf`, and the operational state-bucket map in `mcp/ops/index.js`), and synthetic 12-digit PAN firewall serial-number fixtures in `shifter/engine/provisioner/tests/test_main.py`. `.lock` files and binary assets are skipped. Violation messages name the repo-relative path, line, and identifier kind only — never the value. Dependency lock files and binary assets are not scanned. The check runs at the `fast` and `ci` levels and is wired into `.pre-commit-config.yaml` and `.github/workflows/_quality.yml`. Closes the #911 SEC-2 / NET-10 / DP-7 identifier-strip gap and blocks reintroduction.",
-        "checks": ["no-live-cloud-identifiers"]
+        "description": "Tracked files MUST NOT contain live AWS infrastructure identifiers: 12-digit AWS account IDs, VPC IDs (`vpc-<hex>`), subnet IDs (`subnet-<hex>`), or Shifter S3 bucket names that are account-ID-suffixed (`shifter-...-<12 digits>`) or UUID-suffixed infra/state buckets (`shifter-[dev-]infra-<uuid>`); and, in IaC files (`.tf`/`.tfvars`/`.hcl`) only, globally-routable public IPv4 addresses in code (comments excluded), which are almost always an operator/participant allow-CIDR \u2014 a home/office IP, i.e. PII. Public-IP detection uses `ipaddress.is_global`, so private (RFC1918), loopback, link-local, CGNAT, and documentation (RFC5737: 192.0.2/198.51.100/203.0.113) ranges pass; a small in-code allowlist covers well-known public infra constants (Google/Cloudflare public DNS; GCP load-balancer health-check, IAP, and googleapis VIP ranges). These are low-entropy but reconnaissance-sensitive in a public repo and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary backstop. Detection is by pattern in the centralized `no-live-cloud-identifiers` check in `scripts/adr_guard/adr_guard.py`, never by a denylist of real values. The allowlist is a small fixed set of 12-digit runs that are not Shifter accounts: AWS documentation example account IDs (123456789012, 111122223333), the all-zero placeholder, and public AMI-publisher account IDs (Canonical 099720109477, OffSec/Kali 679593333241). Placeholder and example forms (`vpc-xxxxxxxx`, `<your-account-id>`) are not matched because the patterns require hex / 12 literal digits, so there is no universal `<...>` wildcard a real value can hide behind. Real values that MUST stay committed are cleared via scoped `docs/adr/exceptions.yaml` entries with `rule_id: ADR-004-R14`, owner, reason, `expires_on`, and `paths`: vendor connector templates under `platform/cloudformation/` (Prisma Cloud account IDs must be exact), S3 backend/state buckets read directly by `terraform init` (`*.s3.tfbackend`, the remote-state data sources in `platform/terraform/environments/*/portal/main.tf`, and the operational state-bucket map in `mcp/ops/index.js`), and synthetic 12-digit PAN firewall serial-number fixtures in `shifter/engine/provisioner/tests/test_main.py`. `.lock` files and binary assets are skipped. Violation messages name the repo-relative path, line, and identifier kind only \u2014 never the value. Dependency lock files and binary assets are not scanned. The check runs at the `fast` and `ci` levels and is wired into `.pre-commit-config.yaml` and `.github/workflows/_quality.yml`. Closes the #911 SEC-2 / NET-10 / DP-7 identifier-strip gap and blocks reintroduction.",
+        "checks": [
+          "no-live-cloud-identifiers"
+        ]
       },
       {
         "id": "ADR-004-R15",
         "description": "Committed Terraform under `platform/terraform/` must not ship operational placeholders in `.tf` sources: hardcoded `YOUR_EMAIL@example.com` budget-alert recipients, `subscriber_email_addresses` literals pointing at `@example.com`, or a managed `AdministratorAccess` attachment on the GitHub Actions OIDC role in `platform/terraform/global/iam/github-oidc.tf`. Real alert recipients belong in gitignored `local.auto.tfvars` or the per-environment `TF_VARS_<ENV>_CORE` / `TF_VARS_<ENV>_PORTAL` deploy secrets; CI OIDC permissions stay on scoped policies. Enforced by `no-terraform-operational-placeholders` and `github-oidc-no-admin-access` in `scripts/adr_guard/adr_guard.py` at the `fast` and `ci` levels.",
-        "checks": ["no-terraform-operational-placeholders", "github-oidc-no-admin-access"]
+        "checks": [
+          "no-terraform-operational-placeholders",
+          "github-oidc-no-admin-access"
+        ]
       },
       {
         "id": "ADR-004-R16",
-        "description": "Mission Control runtime code MUST NOT contain hardcoded CTF challenge flag literals. The `no-mission-control-flag-literals` check in `scripts/adr_guard/adr_guard.py` scans the `shifter/shifter_platform/mission_control/` package (all runtime; its tests live under `shifter/shifter_platform/tests/mission_control/`, outside scope) and the `shifter/shifter_platform/templates/mission_control/` template tree (covering inline `<script>` JavaScript) for answer-shaped `FLAG{...}` literals (case-insensitive). Detection is by pattern, never by a denylist of real values. Format-hint placeholders that describe the answer shape rather than carry one are intentionally NOT flagged: an empty body (`FLAG{}`), the ellipsis form (`FLAG{...}`), and angle-bracket templates (`FLAG{<16-hex>}`). The path scope deliberately excludes tests, docs, the native `ctf` app (`CTFChallenge`/`CTFFlag` and `ctf.services`/templates, where `FLAG{...}` is a documented format hint), and Polaris scenario content under `scenario-dev/polaris/`, where flags are legitimate challenge content. Challenge answers belong to the CTF/CTFd content domain, not the Mission Control application path. CTF flags are low-entropy and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary repo-specific backstop. Violation messages name the repo-relative path and line only — never the matched value. The check runs at the `fast` and `ci` levels via the existing `python3 scripts/adr_guard/adr_guard.py --all --level ci` invocation in pre-commit and `.github/workflows/_quality.yml`. Closes the #560 regression gap (the `box_info` literal-flag map removed during the mission_control views package split) and blocks reintroduction.",
-        "checks": ["no-mission-control-flag-literals"]
+        "description": "Mission Control runtime code MUST NOT contain hardcoded CTF challenge flag literals. The `no-mission-control-flag-literals` check in `scripts/adr_guard/adr_guard.py` scans the `shifter/shifter_platform/mission_control/` package (all runtime; its tests live under `shifter/shifter_platform/tests/mission_control/`, outside scope) and the `shifter/shifter_platform/templates/mission_control/` template tree (covering inline `<script>` JavaScript) for answer-shaped `FLAG{...}` literals (case-insensitive). Detection is by pattern, never by a denylist of real values. Format-hint placeholders that describe the answer shape rather than carry one are intentionally NOT flagged: an empty body (`FLAG{}`), the ellipsis form (`FLAG{...}`), and angle-bracket templates (`FLAG{<16-hex>}`). The path scope deliberately excludes tests, docs, the native `ctf` app (`CTFChallenge`/`CTFFlag` and `ctf.services`/templates, where `FLAG{...}` is a documented format hint), and Polaris scenario content under `scenario-dev/polaris/`, where flags are legitimate challenge content. Challenge answers belong to the CTF/CTFd content domain, not the Mission Control application path. CTF flags are low-entropy and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary repo-specific backstop. Violation messages name the repo-relative path and line only \u2014 never the matched value. The check runs at the `fast` and `ci` levels via the existing `python3 scripts/adr_guard/adr_guard.py --all --level ci` invocation in pre-commit and `.github/workflows/_quality.yml`. Closes the #560 regression gap (the `box_info` literal-flag map removed during the mission_control views package split) and blocks reintroduction.",
+        "checks": [
+          "no-mission-control-flag-literals"
+        ]
       },
       {
         "id": "ADR-004-R17",
-        "description": "The shared range *guest* instance role (`aws_iam_role.range_instance` in `platform/terraform/modules/range/vpc/iam.tf`) MUST NOT be granted SSM Parameter Store access on a Resource that wildcards across the environment or range segment. Specifically, any `aws_iam_role_policy`/`aws_iam_policy` attached to a range-instance role whose statement carries an SSM parameter action (`ssm:PutParameter`/`GetParameter`/`GetParameters`/`GetParametersByPath`/`GetParameterHistory`/`DeleteParameter`/`DeleteParameters`/`LabelParameterVersion`, or a wildcard such as `ssm:*`/`ssm:Get*` covering them) MUST NOT use a Resource matching `parameter/shifter/*/range/...` (environment wildcard), `parameter/shifter/<env>/range/*` that is not bound to a concrete `${var.range_id}`/`${range_id}` token (range wildcard), or a full `*` Resource (which covers every environment and range). The checker is fail-closed for the all-wildcard shapes: a full wildcard `Action = \"*\"` is treated as granting SSM parameter access, and a full wildcard `Resource = \"*\"` is a violation, so a broad statement cannot slip past by omitting the literal `ssm:` action or `parameter/shifter` ARN. A correctly range-scoped grant `parameter/shifter/<env>/range/${var.range_id}/*` is allowed. The provisioner orchestrator role (`aws_iam_role.ecs_task` in `platform/terraform/modules/engine-provisioner/iam.tf`) legitimately holds an env-scoped `parameter/shifter/${var.environment}/range/*` grant and is NOT a range-instance role, so it is not inspected. Range guests do not use their instance role for Parameter Store at all: all range SSM access is brokered by the engine provisioner via Run Command (`{{ssm-secure:<name>}}` substitution and provisioner-side `ssm:GetParameter`), so a direct guest-role grant is both over-broad and unnecessary. Backstops the cross-tenant credential-access exposure resolved by #1178 (the role previously granted SSM Put/Get/Delete on `parameter/shifter/*/range/*`, wildcarded across every environment and range) and blocks reintroduction. Implemented in `scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py`, wired as the `check-tf-iam-ssm-range-scope` pre-commit hook and a CI step in `.github/workflows/_quality.yml`, with its unittest suite included in the `check_tf_*` checker tests. Currently scoped to `platform/terraform/modules/range/vpc/iam.tf`; expand the hook's `files:` regex and the CI invocation when another module defines a range-instance role.",
+        "description": "The shared range *guest* instance role (`aws_iam_role.range_instance` in `platform/terraform/modules/range/vpc/iam.tf`) MUST NOT be granted SSM Parameter Store access on a Resource that wildcards across the environment or range segment. Specifically, any `aws_iam_role_policy`/`aws_iam_policy` attached to a range-instance role whose statement carries an SSM parameter action (`ssm:PutParameter`/`GetParameter`/`GetParameters`/`GetParametersByPath`/`GetParameterHistory`/`DeleteParameter`/`DeleteParameters`/`LabelParameterVersion`, or a wildcard such as `ssm:*`/`ssm:Get*` covering them) MUST NOT use a Resource matching `parameter/shifter/*/range/...` (environment wildcard), `parameter/shifter/<env>/range/*` that is not bound to a concrete `${var.range_id}`/`${range_id}` token (range wildcard), or a full `*` Resource (which covers every environment and range). The checker is fail-closed for the all-wildcard shapes: a full wildcard `Action = \"*\"` is treated as granting SSM parameter access, and a full wildcard `Resource = \"*\"` is a violation, so a broad statement cannot slip past by omitting the literal `ssm:` action or `parameter/shifter` ARN. A correctly range-scoped grant `parameter/shifter/<env>/range/${var.range_id}/*` is allowed. The provisioner orchestrator role (`aws_iam_role.ecs_task` in `platform/terraform/modules/engine-provisioner/iam.tf`) legitimately holds an env-scoped `parameter/shifter/${var.environment}/range/*` grant and is NOT a range-instance role, so it is not inspected. Range guests do not use their instance role for Parameter Store at all: guest setup is brokered by the provisioner, and secret-bearing password delivery uses a host-key-pinned SSH stdin channel after non-secret SSM bootstrap, so a direct guest-role grant is both over-broad and unnecessary. Backstops the cross-tenant credential-access exposure resolved by #1178 (the role previously granted SSM Put/Get/Delete on `parameter/shifter/*/range/*`, wildcarded across every environment and range) and blocks reintroduction. Implemented in `scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py`, wired as the `check-tf-iam-ssm-range-scope` pre-commit hook and a CI step in `.github/workflows/_quality.yml`, with its unittest suite included in the `check_tf_*` checker tests. Currently scoped to `platform/terraform/modules/range/vpc/iam.tf`; expand the hook's `files:` regex and the CI invocation when another module defines a range-instance role.",
         "checks": []
       },
       {
@@ -241,8 +299,10 @@
       },
       {
         "id": "ADR-004-R24",
-        "description": "Production-path quality ownership is a single versioned, machine-readable contract at `.github/quality-path-filters.yaml` (schema parsed by `scripts/quality_ownership/contract.py`), enforced fail-closed. The always-run `paths` job in `.github/workflows/_quality.yml` invokes `scripts/quality_ownership/classify_paths.py`, which validates the contract and REJECTS any changed path that is neither a declared quality unit nor a typed exclusion BEFORE emitting any job-selection output, so an unowned path can no longer skip the checks designed to gate it. The `quality-path-ownership` adr_guard check (this rule) reconciles the contract against the whole repository and enforces three invariants: (1) estate completeness - every git-tracked path is a production owner or a narrow typed exclusion (closed enum: docs/test/generated/vendor/metadata/config; no catch-all, no unowned remainder); (2) ownership completeness - every production PATH is covered, across the union of its matching units, by a BLOCKING lint AND security AND test job (an advisory / `continue-on-error` / always-run / missing job never satisfies a responsibility), and unit `packages` reconcile both directions against the #1523 first-party classification in `scripts/check_layer_imports/layer_imports.yaml`; (3) routing reachability - a representative change to each unit makes its declared jobs (and matrix members) run in the real `_quality.yml` (proven by semantic `if:` evaluation, not substring match), while a docs-only change selects no production job. Genuine ownership gaps are recorded ONLY as time-bounded `docs/adr/exceptions.yaml` entries keyed to the `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor - there is no `not_applicable`, advisory, or permanent grandfather escape hatch in the contract schema. The contract and its classifier route their own guard tests and adr-conformance (self-bypass prevention). Anchored on GEN-002 (Executable Architecture Governance). Established by #1530; gap-closure tracked by #1698.",
-        "checks": ["quality-path-ownership"]
+        "description": "Production-path quality ownership is a single versioned, machine-readable contract at `.github/quality-path-filters.yaml` (schema parsed by `scripts/quality_ownership/contract.py`), enforced fail-closed. The always-run `paths` job in `.github/workflows/_quality.yml` invokes `scripts/quality_ownership/classify_paths.py`, which validates the contract and REJECTS any changed path that is neither a declared quality unit nor a typed exclusion BEFORE emitting any job-selection output, so an unowned path can no longer skip the checks designed to gate it. Deleted paths are excluded from classification (git `--diff-filter=d`): a removed file exists at neither HEAD nor the tracked estate, owns no quality job, and MUST NOT require a classifier entry that the estate-staleness invariant below would then reject (#1776). The `quality-path-ownership` adr_guard check (this rule) reconciles the contract against the whole repository and enforces three invariants: (1) estate completeness - every git-tracked path is a production owner or a narrow typed exclusion (closed enum: docs/test/generated/vendor/metadata/config; no catch-all, no unowned remainder); (2) ownership completeness - every production PATH is covered, across the union of its matching units, by a BLOCKING lint AND security AND test job (an advisory / `continue-on-error` / always-run / missing job never satisfies a responsibility), and unit `packages` reconcile both directions against the #1523 first-party classification in `scripts/check_layer_imports/layer_imports.yaml`; (3) routing reachability - a representative change to each unit makes its declared jobs (and matrix members) run in the real `_quality.yml` (proven by semantic `if:` evaluation, not substring match), while a docs-only change selects no production job. Genuine ownership gaps are recorded ONLY as time-bounded `docs/adr/exceptions.yaml` entries keyed to the `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor - there is no `not_applicable`, advisory, or permanent grandfather escape hatch in the contract schema. The contract and its classifier route their own guard tests and adr-conformance (self-bypass prevention). Anchored on GEN-002 (Executable Architecture Governance). Established by #1530; gap-closure tracked by #1698.",
+        "checks": [
+          "quality-path-ownership"
+        ]
       },
       {
         "id": "ADR-004-R25",
@@ -251,7 +311,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "enforcement": [
+      "pre-commit",
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       ".importlinter",
       ".tflint.hcl",
@@ -289,7 +353,9 @@
       {
         "id": "ADR-005-R1",
         "description": "Shared cloud factories must route supported providers through adapter packages rather than provider-specific call sites in domain code. Whole-range provision/destroy/pause/resume is governed by ADR-039's bundle-selected range-substrate adapter, not exposed as a composition of public low-level cloud factories.",
-        "checks": ["cloud-factory-seam"]
+        "checks": [
+          "cloud-factory-seam"
+        ]
       },
       {
         "id": "ADR-005-R2",
@@ -303,7 +369,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "shifter/shifter_platform/shared/cloud/__init__.py",
       "shifter/engine/provisioner/cloud/__init__.py",
@@ -334,21 +403,28 @@
       {
         "id": "ADR-006-R2",
         "description": "Pod, container, and init-container securityContext on every Deployment (in base manifests under platform/k8s/gcp/base/ AND in helm-template-rendered output of platform/charts/shifter for each supported values file) must enforce the restricted PSS profile: pod-level seccompProfile RuntimeDefault; per container/initContainer allowPrivilegeEscalation false, capabilities drop ALL with no capabilities.add, readOnlyRootFilesystem true, runAsNonRoot true, privileged not true, container-level seccompProfile (when set) equal to RuntimeDefault, and positive runAsUser/runAsGroup integers (booleans rejected). Pod-level inheritance for runAsNonRoot/runAsUser/runAsGroup is honored.",
-        "checks": ["k8s-deployment-security-context"]
+        "checks": [
+          "k8s-deployment-security-context"
+        ]
       },
       {
         "id": "ADR-006-R3",
         "description": "Each Shifter Kubernetes namespace must have a default-deny NetworkPolicy covering both ingress and egress, and Shifter NetworkPolicies must use explicit service CIDRs instead of broad internet egress ranges.",
-        "checks": ["k8s-network-policy-coverage"]
+        "checks": [
+          "k8s-network-policy-coverage"
+        ]
       },
       {
         "id": "ADR-006-R4",
-        "description": "Creation of Jobs running as the privileged provisioner service account in the jobs namespace and mutation of their per-intent sensitive-env Secrets must be owned by one dedicated provisioner-launcher workload identity. Portal, CTF scheduler, general workers, and the provisioner runtime identity have no provisioner Job-launch or Secret mutation grant and mount no Kubernetes API token; the provisioner Job also disables token automount while retaining GKE Workload Identity. RBAC, default-deny egress, runtime configuration, and the fail-closed ValidatingAdmissionPolicy (equivalent across the GCP base and Helm default render, with Helm identity/namespace fields derived from canonical values) name one launcher principal. Admission denies non-provisioner Jobs from that launcher and denies provisioner Jobs unless they mirror the canonical GCPTaskRunner contract: pinned image/pull policy and literal values, exact operation/identifier grammar, deterministic task/Secret identity, required Secret-backed database bindings, one non-indexed execution, exact bounded volumes/mounts, no auxiliary execution fields, and canonical pod/container security. Dynamic creates cannot be constrained with RBAC resourceNames known at deployment time; use the dedicated principal, semantic admission, deterministic create-or-observe identity, ownerReferences, and resourceNames only for fixed targets. Enforced by effective-authorization, Helm override/parity, and rendered-CEL semantic denial tests. Recorded by the architecture preflight for #1518.",
+        "description": "Creation of Jobs running as the privileged provisioner service account in the jobs namespace and mutation of their per-intent sensitive-env Secrets must be owned by one dedicated provisioner-launcher workload identity. Portal, CTF scheduler, general workers, and the provisioner runtime identity have no provisioner Job-launch or Secret mutation grant and mount no Kubernetes API token; the provisioner Job also disables token automount while retaining GKE Workload Identity. RBAC, default-deny egress, runtime configuration, and the fail-closed ValidatingAdmissionPolicy (equivalent across the GCP base and Helm default render, with Helm identity/namespace fields derived from canonical values) name one launcher principal. Admission denies non-provisioner Jobs from that launcher and denies provisioner Jobs unless they mirror the canonical GCPTaskRunner contract: pinned image/pull policy and literal values, exact operation/identifier grammar with an optional validated operation-generation UUID suffix, deterministic task/Secret identity, required Secret-backed database bindings, one non-indexed execution, exact bounded volumes/mounts, no auxiliary execution fields, and canonical pod/container security. Structured non-secret runtime values such as the bounded GCE image-key profile map remain literal ConfigMap data and admission requires their exact value to match platform-runtime; they never move to argv or the sensitive Secret. Dynamic creates cannot be constrained with RBAC resourceNames known at deployment time; use the dedicated principal, semantic admission, deterministic create-or-observe identity, ownerReferences, and resourceNames only for fixed targets. Enforced by effective-authorization, Helm override/parity, and rendered-CEL semantic denial tests. Recorded by the architecture preflights for #1518 and #1761.",
         "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "ci"],
+    "enforcement": [
+      "pre-commit",
+      "ci"
+    ],
     "evidence": [
       "platform/k8s/gcp/base/namespaces.yaml",
       "platform/k8s/gcp/base/networkpolicies.yaml",
@@ -385,7 +461,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "pre-commit", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
     "evidence": [
       "platform/charts/shifter/Chart.yaml",
       "platform/charts/shifter/values.yaml",
@@ -437,7 +517,7 @@
       },
       {
         "id": "ADR-008-R7",
-        "description": "GCP application workload identities (portal, workers, CTF scheduler, and provisioner) must not receive project-level Secret Manager payload/admin or Cloud Storage object-admin roles. Static runtime access is bound on each named secret or bucket from the resource-owning module's outputs (portal/secrets `runtime_secret_ids`, portal/gcs `assets_bucket_name`), driven by a single canonical workload/resource matrix in `platform/terraform/gcp/modules/portal/iam/main.tf`. Dynamic provisioner-created secret lifecycle must be isolated by a dedicated project or broker because secret creation is authorized on the parent project before a resource-name condition can constrain the new secret ID; resource-name conditions remain appropriate for existing-secret access/update/delete. Repo-native Terraform guards and effective-permission tests must cover direct, binding/policy, local-map, and equivalent project custom-role shapes. The check is implemented in `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` and wired as the `check-tf-gcp-iam-resource-scope` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest + effective-permission oracle suite included in the `check_tf_*` checker tests. Until the dedicated boundary lands, the guard allowlists exactly two project-level residuals it cannot yet resource-scope — portal `roles/secretmanager.secretAccessor` (reads per-range `*-ssh`/`*-rdp-password` guest credentials) and provisioner `roles/secretmanager.admin` (per-range dynamic-secret create/version/access/delete + vertex-key setIamPolicy + operator GDC secret reads) — each carrying an expiry so the exception cannot outlive its review; the dedicated range-secret project / broker boundary that removes both is designed in #1586. Recorded by the architecture preflight for #1517.",
+        "description": "GCP application workload identities (portal, workers, CTF scheduler, and provisioner) must not receive project-level Secret Manager payload/admin, Cloud Storage object-admin, or service-account IAM-admin (`iam.serviceAccounts.create`/`delete`/`setIamPolicy`) roles, whether predefined or via an equivalent project-level custom role. Static runtime access is bound on each named secret or bucket from the resource-owning module's outputs (portal/secrets `runtime_secret_ids`, portal/gcs `assets_bucket_name`), driven by a single canonical workload/resource matrix in `platform/terraform/gcp/modules/portal/iam/main.tf`. Dynamic provisioner-created secret lifecycle must be isolated by a dedicated project or broker because secret creation is authorized on the parent project before a resource-name condition can constrain the new secret ID; resource-name conditions remain appropriate for existing-secret access/update/delete. Repo-native Terraform guards and effective-permission tests must cover direct, binding/policy, local-map, and equivalent project custom-role shapes. The check is implemented in `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` and wired as the `check-tf-gcp-iam-resource-scope` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest + effective-permission oracle suite included in the `check_tf_*` checker tests. Until the dedicated boundary lands, the guard allowlists exactly two project-level residuals it cannot yet resource-scope \u2014 portal `roles/secretmanager.secretAccessor` (reads per-range `*-ssh`/`*-rdp-password` guest credentials) and provisioner `roles/secretmanager.admin` (per-range dynamic-secret create/version/access/delete + vertex-key setIamPolicy + operator GDC secret reads) \u2014 each carrying an expiry so the exception cannot outlive its review; the dedicated range-secret project / broker boundary that removes both is designed in #1586. The provisioner's former project-level `iam.serviceAccounts.setIamPolicy` custom role (used to self-grant `serviceAccountUser` on dynamically created OpenVPN gateway service accounts, which GCP cannot resource-name-scope for setIamPolicy) is replaced by a pre-provisioned single-project gateway SA pool: Terraform pre-creates `sh-vpn-pool-<slot>` no-role service accounts and grants the provisioner `serviceAccountUser` on each specific member, and each active OpenVPN range reserves a slot via `Range.allocate_vpn_gateway_slot` bounded by `VPN_GATEWAY_POOL_SIZE` (must equal the Terraform `vpn_gateway_pool_size`). Preconfigured GCE range hosts use the same bounded-identity rule through a separate no-role `sh-range-host-<slot>` pool selected by the range's existing allocation index; Terraform grants the provisioner `serviceAccountUser` only on each specific member, and `GCP_RANGE_HOST_IDENTITY_POOL_SIZE` must match the Terraform `range_host_identity_pool_size`. This removes all runtime service-account administration from the provisioner with no cross-project or org-policy dependency (single isolated tenant), so the guard also fails a project-level service-account IAM-admin custom role attached to a workload identity. Recorded by the architecture preflights for #1517 and #1896.",
         "checks": []
       },
       {
@@ -447,7 +527,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "pre-commit", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
     "evidence": [
       "scripts/bootstrap/deploy.py",
       "scripts/gcp/render_runtime_env.py",
@@ -484,7 +568,9 @@
       {
         "id": "ADR-010-R1",
         "description": "MCP servers must not import execSync from child_process; AWS CLI invocations run through argv-array helpers (e.g. mcp/ops/lib.js buildAwsArgv/awsExec/awsJson/awsText).",
-        "checks": ["mcp-no-shell-exec"]
+        "checks": [
+          "mcp-no-shell-exec"
+        ]
       },
       {
         "id": "ADR-010-R2",
@@ -493,7 +579,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "pre-commit", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
     "evidence": [
       "mcp/shared/aws-helpers.js",
       "mcp/ops/SECURITY.md",
@@ -553,7 +643,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "pre-commit", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
     "evidence": [
       "shifter/shifter_platform/config/settings.py",
       "shifter/shifter_platform/config/urls.py",
@@ -617,16 +711,23 @@
       {
         "id": "ADR-011-R7",
         "description": "AWS deploy workflows whose committed terraform.tfvars is an example.com baseline must render the deployment-owned override from GitHub Actions secrets into a gitignored local.auto.tfvars before terraform init/validate/plan/apply. Committed AWS terraform.tfvars files remain non-operational example baselines; the render step fails loud when the active environment's secret is missing.",
-        "checks": ["aws-platform-renders-deploy-tfvars"]
+        "checks": [
+          "aws-platform-renders-deploy-tfvars"
+        ]
       },
       {
         "id": "ADR-011-R8",
         "description": "The backend-bundle contract is published as a committed, versioned artifact generated from the Pydantic contract and registry (shifter/installation/published_contract/), never hand-maintained. The published JSON schema encodes the contract's security-relevant validators (identifier grammars, safe argv tokens, repository-relative paths, the secret-value destination rule) and installation.validate_published_bundle is the parity-complete portable validator that additionally enforces the cross-collection invariants JSON Schema cannot express, so a bundle a downstream author validates cannot pass while the internal contract would reject it. The installation test lane fails on drift between the artifact and the code, on a backward-incompatible change anywhere on the published validation surface (bundle schema or a backend settings schema) that lacks a contract_version bump plus a migration note, and on a published backend that does not validate against the published schema. Published per-version snapshots (backend-bundle-contract.v<N>.json) are append-only: the published-contract-snapshots-immutable adr_guard check rejects modifying or deleting a snapshot already published on the base branch, and fails closed (ADR_GUARD_SNAPSHOT_ENFORCE) in the CI lane that fetches base history. The published contract_version is independent of RootConfig.version and the installation package version.",
-        "checks": ["published-contract-snapshots-immutable"]
+        "checks": [
+          "published-contract-snapshots-immutable"
+        ]
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "docs/architecture/root-configured-backend-bundles.md",
       "docs/architecture/provider-neutral-range-substrate.md",
@@ -660,7 +761,9 @@
       {
         "id": "ADR-012-R1",
         "description": "Each canonical Python package pyproject.toml must enable C901 in [tool.ruff.lint].select and set [tool.ruff.lint.mccabe].max-complexity to the repo-wide threshold.",
-        "checks": ["python-complexity-gate"]
+        "checks": [
+          "python-complexity-gate"
+        ]
       },
       {
         "id": "ADR-012-R2",
@@ -674,7 +777,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "enforcement": [
+      "pre-commit",
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       "scripts/adr_guard/adr_guard.py",
       "docs/adr/complexity-backlog.md",
@@ -700,7 +807,7 @@
     "title": "Unified platform information architecture uses a shared navigation contract",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter treats CTF, Mission Control, Scenario Editor, Risk Register, and Documentation as one platform information architecture. Future navigation implementation must use a shared, role-aware navigation contract derived from the maintained IA and taxonomy artifacts rather than duplicating app-local navigation schemas.",
+    "decision": "Shifter treats CTF, Mission Control, Scenario Editor, and Documentation as one platform information architecture. Future navigation implementation must use a shared, role-aware navigation contract derived from the maintained IA and taxonomy artifacts rather than duplicating app-local navigation schemas.",
     "rules": [
       {
         "id": "ADR-013-R1",
@@ -709,7 +816,7 @@
       },
       {
         "id": "ADR-013-R2",
-        "description": "Future navigation data must be centralized behind the shared platform boundary instead of being duplicated independently by CTF, Mission Control, Scenario Editor, Risk Register, and Documentation.",
+        "description": "Future navigation data must be centralized behind the shared platform boundary instead of being duplicated independently by CTF, Mission Control, Scenario Editor, and Documentation.",
         "checks": []
       },
       {
@@ -724,7 +831,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "pre-commit", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
     "evidence": [
       "docs/design/ux-003-information-architecture-sitemap.md",
       "docs/design/ux-003-oss-shifter-research-personas.md",
@@ -772,12 +883,17 @@
       },
       {
         "id": "ADR-014-R7",
-        "description": "Operator agent MCP surfaces that connect to managed databases through transport-layer tunneling MUST preserve TLS verification end-to-end. `mcp/ops` connects to RDS Postgres via an SSM port forward; the pg.Pool configuration MUST keep `rejectUnauthorized: true` and target the real DB endpoint for SNI / hostname verification (via `ssl.servername` or an equivalent verified path). Disabling verification (`rejectUnauthorized: false`) — even with a documented exception — is not an acceptable answer to the hostname-mismatch problem the tunnel creates.",
-        "checks": ["mcp-ops-tls-strict"]
+        "description": "Operator agent MCP surfaces that connect to managed databases through transport-layer tunneling MUST preserve TLS verification end-to-end. `mcp/ops` connects to RDS Postgres via an SSM port forward; the pg.Pool configuration MUST keep `rejectUnauthorized: true` and target the real DB endpoint for SNI / hostname verification (via `ssl.servername` or an equivalent verified path). Disabling verification (`rejectUnauthorized: false`) \u2014 even with a documented exception \u2014 is not an acceptable answer to the hostname-mismatch problem the tunnel creates.",
+        "checks": [
+          "mcp-ops-tls-strict"
+        ]
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "docs/architecture/mcp-ops-privileged-surface-preflight-777.md",
       ".shifter.yaml",
@@ -792,7 +908,7 @@
       "shifter/installation/contract.py",
       "shifter/installation/errors.py",
       "shifter/shifter_platform/shared/auth.py",
-      "shifter/shifter_platform/risk_register/services.py",
+      "shifter/shifter_platform/shared/audit",
       "shifter/shifter_platform/config/dev_auth.py",
       "shifter/shifter_platform/config/settings.py",
       "shifter/shifter_platform/shared/log_sanitize.py"
@@ -827,7 +943,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["ci", "sonarcloud", "agent-policy"],
+    "enforcement": [
+      "ci",
+      "sonarcloud",
+      "agent-policy"
+    ],
     "evidence": [
       "LICENSE",
       "docs/architecture/file-headers.md",
@@ -844,21 +964,31 @@
       {
         "id": "ADR-016-R1",
         "description": "Django templates with user-facing literals load `i18n` and wrap literal text or translatable attributes with Django-native `{% trans %}` / `{% blocktrans %}`. Custom translation helpers, JSON catalogs, frontend i18n abstractions, and SonarCloud false-positive scoping are not substitutes for the template convention.",
-        "checks": ["django-template-i18n-coverage"]
+        "checks": [
+          "django-template-i18n-coverage"
+        ]
       },
       {
         "id": "ADR-016-R2",
         "description": "The platform keeps `LocaleMiddleware` after `SessionMiddleware` and before `CommonMiddleware`, and keeps `LOCALE_PATHS` pinned to the repo-owned platform locale directory. `i18n_patterns` is not used unless a future ADR explicitly accepts URL-shape changes.",
-        "checks": ["django-i18n-settings"]
+        "checks": [
+          "django-i18n-settings"
+        ]
       },
       {
         "id": "ADR-016-R3",
         "description": "Portal image builds compile Django message catalogs before static collection so runtime `.mo` files and static assets are present without committing generated binaries or rebuilding them at container startup.",
-        "checks": ["django-compilemessages-build"]
+        "checks": [
+          "django-compilemessages-build"
+        ]
       }
     ],
     "exceptions": [],
-    "enforcement": ["tests", "sonarcloud", "agent-policy"],
+    "enforcement": [
+      "tests",
+      "sonarcloud",
+      "agent-policy"
+    ],
     "evidence": [
       "shifter/shifter_platform/config/settings.py",
       "shifter/shifter_platform/Dockerfile",
@@ -883,7 +1013,9 @@
       {
         "id": "ADR-017-R2",
         "description": "Per-deployment range egress allowlist values must not be committed to the repository. Provider bridge values live only in gitignored deployment override files such as `local.auto.tfvars` (or any `*.auto.tfvars.local`) alongside the env's `terraform.tfvars`; the committed Terraform baseline ships an empty allowlist. `.gitignore` blocks the prior committed forms (`victim_allowed_cidrs*.auto.tfvars`, `range_egress*.auto.tfvars`) from being re-introduced.",
-        "checks": ["no-plaintext-secrets-in-tfvars"]
+        "checks": [
+          "no-plaintext-secrets-in-tfvars"
+        ]
       },
       {
         "id": "ADR-017-R3",
@@ -897,7 +1029,11 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "enforcement": [
+      "pre-commit",
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       "shifter/installation/range_egress.py",
       "shifter/installation/loader.py",
@@ -945,7 +1081,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["ci", "agent-policy"],
+    "enforcement": [
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       "shifter/shifter_platform/config/_channels.py",
       "shifter/shifter_platform/config/asgi.py",
@@ -973,11 +1112,17 @@
       {
         "id": "ADR-019-R1",
         "description": "Python tests must not introduce new first-party internal `patch()` or statically resolvable `patch.object()` targets. The `boundary-mock-policy` ADR guard check compares current internal patch counts against `scripts/adr_guard/boundary_mock_baseline.json` and rejects baseline allowance growth against the branch reference; process/network/cloud boundary patches remain allowed.",
-        "checks": ["boundary-mock-policy"]
+        "checks": [
+          "boundary-mock-policy"
+        ]
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "enforcement": [
+      "pre-commit",
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       "scripts/adr_guard/adr_guard.py",
       "scripts/adr_guard/boundary_mock_baseline.json",
@@ -1010,7 +1155,9 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": [
+      "agent-policy"
+    ],
     "evidence": [
       "shifter/engine/provisioner/terraform/modules/range/main.tf",
       "platform/terraform/modules/range/vpc/main.tf",
@@ -1039,7 +1186,9 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": [
+      "agent-policy"
+    ],
     "evidence": [
       "platform/terraform/modules/range/vpc/nat.tf",
       "platform/terraform/modules/range/vpc/outputs.tf",
@@ -1061,11 +1210,17 @@
       {
         "id": "ADR-022-R1",
         "description": "Every feature in docs/adr/documentation-coverage.yaml must declare at least one user doc and at least one technical doc. Each referenced doc must exist under the manifest's docs_root, must not live under a _deprecated or hidden path, and must be linked from an index.md so it is discoverable. The check validates the whole manifest on every run regardless of the changed-file set.",
-        "checks": ["documentation-coverage"]
+        "checks": [
+          "documentation-coverage"
+        ]
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "enforcement": [
+      "pre-commit",
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       "docs/adr/documentation-coverage.yaml",
       "scripts/adr_guard/adr_guard.py",
@@ -1078,7 +1233,7 @@
     "title": "Range events use transactional outbox and authoritative reconciliation for durable delivery",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "PostgreSQL is the authoritative state store for range, request, and instance state. Range events are correctness-critical propagation signals, not best-effort notifications. Every such event is made recoverable through two complementary layers: (1) a transactional outbox — the provisioner enqueues each event into `engine_range_event_outbox` in the same DB transaction as the authoritative state write, and the `drain_range_event_outbox` portal management command publishes PENDING rows to the SNS topic / Pub/Sub with exponential-backoff retry and a DLQ terminal state after max_attempts; (2) a DB-authoritative reconciler — the `reconcile_range_events` portal management command re-reads authoritative `engine.Range` state and idempotently re-drives stale CMS `RangeInstance` projections through the existing handler seam. Consumer handlers propagate transient failures rather than swallowing them, engaging the worker ack-after-handler SQS retry and DLQ. Mission Control websocket fanout remains advisory. AWS SNS/SQS and GCP Pub/Sub messaging surfaces maintain dead-letter, retry-policy, and Cloud Monitoring alert parity.",
+    "decision": "PostgreSQL is the authoritative state store for range, request, and instance state. Range events are correctness-critical propagation signals, not best-effort notifications. Every such event is made recoverable through two complementary layers: (1) a transactional outbox \u2014 the provisioner enqueues each event into `engine_range_event_outbox` in the same DB transaction as the authoritative state write, and the `drain_range_event_outbox` portal management command publishes PENDING rows to the SNS topic / Pub/Sub with exponential-backoff retry and a DLQ terminal state after max_attempts; (2) a DB-authoritative reconciler \u2014 the `reconcile_range_events` portal management command re-reads authoritative `engine.Range` state and idempotently re-drives stale CMS `RangeInstance` projections through the existing handler seam. Consumer handlers propagate transient failures rather than swallowing them, engaging the worker ack-after-handler SQS retry and DLQ. Mission Control websocket fanout remains advisory. AWS SNS/SQS and GCP Pub/Sub messaging surfaces maintain dead-letter, retry-policy, and Cloud Monitoring alert parity.",
     "rules": [
       {
         "id": "ADR-025-R1",
@@ -1112,7 +1267,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "shifter/shifter_platform/engine/models.py",
       "shifter/shifter_platform/engine/migrations/0023_range_event_outbox.py",
@@ -1131,89 +1289,59 @@
   {
     "id": "ADR-023",
     "title": "Agent risk audit findings use canonical internal identity and sanitized public tracking",
-    "status": "accepted",
+    "status": "deprecated",
     "scope": "repository",
-    "decision": "Repeatable agent-driven risk audits treat the Risk Register as the canonical internal store for detailed findings and GitHub issues as sanitized tracking proxies only. A tracked risk has one opaque persisted `risk_key`; same-risk matching is based on a versioned structural tuple, not titles, prose, GitHub issue numbers, or database primary keys. Public GitHub issue content is generated from a sanitized summary policy and must not copy Risk Register detail, exploit evidence, raw scanner output, internal topology, live cloud identifiers, or secrets. Risk Register writes, GitHub issue creation/update, severity or confidence promotion, and lifecycle changes require an explicit human review gate. Productized writes reuse the Risk Register API/service/audit path, Cognito group authorization, and exact `shared.api_tokens` `risk:read` / `risk:write` scopes; operator MCP runs may use `mcp/ops` named DB tools only with the MCP policy/audit evidence surface called out explicitly.",
-    "rules": [
-      {
-        "id": "ADR-023-R1",
-        "description": "Risk Register entries are the internal source of truth for detailed agent risk-audit findings. GitHub issues are sanitized tracking proxies and may carry only coarse component, broad risk class, high-level mitigation objective, review/status labels, and an opaque `Risk-Key`; they must not carry exploit steps, proof-of-concept commands, secrets, raw logs, scanner output, internal endpoints/topology, or live cloud identifiers.",
-        "checks": []
-      },
-      {
-        "id": "ADR-023-R2",
-        "description": "Same-risk matching uses an opaque persisted `risk_key` plus a versioned normalized tuple covering component scope, asset class, risk kind, control failure, actor vector, precondition class, and impact class. Future implementation must add explicit structured Risk Register metadata or link tables when needed; it must not hide machine identity, dedupe fingerprints, confidence, last-seen state, or GitHub links in free-form descriptions or comments.",
-        "checks": []
-      },
-      {
-        "id": "ADR-023-R3",
-        "description": "Risk-audit automation may analyze the repository and propose Risk Register or GitHub updates, but writes, issue creation/update, severity or confidence promotion, and lifecycle changes require a human review gate. Product/API mutations reuse the existing Risk Register auth, serializer, service, and audit paths; operator MCP direct-table workflows must rely on `.shifter.yaml`, `mcp/ops/policy.js`, and `mcp/ops/audit.js` as their evidence surface.",
-        "checks": []
-      }
-    ],
+    "decision": "Deprecated by ADR-045. The product and its agent-finding workflow were removed completely; this record imposes no active runtime, API, data, scope, MCP, or tracking requirements.",
+    "rules": [],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": [],
     "evidence": [
-      "docs/architecture/agent-risk-audit-preflight-163.md",
-      "shifter/shifter_platform/risk_register/models.py",
-      "shifter/shifter_platform/risk_register/api/serializers.py",
-      "shifter/shifter_platform/risk_register/api/views.py",
-      "shifter/shifter_platform/risk_register/services.py",
-      "shifter/shifter_platform/shared/api_tokens",
-      "mcp/ops/index.js",
-      "mcp/ops/policy.js",
-      "mcp/ops/audit.js"
+      "docs/architecture/risk-register-removal-preflight-1374.md",
+      "docs/adr/index.yaml"
     ]
   },
   {
     "id": "ADR-024",
-    "title": "ACES migration uses a parity-gated parallel cutover",
+    "title": "RAES is a hard cutover",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter migrates toward ACES through a parallel path, a row-based parity inventory, explicit ACES manifest/conformance gates, and archive-after-cutover cleanup. Current Shifter behavior remains authoritative until the ACES path proves parity through the normal portal, CMS, engine, provisioner, CTF, Mission Control, artifact, status, and validation surfaces. Legacy experiments are the explicit exception: ADR-027 removes the half-built `cms.experiments` path, so future experiment capability starts from a new ACES-backed design.",
+    "decision": "Shifter cuts directly to the exact released RAES contract pair. The current application has one package, catalog, transport, configuration, API, event, persistence, and provisioning vocabulary. There is no parallel path, old transport reader, fallback, alias, redirect, dual configuration read, compatibility view/model, or runtime selector. Existing content is republished as a current environment pack. Deployment fails closed until all retired-version provisioning work is terminal; old package and sidecar rows are removed rather than relabeled, while terminal opaque plan and envelope bytes remain factual and inert.",
     "rules": [
       {
         "id": "ADR-024-R1",
-        "description": "ACES adoption must not replace current Shifter runtime behavior until a parallel ACES path has passed parity, manifest/conformance, portal/engine/provisioner, Polaris, CTF, Mission Control, artifact, status, and ADR guard validation. Legacy experiments are removed by ADR-027 and are not current runtime authority.",
+        "description": "Current code and deployed contracts use RAES only. A fallback import, old-name alias, old transport reader, dual configuration read, redirect, compatibility API/model/view, runtime selector, or parallel package/catalog/provisioning path is prohibited.",
         "checks": []
       },
       {
         "id": "ADR-024-R2",
-        "description": "Every legacy migration surface tracked for ACES cutover must map to exactly one category in docs/architecture/aces-migration-parity-inventory.yaml: ACES SDL, ACES schema/profile gap, Shifter backend responsibility, validation gate, or archive/delete. Inventory rows cite canonical owners and must not become a second runtime schema, parser, status taxonomy, or exception envelope.",
+        "description": "The cutover migration must not recursively rewrite authored JSON, relabel a payload produced under another versioned contract, or feed that payload to the RAES 2.0.0 consumer. It must abort while matching range, instance, launch, result, or event work remains active.",
         "checks": []
       },
       {
         "id": "ADR-024-R3",
-        "description": "Archive/delete is generally a post-cutover posture. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green. ADR-027 is the accepted exception for the removed legacy experiments path.",
+        "description": "Rows whose contract bytes are not RAES are removed from current package and sidecar stores rather than exposed through RAES models or APIs. Existing scenario content must be republished and registered as a current environment pack.",
         "checks": []
       },
       {
         "id": "ADR-024-R4",
-        "description": "Every legacy_source and validation_evidence clause in docs/architecture/aces-migration-parity-inventory.yaml that is a repository-relative path or glob must resolve to an existing path (a glob must match at least one path); shell-command and prose clauses are classified and skipped. The aces-parity-inventory-path-integrity adr_guard check enforces this as a global repository invariant (it runs even when the inventory is not in the changed-file set, because a referenced file can be moved or deleted without the inventory itself changing) and treats the inventory as untrusted static input: it inspects path metadata only, rejects absolute paths, '..' traversal, and symlink escape fail-closed, and never reads referenced content or lets inventory text reach a shell or subprocess.",
-        "checks": ["aces-parity-inventory-path-integrity"]
+        "description": "Rollback is a coordinated restore of the pre-cutover database backup and preceding release with workers stopped. The current release must not contain an in-process, mixed-schema, or feature-selector rollback path.",
+        "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "pre-commit", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
-      "docs/architecture/aces-migration-adr.md",
-      "docs/architecture/aces-migration-parity-inventory.yaml",
-      "docs/architecture/aces-parity-inventory-path-integrity-preflight-1313.md",
-      "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
-      "docs/architecture/aces-operation-status-snapshot-projection-preflight-1234.md",
-      "docs/architecture/aces-polaris-acceptance-parity-gate-preflight-1237.md",
-      "scenario-dev/polaris/design/aces-sdl-validation-path.md",
-      "scenario-dev/polaris/sdl/README.md",
-      "shifter/shifter_platform/cms/scenarios/schema.py",
-      "shifter/shifter_platform/cms/scenarios/registry.py",
-      "shifter/shifter_platform/cms/scenarios/hydrator.py",
-      "shifter/shifter_platform/shared/schemas",
-      "shifter/cyberscript",
-      "shifter/shifter_platform/ctf",
-      "shifter/shifter_platform/mission_control",
-      "shifter/shifter_platform/engine",
-      "shifter/engine/provisioner",
-      "scripts/adr_guard/adr_guard.py"
+      "docs/architecture/raes-migration-adr.md",
+      "docs/architecture/raes-hard-cutover-preflight-1862.md",
+      "shifter/shifter_platform/cms/migrations/0041_raes_hard_cutover.py",
+      "shifter/shifter_platform/engine/migrations/0048_raes_hard_cutover.py",
+      "shifter/shifter_platform/shared/migrations/0008_raes_hard_cutover.py",
+      "shifter/shifter_platform/shared/migrations/0009_raes_hard_cutover_cleanup.py",
+      "shifter/shifter_platform/openapi/v1.retirements.json",
+      "shifter/shifter_platform/tests/test_raes_cutover_migrations.py"
     ]
   },
   {
@@ -1250,7 +1378,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "docs/architecture/range-zero-egress-preflight-1171.md",
       "docs/architecture/range-isolation-model.md",
@@ -1270,10 +1401,10 @@
   },
   {
     "id": "ADR-027",
-    "title": "Remove legacy experiments in favor of a future ACES-backed design",
+    "title": "Remove legacy experiments in favor of a future RAES-backed design",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter removes the half-built legacy `cms.experiments` feature instead of completing or redesigning it in place. The removal deletes the Django app, experiment/script UI and APIs, websocket/event/queue/runtime wiring, tests, specs, UAT artifacts, and legacy database tables. Future experiment capability must start from an accepted ACES-backed replacement design rather than reviving the deleted runtime path or feature flag.",
+    "decision": "Shifter removes the half-built legacy `cms.experiments` feature instead of completing or redesigning it in place. The removal deletes the Django app, experiment/script UI and APIs, websocket/event/queue/runtime wiring, tests, specs, UAT artifacts, and legacy database tables. Future experiment capability must start from an accepted RAES-backed replacement design rather than reviving the deleted runtime path or feature flag.",
     "rules": [
       {
         "id": "ADR-027-R1",
@@ -1287,15 +1418,18 @@
       },
       {
         "id": "ADR-027-R3",
-        "description": "Future experiment capability starts from an ACES-backed contract and must not reuse `EXPERIMENTS_ENABLED`, `EXPERIMENT_PAYLOAD`, or the removed `cms.experiments` data model as the implementation shortcut.",
+        "description": "Future experiment capability starts from an RAES-backed contract and must not reuse `EXPERIMENTS_ENABLED`, `EXPERIMENT_PAYLOAD`, or the removed `cms.experiments` data model as the implementation shortcut.",
         "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "docs/architecture/experiments-removal-adr.md",
-      "docs/architecture/aces-migration-adr.md",
+      "docs/architecture/raes-migration-adr.md",
       "shifter/shifter_platform/cms/migrations/0034_remove_legacy_experiments.py",
       "shifter/shifter_platform/tests/cms/test_experiments_removed.py",
       "shifter/shifter_platform/config/settings.py",
@@ -1328,7 +1462,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "docs/architecture/ctf-scoreboard-contract-preflight-521.md",
       "shifter/shifter_platform/ctf/views/participant.py",
@@ -1344,7 +1481,7 @@
     "title": "SPA cutover frontend stack, deployment, and API boundary",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. The client runtime uses React Router v7 in library/data-router mode for route and URL state, and TanStack Query v5 over a single typed fetch client for server state, caching, invalidation, idempotent GET retry, and mutation no-retry policy. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. The cutover is phased per module in order: Risk Register, Mission Control, CTF, Scenario Editor, Docs. Legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md; the first module's runtime-library defaults and Risk Register workspace boundary are in docs/design/spa-risk-register-workspace-1301.md. Governing issues: #1300, #1301, #1302.",
+    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. The client runtime uses React Router v7 in library/data-router mode for route and URL state, and TanStack Query v5 over a single typed fetch client for server state, caching, invalidation, idempotent GET retry, and mutation no-retry policy. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. Migration is phased per module and legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md. Governing issue: #1300.",
     "rules": [
       {
         "id": "ADR-029-R1",
@@ -1368,12 +1505,12 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": [
+      "agent-policy"
+    ],
     "evidence": [
       "docs/architecture/spa-cutover-architecture-1300.md",
       "docs/design/spa-design-system-foundation-1299.md",
-      "docs/design/spa-risk-register-workspace-1301.md",
-      "docs/architecture/spa-risk-register-implementation-preflight-1302.md",
       "docs/design/design-system/README.md"
     ]
   },
@@ -1408,19 +1545,28 @@
         "id": "ADR-030-R5",
         "description": "A backend is not event-ready until range-side escape validation passes for cross-range private IP reachability, platform/pod/service/node network reachability, cloud metadata/API credential exposure, approved management ingress, and configured internet egress policy.",
         "checks": []
+      },
+      {
+        "id": "ADR-030-R6",
+        "description": "Instantiation purpose is closed, trusted workflow authority and must not be inferred from RangeSource, scenario type or id, user role, deployment tier, feature flags, or backend selection. In particular, an ordinary Mission Control demo remains live-fire. Range-backend registration is default-deny: each backend explicitly enumerates its permitted purposes in the single shared instantiation-policy mapping, and Kubernetes/GDC may be admitted only by a dedicated non-user demo/BAS or operator-validation path.",
+        "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": [
+      "agent-policy"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1340",
       "https://github.com/Brad-Edwards/shifter/issues/1348",
       "https://github.com/Brad-Edwards/shifter/issues/1354",
       "docs/architecture/gdc-windows-dc-image-build.md",
       "docs/architecture/gdc-vm-runtime-live-fire-gate-preflight-1348.md",
+      "docs/architecture/range-instantiation-policy-control-preflight-1354.md",
       "docs/architecture/range-isolation-model.md",
       "docs/architecture/gcp-range-cell-boundary-controls-preflight-1345.md",
       "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",
+      "docs/architecture/gcp-normal-scenario-range-cell-migration-preflight-1350.md",
       "scripts/polaris-aws-range/ranges.tf",
       "shifter/engine/provisioner/range_terraform_runner.py",
       "shifter/engine/provisioner/gdc_range_networks.py",
@@ -1429,39 +1575,47 @@
   },
   {
     "id": "ADR-031",
-    "title": "ACES-native provisioning core is a feature-flagged parallel path",
+    "title": "RAES provisioning is the direct plan realization path",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter builds an ACES-native provisioning path as a parallel, feature-flagged implementation rather than routing ACES through the cyberscript scenario kernel. A compiled ACES ProvisioningPlan (produced by the PyPI-pinned aces-sdl runtime inside shared.aces) is realized directly: the platform serializes the compiled plan and the engine/provisioner realize it by reading the ACES plan payloads via accessors that mirror the reference ACES backends. Shifter introduces no parallel SDL and no re-modeled provisioning schema; see ADR-032 for how realization works. The existing cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is left unchanged and authoritative. The whole ACES-native path is gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off) and stays inert until an explicitly authorized cutover. This is the provisioning-surface instance of ADR-024 (parity-gated parallel cutover); the ACES-owned conformance suite is the primary oracle. It supersedes the #1262 scenario_ref passthrough, which discarded compiled ACES topology and depended on cyberscript scenarios.",
+    "decision": "A compiled RAES ProvisioningPlan produced by the exact PyPI-pinned runtime inside shared.raes is serialized and realized directly by the engine/provisioner through accessors that mirror the reference RAES backends. Shifter introduces no parallel SDL, re-modeled provisioning schema, feature flag, or alternate RAES path. The RAES-owned conformance suite is the primary oracle.",
     "rules": [
       {
         "id": "ADR-031-R1",
-        "description": "ACES SDL packages (aces_sdl, aces_contracts, aces_runtime, aces_processor, aces_conformance, aces_backend_protocols) may be imported only within shared.aces. The cms, engine, mission_control, ctf, and management layers and the engine provisioner must consume ACES realization through the serialized ACES ProvisioningPlan and shared seams, never by importing an aces_* package. Enforced by an import-linter forbidden contract in CI.",
+        "description": "The RAES module family supplied by the raes distribution (raes, raes_contracts, raes_runtime, raes_processor, raes_conformance, and raes_backend_protocols) may be imported only within shared.raes. The cms, engine, mission_control, ctf, and management layers and the engine provisioner must consume RAES realization through the serialized RAES ProvisioningPlan and shared seams, never by importing those modules. Enforced by an import-linter forbidden contract in CI.",
         "checks": []
       },
       {
         "id": "ADR-031-R2",
-        "description": "The ACES-native provisioning path — ACES catalog launchability, ACES dispatch, ACES engine consumption, and ACES provisioner realization — must be gated by the SHIFTER_ACES_NATIVE_PROVISIONING feature flag (default off). With the flag off, ACES catalog entries are not launchable and the cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is unchanged and authoritative. The ACES-native path must not modify cyberscript hydration, RangeSpec/InstanceSpec, or the existing create_range body; it may only add parallel modules and additive flag-gated branches.",
+        "description": "RAES catalog launchability, dispatch, engine consumption, and provisioner realization are one direct current path. They must not be gated by a retired selector or accompanied by an additive old-contract branch.",
         "checks": []
       },
       {
         "id": "ADR-031-R3",
-        "description": "ACES realization consumes the compiled ACES ProvisioningPlan directly; Shifter must not introduce a parallel SDL or a re-modeled provisioning schema (see ADR-032). The Shifter ACES RuntimeTarget backend must pass the ACES-owned conformance suite: the provisioning-only fixture gate (run_fixture_suite) and a live target probe (run_target_conformance) that requires a non-empty changed_addresses set and at least one PROVISIONING snapshot entry. Conformance verdict logic must not be reimplemented in Shifter.",
+        "description": "RAES realization consumes the compiled RAES ProvisioningPlan directly; Shifter must not introduce a parallel SDL or a re-modeled provisioning schema (see ADR-032). The Shifter RAES RuntimeTarget backend must pass the RAES-owned conformance suite: the provisioning-only fixture gate (run_fixture_suite) and a live target probe (run_target_conformance) that requires a non-empty changed_addresses set and at least one PROVISIONING snapshot entry. Conformance verdict logic must not be reimplemented in Shifter.",
         "checks": []
       },
       {
         "id": "ADR-031-R4",
-        "description": "ACES backend diagnostics and operation evidence must be bounded, single-line, and free of backend realization detail (no terraform, ssm, ami-, cidr, subnet, secret, password, credential, or token substrings). Image ids, machine sizes, subnet allocation, provider configuration, and secrets are backend-owned realization and must not surface as authored ACES semantics or as evidence.",
+        "description": "RAES backend diagnostics and operation evidence must be bounded, single-line, and free of backend realization detail (no terraform, ssm, ami-, cidr, subnet, secret, password, credential, or token substrings). Image ids, machine sizes, subnet allocation, provider configuration, and secrets are backend-owned realization and must not surface as authored RAES semantics or as evidence.",
         "checks": []
       },
       {
         "id": "ADR-031-R5",
-        "description": "ACES catalog launchability and the ACES-native launch service (cms.services.create_aces_native_range, routed via create_range_dispatch) are gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off); with the flag off no ACES entry is launchable and create_range_dispatch is byte-identical to create_range. The launch service reuses create_range's ownership/active-range/audit helpers and persists the same CMS Request + RangeInstance bookkeeping (range_spec=None -- no cyberscript RangeSpec) so Mission Control visibility, active-range admission, and the range.status.updated -> apply_range_status flow work uniformly keyed by request_id. To be genuinely launch-conformant the Shifter backend manifest must declare all and only terms the backend genuinely realizes -- including 'switch' for networks, since the aces-sdl planner rejects any network resource otherwise. Its provisional PROVISIONING snapshot must echo the authored exact concerns covered by the public CONCERN_PAYLOAD_PATH (os_family, node_type, content spec.type) for the RuntimeManager.apply SEM-218 non-approximation gate. Account features not covered by that public path require an equivalent Shifter validate/apply assertion, using the canonical ACES account-feature extractor and an evidence-backed realization envelope independent of the manifest declaration, before dispatch; account values must not enter diagnostics or snapshot evidence.",
+        "description": "The RAES launch service reuses the existing ownership, active-range, audit, CMS Request, RangeInstance, status-event, and Mission Control boundaries. The backend manifest declares only terms genuinely realized. Provisional snapshots echo exact authored concern values required by the runtime non-approximation gate, and account-feature realization remains evidence-backed and free of authored values in diagnostics.",
+        "checks": []
+      },
+      {
+        "id": "ADR-031-R6",
+        "description": "The ADR-024 default cutover of a stable public scenario id to RAES is owned solely by cms.scenarios.registry and expressed as a validated SHIFTER_RAES_CATALOG_CUTOVERS mapping from a public id to a distinct registered RAES package-source id (e.g. polaris=polaris-raes), so a legacy public id can resolve to RAES without a no-shadow collision. The selected public id is emitted exactly once and the internal source id is not a second launch choice; create_range_dispatch consumes that one registry resolution and makes no second _is_raes_scenario decision. Empty routing restores the preserved legacy source; malformed, dangling, unsupported, non-conformant, or duplicate routes fail closed and an active RAES route never falls back to legacy after a RAES error. Provision, status, and teardown for an existing range are selected from its persisted, validated range_config.kind (raes_provisioning_plan), independent of the current selector and capability flag, so an existing RAES range stays destroyable through rollback. The catalog selector plus SHIFTER_RAES_NATIVE_PROVISIONING are the temporary, reversible rollback line converging on the one-direct-path target (R2); #1310 delivers this mechanism and its fleet-uniform AWS/GCP config, while the shipped default stays the preserved-legacy posture and activation is a deferred, reviewed per-environment deploy-config step gated on a conformance-passed pack from the scenario-pack plugin work (ADR-033/034/041).",
         "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["ci", "agent-policy"],
+    "enforcement": [
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1262",
       "https://github.com/Brad-Edwards/shifter/issues/1264",
@@ -1469,85 +1623,105 @@
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
-      "docs/architecture/aces-migration-parity-inventory.yaml",
       ".importlinter",
-      "shifter/shifter_platform/shared/aces/domain_topology.py",
-      "shifter/shifter_platform/shared/aces/runtime_target.py",
-      "shifter/shifter_platform/shared/aces/dispatch_port.py",
-      "shifter/shifter_platform/shared/aces/package_loader.py",
-      "shifter/shifter_platform/cms/services/_aces_range_create.py",
+      "shifter/shifter_platform/shared/raes/domain_topology.py",
+      "shifter/shifter_platform/shared/raes/runtime_target.py",
+      "shifter/shifter_platform/shared/raes/dispatch_port.py",
+      "shifter/shifter_platform/shared/raes/package_loader.py",
+      "shifter/shifter_platform/cms/services/_raes_range_create.py",
       "shifter/shifter_platform/cms/scenarios/registry.py",
-      "shifter/shifter_platform/config/_aces_settings.py",
-      "shifter/shifter_platform/tests/shared/aces/test_backend_conformance_gate.py"
+      "shifter/shifter_platform/config/_raes_settings.py",
+      "shifter/shifter_platform/tests/shared/raes/test_backend_conformance_gate.py"
     ]
   },
   {
     "id": "ADR-032",
-    "title": "How Shifter realizes ACES scenarios",
+    "title": "How Shifter realizes RAES scenarios",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Shifter realizes ACES by riding the ACES contract end to end, not by shadowing it. The pinned aces-sdl runtime (inside shared.aces) compiles a scenario into an ACES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the ACES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference ACES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the authored provisioning-intent artifact that crosses the boundary is the serialized ACES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions. Source-backed content delivery may accompany dispatch only as a separately validated, immutable identity binding governed by ADR-032-R3; it is not authored intent or a second provisioning model. A consumer may materialize a bounded, process-local realization projection after validating the envelope, producer compatibility, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute ACES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. ACES is a deliberate stack commitment: Shifter depends on the aces-sdl PyPI package pinned to a released version.",
+    "decision": "Shifter realizes RAES by riding the RAES contract end to end, not by shadowing it. The pinned raes runtime (inside shared.raes) compiles a scenario into an RAES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the RAES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference RAES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the authored provisioning-intent artifact that crosses the boundary is the serialized RAES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions. Source-backed content delivery may accompany dispatch only as a separately validated, immutable identity binding governed by ADR-032-R3; it is not authored intent or a second provisioning model. Participant-domain interactive-access intent may accompany it only as the separately validated, immutable compiled-address sidecar governed by ADR-032-R10; it never becomes provisioning-plan content or a participant-runtime capability claim. A consumer may materialize a bounded, process-local realization projection after validating the envelope, exact producer version, resource identities, resource types, payload shape, and topology references; that projection is not an authored contract, persistence schema, API DTO, or substitute RAES model. Shifter introduces no parallel SDL or re-modeled provisioning schema. RAES is a deliberate stack commitment: Shifter depends on the raes PyPI distribution pinned to a released version.",
     "rules": [
       {
         "id": "ADR-032-R1",
-        "description": "Authored ACES intent is consumed verbatim, never re-derived or guessed. The node image is taken from the ACES source (name/version), sizing from resources (ram/cpu), and os_family selects only the OS realization dialect and serves as a cross-check. Realization must not infer the image from os_family, invent sizing, or override authored intent with backend heuristics.",
+        "description": "Authored RAES intent is consumed verbatim, never re-derived or guessed. The node image is taken from the RAES source (name/version), sizing from resources (ram/cpu), and os_family selects only the OS realization dialect and serves as a cross-check. Realization must not infer the image from os_family, invent sizing, or override authored intent with backend heuristics.",
         "checks": []
       },
       {
         "id": "ADR-032-R2",
-        "description": "Concrete artifacts (image ids, machine sizes, subnets, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration (the registry/prebake seam), never carried as authored ACES semantics. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact, but recognition must be keyed on authored/compiled content, must fail loud or fall through, and must never reshape parsing or the model. Sniffing a field to hardcode a specific scenario into a backend is prohibited.",
+        "description": "Concrete artifacts (image ids, machine sizes, subnets, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration (the registry/prebake seam), never carried as authored RAES semantics. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact, but recognition must be keyed on authored/compiled content, must fail loud or fall through, and must never reshape parsing or the model. Sniffing a field to hardcode a specific scenario into a backend is prohibited.",
         "checks": []
       },
       {
         "id": "ADR-032-R3",
-        "description": "The only authored provisioning-intent artifact crossing the platform -> provisioner boundary is the serialized ACES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the public ACES/backend payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). For source-backed content, dispatch may carry a versioned server-owned delivery binding beside -- never inside -- that plan, limited to the compiled content resource address, sha256 content digest, normalized content-addressed object key, and bounded byte count. The binding contains no payload bytes, bucket or URL, credential, guest path, command, generated configuration, or client-controlled locator; it is persisted separately from range_config and the launch-intent payload, revalidated and joined exactly to the plan before retrieval or mutation, and is not an authored contract, public DTO, or second provisioning model. A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces ACES.",
+        "description": "The only authored provisioning-intent artifact crossing the platform -> provisioner boundary is the serialized RAES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the public RAES/backend payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). For source-backed content, dispatch may carry a versioned server-owned delivery binding beside -- never inside -- that plan, limited to the compiled content resource address, sha256 content digest, normalized content-addressed object key, and bounded byte count. The binding contains no payload bytes, bucket or URL, credential, guest path, command, generated configuration, or client-controlled locator; it is persisted separately from range_config and the launch-intent payload, revalidated and joined exactly to the plan before retrieval or mutation, and is not an authored contract, public DTO, or second provisioning model. A process-local realization projection may exist only behind fail-closed consumer validation and only to drive backend realization. Shifter must not introduce a parallel SDL, a persisted/API provisioning-intent schema, or a Shifter-owned intermediate contract that replaces RAES.",
         "checks": []
       },
       {
         "id": "ADR-032-R4",
-        "description": "Shifter depends on released PyPI artifacts pinned as one compatible pair (currently aces-scenario-packs 2.0.1 and its exact aces-sdl 0.23.0 dependency); it must not pin either contract to a git ref or non-released build. The provisioner consumer retains a bounded rolling-read window for persisted producer plans (currently [0.19.1, 0.24.0)). aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
+        "description": "Shifter depends on the exact released PyPI pair raes==2.0.0 and raes-env-packs==3.1.0; the environment-pack distribution itself requires raes==2.0.0 (env-packs 3.1.0 adds the public environment-pack publication profile consumed by artifact-requirement resolution, #1580, without changing the raes producer version). Neither contract may use a range, git ref, non-released build, or alternate name. The provisioner consumer accepts only producer version 2.0.0 and rejects every other producer version; no rolling-read compatibility window remains. The RAES module family is imported only within shared.raes (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing it.",
         "checks": []
       },
       {
         "id": "ADR-032-R5",
-        "description": "A node that declares no ACES source still requires a boot OS; the backend supplies a base OS image resolved from backend-owned configuration keyed on os_family. This base-OS default for a source-LESS node is legitimate backend policy and is the only sanctioned use of os_family to select an image; it is distinct from and does not license inferring an image from os_family for an authored source (ADR-032-R1), and it must fail loud when no base image is registered for the os_family.",
+        "description": "A node that declares no RAES source still requires a boot OS; the backend supplies a base OS image resolved from backend-owned configuration keyed on os_family. This base-OS default for a source-LESS node is legitimate backend policy and is the only sanctioned use of os_family to select an image; it is distinct from and does not license inferring an image from os_family for an authored source (ADR-032-R1), and it must fail loud when no base image is registered for the os_family.",
         "checks": []
       },
       {
         "id": "ADR-032-R6",
-        "description": "ACES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content or account term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, or echoing authored intent is not realization. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical ACES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
+        "description": "RAES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content, account, or feature term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, echoing authored intent, submitting an asynchronous bootstrap, or observing command/VM success is not realization. Every admitted guest-local composition item must have its claimed state read back on every concrete target instance before apply returns, operation success/runtime-snapshot evidence is emitted, or the range becomes READY; directory-scoped accounts and SPNs instead require one readback from the declared authoritative directory under the domain realization contract and must not be duplicated per member VM. Sanitized snapshot evidence may identify a verified item only by compiled resource address, composition resource type, and a bounded verified status; it must not carry authored values, target instances, guest output, provider detail, or secrets, and plan-derived entries may be emitted only after exact guest-check coverage succeeds. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical RAES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
         "checks": []
       },
       {
         "id": "ADR-032-R7",
-        "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. Shared admission must invoke the public ACES domain-topology diagnostics against the provisioner's explicitly declared supported_domain_profiles, including the current runtime snapshot for incremental apply. The separate plain-data consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, domain-topology carriers outside Shifter's supported profiles, and unsupported domain-scoped account terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
+        "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. Shared admission must invoke the public RAES domain-topology diagnostics against the provisioner's explicitly declared supported_domain_profiles, including the current runtime snapshot for incremental apply. The separate plain-data consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, domain-topology carriers outside Shifter's supported profiles, and unsupported domain-scoped account terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public RAES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
         "checks": []
       },
       {
         "id": "ADR-032-R8",
-        "description": "ACES Node.services entries are authored layer-4 transport exposure intent, not informational labels, guest service installation, participant authorization, or an override of authored ACLs. The GCE realization must validate the compiled spec.node.services payload again at the separate provisioner trust boundary and realize supported TCP/UDP ports as deterministic per-node-tag ingress policy sourced only from concrete CIDRs declared by networks in that same compiled range. It must never widen a service to 0.0.0.0/0, platform/portal/operator CIDRs, or another range by default. The existing management-plane allow remains higher precedence than authored ACLs; authored ACLs remain higher precedence than service-derived allows. Unsupported or malformed service shapes and any priority/source scope that cannot be represented without widening must fail before cloud mutation. The projection is process-local realization data only; it must not become a second SDL, persisted schema, API DTO, setting, or participant-access contract.",
+        "description": "RAES Node.services entries are authored layer-4 transport exposure intent, not informational labels, guest service installation, participant authorization, or an override of authored ACLs. The GCE realization must validate the compiled spec.node.services payload again at the separate provisioner trust boundary and realize supported TCP/UDP ports as deterministic per-node-tag ingress policy sourced only from concrete CIDRs declared by networks in that same compiled range. It must never widen a service to 0.0.0.0/0, platform/portal/operator CIDRs, or another range by default. The existing management-plane allow remains higher precedence than authored ACLs; authored ACLs remain higher precedence than service-derived allows. Unsupported or malformed service shapes and any priority/source scope that cannot be represented without widening must fail before cloud mutation. The projection is process-local realization data only; it must not become a second SDL, persisted schema, API DTO, setting, or participant-access contract.",
+        "checks": []
+      },
+      {
+        "id": "ADR-032-R9",
+        "description": "RAES feature bindings use an honest, shape-aware realization ledger. Package/baked services require package presence plus enabled/running in-guest verification before READY; source-backed artifact/configuration bytes reuse the immutable content-addressed delivery channel and independent in-guest digest readback. Unsupported feature types or values fail through the common validate/apply path before dispatch. A versioned server-owned delivery binding may identify a compiled content-placement or feature-binding by resource type plus resource address and bounded payload kind, but remains byte-free and separate from the serialized RAES plan. Feature types must not be modeled as content/account capabilities, features must not masquerade in a legacy content_address, and the backend must not execute pack-supplied commands or installer hooks.",
+        "checks": []
+      },
+      {
+        "id": "ADR-032-R10",
+        "description": "RAES agents.interactive_access remains participant-domain intent and MUST NOT be injected into the serialized ProvisioningPlan, RaesPlan, provisioning node payloads, backend capability manifest, or redacted runtime snapshot. shared.raes may lower only the released compiler's typed ParticipantBehaviorRuntime interactive-access projection into a versioned, bounded, non-secret sidecar of resolved compiled node address, closed channel, and resolved compiled account address. The sidecar is persisted separately from range_config, carried through the generation-fenced RAES operation input, and joined fail-closed to the separately parsed provisioning nodes/accounts before any provider or secret mutation. Shifter continues to claim no RAES participant_runtime capability. Because current product authorization has no trusted Shifter-actor to RAES-participant mapping, participant-local binding sets may be used only when they are invariant across compiled participant behaviors; they MUST NOT be unioned, guessed from role/name/team, or selected by an endpoint request. Each current binding requires an explicit enabled local account on the same single-instance target, a channel-compatible existing account credential strategy, and exact declaration-to-result equality; omitted/default accounts, domain accounts, count fan-out/implicit #0 selection, and exposure of the reserved provisioner-management account/key fail closed. The bounded realized member/access projection travels only in the authoritative terminal-ready operation result and is atomically persisted with READY, while credential values remain confined to guest installation and the existing terminal/Guacamole connection boundary.",
         "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["ci", "agent-policy"],
+    "enforcement": [
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1264",
       "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
       "https://github.com/Brad-Edwards/shifter/issues/1564",
+      "https://github.com/Brad-Edwards/shifter/issues/1565",
+      "https://github.com/Brad-Edwards/shifter/issues/1569",
       "https://github.com/Brad-Edwards/shifter/issues/1606",
+      "https://github.com/Brad-Edwards/shifter/issues/1710",
+      "https://github.com/Brad-Edwards/shifter/issues/1710",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-source-content-delivery-preflight-1564.md",
+      "docs/architecture/aces-feature-artifact-delivery-preflight-1565.md",
+      "docs/architecture/aces-composition-realization-verification-preflight-1569.md",
       "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-domain-topology-preflight-1606.md",
+      "docs/architecture/raes-interactive-access-gcp-preflight-1710.md",
+      "docs/architecture/aces-interactive-access-gcp-preflight-1710.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
-      "shifter/shifter_platform/shared/aces/domain_topology.py",
-      "shifter/shifter_platform/shared/aces/runtime_target.py"
+      "shifter/shifter_platform/shared/raes/domain_topology.py",
+      "shifter/shifter_platform/shared/raes/runtime_target.py"
     ]
   },
   {
@@ -1555,11 +1729,11 @@
     "title": "Product, distribution, and development surfaces",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane if a bare operator tenant needs it to run or extend Shifter; such dual-use capabilities (content ingestion, image baking) are built once as product capabilities and produced by maintainers through that same path (dogfood), not as maintainer-bespoke implementations. The CI/build/deploy runner fleet is development-plane and must not live in a product/operator deploy-target account (see ADR-033-R2, amended by #1546 for maintainer-owned dev tenants). Operator content acquisition and entitlement are resolved outside the platform.",
+    "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane when a bare operator tenant needs it to run or extend Shifter; content ingestion and supported artifact-preparation capabilities therefore cannot exist only in maintainer CI. Maintainers reuse a product capability when the same contract and policy apply, while genuinely distribution-only publication, promotion, replication, and credentialed preparation remain distribution-plane. Published artifacts may be exact requirements, allowed candidates, or optimizations and are not assumed to be caches or reproducible outputs. The CI/build/deploy runner fleet is development-plane and must not live in a product/operator deploy-target account (see ADR-033-R2, amended by #1546 for maintainer-owned dev tenants). Operator content acquisition and entitlement are resolved outside the platform.",
     "rules": [
       {
         "id": "ADR-033-R1",
-        "description": "Capabilities a bare operator tenant needs to run or extend Shifter (including content ingestion and image baking) are product-plane; maintainers produce shipped/blessed artifacts through the same product capability rather than a maintainer-bespoke implementation.",
+        "description": "Capabilities a bare operator tenant needs to run or extend Shifter, including content ingestion and each artifact-preparation mechanism Shifter promises operators, are product-plane rather than maintainer-only CI. Maintainers reuse a product capability when the same inputs, policy, timing, and output contract apply; distribution-only publication, promotion, replication, or credentialed preparation may use separate operated workflows. This rule does not imply that every requirement is buildable or that every published artifact is reproducible.",
         "checks": []
       },
       {
@@ -1588,7 +1762,7 @@
     "title": "Uniform content-ingestion contract",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Repo pack identity is bound to the canonical ACES associated-artifact digest at registration and verified again before native launch. Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. Content is the source of truth and a published image is a cache.",
+    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Repo pack identity is bound to the canonical RAES associated-artifact digest at registration and verified again before native launch. Artifact satisfaction preserves the RAES exact, constrained, open, and absent author postures; Shifter chooses a realization only where the authored requirement permits it and the selected backend declares support. Exact artifacts, existing backend artifacts, pack-published candidates, dynamic composition, and explicitly permitted materialization specifications are possible mechanisms rather than an exhaustive pull-or-bake choice. Acquisition transport, satisfaction mechanism, and realization timing remain separate. Packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. A published artifact may be authoritative, an allowed candidate, or an optimization; it is not inherently a cache or rebuildable substitute.",
     "rules": [
       {
         "id": "ADR-034-R1",
@@ -1597,7 +1771,7 @@
       },
       {
         "id": "ADR-034-R2",
-        "description": "Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry zero images and may define parameterized experiment runs.",
+        "description": "Artifact satisfaction preserves RAES author intent: exact artifacts must be honored, constrained requirements admit only conforming candidates, open concerns may be delegated only to a capable backend, and absence is not an implicit artifact request. Exact artifacts, existing backend inventory, pack-published candidates, dynamic composition, and explicitly permitted materialization specifications are possible mechanisms, not a closed pull-or-bake menu. Acquisition transport and realization timing are independent. Packs may carry zero images and may define parameterized experiment runs.",
         "checks": []
       },
       {
@@ -1607,17 +1781,27 @@
       },
       {
         "id": "ADR-034-R4",
-        "description": "Content is the source of truth and published images are a cache; private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
+        "description": "The portable RAES artifact requirement is semantic authority. A published artifact may be the exact required artifact, an allowed candidate, or an optimization over a reproducible path; it is not inherently a cache, substitute, or rebuildable output. Private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
         "checks": []
       },
       {
         "id": "ADR-034-R5",
-        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical ACES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and an object-backed pack becomes launchable only after its resolver provides equivalent bounded extraction, containment, immutable-object identity, contract validation, and digest guarantees.",
+        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical RAES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and an object-backed pack becomes launchable only after its resolver provides equivalent bounded extraction, containment, immutable-object identity, contract validation, and digest guarantees.",
         "checks": []
       },
       {
         "id": "ADR-034-R6",
-        "description": "Source-backed ACES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
+        "description": "Source-backed RAES content is resolved and deterministically materialized only while the containing pack is immutable, containment-checked, contract-validated, and digest-verified. Every source must bind explicitly to pack-associated input and a supported materialization format; path/name/extension sniffing, filesystem-order selection, and package-supplied executable code are prohibited. Materialized bytes use the existing provider-neutral object-storage boundary under a normalized content-addressed key, and only the immutable delivery identity permitted by ADR-032-R3 crosses to the provisioner; Shifter does not add a standalone artifact store or let guests access object storage.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R7",
+        "description": "Source-backed RAES feature artifacts reuse the uniform pack trust and delivery machinery without becoming content placements. A versioned discriminated projection binds feature type plus source name/version to an inventory-covered deterministic payload and bounded data-only install policy; content and feature entries keep distinct match semantics while sharing containment, size, digest, content-addressed storage, authenticated guest transport, and readback. Filename/extension inference, ambiguous wildcard resolution, contributor-supplied executable installers/probes, and a parallel feature artifact store are prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R8",
+        "description": "Shifter must evaluate artifact satisfiability before provisioning and report whether failure is due to an unavailable exact artifact, unsatisfied constraints, unsupported open realization, missing locked input, unavailable candidate, or unsupported backend mechanism. Long-running VM-image construction never starts on the provisioning critical path; bounded backend composition may occur during realization only when RAES author intent permits it and the backend declares and evidences that capability.",
         "checks": []
       }
     ],
@@ -1628,7 +1812,9 @@
     "evidence": [
       "docs/architecture/uniform-content-ingestion-contract.md",
       "docs/architecture/uniform-content-ingestion-preflight-1578.md",
+      "docs/architecture/raes-artifact-requirement-resolution-preflight-1580.md",
       "docs/architecture/aces-source-content-delivery-preflight-1564.md",
+      "docs/architecture/aces-feature-artifact-delivery-preflight-1565.md",
       "docs/architecture/product-development-surfaces.md",
       "docs/ops/content-ingestion.md",
       "docs/adr/index.yaml"
@@ -1658,7 +1844,9 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["ci"],
+    "enforcement": [
+      "ci"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1575",
       "scripts/bootstrap/preflight.py",
@@ -1699,7 +1887,9 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": [
+      "agent-policy"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1520",
       "docs/architecture/rev1/security.md",
@@ -1717,7 +1907,9 @@
       {
         "id": "ADR-037-R1",
         "description": "Every non-local uses: action in a cloud-credentialed workflow (one requesting id-token: write, running self-hosted, invoking a cloud-auth action, or passing a workload_identity_provider) MUST pin a full 40-hex commit SHA, including actions/*. A readable '# <version>' comment is retained for Dependabot. Enforced fail-closed by the workflow-action-sha-pinning adr_guard check, which parses workflows as data and reports any unparseable workflow, unclassifiable ref, or mutable ref.",
-        "checks": ["workflow-action-sha-pinning"]
+        "checks": [
+          "workflow-action-sha-pinning"
+        ]
       },
       {
         "id": "ADR-037-R2",
@@ -1746,12 +1938,16 @@
       },
       {
         "id": "ADR-037-R7",
-        "description": "Cloud-credentialed validation workflows that mint trusted labels (e.g. validated=passed) MUST be restricted to protected integration branches at two independent enforcement layers: (1) a ref-allowlist in the workflow job that rejects non-protected refs before cloud auth is attempted (defense-in-depth), and (2) a ref condition in the OIDC/WIF attribute_condition that rejects tokens from any ref outside the allowlist at the provider level — outside any branch-controlled workflow code. The GCP WIF module enforces this via the allowed_workflow_refs variable (platform/terraform/gcp/modules/cicd-github-oidc). GitHub environment deployment-branch protection MUST also be configured for the target environments so that GitHub rejects runs from non-protected refs before the job starts. Any exception requires a docs/adr/exceptions.yaml entry with owner, justification, and expiry.",
+        "description": "Cloud-credentialed validation workflows that mint trusted labels (e.g. validated=passed) MUST be restricted to protected integration branches at two independent enforcement layers: (1) a ref-allowlist in the workflow job that rejects non-protected refs before cloud auth is attempted (defense-in-depth), and (2) a ref condition in the OIDC/WIF attribute_condition that rejects tokens from any ref outside the allowlist at the provider level \u2014 outside any branch-controlled workflow code. The GCP WIF module enforces this via the allowed_workflow_refs variable (platform/terraform/gcp/modules/cicd-github-oidc). GitHub environment deployment-branch protection MUST also be configured for the target environments so that GitHub rejects runs from non-protected refs before the job starts. Any exception requires a docs/adr/exceptions.yaml entry with owner, justification, and expiry.",
         "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "enforcement": [
+      "pre-commit",
+      "ci",
+      "agent-policy"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1519",
       "docs/architecture/rev1-build-deployment-provenance-preflight-1519.md",
@@ -1787,7 +1983,9 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["ci"],
+    "enforcement": [
+      "ci"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1591",
       "mkdocs.yml",
@@ -1800,24 +1998,52 @@
     "title": "Provider-neutral range substrate",
     "status": "accepted",
     "scope": "range_provisioning",
-    "decision": "Each root-selected backend bundle selects exactly one provider-neutral range-substrate adapter exposing four convergent operations -- provision, destroy, pause, and resume -- over the complete range resource set (networks, instances, optional NGFW, and remote-access bindings). The port consumes existing validated RangeSpec or ACES realization intent rather than a new topology schema, returns closed versioned non-secret resource bindings, uses one classified error contract and request-scoped idempotency semantics, and is trusted only after the shared black-box lifecycle/security conformance suite passes. Task dispatch, backend metadata, public workflow/status, ACES semantic conformance, and Guacamole credential/session construction remain separate concerns. AWS Terraform and GCP GDC are the initial adapters; Azure is deferred until both pass conformance and may enter only as another bundle/adapter behind this contract.",
+    "decision": "Each root-selected backend bundle selects exactly one provider-neutral range-substrate adapter exposing four convergent operations -- provision, destroy, pause, and resume -- over the complete range resource set (networks, instances, optional NGFW, and remote-access bindings). The port consumes existing validated RangeSpec or RAES realization intent rather than a new topology schema, returns closed versioned non-secret resource bindings, uses one classified error contract and request-scoped idempotency semantics, and is trusted only after the shared black-box lifecycle/security conformance suite passes. Task dispatch, backend metadata, public workflow/status, RAES semantic conformance, and Guacamole credential/session construction remain separate concerns. AWS Terraform and GCP GDC are the initial adapters; Azure is deferred until both pass conformance and may enter only as another bundle/adapter behind this contract.",
     "interface_contract": {
       "kind": "range-substrate/v1",
-      "operations": ["provision", "destroy", "pause", "resume"],
-      "resources": ["network", "instance", "ngfw", "remote-access"],
+      "operations": [
+        "provision",
+        "destroy",
+        "pause",
+        "resume"
+      ],
+      "resources": [
+        "network",
+        "instance",
+        "ngfw",
+        "remote-access"
+      ],
       "conformance": {
         "shared_black_box_suite": true,
         "real_provider_promotion_evidence": true
       },
       "adapters": {
-        "initial": ["aws-terraform", "gcp-gdc"],
-        "deferred": ["azure"]
+        "initial": [
+          "aws-terraform",
+          "gcp-gdc"
+        ],
+        "deferred": [
+          "azure"
+        ]
       },
       "issue_references": {
-        "283": {"disposition": "out-of-scope"},
-        "478": {"operations": ["provision", "destroy", "pause", "resume"]},
-        "265": {"disposition": "out-of-scope"},
-        "277": {"disposition": "out-of-scope"}
+        "283": {
+          "disposition": "out-of-scope"
+        },
+        "478": {
+          "operations": [
+            "provision",
+            "destroy",
+            "pause",
+            "resume"
+          ]
+        },
+        "265": {
+          "disposition": "out-of-scope"
+        },
+        "277": {
+          "disposition": "out-of-scope"
+        }
       }
     },
     "rules": [
@@ -1828,7 +2054,7 @@
       },
       {
         "id": "ADR-039-R2",
-        "description": "Substrate inputs and results are closed and versioned. The port carries existing validated RequestSpec/RangeSpec or ADR-032 ACES ProvisioningPlan realization intent plus its immutable digest and must not introduce another scenario/topology schema, universal placement taxonomy, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Scenario realization owns internal composition semantics; substrate lifecycle ownership is limited to provider-safe membership, ownership, state, cleanup, and logical access bindings. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
+        "description": "Substrate inputs and results are closed and versioned. The port carries existing validated RequestSpec/RangeSpec or ADR-032 RAES ProvisioningPlan realization intent plus its immutable digest and must not introduce another scenario/topology schema, universal placement taxonomy, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Scenario realization owns internal composition semantics; substrate lifecycle ownership is limited to provider-safe membership, ownership, state, cleanup, and logical access bindings. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
         "checks": []
       },
       {
@@ -1863,17 +2089,20 @@
       },
       {
         "id": "ADR-039-R9",
-        "description": "GCP scenario-declared participant/operator endpoint access uses the existing platform-to-range VPC peering and existing portal browser-SSH / guacd Guacamole dialers. Range VMs remain private-only. Logical target/channel declarations and closed realized range-cell bindings are the authorization and persistence source; role, OS, scenario id, credential existence, browser input, and arbitrary host/port values are not. Provisioner management ingress and participant access ingress remain separate. Kubernetes default-deny plus access-workload-specific egress and cell-targeted GCE ingress admit only approved channel ports from dedicated access-workload source identities/ranges; peering alone grants no access. Authorization, READY/member/channel checks run before enqueue and again before credential resolution/dial, while participant removal, binding removal, pause, and destroy invalidate pending bootstraps and terminate or boundedly expire established browser SSH and Guacamole sessions. JSON-auth/bootstrap token expiry alone is not established-session revocation. Recorded by the architecture preflight for #1349.",
+        "description": "GCP scenario-declared participant/operator endpoint access uses the existing platform-to-range VPC peering and existing portal browser-SSH / guacd Guacamole dialers. Range VMs remain private-only. Logical target/channel declarations and closed realized range-cell bindings are the authorization and persistence source; role, OS, scenario id, credential existence, browser input, and arbitrary host/port values are not. Provisioner management ingress and participant access ingress remain separate. Kubernetes default-deny plus access-workload-specific egress and cell-targeted GCE ingress admit only approved channel ports from dedicated access-workload source identities/ranges; peering alone grants no access. Authorization, READY/member/channel checks run before enqueue and again before credential resolution/dial, while participant removal, binding removal, pause, and destroy invalidate pending bootstraps and terminate or boundedly expire established browser SSH and Guacamole sessions. JSON-auth/bootstrap token expiry alone is not established-session revocation. RAES-native interactive access reaches this same closed binding only through the separately validated ADR-032-R10 participant sidecar; participant-local policies are never unioned and the reserved provisioner-management account/key is never exposed. Recorded by the architecture preflights for #1349 and #1710.",
         "checks": []
       },
       {
         "id": "ADR-039-R10",
-        "description": "User-held client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only a trusted product launch path may mint the closed capability beside scenario intent; product provenance and ownership stay at the product/CMS boundary, while the capability binds one authoritative participant-access target and an enforced server-owned access deadline. CMS persists one lease for every new CTF and Mission Control range: the current deadline is the sole automatic-cleanup authority and the immutable generation ceiling bounds certificate `notAfter`. CTF derives both from event cleanup. Mission Control starts at 30 days, extends only through server-selected 30-day increments, and cannot exceed 365 days from creation; HTTP callers cannot select a deadline or increment. The DB-authoritative reconciler locks due rows and reuses canonical system-attributed destroy and existing product projections rather than a CTF- or Mission-Control-specific cleanup workflow. Any future product must supply the same enforced lease semantics or introduce an explicitly versioned renewal/revocation lifecycle; caller-supplied, silently expiring, and unbounded deadlines are prohibited, and topology alone never activates a VPN. A required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the user-controlled target), creates one owner/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former owner, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every live-fire adapter eligible for an enabled product profile must pass the same real-client handshake, isolation, lifecycle, secret-deletion, and capacity conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
+        "description": "User-held client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only a trusted product launch path may mint the closed capability beside scenario intent; product provenance and ownership stay at the product/CMS boundary, while the capability binds one authoritative participant-access target and an enforced server-owned access deadline. CMS persists one lease for every new CTF and Mission Control range: the current deadline is the sole automatic-cleanup authority and the immutable generation ceiling bounds certificate `notAfter`. CTF derives both from event cleanup. Mission Control starts at 30 days, extends only through server-selected 30-day increments, and cannot exceed 365 days from creation; HTTP callers cannot select a deadline or increment. The DB-authoritative reconciler locks due rows and reuses canonical system-attributed destroy and existing product projections rather than a CTF- or Mission-Control-specific cleanup workflow. Any future product must supply the same enforced lease semantics or introduce an explicitly versioned renewal/revocation lifecycle; caller-supplied, silently expiring, and unbounded deadlines are prohibited, and topology alone never activates a VPN. A required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the user-controlled target), creates one owner/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former owner, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret; the provisioner writes serviceAccountUser only on that generated gateway account before Compute attaches it. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every live-fire adapter eligible for an enabled product profile must pass the same real-client handshake, isolation, lifecycle, secret-deletion, and capacity conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
         "checks": []
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1322",
       "https://github.com/Brad-Edwards/shifter/issues/1695",
@@ -1890,6 +2119,8 @@
       "docs/architecture/gcp-range-cell-boundary-controls-preflight-1345.md",
       "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",
       "docs/architecture/gcp-scenario-endpoint-access-preflight-1349.md",
+      "docs/architecture/raes-interactive-access-gcp-preflight-1710.md",
+      "docs/architecture/aces-interactive-access-gcp-preflight-1710.md",
       "shifter/installation/contract.py",
       "shifter/installation/registry.py",
       "shifter/shifter_platform/engine/ecs.py",
@@ -1906,7 +2137,7 @@
     "title": "The versioned platform API is published from DRF with fail-closed compatibility gates",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "The canonical DRF /api/v1/ surface is published as deterministic committed OpenAPI JSON generated from runtime URL routing, serializers, permissions, and drf-spectacular annotations. Runtime DRF remains the authoring source and the committed artifact is the downstream consumer contract; frontend and other generated types derive from that artifact. Schema generation fails on warnings or graceful fallbacks, drift compares runtime generation with the artifact, and breaking-change analysis compares the proposal with a trusted base-branch artifact or immutable major snapshot that the same change cannot rewrite. Backward-compatible additions remain in v1; consumer-breaking changes require a parallel /api/v2/, aligned major metadata, and a machine-verifiable migration note while v1 remains available for its migration window. Authentication, application scopes, CSRF conditions, pagination, and the shared sanitized error envelope are represented from their existing canonical implementations rather than duplicated in schema-only policy.",
+    "decision": "The canonical DRF /api/v1/ surface is published as deterministic committed OpenAPI JSON generated from runtime URL routing, serializers, permissions, and drf-spectacular annotations. Runtime DRF remains the authoring source and the committed artifact is the downstream consumer contract; frontend and other generated types derive from that artifact. Schema generation fails on warnings or graceful fallbacks, drift compares runtime generation with the artifact, and breaking-change analysis compares the proposal with a trusted base-branch artifact or immutable major snapshot that the same change cannot rewrite. Backward-compatible evolution remains in v1; ordinary consumer-breaking changes require a parallel /api/v2/, aligned major metadata, and a machine-verifiable migration note while v1 remains available for its migration window. A separately accepted ADR may retire a complete product surface without preserving that product under another API major. Authentication, application scopes, CSRF conditions, pagination, and the shared sanitized error envelope are represented from their existing canonical implementations rather than duplicated in schema-only policy.",
     "rules": [
       {
         "id": "ADR-040-R1",
@@ -1915,12 +2146,12 @@
       },
       {
         "id": "ADR-040-R2",
-        "description": "CI MUST fail on runtime-to-artifact drift and on consumer-breaking differences from a trusted base-branch artifact or immutable per-major snapshot. The compatibility oracle cannot be refreshed by the same proposed change; compatibility semantics live in a pinned OpenAPI-aware checker or package-local code rather than workflow YAML/shell. A break requires a parallel URL major, aligned NamespaceVersioning/settings/schema metadata, and a machine-verifiable migration note; a label, commit message, info.version-only edit, or overwritten baseline is insufficient.",
+        "description": "CI MUST fail on runtime-to-artifact drift and on consumer-breaking differences from a trusted base-branch artifact or immutable per-major snapshot unless a separately accepted ADR explicitly retires the complete affected product surface. The compatibility oracle cannot be refreshed by the same proposed change; compatibility semantics live in a pinned OpenAPI-aware checker or package-local code rather than workflow YAML/shell. An ordinary break requires a parallel URL major, aligned NamespaceVersioning/settings/schema metadata, and a machine-verifiable migration note; a label, commit message, info.version-only edit, or overwritten baseline is insufficient.",
         "checks": []
       },
       {
         "id": "ADR-040-R3",
-        "description": "Within /api/v1/, additions are limited to new independent operations, optional request inputs, optional response object fields, wider accepted requests, and non-semantic documentation. Removed/renamed wire elements; newly required or narrowed inputs; wider, optional, nullable, or new closed-union response possibilities; changed status/media/pagination/error/operation-id semantics; tightened auth/role/scope; and behavior-changing defaults are breaking and require /api/v2/ plus migration evidence.",
+        "description": "Within /api/v1/, additions are limited to new independent operations, optional request inputs, optional response object fields, wider accepted requests, and non-semantic documentation. Removed/renamed wire elements; newly required or narrowed inputs; wider, optional, nullable, or new closed-union response possibilities; changed status/media/pagination/error/operation-id semantics; tightened auth/role/scope; and behavior-changing defaults are breaking and require /api/v2/ plus migration evidence, except when a separately accepted ADR removes the complete product surface rather than evolving it.",
         "checks": []
       },
       {
@@ -1930,7 +2161,9 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": [
+      "agent-policy"
+    ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1329",
       "docs/architecture/openapi-contract-publication-preflight-1329.md",
@@ -1954,7 +2187,7 @@
     "title": "Scenario verification uses an explicitly selected installed plugin seam",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "Core owns a provider- and scenario-neutral shared scenario-verification contract and framework, but ships zero scenario adapters, answer material, topology, or runner implementations. Adapters are loaded only from the fixed shifter.scenario_verification.adapters entry-point group after deterministic installed-metadata discovery and explicit distribution/version/entry-point selection (or a sole unambiguous match). The frozen v1 contract exposes bounded declarations, explicit runtime prerequisites, an injected transport-neutral argv-only runner with per-command and whole-run budgets, closed pass/fail/blocked/error reports, and one versioned redacted report DTO. ACES demand/supply/realizability, challenge-board readback, provider topology, persistence, and deployment configuration remain outside the seam.",
+    "decision": "Core owns a provider- and scenario-neutral shared scenario-verification contract and framework, but ships zero scenario adapters, answer material, topology, or runner implementations. Adapters are loaded only from the fixed shifter.scenario_verification.adapters entry-point group after deterministic installed-metadata discovery and explicit distribution/version/entry-point selection (or a sole unambiguous match). The frozen v1 contract exposes bounded declarations, explicit runtime prerequisites, an injected transport-neutral argv-only runner with per-command and whole-run budgets, closed pass/fail/blocked/error reports, and one versioned redacted report DTO. RAES demand/supply/realizability, challenge-board readback, provider topology, persistence, and deployment configuration remain outside the seam.",
     "rules": [
       {
         "id": "ADR-041-R1",
@@ -1964,7 +2197,9 @@
       {
         "id": "ADR-041-R2",
         "description": "The public verification ABI MUST remain in the shared contracts layer, import-safe and independent of Django and other platform layers. Its versioned declarations and report objects are immutable; identifiers, reason codes, bindings, summaries, callables, API versions, duplicates, and non-empty adapter selections are validated centrally and ordered deterministically before execution.",
-        "checks": ["layer-imports"]
+        "checks": [
+          "layer-imports"
+        ]
       },
       {
         "id": "ADR-041-R3",
@@ -1993,7 +2228,10 @@
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy", "ci"],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
     "evidence": [
       "docs/architecture/scenario-verification-plugin-seam-adr.md",
       "docs/architecture/aces-polaris-scenario-smoketest-coverage-preflight-1293.md",
@@ -2001,8 +2239,406 @@
       "shifter/shifter_platform/shared/scenario_verification",
       "shifter/shifter_platform/tests/shared/scenario_verification",
       ".github/quality-path-filters.yaml",
-      ".github/workflows/_quality.yml",
-      "docs/architecture/aces-migration-parity-inventory.yaml"
+      ".github/workflows/_quality.yml"
+    ]
+  },
+  {
+    "id": "ADR-042",
+    "title": "Repository releases use one Release Please umbrella lineage",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Shifter has one umbrella SemVer release line coordinated by Release Please on protected main. A release is a vX.Y.Z source tag plus GitHub Release created by the Release Please action on merge of its release PR (mirroring the sibling RAES repos), not a deployment or independently published component set. Release Please is the sole CHANGELOG.md writer after a lossless final Towncrier transition; Conventional Commit signals must survive the feature-to-dev and dev-to-main merge topology. Component package/chart versions and OCI digest-based deployment identity remain separate contracts.",
+    "rules": [
+      {
+        "id": "ADR-042-R1",
+        "description": "Release Please MUST configure exactly one root package for the Shifter umbrella release. The root manifest records last released state and the simple releaser's root version.txt is its committed mirror; Python, Node, Helm, Terraform, schema, protocol, and migration versions MUST NOT be swept into the umbrella bump unless a later ADR establishes an independently published lifecycle.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R2",
+        "description": "A Shifter release is a vX.Y.Z tag and GitHub Release bound to one protected-main source commit, created by the Release Please action via the ephemeral GITHUB_TOKEN (mirroring the sibling RAES repos); a CI-managed release tag is not required to carry a GPG/OIDC signature. Release creation MUST NOT deploy, publish packages or images, mint cloud credentials, or replace ADR-037's exact OCI digest and source-revision deployment identity. Existing tags are immutable and a mismatched same-version tag fails closed.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R3",
+        "description": "Release Please is the sole CHANGELOG.md writer after cutover. Every pending Towncrier fragment MUST first be consumed into a correctly rendered final transition release with a matching tag/Release, after which towncrier.toml, changelog.d, its template, merge driver, fragment gates, and fragment guidance are retired together; a hybrid or silent fragment deletion is prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R4",
+        "description": "The release signal is the Conventional Commit subject preserved on main: feat is minor, fix/perf is patch, and an explicit breaking marker is major; non-release maintenance and the retained Keep-a-Changelog types (security/added/changed/deprecated/removed/fixed) do not bump. Feature PRs to dev MUST be title-validated and squash-merged with that title as the commit subject, while dev-to-main promotion preserves those commits. The prior blanket exemption for PRs targeting dev is removed (pr-title-lint runs on PRs to dev); only dev-to-main promotion PRs, whose title never becomes a release commit, are left unlinted.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R5",
+        "description": "Release automation runs from protected main on a GitHub-hosted runner, serializes writes, uses full-SHA-pinned actions and job-scoped least privilege, and prefers ephemeral GITHUB_TOKEN plus OIDC signing over a PAT or static key. Untrusted titles/API data are parsed as data; tokens and signing material never enter argv, URLs, generated files, release notes, artifacts, summaries, or logs.",
+        "checks": [
+          "workflow-action-sha-pinning"
+        ]
+      },
+      {
+        "id": "ADR-042-R6",
+        "description": "The main-only release commit returns to dev through one narrowly identified, human-merged back-merge PR. Automation may update its dedicated branch idempotently but MUST NOT force-update main/dev, auto-merge through required checks, or create a release loop from dev synchronization.",
+        "checks": []
+      },
+      {
+        "id": "ADR-042-R7",
+        "description": "Ground Control release-please mode is selected by the canonical root release-please-config.json signal. Shifter removes its fragment plan rule but MUST NOT add a duplicate changelog_mode schema key or retain a separate fragment validator/rendering path.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1776",
+      "docs/architecture/release-please-preflight-1776.md",
+      "docs/DEVELOPMENT_WORKFLOW.md",
+      "release-please-config.json",
+      ".release-please-manifest.json",
+      ".github/workflows/release-please.yml",
+      "CHANGELOG.md",
+      ".gc/plan-rules.md",
+      ".github/workflows/pr-title-lint.yml",
+      "docs/architecture/rev1-build-deployment-provenance.md"
+    ]
+  },
+  {
+    "id": "ADR-043",
+    "title": "Provisioner persistence crosses a versioned operation boundary, not Django tables",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Engine owns the request, range, instance, app, subnet, allocation, outbox, and audit persistence schemas. The separately deployed provisioner integrates through one operation-shaped boundary anchored to the existing ProvisionerLaunchIntent operation_id: an immutable versioned input projection consumed by the provisioner and an append-only versioned result inbox consumed by an Engine-owned applier. The applier validates ownership, lifecycle generation, contract version, ordering, idempotency, and payload shape before applying domain state, audit intent, and any ADR-025 RangeEventOutbox notification in a platform-owned transaction. Direct provisioner reads/writes of Django domain tables and direct inserts into the range-event outbox are compatibility shims to be removed with their grants; synchronous subnet reservation must remain serialized but move behind an Engine-owned stable coordination contract rather than remain an undocumented table exception.",
+    "rules": [
+      {
+        "id": "ADR-043-R1",
+        "description": "The provisioner MUST NOT use Django model tables, columns, joins, migration history, arbitrary field updates, or the range-event outbox as its service API. At completed cutover its database principal may read only the immutable operation-input integration surface, append only to the result inbox, and use an explicitly reviewed stable coordination surface for synchronous reservations; all legacy domain-table and outbox grants MUST be revoked by forward migration and proved absent with PostgreSQL effective-privilege tests.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R2",
+        "description": "Provisioner command, input, and result contracts MUST be operation-shaped, provider-neutral, versioned independently of application releases, bounded, runtime-validated at every process boundary, secret-free except for existing encrypted envelopes and provider-native secret references, and anchored to the existing operation_id generation. AWS and GCP MUST NOT use different generation or persistence contracts. Unknown versions, stale generations, wrong ownership, invalid transitions/order, oversized payloads, and a repeated result id with a different digest MUST fail closed without domain mutation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R3",
+        "description": "Engine is the sole result applier. Applying a provisioner result, recording its idempotent disposition, writing Engine domain state and system audit intent, and enqueueing any ADR-025 notification MUST share one platform-owned transaction. Delivery is at-least-once with idempotent application; launch retry, result-apply retry, range-event delivery, and CMS/Mission Control reconciliation remain distinct workflows and MUST NOT share tables, payloads, status meanings, or DLQ semantics.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R4",
+        "description": "Operation payloads MUST compose the existing shared persisted RangeSpec/RAES ProvisioningPlan, range-cell, backend-admission, remote-access, RAES content/evidence, ResourceStatus, NGFW attachment, audit, error, and logging contracts. They MUST NOT introduce table-shaped DTOs, a second authored/runtime state model, duplicate validators/status enums/event constants/exception hierarchies, raw provider-response persistence, or a generic repository/query/patch interface.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R5",
+        "description": "Process argv is limited to the canonical resource/operation, request or legacy identifiers, and optional operation-generation UUID correlation; payloads, capabilities, credentials, database tokens, signed URLs, VPN profiles, provider responses, and environment maps MUST NOT enter argv, logs, audit context, range error text, events, or public error envelopes. Existing IAM/Cloud SQL DB auth, TLS, sensitive-env projection, env inventories/renderers, admission policy, shared.log_sanitize/provisioner log_redact, and shared API error envelopes remain authoritative.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R6",
+        "description": "Subnet/CIDR reservation is synchronous pre-mutation coordination, not an eventual provisioner result. Its Engine-owned boundary MUST preserve the existing PostgreSQL serialization, uniqueness, cloud-drift observation, ownership, release, and failure-compensation semantics. Realized CIDRs MUST live in allocation/subnet state and operation contracts; the provisioner MUST NOT continue mutating authored range_config as runtime scratch state.",
+        "checks": []
+      },
+      {
+        "id": "ADR-043-R7",
+        "description": "The operation boundary MUST retain immutable input until terminal recovery is no longer possible, support an explicit rolling producer/consumer version window, and provide bounded retry/DLQ plus operator-visible signals for inbox lag, unsupported versions, stale/conflicting results, and operations lacking terminal results. A crash after cloud mutation but before result append MUST be recoverable through idempotent re-drive or provider/Terraform reconciliation; ADR-025 projection reconciliation alone is insufficient.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/478",
+      "docs/architecture/provisioner-persistence-boundary-preflight-478.md",
+      "docs/architecture/provisioner-subnet-coordination-preflight-1838.md",
+      "docs/architecture/gcp-provisioner-launch-boundary-preflight-1518.md",
+      "docs/architecture/range-event-delivery-preflight-476.md",
+      "shifter/shifter_platform/engine/launch_intents.py",
+      "shifter/shifter_platform/engine/models",
+      "shifter/shifter_platform/engine/services",
+      "shifter/shifter_platform/shared",
+      "shifter/engine/provisioner/provisioner_db.py",
+      "shifter/engine/provisioner/state_helpers.py"
+    ]
+  },
+  {
+    "id": "ADR-044",
+    "title": "Platform control-plane workloads use one backend-neutral Helm package",
+    "status": "accepted",
+    "scope": "platform_packaging",
+    "decision": "The Shifter Helm chart is the canonical control-plane workload package for supported Kubernetes backends. Root-selected backend bundles provision provider prerequisites and render validated identity, edge, network, image, runtime, and secret-reference values into the one chart. New AWS deployments use EKS plus Helm; existing ECS/ASG platform deployments remain a documented compatibility path with separate state and controlled cutover. Platform packaging, task delivery, range-substrate lifecycle, cloud backend selection, and user identity remain distinct concerns.",
+    "rules": [
+      {
+        "id": "ADR-044-R1",
+        "description": "platform/charts/shifter is the single canonical control-plane workload package for GKE and EKS. Backend-specific Terraform and bootstrap code may supply layered values and provider prerequisites, but must not fork the chart or create an ad hoc kubectl workload deployment path; raw GCP manifests remain supporting/parity evidence during migration.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R2",
+        "description": "The chart's neutral defaults must not emit provider-specific CRDs, annotations, ingress classes, load-balancer/API CIDRs, image roots, or credentials. Backend renderers project validated Terraform outputs and verified image digests into schema-validated values. Secret payloads are prohibited from Helm values/history and ConfigMaps and must flow through provider secret stores or Kubernetes Secrets using the existing hydration boundary.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R3",
+        "description": "For root-configured backend=aws deployments, EKS is the canonical platform compute without introducing an aws-eks backend. This does not by itself move the AWS provisioner task runner from private ECS tasks, replace ADR-039's AWS Terraform range-substrate adapter, or change Cognito/OIDC. GCP Job-launch RBAC/admission resources must not render on EKS unless a separately reviewed Kubernetes task-runner contract requires and tests them.",
+        "checks": []
+      },
+      {
+        "id": "ADR-044-R4",
+        "description": "Every supported provider values render must preserve ADR-006 restricted Pod Security and default-deny network policy, least-privilege workload identity, private placement, HTTPS edge policy, exact attested OCI digests, atomic/waiting Helm rollout, and provider-appropriate health evidence. Branch names do not select deployments; CI validates bundle examples and owned artifacts through an explicit backend matrix while credentialed mutation remains explicitly invoked and protected.",
+        "checks": [
+          "k8s-deployment-security-context",
+          "k8s-network-policy-coverage"
+        ]
+      },
+      {
+        "id": "ADR-044-R5",
+        "description": "EKS infrastructure and legacy ECS/ASG infrastructure retain separate Terraform state and ownership. Compatibility migration must prevent both control planes from acting as concurrent active schedulers, queue consumers, outbox drainers, migration runners, or range launchers; cutover and rollback are explicit and must not rename, import, destroy, or silently adopt legacy resources.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1324",
+      "docs/architecture/aws-eks-helm-packaging-preflight-1324.md",
+      "docs/architecture/root-configured-backend-bundles.md",
+      "docs/architecture/branch-routing-provider-coupling-inventory.md",
+      "platform/charts/shifter/Chart.yaml",
+      "platform/charts/shifter/values.yaml",
+      "platform/charts/shifter/values.schema.json",
+      "platform/charts/shifter/values-aws-dev.yaml",
+      "platform/charts/shifter/values-aws-proof.yaml",
+      "platform/charts/shifter/values-aws-prod.yaml",
+      "platform/charts/shifter/tests/test_chart_contract.py",
+      "shifter/installation/contract",
+      "shifter/installation/registry.py",
+      "shifter/installation/runtime_inventory.py",
+      "scripts/bootstrap/deploy.py",
+      ".github/workflows/deploy.yml",
+      "scripts/adr_guard/adr_guard.py"
+    ]
+  },
+  {
+    "id": "ADR-045",
+    "title": "Risk Register is removed and durable audit logging belongs to shared",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The Risk Register product is removed completely. Its Django app, data model, routes, templates, SPA workspace, navigation, permissions, token scopes, settings, MCP tools, and feature documentation are not retained under aliases, flags, compatibility endpoints, or a new API major. The cross-cutting audit capability that other platform domains already use is rehomed to shared: shared owns the durable model and table, writer, archive command, read-only admin, health state, and staff-session-only read API. Upgrade migration preserves existing audit rows while deleting the retired product tables; clean installs create only the shared audit table.",
+    "rules": [
+      {
+        "id": "ADR-045-R1",
+        "description": "No Risk Register runtime surface remains. Code, configuration, schemas, scopes, routes, navigation, templates, frontend modules, MCP registrations, and product documentation must not expose or alias the removed feature.",
+        "checks": []
+      },
+      {
+        "id": "ADR-045-R2",
+        "description": "The durable audit store, writer, archive command, health state, read-only admin, and read API are owned by shared. Feature code emits through shared.audit and must not depend on a retired-app compatibility facade.",
+        "checks": [
+          "layer-imports"
+        ]
+      },
+      {
+        "id": "ADR-045-R3",
+        "description": "The audit read API is list/retrieve only and requires a staff or superuser Django session. API tokens have no audit-read scope, and denied reads are audited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-045-R4",
+        "description": "Database upgrades rename the existing audit table in place and preserve all audit rows; clean installs create the shared audit table directly. Retired product tables are dropped and no compatibility views or aliases are created.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1374",
+      "docs/architecture/risk-register-removal-preflight-1374.md",
+      "docs/architecture/audit-system-architecture.md",
+      "shifter/shifter_platform/shared/models.py",
+      "shifter/shifter_platform/shared/audit",
+      "shifter/shifter_platform/shared/audit_adapter.py",
+      "shifter/shifter_platform/shared/api/audit.py",
+      "shifter/shifter_platform/shared/migrations/0006_rehome_audit_log.py",
+      "shifter/shifter_platform/openapi/v1.retirements.json",
+      "shifter/shifter_platform/tests/shared/test_removed_feature_surface.py",
+      "shifter/shifter_platform/tests/shared/test_audit_migration.py",
+      "shifter/shifter_platform/tests/shared/test_audit_policy.py",
+      "shifter/shifter_platform/tests/shared/test_audit_store.py"
+    ]
+  },
+  {
+    "id": "ADR-046",
+    "title": "Organization/workspace tenancy is a domain boundary above range ownership",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Organizations own workspaces; a workspace owns its user memberships and role codes; a range remains owned by its existing user/request identity and is additionally bound to exactly one workspace. The bounded workspaces domain is the sole owner of Organization, Workspace, and WorkspaceMembership persistence and authorization. It does not reuse Django auth groups, UserProfile, CTF teams/events, SPA navigation workspaces, Terraform workspaces, or cloud tenancy as the membership model. Engine and CMS retain their own range/request persistence under ADR-001: they carry a validated opaque workspace_id rather than a cross-layer ForeignKey or a second workspace model. Existing user-owned ranges are placed in the owning user's personal workspace, which is itself owned by a personal organization, so single-user installs retain the same owner, lifecycle, admission, access, and visible behavior. Identity-provider group/claim integration is a future, verified adapter into this domain, not a direct role authority in this data model.",
+    "rules": [
+      {
+        "id": "ADR-046-R1",
+        "description": "Organization, Workspace, and WorkspaceMembership are owned by one classified domain app and exposed to other layers only through its public service facade. The models may relate to Django auth.User, but no other domain may import them or add a cross-layer ForeignKey. Do not duplicate the schema in management, CMS, Engine, CTF, shared, frontend state, provider tags, or JSON blobs.",
+        "checks": [
+          "layer-imports",
+          "cross-layer-model-imports"
+        ]
+      },
+      {
+        "id": "ADR-046-R2",
+        "description": "A workspace belongs to exactly one organization and has at most one membership per user. Membership role is a closed domain value; its operation-to-role policy is owned by the workspace authorization service. Workspace membership does not replace Range.user, cms.Request.user, CMS range provenance, CTF participant/event/team membership, API-token scope, or per-range remote-access checks. A workspace role grants no implicit SSH, RDP, VPN, Guacamole, or CTF-event access to another user's range.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R3",
+        "description": "The trusted launch/reassignment path resolves and authorizes workspace scope once through the workspace service and persists the resulting internal workspace_id as an immutable scope binding on CMS request intent, the CMS RangeInstance projection, and Engine Range. These are scalar references rather than cross-layer FKs; no caller may trust a supplied internal ID, mutate only one projection, infer scope from a user/group, or silently rehome a range. A future explicit rehoming operation must validate the target membership and update all ownership projections transactionally.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R4",
+        "description": "The compatibility default is per user, never a deployment-global organization or workspace: every migrated user-owned range is bound to that user's personal workspace and an owner membership. The migration must fail loudly on conflicting or unresolvable Engine/CMS ownership evidence rather than choosing an arbitrary tenant, and current per-user active-range, lifecycle, terminal, VPN, CTF, and API behavior remains unchanged until a separately reviewed scoping policy changes it.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R5",
+        "description": "OIDC/Identity Platform claims may be considered only after the existing issuer, audience, authorized-party, subject, and verified-email gates bind the Django user. Provider group names are external evidence, not workspace IDs or role strings; any later mapping is allowlisted/configured at the identity adapter, provenance-aware, auditable, revocable, and cannot let a self-mutable claim or Django auth.Group create workspace authority.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R6",
+        "description": "Future organization/workspace APIs use the canonical /api/v1 DRF authentication, exact API-token scope registry, serializer validation, shared error envelope, request correlation, audit facade, and sanitized logging. Role/membership mutations and sensitive range rehoming are transactional and audit-strict. External IDs, claims, tokens, emails, membership lists, and database errors must not leak through logs, events, command argv, or public error bodies.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R7",
+        "description": "Tenancy scopes principals and range ownership, not platform configuration or catalog. The following remain deployment-global and MUST NOT acquire an organization or workspace binding as an implicit consequence of this layer: the scenario catalog and RAES package sources; the agent, operating-system, instance-type, and app catalogs; NGFW instances and platform network/infrastructure; cloud provider, range-backend, and deployment settings including the environment manifest; identity-provider configuration (issuer, audience, allowlists) and the API-token scope registry; the durable audit store; feature flags; and CTF events, teams, and participants, which stay a separate membership model. Scoping any of these to a workspace is a separate decision requiring its own ADR, because each carries platform-operator authority rather than tenant authority; a workspace-level policy surface (for example the #1171 zero-egress posture) is added by an explicit decision on that surface, never by inheritance from this rule.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R8",
+        "description": "The initial membership roles are the closed, workspace-scoped owner, admin, and member values. The workspaces service owns their operation matrix and every interactive operation on a workspace-bound resource must pass that service in addition to existing owner, source, lifecycle, CTF, participant-channel, and remote-access checks. Owner/admin/member must not be derived from Django staff/groups, identity-provider claims/groups, CTF authority, API-token scopes, or cloud roles. Personal-workspace ownership is immutable compatibility state; all other membership and role mutations are locked, transactional, and strict-audited, with an owner-only ownership boundary and at least one owner retained. There is no OrganizationMembership or organization-wide role in this iteration: encoding org_admin on workspace rows, copying it across workspaces, or inferring it from one workspace is forbidden until a separate authority model is accepted.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R9",
+        "description": "An interactive range launch may select a workspace only by its public UUID; omission resolves the actor's personal compatibility workspace. CMS resolves and authorizes that scope through workspaces.services, then reauthorizes while holding the existing workspace mutation mutex through the atomic CMS request/range reservation so concurrent membership removal cannot create a range outside its owner's authority. The same internal workspace_id is persisted on CMS Request, CMS RangeInstance, and Engine Range before dispatch. Engine idempotent create must reject a replay whose workspace binding differs from the persisted range; neither a supplied invalid scope nor a conflicting replay may fall back, rehome, or reuse silently.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R10",
+        "description": "Workspace quota and workspace range-policy evaluation compose at one CMS pre-reservation launch-admission seam parameterized by authorized workspace, individual owner, server-derived range source, trusted instantiation purpose, and stable request correlation. The initial decision may add no hard tenant limit, but callers may not duplicate the hook. A future enforcing workspace quota must use durable idempotent reservation rather than a count-then-create race, and must remain distinct from Engine's event/provider-capacity ledger. A future workspace egress override extends the canonical installation RangeEgressPolicy, resolves and pins one closed effective decision on the Engine range, and is replay-verified; workspace identity, membership, role, or policy documents never enter scenario/RAES contracts, provisioner argv/environment, events, provider labels, or guest metadata.",
+        "checks": []
+      },
+      {
+        "id": "ADR-046-R11",
+        "description": "A current-principal organization/workspace context is a read-only projection of the actor's existing workspace memberships, grouped by membership-reachable organizations and exposed only through the workspaces service facade with public UUIDs and server-derived operation capabilities. It does not establish a primary organization, persisted current workspace, organization-wide role, or new authority source; navigation, routes, flags, role labels, and cached client context remain advisory, and every resource endpoint repeats the applicable workspace service authorization. The read must not create or repair tenancy state.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1325",
+      "https://github.com/Brad-Edwards/shifter/issues/1326",
+      "https://github.com/Brad-Edwards/shifter/issues/1327",
+      "https://github.com/Brad-Edwards/shifter/issues/1938",
+      "docs/architecture/organization-workspace-preflight-1325.md",
+      "docs/architecture/workspace-membership-roles-preflight-1326.md",
+      "docs/architecture/range-workspace-scoping-preflight-1327.md",
+      "docs/architecture/organization-workspace-admin-console-preflight-1938.md",
+      "scripts/check_layer_imports/layer_imports.yaml",
+      "shifter/shifter_platform/management/management/commands/check_model_fks.py",
+      "shifter/shifter_platform/cms/models/provisioning.py",
+      "shifter/shifter_platform/cms/models/range.py",
+      "shifter/shifter_platform/engine/models/_range.py",
+      "shifter/shifter_platform/config/oidc.py",
+      "shifter/shifter_platform/config/identity_platform.py",
+      "shifter/shifter_platform/shared/api/errors.py",
+      "shifter/shifter_platform/shared/audit",
+      "shifter/shifter_platform/workspaces/roles.py",
+      "shifter/shifter_platform/workspaces/services/_memberships.py",
+      "shifter/shifter_platform/workspaces/api",
+      "shifter/shifter_platform/tests/workspaces/test_memberships.py",
+      "shifter/shifter_platform/tests/workspaces/test_api.py",
+      "docs/features/workspaces.md",
+      "docs/technical/shifter_platform/workspaces.md"
+    ]
+  },
+  {
+    "id": "ADR-047",
+    "title": "Capacity-aware provisioning is an Engine-owned admission layer over a deployment-declared catalog",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Event provisioning is admitted against observed provider headroom before spinup rather than discovering a shortfall mid-wave. CTF declares event intent (CTF-908), CMS keeps authenticated range creation, scenario hydration, and backend admission, and the Engine owns capacity assessment, durable reservation, and the admission decision; the provisioner realizes an already-admitted request and never makes a second, divergent decision. A declaration is intent, not an allocation: engine_capacity_declaration stays append-only, while engine_capacity_assessment is an immutable snapshot pinned to the partition, the catalog policy version, and the time the underlying readings were taken, and engine_capacity_reservation is the durable commitment that makes overlapping events account for one another. Partitions and metrics exist only because a deployment declared them in the capacity catalog (CAPACITY_PLANNING_CATALOG), which is parsed strictly and fails closed at the composition root; a partition is never inferred from an event name, scenario, organizer hint, or mutable global provider setting. Provider limits and usage are read through a read-only CAPACITY_INVENTORY backend capability under shared.cloud, outside any database transaction because provider state cannot be locked, and the transaction that follows re-reads committed overlapping reservations before writing its own. Per-metric freshness limits and safety margins carry the residual race. Enforcement is per metric and defaults to advisory: an over-limit advisory metric emits an operator warning and audit record and provisioning proceeds, while an enforcing metric refuses before dispatch. An unreadable, stale, or unsupported measurement is INDETERMINATE and is never converted to zero usage or to sufficient headroom. Raw quota limits, usage figures, account identifiers, and provider payloads stay inside the adapter and the operator-only assessment record; product surfaces carry bounded reason codes only. Assessment and admission are separate operations: assessment reads providers, decides, and sizes an event capacity budget once per wave, while admission draws one range's share from that budget on every event-scoped creation path using only the database. Welding them together would make each range re-reserve the whole event. Draws are idempotent on a stable pre-creation key (participant or spare identity), are refused before a range is created rather than after, are returned on failed creation and on teardown, and are bounded by database check constraints so a concurrent draw cannot exceed the committed budget. Budgets expire at the end of their window and the reconciler releases their open draws, because a ledger trusted indefinitely diverges from provider reality and a leaked draw refuses an event that would have fit.",
+    "rules": [
+      {
+        "id": "ADR-047-R1",
+        "description": "The Engine owns capacity assessment, reservation, and the admission decision. CTF and CMS reach it only through the existing ctf.bridges -> cms.services -> engine.services seam, and the provisioner must not reproduce capacity policy or re-decide an admitted request.",
+        "checks": [
+          "layer-imports"
+        ]
+      },
+      {
+        "id": "ADR-047-R2",
+        "description": "Target partitions and metrics come from the deployment-declared capacity catalog and are validated at the composition root. Unknown keys, out-of-range safety margins or costs, non-positive freshness limits, unknown enum values, duplicate names, and metrics targeting an undeclared partition are configuration errors that fail closed; they must never be defaulted, clamped, or partially loaded.",
+        "checks": []
+      },
+      {
+        "id": "ADR-047-R3",
+        "description": "An unsupported, unavailable, or stale capacity measurement is INDETERMINATE. It must never be recorded or treated as admitted, as zero usage, or as available headroom, and the least-permissive verdict across metrics is the assessment outcome.",
+        "checks": []
+      },
+      {
+        "id": "ADR-047-R4",
+        "description": "Provider capacity reads happen outside any database transaction and through a read-only capability. Capacity-read identities are least-privilege and per partition; cross-account reads use explicitly enumerated role ARNs with no account wildcard, and the portal, scheduler, worker, and provisioner identities are not widened to inspect headroom.",
+        "checks": []
+      },
+      {
+        "id": "ADR-047-R5",
+        "description": "Enforcement is per metric and defaults to advisory. A rejected assessment reserves no capacity. Raw quota limits, usage figures, account identifiers, provider responses, and policy blobs must not appear in verdicts, audit free text, logs, task arguments, task environment, notifications, or API error details; product surfaces carry bounded reason codes only.",
+        "checks": []
+      },
+      {
+        "id": "ADR-047-R6",
+        "description": "Capacity assessment (provider reads, decision, budget sizing) and capacity admission (per-range draw-down) are separate operations. Admission performs no provider I/O, is idempotent on a stable identity known before the range exists, refuses before creation rather than after, and returns its draw on failed creation and on teardown. Consumption is bounded by database constraints rather than a read-then-write check alone, and budgets plus their open draws are released when their window ends.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/680",
+      "docs/architecture/capacity-aware-provisioning-preflight-680.md",
+      "shifter/shifter_platform/shared/capacity",
+      "shifter/shifter_platform/shared/cloud/aws/capacity_inventory.py",
+      "shifter/shifter_platform/shared/cloud/gcp/capacity_inventory.py",
+      "shifter/shifter_platform/engine/models/_capacity_assessment.py",
+      "shifter/shifter_platform/engine/services/_capacity_plan.py",
+      "shifter/shifter_platform/config/_capacity_planning_settings.py",
+      "platform/terraform/modules/portal/ec2/main.tf",
+      "shifter/shifter_platform/tests/shared/capacity",
+      "shifter/shifter_platform/tests/shared/cloud/test_capacity_inventory.py",
+      "shifter/shifter_platform/tests/engine/test_capacity_plan.py",
+      "shifter/shifter_platform/tests/ctf/test_capacity_admission_wiring.py",
+      "shifter/shifter_platform/engine/services/_capacity_admit.py",
+      "shifter/shifter_platform/tests/engine/test_capacity_admit.py",
+      "shifter/shifter_platform/tests/ctf/test_capacity_draw_wiring.py"
     ]
   }
 ]

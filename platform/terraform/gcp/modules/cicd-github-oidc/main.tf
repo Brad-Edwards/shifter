@@ -33,10 +33,10 @@ locals {
     sub => "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/${sub}"
   }
 
-  # CEL fragment: assertion.ref must be one of the allowed protected integration
-  # branches (ADR-037-R7, #1685). Single quotes so the composite condition needs
-  # no HCL escaping and Checkov's CKV_GCP_125 `assertion.sub ==` regex still
-  # matches the static sub clauses below.
+  # CEL fragment for shared build/image callers: assertion.ref must be one of
+  # the allowed protected integration branches (ADR-037-R7, #1685). The
+  # gcp-dev deployment branch is handled separately in the provider condition
+  # and is paired only with the gcp-dev Environment subject.
   ref_condition = join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == '${r}'"])
 }
 
@@ -65,17 +65,17 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   # Three-layer external trust boundary; a token is accepted only when ALL hold:
   #   1. Repository (ADR-037-R7): tokens from any other repository are rejected
   #      before the SA binding is consulted.
-  #   2. Ref (ADR-037-R7, #1685): the source ref must be in allowed_workflow_refs
-  #      (the protected integration branches), via local.ref_condition. An
-  #      `environment:` subject does not carry the branch, so THIS layer is what
-  #      denies a feature-branch/tag dispatch that reuses an environment subject.
+  #   2. Ref (ADR-037-R7, #1685): shared build/image subjects require a ref in
+  #      allowed_workflow_refs. The protected gcp-dev branch is admitted only
+  #      when paired with the exact gcp-dev Environment subject. A feature
+  #      branch/tag cannot reuse an environment subject.
   #   3. Subject (ADR-004-R23, #1690): assertion.sub must be one of the exact
   #      allow-listed subjects. These clauses are written out statically (Checkov
   #      cannot render join()) and MUST equal local.federated_subjects
   #      (check-tf-gcp-wif-trust enforces it). Single-quoted CEL literals so the
   #      HCL string needs no escaping and the exact `assertion.sub ==` pin
   #      satisfies CKV_GCP_125 - no waiver needed.
-  attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && (${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:proof' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:prod' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main')"
+  attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && ((assertion.ref == 'refs/heads/gcp-dev' && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev') || ((${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:proof' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:prod' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main')))"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"

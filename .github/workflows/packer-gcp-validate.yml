@@ -14,7 +14,8 @@ name: Packer GCE Image Validate
 # polaris-vm) or probes AD over LDAP (dc-prebaked). A candidate cannot forge a
 # pass. On success it labels the EXACT validated candidate `validated=passed` and
 # uploads a bounded, non-secret evidence artifact; packer-gcp-promote.yml refuses
-# to promote an image without that label. Runs in dev/proof (never prod).
+# to promote unless the label, protected run, revision, and artifact all agree.
+# Runs in dev/proof (never prod).
 #
 # NOTE: the live behaviour (IAP tunnel to the polaris-vm management SSH port, AD
 # LDAP probe) is exercised by an operator against real GCP; CI covers template /
@@ -171,6 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           ZONE="${GCP_PACKER_ZONE:-${GCP_REGION}-a}"
+          MACHINE_TYPE="${GCP_VALIDATE_MACHINE_TYPE}"
 
           # SSH port the runner probes: polaris-vm moves the host sshd to the
           # management port; other Linux guests keep :22. dc-prebaked is probed
@@ -232,7 +234,7 @@ jobs:
             --zone="${ZONE}" \
             --image="${CANDIDATE}" \
             --image-project="${GCP_PROJECT_ID}" \
-            --machine-type="${GCP_VALIDATE_MACHINE_TYPE}" \
+            --machine-type="${MACHINE_TYPE}" \
             --no-address \
             --subnet="${GCP_PACKER_SUBNETWORK}" \
             --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
@@ -302,7 +304,7 @@ jobs:
           # label; promotion verifies validated=passed before copying it.
           gcloud compute images update "${CANDIDATE}" \
             --project="${GCP_PROJECT_ID}" \
-            --update-labels="validated=passed,validated-run=${GITHUB_RUN_ID},validated-at=${VALIDATED_AT}"
+            --update-labels="validated=passed,validated-run=${GITHUB_RUN_ID},validated-revision=${GITHUB_SHA},validated-at=${VALIDATED_AT}"
           # Bounded, non-secret evidence artifact (workflow record, not app state).
           cat > validation-evidence.json <<JSON
           {
