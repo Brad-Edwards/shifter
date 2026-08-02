@@ -121,5 +121,6 @@ class TestGCPTaskRunnerInterrupt:
 
     def test_missing_task_ref_raises(self):
         runner = GCPTaskRunner()
+        identity = _expected_identity()
         with pytest.raises(CloudTaskError):
-            runner.interrupt_task(_NAMESPACE, "", _expected_identity())
+            runner.interrupt_task(_NAMESPACE, "", identity)

@@ -30,7 +30,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from raes.scenarios import ScenarioError, load_scenario
 from raes_env_packs.publication import authored_artifact_requirements
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from raes_contracts.apparatus import ApparatusIdentity
     from raes_contracts.contracts import ArtifactMechanismCapability, ArtifactRequirementAvailability
     from raes_contracts.diagnostics import Diagnostic
+    from raes_processor.models.runtime_model import ExecutionPlan
 
     #: Injected by the catalog layer to supply backend-owned inventory availability
     #: for a scenario's authored requirements (keeps the registry read out of shared).
@@ -169,7 +170,8 @@ class _NeverDispatchPort:
         """Identify the assessment; no Shifter request is ever created."""
         return "realizability-assessment"
 
-    def realize(self, compiled_plan: dict[str, Any], participant_access: object = ()) -> Any:
+    @staticmethod
+    def realize(compiled_plan: dict[str, Any], participant_access: object = ()) -> NoReturn:
         """Refuse to dispatch -- assessment is an authoring check, not a launch."""
         raise AssertionError("realizability assessment must never dispatch a provisioning plan")
 
@@ -309,7 +311,7 @@ def worst_outcome(outcomes: Iterable[RealizabilityOutcome]) -> RealizabilityOutc
     return RealizabilityOutcome.REALIZABLE
 
 
-def _plan(scenario: object, parameters: Mapping[str, object] | None) -> Any:
+def _plan(scenario: object, parameters: Mapping[str, object] | None) -> ExecutionPlan:
     """Compile and plan ``scenario`` against the Shifter backend without applying."""
     from raes_runtime import RuntimeManager
 
@@ -336,7 +338,7 @@ def _project_gaps(diagnostics: Iterable[Diagnostic]) -> tuple[RealizabilityGap, 
     return tuple(sorted(gaps))
 
 
-def _project_image_demands(provisioning_plan: Any) -> tuple[ImageDemand, ...]:
+def _project_image_demands(provisioning_plan: object) -> tuple[ImageDemand, ...]:
     """Project each planned node into its bounded image identity.
 
     Reads the serialized RAES plan payload directly, the same way the

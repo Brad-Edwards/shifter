@@ -45,10 +45,12 @@ class Violation:
 
 
 def _parse_iso_date(value: str) -> date:
+    """Parse an ISO-8601 date string, raising ValueError when malformed."""
     return date.fromisoformat(value)
 
 
 def _repo_relative(path: Path, repo_root: Path) -> str:
+    """Return ``path`` as a posix path relative to the repo root."""
     return path.resolve().relative_to(repo_root.resolve()).as_posix()
 
 
@@ -70,6 +72,7 @@ def is_guard_source_path(path: str) -> bool:
 
 
 def _normalize_files(files: list[str] | None, repo_root: Path) -> list[str] | None:
+    """Normalize file arguments to sorted, unique repo-relative posix paths."""
     if files is None:
         return None
 
@@ -87,10 +90,11 @@ def _normalize_files(files: list[str] | None, repo_root: Path) -> list[str] | No
 
 
 def _load_json_yaml(path: Path) -> object:
+    """Load a JSON-compatible YAML document from ``path``."""
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_adr_exceptions(repo_root: Path) -> list[dict]:
+def load_adr_exceptions(repo_root: Path) -> list[dict[str, object]]:
     """Load and validate the exception registry shape."""
     path = repo_root / "docs" / "adr" / "exceptions.yaml"
     data = _load_json_yaml(path)
@@ -99,7 +103,7 @@ def load_adr_exceptions(repo_root: Path) -> list[dict]:
     return data
 
 
-def validate_adr_exceptions(exceptions: list[dict]) -> list[str]:
+def validate_adr_exceptions(exceptions: list[dict[str, object]]) -> list[str]:
     """Validate exception schema and expiry dates."""
     errors: list[str] = []
     for index, exception in enumerate(exceptions):
@@ -128,7 +132,7 @@ def validate_adr_exceptions(exceptions: list[dict]) -> list[str]:
     return errors
 
 
-def exception_is_active(exception: dict, today: date | None = None) -> bool:
+def exception_is_active(exception: dict[str, object], today: date | None = None) -> bool:
     """Return True when an exception carries a valid, unexpired ``expires_on``.
 
     A missing or unparseable date counts as inactive. ``validate_adr_exceptions``
@@ -145,12 +149,9 @@ def exception_is_active(exception: dict, today: date | None = None) -> bool:
     return expires_on >= (today or date.today())
 
 
-def exception_matches(violation: Violation, exception: dict) -> bool:
+def exception_matches(violation: Violation, exception: dict[str, object]) -> bool:
     """Return True if an unexpired exception covers a given violation."""
-    if not exception_is_active(exception):
-        return False
-
-    if exception.get("rule_id") != violation.rule_id:
+    if not exception_is_active(exception) or exception.get("rule_id") != violation.rule_id:
         return False
 
     checks = exception.get("checks") or []
@@ -158,13 +159,10 @@ def exception_matches(violation: Violation, exception: dict) -> bool:
         return False
 
     paths = exception.get("paths") or []
-    if not paths:
-        return True
-
-    return any(fnmatch(violation.path, pattern) for pattern in paths)
+    return not paths or any(fnmatch(violation.path, pattern) for pattern in paths)
 
 
-def filter_excepted_violations(violations: list[Violation], exceptions: list[dict]) -> list[Violation]:
+def filter_excepted_violations(violations: list[Violation], exceptions: list[dict[str, object]]) -> list[Violation]:
     """Drop violations that are covered by a non-expired exception."""
     filtered: list[Violation] = []
     for violation in violations:
@@ -212,9 +210,7 @@ def _git_text(repo_root: Path, args: list[str]) -> str | None:
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    if result.returncode != 0:
-        return None
-    return result.stdout
+    return result.stdout if result.returncode == 0 else None
 
 
 def _boundary_mock_base_reference_candidates(repo_root: Path) -> list[str]:
@@ -287,8 +283,8 @@ def _git_tracked_all(repo_root: Path) -> list[str] | None:
     try:
         result = subprocess.run(cmd, capture_output=True, check=False, timeout=60)
     except (OSError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
+        result = None
+    if result is None or result.returncode != 0:
         return None
     output = result.stdout.decode("utf-8", errors="replace")
     return [entry for entry in output.split("\0") if entry]

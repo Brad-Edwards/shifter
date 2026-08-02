@@ -249,20 +249,20 @@ class TestNgfwTerraformOrchestrationHelpers:
 
         app_spec = {"user_id": 7}
         monkeypatch.setenv("CLOUD_PROVIDER", "aws")
-        _run_ngfw_operation_for_provider("up", "req-1", "inst-1", "app-1", app_spec, "americas")
-        _run_ngfw_operation_for_provider("destroy", "req-1", "inst-1", "app-1", app_spec, "americas")
+        _run_ngfw_operation_for_provider("up", "req-1", "inst-1", app_spec, "americas")
+        _run_ngfw_operation_for_provider("destroy", "req-1", "inst-1", app_spec, "americas")
 
         monkeypatch.setenv("CLOUD_PROVIDER", "gcp")
-        _run_ngfw_operation_for_provider("up", "req-2", "inst-2", "app-2", app_spec, "europe")
-        _run_ngfw_operation_for_provider("destroy", "req-2", "inst-2", "app-2", app_spec, "europe")
+        _run_ngfw_operation_for_provider("up", "req-2", "inst-2", app_spec, "europe")
+        _run_ngfw_operation_for_provider("destroy", "req-2", "inst-2", app_spec, "europe")
 
-        mock_aws_provision.assert_called_once_with("req-1", "inst-1", "app-1", app_spec, "americas", operation_id=None)
+        mock_aws_provision.assert_called_once_with("req-1", "inst-1", app_spec, "americas", operation_id=None)
         mock_aws_deprovision.assert_called_once_with("req-1", "inst-1", operation_id=None)
-        mock_gdc_provision.assert_called_once_with("req-2", "inst-2", "app-2", app_spec, "europe", operation_id=None)
+        mock_gdc_provision.assert_called_once_with("req-2", "inst-2", app_spec, "europe", operation_id=None)
         mock_gdc_deprovision.assert_called_once_with("req-2", operation_id=None)
 
         with pytest.raises(ValueError, match="Unknown operation"):
-            _run_ngfw_operation_for_provider("rotate", "req-3", "inst-3", "app-3", app_spec, "americas")
+            _run_ngfw_operation_for_provider("rotate", "req-3", "inst-3", app_spec, "americas")
 
     def test_provider_dispatch_raises_for_unsupported_provider(self, monkeypatch):
         """A future third backend must fail closed rather than being routed through
@@ -274,10 +274,10 @@ class TestNgfwTerraformOrchestrationHelpers:
         monkeypatch.setattr(ngfw_terraform, "resolve_cloud_provider", lambda *a, **k: "azure")
 
         with pytest.raises(CloudProviderNotImplementedError, match="azure"):
-            ngfw_terraform._run_ngfw_operation_for_provider("up", "req-1", "inst-1", "app-1", {}, "americas")
+            ngfw_terraform._run_ngfw_operation_for_provider("up", "req-1", "inst-1", {}, "americas")
 
         with pytest.raises(CloudProviderNotImplementedError, match="azure"):
-            ngfw_terraform._run_ngfw_operation_for_provider("destroy", "req-1", "inst-1", "app-1", {}, "americas")
+            ngfw_terraform._run_ngfw_operation_for_provider("destroy", "req-1", "inst-1", {}, "americas")
 
     @patch.dict(
         "os.environ",
@@ -346,7 +346,6 @@ class TestNgfwTerraformOrchestrationHelpers:
             "up",
             "req-1",
             "inst-1",
-            "app-1",
             {"sls_region": "americas", "user_id": 7},
             "americas",
             operation_id=None,
@@ -438,7 +437,7 @@ class TestNgfwTerraformOrchestrationHelpers:
             "ssh_key_secret_arn": "arn:aws:secretsmanager:us-east-2:123:secret:key",
         }
 
-        _run_provision("req-1", "inst-1", "app-1", {"user_id": 7}, "americas")
+        _run_provision("req-1", "inst-1", {"user_id": 7}, "americas")
 
         mock_update_instance_state.assert_called_once_with(
             "req-1",
@@ -475,7 +474,7 @@ class TestNgfwTerraformOrchestrationHelpers:
         monkeypatch.setattr("ngfw_terraform.update_instance_state", mock_update_instance_state)
         monkeypatch.setitem(sys.modules, "gdc_vmseries_ngfw", fake_gdc)
 
-        _run_gdc_provision("req-1", "inst-1", "app-1", {"user_id": 7}, "americas")
+        _run_gdc_provision("req-1", "inst-1", {"user_id": 7}, "americas")
 
         assert mock_update_instance_state.call_count == 2
         persisted = mock_update_instance_state.call_args_list[1].kwargs

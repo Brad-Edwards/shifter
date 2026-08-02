@@ -48,6 +48,8 @@ from ._operation_apply_effects import (
 if TYPE_CHECKING:
     from engine.models import Instance, OperationResultInbox, Range
 
+    from ._operation_apply_raes import RaesRealizedAccessError
+
 logger = logging.getLogger(__name__)
 
 _RANGE_RESOURCES = frozenset({"range", "raes-range"})
@@ -55,6 +57,12 @@ _RANGE_RESOURCES = frozenset({"range", "raes-range"})
 # RAES-native lifecycle operations (ADR-043 phase 5, #1837). Pause/resume are
 # deliberately absent: they share the generic range step tables and dispatch.
 _RAES_OPERATIONS = frozenset({("raes-range", "provision"), ("raes-range", "destroy")})
+
+# Range steps that settle the generation, whether it failed or reached a
+# paused/ready outcome.
+_RANGE_TERMINAL_STEPS = frozenset(
+    {ResultStep.RANGE_TERMINAL_FAILED, ResultStep.RANGE_TERMINAL_PAUSED, ResultStep.RANGE_TERMINAL_READY}
+)
 
 # Statuses on another attached range that keep a shared NGFW running. The
 # provisioner's ``should_pause_ngfw`` is a pre-cloud compatibility check; this
@@ -327,11 +335,16 @@ def _dispatch_range(row: OperationResultInbox, step: ResultStep, payload: dict[s
     request_id = str(row.request_id)
     if step in (ResultStep.RANGE_INSTANCES_PAUSED, ResultStep.RANGE_INSTANCES_READY):
         return _apply_instances(target, payload, request_id)
+    if step in _RANGE_TERMINAL_STEPS:
+        return _dispatch_range_terminal(step, payload, request_id, target)
+    return _dispatch_cascade(target, payload, request_id)
+
+
+def _dispatch_range_terminal(step: ResultStep, payload: dict[str, Any], request_id: str, target: Range) -> str:
+    """Settle a range at a terminal step: failure, or a paused/ready outcome."""
     if step is ResultStep.RANGE_TERMINAL_FAILED:
         return _apply_failure(target, payload, request_id, is_range=True)
-    if step in (ResultStep.RANGE_TERMINAL_PAUSED, ResultStep.RANGE_TERMINAL_READY):
-        return _apply_range_terminal(target, payload, request_id)
-    return _dispatch_cascade(target, payload, request_id)
+    return _apply_range_terminal(target, payload, request_id)
 
 
 def _dispatch_cascade(range_obj: Range, payload: dict[str, Any], request_id: str) -> str:
@@ -468,11 +481,18 @@ def apply_validated_result(row: OperationResultInbox) -> tuple[str, str]:
         if target is None:
             return "", ""
         detail = _dispatch(row, step, payload, target)
-    except _Rejected as rejection:
-        return rejection.disposition, rejection.detail
-    except _NotApplicable as exc:
-        return OperationResultDisposition.REJECTED_OWNERSHIP, str(exc)[:128]
-    except RaesRealizedAccessError as exc:
-        # A realized/declared access mismatch can never be satisfied by a retry.
-        return OperationResultDisposition.REJECTED_INVALID, str(exc)[:128]
+    except (_Rejected, _NotApplicable, RaesRealizedAccessError) as refusal:
+        return _refusal_disposition(refusal)
     return OperationResultDisposition.APPLIED, detail[:128]
+
+
+def _refusal_disposition(refusal: _Rejected | _NotApplicable | RaesRealizedAccessError) -> tuple[str, str]:
+    """Map a deterministic refusal onto the disposition and detail to record."""
+    from engine.models import OperationResultDisposition
+
+    if isinstance(refusal, _Rejected):
+        return refusal.disposition, refusal.detail
+    if isinstance(refusal, _NotApplicable):
+        return OperationResultDisposition.REJECTED_OWNERSHIP, str(refusal)[:128]
+    # A realized/declared access mismatch can never be satisfied by a retry.
+    return OperationResultDisposition.REJECTED_INVALID, str(refusal)[:128]

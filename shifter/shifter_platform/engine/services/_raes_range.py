@@ -36,6 +36,7 @@ from ._range_backend_binding import (
 )
 
 if TYPE_CHECKING:
+    from engine.models import Range
     from shared.range_instantiation_policy import BackendAdmission
 
 __all__ = ["RaesRangeRef", "RangeBindings", "create_raes_range"]
@@ -219,7 +220,7 @@ def create_raes_range(
 
 
 def _verify_existing_participant_access(
-    existing: Any,
+    existing: Range,
     participant_access: tuple[ParticipantAccessBinding, ...],
 ) -> None:
     """Reject an idempotent replay that carries different access intent (#1710).

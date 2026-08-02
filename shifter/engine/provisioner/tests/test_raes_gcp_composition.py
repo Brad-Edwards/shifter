@@ -48,11 +48,13 @@ class TestLinux:
             home="/home/alice",
         )
         script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
-        assert "id -u alice" in script and "useradd -m alice" in script
+        assert "id -u alice" in script
+        assert "useradd -m alice" in script
         assert "adduser -D alice" in script
         assert "usermod -s /bin/bash alice" in script
         assert "usermod -d /home/alice -m alice" in script
-        assert "usermod -aG ops alice" in script and "usermod -aG sudo alice" in script
+        assert "usermod -aG ops alice" in script
+        assert "usermod -aG sudo alice" in script
 
     def test_disabled_account_is_locked(self):
         account = RaesPlanAccount(username="bob", target_address="node.web", disabled=True)

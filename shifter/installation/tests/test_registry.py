@@ -119,7 +119,8 @@ def test_owned_files_and_docs_are_repository_relative():
             owned.docs,
         )
         for path in (*[p for group in groups for p in group], *bundle.docs):
-            assert path and not path.startswith("/"), path
+            assert path, path
+            assert not path.startswith("/"), path
             assert ".." not in path.split("/"), path
         # A backend that exists in the repo points at its own worked example.
         assert owned.examples == (f"shifter/installation/examples/{bundle.name}.yaml",)

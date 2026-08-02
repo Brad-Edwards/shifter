@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from collections.abc import Mapping
+from typing import ClassVar
 
 from .base import SetupStep
 
@@ -37,7 +38,8 @@ class PreconfiguredMachineHostPlan:
     ]
     verify_step: ClassVar[SetupStep | None] = None
 
-    def get_context(self, instance: Any) -> dict[str, Any]:
+    @staticmethod
+    def get_context(instance: Mapping[str, object]) -> dict[str, object]:
         """Return the validated profile-selected container name."""
         return {"participant_container_name": instance["gcp_participant_container_name"]}
 
