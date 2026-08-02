@@ -43,7 +43,7 @@ class OrganizationProfileUpdateSerializer(serializers.Serializer):
     support_email = serializers.EmailField(max_length=254, allow_blank=True, required=False)
     support_url = serializers.URLField(max_length=500, allow_blank=True, required=False)
 
-    def validate(self, attrs: dict) -> dict:
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
         """Reject unknown fields so a stale or hostile client cannot smuggle keys."""
         unknown = set(self.initial_data) - set(self.fields)
         if unknown:

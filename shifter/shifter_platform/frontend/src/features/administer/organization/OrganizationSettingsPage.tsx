@@ -213,9 +213,7 @@ function OrganizationSettingsForm({ uuid, data }: Readonly<{ uuid: string; data:
           </Alert>
         ) : null}
         {saved && !mutation.isPending ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Saved.
-          </p>
+          <output className="text-sm text-muted-foreground">Saved.</output>
         ) : null}
 
         <Button type="submit" disabled={mutation.isPending}>

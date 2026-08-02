@@ -211,12 +211,11 @@ def test_superuser_update_is_recorded_as_an_override():
 def test_non_admin_update_is_denied_and_persists_nothing():
     organization = _organization(description="original")
     outsider = _user("outsider")
+    audit = _audit(outsider)
     before = AuditLog.objects.count()
 
     with pytest.raises(services.OrganizationAuthorizationError):
-        services.update_organization_profile(
-            outsider, organization.uuid, {"description": "hacked"}, audit=_audit(outsider)
-        )
+        services.update_organization_profile(outsider, organization.uuid, {"description": "hacked"}, audit=audit)
 
     organization.refresh_from_db()
     assert organization.description == "original"
@@ -242,10 +241,11 @@ def test_non_admin_update_is_denied_and_persists_nothing():
 def test_update_validates_field_invariants_for_every_caller(changes):
     organization = _organization(description="original")
     admin = _admin_of(organization)
+    audit = _audit(admin)
     before = AuditLog.objects.count()
 
     with pytest.raises(services.OrganizationValidationError):
-        services.update_organization_profile(admin, organization.uuid, changes, audit=_audit(admin))
+        services.update_organization_profile(admin, organization.uuid, changes, audit=audit)
 
     organization.refresh_from_db()
     assert organization.description == "original"
