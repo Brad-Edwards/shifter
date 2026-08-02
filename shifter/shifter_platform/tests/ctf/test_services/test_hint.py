@@ -20,7 +20,7 @@ from ctf.enums import (
     ParticipantStatus,
 )
 from ctf.exceptions import CTFStateError, CTFValidationError
-from ctf.models import CTFChallenge, CTFEvent, CTFHint, CTFHintUsage, CTFParticipant
+from ctf.models import CTFChallenge, CTFEvent, CTFFlag, CTFHint, CTFHintUsage, CTFParticipant
 from ctf.services.hint import (
     add_hint,
     get_hints,
@@ -64,7 +64,6 @@ def challenge(db, draft_event):
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$placeholder_hint",
     )
 
 
@@ -77,7 +76,6 @@ def active_challenge(db, active_event):
         category=ChallengeCategory.WEB.value,
         points=200,
         difficulty=ChallengeDifficulty.MEDIUM.value,
-        flag_hash="$2b$12$placeholder_active",
     )
 
 
@@ -304,7 +302,6 @@ class TestHintAvailabilityPolicy:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_window",
         )
         hint = CTFHint.objects.create(challenge=challenge, text="x", penalty=5, order=0)
 
@@ -336,7 +333,6 @@ class TestHintAvailabilityPolicy:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_delayed",
             release_time=timezone.now() + timedelta(hours=2),
         )
         hint = CTFHint.objects.create(challenge=challenge, text="x", penalty=5, order=0)
@@ -354,7 +350,6 @@ class TestHintAvailabilityPolicy:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_gating",
         )
         gated = CTFChallenge.objects.create(
             event=active_event,
@@ -363,7 +358,6 @@ class TestHintAvailabilityPolicy:
             category=ChallengeCategory.WEB.value,
             points=200,
             difficulty=ChallengeDifficulty.MEDIUM.value,
-            flag_hash="$2b$12$placeholder_gated",
         )
         CTFChallengePrerequisite.objects.create(challenge=gated, required_challenge=gating)
         hint = CTFHint.objects.create(challenge=gated, text="x", penalty=5, order=0)
@@ -399,7 +393,6 @@ class TestHintAvailabilityPolicy:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_intended",
         )
         other = CTFChallenge.objects.create(
             event=active_event,
@@ -408,7 +401,6 @@ class TestHintAvailabilityPolicy:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_other",
         )
         hint_for_other = CTFHint.objects.create(challenge=other, text="x", penalty=5, order=0)
 
@@ -440,7 +432,13 @@ class TestSubmitFlagAppliesHintPenalty:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
+        )
+        CTFFlag.objects.create(
+            challenge=challenge,
             flag_hash=hash_flag("FLAG{penalty_test}"),
+            flag_type="static",
+            case_sensitive=True,
+            order=0,
         )
         # The hint penalty machinery is on CTFHint + CTFHintUsage.
         CTFHint.objects.create(challenge=challenge, text="The flag", penalty=25, order=0)

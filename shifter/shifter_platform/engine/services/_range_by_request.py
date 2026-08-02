@@ -113,20 +113,9 @@ def cancel_range_by_request(request_id: UUID) -> bool:
         if not range_obj:
             logger.warning("cancel_range_by_request: no range for request_id=%s", request_id)
             return False
-        if range_obj.status == Range.Status.DESTROYING:
-            logger.info(
-                "cancel_range_by_request: already destroying request_id=%s range_id=%s",
-                request_id,
-                range_obj.id,
-            )
-            return True
-        if range_obj.status not in (Range.Status.PENDING, Range.Status.PROVISIONING):
-            logger.warning(
-                "cancel_range_by_request: not cancellable status=%s request_id=%s",
-                range_obj.status,
-                request_id,
-            )
-            return False
+        settled = _cancellation_already_settled(range_obj, request_id)
+        if settled is not None:
+            return settled
         range_obj.status = Range.Status.DESTROYING
         range_obj.save(update_fields=["status"])
         request_provision_interrupt(range_obj)
@@ -136,6 +125,32 @@ def cancel_range_by_request(request_id: UUID) -> bool:
             range_obj.id,
         )
         return True
+
+
+def _cancellation_already_settled(range_obj: Range, request_id: UUID) -> bool | None:
+    """Return the cancellation outcome when the range's status already decides it.
+
+    ``True`` when a teardown is already under way, ``False`` when the status is
+    not cancellable, and ``None`` when the caller should proceed with the
+    cancellation. Caller holds the row lock.
+    """
+    from engine.models import Range
+
+    if range_obj.status == Range.Status.DESTROYING:
+        logger.info(
+            "cancel_range_by_request: already destroying request_id=%s range_id=%s",
+            request_id,
+            range_obj.id,
+        )
+        return True
+    if range_obj.status in (Range.Status.PENDING, Range.Status.PROVISIONING):
+        return None
+    logger.warning(
+        "cancel_range_by_request: not cancellable status=%s request_id=%s",
+        range_obj.status,
+        request_id,
+    )
+    return False
 
 
 def rebind_range_workspace_by_request(request_id: UUID, workspace_id: int) -> bool:

@@ -132,7 +132,8 @@ class TestImageSupplyGap:
 
         gaps = get_scenario_realizability("imageless")["gaps"]
         supply = [gap for gap in gaps if gap["category"] == GapCategory.IMAGE_SUPPLY]
-        assert supply and all(gap["address"] for gap in supply)
+        assert supply
+        assert all(gap["address"] for gap in supply)
 
 
 class TestSourceIntegrity:

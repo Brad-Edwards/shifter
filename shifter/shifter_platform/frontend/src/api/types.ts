@@ -34,6 +34,15 @@ export type OrganizationRef = components["schemas"]["OrganizationRef"];
 export type WorkspaceRole = components["schemas"]["WorkspaceRoleEnum"];
 
 /**
+ * Organization profile & settings types (#1939, PLAT-232), re-exported from the
+ * generated OpenAPI schema. The `workspaces.services` seam + DRF serializers are
+ * authoritative (ADR-048); regenerate `schema.d.ts` rather than hand-copying.
+ */
+export type OrganizationProfile = components["schemas"]["OrganizationProfile"];
+export type OrganizationProfileUpdate = components["schemas"]["PatchedOrganizationProfileUpdate"];
+export type PaginatedOrganizationProfileList = components["schemas"]["PaginatedOrganizationProfileList"];
+
+/**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
  * schema. Only the shapes this foundation chunk (and the pages/live-access
  * chunks that follow it) need are re-exported here; do not hand-copy field

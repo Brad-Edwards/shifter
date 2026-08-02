@@ -290,12 +290,14 @@ def test_materialize_directory_is_deterministic_tar(tmp_path: Path):
     with tarfile.open(fileobj=BytesIO(first), mode="r:") as tar:
         for member in tar.getmembers():
             names.append(member.name)
-            assert member.uid == 0 and member.gid == 0
+            assert member.uid == 0
+            assert member.gid == 0
             assert member.mtime == 0
     # sorted, relative posix paths, no absolute leakage
     assert names == sorted(names)
     assert all(not n.startswith("/") and ".." not in n for n in names)
-    assert "a.txt" in names and "sub/c.txt" in names
+    assert "a.txt" in names
+    assert "sub/c.txt" in names
 
 
 def test_materialize_directory_rejects_symlink(tmp_path: Path):

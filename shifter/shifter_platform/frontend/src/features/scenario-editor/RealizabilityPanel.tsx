@@ -104,16 +104,16 @@ function RealizabilityBody({
 }>) {
   if (isPending) {
     return (
-      <p className="text-muted-foreground text-sm" role="status">
+      <output className="text-muted-foreground block text-sm">
         Checking backend realizability…
-      </p>
+      </output>
     );
   }
   if (isError || !outcome) {
     return (
-      <p className="text-muted-foreground text-sm" role="status">
+      <output className="text-muted-foreground block text-sm">
         Backend realizability could not be loaded.
-      </p>
+      </output>
     );
   }
 
@@ -127,14 +127,14 @@ function RealizabilityBody({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`${CHIP} text-foreground/85`} role="status">
+        <output className={`${CHIP} text-foreground/85`}>
           <span
             className="size-1.5 rounded-full"
             style={{ backgroundColor: presentation.dot }}
             aria-hidden="true"
           />
           {presentation.label}
-        </span>
+        </output>
         {targetId ? <span className={`${CHIP} text-muted-foreground`}>Target: {targetId}</span> : null}
       </div>
       {presentation.summary ? <p className="text-muted-foreground mt-2 text-sm">{presentation.summary}</p> : null}

@@ -1,57 +1,45 @@
 """GCE (Compute Engine) live-fire range-cell backend configuration.
 
-Depends on the ``_env`` leaf, the ``_gcp_backend`` leaf, and ``_range`` (for
-``get_range_availability_zone``).
+Depends on the ``_env`` leaf, the ``_gcp_backend`` leaf, ``_range`` (for
+``get_range_availability_zone``), and its own ``_gce_profile`` /
+``_gce_image_keys`` leaves. The guest image profile contract and its validation
+live in ``_gce_profile``; the keyed image-profile map parser lives in
+``_gce_image_keys``. Both are re-exported here so the module's public surface is
+unchanged.
 """
 
-import hashlib
-import json
 import os
-import re
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 from ._env import _get_bool_env, _get_int_env, _parse_csv_env
+from ._gce_image_keys import _load_gce_image_key_profiles
+from ._gce_profile import (
+    _GCE_LOGICAL_NAME_RE,
+    GCE_BOOTSTRAP_POLARIS_HOST,
+    GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+    GCE_BOOTSTRAP_PREPROMOTED_DC,
+    GCE_BOOTSTRAP_STANDARD,
+    GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES,
+    GCERangeImageProfile,
+    _load_gce_range_profile,
+    _profile_has_source,
+    gce_image_profile_fingerprint,
+)
 from ._gce_required import missing_gce_range_required_env, resolve_gce_range_required_env
 from ._gcp_backend import is_gce_range_cell_backend
 
-GCE_BOOTSTRAP_STANDARD = "standard"
-GCE_BOOTSTRAP_POLARIS_HOST = "polaris-docker-host"
-GCE_BOOTSTRAP_PREPROMOTED_DC = "prepromoted-domain-controller"
-GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST = "preconfigured-machine-host"
-GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES = frozenset(
-    {
-        GCE_BOOTSTRAP_STANDARD,
-        GCE_BOOTSTRAP_POLARIS_HOST,
-        GCE_BOOTSTRAP_PREPROMOTED_DC,
-        GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
-    }
-)
-
-
-@dataclass(frozen=True)
-class GCERangeImageProfile:
-    """Image, sizing, and realization contract for one GCE guest family."""
-
-    source_image: str = ""
-    source_machine_image: str = ""
-    machine_type: str = "e2-medium"
-    disk_size_gb: int = 30
-    disk_type: str = "pd-balanced"
-    bootstrap_capability: str = GCE_BOOTSTRAP_STANDARD
-    domain_dns_name: str = ""
-    domain_netbios_name: str = ""
-    participant_container_name: str = ""
-    participant_username: str = ""
-    host_ssh_username: str = ""
-    host_ssh_port: int = 22
-    allow_public_web_egress: bool = False
-
-
-def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
-    """Return a bounded non-secret profile identity for labels and reconciliation."""
-    canonical = json.dumps(asdict(profile), separators=(",", ":"), sort_keys=True)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
+__all__ = [
+    "GCE_BOOTSTRAP_POLARIS_HOST",
+    "GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST",
+    "GCE_BOOTSTRAP_PREPROMOTED_DC",
+    "GCE_BOOTSTRAP_STANDARD",
+    "GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES",
+    "GCERangeCellConfig",
+    "GCERangeImageProfile",
+    "gce_image_profile_fingerprint",
+    "load_gce_range_cell_config",
+]
 
 
 @dataclass(frozen=True)
@@ -184,323 +172,6 @@ class GCERangeCellConfig:
                 allow_public_web_egress=profile.allow_public_web_egress,
             )
         return profile
-
-
-# Disk types the range provisioner accepts. Compute Engine rejects an unknown
-# disk type only after the create call; validate at config load so the operator
-# sees a clear error before a range attempt (#1343 gap 7).
-_VALID_GCE_DISK_TYPES = frozenset({"pd-standard", "pd-balanced", "pd-ssd", "pd-extreme", "hyperdisk-balanced"})
-_GCE_PROFILE_CLASSES = frozenset({"linux", "kali", "windows", "dc"})
-_GCE_PROFILE_REQUIRED_FIELDS = frozenset({"machine_type", "bootstrap_capability"})
-_GCE_PROFILE_OPTIONAL_FIELDS = frozenset(
-    {
-        "source_image",
-        "source_machine_image",
-        "disk_size_gb",
-        "disk_type",
-        "domain_dns_name",
-        "domain_netbios_name",
-        "participant_container_name",
-        "participant_username",
-        "host_ssh_username",
-        "host_ssh_port",
-        "allow_public_web_egress",
-    }
-)
-_GCE_PROFILE_FIELDS = _GCE_PROFILE_REQUIRED_FIELDS | _GCE_PROFILE_OPTIONAL_FIELDS
-_GCE_PROFILE_MIN_DISK_SIZE_GB = {"linux": 10, "kali": 30, "windows": 100, "dc": 100}
-_GCE_IMAGE_KEY_PROFILES_MAX_BYTES = 32_768
-_GCE_IMAGE_KEY_PROFILES_MAX_ENTRIES = 64
-_GCE_LOGICAL_NAME_RE = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
-
-# A Compute Engine resource name segment: lowercase, starts with a letter, and
-# is at most 63 chars (RFC1035, as GCE enforces for image/family names).
-_GCE_NAME = r"[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?"
-# A project id segment permits the domain-scoped ``example.com:project`` legacy
-# form, so allow dots and a single colon in addition to the standard chars.
-_GCE_PROJECT = r"[a-z0-9][-a-z0-9.:]*"
-# Accepted image reference forms:
-#   <name>                                         (bare image or family slug)
-#   family/<name>
-#   [global|projects/<proj>/global]/images[/family]/<name>
-#   an https://…/compute/v1/ prefix on the projects/… form
-_GCE_IMAGE_REFERENCE_RE = re.compile(
-    r"^(?:"
-    rf"{_GCE_NAME}"
-    rf"|family/{_GCE_NAME}"
-    rf"|(?:https://[^/]+/compute/(?:v1|beta)/)?"
-    rf"(?:projects/{_GCE_PROJECT}/)?global/images/(?:family/)?{_GCE_NAME}"
-    r")$"
-)
-_GCE_MACHINE_IMAGE_REFERENCE_RE = re.compile(
-    rf"^(?:(?:https://[^/]+/compute/(?:v1|beta)/)?)projects/{_GCE_PROJECT}/global/machineImages/{_GCE_NAME}$"
-)
-_GCE_LINUX_USERNAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
-_GCE_CONTAINER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
-
-
-def _profile_has_source(profile: GCERangeImageProfile) -> bool:
-    """Return whether a profile selects exactly one supported GCE source."""
-    return bool(profile.source_image or profile.source_machine_image)
-
-
-def _validate_gce_image_reference(prefix: str, value: str) -> None:
-    """Reject a malformed GCE image reference before any Compute Engine call."""
-    if not _GCE_IMAGE_REFERENCE_RE.fullmatch(value):
-        raise RuntimeError(
-            f"{prefix}_IMAGE is not a valid Compute Engine image reference: {value!r}. "
-            "Use an image/family name, 'family/<name>', or "
-            "'projects/<project>/global/images[/family]/<name>'."
-        )
-
-
-def _validate_gce_machine_image_reference(prefix: str, value: str) -> None:
-    """Require an exact, immutable Compute Engine machine-image resource."""
-    if not _GCE_MACHINE_IMAGE_REFERENCE_RE.fullmatch(value):
-        raise RuntimeError(
-            f"{prefix}.source_machine_image is not a valid exact Compute Engine machine-image reference: "
-            f"{value!r}. Use 'projects/<project>/global/machineImages/<name>'."
-        )
-
-
-def _validate_preconfigured_machine_profile(prefix: str, profile: GCERangeImageProfile) -> None:
-    """Validate the closed machine-host capability fields."""
-    machine_host = profile.bootstrap_capability == GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST
-    machine_fields = (
-        profile.participant_container_name,
-        profile.participant_username,
-        profile.host_ssh_username,
-    )
-    if machine_host:
-        if not profile.source_machine_image:
-            raise RuntimeError(f"{prefix} preconfigured-machine-host requires source_machine_image")
-        if not all(machine_fields):
-            raise RuntimeError(
-                f"{prefix} preconfigured-machine-host requires participant_container_name, "
-                "participant_username, and host_ssh_username"
-            )
-        if not _GCE_CONTAINER_NAME_RE.fullmatch(profile.participant_container_name):
-            raise RuntimeError(f"{prefix}.participant_container_name is not a valid container name")
-        for field_name, value in (
-            ("participant_username", profile.participant_username),
-            ("host_ssh_username", profile.host_ssh_username),
-        ):
-            if not _GCE_LINUX_USERNAME_RE.fullmatch(value):
-                raise RuntimeError(f"{prefix}.{field_name} is not a valid Linux username")
-        if profile.host_ssh_port < 1 or profile.host_ssh_port > 65535:
-            raise RuntimeError(f"{prefix}.host_ssh_port must be between 1 and 65535")
-    elif profile.source_machine_image or any(machine_fields) or profile.host_ssh_port != 22:
-        raise RuntimeError(
-            f"{prefix} machine-image and participant-container fields require "
-            f"bootstrap_capability={GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST!r}"
-        )
-
-
-def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, min_disk_size_gb: int) -> None:
-    """Fail fast on a malformed image ref, unknown disk type, or too-small boot disk."""
-    if profile.source_image and profile.source_machine_image:
-        raise RuntimeError(f"{prefix} must set exactly one of source_image or source_machine_image")
-    if profile.source_image:
-        _validate_gce_image_reference(prefix, profile.source_image)
-    if profile.source_machine_image:
-        _validate_gce_machine_image_reference(prefix, profile.source_machine_image)
-    if profile.source_image and profile.disk_type not in _VALID_GCE_DISK_TYPES:
-        raise RuntimeError(
-            f"{prefix}_DISK_TYPE {profile.disk_type!r} is not a supported Compute Engine disk type. "
-            f"Choose one of: {', '.join(sorted(_VALID_GCE_DISK_TYPES))}."
-        )
-    # Role-policy minimum boot-disk size. This is NOT a guarantee that the disk
-    # is >= the actual source image's disk (that would require resolving image
-    # metadata at create time, and the reference may be a mutable family); it
-    # enforces the documented per-role floors (e.g. the Windows/DC images are
-    # 100 GB) so an obviously-undersized disk fails at config load instead of
-    # only at instance creation.
-    if profile.source_image and profile.disk_size_gb < min_disk_size_gb:
-        raise RuntimeError(
-            f"{prefix}_DISK_SIZE_GB {profile.disk_size_gb} is smaller than the {min_disk_size_gb} GB "
-            f"role-policy minimum for this guest role."
-        )
-    if not _GCE_LOGICAL_NAME_RE.fullmatch(profile.bootstrap_capability):
-        raise RuntimeError(
-            f"{prefix}.bootstrap_capability must be a lowercase logical capability using letters, digits, and hyphens"
-        )
-    if bool(profile.domain_dns_name) != bool(profile.domain_netbios_name):
-        raise RuntimeError(f"{prefix} must set domain_dns_name and domain_netbios_name together")
-    if len(profile.domain_dns_name) > 253:
-        raise RuntimeError(f"{prefix}.domain_dns_name exceeds the 253-character DNS-name limit")
-    if len(profile.domain_netbios_name) > 15:
-        raise RuntimeError(f"{prefix}.domain_netbios_name exceeds the 15-character NetBIOS-name limit")
-    _validate_preconfigured_machine_profile(prefix, profile)
-
-
-def _load_gce_range_profile(
-    prefix: str,
-    *,
-    default_machine_type: str,
-    default_disk_size_gb: int,
-    min_disk_size_gb: int,
-) -> GCERangeImageProfile:
-    """Load one GCE range guest image/sizing profile."""
-    profile = GCERangeImageProfile(
-        source_image=os.environ.get(f"{prefix}_IMAGE", "").strip(),
-        machine_type=os.environ.get(f"{prefix}_MACHINE_TYPE", default_machine_type).strip() or default_machine_type,
-        disk_size_gb=_get_int_env(f"{prefix}_DISK_SIZE_GB", default_disk_size_gb),
-        disk_type=os.environ.get(f"{prefix}_DISK_TYPE", "pd-balanced").strip() or "pd-balanced",
-    )
-    _validate_gce_range_profile(prefix, profile, min_disk_size_gb=min_disk_size_gb)
-    return profile
-
-
-def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    """Build one JSON object while refusing keys that would otherwise be overwritten."""
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            raise ValueError(f"duplicate JSON key: {key!r}")
-        value[key] = item
-    return value
-
-
-def _require_profile_string(entry: Mapping[str, object], field_name: str, *, location: str) -> str:
-    """Return one required non-empty string field from a keyed profile."""
-    value = entry[field_name]
-    if not isinstance(value, str) or not value.strip():
-        raise RuntimeError(f"{location}.{field_name} must be a non-empty string")
-    return value.strip()
-
-
-def _optional_profile_string(entry: Mapping[str, object], field_name: str, *, location: str) -> str:
-    """Return one optional string field from a keyed profile."""
-    value = entry.get(field_name, "")
-    if not isinstance(value, str):
-        raise RuntimeError(f"{location}.{field_name} must be a string")
-    return value.strip()
-
-
-def _parse_gce_image_key_profile(
-    profile_class: str,
-    logical_key: str,
-    entry: object,
-) -> GCERangeImageProfile:
-    """Parse and validate one complete logical-key GCE image profile."""
-    location = f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON[{profile_class!r}][{logical_key!r}]"
-    if not isinstance(entry, dict):
-        raise RuntimeError(f"{location} must be an object")
-    fields = set(entry)
-    unknown = sorted(fields - _GCE_PROFILE_FIELDS)
-    missing = sorted(_GCE_PROFILE_REQUIRED_FIELDS - fields)
-    if unknown:
-        raise RuntimeError(f"{location} has unknown fields: {', '.join(unknown)}")
-    if missing:
-        raise RuntimeError(f"{location} is missing required fields: {', '.join(missing)}")
-
-    source_image = _optional_profile_string(entry, "source_image", location=location)
-    source_machine_image = _optional_profile_string(entry, "source_machine_image", location=location)
-    if bool(source_image) == bool(source_machine_image):
-        raise RuntimeError(f"{location} must set exactly one of source_image or source_machine_image")
-    if source_image:
-        missing_image_fields = sorted({"disk_size_gb", "disk_type"} - fields)
-        if missing_image_fields:
-            raise RuntimeError(f"{location} is missing required fields: {', '.join(missing_image_fields)}")
-    machine_type = _require_profile_string(entry, "machine_type", location=location)
-    bootstrap_capability = _require_profile_string(entry, "bootstrap_capability", location=location)
-    domain_dns_name = _optional_profile_string(entry, "domain_dns_name", location=location)
-    domain_netbios_name = _optional_profile_string(entry, "domain_netbios_name", location=location)
-    participant_container_name = _optional_profile_string(entry, "participant_container_name", location=location)
-    participant_username = _optional_profile_string(entry, "participant_username", location=location)
-    host_ssh_username = _optional_profile_string(entry, "host_ssh_username", location=location)
-    disk_type = _optional_profile_string(entry, "disk_type", location=location) or "pd-balanced"
-    disk_size_gb = entry.get("disk_size_gb", 30)
-    if isinstance(disk_size_gb, bool) or not isinstance(disk_size_gb, int) or disk_size_gb <= 0:
-        raise RuntimeError(f"{location}.disk_size_gb must be a positive integer")
-    host_ssh_port = entry.get("host_ssh_port", 22)
-    if isinstance(host_ssh_port, bool) or not isinstance(host_ssh_port, int):
-        raise RuntimeError(f"{location}.host_ssh_port must be an integer")
-    allow_public_web_egress = entry.get("allow_public_web_egress", False)
-    if not isinstance(allow_public_web_egress, bool):
-        raise RuntimeError(f"{location}.allow_public_web_egress must be a boolean")
-    if not _GCE_LOGICAL_NAME_RE.fullmatch(machine_type):
-        raise RuntimeError(f"{location}.machine_type is not a valid Compute Engine machine type")
-
-    profile = GCERangeImageProfile(
-        source_image=source_image,
-        source_machine_image=source_machine_image,
-        machine_type=machine_type,
-        disk_size_gb=disk_size_gb,
-        disk_type=disk_type,
-        bootstrap_capability=bootstrap_capability,
-        domain_dns_name=domain_dns_name,
-        domain_netbios_name=domain_netbios_name,
-        participant_container_name=participant_container_name,
-        participant_username=participant_username,
-        host_ssh_username=host_ssh_username,
-        host_ssh_port=host_ssh_port,
-        allow_public_web_egress=allow_public_web_egress,
-    )
-    _validate_gce_range_profile(
-        location,
-        profile,
-        min_disk_size_gb=_GCE_PROFILE_MIN_DISK_SIZE_GB[profile_class],
-    )
-    return profile
-
-
-def _load_gce_image_key_profile_class(
-    profile_class: str,
-    entries: object,
-    *,
-    entry_count: int,
-) -> tuple[dict[str, GCERangeImageProfile], int]:
-    """Parse one profile class's logical-key entries, enforcing the global entry cap.
-
-    ``entry_count`` is the running total across all classes; the updated total is
-    returned so the caller can keep the cap cumulative.
-    """
-    if not isinstance(entries, dict):
-        raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON[{profile_class!r}] must be an object")
-    resolved_entries: dict[str, GCERangeImageProfile] = {}
-    for logical_key, entry in entries.items():
-        if not _GCE_LOGICAL_NAME_RE.fullmatch(logical_key):
-            raise RuntimeError(
-                "GCP_RANGE_IMAGE_KEY_PROFILES_JSON logical keys must be lowercase and use only "
-                "letters, digits, and hyphens"
-            )
-        entry_count += 1
-        if entry_count > _GCE_IMAGE_KEY_PROFILES_MAX_ENTRIES:
-            raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 64-entry limit")
-        resolved_entries[logical_key] = _parse_gce_image_key_profile(profile_class, logical_key, entry)
-    return resolved_entries, entry_count
-
-
-def _load_gce_image_key_profiles() -> dict[str, dict[str, GCERangeImageProfile]]:
-    """Load the bounded exact (profile class, logical key) GCE profile map."""
-    raw = os.environ.get("GCP_RANGE_IMAGE_KEY_PROFILES_JSON", "").strip()
-    if not raw:
-        return {}
-    if len(raw.encode("utf-8")) > _GCE_IMAGE_KEY_PROFILES_MAX_BYTES:
-        raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON exceeds the 32768-byte configuration limit")
-    try:
-        # json.JSONDecodeError is a ValueError subclass, so this also catches the
-        # duplicate-key ValueError raised by _reject_duplicate_json_keys.
-        decoded = json.loads(raw, object_pairs_hook=_reject_duplicate_json_keys)
-    except ValueError as exc:
-        raise RuntimeError(f"GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be a valid JSON object: {exc}") from exc
-    if not isinstance(decoded, dict):
-        raise RuntimeError("GCP_RANGE_IMAGE_KEY_PROFILES_JSON must be a valid JSON object")
-
-    unknown_classes = sorted(set(decoded) - _GCE_PROFILE_CLASSES)
-    if unknown_classes:
-        raise RuntimeError(
-            "GCP_RANGE_IMAGE_KEY_PROFILES_JSON has unknown profile classes: " + ", ".join(unknown_classes)
-        )
-
-    profiles: dict[str, dict[str, GCERangeImageProfile]] = {}
-    entry_count = 0
-    for profile_class, entries in decoded.items():
-        profiles[profile_class], entry_count = _load_gce_image_key_profile_class(
-            profile_class, entries, entry_count=entry_count
-        )
-    return profiles
 
 
 def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellConfig:

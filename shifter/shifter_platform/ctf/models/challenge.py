@@ -41,7 +41,6 @@ class CTFChallenge(CTFBaseModel):
         category: Organizer-authored category or mission name.
         points: Points awarded for solving.
         difficulty: Challenge difficulty level.
-        flag_hash: Hashed flag value (bcrypt).
         flag_format: Optional format hint (e.g., "FLAG{...}").
         max_attempts: Maximum submission attempts (0 = unlimited).
         release_time: When challenge becomes visible (null = immediately).
@@ -81,10 +80,6 @@ class CTFChallenge(CTFBaseModel):
         choices=ChallengeDifficulty.choices(),
         default=ChallengeDifficulty.MEDIUM.value,
         help_text="Challenge difficulty level",
-    )
-    flag_hash = models.CharField(
-        max_length=255,
-        help_text="Hashed flag value (bcrypt)",
     )
     flag_format = models.CharField(
         max_length=100,

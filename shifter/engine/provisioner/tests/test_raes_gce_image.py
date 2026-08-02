@@ -83,7 +83,8 @@ class TestRegistryResolution:
     def test_registry_disk_defaults_when_omitted(self):
         node = _node(image=RaesPlanImage(name="kali"))
         profile = resolve_gce_image(node, [_candidate("", "img")])
-        assert profile.disk_size_gb == 30 and profile.disk_type == "pd-balanced"
+        assert profile.disk_size_gb == 30
+        assert profile.disk_type == "pd-balanced"
 
     def test_ram_is_aligned_up_to_256_boundary(self):
         node = _node(image=RaesPlanImage(name="kali"), ram_mib=2000, vcpus=2)

@@ -28,6 +28,24 @@ class Organization(models.Model):
         help_text="Immutable public identifier; the only organization ID public surfaces accept.",
     )
     name = models.CharField(max_length=200, help_text="Display name shown to members.")
+    description = models.CharField(
+        max_length=2000,
+        blank=True,
+        default="",
+        help_text="Optional organization description (PLAT-232). Empty string means unset.",
+    )
+    support_email = models.EmailField(
+        max_length=254,
+        blank=True,
+        default="",
+        help_text="Optional organization support email (PLAT-232). Empty string means unset.",
+    )
+    support_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Optional organization support URL (PLAT-232). Empty string means unset.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

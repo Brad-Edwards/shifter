@@ -20,10 +20,17 @@ workload identity at project scope:
 * a project-scoped ``google_project_iam_custom_role`` whose ``permissions`` grant
   equivalent secret payload/lifecycle or object-mutation access.
 
-Legitimate different principals (the GCE range-host SA, the range-Vertex SA, the
-GKE node SA, CI/bootstrap identities) are not workload identities and are not
-matched. The two ``ALLOWLIST`` residuals carry an expiry so the exception cannot
-outlive the #1586 boundary silently.
+Legitimate different principals (the range-Vertex SA, the GKE node SA,
+CI/bootstrap identities) are not workload identities and are not matched. The two
+``ALLOWLIST`` residuals carry an expiry so the exception cannot outlive the #1586
+boundary silently.
+
+The ``range_host`` / ``range_host_pool`` identities are handled separately (#1644):
+they are attached to participant-controllable range guests, so ANY project-level
+Cloud Storage role (including read-only ``objectViewer``) is rejected on them --
+via the same direct-member, inline ``for_each`` role list, local-map,
+policy-binding, and custom-role shapes -- while their logging/monitoring writes
+are left alone. Host artifacts reach these guests through short-lived signed URLs.
 """
 
 from __future__ import annotations
@@ -80,6 +87,16 @@ FORBIDDEN_CUSTOM_PERMISSIONS = frozenset(
     }
 )
 _FORBIDDEN_PERMISSION_WILDCARD_PREFIXES = ("secretmanager.", "storage.objects.")
+
+# Range-host principals (#1644). ``range_host`` and the ``range_host_pool`` members
+# are the service accounts attached to participant-controllable POLARIS/GCE range
+# guests. They are NOT application workloads, but a participant with root on a
+# guest can mint the attached SA token from the metadata server, so they must
+# never hold a project-level Cloud Storage role: a project (or shared-bucket)
+# storage grant crosses the range/tenant boundary and exposes other tenants'
+# objects and Terraform state. Host artifacts are delivered as short-lived signed
+# URLs instead. Their only legitimate project roles are logging/monitoring writes.
+_RANGE_HOST_MEMBER_RE = re.compile(r"google_service_account\.range_host(?:_pool)?\b")
 
 
 @dataclass(frozen=True)
@@ -395,6 +412,120 @@ def _collect_locals_text(files: dict[Path, list[str]]) -> str:
     return "\n".join(blocks)
 
 
+def _is_range_host_forbidden_role(role: str) -> bool:
+    """True for any project-level Cloud Storage role on a range-host identity.
+
+    Range hosts hold zero legitimate project storage access (#1644), so every
+    ``roles/storage.*`` role -- including the read-only ``objectViewer`` that the
+    workload set deliberately permits per named bucket -- is forbidden here.
+    """
+    return role.startswith("roles/storage.")
+
+
+def _resource_granted_roles(body: str) -> list[str]:
+    """Return the role strings a project_iam_member/binding block grants directly.
+
+    Covers a literal ``role = "roles/..."`` and the inline
+    ``for_each = toset([...roles...])`` / ``for_each = [...]`` shape whose
+    ``role = each.value`` iterates role strings directly -- the shape the
+    range-host grant uses, which neither the literal nor the local-map workload
+    check inspects. Local-map-driven roles are resolved separately.
+    """
+    roles: list[str] = []
+    literal = _LITERAL_ROLE_RE.search(body)
+    if literal:
+        roles.append(literal.group(1))
+    if re.search(r"\brole\s*=\s*each\.value\b", body):
+        for_each = re.search(r"for_each\s*=\s*(?:toset\(\s*)?\[", body)
+        if for_each:
+            roles.extend(_collect_roles_after(body, for_each.end()))
+    return roles
+
+
+def _check_range_host_members(
+    path: Path, lines: list[str], locals_text: str
+) -> list[Violation]:
+    """Flag project-level storage roles bound to a range-host identity (#1644)."""
+    violations: list[Violation] = []
+    for _name, line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+        if not _RANGE_HOST_MEMBER_RE.search(body):
+            continue
+        roles = list(_resource_granted_roles(body))
+        map_match = _FOR_EACH_LOCAL_MAP_RE.search(body)
+        if map_match:
+            for mapped in _parse_role_map(locals_text, map_match.group(1)).values():
+                roles.extend(mapped)
+        for role in sorted({r for r in roles if _is_range_host_forbidden_role(r)}):
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"resource grants project-level {role} to a range-host "
+                    "identity. Range guests are participant-reachable; deliver the "
+                    "artifact via a short-lived signed URL and keep the SA free of "
+                    "project storage roles (#1644).",
+                )
+            )
+    return violations
+
+
+def _check_range_host_policy_bindings(path: Path, text: str) -> list[Violation]:
+    """Flag authoritative policy bindings granting storage to a range-host identity."""
+    violations: list[Violation] = []
+    for binding_match in re.finditer(r"(?:^|\n)\s*binding\s*\{", text):
+        block = _extract_brace_block(text, binding_match.end())
+        role_match = re.search(r'role\s*=\s*"(roles/[^"]+)"', block)
+        if not role_match or not _is_range_host_forbidden_role(role_match.group(1)):
+            continue
+        if _RANGE_HOST_MEMBER_RE.search(block):
+            line = text.count("\n", 0, binding_match.start()) + 1
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"policy binding grants project-level {role_match.group(1)} to "
+                    "a range-host identity (#1644).",
+                )
+            )
+    return violations
+
+
+def _forbidden_range_host_custom_roles(lines: list[str]) -> set[str]:
+    """Return custom-role names whose permissions grant any Cloud Storage access."""
+    forbidden: set[str] = set()
+    for name, _line, body in _extract_resource_blocks(lines, _CUSTOM_ROLE_RE):
+        for permission in re.findall(r'"([\w.*]+)"', body):
+            stem = permission.rstrip("*")
+            if permission.startswith("storage.") or (
+                permission.endswith("*") and "storage.".startswith(stem)
+            ):
+                forbidden.add(name)
+                break
+    return forbidden
+
+
+def _check_range_host_custom_role_bindings(path: Path, lines: list[str]) -> list[Violation]:
+    """Flag range-host bindings of a project-scoped custom role with storage perms."""
+    forbidden_roles = _forbidden_range_host_custom_roles(lines)
+    if not forbidden_roles:
+        return []
+    violations: list[Violation] = []
+    for _name, line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+        ref_match = _CUSTOM_ROLE_REF_RE.search(body)
+        if not ref_match or ref_match.group(1) not in forbidden_roles:
+            continue
+        if _RANGE_HOST_MEMBER_RE.search(body):
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"custom role {ref_match.group(1)} grants project-level Cloud "
+                    "Storage access to a range-host identity (#1644).",
+                )
+            )
+    return violations
+
+
 def check_paths(paths: list[Path]) -> list[Violation]:
     """Return every ADR-008-R7 violation across a set of module Terraform files."""
     files = {p: p.read_text().splitlines() for p in paths if p.suffix == ".tf"}
@@ -405,6 +536,9 @@ def check_paths(paths: list[Path]) -> list[Violation]:
         violations.extend(_check_map_driven_members(path, lines, locals_text))
         violations.extend(_check_policy_bindings(path, "\n".join(lines)))
         violations.extend(_check_custom_role_bindings(path, lines))
+        violations.extend(_check_range_host_members(path, lines, locals_text))
+        violations.extend(_check_range_host_policy_bindings(path, "\n".join(lines)))
+        violations.extend(_check_range_host_custom_role_bindings(path, lines))
     return violations
 
 

@@ -27,6 +27,7 @@ class _BoundaryPatchSite:
     target: str
 
 
+_UNITTEST_MOCK_MODULE = "unittest.mock"
 _BOUNDARY_MOCK_BASELINE_PATH = "scripts/adr_guard/boundary_mock_baseline.json"
 _BOUNDARY_MOCK_CHECK_NAME = "boundary-mock-policy"
 _BOUNDARY_MOCK_RULE = "ADR-019-R1"
@@ -96,8 +97,8 @@ def _git_tracked_python_files(repo_root: Path) -> list[str] | None:
     try:
         result = subprocess.run(cmd, capture_output=True, check=False, timeout=30)
     except (OSError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
+        result = None
+    if result is None or result.returncode != 0:
         return None
     return [entry.decode("utf-8") for entry in result.stdout.split(b"\0") if entry]
 
@@ -170,6 +171,38 @@ def _resolve_imported_name(name: str, imported_modules: dict[str, str]) -> str |
     return f"{resolved}.{tail}" if sep else resolved
 
 
+def _record_import_aliases(
+    node: ast.Import,
+    mock_modules: set[str],
+    imported_modules: dict[str, str],
+) -> None:
+    """Record ``import x`` aliases, tracking any alias of the unittest.mock module."""
+    for alias in node.names:
+        local = alias.asname or alias.name.split(".", 1)[0]
+        imported_modules[local] = alias.name
+        if alias.name == "unittest":
+            mock_modules.add(f"{local}.mock")
+        elif alias.name == _UNITTEST_MOCK_MODULE:
+            mock_modules.add(local if alias.asname else _UNITTEST_MOCK_MODULE)
+
+
+def _record_import_from_aliases(
+    node: ast.ImportFrom,
+    patch_names: set[str],
+    mock_modules: set[str],
+    imported_modules: dict[str, str],
+) -> None:
+    """Record ``from x import y`` aliases, tracking imported patch and mock names."""
+    module = node.module or ""
+    for alias in node.names:
+        local = alias.asname or alias.name
+        imported_modules[local] = f"{module}.{alias.name}" if module else alias.name
+        if module == _UNITTEST_MOCK_MODULE and alias.name == "patch":
+            patch_names.add(local)
+        elif module == "unittest" and alias.name == "mock":
+            mock_modules.add(local)
+
+
 def _collect_mock_aliases(tree: ast.AST) -> tuple[set[str], set[str], dict[str, str]]:
     """Collect unittest.mock aliases and imported module aliases from a file."""
     patch_names: set[str] = set()
@@ -178,22 +211,9 @@ def _collect_mock_aliases(tree: ast.AST) -> tuple[set[str], set[str], dict[str, 
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                local = alias.asname or alias.name.split(".", 1)[0]
-                imported_modules[local] = alias.name
-                if alias.name == "unittest":
-                    mock_modules.add(f"{local}.mock")
-                elif alias.name == "unittest.mock":
-                    mock_modules.add(local if alias.asname else "unittest.mock")
+            _record_import_aliases(node, mock_modules, imported_modules)
         elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-            for alias in node.names:
-                local = alias.asname or alias.name
-                imported_modules[local] = f"{module}.{alias.name}" if module else alias.name
-                if module == "unittest.mock" and alias.name == "patch":
-                    patch_names.add(local)
-                elif module == "unittest" and alias.name == "mock":
-                    mock_modules.add(local)
+            _record_import_from_aliases(node, patch_names, mock_modules, imported_modules)
 
     return patch_names, mock_modules, imported_modules
 
@@ -223,43 +243,55 @@ def _patch_object_target(call: ast.Call, imported_modules: dict[str, str]) -> st
     if not (isinstance(attr_arg, ast.Constant) and isinstance(attr_arg.value, str)):
         return None
     base = _name_chain(call.args[0])
-    if base is None:
-        return None
-    resolved = _resolve_imported_name(base, imported_modules)
-    if resolved is None:
-        return None
-    return f"{resolved}.{attr_arg.value}"
+    resolved = _resolve_imported_name(base, imported_modules) if base is not None else None
+    return f"{resolved}.{attr_arg.value}" if resolved is not None else None
+
+
+def _call_patch_target(
+    node: ast.Call,
+    patch_names: set[str],
+    mock_modules: set[str],
+    imported_modules: dict[str, str],
+) -> str | None:
+    """Return the statically resolvable mock patch target of a call, or None."""
+    if (
+        _is_mock_patch_func(node.func, patch_names, mock_modules)
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    ):
+        return node.args[0].value
+    if _is_mock_patch_object_func(node.func, patch_names, mock_modules):
+        return _patch_object_target(node, imported_modules)
+    return None
+
+
+def _file_boundary_patch_sites(repo_root: Path, rel: str) -> list[_BoundaryPatchSite]:
+    """Statically discover string patch targets in one test file."""
+    path = repo_root / rel
+    if not path.exists() or not path.is_file():
+        return []
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return []
+
+    patch_names, mock_modules, imported_modules = _collect_mock_aliases(tree)
+    sites: list[_BoundaryPatchSite] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        target = _call_patch_target(node, patch_names, mock_modules, imported_modules)
+        if target:
+            sites.append(_BoundaryPatchSite(rel, node.lineno, target))
+    return sites
 
 
 def _iter_boundary_patch_sites(repo_root: Path, rel_paths: list[str]) -> list[_BoundaryPatchSite]:
     """Statically discover string patch targets in selected test files."""
     sites: list[_BoundaryPatchSite] = []
     for rel in rel_paths:
-        path = repo_root / rel
-        if not path.exists() or not path.is_file():
-            continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
-        except (OSError, SyntaxError, UnicodeDecodeError):
-            continue
-
-        patch_names, mock_modules, imported_modules = _collect_mock_aliases(tree)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            target: str | None = None
-            if (
-                _is_mock_patch_func(node.func, patch_names, mock_modules)
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                target = node.args[0].value
-            elif _is_mock_patch_object_func(node.func, patch_names, mock_modules):
-                target = _patch_object_target(node, imported_modules)
-
-            if target:
-                sites.append(_BoundaryPatchSite(rel, node.lineno, target))
+        sites.extend(_file_boundary_patch_sites(repo_root, rel))
     return sites
 
 
@@ -275,40 +307,49 @@ def _is_first_party_internal_patch_target(target: str, first_party_roots: set[st
     return root in first_party_roots and not _is_allowed_boundary_patch_target(target)
 
 
-def _parse_boundary_mock_baseline(raw: str, source: str) -> tuple[Counter[tuple[str, str]], Violation | None]:
-    """Parse a boundary mock baseline payload into counts keyed by (path, target)."""
+def _boundary_mock_baseline_records(raw: str, source: str) -> tuple[list[object] | None, str | None]:
+    """Return the baseline record list, or the error explaining why it is unusable."""
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        return Counter(), _boundary_mock_violation(
-            _BOUNDARY_MOCK_BASELINE_PATH,
-            f"invalid baseline JSON in {source}: {exc}",
-        )
+        return None, f"invalid baseline JSON in {source}: {exc}"
 
     records = payload.get("allowed_internal_patch_counts") if isinstance(payload, dict) else None
     if not isinstance(records, list):
-        return Counter(), _boundary_mock_violation(
-            _BOUNDARY_MOCK_BASELINE_PATH,
-            f"baseline in {source} must contain an allowed_internal_patch_counts list",
-        )
+        return None, f"baseline in {source} must contain an allowed_internal_patch_counts list"
+    return records, None
 
+
+def _boundary_mock_baseline_counts(
+    records: list[object],
+    source: str,
+) -> tuple[Counter[tuple[str, str]], str | None]:
+    """Aggregate baseline records into counts, or return the first shape error found."""
     counts: Counter[tuple[str, str]] = Counter()
     for index, record in enumerate(records):
         if not isinstance(record, dict):
-            return Counter(), _boundary_mock_violation(
-                _BOUNDARY_MOCK_BASELINE_PATH,
-                f"baseline entry {index} in {source} must be an object",
-            )
+            return Counter(), f"baseline entry {index} in {source} must be an object"
         rel = record.get("path")
         target = record.get("target")
         count = record.get("count")
         if not isinstance(rel, str) or not isinstance(target, str) or not isinstance(count, int) or count < 0:
-            return Counter(), _boundary_mock_violation(
-                _BOUNDARY_MOCK_BASELINE_PATH,
+            return Counter(), (
                 f"baseline entry {index} in {source} must have string path/target "
-                "and non-negative integer count",
+                "and non-negative integer count"
             )
         counts[(rel, target)] += count
+    return counts, None
+
+
+def _parse_boundary_mock_baseline(raw: str, source: str) -> tuple[Counter[tuple[str, str]], Violation | None]:
+    """Parse a boundary mock baseline payload into counts keyed by (path, target)."""
+    records, error = _boundary_mock_baseline_records(raw, source)
+    if error is not None:
+        return Counter(), _boundary_mock_violation(_BOUNDARY_MOCK_BASELINE_PATH, error)
+
+    counts, error = _boundary_mock_baseline_counts(records, source)
+    if error is not None:
+        return Counter(), _boundary_mock_violation(_BOUNDARY_MOCK_BASELINE_PATH, error)
     return counts, None
 
 
@@ -332,25 +373,31 @@ def _load_boundary_mock_baseline(repo_root: Path) -> tuple[Counter[tuple[str, st
     return _parse_boundary_mock_baseline(raw, "working tree")
 
 
+def _boundary_mock_baseline_from_refs(
+    repo_root: Path,
+    refs: list[str],
+) -> tuple[Counter[tuple[str, str]], Violation | None] | None:
+    """Parse the baseline from the first reference that carries one, else None."""
+    for ref in refs:
+        raw = _git_text(repo_root, ["show", f"{ref}:{_BOUNDARY_MOCK_BASELINE_PATH}"])
+        if raw is None:
+            continue
+        return _parse_boundary_mock_baseline(raw, f"git reference {ref}")
+    return None
+
+
 def _load_boundary_mock_reference_baseline(
     repo_root: Path,
 ) -> tuple[Counter[tuple[str, str]] | None, Violation | None]:
     """Load the baseline from the branch reference point, when one exists."""
     base_refs = _boundary_mock_base_reference_candidates(repo_root)
-    for ref in base_refs:
-        raw = _git_text(repo_root, ["show", f"{ref}:{_BOUNDARY_MOCK_BASELINE_PATH}"])
-        if raw is None:
-            continue
-        return _parse_boundary_mock_baseline(raw, f"git reference {ref}")
-    if base_refs:
-        return None, None
-
-    for ref in _boundary_mock_fallback_reference_candidates(repo_root):
-        raw = _git_text(repo_root, ["show", f"{ref}:{_BOUNDARY_MOCK_BASELINE_PATH}"])
-        if raw is None:
-            continue
-        return _parse_boundary_mock_baseline(raw, f"git reference {ref}")
-    return None, None
+    parsed = _boundary_mock_baseline_from_refs(repo_root, base_refs)
+    if parsed is None and not base_refs:
+        parsed = _boundary_mock_baseline_from_refs(
+            repo_root,
+            _boundary_mock_fallback_reference_candidates(repo_root),
+        )
+    return parsed if parsed is not None else (None, None)
 
 
 def _check_boundary_mock_baseline_non_growth(

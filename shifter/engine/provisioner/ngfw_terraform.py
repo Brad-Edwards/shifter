@@ -52,7 +52,6 @@ def _run_ngfw_operation_for_provider(
     operation: str,
     request_id: str,
     instance_id: str,
-    app_id: str,
     app_spec: dict[str, Any],
     sls_region: str,
     *,
@@ -65,14 +64,14 @@ def _run_ngfw_operation_for_provider(
 
     if provider == "gcp":
         if operation == "up":
-            _run_gdc_provision(request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id)
+            _run_gdc_provision(request_id, instance_id, app_spec, sls_region, operation_id=operation_id)
         else:
             _run_gdc_deprovision(request_id, operation_id=operation_id)
         return
 
     if provider == "aws":
         if operation == "up":
-            _run_provision(request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id)
+            _run_provision(request_id, instance_id, app_spec, sls_region, operation_id=operation_id)
         else:
             _run_deprovision(request_id, instance_id, operation_id=operation_id)
         return
@@ -140,7 +139,7 @@ def run_ngfw_terraform(operation: str, request_id: str, *, operation_id: str | N
     try:
         sls_region = app_spec.get("sls_region", "americas")
         _run_ngfw_operation_for_provider(
-            operation, request_id, instance_id, app_id, app_spec, sls_region, operation_id=operation_id
+            operation, request_id, instance_id, app_spec, sls_region, operation_id=operation_id
         )
 
     except Exception as e:
@@ -401,7 +400,6 @@ def _run_pan_os_post_provision(
 def _run_provision(
     request_id: str,
     instance_id: str,
-    app_id: str,
     app_spec: dict[str, Any],
     sls_region: str,
     *,
@@ -447,7 +445,6 @@ def _run_provision(
 def _run_gdc_provision(
     request_id: str,
     instance_id: str,
-    app_id: str,
     app_spec: dict[str, Any],
     sls_region: str,
     *,

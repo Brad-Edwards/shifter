@@ -56,7 +56,8 @@ class TestRefusal:
 
         provision_event_ranges_throttled(ctf_event_active.pk, 60)
 
-        assert notified and notified[0]["blocking"] is True
+        assert notified
+        assert notified[0]["blocking"] is True
 
     def test_organizer_notification_carries_no_raw_figures(self, ctf_event_active, monkeypatch):
         """Bounded reason codes only -- quota numbers stay operator-only."""

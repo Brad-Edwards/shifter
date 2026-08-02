@@ -55,7 +55,6 @@ class TestChallengeVisibility:
             description="d",
             category="web",
             points=100,
-            flag_hash="x",
             visibility="visible",
         )
 
@@ -67,7 +66,6 @@ class TestChallengeVisibility:
             description="d",
             category="web",
             points=100,
-            flag_hash="x",
             visibility="hidden",
         )
 
@@ -79,7 +77,6 @@ class TestChallengeVisibility:
             description="d",
             category="web",
             points=100,
-            flag_hash="x",
             visibility="locked",
         )
 
@@ -142,7 +139,6 @@ class TestChallengeVisibility:
             description="d",
             category="web",
             points=100,
-            flag_hash="x",
         )
         assert c.visibility == "visible"
 
@@ -602,7 +598,6 @@ class TestChallengeRatings:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_rate",
         )
         # Create a correct submission
         CTFSubmission.objects.create(
@@ -633,7 +628,6 @@ class TestChallengeRatings:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_unsolved",
         )
         with pytest.raises(CTFValidationError, match="must solve"):
             rate_challenge(participant.id, unsolved.id, 3)
@@ -719,7 +713,6 @@ class TestChallengeRatings:
             description="Test",
             category=ChallengeCategory.WEB.value,
             points=100,
-            flag_hash="$2b$12$x",
         )
         p = CTFParticipant.objects.create(
             event=event,

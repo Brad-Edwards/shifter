@@ -140,7 +140,9 @@ class TestCapabilityGaps:
         gap = assess_scenario_capability(path).gaps[0]
 
         assert gap.category is GapCategory.CAPABILITY
-        assert gap.code and gap.address and gap.message
+        assert gap.code
+        assert gap.address
+        assert gap.message
         # The author needs to know which resource is at fault.
         assert isinstance(gap.address, str)
 

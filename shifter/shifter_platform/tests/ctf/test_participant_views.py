@@ -83,7 +83,6 @@ class TestParticipantChallengeListView:
             category="Start Here",
             points=50,
             difficulty="easy",
-            flag_hash="$2b$12$warmup_hash_placeholder",
         )
         set_active_ctf_event(participant_user, ctf_participant.event_id)
 

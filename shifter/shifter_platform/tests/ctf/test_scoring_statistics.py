@@ -187,7 +187,6 @@ class TestGetChallengeStatistics:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder",
             flag_format="FLAG{...}",
         )
         CTFParticipant.objects.filter(event=ctf_event).delete()

@@ -10,6 +10,10 @@ import { UsersListPage } from "@/features/administer/UsersListPage";
 import { ConsoleSlotPage } from "@/features/administer/organization/ConsoleSlotPage";
 import { OrganizationConsoleLayout } from "@/features/administer/organization/OrganizationConsoleLayout";
 import { OrganizationOverviewPage } from "@/features/administer/organization/OrganizationOverviewPage";
+import {
+  OrganizationSettingsDetailPage,
+  OrganizationSettingsPage,
+} from "@/features/administer/organization/OrganizationSettingsPage";
 import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
 import { WORKSPACE_SURFACES } from "@/features/administer/organization/surfaces";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
@@ -221,7 +225,8 @@ export const router = createBrowserRouter(
               element: <OrganizationConsoleLayout />,
               children: [
                 { index: true, element: <OrganizationOverviewPage /> },
-                { path: "settings", element: <ConsoleSlotPage title="Organization settings" /> },
+                { path: "settings", element: <OrganizationSettingsPage /> },
+                { path: "settings/:organizationUuid", element: <OrganizationSettingsDetailPage /> },
                 { path: "workspaces", element: <ConsoleSlotPage title="Workspaces" /> },
                 {
                   path: "workspaces/:workspaceUuid",

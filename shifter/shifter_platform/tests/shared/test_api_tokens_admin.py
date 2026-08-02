@@ -63,7 +63,8 @@ class TestAdminCreate:
         match = re.search(r"shf_[\w-]+\.[\w-]+", body)
         assert match is not None, "raw bearer token not rendered"
         resolved = ApiToken.authenticate(match.group())
-        assert resolved is not None and resolved.pk == token.pk
+        assert resolved is not None
+        assert resolved.pk == token.pk
         assert token.verifier_hash not in body  # ...never the stored verifier.
 
         # The secret must NOT be routed through the messages/cookie framework.

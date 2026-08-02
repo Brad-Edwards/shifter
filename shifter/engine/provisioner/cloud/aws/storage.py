@@ -49,13 +49,20 @@ class AWSObjectStorage(BaseAWSAdapter):
         bucket: str,
         key: str,
         expires_in: int = 3600,
+        *,
+        object_version: str | None = None,
     ) -> str:
         logger.debug("generate_presigned_download_url: bucket=%s key=%s", bucket, key)
         try:
             client = self._get_client()
+            params: dict[str, Any] = {"Bucket": bucket, "Key": key}
+            if object_version is not None:
+                # S3 object versions are opaque VersionId strings, carried through
+                # unchanged (the S3 analog of a GCS generation).
+                params["VersionId"] = object_version
             url: str = client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": bucket, "Key": key},
+                Params=params,
                 ExpiresIn=expires_in,
             )
             return url

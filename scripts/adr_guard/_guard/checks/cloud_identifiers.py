@@ -48,11 +48,16 @@ _IDENTIFIER_CHECK = "no-live-cloud-identifiers"
 #    them would break AMI lookups.
 _SYNTHETIC_ACCOUNT_IDS: frozenset[str] = frozenset(
     {
-        "123456789012",  # AWS docs canonical example account
-        "111122223333",  # AWS docs secondary example account
-        "000000000000",  # explicit all-zero placeholder
-        "099720109477",  # Canonical (Ubuntu) - public AMI publisher
-        "679593333241",  # OffSec (Kali Linux) - public AMI publisher
+        # AWS docs canonical example account
+        "123456789012",
+        # AWS docs secondary example account
+        "111122223333",
+        # explicit all-zero placeholder
+        "000000000000",
+        # Canonical (Ubuntu) - public AMI publisher
+        "099720109477",
+        # OffSec (Kali Linux) - public AMI publisher
+        "679593333241",
     }
 )
 
@@ -88,14 +93,14 @@ _IDENTIFIER_SKIP_SUFFIX_LOCK = ".lock"
 # A hyphen-prefixed account ID such as `account-<id>` is still caught because
 # the chars before the digits (`ount-`) are not `<4 hex>-`.
 _ACCOUNT_ID_RE = re.compile(
-    r"(?<![0-9a-fA-F])(?<![0-9a-fA-F]{4}-)[0-9]{12}(?![0-9a-fA-F])"
+    r"(?<![0-9a-fA-F])(?<![0-9a-fA-F]{4}-)\d{12}(?![0-9a-fA-F])"
 )
 # VPC / subnet IDs are `vpc-` / `subnet-` followed by 8 (legacy) or 17 (long)
 # hex chars. The hex requirement means `vpc-xxxxxxxx` placeholders never match.
 _VPC_ID_RE = re.compile(r"\bvpc-[0-9a-f]{8}(?:[0-9a-f]{9})?\b")
 _SUBNET_ID_RE = re.compile(r"\bsubnet-[0-9a-f]{8}(?:[0-9a-f]{9})?\b")
 # Account-ID-suffixed Shifter bucket (reveals the account): `shifter-...-<12d>`.
-_ACCT_BUCKET_RE = re.compile(r"\bshifter-[a-z0-9-]+-[0-9]{12}\b")
+_ACCT_BUCKET_RE = re.compile(r"\bshifter-[a-z0-9-]+-\d{12}\b")
 # UUID-suffixed infra/state bucket: `shifter-[dev-]infra-<uuid>`. Retained for
 # `terraform init` via a scoped path exception, flagged so the retention is
 # explicit and auditable.
@@ -116,15 +121,30 @@ _UUID_BUCKET_RE = re.compile(
 # public IP is cleared with a scoped docs/adr/exceptions.yaml entry.
 _IAC_IP_SUFFIXES: tuple[str, ...] = (".tf", ".tfvars", ".hcl")
 _IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-_PUBLIC_IP_ALLOW_NETS: tuple[ipaddress.IPv4Network, ...] = tuple(
-    ipaddress.ip_network(cidr)
-    for cidr in (
-        "8.8.8.8/32", "8.8.4.4/32",             # Google Public DNS
-        "1.1.1.1/32", "1.0.0.1/32",             # Cloudflare DNS
-        "130.211.0.0/22", "35.191.0.0/16",      # GCP LB health-check ranges
-        "35.235.240.0/20",                      # GCP Identity-Aware Proxy
-        "199.36.153.4/30", "199.36.153.8/30",   # GCP private/restricted googleapis VIPs
-    )
+
+# The allowlist lives in a sibling data file so no globally-routable IP literal
+# is embedded in this checker source (python:S1313).
+_PUBLIC_IP_ALLOWLIST_PATH = (
+    Path(__file__).resolve().parent / "cloud_identifiers_public_ip_allowlist.txt"
+)
+
+
+def _load_public_ip_allow_nets(path: Path) -> tuple[ipaddress.IPv4Network, ...]:
+    """Load the well-known public-infrastructure IP allowlist from ``path``.
+
+    Each line is a CIDR; blank lines and ``#`` comments (including trailing
+    comments) are ignored.
+    """
+    nets: list[ipaddress.IPv4Network] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        entry = raw_line.split("#", 1)[0].strip()
+        if entry:
+            nets.append(ipaddress.ip_network(entry))
+    return tuple(nets)
+
+
+_PUBLIC_IP_ALLOW_NETS: tuple[ipaddress.IPv4Network, ...] = _load_public_ip_allow_nets(
+    _PUBLIC_IP_ALLOWLIST_PATH
 )
 
 
@@ -197,6 +217,7 @@ def _scan_identifier_line(line: str) -> list[str]:
 
 
 def _scan_identifier_file(path: Path, rel: str) -> list[Violation]:
+    """Scan one tracked file for live cloud identifiers and IaC public IPs."""
     text = _read_text_safe(path)
     if text is None:
         return []
@@ -212,6 +233,7 @@ def _scan_identifier_file(path: Path, rel: str) -> list[Violation]:
 
 
 def _iter_identifier_candidates(repo_root: Path, files: list[str] | None) -> list[str]:
+    """Repo-relative paths to scan: the given `files`, or every tracked file."""
     if files is not None:
         return list(files)
     tracked = _git_tracked_all(repo_root)
@@ -323,7 +345,8 @@ def _mc_flag_is_placeholder(inner: str) -> bool:
     stripped = inner.strip()
     if not stripped:  # FLAG{}
         return True
-    if set(stripped) == {"."}:  # ellipsis form FLAG{...}
+    # ellipsis form FLAG{...}
+    if set(stripped) == {"."}:
         return True
     # One <...> template token and nothing else (FLAG{<16-hex>}). An answer
     # with any text outside the brackets does not match, so it stays flagged.
@@ -355,6 +378,7 @@ def _mc_flag_violation(rel: str, lineno: int) -> Violation:
 
 
 def _scan_mc_flag_file(path: Path, rel: str) -> list[Violation]:
+    """Scan one Mission Control runtime file for answer-shaped flag literals."""
     text = _read_text_safe(path)
     if text is None:
         return []
@@ -367,6 +391,7 @@ def _scan_mc_flag_file(path: Path, rel: str) -> list[Violation]:
 
 
 def _iter_mc_flag_candidates(repo_root: Path, files: list[str] | None) -> list[str]:
+    """Mission Control runtime paths to scan: from `files`, or by walking the roots."""
     if files is not None:
         return [rel for rel in files if _is_mc_runtime_path(rel)]
     candidates: list[str] = []

@@ -2492,6 +2492,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/organizations/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description List the organizations the caller may administer (ADR-048 authority).
+         *
+         *     Session-only, like the profile detail view. The list is the authority-owned
+         *     discovery source for the settings surface: a superuser sees every
+         *     organization, every other actor sees only the organizations it holds an
+         *     ``admin`` membership in, and workspace reachability is never used. A caller
+         *     who administers none receives an empty page.
+         */
+        get: operations["api_v1_organizations_administrable_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/organizations/{organization_uuid}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Read or partially update an organization profile, keyed by public UUID.
+         *
+         *     Session-only and authorized by the ADR-048 organization-admin seam (or a
+         *     Django superuser override) inside ``workspaces.services``; a platform token
+         *     principal is refused by ``IsAuthenticatedSession``. A missing organization,
+         *     an organization outside the actor's authority, and insufficient authority
+         *     all return the same opaque 403 so the endpoint is not a tenant-enumeration
+         *     oracle.
+         */
+        get: operations["api_v1_organization_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * @description Read or partially update an organization profile, keyed by public UUID.
+         *
+         *     Session-only and authorized by the ADR-048 organization-admin seam (or a
+         *     Django superuser override) inside ``workspaces.services``; a platform token
+         *     principal is refused by ``IsAuthenticatedSession``. A missing organization,
+         *     an organization outside the actor's authority, and insufficient authority
+         *     all return the same opaque 403 so the endpoint is not a tenant-enumeration
+         *     oracle.
+         */
+        patch: operations["api_v1_organization_update"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3362,6 +3423,26 @@ export interface components {
             readonly notification_id: string;
             readonly status: string;
         };
+        /**
+         * @description Read-only organization profile projection (ADR-048, PLAT-232).
+         *
+         *     Emits the public ``uuid`` only; the internal integer primary key never
+         *     appears on the wire.
+         */
+        OrganizationProfile: {
+            /** Format: uuid */
+            readonly uuid: string;
+            readonly name: string;
+            readonly description: string;
+            /** Format: email */
+            readonly support_email: string;
+            /** Format: uri */
+            readonly support_url: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
         /** @description Public organization projection (uuid + display name only). */
         OrganizationRef: {
             /** Format: uuid */
@@ -3486,6 +3567,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["AuditLog"][];
+        };
+        PaginatedOrganizationProfileList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["OrganizationProfile"][];
         };
         PaginatedPrincipalWorkspaceContextList: {
             /** @example 123 */
@@ -3786,6 +3882,23 @@ export interface components {
         /** @description New login handle for the username-rename endpoints (#1206/#1593). */
         ParticipantUsernameRequest: {
             username: string;
+        };
+        /**
+         * @description Partial-update command for the organization profile (PATCH mask).
+         *
+         *     Every field is optional; an absent field is unchanged and an empty string
+         *     clears an optional field. Unknown fields are rejected rather than ignored,
+         *     and ``uuid``/timestamps are never writable here. The serializer owns HTTP
+         *     shape (lengths, primitive formats); ``workspaces.services`` owns authority
+         *     and persistence invariants.
+         */
+        PatchedOrganizationProfileUpdate: {
+            name?: string;
+            description?: string;
+            /** Format: email */
+            support_email?: string;
+            /** Format: uri */
+            support_url?: string;
         };
         /** @description Partial self-profile update: any omitted field is left unchanged. */
         PatchedProfileUpdateRequest: {
@@ -11691,6 +11804,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedPrincipalWorkspaceContextList"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_organizations_administrable_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedOrganizationProfileList"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_organization_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationProfile"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_organization_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedOrganizationProfileUpdate"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedOrganizationProfileUpdate"];
+                "multipart/form-data": components["schemas"]["PatchedOrganizationProfileUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationProfile"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */

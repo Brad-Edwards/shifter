@@ -34,7 +34,8 @@ def _candidate(version: str, image_ref: str, **extra) -> dict:
 class TestSharedPolicyInProvisionerEnvironment:
     def test_exact_version_match(self):
         resolved = resolve_from_candidates([_candidate("1.0", "img-v1"), _candidate("", "img-any")], version="1.0")
-        assert isinstance(resolved, ResolvedImage) and resolved.image_ref == "img-v1"
+        assert isinstance(resolved, ResolvedImage)
+        assert resolved.image_ref == "img-v1"
 
     def test_pinned_version_never_falls_back_to_any_version(self):
         # The author pinned 9.9; only an any-version row exists. Must NOT substitute
@@ -43,7 +44,8 @@ class TestSharedPolicyInProvisionerEnvironment:
 
     def test_unpinned_star_uses_any_version_default(self):
         resolved = resolve_from_candidates([_candidate("", "img-any")], version="*")
-        assert resolved is not None and resolved.image_ref == "img-any"
+        assert resolved is not None
+        assert resolved.image_ref == "img-any"
 
     def test_no_match_returns_none(self):
         assert resolve_from_candidates([_candidate("1.0", "img")], version="2.0") is None

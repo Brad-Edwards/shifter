@@ -80,7 +80,8 @@ def _load_provisioner_module(name: str):
     if str(_PROVISIONER_DIR) not in sys.path:
         sys.path.insert(0, str(_PROVISIONER_DIR))
     spec = importlib.util.spec_from_file_location(name, _PROVISIONER_DIR / f"{name}.py")
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module  # so sibling `from raes_plan import ...` resolves
     spec.loader.exec_module(module)
