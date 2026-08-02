@@ -85,7 +85,8 @@ def _is_polaris_operator_run_artifact(basename: str) -> bool:
 
 def _is_polaris_build_artifact(basename: str) -> bool:
     """Return True for any file under the Polaris build tree."""
-    del basename  # the whole build/ tree is generated output, whatever the name
+    # The whole build/ tree is generated output, whatever the name.
+    del basename
     return True
 
 

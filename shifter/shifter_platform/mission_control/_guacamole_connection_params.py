@@ -1,106 +1,14 @@
-"""JSON-auth payload construction and per-protocol connection parameters.
+"""Guacamole connection-parameter builders.
 
-Split out of :mod:`mission_control.guacamole` (Sonar S104's 500-line cap) so
-that module keeps the network-facing half -- the ``/api/tokens`` exchange with
-its bounded readiness retry, and the signed-URL builders. Everything here is
-pure: it builds the payload dict, signs and encrypts it per Guacamole's JSON
-auth specification, and shapes the RDP/SSH connection parameter maps.
-
-See: https://guacamole.apache.org/doc/gug/json-auth.html
+Extracted from :mod:`mission_control.guacamole` to keep that module under the
+file-length limit (Sonar S104). These builders construct the protocol
+parameter dictionaries and are re-exported by ``guacamole`` for callers that
+import them from there.
 """
 
-import base64
-import hashlib
-import hmac
-import json
-import time
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any
-
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
-
-def create_guacamole_auth_payload(
-    username: str,
-    connections: dict[str, dict[str, Any]],
-    expires_minutes: int = 5,
-) -> dict[str, Any]:
-    """Create the JSON payload for Guacamole JSON auth.
-
-    Args:
-        username: Username for the Guacamole session (typically user's email)
-        connections: Dictionary of connection definitions
-        expires_minutes: Minutes until the payload expires
-
-    Returns:
-        Dictionary payload ready for signing
-
-    Example connection:
-        {
-            "rdp-connection": {
-                "protocol": "rdp",
-                "parameters": {
-                    "hostname": "10.1.5.10",
-                    "port": "3389",
-                    "ignore-cert": "true",
-                    "security": "any"
-                }
-            }
-        }
-    """
-    expires_ms = int((time.time() + expires_minutes * 60) * 1000)
-
-    return {
-        "username": username,
-        "expires": expires_ms,
-        "connections": connections,
-    }
-
-
-def sign_and_encrypt_payload(payload: dict[str, Any], secret_key: str) -> str:
-    """Sign and encrypt a Guacamole JSON auth payload.
-
-    The process follows Guacamole's JSON auth specification:
-    1. Convert payload to JSON bytes
-    2. Create HMAC-SHA256 signature using secret key
-    3. Prepend binary signature to JSON bytes
-    4. Encrypt with AES-128-CBC using zero IV
-    5. Base64 encode the result
-
-    Args:
-        payload: The JSON auth payload dictionary
-        secret_key: Hex string key (64 characters / 256-bit preferred)
-
-    Returns:
-        Base64-encoded encrypted payload for use as 'data' parameter
-    """
-    # Convert secret key from hex string to bytes
-    key_bytes = bytes.fromhex(secret_key)
-    if len(key_bytes) not in {16, 24, 32}:
-        raise ValueError("Secret key must be 32, 48, or 64 hex characters (128, 192, or 256 bits)")
-
-    # Convert payload to JSON bytes
-    json_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-
-    # Create HMAC-SHA256 signature
-    signature = hmac.new(key_bytes, json_bytes, hashlib.sha256).digest()
-
-    # Prepend signature to JSON
-    signed_data = signature + json_bytes
-
-    # Pad to AES block size (16 bytes)
-    block_size = 16
-    padding_length = block_size - (len(signed_data) % block_size)
-    padded_data = signed_data + bytes([padding_length]) * padding_length
-
-    # Encrypt with AES-128-CBC using zero IV
-    iv = b"\x00" * 16
-    cipher = Cipher(algorithms.AES(key_bytes), modes.CBC(iv))
-    encryptor = cipher.encryptor()
-    encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
-
-    # Base64 encode
-    return base64.b64encode(encrypted_data).decode("utf-8")
 
 
 @dataclass(frozen=True)
