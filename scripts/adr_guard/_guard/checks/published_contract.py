@@ -36,38 +36,44 @@ def _published_contract_snapshot_names(repo_root: Path, ref: str) -> set[str] | 
 
 
 def _published_contract_enforced() -> bool:
+    """True when the CI lane demands the immutability check fail closed."""
     return os.environ.get(_PUBLISHED_CONTRACT_ENFORCE_ENV, "").strip().lower() in {"1", "true", "yes"}
 
 
 def _published_contract_violation(path: str, message: str) -> Violation:
+    """Shorthand for an ADR-011-R8 published-contract violation at ``path``."""
     return Violation(_PUBLISHED_CONTRACT_CHECK, _PUBLISHED_CONTRACT_RULE, path, message)
 
 
+def _published_contract_unverifiable(enforce: bool, path: str, message: str) -> list[Violation]:
+    """Report an unverifiable snapshot when enforcing; otherwise fail open silently."""
+    return [_published_contract_violation(path, message)] if enforce else []
+
+
 def _published_contract_snapshot_diff(repo_root: Path, ref: str, name: str, enforce: bool) -> list[Violation]:
+    """Compare one published snapshot against ``ref`` and report any mutation."""
     rel = f"{_PUBLISHED_CONTRACT_DIR}/{name}"
     head_path = repo_root / rel
     if not head_path.exists():
-        return [
-            _published_contract_violation(
+        message = (
+            "published contract version snapshot was deleted; published versions are immutable "
+            "(append-only). Restore it and ship a new version snapshot instead of removing this one."
+        )
+    else:
+        base_content = _git_text(repo_root, ["show", f"{ref}:{rel}"])
+        if base_content is None:
+            return _published_contract_unverifiable(
+                enforce,
                 rel,
-                "published contract version snapshot was deleted; published versions are immutable "
-                "(append-only). Restore it and ship a new version snapshot instead of removing this one.",
+                "cannot read the published snapshot at the base ref to verify immutability",
             )
-        ]
-    base_content = _git_text(repo_root, ["show", f"{ref}:{rel}"])
-    if base_content is None:
-        if enforce:
-            return [_published_contract_violation(rel, "cannot read the published snapshot at the base ref to verify immutability")]
-        return []
-    if head_path.read_text(encoding="utf-8") != base_content:
-        return [
-            _published_contract_violation(
-                rel,
-                "published contract version snapshot was modified; published versions are immutable "
-                "(append-only). Bump contract_version and add a new snapshot instead of changing this one.",
-            )
-        ]
-    return []
+        if head_path.read_text(encoding="utf-8") == base_content:
+            return []
+        message = (
+            "published contract version snapshot was modified; published versions are immutable "
+            "(append-only). Bump contract_version and add a new snapshot instead of changing this one."
+        )
+    return [_published_contract_violation(rel, message)]
 
 
 def check_published_contract_snapshots_immutable(repo_root: Path, files: list[str] | None) -> list[Violation]:
@@ -84,32 +90,27 @@ def check_published_contract_snapshots_immutable(repo_root: Path, files: list[st
     the CI lane sets it and fetches base history (``fetch-depth: 0``), so an inability to
     resolve or read the base becomes an enforcement failure rather than a silent pass.
     """
-    del files  # global repository invariant, not scoped to the changed-file set
+    # global repository invariant, not scoped to the changed-file set
+    del files
     enforce = _published_contract_enforced()
     base_refs = _boundary_mock_base_reference_candidates(repo_root)
     if not base_refs:
-        if enforce:
-            return [
-                _published_contract_violation(
-                    _PUBLISHED_CONTRACT_DIR,
-                    "cannot resolve a base ref to verify published-contract snapshot immutability; "
-                    "the CI lane must fetch base-branch history (fetch-depth: 0)",
-                )
-            ]
-        return []
+        return _published_contract_unverifiable(
+            enforce,
+            _PUBLISHED_CONTRACT_DIR,
+            "cannot resolve a base ref to verify published-contract snapshot immutability; "
+            "the CI lane must fetch base-branch history (fetch-depth: 0)",
+        )
     ref = base_refs[0]
     base_snapshots = _published_contract_snapshot_names(repo_root, ref)
     if base_snapshots is None:
-        if enforce:
-            return [
-                _published_contract_violation(
-                    _PUBLISHED_CONTRACT_DIR,
-                    "cannot read the published-contract directory at the base ref to verify snapshot immutability",
-                )
-            ]
-        return []
-    if not base_snapshots:
-        return []  # the directory does not exist at the base yet (genuine first publication)
+        return _published_contract_unverifiable(
+            enforce,
+            _PUBLISHED_CONTRACT_DIR,
+            "cannot read the published-contract directory at the base ref to verify snapshot immutability",
+        )
+    # An empty set means the directory does not exist at the base yet
+    # (a genuine first publication), so the loop below is a no-op.
     violations: list[Violation] = []
     for name in sorted(base_snapshots):
         violations.extend(_published_contract_snapshot_diff(repo_root, ref, name, enforce))

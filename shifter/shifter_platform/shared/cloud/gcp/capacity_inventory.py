@@ -108,12 +108,12 @@ class GCPCapacityInventory:
         if ref is None or not ref.limit_ref or not ref.usage_ref:
             return ObservationResult(reason_code=CapacityReasonCode.METRIC_UNSUPPORTED)
 
+        # Usage is only read once a limit is in hand: without a limit there is
+        # nothing to compare it against, so the second read would be spent for a
+        # result that can only be unavailable.
         limit = self._read(ref.limit_ref, spec, partition)
-        if limit is None:
-            return ObservationResult(reason_code=CapacityReasonCode.MEASUREMENT_UNAVAILABLE)
-
-        usage = self._read(ref.usage_ref, spec, partition)
-        if usage is None:
+        usage = self._read(ref.usage_ref, spec, partition) if limit is not None else None
+        if limit is None or usage is None:
             return ObservationResult(reason_code=CapacityReasonCode.MEASUREMENT_UNAVAILABLE)
 
         return ObservationResult(

@@ -524,6 +524,11 @@
         "id": "ADR-008-R8",
         "description": "The GCP-native self-hosted GitHub Actions runner (issue #1546) must live in a dedicated, custom-mode VPC (never the project default network) with the instance private-only (no external IP), SSH ingress admitted only from Google's IAP relay range (35.235.240.0/20) and targeted at the runner service account, and Cloud NAT for egress. This mirrors the AWS ADR-004-R20 default-VPC guard for GCP so the runner cannot be silently placed on a shared or default network. The runner-specific network invariants (dedicated custom VPC + IAP-scoped SSH, which Checkov does not assert) are enforced by `scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py`, wired as the `check-tf-gcp-runner-network` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest included in the `check_tf_*` checker tests; the external-IP and world-open-SSH invariants are covered generically by Checkov. Recorded by the architecture preflight for #1546.",
         "checks": []
+      },
+      {
+        "id": "ADR-008-R9",
+        "description": "A service account attached to a participant-controllable GCE guest or range host must not have project-wide Cloud Storage access. OAuth cloud-platform scope and container metadata blocking are not authorization boundaries for a root-on-host attacker. Exact host bootstrap artifacts use the existing provisioner signed-delivery boundary; Terraform guards and effective-permission tests reject project storage grants for attachable range-host identities. Recorded by the architecture preflight for #1644.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -549,6 +554,7 @@
       "docs/architecture/gcp-vpc-firewall-preflight.md",
       "docs/architecture/gcp-cloud-sql-deletion-protection-preflight.md",
       "docs/architecture/gcp-workload-resource-iam-preflight-1517.md",
+      "docs/architecture/gcp-range-host-artifact-delivery-preflight-1644.md",
       "scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py",
       "docs/architecture/gcp-gcs-cmek-preflight.md",
       "docs/architecture/gcp-redis-auth-tls-preflight.md",

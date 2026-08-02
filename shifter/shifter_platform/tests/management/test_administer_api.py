@@ -104,7 +104,8 @@ class TestUserList:
         _make_user("needle_user")
         _make_user("other_user")
         results = _client(admin).get(USERS_URL, {"search": "needle"}).json()["results"]
-        assert results and all("needle" in r["username"] for r in results)
+        assert results
+        assert all("needle" in r["username"] for r in results)
 
     def test_overlong_search_is_rejected(self, admin):
         assert _client(admin).get(USERS_URL, {"search": "x" * 101}).status_code == 400

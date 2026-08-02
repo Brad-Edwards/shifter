@@ -41,7 +41,8 @@ class TestAnalytics:
         assert resp.status_code == 200
         body = resp.json()
         assert sum(bucket["count"] for bucket in body["score_distribution"]) == 1
-        assert body["solve_timeline"] and body["solve_timeline"][0]["solves"] == 1
+        assert body["solve_timeline"]
+        assert body["solve_timeline"][0]["solves"] == 1
         challenge_row = next(c for c in body["challenges"] if c["name"] == ctf_challenge.name)
         assert challenge_row["solves"] == 1
         assert challenge_row["solve_rate"] == 1.0

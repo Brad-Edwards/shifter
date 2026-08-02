@@ -19,7 +19,7 @@ Extracted from the GCP task-runner package (#1824).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from shared.cloud.exceptions import CloudTaskError
 from shared.cloud.types import TaskInterruptDisposition
@@ -29,6 +29,8 @@ from ._job_lifecycle import _read_idempotent_job
 from .naming import parse_job_task_id
 
 if TYPE_CHECKING:
+    from types import ModuleType
+
     from ._runner import KubernetesTaskRunner
 
 logger = logging.getLogger(__name__)
@@ -113,7 +115,8 @@ def interrupt_job(runner: KubernetesTaskRunner, cluster: str, task_ref: str, exp
         raise CloudTaskError("Kubernetes interrupt requires a namespace/job task reference")
 
     batch_api, core_api, client, api_exception = runner._load_kubernetes_api()
-    client_lib: Any = client  # dynamically loaded kubernetes.client module
+    # The loader hands back the dynamically imported ``kubernetes.client`` module.
+    client_lib = cast("ModuleType", client)
 
     job = _read_idempotent_job(batch_api, api_exception, namespace, job_name)
     if job is None:

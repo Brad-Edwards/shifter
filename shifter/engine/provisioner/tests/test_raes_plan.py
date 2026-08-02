@@ -175,11 +175,15 @@ class TestParseValid:
         assert node.count == 2
         assert node.ram_mib == 2048  # 2 GiB bytes -> MiB
         assert node.vcpus == 2
-        assert node.image is not None and node.image.name == "kali" and node.image.version == "2024.1"
+        assert node.image is not None
+        assert node.image.name == "kali"
+        assert node.image.version == "2024.1"
         assert node.network_addresses == ("net.default",)  # resolved via lookup
 
         net = parsed.networks[0]
-        assert net.cidr == "10.0.0.0/24" and net.gateway == "10.0.0.1" and net.internal is True
+        assert net.cidr == "10.0.0.0/24"
+        assert net.gateway == "10.0.0.1"
+        assert net.internal is True
 
     def test_os_family_falls_back_to_spec_node_os(self):
         payload = {"spec": {"node": {"os": "windows"}}}
@@ -195,13 +199,16 @@ class TestParseValid:
         payload = {"os_family": "windows", "spec": {"node": {"source": "win2022-template"}}}
         parsed = parse_plan(_serialized(_resource("node.a", "node", payload)))
         assert parsed.nodes[0].image is not None
-        assert parsed.nodes[0].image.name == "win2022-template" and parsed.nodes[0].image.version is None
+        assert parsed.nodes[0].image.name == "win2022-template"
+        assert parsed.nodes[0].image.version is None
 
     def test_absent_sizing_and_image_are_none(self):
         payload = {"os_family": "linux", "spec": {"node": {}}}
         parsed = parse_plan(_serialized(_resource("node.a", "node", payload)))
         node = parsed.nodes[0]
-        assert node.ram_mib is None and node.vcpus is None and node.image is None
+        assert node.ram_mib is None
+        assert node.vcpus is None
+        assert node.image is None
         assert node.count == 1  # default
 
     def test_unresolvable_network_ref_fails_closed(self):
@@ -239,12 +246,15 @@ class TestAclExtraction:
         assert acl.direction == "in"
         assert acl.protocol == "tcp"  # lowercased
         assert acl.ports == (22,)
-        assert acl.from_net == "net.dmz" and acl.to_net is None
+        assert acl.from_net == "net.dmz"
+        assert acl.to_net is None
 
     def test_defaults_direction_inout_and_wildcard_protocol(self):
         node = self._node_with_acls({"action": "deny"})
         acl = node.acls[0]
-        assert acl.action == "drop" and acl.direction == "inout" and acl.protocol == "all"
+        assert acl.action == "drop"
+        assert acl.direction == "inout"
+        assert acl.protocol == "all"
         assert acl.name == "acl-0"
 
     def test_missing_action_fails_closed(self):
@@ -803,7 +813,9 @@ class TestCompositionExtraction:
 
     def test_no_composition_is_empty(self):
         plan = parse_plan(_serialized(_resource("node.a", "node", {"os_family": "linux", "spec": {"node": {}}})))
-        assert plan.content == () and plan.accounts == () and plan.features == ()
+        assert plan.content == ()
+        assert plan.accounts == ()
+        assert plan.features == ()
 
 
 class TestSelfDiscrimination:
