@@ -2719,5 +2719,32 @@
       "shifter/shifter_platform/tests/workspaces/test_organization_api.py",
       "shifter/shifter_platform/tests/workspaces/test_organization_admin_backfill.py"
     ]
+  },
+  {
+    "id": "ADR-049",
+    "title": "The CTF v1 participant invited/invited_at response vocabulary is retired",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The CTF participant lifecycle (issue #535 / CTF-006) is corrected to immediate organizer-driven provisioning: a participant is registered with a fresh isolated account on creation, and the misleading invited state and invitation-acceptance vocabulary are removed rather than carried as dead aliases. As part of that correction the v1 API drops the invitation-acceptance vocabulary from its responses -- the invited boolean on the participant-add and resend-login-info results, and the invited_at timestamp on the participant detail projection (renamed login_info_sent_at). These are consumer-breaking removals of required v1 response properties. There are no external v1 consumers to preserve (the sole consumer is the platform SPA, updated in the same change, and no production tenant depends on the retired fields), so the fields are retired under the ADR-040 whole-feature retirement path via the exact openapi/v1.retirements.json manifest, not duplicated behind an /api/v2/ surface and not kept as deprecated aliases.",
+    "rules": [
+      {
+        "id": "ADR-049-R1",
+        "description": "The retired v1 CTF response vocabulary -- ParticipantInviteResult.invited, ResendInviteResult.invited, and ParticipantDetail.invited_at -- must not be reintroduced into the committed v1 contract under any alias. The openapi/v1.retirements.json manifest projects these exact schema properties out of the trusted baseline before the ADR-040 breaking-change comparison; the projection fails closed if any is restored.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/535",
+      "docs/architecture/ctf-participant-lifecycle-preflight-535.md",
+      "shifter/shifter_platform/openapi/v1.retirements.json",
+      "shifter/shifter_platform/ctf/api/serializers/organizer_ops.py",
+      "shifter/shifter_platform/ctf/migrations/0048_participant_lifecycle_535.py"
+    ]
   }
 ]
