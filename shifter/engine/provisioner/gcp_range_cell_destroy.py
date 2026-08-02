@@ -47,31 +47,37 @@ def _destroy_vpn_gateway(plan: RangeCellPlan, clients: GCEClients) -> None:
     )
 
 
+def _mark_disks_auto_delete(plan: RangeCellPlan, clients: GCEClients, resource_name: str) -> None:
+    """Flag every retained disk of an existing instance so its delete reclaims them."""
+    existing = _get_or_none(
+        clients.instances.get,
+        clients.google_exceptions,
+        project=plan["project_id"],
+        zone=plan["zone"],
+        instance=resource_name,
+    )
+    if existing is None:
+        return
+    for disk in getattr(existing, "disks", None) or []:
+        if bool(getattr(disk, "auto_delete", False)):
+            continue
+        device_name = str(getattr(disk, "device_name", "") or "")
+        if not device_name:
+            raise RuntimeError("GCE range instance has an attached disk without a device name")
+        operation = clients.instances.set_disk_auto_delete(
+            project=plan["project_id"],
+            zone=plan["zone"],
+            instance=resource_name,
+            device_name=device_name,
+            auto_delete=True,
+        )
+        _wait_for_operation(plan, clients, operation, "zone")
+
+
 def _destroy_instances(plan: RangeCellPlan, clients: GCEClients, secret_ops: GCEGuestSecretOps) -> None:
     """Delete range instances, their addresses, and their guest secrets."""
     for instance in reversed(plan["instances"]):
-        existing = _get_or_none(
-            clients.instances.get,
-            clients.google_exceptions,
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=instance["resource_name"],
-        )
-        if existing is not None:
-            for disk in getattr(existing, "disks", None) or []:
-                if bool(getattr(disk, "auto_delete", False)):
-                    continue
-                device_name = str(getattr(disk, "device_name", "") or "")
-                if not device_name:
-                    raise RuntimeError("GCE range instance has an attached disk without a device name")
-                operation = clients.instances.set_disk_auto_delete(
-                    project=plan["project_id"],
-                    zone=plan["zone"],
-                    instance=instance["resource_name"],
-                    device_name=device_name,
-                    auto_delete=True,
-                )
-                _wait_for_operation(plan, clients, operation, "zone")
+        _mark_disks_auto_delete(plan, clients, instance["resource_name"])
         _delete_resource(
             plan,
             clients,

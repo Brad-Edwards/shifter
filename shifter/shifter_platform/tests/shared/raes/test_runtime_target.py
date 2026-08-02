@@ -166,7 +166,8 @@ def test_interpret_serializes_full_plan_verbatim() -> None:
     assert node_spec["source"] == {"name": "ubuntu-22.04", "version": "1.2"}
     assert node_spec["resources"] == {"ram": 2 * 1024 * 1024 * 1024, "cpu": 2}
     props = resources["provision.network.lan"]["payload"]["spec"]["infrastructure"]["properties"]
-    assert props["cidr"] == "10.9.0.0/24" and props["internal"] is True
+    assert props["cidr"] == "10.9.0.0/24"
+    assert props["internal"] is True
 
 
 def test_interpret_serialized_plan_is_json_safe() -> None:

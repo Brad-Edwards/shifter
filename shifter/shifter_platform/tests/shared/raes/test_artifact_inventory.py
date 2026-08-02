@@ -145,7 +145,8 @@ def test_exact_mechanism_profile_digest_is_stable_and_well_formed():
     second = exact_artifact_profile()
     assert first == second  # two independent builds produce an equal, deterministic profile
     digest = first.digest
-    assert digest.startswith("sha256:") and len(digest) == len("sha256:") + 64
+    assert digest.startswith("sha256:")
+    assert len(digest) == len("sha256:") + 64
 
 
 # --- end-to-end: a registered prebaked image satisfies an exact requirement --

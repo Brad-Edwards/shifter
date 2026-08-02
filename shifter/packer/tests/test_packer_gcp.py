@@ -129,7 +129,8 @@ class TestGcpDcPrebaked:
 
     def test_promote_bake_reads_domain_from_env(self):
         content = (GCP_SCRIPTS_DIR / "dc-prebaked" / "promote-bake.ps1").read_text()
-        assert "DC_DOMAIN_NAME" in content and "DC_NETBIOS_NAME" in content
+        assert "DC_DOMAIN_NAME" in content
+        assert "DC_NETBIOS_NAME" in content
         assert "-DomainName $DomainName" in content
 
     def test_variables_declare_dc_prebaked_knobs(self):
@@ -661,7 +662,8 @@ class TestGcpValidationWorkflow:
         assert "google-guest-agent" in linux
         assert "docker compose config --images" in linux
         # Exits non-zero on failure so the runner gates on the exit code.
-        assert "exit 1" in linux and "exit 0" in linux
+        assert "exit 1" in linux
+        assert "exit 0" in linux
 
     def test_linux_validation_observes_without_creating_the_stack(self):
         linux = (GCP_SCRIPTS_DIR / "validate" / "linux.sh").read_text()

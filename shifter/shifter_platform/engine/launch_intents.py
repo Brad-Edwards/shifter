@@ -279,14 +279,8 @@ def request_provision_interrupt(range_obj: Range) -> bool:
     Returns:
         True when an interruptible provision generation was (or already is) marked.
     """
-    op_id = range_obj.provisioner_operation_id
-    if op_id is None:
-        return False
-    intent = ProvisionerLaunchIntent.objects.select_for_update().filter(operation_id=op_id).first()
+    intent = _interruptible_provision_intent(range_obj)
     if intent is None:
-        return False
-    payload = intent.payload or {}
-    if (payload.get("resource"), payload.get("operation")) != _INTERRUPTIBLE_PROVISION:
         return False
     if intent.interrupt_state != InterruptState.NONE:
         return True
@@ -304,6 +298,27 @@ def request_provision_interrupt(range_obj: Range) -> bool:
         ]
     )
     return True
+
+
+def _interruptible_provision_intent(range_obj: Range) -> ProvisionerLaunchIntent | None:
+    """Return the range's current launch intent when its generation can be interrupted.
+
+    ``None`` when the range has no reserved generation, no intent is recorded for
+    it, or the recorded intent is not the RAES provision operation the interrupt
+    path converges.
+    """
+    op_id = range_obj.provisioner_operation_id
+    intent = (
+        ProvisionerLaunchIntent.objects.select_for_update().filter(operation_id=op_id).first()
+        if op_id is not None
+        else None
+    )
+    if intent is None:
+        return None
+    payload = intent.payload or {}
+    if (payload.get("resource"), payload.get("operation")) != _INTERRUPTIBLE_PROVISION:
+        return None
+    return intent
 
 
 def clear_provisioner_operation_after_failure(row: Range | Instance) -> list[str]:

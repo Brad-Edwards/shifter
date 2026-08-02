@@ -65,7 +65,6 @@ def _runtime_step(owning_operation: str, status: str) -> ResultStep:
 
 def _publish_ngfw_runtime_status(
     request_id: str,
-    instance_uuid: str,
     status: str,
     *,
     operation_id: str | None = None,
@@ -86,7 +85,6 @@ def _publish_ngfw_runtime_status(
 def _run_gcp_ngfw_operation(
     operation: str,
     request_id: str,
-    instance_uuid: str,
     state: dict[str, Any],
     *,
     operation_id: str | None = None,
@@ -98,7 +96,6 @@ def _run_gcp_ngfw_operation(
     in_progress_status, success_status = _validate_ngfw_operation(operation)
     _publish_ngfw_runtime_status(
         request_id,
-        instance_uuid,
         in_progress_status,
         operation_id=operation_id,
         operation=operation,
@@ -119,7 +116,6 @@ def _run_gcp_ngfw_operation(
         raise
     _publish_ngfw_runtime_status(
         request_id,
-        instance_uuid,
         success_status,
         operation_id=operation_id,
         operation=operation,
@@ -143,7 +139,6 @@ def _load_ngfw_ops_plan(operation: str) -> SetupPlan:
 def _run_aws_ngfw_operation(
     operation: str,
     request_id: str,
-    instance_uuid: str,
     ec2_instance_id: str,
     *,
     operation_id: str | None = None,
@@ -154,7 +149,6 @@ def _run_aws_ngfw_operation(
     in_progress_status, success_status = _validate_ngfw_operation(operation)
     _publish_ngfw_runtime_status(
         request_id,
-        instance_uuid,
         in_progress_status,
         operation_id=operation_id,
         operation=operation,
@@ -191,7 +185,6 @@ def _run_aws_ngfw_operation(
 
     _publish_ngfw_runtime_status(
         request_id,
-        instance_uuid,
         success_status,
         operation_id=operation_id,
         operation=operation,
@@ -237,8 +230,6 @@ def run_ngfw_operation(
 
     # Get NGFW data from database including state with EC2 instance ID
     ngfw_data = get_ngfw_data_by_request_id(request_id)
-    # Our UUID, not AWS instance ID
-    instance_uuid = ngfw_data["instance_id"]
     state = ngfw_data.get("state", {})
     provider = resolve_ngfw_attachment_config(state).cloud_provider
 
@@ -246,7 +237,6 @@ def run_ngfw_operation(
         _run_gcp_ngfw_operation(
             operation,
             request_id,
-            instance_uuid,
             state,
             operation_id=operation_id,
             owning_operation=owning_operation,
@@ -262,7 +252,6 @@ def run_ngfw_operation(
     _run_aws_ngfw_operation(
         operation,
         request_id,
-        instance_uuid,
         ec2_instance_id,
         operation_id=operation_id,
         owning_operation=owning_operation,
