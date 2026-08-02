@@ -88,8 +88,9 @@ class TestInitiateUploadUserValidation:
             services.initiate_upload("not a user", "Agent", "agent.msi", 1000)
 
     def test_raises_valueerror_when_user_is_unsaved(self):
+        unsaved = User(username="unsaved")
         with pytest.raises(ValueError, match="user must be saved"):
-            services.initiate_upload(User(username="unsaved"), "Agent", "agent.msi", 1000)
+            services.initiate_upload(unsaved, "Agent", "agent.msi", 1000)
 
 
 class TestInitiateUploadInputValidation:
