@@ -342,7 +342,7 @@ def _participant_detail_payload(participant: CTFParticipant) -> dict[str, object
         "username": _participant_username(participant),
         "team_name": participant.team.name if participant.team else None,
         "registered_at": participant.registered_at.isoformat() if participant.registered_at else None,
-        "invited_at": participant.invited_at.isoformat() if participant.invited_at else None,
+        "login_info_sent_at": participant.login_info_sent_at.isoformat() if participant.login_info_sent_at else None,
         "last_active_at": participant.last_active_at.isoformat() if participant.last_active_at else None,
         "total_score": participant.total_score,
         "solved_count": correct_submissions.count(),

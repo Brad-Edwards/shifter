@@ -3689,7 +3689,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SendInvitationsResult"
+                  "$ref": "#/components/schemas/SendLoginInfoResult"
                 }
               }
             },
@@ -4213,17 +4213,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ParticipantInvite"
+                "$ref": "#/components/schemas/ParticipantAdd"
               }
             },
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/ParticipantInvite"
+                "$ref": "#/components/schemas/ParticipantAdd"
               }
             },
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/ParticipantInvite"
+                "$ref": "#/components/schemas/ParticipantAdd"
               }
             }
           },
@@ -4242,7 +4242,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ParticipantInviteResult"
+                  "$ref": "#/components/schemas/ParticipantAddResult"
                 }
               }
             },
@@ -7762,7 +7762,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResendInviteResult"
+                  "$ref": "#/components/schemas/ResendLoginInfoResult"
                 }
               }
             },
@@ -15140,6 +15140,50 @@
           }
         }
       },
+      "ParticipantAdd": {
+        "type": "object",
+        "description": "Request body for inviting a single participant.\n\n``name`` and ``email`` are both required and non-blank (mirroring the legacy\ntruthiness check). ``email`` is a plain ``CharField`` rather than an\n``EmailField`` because the service layer owns email validation.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name"
+        ]
+      },
+      "ParticipantAddResult": {
+        "type": "object",
+        "description": "Result returned after adding a single participant (provisioned and registered).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "readOnly": true
+          },
+          "status": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "id",
+          "name",
+          "status"
+        ]
+      },
       "ParticipantAnnouncement": {
         "type": "object",
         "description": "One sent announcement on the participant surface (CTF-803).",
@@ -15546,7 +15590,7 @@
             "readOnly": true,
             "nullable": true
           },
-          "invited_at": {
+          "login_info_sent_at": {
             "type": "string",
             "format": "date-time",
             "readOnly": true,
@@ -15602,8 +15646,8 @@
           "event_id",
           "hidden",
           "id",
-          "invited_at",
           "last_active_at",
+          "login_info_sent_at",
           "name",
           "registered_at",
           "role",
@@ -15838,55 +15882,6 @@
           "email",
           "id",
           "name"
-        ]
-      },
-      "ParticipantInvite": {
-        "type": "object",
-        "description": "Request body for inviting a single participant.\n\n``name`` and ``email`` are both required and non-blank (mirroring the legacy\ntruthiness check). ``email`` is a plain ``CharField`` rather than an\n``EmailField`` because the service layer owns email validation.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "email",
-          "name"
-        ]
-      },
-      "ParticipantInviteResult": {
-        "type": "object",
-        "description": "Result returned after inviting a single participant.",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "name": {
-            "type": "string",
-            "readOnly": true
-          },
-          "email": {
-            "type": "string",
-            "readOnly": true
-          },
-          "status": {
-            "type": "string",
-            "readOnly": true
-          },
-          "invited": {
-            "type": "boolean",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "email",
-          "id",
-          "invited",
-          "name",
-          "status"
         ]
       },
       "ParticipantListResponse": {
@@ -17542,7 +17537,7 @@
           "message"
         ]
       },
-      "ResendInviteResult": {
+      "ResendLoginInfoResult": {
         "type": "object",
         "description": "Confirmation returned after resending non-secret login information.",
         "properties": {
@@ -17553,15 +17548,10 @@
           "id": {
             "type": "string",
             "readOnly": true
-          },
-          "invited": {
-            "type": "boolean",
-            "readOnly": true
           }
         },
         "required": [
           "id",
-          "invited",
           "success"
         ]
       },
@@ -18105,7 +18095,7 @@
           "timeline"
         ]
       },
-      "SendInvitationsResult": {
+      "SendLoginInfoResult": {
         "type": "object",
         "description": "Result returned after queuing invitation emails for an event.",
         "properties": {

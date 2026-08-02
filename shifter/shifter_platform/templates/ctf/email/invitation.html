@@ -17,13 +17,13 @@
                  max-width: 600px;
                  margin: 0 auto">
         <h2>
-            {% trans "You're Invited!" %}
+            {% trans "Your Event Access" %}
         </h2>
         <p>
             {% blocktrans with v1=participant.name %}Hi {{ v1 }},{% endblocktrans %}
         </p>
         <p>
-            {% trans "You have been invited to participate in" %} <strong>{{ event.name }}</strong>.
+            {% trans "Your access to" %} <strong>{{ event.name }}</strong> {% trans "is ready." %}
         </p>
         <p>
             <strong>{% trans "Event Date:" %}</strong>

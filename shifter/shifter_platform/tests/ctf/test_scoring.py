@@ -278,7 +278,7 @@ class TestScoreboardBehavior:
         event = _make_event(organizer_user)
         c = _make_challenge(event, points=100)
         active = _make_participant(event, "Active")
-        _make_participant(event, "Invited", status=ParticipantStatus.INVITED.value, registered=False)
+        _make_participant(event, "Invited", status=ParticipantStatus.REGISTERED.value, registered=False)
         _make_participant(event, "Disq", status=ParticipantStatus.DISQUALIFIED.value)
         _solve(active, c, points=100)
         recompute_event_leaderboard(event.id)

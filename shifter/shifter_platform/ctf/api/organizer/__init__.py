@@ -64,7 +64,7 @@ from ctf.api.organizer.notifications import (
     NotificationCancelScheduleView,
     NotificationListView,
     NotificationSendView,
-    SendInvitationsView,
+    SendLoginInfoView,
 )
 from ctf.api.organizer.participants import (
     AssignBracketView,
@@ -72,7 +72,7 @@ from ctf.api.organizer.participants import (
     ParticipantImportView,
     ParticipantListView,
     ParticipantPasswordView,
-    ParticipantResendInviteView,
+    ParticipantResendLoginInfoView,
 )
 from ctf.api.organizer.play import (
     RateChallengeView,
@@ -159,7 +159,7 @@ __all__ = [
     "ParticipantRangeStatusView",
     "ParticipantRangeStopView",
     "ParticipantRequalifyView",
-    "ParticipantResendInviteView",
+    "ParticipantResendLoginInfoView",
     "ParticipantRoleView",
     "ParticipantUnbanView",
     "ParticipantUsernameView",
@@ -169,7 +169,7 @@ __all__ = [
     "RemoveFlagView",
     "ScenarioListView",
     "ScoreTimelineView",
-    "SendInvitationsView",
+    "SendLoginInfoView",
     "SubmissionListView",
     "SubmitFlagView",
     "TaskRunNowView",

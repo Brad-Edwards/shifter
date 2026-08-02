@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def send_invitations(event_id: UUID) -> dict[str, Any]:
+def send_login_info(event_id: UUID) -> dict[str, Any]:
     """Queue non-secret login information for participants with delivery email.
 
     Args:
@@ -70,8 +70,8 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
 
             from django.utils import timezone
 
-            participant.invited_at = timezone.now()
-            participant.save(update_fields=["invited_at", "updated_at"])
+            participant.login_info_sent_at = timezone.now()
+            participant.save(update_fields=["login_info_sent_at", "updated_at"])
             queued += 1
         except Exception:
             logger.exception("Failed to send invitation to %s", safe_log_value(participant.email))

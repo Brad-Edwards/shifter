@@ -260,9 +260,9 @@ class TestInviteEmailUniqueness:
 
     def test_bulk_import_partial_success(self, ctf_event, monkeypatch):
         monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-        from ctf.services import bulk_import_participants, invite_participant
+        from ctf.services import add_participant, bulk_import_participants
 
-        invite_participant(ctf_event.id, "taken@test.com", "Existing")
+        add_participant(ctf_event.id, "taken@test.com", "Existing")
         result = bulk_import_participants(
             ctf_event.id,
             "Alice,alice@test.com\nBob,taken@test.com\nCara,alice@test.com\nbad-row\nDee,dee@test.com",

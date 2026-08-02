@@ -128,8 +128,8 @@ class TestGetChallengeStatistics:
             event=ctf_event,
             email="idle@example.com",
             name="Idle Invitee",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.REGISTERED.value,
+            login_info_sent_at=timezone.now(),
         )
         other_event = CTFEvent.objects.create(
             name="Other Event",
@@ -143,8 +143,8 @@ class TestGetChallengeStatistics:
             event=other_event,
             email="other@example.com",
             name="Other Event Participant",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.REGISTERED.value,
+            login_info_sent_at=timezone.now(),
         )
 
         first_submission = CTFSubmission.objects.create(
