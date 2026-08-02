@@ -11233,6 +11233,213 @@
           }
         }
       }
+    },
+    "/api/v1/workspaces/organizations/": {
+      "get": {
+        "operationId": "api_v1_organizations_administrable_list",
+        "description": "List the organizations the caller may administer (ADR-048 authority).\n\nSession-only, like the profile detail view. The list is the authority-owned\ndiscovery source for the settings surface: a superuser sees every\norganization, every other actor sees only the organizations it holds an\n``admin`` membership in, and workspace reachability is never used. A caller\nwho administers none receives an empty page.",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedOrganizationProfileList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/organizations/{organization_uuid}/": {
+      "get": {
+        "operationId": "api_v1_organization_retrieve",
+        "description": "Read or partially update an organization profile, keyed by public UUID.\n\nSession-only and authorized by the ADR-048 organization-admin seam (or a\nDjango superuser override) inside ``workspaces.services``; a platform token\nprincipal is refused by ``IsAuthenticatedSession``. A missing organization,\nan organization outside the actor's authority, and insufficient authority\nall return the same opaque 403 so the endpoint is not a tenant-enumeration\noracle.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProfile"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      },
+      "patch": {
+        "operationId": "api_v1_organization_update",
+        "description": "Read or partially update an organization profile, keyed by public UUID.\n\nSession-only and authorized by the ADR-048 organization-admin seam (or a\nDjango superuser override) inside ``workspaces.services``; a platform token\nprincipal is refused by ``IsAuthenticatedSession``. A missing organization,\nan organization outside the actor's authority, and insufficient authority\nall return the same opaque 403 so the endpoint is not a tenant-enumeration\noracle.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedOrganizationProfileUpdate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedOrganizationProfileUpdate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedOrganizationProfileUpdate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProfile"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -13849,6 +14056,54 @@
           "status"
         ]
       },
+      "OrganizationProfile": {
+        "type": "object",
+        "description": "Read-only organization profile projection (ADR-048, PLAT-232).\n\nEmits the public ``uuid`` only; the internal integer primary key never\nappears on the wire.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "description": {
+            "type": "string",
+            "readOnly": true
+          },
+          "support_email": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true
+          },
+          "support_url": {
+            "type": "string",
+            "format": "uri",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "name",
+          "support_email",
+          "support_url",
+          "updated_at",
+          "uuid"
+        ]
+      },
       "OrganizationRef": {
         "type": "object",
         "description": "Public organization projection (uuid + display name only).",
@@ -14227,6 +14482,37 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AuditLog"
+            }
+          }
+        }
+      },
+      "PaginatedOrganizationProfileList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationProfile"
             }
           }
         }
@@ -15397,6 +15683,30 @@
         "required": [
           "username"
         ]
+      },
+      "PatchedOrganizationProfileUpdate": {
+        "type": "object",
+        "description": "Partial-update command for the organization profile (PATCH mask).\n\nEvery field is optional; an absent field is unchanged and an empty string\nclears an optional field. Unknown fields are rejected rather than ignored,\nand ``uuid``/timestamps are never writable here. The serializer owns HTTP\nshape (lengths, primitive formats); ``workspaces.services`` owns authority\nand persistence invariants.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "support_email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "support_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 500
+          }
+        }
       },
       "PatchedProfileUpdateRequest": {
         "type": "object",

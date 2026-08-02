@@ -62,4 +62,88 @@ is on.
   not permit are shown disabled. The Django admin escape hatch remains an
   unflagged external entry at `/admin/`, outside this subtree.
 - **Slots.** The child surfaces are route slots rendering a placeholder
-  (`ConsoleSlotPage`) until their owning issues (PLAT-232–240) land.
+  (`ConsoleSlotPage`) until their owning issues (PLAT-233–240) land. The
+  organization settings slot is now a real surface (see below).
+
+## Organization profile & settings (issue #1939, PLAT-232)
+
+The first console surface to replace a placeholder. It adds an organization
+authority model and a UUID-keyed read/update API for the organization profile.
+The binding boundaries are recorded in ADR-048, ADR-046-R12, and
+[`organization-profile-settings-preflight-1939.md`](../../architecture/organization-profile-settings-preflight-1939.md).
+
+### Organization authority (ADR-048)
+
+ADR-046-R8 left the tenancy layer with no organization-wide role. ADR-048 is the
+separately accepted authority model ADR-046-R12 requires:
+
+- **Persisted role.** `OrganizationMembership` (`workspaces/models/_organization_membership.py`)
+  is a `(organization, user, role)` row with a closed, database-checked
+  `OrganizationRole` vocabulary (initially `admin`), owned by the `workspaces`
+  domain and reachable only through `workspaces.services`.
+- **Never derived.** Read/update authority is resolved only from an `admin`
+  membership for that organization—never from a `WorkspaceRole`, Django
+  `is_staff`/groups, Django model permissions, identity-provider claims,
+  API-token scopes, or cached client capabilities.
+- **Superuser override.** A Django `is_superuser` is the sole platform-operator
+  override: it may read/update any organization, recorded distinctly in audit
+  (`superuser_override`). `is_staff` without superuser or an admin membership is
+  denied. The override lives in the service, not as an HTTP-layer permission
+  shortcut.
+- **Bootstrap.** Each personal organization (ADR-046-R4) seeds its personal
+  workspace owner as its bootstrap admin—once, at `resolve_personal_workspace`
+  creation and by the idempotent backfill
+  (`workspaces/migrations/0005_backfill_organization_admins.py`). Authority is
+  read from the row afterwards, never re-inferred from the workspace role.
+
+### Profile API
+
+`GET`/`PATCH /api/v1/workspaces/organizations/<uuid>/`
+(`workspaces/api/views.py:OrganizationProfileView`) read and partially update
+the profile (`name`, `description`, `support_email`, `support_url`).
+
+- **Identifiers.** The organization is addressed by its immutable public `uuid`;
+  the integer primary key never appears on the wire.
+- **Discovery.** `GET /api/v1/workspaces/organizations/`
+  (`OrganizationListView`) is the authority-owned list of organizations the
+  caller may administer—a superuser sees all, everyone else sees only their
+  `admin`-membership organizations. Discovery is never derived from workspace
+  reachability (`list_administrable_organizations`).
+- **Authorization.** Enforced in `workspaces.services.get_organization_profile` /
+  `update_organization_profile`. A missing organization, an organization outside
+  the actor's authority, and insufficient authority return one opaque `403`, so
+  the endpoint is not a tenant-enumeration oracle.
+- **Domain validation.** `update_organization_profile` validates unknown fields,
+  lengths, a non-blank name, and email/URL formats in the service
+  (`_validate_changes`), so the invariants hold for every facade caller, not only
+  the HTTP serializer path (ADR-046-R12).
+- **Session-only.** The bearer-first chain refuses an invalid token fail-closed;
+  `IsAuthenticatedSession` rejects any valid platform token. Token access would
+  require new exact scopes and is out of scope.
+- **Serializers.** Explicit read and partial-update serializers (no writable
+  `ModelSerializer`); unknown fields are rejected, and `EmailField`/`URLField`
+  bound and format-check the input at the HTTP boundary.
+- **Update semantics.** `update_organization_profile` is atomic: it
+  `select_for_update`s the organization, re-checks authority under the lock,
+  writes only fields whose value actually changed (absent is unchanged, empty
+  string clears), and emits one strict `shared.audit` event
+  (`AuditEntityType.ORGANIZATION`) carrying the changed field *names*, the
+  internal organization id, and the `superuser_override` flag—never the field
+  values—in the same transaction. A no-op change writes nothing and records no
+  audit event.
+- **Contract.** Regenerated into `openapi/v1.json` and
+  `frontend/src/api/schema.d.ts` via `npm run gen:api`.
+
+### SPA settings surface
+
+`features/administer/organization/OrganizationSettingsPage.tsx` replaces the
+settings slot with a chooser (`/administer/organization/settings`) and an editor
+(`/administer/organization/settings/:organizationUuid`). The chooser lists the
+organizations the caller may administer from the authority-owned list endpoint
+(`useAdministrableOrganizations`), links each to its editor by public UUID, and
+opens the only one directly; selection is never inferred from workspace context.
+The editor uses the shared `useOrganizationProfile`/`useUpdateOrganizationProfile`
+hooks (`frontend/src/api/organization.ts`), submits only fields changed from the
+loaded snapshot (the PATCH mask, so a stale form cannot revert a concurrent
+edit), surfaces server field errors from the shared `ApiError` envelope, and
+never compares roles client-side.

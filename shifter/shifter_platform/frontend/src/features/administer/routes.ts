@@ -23,7 +23,11 @@ export const platformSettingsPath = (): string => `${ADMINISTER_BASE}/settings`;
 export const ORGANIZATION_BASE = `${ADMINISTER_BASE}/organization`;
 
 export const organizationPath = (): string => ORGANIZATION_BASE;
-export const organizationSettingsPath = (): string => `${ORGANIZATION_BASE}/settings`;
+// The organization settings surface (#1939, PLAT-232) selects its target
+// organization by public UUID. Without a UUID it resolves to the chooser, which
+// lists the principal's reachable organizations (or opens the only one).
+export const organizationSettingsPath = (organizationUuid?: string): string =>
+  organizationUuid ? `${ORGANIZATION_BASE}/settings/${organizationUuid}` : `${ORGANIZATION_BASE}/settings`;
 export const organizationWorkspacesPath = (): string => `${ORGANIZATION_BASE}/workspaces`;
 export const workspaceScopePath = (workspaceUuid: string): string =>
   `${ORGANIZATION_BASE}/workspaces/${workspaceUuid}`;

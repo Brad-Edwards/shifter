@@ -66,6 +66,7 @@ class AuditEntityType(models.TextChoices):
     SCENARIO = "scenario", "Scenario"
     SCRIPT = "script", "Script"
     WORKSPACE_MEMBERSHIP = "workspace_membership", "Workspace Membership"
+    ORGANIZATION = "organization", "Organization"
 
 
 class AuditActorType(models.TextChoices):
