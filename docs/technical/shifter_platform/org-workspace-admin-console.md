@@ -206,8 +206,8 @@ separate (ADR-046-R8, ADR-048), never conflating them:
 Mounted under `/api/v1/workspaces/` (`workspaces/api/views.py`,
 `workspaces/api/urls.py`):
 
-- `GET/POST /api/v1/workspaces/` — list (`?organization=<uuid>&include_archived=&search=`) / create.
-- `GET/PATCH /api/v1/workspaces/<uuid>/` — detail / rename.
+- `GET/POST /api/v1/workspaces/`: list (`?organization=<uuid>&include_archived=&search=`) or create.
+- `GET/PATCH /api/v1/workspaces/<uuid>/`: detail or rename.
 - `POST /api/v1/workspaces/<uuid>/archive/`, `.../restore/`, `.../transfer/`.
 
 - **Session-only, service-seam authorized.** Like the organization profile
