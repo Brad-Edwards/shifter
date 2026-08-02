@@ -40,7 +40,7 @@ class ParticipantListResponseSerializer(serializers.Serializer):
     total = serializers.IntegerField(read_only=True)
 
 
-class ParticipantInviteSerializer(serializers.Serializer):
+class ParticipantAddSerializer(serializers.Serializer):
     """Request body for inviting a single participant.
 
     ``name`` and ``email`` are both required and non-blank (mirroring the legacy
@@ -52,14 +52,13 @@ class ParticipantInviteSerializer(serializers.Serializer):
     email = serializers.CharField()
 
 
-class ParticipantInviteResultSerializer(serializers.Serializer):
-    """Result returned after inviting a single participant."""
+class ParticipantAddResultSerializer(serializers.Serializer):
+    """Result returned after adding a single participant (provisioned and registered)."""
 
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     email = serializers.CharField(read_only=True)
     status = serializers.CharField(read_only=True)
-    invited = serializers.BooleanField(read_only=True)
 
 
 class ParticipantImportSerializer(serializers.Serializer):
@@ -113,7 +112,7 @@ class ParticipantDetailSerializer(serializers.Serializer):
     username = serializers.CharField(read_only=True, allow_null=True)
     team_name = serializers.CharField(read_only=True, allow_null=True)
     registered_at = serializers.DateTimeField(read_only=True, allow_null=True)
-    invited_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    login_info_sent_at = serializers.DateTimeField(read_only=True, allow_null=True)
     last_active_at = serializers.DateTimeField(read_only=True, allow_null=True)
     total_score = serializers.IntegerField(read_only=True)
     solved_count = serializers.IntegerField(read_only=True)
@@ -131,12 +130,11 @@ class ParticipantDeleteResultSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
 
 
-class ResendInviteResultSerializer(serializers.Serializer):
+class ResendLoginInfoResultSerializer(serializers.Serializer):
     """Confirmation returned after resending non-secret login information."""
 
     success = serializers.BooleanField(read_only=True)
     id = serializers.CharField(read_only=True)
-    invited = serializers.BooleanField(read_only=True)
 
 
 class ParticipantPasswordRequestSerializer(serializers.Serializer):
@@ -304,7 +302,7 @@ class SpareProvisionResultSerializer(serializers.Serializer):
     created = serializers.IntegerField(read_only=True)
 
 
-class SendInvitationsResultSerializer(serializers.Serializer):
+class SendLoginInfoResultSerializer(serializers.Serializer):
     """Result returned after queuing invitation emails for an event."""
 
     success = serializers.BooleanField(read_only=True)

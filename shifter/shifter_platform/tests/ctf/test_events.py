@@ -443,7 +443,6 @@ class TestEventDetailView:
         stats = {
             "participant_count": 1,
             "registered_count": 1,
-            "invited_count": 0,
             "challenge_count": 1,
             "team_count": 0,
             "total_submissions": 0,
@@ -500,7 +499,6 @@ class TestEventDetailView:
         stats = {
             "participant_count": 0,
             "registered_count": 0,
-            "invited_count": 0,
             "challenge_count": 0,
             "team_count": 0,
             "total_submissions": 0,

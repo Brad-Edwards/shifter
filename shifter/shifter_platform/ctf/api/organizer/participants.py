@@ -33,16 +33,16 @@ from ctf.api.organizer._base import (
 from ctf.api.serializers import (
     AssignBracketRequestSerializer,
     AssignBracketResultSerializer,
+    ParticipantAddResultSerializer,
+    ParticipantAddSerializer,
     ParticipantDeleteResultSerializer,
     ParticipantDetailSerializer,
     ParticipantImportResultSerializer,
     ParticipantImportSerializer,
-    ParticipantInviteResultSerializer,
-    ParticipantInviteSerializer,
     ParticipantListResponseSerializer,
     ParticipantPasswordRequestSerializer,
     ParticipantPasswordResultSerializer,
-    ResendInviteResultSerializer,
+    ResendLoginInfoResultSerializer,
 )
 from shared.log_sanitize import safe_log_value
 
@@ -92,20 +92,20 @@ class ParticipantListView(APIView):
         ]
         return Response({"participants": data, "total": total})
 
-    @extend_schema(request=ParticipantInviteSerializer, responses={201: ParticipantInviteResultSerializer})
+    @extend_schema(request=ParticipantAddSerializer, responses={201: ParticipantAddResultSerializer})
     def post(self, request: Request, event_id: UUID) -> Response:
         """Invite a single participant to an owned event."""
         from ctf.exceptions import CTFValidationError
-        from ctf.services import invite_participant
+        from ctf.services import add_participant
 
         try:
             _resolve_owned_event(request, event_id, capability="participants")
-            serializer = ParticipantInviteSerializer(data=request.data)
+            serializer = ParticipantAddSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             name = serializer.validated_data["name"]
             email = serializer.validated_data["email"]
             try:
-                participant = invite_participant(event_id, email, name)
+                participant = add_participant(event_id, email, name)
             except CTFValidationError:
                 _raise_bad_request(_INVALID_PARTICIPANT_REQUEST)
             return Response(
@@ -114,7 +114,6 @@ class ParticipantListView(APIView):
                     "name": participant.name,
                     "email": participant.email,
                     "status": participant.status,
-                    "invited": True,
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -143,7 +142,7 @@ class ParticipantImportView(APIView):
     def _import(event_id: UUID, participants_data: list[object]) -> Response:
         """Invite each row, mirroring the legacy per-item validation and error shapes."""
         from ctf.exceptions import CTFValidationError
-        from ctf.services import invite_participant
+        from ctf.services import add_participant
 
         imported: list[dict[str, str]] = []
         errors: list[dict[str, object]] = []
@@ -160,7 +159,7 @@ class ParticipantImportView(APIView):
                 errors.append({"index": idx, "error": "name and email are required"})
                 continue
             try:
-                participant = invite_participant(event_id, email, name)
+                participant = add_participant(event_id, email, name)
                 imported.append(
                     {
                         "id": str(participant.id),
@@ -209,17 +208,17 @@ class ParticipantDetailView(APIView):
             return exc.to_response(request)
 
 
-class ParticipantResendInviteView(APIView):
+class ParticipantResendLoginInfoView(APIView):
     """Deprecated invitation-information resend (POST, no credential mutation)."""
 
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(request=None, responses=ResendInviteResultSerializer, deprecated=True)
+    @extend_schema(request=None, responses=ResendLoginInfoResultSerializer, deprecated=True)
     def post(self, request: Request, participant_id: UUID) -> Response:
         """Rate-limit, enforce ownership, then resend non-secret login information."""
         from ctf.exceptions import CTFStateError, CTFValidationError
-        from ctf.services import resend_invite
+        from ctf.services import resend_login_info
         from ctf.views._access import _check_credential_delivery_rate_limit
 
         try:
@@ -227,13 +226,13 @@ class ParticipantResendInviteView(APIView):
                 _raise_throttled("Too many invitations. Try again later.")
             _resolve_owned_participant(request, participant_id, capability="participants")
             try:
-                updated = resend_invite(participant_id)
+                updated = resend_login_info(participant_id)
             except (CTFStateError, CTFValidationError):
                 # CTFValidationError covers the fail-closed bootstrap-credential path
                 # (issue #1665): an unavailable/invalid configured source must surface
                 # as a controlled 400, never an uncaught 500.
                 _raise_bad_request(_INVALID_PARTICIPANT_REQUEST)
-            return Response({"success": True, "id": str(updated.id), "invited": True})
+            return Response({"success": True, "id": str(updated.id)})
         except _CtfApiError as exc:
             return exc.to_response(request)
 

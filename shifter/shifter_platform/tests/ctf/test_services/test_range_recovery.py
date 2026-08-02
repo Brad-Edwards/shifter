@@ -693,7 +693,7 @@ class TestValidationAndFailures:
             user=None,
             email="unregistered@test.com",
             name="Unregistered",
-            status=ParticipantStatus.INVITED.value,
+            status=ParticipantStatus.REGISTERED.value,
         )
         with pytest.raises(CTFValidationError, match="registered"):
             recover_participant_range(

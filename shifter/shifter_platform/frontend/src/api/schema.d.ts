@@ -3598,6 +3598,24 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["PrincipalWorkspaceContext"][];
         };
+        /**
+         * @description Request body for inviting a single participant.
+         *
+         *     ``name`` and ``email`` are both required and non-blank (mirroring the legacy
+         *     truthiness check). ``email`` is a plain ``CharField`` rather than an
+         *     ``EmailField`` because the service layer owns email validation.
+         */
+        ParticipantAdd: {
+            name: string;
+            email: string;
+        };
+        /** @description Result returned after adding a single participant (provisioned and registered). */
+        ParticipantAddResult: {
+            readonly id: string;
+            readonly name: string;
+            readonly email: string;
+            readonly status: string;
+        };
         /** @description One sent announcement on the participant surface (CTF-803). */
         ParticipantAnnouncement: {
             readonly id: string;
@@ -3695,7 +3713,7 @@ export interface components {
             /** Format: date-time */
             readonly registered_at: string | null;
             /** Format: date-time */
-            readonly invited_at: string | null;
+            readonly login_info_sent_at: string | null;
             /** Format: date-time */
             readonly last_active_at: string | null;
             readonly total_score: number;
@@ -3774,25 +3792,6 @@ export interface components {
             readonly id: string;
             readonly name: string;
             readonly email: string;
-        };
-        /**
-         * @description Request body for inviting a single participant.
-         *
-         *     ``name`` and ``email`` are both required and non-blank (mirroring the legacy
-         *     truthiness check). ``email`` is a plain ``CharField`` rather than an
-         *     ``EmailField`` because the service layer owns email validation.
-         */
-        ParticipantInvite: {
-            name: string;
-            email: string;
-        };
-        /** @description Result returned after inviting a single participant. */
-        ParticipantInviteResult: {
-            readonly id: string;
-            readonly name: string;
-            readonly email: string;
-            readonly status: string;
-            readonly invited: boolean;
         };
         /** @description Envelope returned by the event participant list. */
         ParticipantListResponse: {
@@ -4322,10 +4321,9 @@ export interface components {
             readonly message: string;
         };
         /** @description Confirmation returned after resending non-secret login information. */
-        ResendInviteResult: {
+        ResendLoginInfoResult: {
             readonly success: boolean;
             readonly id: string;
-            readonly invited: boolean;
         };
         /**
          * @description * `pending` - pending
@@ -4518,7 +4516,7 @@ export interface components {
             }[];
         };
         /** @description Result returned after queuing invitation emails for an event. */
-        SendInvitationsResult: {
+        SendLoginInfoResult: {
             readonly success: boolean;
             readonly event_id: string;
             readonly total: number;
@@ -6966,7 +6964,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SendInvitationsResult"];
+                    "application/json": components["schemas"]["SendLoginInfoResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -7291,9 +7289,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ParticipantInvite"];
-                "application/x-www-form-urlencoded": components["schemas"]["ParticipantInvite"];
-                "multipart/form-data": components["schemas"]["ParticipantInvite"];
+                "application/json": components["schemas"]["ParticipantAdd"];
+                "application/x-www-form-urlencoded": components["schemas"]["ParticipantAdd"];
+                "multipart/form-data": components["schemas"]["ParticipantAdd"];
             };
         };
         responses: {
@@ -7302,7 +7300,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ParticipantInviteResult"];
+                    "application/json": components["schemas"]["ParticipantAddResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -9571,7 +9569,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ResendInviteResult"];
+                    "application/json": components["schemas"]["ResendLoginInfoResult"];
                 };
             };
             /** @description Authentication failed. */

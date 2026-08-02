@@ -26,7 +26,7 @@ const BASE = {
   username: null,
   team_name: null,
   registered_at: null,
-  invited_at: null,
+  login_info_sent_at: null,
   last_active_at: null,
   total_score: 0,
   solved_count: 0,
