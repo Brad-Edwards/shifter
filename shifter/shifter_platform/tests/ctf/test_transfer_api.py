@@ -135,7 +135,9 @@ class TestResultsExport:
         ).json()
         assert results["rankings"][0]["name"] == "Scored"
         assert results["rankings"][0]["rank"] == 1
-        assert "statistics" in results and "solves" in results and "hint_usage" in results
+        assert "statistics" in results
+        assert "solves" in results
+        assert "hint_usage" in results
         assert participant.pk  # participant fixture used
 
         csv_response = call_json(

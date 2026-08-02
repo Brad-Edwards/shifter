@@ -47,21 +47,20 @@ class TestSingleFlagNormalization:
         assert verify_flag(challenge, "FLAG{nope}") is False
 
     def test_create_rejects_flag_and_flags_together(self, ctf_event_draft):
+        data = _base_challenge_data(flag="FLAG{a}", flags=[{"flag": "FLAG{b}", "flag_type": "static"}])
         with pytest.raises(CTFValidationError):
             create_challenge(
                 event_id=ctf_event_draft.pk,
-                challenge_data=_base_challenge_data(
-                    flag="FLAG{a}",
-                    flags=[{"flag": "FLAG{b}", "flag_type": "static"}],
-                ),
+                challenge_data=data,
                 actor_id=ctf_event_draft.created_by_id,
             )
 
     def test_create_rejects_explicitly_empty_flags(self, ctf_event_draft):
+        data = _base_challenge_data(flags=[])
         with pytest.raises(CTFValidationError):
             create_challenge(
                 event_id=ctf_event_draft.pk,
-                challenge_data=_base_challenge_data(flags=[]),
+                challenge_data=data,
                 actor_id=ctf_event_draft.created_by_id,
             )
 

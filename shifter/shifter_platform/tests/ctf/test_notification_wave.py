@@ -61,7 +61,8 @@ class TestScheduledAnnouncements:
         notification = CTFNotification.objects.get(pk=resp.json()["id"])
         assert notification.status == NotificationStatus.SENT.value
         assert notification.sent_count == 1
-        assert outbox and outbox[0][1] == "Hint drop"
+        assert outbox
+        assert outbox[0][1] == "Hint drop"
 
     def test_schedule_rejects_past_time(self, ctf_event_active, authenticated_organizer_client):
         resp = call_json(
@@ -181,7 +182,8 @@ class TestMilestoneEmails:
 
         participant = _register(ctf_event_active, "unlucky")
         assert notify_participant_provision_failure(participant.pk) is True
-        assert outbox and "problem with your range" in outbox[0][1]
+        assert outbox
+        assert "problem with your range" in outbox[0][1]
 
 
 class TestRealtimeBus:

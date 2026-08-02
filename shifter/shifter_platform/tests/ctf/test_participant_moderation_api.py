@@ -196,7 +196,8 @@ class TestRoleAndHidden:
         # Organizer roster still shows the row (CTF-606: admin view sees hidden).
         roster = call_json(organizer_client, "get", "api_participant_list", kwargs={"event_id": event.id})
         hidden_rows = [p for p in roster.json()["participants"] if p["id"] == str(participant.id)]
-        assert hidden_rows and hidden_rows[0]["hidden"] is True
+        assert hidden_rows
+        assert hidden_rows[0]["hidden"] is True
 
     def test_hidden_member_sheds_team_contribution(self, moderated):
         event, participant, organizer_client = moderated
