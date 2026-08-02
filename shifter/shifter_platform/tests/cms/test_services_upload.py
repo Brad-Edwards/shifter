@@ -65,6 +65,13 @@ class TestInitiateUploadReturns:
         result = services.initiate_upload(user, "Agent", "agent.deb", 1000)
         assert result["expected_os"] == "linux-debian"
 
+    def test_expected_os_is_non_null_string(self, user, s3_presign):
+        # The service boundary guarantees a non-null OS slug even though the DRF
+        # presentation schema permits null (#317, UploadInitiation.expected_os: str).
+        result = services.initiate_upload(user, "Agent", "agent.msi", 1000)
+        assert isinstance(result["expected_os"], str)
+        assert result["expected_os"]
+
     def test_agent_type_is_carried_into_token(self, user, s3_presign):
         result = services.initiate_upload(user, "Agent", "agent.msi", 1000, agent_type="xdr_collector")
         payload = verify_upload_token(result["upload_token"], user.id)

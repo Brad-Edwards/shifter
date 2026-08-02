@@ -17,6 +17,7 @@ See ``docs/adr/index.yaml``.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from cms.scenarios.registry import get_catalog_entry, list_all_scenarios
@@ -86,7 +87,7 @@ def list_catalog_presentations(user: User | None = None) -> list[dict[str, Any]]
     return [_to_presentation(entry, sources) for entry in entries]
 
 
-def _is_raes(entry: dict[str, Any]) -> bool:
+def _is_raes(entry: Mapping[str, Any]) -> bool:
     """Return True when a catalog projection entry is an RAES package-backed row."""
     return entry.get("scenario_type") == RAES_SCENARIO_TYPE
 
@@ -100,7 +101,7 @@ def _raes_source_map(scenario_ids: list[str]) -> dict[str, RaesPackageSource]:
     return {source.scenario_id: source for source in RaesPackageSource.objects.filter(scenario_id__in=scenario_ids)}
 
 
-def _to_presentation(entry: dict[str, Any], raes_sources: dict[str, RaesPackageSource]) -> dict[str, Any]:
+def _to_presentation(entry: Mapping[str, Any], raes_sources: dict[str, RaesPackageSource]) -> dict[str, Any]:
     """Build the presentation DTO for one catalog entry, attaching the RAES block when present."""
     presentation = _base_presentation(entry)
     if _is_raes(entry):
@@ -110,7 +111,7 @@ def _to_presentation(entry: dict[str, Any], raes_sources: dict[str, RaesPackageS
     return presentation
 
 
-def _base_presentation(entry: dict[str, Any]) -> dict[str, Any]:
+def _base_presentation(entry: Mapping[str, Any]) -> dict[str, Any]:
     """Build the source-agnostic base DTO (identity, access overlay, launchability, empty raes)."""
     scenario_type = entry.get("scenario_type", "demo")
     is_default = entry.get("is_default", False)
