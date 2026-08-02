@@ -62,8 +62,9 @@ is on.
   not permit are shown disabled. The Django admin escape hatch remains an
   unflagged external entry at `/admin/`, outside this subtree.
 - **Slots.** The child surfaces are route slots rendering a placeholder
-  (`ConsoleSlotPage`) until their owning issues (PLAT-233–240) land. The
-  organization settings slot is now a real surface (see below).
+  (`ConsoleSlotPage`) until their owning issues (PLAT-234–240) land. The
+  organization settings and workspace lifecycle slots are now real surfaces
+  (see below).
 
 ## Organization profile & settings (issue #1939, PLAT-232)
 
@@ -147,3 +148,93 @@ hooks (`frontend/src/api/organization.ts`), submits only fields changed from the
 loaded snapshot (the PATCH mask, so a stale form cannot revert a concurrent
 edit), surfaces server field errors from the shared `ApiError` envelope, and
 never compares roles client-side.
+
+## Workspace lifecycle (issue #1940, PLAT-233)
+
+The second console surface to replace a placeholder. It adds the workspace
+create/list/rename/archive/restore/owner-transfer lifecycle behind the existing
+`workspaces.services` facade. The binding boundaries are recorded in ADR-046,
+ADR-048, and
+[`workspace-lifecycle-preflight-1940.md`](../../architecture/workspace-lifecycle-preflight-1940.md).
+
+### Two distinct authorities
+
+Lifecycle deliberately keeps organization authority and workspace authority
+separate (ADR-046-R8, ADR-048), never conflating them:
+
+- **Create and list** are organization-authorized. They resolve the target
+  organization by public UUID through `resolve_administrable_organization`
+  (`workspaces/services/_organization.py`), which reuses the ADR-048 `admin`
+  `OrganizationMembership` seam (or the recorded superuser override). Authority
+  is never derived from a workspace role, Django staff/groups, model
+  permissions, identity claims, or API-token scopes.
+- **Read detail, rename, archive, restore, and transfer** are authorized by the
+  workspace role seam for that exact public workspace UUID, via new
+  `WorkspaceOperation` codes (`read_workspace`, `rename_workspace`,
+  `archive_workspace`, `restore_workspace`, `transfer_ownership`). The
+  operation-to-role mapping lives only in `workspaces.roles.ROLE_OPERATIONS`:
+  owner and admin may read/rename/archive/restore; `transfer_ownership` is
+  owner-only. `create_workspace` seeds the creator as `OWNER` in the same
+  transaction, so a create-then-manage flow works without a separate grant.
+
+### Service (`workspaces/services/_lifecycle.py`)
+
+- **Transactional and locked.** Each mutation locks the workspace row and
+  re-checks the live grant under the lock (reusing
+  `_memberships._lock_workspace_and_actor`), performs the change, and writes one
+  strict, request-attributed `shared.audit` event (`AuditEntityType.WORKSPACE`)
+  in the same transaction, so an audit-write failure rolls the mutation back.
+  Audit records internal integer IDs, the action, and bounded state/field
+  *names* only—never the workspace or organization display name.
+- **Archive is a reversible marker.** A nullable `Workspace.archived_at`
+  timestamp; archive sets it, restore clears it. It never deletes, rehomes, or
+  cascades to the scalar `workspace_id` range bindings in CMS/Engine (those are
+  `IntegerField`s, not foreign keys). List defaults to active-only with an
+  explicit `include_archived` filter.
+- **Invariants.** Names stay unique within the organization (DB constraint;
+  `IntegrityError` is classified as `name_taken`, not surfaced raw). Owner
+  transfer promotes the target's existing active membership to `OWNER` and
+  demotes the acting owner to `ADMIN` in one atomic command, preserving the
+  last-owner invariant throughout. Personal compatibility workspaces are
+  rejected from every lifecycle mutation (`personal_workspace_protected`).
+- **Opaque denials.** A malformed UUID, an unknown workspace/organization, and
+  an unauthorized one all raise the same opaque denial, so the surface is not a
+  tenant-enumeration oracle.
+
+### Lifecycle API
+
+Mounted under `/api/v1/workspaces/` (`workspaces/api/views.py`,
+`workspaces/api/urls.py`):
+
+- `GET/POST /api/v1/workspaces/`: list (`?organization=<uuid>&include_archived=&search=`) or create.
+- `GET/PATCH /api/v1/workspaces/<uuid>/`: detail or rename.
+- `POST /api/v1/workspaces/<uuid>/archive/`, `.../restore/`, `.../transfer/`.
+
+- **Session-only, service-seam authorized.** Like the organization profile
+  endpoints (ADR-048, PLAT-232), the lifecycle views use
+  `IsAuthenticatedSession` with a bearer-first chain that refuses a valid
+  platform token; domain authority is enforced inside `workspaces.services`.
+  The console `/administer` route stays staff-gated at the SPA level for
+  defense-in-depth, but a non-staff organization admin can drive the API for
+  their own organization—`IsStaffSession` is deliberately *not* used here, so
+  workspace authority is not collapsed into Django staff.
+- **Serializers.** Explicit read (`WorkspaceSerializer`) and command
+  (`CreateWorkspaceSerializer`, `RenameWorkspaceSerializer`,
+  `TransferWorkspaceOwnershipSerializer`) serializers; the public workspace and
+  organization UUIDs only on the wire. Bounded service outcomes map through the
+  shared error envelope (`name_taken`→409, invalid name→400,
+  `personal_workspace_protected`→409, `membership_not_found`→404, authorization
+  →opaque 403).
+- **Contract.** Regenerated into `openapi/v1.json` and
+  `frontend/src/api/schema.d.ts` via `npm run gen:api`.
+
+### SPA lifecycle surface
+
+`features/administer/organization/WorkspaceListPage.tsx` replaces the workspaces
+slot (organization-scoped list, search, include-archived toggle, and create),
+and `WorkspaceDetailPage.tsx` renders the workspace-scope overview (rename,
+archive/restore with a confirm dialog, and owner transfer). Both use the shared
+`frontend/src/api/workspaces.ts` TanStack Query hooks (one typed client and
+query-key family; mutations never auto-retry and invalidate the affected
+caches), address workspaces by public UUID only, and never compare roles
+client-side.

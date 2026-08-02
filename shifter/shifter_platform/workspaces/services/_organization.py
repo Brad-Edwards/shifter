@@ -162,6 +162,31 @@ def _authorize(actor: User, organization: Organization) -> bool:
     return False
 
 
+def resolve_administrable_organization(
+    actor: User,
+    organization_uuid: str | uuid.UUID,
+) -> tuple[Organization, bool]:
+    """Resolve a public organization UUID the ``actor`` may administer.
+
+    Shared entry point for sibling services (e.g. workspace lifecycle, #1940)
+    that need the persisted ADR-048 organization-admin authority without
+    re-deriving it. A malformed UUID, a missing organization, and insufficient
+    authority all raise the same opaque :class:`OrganizationAuthorizationError`
+    so the caller cannot become a tenant-enumeration oracle.
+
+    Returns:
+        tuple[Organization, bool]: the organization and whether a Django
+        superuser override (rather than a persisted ``admin`` membership)
+        admitted the actor.
+    """
+    parsed = _parsed_uuid(organization_uuid)
+    organization = Organization.objects.filter(uuid=parsed).first()
+    if organization is None:
+        raise OrganizationAuthorizationError(_ORG_DENIED_MESSAGE)
+    superuser_override = _authorize(actor, organization)
+    return organization, superuser_override
+
+
 def _write_audit(
     organization: Organization,
     changed_fields: list[str],

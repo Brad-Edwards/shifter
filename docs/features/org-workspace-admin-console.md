@@ -54,10 +54,37 @@ otherwise it opens the one you administer directly.
   they will arrive with their own release once their storage and safety handling
   is defined.
 
+## Workspaces
+
+**Administer → Organization → Workspaces** lists the workspaces in an
+organization you administer and lets you create and manage them. If you
+administer more than one organization you choose the organization first;
+otherwise it opens the one you administer.
+
+- **Create.** Give the workspace a name that is unique within the organization.
+  You become its owner. Personal workspaces are created automatically for each
+  user and are not created or managed here.
+- **List and search.** The list shows active workspaces by default; a toggle
+  includes archived ones. Search filters by name.
+- **Rename.** A workspace owner or admin can rename a workspace. Names stay
+  unique within the organization.
+- **Archive and restore.** Archiving hides a workspace from the default list
+  without deleting anything—ranges bound to the workspace are left untouched.
+  Restoring brings it back. Archiving is fully reversible.
+- **Transfer ownership.** A workspace owner can hand ownership to another
+  existing member of the workspace: the new owner is promoted and the previous
+  owner becomes an admin, so the workspace always keeps an owner.
+- **Who can do what.** Creating and listing workspaces requires organization
+  administrator authority for that organization. Renaming, archiving, restoring,
+  and transferring are authorized by your role in that specific workspace (owner
+  or admin; transfer is owner-only). The server re-checks every action; the
+  console never decides access on its own. Personal workspaces cannot be
+  created, renamed, archived, or transferred here.
+
 ## What is not here yet
 
 This release delivers the console shell, navigation, workspace context,
-switcher, and the organization settings surface. The remaining administration
-surfaces (workspace lifecycle, membership, invitations, user lifecycle, range
-scoping, policy, quota, and audit review) arrive in later releases; their
-sections are present as placeholders until then.
+switcher, the organization settings surface, and the workspace lifecycle
+surface above. The remaining administration surfaces (membership, invitations,
+user lifecycle, range scoping, policy, quota, and audit review) arrive in later
+releases; their sections are present as placeholders until then.

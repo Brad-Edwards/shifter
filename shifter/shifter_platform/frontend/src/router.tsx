@@ -14,6 +14,8 @@ import {
   OrganizationSettingsDetailPage,
   OrganizationSettingsPage,
 } from "@/features/administer/organization/OrganizationSettingsPage";
+import { WorkspaceDetailPage } from "@/features/administer/organization/WorkspaceDetailPage";
+import { WorkspaceListPage } from "@/features/administer/organization/WorkspaceListPage";
 import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
 import { WORKSPACE_SURFACES } from "@/features/administer/organization/surfaces";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
@@ -227,12 +229,12 @@ export const router = createBrowserRouter(
                 { index: true, element: <OrganizationOverviewPage /> },
                 { path: "settings", element: <OrganizationSettingsPage /> },
                 { path: "settings/:organizationUuid", element: <OrganizationSettingsDetailPage /> },
-                { path: "workspaces", element: <ConsoleSlotPage title="Workspaces" /> },
+                { path: "workspaces", element: <WorkspaceListPage /> },
                 {
                   path: "workspaces/:workspaceUuid",
                   element: <WorkspaceScopeLayout />,
                   children: [
-                    { index: true, element: <ConsoleSlotPage title="Workspace overview" /> },
+                    { index: true, element: <WorkspaceDetailPage /> },
                     ...WORKSPACE_SURFACES.map((surface) => ({
                       path: surface.key,
                       element: <ConsoleSlotPage title={surface.label} />,

@@ -51,6 +51,17 @@ class Workspace(models.Model):
             "NULL for ordinary shared workspaces; unique so a user has at most one."
         ),
     )
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        default=None,
+        db_index=True,
+        help_text=(
+            "Set when the workspace is archived; NULL for active workspaces. "
+            "A reversible lifecycle marker only -- archival never deletes or "
+            "rehomes ranges bound to the workspace (#1940, PLAT-233)."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
