@@ -81,10 +81,39 @@ otherwise it opens the one you administer.
   console never decides access on its own. Personal workspaces cannot be
   created, renamed, archived, or transferred here.
 
+## Membership and roles
+
+**Administer → Organization → Workspaces → (a workspace) → Membership** manages
+who belongs to a workspace and the role each member holds. Roles come from a
+fixed, closed set: **owner**, **admin**, and **member**.
+
+- **Roster.** Owners and admins see the full membership roster: each member's
+  name, role, and when they joined.
+- **Add a member.** Owners and admins can add an existing account to the
+  workspace by email and assign it a role. This adds an account that already
+  exists; it does not send an invitation or create a new account.
+- **Change a role.** Owners and admins can change a member's role from the
+  roster.
+- **Remove a member.** Owners and admins can remove another member after a
+  confirmation. Removing a member does not delete their account.
+- **Leave.** Any member can leave a workspace they belong to. A member who
+  cannot see the roster still sees a simple self-service view that shows their
+  own role and lets them leave.
+- **The last owner is protected.** A workspace always keeps at least one owner.
+  The last remaining owner cannot be removed, demoted, or leave; the console
+  shows this clearly and disables those actions. To move on, add or promote
+  another owner, or transfer ownership from the workspace overview, first.
+- **Who can do what.** The actions you see are driven by what your role in that
+  specific workspace permits, as reported by the server. Seeing an action is not
+  the same as being allowed to complete it: the server re-checks every action
+  and is the final authority. Managing owners is restricted to owners, so an
+  admin may be shown an action on an owner that the server then declines.
+
 ## What is not here yet
 
 This release delivers the console shell, navigation, workspace context,
-switcher, the organization settings surface, and the workspace lifecycle
-surface above. The remaining administration surfaces (membership, invitations,
-user lifecycle, range scoping, policy, quota, and audit review) arrive in later
-releases; their sections are present as placeholders until then.
+switcher, the organization settings surface, the workspace lifecycle surface,
+and the membership and roles surface above. The remaining administration
+surfaces (invitations, user lifecycle, range scoping, policy, quota, and audit
+review) arrive in later releases; their sections are present as placeholders
+until then.

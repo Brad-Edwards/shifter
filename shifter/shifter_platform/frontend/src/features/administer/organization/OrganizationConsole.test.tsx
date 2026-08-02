@@ -136,11 +136,19 @@ describe("WorkspaceScopeLayout", () => {
     expect(screen.getByRole("link", { name: "Membership" })).toBeInTheDocument();
   });
 
+  it("keeps membership reachable for a member via self-service", async () => {
+    mockApi.mockResolvedValue(page([ctx({ role: "member", capabilities: ["read_self_membership", "leave_workspace"] })]));
+    renderConsole(["/administer/organization/workspaces/11111111-1111-1111-1111-111111111111"]);
+    await screen.findByRole("heading", { name: "Acme / Blue" });
+    // A member lacks read_members but may leave → membership stays a link (self-service).
+    expect(screen.getByRole("link", { name: "Membership" })).toBeInTheDocument();
+  });
+
   it("disables a surface the workspace role does not permit", async () => {
     mockApi.mockResolvedValue(page([ctx({ role: "member", capabilities: ["read_self_membership"] })]));
     renderConsole(["/administer/organization/workspaces/11111111-1111-1111-1111-111111111111"]);
     await screen.findByRole("heading", { name: "Acme / Blue" });
-    // Member lacks read_members → membership is present but not a link.
+    // Neither read_members nor leave_workspace → membership is present but not a link.
     expect(screen.queryByRole("link", { name: "Membership" })).not.toBeInTheDocument();
     expect(screen.getByText("Membership")).toHaveAttribute("aria-disabled", "true");
   });
