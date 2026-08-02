@@ -11,6 +11,11 @@ from workspaces.api.views import (
     OrganizationProfileView,
     PrincipalWorkspaceContextView,
     SelfMembershipView,
+    WorkspaceArchiveView,
+    WorkspaceCollectionView,
+    WorkspaceDetailView,
+    WorkspaceRestoreView,
+    WorkspaceTransferOwnershipView,
 )
 
 app_name = "workspaces"
@@ -19,6 +24,7 @@ urlpatterns = [
     # Static `context/` and `organizations/` prefixes are declared before the
     # `<uuid:workspace_uuid>` routes; neither is a valid UUID, so the ordering is
     # defensive, not load-bearing.
+    path("", WorkspaceCollectionView.as_view(), name="workspaces"),
     path("context/", PrincipalWorkspaceContextView.as_view(), name="principal-context"),
     path("organizations/", OrganizationListView.as_view(), name="organization-list"),
     path(
@@ -26,6 +32,10 @@ urlpatterns = [
         OrganizationProfileView.as_view(),
         name="organization-detail",
     ),
+    path("<uuid:workspace_uuid>/", WorkspaceDetailView.as_view(), name="workspace-detail"),
+    path("<uuid:workspace_uuid>/archive/", WorkspaceArchiveView.as_view(), name="workspace-archive"),
+    path("<uuid:workspace_uuid>/restore/", WorkspaceRestoreView.as_view(), name="workspace-restore"),
+    path("<uuid:workspace_uuid>/transfer/", WorkspaceTransferOwnershipView.as_view(), name="workspace-transfer"),
     path("<uuid:workspace_uuid>/membership/", SelfMembershipView.as_view(), name="membership-self"),
     path("<uuid:workspace_uuid>/memberships/", MembershipListAddView.as_view(), name="memberships"),
     path("<uuid:workspace_uuid>/memberships/leave/", MembershipLeaveView.as_view(), name="memberships-leave"),
