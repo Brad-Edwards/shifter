@@ -2549,6 +2549,11 @@
         "id": "ADR-046-R11",
         "description": "A current-principal organization/workspace context is a read-only projection of the actor's existing workspace memberships, grouped by membership-reachable organizations and exposed only through the workspaces service facade with public UUIDs and server-derived operation capabilities. It does not establish a primary organization, persisted current workspace, organization-wide role, or new authority source; navigation, routes, flags, role labels, and cached client context remain advisory, and every resource endpoint repeats the applicable workspace service authorization. The read must not create or repair tenancy state.",
         "checks": []
+      },
+      {
+        "id": "ADR-046-R12",
+        "description": "Organization profile reads may expose a closed scalar projection only for membership-reachable organizations and address it by public organization UUID. Organization mutation requires a separately accepted, service-owned organization authority rule: staff admission, Django permissions, provider/cloud roles, cached UI capabilities, and owner/admin authority in one, every, or a selected workspace do not imply organization-wide authority. Mutable profile fields must be explicit typed domain fields with one validation/normalization path; generic settings/branding/default JSON and tenant-scoping the deployment-global concerns in R7 are prohibited. Any accepted mutation locks and updates through workspaces.services and writes request-attributed strict shared.audit state in the same transaction; its API uses the shared error/OpenAPI/generated-client boundaries and remains identical across providers.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2561,10 +2566,12 @@
       "https://github.com/Brad-Edwards/shifter/issues/1326",
       "https://github.com/Brad-Edwards/shifter/issues/1327",
       "https://github.com/Brad-Edwards/shifter/issues/1938",
+      "https://github.com/Brad-Edwards/shifter/issues/1939",
       "docs/architecture/organization-workspace-preflight-1325.md",
       "docs/architecture/workspace-membership-roles-preflight-1326.md",
       "docs/architecture/range-workspace-scoping-preflight-1327.md",
       "docs/architecture/organization-workspace-admin-console-preflight-1938.md",
+      "docs/architecture/organization-profile-settings-preflight-1939.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",
@@ -2645,6 +2652,71 @@
       "shifter/shifter_platform/engine/services/_capacity_admit.py",
       "shifter/shifter_platform/tests/engine/test_capacity_admit.py",
       "shifter/shifter_platform/tests/ctf/test_capacity_draw_wiring.py"
+    ]
+  },
+  {
+    "id": "ADR-048",
+    "title": "Organization administrator authority is a persisted org-scoped role, distinct from workspace roles, with a platform-superuser override",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "ADR-046-R8 deliberately left the organization/workspace tenancy layer with no organization-wide role, and ADR-046-R12 requires a separately accepted, service-owned authority rule before any organization mutation. This is that separately accepted rule. Organization authority is a persisted OrganizationMembership row with a closed org-scoped role (initially admin), owned by the workspaces domain and reachable only through workspaces.services. It is never derived at authorization time from a workspace role, Django staff/groups, Django model permissions, identity-provider claims, API-token scopes, or cloud roles; those derivations remain forbidden by ADR-046-R8/R12. A personal organization (ADR-046-R4) seeds its personal workspace owner as its bootstrap admin once, at creation and by backfill, after which authority is read only from the persisted membership. The single deliberate exception is a Django superuser (is_superuser), the platform-root operator that may read and update any organization as a platform-operator action recorded distinctly in audit; is_staff and model permissions alone still grant nothing. Organization profile reads and updates address the organization by its immutable public uuid, expose a closed scalar projection, and never emit the integer primary key. Updates are atomic: they lock the organization row, re-check live authority under the lock, write only changed fields, and emit one strict shared.audit event carrying changed field names and the internal organization id (never the field values) in the same transaction, so an audit-write failure rolls the update back. A missing organization, an organization outside the actor's authority, and insufficient authority share one opaque outcome. Mutable profile fields are explicit typed domain fields (name, description, support_email, support_url) with one validation path; there is no generic settings/branding/defaults JSON, and organization branding assets are out of scope until they have their own storage, content-type, and CSP contract. There is no organization create/delete/transfer, org-admin grant/revoke, or organization-wide role beyond admin in this iteration; a future shared-organization creation path must seed an admin so the last-admin invariant holds.",
+    "rules": [
+      {
+        "id": "ADR-048-R1",
+        "description": "Organization authority is a persisted OrganizationMembership row (organization, user, closed role; unique per organization+user; role a database-checked closed vocabulary) owned by the workspaces domain and exposed only through workspaces.services. No other layer imports the model or holds a cross-layer ForeignKey to it (ADR-001, ADR-046-R1).",
+        "checks": [
+          "layer-imports",
+          "cross-layer-model-imports"
+        ]
+      },
+      {
+        "id": "ADR-048-R2",
+        "description": "Organization read and update authority is resolved only from a persisted OrganizationMembership admin row for that organization, or from the platform-superuser override. It is never derived from a WorkspaceRole, Django is_staff/groups, Django model permissions, identity-provider claims, API-token scopes, cloud roles, or cached client capabilities (ADR-046-R8/R12). The WorkspaceOperation vocabulary and ROLE_OPERATIONS policy are not extended for organization authority.",
+        "checks": []
+      },
+      {
+        "id": "ADR-048-R3",
+        "description": "A Django superuser (is_superuser) is the sole platform-operator override: it may read and update any organization and every such action is recorded distinctly in audit (superuser_override). is_staff without superuser or an admin membership is denied. The override is enforced inside workspaces.services, never as an incidental Django-permission shortcut at the HTTP layer.",
+        "checks": []
+      },
+      {
+        "id": "ADR-048-R4",
+        "description": "Every personal organization (ADR-046-R4) has exactly one bootstrap admin: its personal workspace owner, seeded once at personal-workspace creation and by the idempotent #1939 backfill. Authority is read from the persisted membership afterwards and never re-inferred from the workspace role. This iteration adds no organization create/delete/transfer, no org-admin grant/revoke API, and no organization role beyond admin; a future shared-organization creation path must seed an admin so at least one admin always exists.",
+        "checks": []
+      },
+      {
+        "id": "ADR-048-R5",
+        "description": "The organization profile API addresses organizations by immutable public uuid only and never emits the integer primary key. It uses the shared bearer-first authentication chain and is session-only (a platform token principal is refused; token access would require new exact scopes). Reads and updates use explicit DRF serializers (no writable ModelSerializer, unknown fields rejected), the shared error envelope, and the generated OpenAPI/TypeScript client. A missing organization, an organization outside authority, and insufficient authority return one opaque denial.",
+        "checks": []
+      },
+      {
+        "id": "ADR-048-R6",
+        "description": "An organization profile update is atomic: it locks the organization row, re-checks live authority under the lock, applies only supplied fields whose value actually changed (PATCH mask; absent is unchanged, empty string clears), and emits one strict shared.audit event in the same transaction so an audit-write failure rolls the update back. A no-op change writes nothing and records no audit event. Audit state carries changed field names, the internal organization id, and the superuser_override flag only, never the field values. Mutable fields are explicit typed domain fields; generic settings/branding/defaults JSON and tenant-scoping the ADR-046-R7 deployment-global concerns are prohibited.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1939",
+      "docs/architecture/organization-profile-settings-preflight-1939.md",
+      "shifter/shifter_platform/workspaces/roles.py",
+      "shifter/shifter_platform/workspaces/models/_organization.py",
+      "shifter/shifter_platform/workspaces/models/_organization_membership.py",
+      "shifter/shifter_platform/workspaces/services/_organization.py",
+      "shifter/shifter_platform/workspaces/services/_personal.py",
+      "shifter/shifter_platform/workspaces/migrations/0005_backfill_organization_admins.py",
+      "shifter/shifter_platform/workspaces/api/views.py",
+      "shifter/shifter_platform/workspaces/api/serializers.py",
+      "shifter/shifter_platform/shared/api/permissions.py",
+      "shifter/shifter_platform/shared/audit/vocabulary.py",
+      "shifter/shifter_platform/frontend/src/features/administer/organization/OrganizationSettingsPage.tsx",
+      "shifter/shifter_platform/tests/workspaces/test_organization.py",
+      "shifter/shifter_platform/tests/workspaces/test_organization_api.py",
+      "shifter/shifter_platform/tests/workspaces/test_organization_admin_backfill.py"
     ]
   }
 ]

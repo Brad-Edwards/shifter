@@ -11,6 +11,20 @@ class WorkspaceRole(models.TextChoices):
     MEMBER = "member", "Member"
 
 
+class OrganizationRole(models.TextChoices):
+    """Roles a user may hold at the organization level (ADR-048).
+
+    Distinct from :class:`WorkspaceRole`: organization authority is a separately
+    accepted, persisted seam and is never derived from a workspace role, Django
+    staff/groups, model permissions, identity-provider claims, API-token scopes,
+    or cloud roles. The vocabulary is closed and starts with a single
+    ``admin`` role; it is fail-closed, so a role code outside it carries no
+    authority.
+    """
+
+    ADMIN = "admin", "Admin"
+
+
 class WorkspaceOperation(models.TextChoices):
     """Operations the workspace authorization seam can be asked about."""
 

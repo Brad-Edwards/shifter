@@ -34,6 +34,15 @@ from ._memberships import (
     list_workspace_memberships,
     remove_workspace_member,
 )
+from ._organization import (
+    OrganizationAuditContext,
+    OrganizationAuthorizationError,
+    OrganizationProfile,
+    OrganizationValidationError,
+    get_organization_profile,
+    list_administrable_organizations,
+    update_organization_profile,
+)
 from ._personal import resolve_personal_workspace
 
 # ``WorkspaceOperation`` is re-exported here on purpose: callers name the
@@ -43,7 +52,11 @@ from ._personal import resolve_personal_workspace
 __all__ = [
     "ActorWorkspaceContext",
     "MembershipAuditContext",
+    "OrganizationAuditContext",
+    "OrganizationAuthorizationError",
+    "OrganizationProfile",
     "OrganizationRef",
+    "OrganizationValidationError",
     "WorkspaceAuthorization",
     "WorkspaceAuthorizationError",
     "WorkspaceMembershipError",
@@ -55,10 +68,13 @@ __all__ = [
     "authorize_workspace",
     "authorized_workspace_ids",
     "change_workspace_member_role",
+    "get_organization_profile",
     "get_self_membership",
     "leave_workspace",
     "list_actor_workspace_contexts",
+    "list_administrable_organizations",
     "list_workspace_memberships",
     "remove_workspace_member",
     "resolve_personal_workspace",
+    "update_organization_profile",
 ]

@@ -12,8 +12,8 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from workspaces import services
-from workspaces.models import Organization, Workspace, WorkspaceMembership
-from workspaces.roles import WorkspaceOperation, WorkspaceRole
+from workspaces.models import Organization, OrganizationMembership, Workspace, WorkspaceMembership
+from workspaces.roles import OrganizationRole, WorkspaceOperation, WorkspaceRole
 
 pytestmark = pytest.mark.django_db
 
@@ -42,6 +42,21 @@ def test_resolve_personal_workspace_creates_organization_workspace_and_owner_mem
     assert WorkspaceMembership.objects.filter(workspace=workspace, user=user, role=WorkspaceRole.OWNER.value).exists()
 
 
+def test_resolve_personal_workspace_seeds_the_user_as_its_organization_admin():
+    user = _user()
+
+    result = services.resolve_personal_workspace(user)
+
+    # The personal organization's bootstrap admin (ADR-048) is its personal
+    # workspace owner, persisted as an OrganizationMembership so authority is
+    # never re-inferred from the workspace role afterwards.
+    assert OrganizationMembership.objects.filter(
+        organization_id=result.organization_id,
+        user=user,
+        role=OrganizationRole.ADMIN.value,
+    ).exists()
+
+
 def test_resolve_personal_workspace_is_idempotent():
     user = _user()
 
@@ -52,6 +67,7 @@ def test_resolve_personal_workspace_is_idempotent():
     assert Workspace.objects.filter(personal_for_user=user).count() == 1
     assert Organization.objects.count() == 1
     assert WorkspaceMembership.objects.filter(user=user).count() == 1
+    assert OrganizationMembership.objects.filter(user=user).count() == 1
 
 
 def test_resolve_personal_workspace_refuses_a_missing_persisted_owner_membership():

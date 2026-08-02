@@ -33,10 +33,31 @@ scoping, policy, quota, and audit) attach to as they ship.
   display aid only; the underlying endpoints enforce access regardless of what
   the navigation shows.
 
+## Organization settings
+
+**Administer → Organization → Organization settings** lets an organization
+administrator view and edit their organization's profile: its display name,
+description, support email, and support URL. If you administer more than one
+organization the surface first lists them so you can choose which to edit;
+otherwise it opens the one you administer directly.
+
+- **Who can edit.** Editing an organization is restricted to that
+  organization's administrators. Being able to open the admin console (a staff
+  session) does not by itself let you edit an organization—organization
+  administration is a separate authority. A platform superuser can administer
+  any organization; every such change is recorded in the audit log.
+- **What is saved.** Only the fields you change are written. Leaving a field
+  empty clears it. Invalid input (for example a malformed support email) is
+  rejected with a message next to the field, and nothing is saved until it is
+  corrected.
+- Organization logos and other branding assets are not part of this surface;
+  they will arrive with their own release once their storage and safety handling
+  is defined.
+
 ## What is not here yet
 
-This release delivers the console shell, navigation, workspace context, and
-switcher. The individual administration surfaces (organization settings,
-workspace lifecycle, membership, invitations, user lifecycle, range scoping,
-policy, quota, and audit review) arrive in later releases; their sections are
-present as placeholders until then.
+This release delivers the console shell, navigation, workspace context,
+switcher, and the organization settings surface. The remaining administration
+surfaces (workspace lifecycle, membership, invitations, user lifecycle, range
+scoping, policy, quota, and audit review) arrive in later releases; their
+sections are present as placeholders until then.

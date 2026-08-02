@@ -7,6 +7,8 @@ from workspaces.api.views import (
     MembershipListAddView,
     MembershipRemoveView,
     MembershipRoleView,
+    OrganizationListView,
+    OrganizationProfileView,
     PrincipalWorkspaceContextView,
     SelfMembershipView,
 )
@@ -14,9 +16,16 @@ from workspaces.api.views import (
 app_name = "workspaces"
 
 urlpatterns = [
-    # Static `context/` is declared before the `<uuid:workspace_uuid>` routes; it
-    # is not a valid UUID, so the ordering is defensive, not load-bearing.
+    # Static `context/` and `organizations/` prefixes are declared before the
+    # `<uuid:workspace_uuid>` routes; neither is a valid UUID, so the ordering is
+    # defensive, not load-bearing.
     path("context/", PrincipalWorkspaceContextView.as_view(), name="principal-context"),
+    path("organizations/", OrganizationListView.as_view(), name="organization-list"),
+    path(
+        "organizations/<uuid:organization_uuid>/",
+        OrganizationProfileView.as_view(),
+        name="organization-detail",
+    ),
     path("<uuid:workspace_uuid>/membership/", SelfMembershipView.as_view(), name="membership-self"),
     path("<uuid:workspace_uuid>/memberships/", MembershipListAddView.as_view(), name="memberships"),
     path("<uuid:workspace_uuid>/memberships/leave/", MembershipLeaveView.as_view(), name="memberships-leave"),
