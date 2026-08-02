@@ -237,7 +237,7 @@ class TestForceDeleteEvent:
             user=None,
             email="ranged@test.com",
             name="Ranged Participant",
-            status=ParticipantStatus.INVITED.value,
+            status=ParticipantStatus.REGISTERED.value,
             range_instance_id=42,
             range_status="ready",
         )
@@ -288,7 +288,7 @@ class TestForceDeleteEvent:
             user=None,
             email="ok@test.com",
             name="OK",
-            status=ParticipantStatus.INVITED.value,
+            status=ParticipantStatus.REGISTERED.value,
             range_instance_id=42,
             range_status="ready",
         )
@@ -466,7 +466,6 @@ class TestAdminEventForceDelete:
                 return_value={
                     "participant_count": 5,
                     "registered_count": 3,
-                    "invited_count": 2,
                     "challenge_count": 10,
                     "total_points": 500,
                     "total_submissions": 20,
@@ -517,7 +516,6 @@ class TestAdminEventForceDelete:
                 return_value={
                     "participant_count": 0,
                     "registered_count": 0,
-                    "invited_count": 0,
                     "challenge_count": 0,
                     "total_points": 0,
                     "total_submissions": 0,

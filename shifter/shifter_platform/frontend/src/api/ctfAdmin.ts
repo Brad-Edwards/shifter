@@ -33,7 +33,7 @@ import type {
   CtfOrganizerChallengeDetail,
   CtfOrganizerParticipantDetail,
   CtfParticipantImportResult,
-  CtfParticipantInvite,
+  CtfParticipantAdd,
   CtfParticipantListResponse,
   CtfParticipantPasswordRequest,
   CtfParticipantPasswordResult,
@@ -303,10 +303,10 @@ export function useCtfParticipant(participantId: string, enabled = true) {
   });
 }
 
-export function useInviteCtfParticipant(eventId: string) {
+export function useAddCtfParticipant(eventId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: CtfParticipantInvite) =>
+    mutationFn: (body: CtfParticipantAdd) =>
       apiFetch<unknown>(`${BASE}/events/${eventId}/participants/`, { method: "POST", body }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participants(eventId) }),
   });
@@ -356,7 +356,7 @@ export function useRevokeCtfAward(participantId: string) {
   });
 }
 
-export function useResendCtfInvite(participantId: string) {
+export function useResendCtfLoginInfo(participantId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => apiFetch<unknown>(`${BASE}/participants/${participantId}/resend-invite/`, { method: "POST" }),

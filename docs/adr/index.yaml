@@ -667,6 +667,7 @@
       "docs/architecture/root-configured-backend-bundles.md",
       "docs/architecture/verified-oidc-admin-bootstrap-preflight-1521.md",
       "docs/architecture/ctf-isolated-participant-accounts-preflight-1206.md",
+      "docs/architecture/ctf-participant-lifecycle-preflight-535.md",
       "docs/technical/architecture.md",
       "docs/technical/dev/secrets.md"
     ]

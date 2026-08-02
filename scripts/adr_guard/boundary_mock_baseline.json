@@ -1003,17 +1003,7 @@
     {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_api_error_paths.py",
-      "target": "ctf.services.invite_participant"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_api_error_paths.py",
       "target": "ctf.services.range.provision_participant_range"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_api_error_paths.py",
-      "target": "ctf.services.resend_invite"
     },
     {
       "count": 2,
@@ -1054,16 +1044,6 @@
       "count": 2,
       "path": "shifter/shifter_platform/tests/ctf/test_api_view_flows.py",
       "target": "ctf.services.notification.send_announcement"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_api_view_flows.py",
-      "target": "ctf.services.notification.send_invitations"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_api_view_flows.py",
-      "target": "ctf.services.resend_invite"
     },
     {
       "count": 1,

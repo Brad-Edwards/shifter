@@ -54,18 +54,21 @@ class EventStatus(StrEnum):
 class ParticipantStatus(StrEnum):
     """CTF participant lifecycle status.
 
-    Participants progress through these states:
-        invited -> registered -> active -> completed
-                       |
-                       v
-            disqualified / banned
+    Organizer creation (single add, CSV import, generated seats) is immediate
+    seat provisioning: a participant is ``registered`` the moment it is created.
+    There is no invitation-acceptance workflow and no unregistered lifecycle
+    state.
+
+        registered -> active -> completed
+             |
+             v
+        disqualified / banned
 
     ``disqualified`` (CTF-609) removes competitive standing but keeps
     view access; ``banned`` (CTF-605) blocks all event access. Both are
     reversible by the organizer and preserve submission history.
     """
 
-    INVITED = "invited"
     REGISTERED = "registered"
     ACTIVE = "active"
     COMPLETED = "completed"

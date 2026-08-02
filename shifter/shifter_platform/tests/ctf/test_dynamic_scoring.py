@@ -88,9 +88,9 @@ class TestDynamicScoringEndToEnd:
         return challenge
 
     def _participant(self, event, index):
-        from ctf.services.participant import invite_participant
+        from ctf.services.participant import add_participant
 
-        participant = invite_participant(
+        participant = add_participant(
             event_id=event.pk,
             email=f"decay-player-{index}@test.com",
             name=f"Decay Player {index}",

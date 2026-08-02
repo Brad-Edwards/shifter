@@ -309,27 +309,51 @@ class TestApiErrorPaths:
 class TestApiParticipantErrorPaths:
     """Participant submit/hint/rate/range/download/bracket error and edge branches."""
 
-    def test_resend_invite_state_error(
-        self, authenticated_organizer_client: Client, ctf_participant_invited: CTFParticipant
+    def test_resend_invite_no_account_error(
+        self, authenticated_organizer_client: Client, ctf_participant_no_account: CTFParticipant
     ):
-        with patch("ctf.services.resend_invite", side_effect=CTFStateError("s")):
-            resp = _json(
-                authenticated_organizer_client,
-                "post",
-                "api_participant_resend_invite",
-                kwargs={"participant_id": ctf_participant_invited.id},
-            )
+        """Resend fails closed for a participant with no isolated account.
+
+        ADR-019-R1: no first-party service patch. ``ctf_participant_no_account``
+        has ``user=None``, so the real ``reset_participant_credentials`` raises
+        ``CTFValidationError`` (``CTF_ACCOUNT_REQUIRED``); the resend endpoint
+        maps that (and ``CTFStateError``) to a controlled 400.
+        """
+        resp = _json(
+            authenticated_organizer_client,
+            "post",
+            "api_participant_resend_invite",
+            kwargs={"participant_id": ctf_participant_no_account.id},
+        )
         assert resp.status_code == 400
 
     def test_invite_participant_validation_error(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        with patch("ctf.services.invite_participant", side_effect=CTFValidationError("v")):
-            resp = _json(
-                authenticated_organizer_client,
-                "post",
-                "api_participant_list",
-                kwargs={"event_id": ctf_event.id},
-                body={"name": "A", "email": "a@test.com"},
-            )
+        """A duplicate delivery email is rejected by the real invite service (400).
+
+        ADR-019-R1: no first-party service patch. An existing participant already
+        holds the email, so the second organizer add hits the real duplicate-email
+        guard in ``add_participant`` (``CTF_DUPLICATE_EMAIL``) and the endpoint
+        maps it to 400.
+        """
+        from django.utils import timezone
+
+        from ctf.enums import ParticipantStatus
+        from ctf.models import CTFParticipant
+
+        CTFParticipant.objects.create(
+            event=ctf_event,
+            email="dupe@test.com",
+            name="Existing Participant",
+            status=ParticipantStatus.REGISTERED.value,
+            registered_at=timezone.now(),
+        )
+        resp = _json(
+            authenticated_organizer_client,
+            "post",
+            "api_participant_list",
+            kwargs={"event_id": ctf_event.id},
+            body={"name": "A", "email": "dupe@test.com"},
+        )
         assert resp.status_code == 400
 
     def test_range_action_range_error(self, authenticated_organizer_client: Client, ctf_participant: CTFParticipant):
