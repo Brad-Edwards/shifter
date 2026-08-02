@@ -42,7 +42,7 @@ def _make_unregistered_participant(event, idx):
         user=None,
         email=f"throttle-{idx}@test.com",
         name=f"Throttle Participant {idx}",
-        status=ParticipantStatus.INVITED.value,
+        status=ParticipantStatus.REGISTERED.value,
     )
 
 
@@ -166,10 +166,10 @@ class TestProvisionParticipantRange:
         assert ctf_participant.range_status == "provisioning"
 
     @pytest.mark.django_db
-    def test_provision_requires_registered_user(self, ctf_participant_invited):
+    def test_provision_requires_registered_user(self, ctf_participant_no_account):
         """Raises CTFRangeError if participant has no linked user."""
         with pytest.raises(CTFRangeError, match="must be registered"):
-            range_service.provision_participant_range(ctf_participant_invited.pk)
+            range_service.provision_participant_range(ctf_participant_no_account.pk)
 
     @pytest.mark.django_db
     def test_provision_cms_failure(self, ctf_participant):

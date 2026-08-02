@@ -422,14 +422,14 @@ def ctf_participant(db, ctf_event, participant_user) -> CTFParticipant:
 
 
 @pytest.fixture
-def ctf_participant_invited(db, ctf_event) -> CTFParticipant:
-    """Create an invited (not yet registered) participant."""
+def ctf_participant_no_account(db, ctf_event) -> CTFParticipant:
+    """Create a participant row with no linked isolated account (``user`` is None)."""
     return CTFParticipant.objects.create(
         event=ctf_event,
-        email="invited@test.com",
-        name="Invited Participant",
-        status=ParticipantStatus.INVITED.value,
-        invited_at=timezone.now(),
+        email="no-account@test.com",
+        name="No Account Participant",
+        status=ParticipantStatus.REGISTERED.value,
+        login_info_sent_at=timezone.now(),
     )
 
 

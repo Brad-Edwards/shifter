@@ -94,7 +94,7 @@ urlpatterns = [
     ),
     path(
         "participants/<uuid:participant_id>/resend-invite/",
-        organizer.ParticipantResendInviteView.as_view(),
+        organizer.ParticipantResendLoginInfoView.as_view(),
         name="api_participant_resend_invite",
     ),
     path(
@@ -293,7 +293,7 @@ urlpatterns = [
     ),
     path(
         "events/<uuid:event_id>/invitations/send/",
-        organizer.SendInvitationsView.as_view(),
+        organizer.SendLoginInfoView.as_view(),
         name="api_send_invitations",
     ),
     path(

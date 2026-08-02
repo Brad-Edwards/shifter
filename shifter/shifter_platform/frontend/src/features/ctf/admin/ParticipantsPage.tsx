@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router";
 
 import { UserPlus } from "lucide-react";
 
-import { useCtfParticipants, useInviteCtfParticipant } from "@/api/ctfAdmin";
+import { useCtfParticipants, useAddCtfParticipant } from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -30,7 +30,7 @@ import { titleCase } from "../format";
 import { ctfAdminEventPath, ctfAdminEventsPath, ctfAdminParticipantPath } from "../routes";
 
 function InviteDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: string; open: boolean; onOpenChange: (open: boolean) => void }>) {
-  const invite = useInviteCtfParticipant(eventId);
+  const invite = useAddCtfParticipant(eventId);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const error = describeMutationError(invite.error, "Could not invite the participant.");

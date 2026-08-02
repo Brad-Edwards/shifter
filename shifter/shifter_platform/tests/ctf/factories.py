@@ -109,7 +109,7 @@ def create_participant_data(**overrides: Any) -> dict[str, Any]:
     data = {
         "email": "participant@test.com",
         "name": "Test Participant",
-        "status": ParticipantStatus.INVITED.value,
+        "status": ParticipantStatus.REGISTERED.value,
     }
     data.update(overrides)
     return data

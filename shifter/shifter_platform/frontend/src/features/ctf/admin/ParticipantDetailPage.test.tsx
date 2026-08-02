@@ -19,7 +19,7 @@ const PARTICIPANT = {
   status: "active",
   team_name: null,
   registered_at: "2026-08-01T10:00:00Z",
-  invited_at: "2026-07-30T10:00:00Z",
+  login_info_sent_at: "2026-07-30T10:00:00Z",
   last_active_at: null,
   total_score: 300,
   solved_count: 3,

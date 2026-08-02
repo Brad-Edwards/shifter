@@ -57,7 +57,6 @@ def get_event_stats(event: CTFEvent) -> dict[str, int]:
                 ParticipantStatus.COMPLETED.value,
             ]
         ).count(),
-        "invited_count": event.participants.filter(status=ParticipantStatus.INVITED.value).count(),
         "challenge_count": event.challenges.count(),
         "team_count": event.teams.count() if event.team_mode else 0,
         "total_submissions": CTFSubmission.objects.filter(participant__event=event).count(),
