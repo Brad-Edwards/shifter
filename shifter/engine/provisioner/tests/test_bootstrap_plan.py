@@ -68,6 +68,9 @@ class MockPolarisInstance:
     public_key: str = "ssh-rsa AAAA"
     range_id: int = 7
     agent_role_arn: str = "arn:aws:iam::123456789012:role/shifter-range-7-polaris-agent"
+    # GCP threads a provisioner-minted signed tarball URL in via the instance
+    # (#1644); the range host has no GCS identity of its own.
+    polaris_tests_url: str = "https://storage.googleapis.com/b/o?X-Goog-Signature=deadbeef&generation=42"
 
 
 class TestPolarisRangeBootstrapPlan:
@@ -144,7 +147,15 @@ class TestPolarisRangeBootstrapPlan:
             "polaris_kali_vertex_shard",
         ]
         scripts = dict(zip(step_names, [s.script for s in plan.steps], strict=True))
-        assert "gcloud storage cp" in scripts["polaris_fetch_tests"]
+        fetch = scripts["polaris_fetch_tests"]
+        # #1644: the GCS fetch uses a provisioner-minted signed URL, never the
+        # range-host SA's ADC. No gcloud/gsutil, no gs:// path, no metadata server.
+        assert "{{ polaris_tests_url }}" in fetch
+        assert "curl -sSfL" in fetch
+        assert "gcloud storage" not in fetch
+        assert "gsutil" not in fetch
+        assert "gs://" not in fetch
+        assert "metadata" not in fetch.lower()
         vertex = scripts["polaris_kali_vertex_shard"]
         assert "CLAUDE_CODE_USE_VERTEX" in vertex
         # Metadata exfil path is blocked and the key is owned by the agent user.
@@ -206,11 +217,35 @@ class TestPolarisRangeBootstrapPlan:
         with pytest.raises(ValueError, match="agent_role_arn"):
             polaris_range_bootstrap_plan.get_context(mock_polaris_instance)
 
+    def test_gcp_context_carries_signed_tarball_url_not_a_bucket(self):
+        # #1644: GCP delivers the tarball via the threaded signed URL; the range
+        # host selects no bucket of its own and gets no bucket/key render vars.
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "proj-123")
+            instance = MockPolarisInstance(polaris_tests_url="https://signed.example/tarball?sig=x")
+            context = PolarisRangeBootstrapPlan(provider="gcp").get_context(instance)
+
+        assert context["polaris_tests_url"] == "https://signed.example/tarball?sig=x"
+        assert "polaris_tests_bucket" not in context
+        assert "polaris_tests_key" not in context
+
+    def test_gcp_context_requires_signed_tarball_url(self):
+        # No provisioner-minted URL threaded in -> fail closed (#1644); never fall
+        # back to guest ADC or a project storage grant.
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "proj-123")
+            instance = MockPolarisInstance(polaris_tests_url="")
+            with pytest.raises(ValueError, match="polaris_tests_url"):
+                PolarisRangeBootstrapPlan(provider="gcp").get_context(instance)
+
     def test_gcp_context_carries_vertex_project_region_models(self):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setenv("POLARIS_TESTS_BUCKET", "gcs-bucket")
             mp.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "proj-123")
             mp.setenv("GCP_RANGE_VERTEX_REGION", "us-east5")
             context = PolarisRangeBootstrapPlan(provider="gcp").get_context(MockPolarisInstance())
