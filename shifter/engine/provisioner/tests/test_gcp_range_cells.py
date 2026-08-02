@@ -381,13 +381,10 @@ def test_render_range_cell_plan_rejects_disabled_machine_host_identity_pool():
     payload = _scenario_payload()
     payload["subnets"][0]["instances"][0]["ami_key"] = "nested-host"
 
+    variables = _variables(payload=payload)
+
     with pytest.raises(CloudError, match="identity pool is disabled"):
-        render_range_cell_plan(
-            "req-123",
-            _variables(payload=payload),
-            config,
-            range_host_pool_slot=4,
-        )
+        render_range_cell_plan("req-123", variables, config, range_host_pool_slot=4)
 
 
 def test_render_range_cell_plan_private_google_access_adds_egress_hole():

@@ -1004,23 +1004,22 @@ class TestParticipantAccessRealization:
             credential_installer=lambda **_kwargs: {},
         )
 
+        plan = _access_plan()
+        bindings = [_access_transport()]
+
         with pytest.raises(RaesGcePlanError, match="no verified account credential"):
-            apply_raes_range_cell("req-1", 7, _access_plan(), _resolver, options, access_bindings=[_access_transport()])
+            apply_raes_range_cell("req-1", 7, plan, _resolver, options, access_bindings=bindings)
 
     def test_an_unrealizable_binding_is_refused_before_any_cloud_call(self):
         clients = _clients()
         secret_ops, _ = _secret_ops()
         options = _apply_options(_config(), clients, secret_ops)
 
+        plan = _access_plan()
+        bindings = [{**_access_transport(), "target_address": "node.ghost"}]
+
         with pytest.raises(Exception, match="participant access"):
-            apply_raes_range_cell(
-                "req-1",
-                7,
-                _access_plan(),
-                _resolver,
-                options,
-                access_bindings=[{**_access_transport(), "target_address": "node.ghost"}],
-            )
+            apply_raes_range_cell("req-1", 7, plan, _resolver, options, access_bindings=bindings)
         assert not clients.instances.insert.called
 
     def test_no_bindings_leaves_the_instance_participant_free(self):

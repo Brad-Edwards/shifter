@@ -55,7 +55,8 @@ class TestKnownScopes:
             assert scope == scope.lower()
             assert "*" not in scope
             assert scope.count(":") >= 1
-            assert not scope.startswith(":") and not scope.endswith(":")
+            assert not scope.startswith(":")
+            assert not scope.endswith(":")
 
 
 class TestValidateScopes:

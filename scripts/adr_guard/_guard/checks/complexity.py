@@ -104,9 +104,7 @@ def _classify_noqa_line(line: str) -> str | None:
         if "C901" not in codes:
             return None
         return "c901" if def_match else "<noqa-without-def>"
-    if _NOQA_BARE_PATTERN.search(line) and def_match:
-        return "<bare-noqa>"
-    return None
+    return "<bare-noqa>" if _NOQA_BARE_PATTERN.search(line) and def_match else None
 
 
 def _scan_file_for_noqa(path: Path, relpath: str, sites: dict[tuple[str, str], tuple[str, int]]) -> None:
@@ -157,6 +155,26 @@ def _scan_noqa_c901_sites(repo_root: Path) -> dict[tuple[str, str], tuple[str, i
     return sites
 
 
+def _is_backticked(cell: str) -> bool:
+    """True when a markdown table cell is wrapped in backticks."""
+    return cell.startswith("`") and cell.endswith("`")
+
+
+def _backlog_row_entry(line: str) -> tuple[str, str] | None:
+    """Parse one backlog table row into a ``(file, function)`` pair, or None."""
+    cells = [c.strip() for c in line.split("|")]
+    # A markdown table row has empty leading/trailing cells. The required
+    # leading columns are `<pkg>|<file>|<fn>|<complexity>`; downstream
+    # columns (tracking issue, owner, etc.) are accepted as long as the
+    # leading shape is intact.
+    if len(cells) < 6 or cells[0] or cells[-1]:
+        return None
+    file_cell, fn_cell, comp_cell = cells[2], cells[3], cells[4]
+    if not _is_backticked(file_cell) or not _is_backticked(fn_cell) or not comp_cell.isdigit():
+        return None
+    return (file_cell.strip("`"), fn_cell.strip("`"))
+
+
 def _parse_complexity_backlog(repo_root: Path) -> set[tuple[str, str]] | None:
     """Parse the ADR-012 backlog doc into a set of ``(file, function)`` pairs.
 
@@ -171,21 +189,9 @@ def _parse_complexity_backlog(repo_root: Path) -> set[tuple[str, str]] | None:
         return None
     entries: set[tuple[str, str]] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
-        cells = [c.strip() for c in line.split("|")]
-        # A markdown table row has empty leading/trailing cells. The required
-        # leading columns are `<pkg>|<file>|<fn>|<complexity>`; downstream
-        # columns (tracking issue, owner, etc.) are accepted as long as the
-        # leading shape is intact.
-        if len(cells) < 6 or cells[0] or cells[-1]:
-            continue
-        _pkg, file_cell, fn_cell, comp_cell = cells[1], cells[2], cells[3], cells[4]
-        if not (file_cell.startswith("`") and file_cell.endswith("`")):
-            continue
-        if not (fn_cell.startswith("`") and fn_cell.endswith("`")):
-            continue
-        if not comp_cell.isdigit():
-            continue
-        entries.add((file_cell.strip("`"), fn_cell.strip("`")))
+        entry = _backlog_row_entry(line)
+        if entry is not None:
+            entries.add(entry)
     return entries
 
 
@@ -256,7 +262,7 @@ def _violation_r2(path: str, message: str) -> Violation:
     return Violation(_CHECK_NAME, _RULE_R2, path, message)
 
 
-def _load_lint_section(path: Path) -> tuple[dict, Violation | None]:
+def _load_lint_section(path: Path) -> tuple[dict[str, object], Violation | None]:
     """Read a pyproject.toml and return its ``[tool.ruff.lint]`` mapping.
 
     Returns ``({}, Violation)`` on TOML decode errors so the caller can record
@@ -272,7 +278,7 @@ def _load_lint_section(path: Path) -> tuple[dict, Violation | None]:
     return lint, None
 
 
-def _check_select(lint: dict, relative: str) -> list[Violation]:
+def _check_select(lint: dict[str, object], relative: str) -> list[Violation]:
     """C901 must be covered by ``select`` or ``extend-select``."""
     if _any_selector_covers_c901(lint.get("select", [])) or _any_selector_covers_c901(lint.get("extend-select", [])):
         return []
@@ -284,7 +290,7 @@ def _check_select(lint: dict, relative: str) -> list[Violation]:
     ]
 
 
-def _check_ignore_field(lint: dict, field: str, relative: str) -> list[Violation]:
+def _check_ignore_field(lint: dict[str, object], field: str, relative: str) -> list[Violation]:
     """``ignore`` / ``extend-ignore`` must not suppress C901 by any prefix."""
     covers = [s for s in lint.get(field, []) if _selector_covers_c901(s)]
     if not covers:
@@ -297,7 +303,7 @@ def _check_ignore_field(lint: dict, field: str, relative: str) -> list[Violation
     ]
 
 
-def _check_per_file_ignores(lint: dict, relative: str) -> list[Violation]:
+def _check_per_file_ignores(lint: dict[str, object], relative: str) -> list[Violation]:
     """``per-file-ignores`` must not exempt C901 from any glob."""
     per_file_ignores = lint.get("per-file-ignores", {})
     broad = sorted(glob for glob, rules in per_file_ignores.items() if any(_selector_covers_c901(r) for r in rules))
@@ -313,7 +319,7 @@ def _check_per_file_ignores(lint: dict, relative: str) -> list[Violation]:
     ]
 
 
-def _check_max_complexity(lint: dict, relative: str) -> list[Violation]:
+def _check_max_complexity(lint: dict[str, object], relative: str) -> list[Violation]:
     """``mccabe.max-complexity`` must equal the repo-wide threshold."""
     mccabe = lint.get("mccabe", {})
     if "max-complexity" not in mccabe:

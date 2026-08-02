@@ -145,8 +145,51 @@ def provision_event_ranges_throttled(
 
     tallies = {"successful": 0, "failed": 0, "skipped": 0}
     errors: list[dict[str, str]] = []
-    interrupted = False
 
+    interrupted = _provision_participants_paced(
+        event_id,
+        participants,
+        delay,
+        tallies,
+        errors,
+        shutdown_check=shutdown_check,
+        heartbeat=heartbeat,
+    )
+
+    _notify_provision_failures(event_id, errors)
+    if capacity is not None and capacity["outcome"] != "admitted":
+        # Advisory/indeterminate outcomes proceeded, but the operator still
+        # needs to see them.
+        _notify_capacity_outcome(event_id, capacity)
+
+    return {
+        "event_id": str(event_id),
+        "total": tallies["successful"] + tallies["failed"] + tallies["skipped"],
+        "successful": tallies["successful"],
+        "failed": tallies["failed"],
+        "skipped": tallies["skipped"],
+        "errors": errors,
+        "interrupted": interrupted,
+        "capacity": capacity,
+    }
+
+
+def _provision_participants_paced(
+    event_id: UUID,
+    participants: list[CTFParticipant],
+    delay: float,
+    tallies: dict[str, int],
+    errors: list[dict[str, str]],
+    *,
+    shutdown_check: Callable[[], bool] | None = None,
+    heartbeat: Callable[[], None] | None = None,
+) -> bool:
+    """Provision each participant in turn, waiting ``delay`` seconds between them.
+
+    Outcomes are folded into ``tallies`` and ``errors`` in place. Returns whether
+    ``shutdown_check`` asked the run to abort before the list was exhausted.
+    """
+    count = len(participants)
     for i, participant in enumerate(participants):
         if shutdown_check and shutdown_check():
             logger.info(
@@ -155,8 +198,7 @@ def provision_event_ranges_throttled(
                 count,
                 event_id,
             )
-            interrupted = True
-            break
+            return True
 
         _safe_heartbeat(heartbeat, event_id)
         _record_provision_attempt(participant, tallies, errors, heartbeat=heartbeat)
@@ -175,23 +217,7 @@ def provision_event_ranges_throttled(
         # chunked so the heartbeat stays fresh and shutdown stays responsive.
         if i < count - 1 and not (shutdown_check and shutdown_check()):
             _interruptible_sleep(delay, heartbeat=heartbeat, shutdown_check=shutdown_check)
-
-    _notify_provision_failures(event_id, errors)
-    if capacity is not None and capacity["outcome"] != "admitted":
-        # Advisory/indeterminate outcomes proceeded, but the operator still
-        # needs to see them.
-        _notify_capacity_outcome(event_id, capacity)
-
-    return {
-        "event_id": str(event_id),
-        "total": tallies["successful"] + tallies["failed"] + tallies["skipped"],
-        "successful": tallies["successful"],
-        "failed": tallies["failed"],
-        "skipped": tallies["skipped"],
-        "errors": errors,
-        "interrupted": interrupted,
-        "capacity": capacity,
-    }
+    return False
 
 
 def _declare_and_assess(event_id: UUID) -> dict[str, Any] | None:

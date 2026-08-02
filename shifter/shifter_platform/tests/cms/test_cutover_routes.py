@@ -70,7 +70,8 @@ class TestCatalogOverlay:
         _route(settings)
         polaris = _entry("polaris")
         assert polaris["id"] == "polaris"
-        assert polaris["name"] and polaris["name"] != "polaris-raes"
+        assert polaris["name"]
+        assert polaris["name"] != "polaris-raes"
 
     def test_route_to_unregistered_target_fails_closed(self, settings):
         _route(settings)  # no polaris-raes row registered

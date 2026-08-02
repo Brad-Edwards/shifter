@@ -20,6 +20,7 @@ from ._registry import (
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse the ADR guard command line and validate the requested check names."""
     valid_checks = sorted(CHECKS)
     parser = argparse.ArgumentParser(description="Run ADR conformance checks")
     parser.add_argument("--checks", nargs="*", default=[], help=f"Explicit checks to run ({', '.join(valid_checks)})")
@@ -43,16 +44,16 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _selected_files(args: argparse.Namespace, repo_root: Path) -> list[str] | None:
+    """Resolve the scope flags to repo-relative files, or None for the whole repo."""
     if args.all:
         return None
     if args.changed:
         return _normalize_files(get_changed_files(repo_root), repo_root)
-    if args.files:
-        return _normalize_files(args.files, repo_root)
-    return None
+    return _normalize_files(args.files, repo_root)
 
 
 def _print_text(violations: list[Violation], checks: list[str], files: list[str] | None) -> None:
+    """Print a human-readable summary of the run and any violations found."""
     if not violations:
         scope = "all files" if files is None else f"{len(files)} file(s)"
         print(f"ADR guard passed: {', '.join(checks)} on {scope}")
@@ -64,13 +65,14 @@ def _print_text(violations: list[Violation], checks: list[str], files: list[str]
 
 
 def main() -> int:
+    """Run the selected checks and return the process exit code."""
     args = _parse_args()
     repo_root = REPO_ROOT
     files = _selected_files(args, repo_root)
     checks = args.checks or CHECK_LEVELS[args.level]
     try:
         exceptions = load_adr_exceptions(repo_root)
-    except (OSError, ValueError, json.JSONDecodeError):
+    except (OSError, ValueError):
         exceptions = []
 
     violations: list[Violation] = []

@@ -78,8 +78,8 @@ class AWSTaskRunner:
         failure_reasons = [f.get("reason", "unknown") for f in failures]
         raise CloudTaskError(f"No tasks started for {task_definition}: {failure_reasons}")
 
+    @staticmethod
     def interrupt_task(
-        self,
         cluster: str,
         task_ref: str,
         expected_identity: dict[str, Any],

@@ -103,7 +103,16 @@ def get_scenario_realizability(scenario_id: str) -> dict[str, Any] | None:
         return None
     if entry.get("scenario_type") != RAES_SCENARIO_TYPE:
         return _result(scenario_id, "", RealizabilityOutcome.NOT_APPLICABLE, ())
+    return _assess_raes_entry(scenario_id)
 
+
+def _assess_raes_entry(scenario_id: str) -> dict[str, Any]:
+    """Assess a catalog entry already known to be RAES-backed.
+
+    Resolves the registered package source and the server-selected target before
+    handing off to the pack assessment; either being unavailable is
+    ``indeterminate``, never realizable.
+    """
     source = _package_source(scenario_id)
     if source is None:
         return _result(scenario_id, "", RealizabilityOutcome.INDETERMINATE, (_gap_pack_unresolvable(),))
@@ -200,16 +209,21 @@ def _trusted_scenario_path(source: RaesPackageSource) -> Iterator[tuple[Path | N
         yield _repo_scenario_path(source)
         return
 
-    # ExitStack owns the staging teardown, and the try covers only entering it --
-    # a failure inside the assessment body must propagate, not be re-yielded.
+    # ExitStack owns the staging teardown, and the staging helper catches only
+    # the staging failure -- a failure inside the assessment body propagates out
+    # of the yield below rather than being re-yielded.
     with ExitStack() as stack:
-        try:
-            pack_root = stack.enter_context(_stage_object_pack(source))
-        except Exception as exc:
-            logger.info("raes realizability could not stage object pack (%s)", type(exc).__name__)
-            yield None, _gap_pack_unresolvable()
-        else:
-            yield _verified_object_scenario_path(pack_root, source)
+        yield _staged_object_scenario_path(stack, source)
+
+
+def _staged_object_scenario_path(stack: ExitStack, source: RaesPackageSource) -> tuple[Path | None, RealizabilityGap]:
+    """Stage the object pack into ``stack`` and resolve its verified SDL path."""
+    try:
+        pack_root = stack.enter_context(_stage_object_pack(source))
+    except Exception as exc:
+        logger.info("raes realizability could not stage object pack (%s)", type(exc).__name__)
+        return None, _gap_pack_unresolvable()
+    return _verified_object_scenario_path(pack_root, source)
 
 
 def _repo_scenario_path(source: RaesPackageSource) -> tuple[Path | None, RealizabilityGap]:
@@ -267,9 +281,10 @@ def _verified_object_scenario_path(pack_root: Path, source: RaesPackageSource) -
     from shared.raes.package_loader import resolve_pack_scenario_path
 
     try:
-        if validate_pack(pack_root) != source.scenario_id:
-            return None, _gap_untrusted()
-        if source.package_digest and not verify_pack_digest(pack_root, source.package_digest):
+        trusted = validate_pack(pack_root) == source.scenario_id and (
+            not source.package_digest or verify_pack_digest(pack_root, source.package_digest)
+        )
+        if not trusted:
             return None, _gap_untrusted()
         return resolve_pack_scenario_path(pack_root), _gap_untrusted()
     except Exception as exc:
@@ -304,9 +319,10 @@ def _supply_gap(
     # An unpinned authored source and a base-OS fallback both take the
     # any-version default row; a pinned source must match exactly.
     version = demand.source_version if demand.source_name else None
-    if resolve_from_candidates(candidates.get(name, []), version=version) is not None:
-        return None
-    if demand.source_name and is_concrete_image_ref(demand.source_name, provider=target_id):
+    supplied = resolve_from_candidates(candidates.get(name, []), version=version) is not None or bool(
+        demand.source_name and is_concrete_image_ref(demand.source_name, provider=target_id)
+    )
+    if supplied:
         return None
     return _gap(
         _MISSING_IMAGE_MAPPING,
