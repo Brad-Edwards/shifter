@@ -307,11 +307,20 @@ resource "google_service_account" "range_vertex" {
   display_name = "Shifter ${var.environment} range Vertex"
 }
 
+# The range host SA is attached to participant-controllable POLARIS GCE guests
+# with cloud-platform scope, so a participant with root on the guest can mint its
+# token from the metadata server. It therefore holds NO project-level Cloud
+# Storage role: a project (or shared-assets-bucket) objectViewer would let a
+# compromised guest read across tenants (#1644). Its only host-side GCS need --
+# the POLARIS smoketest tarball -- is delivered as a short-lived, provisioner-
+# minted V4 signed download URL (agent_assets.get_polaris_tests_presigned_url),
+# so the guest needs no GCS identity at all. logging/monitoring writes stay; the
+# per-range Vertex-secret grant is bound elsewhere. check_tf_gcp_iam_resource_scope
+# fails closed on any project-level roles/storage.* re-added to this SA.
 resource "google_project_iam_member" "range_host_roles" {
   for_each = toset([
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
-    "roles/storage.objectViewer",
   ])
 
   project = var.project_id
