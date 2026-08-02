@@ -7,6 +7,11 @@ import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
 import { UsersListPage } from "@/features/administer/UsersListPage";
+import { ConsoleSlotPage } from "@/features/administer/organization/ConsoleSlotPage";
+import { OrganizationConsoleLayout } from "@/features/administer/organization/OrganizationConsoleLayout";
+import { OrganizationOverviewPage } from "@/features/administer/organization/OrganizationOverviewPage";
+import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
+import { WORKSPACE_SURFACES } from "@/features/administer/organization/surfaces";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
 import { ChallengesPage } from "@/features/ctf/ChallengesPage";
 import { AdminDashboardPage } from "@/features/ctf/admin/AdminDashboardPage";
@@ -204,6 +209,33 @@ export const router = createBrowserRouter(
             { path: "users/:id", element: <UserDetailPage /> },
             { path: "cost", element: <CostPage /> },
             { path: "settings", element: <PlatformSettingsPage /> },
+            {
+              // Organization/workspace admin console (#1938, PLAT-231). The shell
+              // owns routing, the switcher, context, and capability-aware nav; the
+              // child surface slots (org settings, workspaces, and the
+              // workspace-scoped membership/invitations/users/range-scoping/policy/
+              // quota/audit routes) are placeholders owned by PLAT-232–240. The
+              // selected workspace is the public-UUID route param; the host
+              // catch-all already serves /administer/* so deep links resolve.
+              path: "organization",
+              element: <OrganizationConsoleLayout />,
+              children: [
+                { index: true, element: <OrganizationOverviewPage /> },
+                { path: "settings", element: <ConsoleSlotPage title="Organization settings" /> },
+                { path: "workspaces", element: <ConsoleSlotPage title="Workspaces" /> },
+                {
+                  path: "workspaces/:workspaceUuid",
+                  element: <WorkspaceScopeLayout />,
+                  children: [
+                    { index: true, element: <ConsoleSlotPage title="Workspace overview" /> },
+                    ...WORKSPACE_SURFACES.map((surface) => ({
+                      path: surface.key,
+                      element: <ConsoleSlotPage title={surface.label} />,
+                    })),
+                  ],
+                },
+              ],
+            },
           ],
         },
         { path: "*", element: <NotFoundPage /> },

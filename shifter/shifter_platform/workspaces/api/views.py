@@ -6,18 +6,23 @@ from typing import TYPE_CHECKING, NoReturn
 from uuid import UUID
 
 from drf_spectacular.utils import extend_schema
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shared.api.errors import api_error_response
+from shared.api.permissions import IsStaffSession
 from shared.api.principals import active_actor_user
 from shared.api.schema import ApiErrorSerializer
+from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.audit import get_actor_from_request, get_client_ip, get_request_id
 from workspaces import services
 from workspaces.api.permissions import WORKSPACE_MEMBERSHIP_PERMISSIONS
 from workspaces.api.serializers import (
     AddWorkspaceMemberSerializer,
     ChangeWorkspaceMemberRoleSerializer,
+    PrincipalWorkspaceContextSerializer,
     WorkspaceMembershipSerializer,
 )
 
@@ -109,6 +114,46 @@ class _WorkspaceAPIView(APIView):
         if isinstance(exc, _WorkspaceAPIError):
             return exc.to_response()
         return super().handle_exception(exc)
+
+
+class PrincipalWorkspaceContextView(ListAPIView):
+    """Read the caller's own organization/workspace context for the admin console.
+
+    A side-effect-free projection of the caller's existing workspace memberships
+    (organization, workspace, role, and role-permitted operations), used by the
+    ``/administer`` organization console shell and switcher (ADR-046-R11, #1938).
+
+    Staff-session only and deliberately **not** token-capable: the bearer-first,
+    fail-closed authentication ordering parses an invalid token before session
+    fallback, and ``IsStaffSession`` rejects any valid platform token (including
+    one owned by a staff user). Staff admission and workspace authority stay
+    additive -- staff admits the console, but each child resource endpoint still
+    reauthorizes its own workspace operation. The read never creates or repairs
+    tenancy state, so a staff caller with no membership receives an empty page.
+    """
+
+    authentication_classes = [ApiTokenAuthentication, SessionAuthentication]
+    permission_classes = [IsStaffSession]
+    serializer_class = PrincipalWorkspaceContextSerializer
+    # The service returns a materialized, already-ordered list, not a queryset, so
+    # the globally configured OrderingFilter/SearchFilter backends (which call
+    # queryset.order_by / .filter) cannot apply. Opt out so the generated contract
+    # does not advertise ?ordering=/?search= parameters this view cannot honor.
+    filter_backends: list[type] = []
+
+    @extend_schema(
+        responses={200: PrincipalWorkspaceContextSerializer(many=True), 403: ApiErrorSerializer},
+        operation_id="api_v1_workspaces_principal_context",
+    )
+    def get(self, request: Request, *args: object, **kwargs: object) -> Response:
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self) -> list[services.ActorWorkspaceContext]:
+        actor = active_actor_user(self.request)
+        if actor is None:
+            # Defensive: IsStaffSession admits only an authenticated staff session.
+            return []
+        return services.list_actor_workspace_contexts(actor)
 
 
 class SelfMembershipView(_WorkspaceAPIView):

@@ -52,6 +52,13 @@
       "technical_docs": ["technical/shifter_platform/workspaces.md"]
     },
     {
+      "id": "org-workspace-admin-console",
+      "title": "Organization/workspace admin console",
+      "requirement": "PLAT-231",
+      "user_docs": ["features/org-workspace-admin-console.md"],
+      "technical_docs": ["technical/shifter_platform/org-workspace-admin-console.md"]
+    },
+    {
       "id": "aws-eks-backend-bundle",
       "title": "AWS EKS backend bundle",
       "requirement": "GEN-001",

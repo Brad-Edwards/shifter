@@ -18,6 +18,11 @@ from ._authorization import (
     authorize_workspace,
     authorized_workspace_ids,
 )
+from ._context import (
+    ActorWorkspaceContext,
+    OrganizationRef,
+    list_actor_workspace_contexts,
+)
 from ._memberships import (
     MembershipAuditContext,
     WorkspaceMembershipError,
@@ -36,7 +41,9 @@ from ._personal import resolve_personal_workspace
 # import (ADR-001-R1). The role vocabulary is NOT re-exported -- no other layer
 # has business reading or comparing a role code.
 __all__ = [
+    "ActorWorkspaceContext",
     "MembershipAuditContext",
+    "OrganizationRef",
     "WorkspaceAuthorization",
     "WorkspaceAuthorizationError",
     "WorkspaceMembershipError",
@@ -50,6 +57,7 @@ __all__ = [
     "change_workspace_member_role",
     "get_self_membership",
     "leave_workspace",
+    "list_actor_workspace_contexts",
     "list_workspace_memberships",
     "remove_workspace_member",
     "resolve_personal_workspace",

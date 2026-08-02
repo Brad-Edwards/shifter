@@ -260,6 +260,18 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         external: false,
         featureFlag: "administer_spa",
       },
+      // In-SPA Organization/workspace admin console (#1938, PLAT-231), gated by
+      // administer_spa. First-class entry the per-capability org/workspace admin
+      // slices (PLAT-232–240) hang off; staff-gated like the rest of the group.
+      {
+        surface: "Organization",
+        routeName: "administer:organization",
+        purpose: "Administer organizations and workspaces.",
+        routePath: "/administer/organization",
+        iconKey: "boxes",
+        external: false,
+        featureFlag: "administer_spa",
+      },
       {
         surface: "Cost",
         routeName: "administer:cost",

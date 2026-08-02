@@ -2538,6 +2538,11 @@
         "id": "ADR-046-R10",
         "description": "Workspace quota and workspace range-policy evaluation compose at one CMS pre-reservation launch-admission seam parameterized by authorized workspace, individual owner, server-derived range source, trusted instantiation purpose, and stable request correlation. The initial decision may add no hard tenant limit, but callers may not duplicate the hook. A future enforcing workspace quota must use durable idempotent reservation rather than a count-then-create race, and must remain distinct from Engine's event/provider-capacity ledger. A future workspace egress override extends the canonical installation RangeEgressPolicy, resolves and pins one closed effective decision on the Engine range, and is replay-verified; workspace identity, membership, role, or policy documents never enter scenario/RAES contracts, provisioner argv/environment, events, provider labels, or guest metadata.",
         "checks": []
+      },
+      {
+        "id": "ADR-046-R11",
+        "description": "A current-principal organization/workspace context is a read-only projection of the actor's existing workspace memberships, grouped by membership-reachable organizations and exposed only through the workspaces service facade with public UUIDs and server-derived operation capabilities. It does not establish a primary organization, persisted current workspace, organization-wide role, or new authority source; navigation, routes, flags, role labels, and cached client context remain advisory, and every resource endpoint repeats the applicable workspace service authorization. The read must not create or repair tenancy state.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2549,9 +2554,11 @@
       "https://github.com/Brad-Edwards/shifter/issues/1325",
       "https://github.com/Brad-Edwards/shifter/issues/1326",
       "https://github.com/Brad-Edwards/shifter/issues/1327",
+      "https://github.com/Brad-Edwards/shifter/issues/1938",
       "docs/architecture/organization-workspace-preflight-1325.md",
       "docs/architecture/workspace-membership-roles-preflight-1326.md",
       "docs/architecture/range-workspace-scoping-preflight-1327.md",
+      "docs/architecture/organization-workspace-admin-console-preflight-1938.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",

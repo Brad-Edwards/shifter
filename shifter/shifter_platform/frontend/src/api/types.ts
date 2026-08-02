@@ -21,6 +21,19 @@ export type PaginatedAdminUserListItemList = components["schemas"]["PaginatedAdm
 export type OrganizerGrantResult = components["schemas"]["OrganizerGrantResult"];
 
 /**
+ * Organization/workspace admin console types (#1938, PLAT-231), re-exported from
+ * the generated OpenAPI schema. The `workspaces.services` projection + DRF
+ * serializer are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. `role`/`capabilities` are advisory display data — the
+ * `/api/v1/workspaces/` endpoints reauthorize every operation.
+ */
+export type PrincipalWorkspaceContext = components["schemas"]["PrincipalWorkspaceContext"];
+export type PaginatedPrincipalWorkspaceContextList =
+  components["schemas"]["PaginatedPrincipalWorkspaceContextList"];
+export type OrganizationRef = components["schemas"]["OrganizationRef"];
+export type WorkspaceRole = components["schemas"]["WorkspaceRoleEnum"];
+
+/**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
  * schema. Only the shapes this foundation chunk (and the pages/live-access
  * chunks that follow it) need are re-exported here; do not hand-copy field

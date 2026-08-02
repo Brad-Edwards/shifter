@@ -131,4 +131,30 @@ describe("visibleNavGroups", () => {
     });
     expect(visibleNavGroups("participant", bs)).toEqual([]);
   });
+
+  it("shows the Organization console entry for staff with administer_spa on (#1938)", () => {
+    const administer = visibleNavGroups("operator", bootstrap()).find((g) => g.group === "Administer");
+    const org = administer?.entries.find((e) => e.surface === "Organization");
+    expect(org?.routePath).toBe("/administer/organization");
+    expect(org?.permissionPolicy).toBe("staff");
+    expect(org?.featureFlag).toBe("administer_spa");
+    expect(org?.external).toBeFalsy();
+  });
+
+  it("hides the Organization console entry when administer_spa is off (#1938)", () => {
+    const bs = bootstrap({ feature_flags: { ...STAFF_BOOTSTRAP.feature_flags, administer_spa: false } });
+    const administer = visibleNavGroups("operator", bs).find((g) => g.group === "Administer");
+    expect(administer?.entries.some((e) => e.surface === "Organization")).toBeFalsy();
+  });
+
+  it("keeps the Django Admin escape hatch present and external in every rollout state (#1938)", () => {
+    // administer_spa OFF: the SPA Administer entries drop, but the Django admin
+    // escape hatch must remain reachable from the sidebar.
+    const bs = bootstrap({ feature_flags: { ...STAFF_BOOTSTRAP.feature_flags, administer_spa: false } });
+    const administer = visibleNavGroups("operator", bs).find((g) => g.group === "Administer");
+    const djangoAdmin = administer?.entries.find((e) => e.surface === "Django Admin");
+    expect(djangoAdmin?.external).toBe(true);
+    expect(djangoAdmin?.routePath).toBe("/admin/");
+    expect(djangoAdmin?.featureFlag).toBeUndefined();
+  });
 });
