@@ -130,10 +130,14 @@ class TestParticipantScopedApi:
             kwargs={"challenge_id": ctf_challenge.id},
             body={"flag": "FLAG{guess}"},
         )
-        # The flag value is deliberately wrong, so the outcome is intentionally not
-        # the happy path: 200 (submission accepted, marked incorrect), 400 (rejected),
-        # or 429 (rate-limited) are all valid; this test exercises dispatch, not a win.
-        assert resp.status_code in (200, 400, 429)
+        # submit_flag enforces the same availability policy as hint unlock and
+        # rating (ctf.services.challenge.assert_challenge_available_for_participant):
+        # the ctf_event fixture is in REGISTRATION, not an active window, so the
+        # precondition refuses the submission with 400 before verify_flag runs.
+        # This pins the deterministic precondition outcome rather than accepting an
+        # unreachable 200/429. Flag verification itself is exercised directly in
+        # test_flag_source_of_truth.py and test_challenge_services.py.
+        assert resp.status_code == 400
 
     def test_submit_flag_missing(
         self, authenticated_participant_client: Client, ctf_participant: CTFParticipant, ctf_challenge: CTFChallenge
@@ -625,7 +629,6 @@ class TestAdminChallengeFormPosts:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$z",
             flag_format="FLAG{...}",
         )
         resp = authenticated_organizer_client.post(

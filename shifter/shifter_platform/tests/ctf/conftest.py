@@ -27,6 +27,7 @@ from ctf.models import (
     CTFBracket,
     CTFChallenge,
     CTFEvent,
+    CTFFlag,
     CTFParticipant,
     CTFScheduledTask,
     CTFSubmission,
@@ -88,7 +89,6 @@ def make_challenge(event=None, **overrides) -> CTFChallenge:
         "category": ChallengeCategory.WEB.value,
         "points": 100,
         "difficulty": ChallengeDifficulty.EASY.value,
-        "flag_hash": "$2b$12$test_hash_placeholder",
         "flag_format": "FLAG{...}",
         "release_time": None,
         "order": 0,
@@ -329,19 +329,35 @@ def ctf_event_team(db, organizer_user) -> CTFEvent:
 # -----------------------------------------------------------------------------
 
 
+def _add_static_flag(challenge: CTFChallenge, flag: str = "FLAG{test}", *, order: int = 0) -> CTFFlag:
+    """Attach one static CTFFlag to a challenge (CTFFlag is the flag source of
+    truth; #532)."""
+    from ctf.services.challenge import hash_flag
+
+    return CTFFlag.objects.create(
+        challenge=challenge,
+        flag_hash=hash_flag(flag),
+        flag_type="static",
+        case_sensitive=True,
+        order=order,
+    )
+
+
 @pytest.fixture
 def ctf_challenge(db, ctf_event) -> CTFChallenge:
-    """Create a basic challenge."""
-    return CTFChallenge.objects.create(
+    """Create a basic challenge with one static flag (CTFFlag is the source of
+    truth; #532)."""
+    challenge = CTFChallenge.objects.create(
         event=ctf_event,
         name="Test Challenge",
         description="Find the flag in the source code",
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$test_hash_placeholder",
         flag_format="FLAG{...}",
     )
+    _add_static_flag(challenge, "FLAG{test}")
+    return challenge
 
 
 @pytest.fixture
@@ -354,7 +370,6 @@ def ctf_challenge_with_hint(db, ctf_event) -> CTFChallenge:
         category=ChallengeCategory.CRYPTO.value,
         points=200,
         difficulty=ChallengeDifficulty.MEDIUM.value,
-        flag_hash="$2b$12$another_hash_placeholder",
         hint="Look at the cipher mode",
         hint_penalty=25,
     )
@@ -370,7 +385,6 @@ def ctf_challenge_delayed(db, ctf_event) -> CTFChallenge:
         category=ChallengeCategory.PWN.value,
         points=300,
         difficulty=ChallengeDifficulty.HARD.value,
-        flag_hash="$2b$12$delayed_hash_placeholder",
         release_time=ctf_event.event_start + timedelta(hours=2),
     )
 

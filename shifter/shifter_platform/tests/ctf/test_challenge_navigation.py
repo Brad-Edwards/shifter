@@ -34,7 +34,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$h1",
         )
         CTFChallenge.objects.create(
             event=ctf_event_draft,
@@ -43,7 +42,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$h2",
         )
         form = CTFChallengeForm(instance=c1, event=ctf_event_draft)
         qs = form.fields["next_challenge"].queryset
@@ -69,7 +67,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$h1",
         )
         CTFChallenge.objects.create(
             event=other_event,
@@ -78,7 +75,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$h2",
         )
         form = CTFChallengeForm(event=ctf_event_draft)
         qs = form.fields["next_challenge"].queryset
@@ -102,7 +98,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$h1",
         )
         c2 = CTFChallenge.objects.create(
             event=ctf_event_active,
@@ -111,7 +106,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$h2",
         )
         c1.next_challenge = c2
         c1.save()
@@ -158,7 +152,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$h1",
         )
         p = CTFParticipant.objects.create(
             event=ctf_event_active,
@@ -200,7 +193,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.NETWORK.value,
             points=200,
             difficulty=ChallengeDifficulty.MEDIUM.value,
-            flag_hash="$2b$12$h3",
             target_instance_name="windows-target",
             target_port=3389,
         )
@@ -247,7 +239,6 @@ class TestNextChallengeNavigation:
             category=ChallengeCategory.NETWORK.value,
             points=200,
             difficulty=ChallengeDifficulty.MEDIUM.value,
-            flag_hash="$2b$12$h4",
             target_instance_name="windows-target",
             target_port=3389,
         )
@@ -321,7 +312,6 @@ class TestOrganizerDashboard:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$h1",
         )
         p = CTFParticipant.objects.create(
             event=ctf_event_active,

@@ -134,7 +134,6 @@ def test_foreign_content_is_not_merged(organizer_user) -> None:
         description="Existing",
         category="misc",
         points=10,
-        flag_hash="unusable",
     )
     resolved = _resolved()
     with pytest.raises(CTFStateError) as error:

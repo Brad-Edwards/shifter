@@ -36,7 +36,6 @@ def ctf_challenge_active(ctf_event_active):
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$test_hash_placeholder",
         flag_format="FLAG{...}",
     )
 
