@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from django.contrib.auth.decorators import login_required
@@ -10,7 +11,22 @@ from django.contrib.auth.models import User
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
-from cms.services import WorkspaceLaunchDenied
+from cms.services import (
+    WorkspaceLaunchDenied,
+    get_active_range,
+)
+from cms.services import (
+    create_range_dispatch as cms_create_range,
+)
+from cms.services import (
+    get_agent as cms_get_agent,
+)
+from cms.services import (
+    list_agents as cms_list_agents,
+)
+from cms.services import (
+    list_launchable_scenarios as cms_list_launchable_scenarios,
+)
 from mission_control.utils import build_connection_urls
 from shared.audit import AuditAction
 from shared.auth import block_ctf_participant_only
@@ -19,7 +35,9 @@ from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
 from shared.raes.presentation import build_range_participant_runtime_projection, build_range_raes_projection
 
-from ._common import _audit_range_lifecycle, _get_user, _logger, _pkg
+from ._common import _audit_range_lifecycle, _get_user
+
+logger = logging.getLogger(__name__)
 
 
 class _RangeError(Exception):
@@ -48,8 +66,7 @@ def get_range(request: HttpRequest) -> JsonResponse:
         - has_range: true/false
         - range: RangeContext object (if exists)
     """
-    # Late-bound: tests patch ``views.get_active_range``.
-    active_range = _pkg().get_active_range(_get_user(request))
+    active_range = get_active_range(_get_user(request))
 
     if not active_range:
         return JsonResponse(
@@ -84,9 +101,9 @@ def _resolve_launch_agents(user: User, data: dict[str, Any]) -> dict[str, int]:
         if not agent_id:
             raise _RangeError(JsonResponse({"error": "agent_id is required"}, status=400))
         try:
-            agent = _pkg().cms_get_agent(user, agent_id)
+            agent = cms_get_agent(user, agent_id)
         except CMSError as e:
-            _logger().exception("Agent lookup failed: user=%s agent_id=%s", user.pk, safe_log_value(agent_id))
+            logger.exception("Agent lookup failed: user=%s agent_id=%s", user.pk, safe_log_value(agent_id))
             raise _RangeError(
                 JsonResponse({"error": classify_user_message(str(e), default="Agent not available")}, status=400)
             ) from e
@@ -119,7 +136,7 @@ def launch_range(request: HttpRequest) -> JsonResponse:
     try:
         data = _parse_json_body(request)
         scenario = data.get("scenario", "basic")
-        valid_scenarios = {s["id"] for s in _pkg().cms_list_launchable_scenarios(user, "range_launch")}
+        valid_scenarios = {s["id"] for s in cms_list_launchable_scenarios(user, "range_launch")}
         if scenario not in valid_scenarios:
             raise _RangeError(JsonResponse({"error": "Invalid scenario"}, status=400))
         agents_by_os = _resolve_launch_agents(user, data)
@@ -127,13 +144,13 @@ def launch_range(request: HttpRequest) -> JsonResponse:
             # Optional public workspace selection (ADR-046-R9); the internal
             # workspace_id is resolved and authorized in cms.services, and a
             # malformed/unauthorized UUID is denied there rather than trusted.
-            range_ctx = _pkg().cms_create_range(user, scenario, agents_by_os, workspace_uuid=data.get("workspace_uuid"))
+            range_ctx = cms_create_range(user, scenario, agents_by_os, workspace_uuid=data.get("workspace_uuid"))
         except WorkspaceLaunchDenied as e:
             # Authorized-shape but unavailable scope is one opaque 403 (ADR-046-R9);
             # a malformed UUID would be a 400 at input validation.
             raise _RangeError(JsonResponse({"error": "Selected workspace is not available."}, status=403)) from e
         except CMSError as e:
-            _logger().exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+            logger.exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
             # Preserve the "already have an active range" guidance for the UI
             # using an authored literal (str(e) must not reach the response).
             text = str(e).lower()
@@ -145,7 +162,7 @@ def launch_range(request: HttpRequest) -> JsonResponse:
     except _RangeError as err:
         return err.response
 
-    _logger().info(
+    logger.info(
         "Range launched: user=%s request_id=%s agent=%s scenario=%s",
         safe_log_value(user.email),
         range_ctx.request_id,
@@ -176,8 +193,9 @@ def _dispatch_range_lifecycle(
 ) -> JsonResponse:
     """Shared cancel/destroy/pause/resume dispatcher.
 
-    The CMS callables are looked up at call time by attribute name on
-    ``cms.services`` so ``patch("cms.services.<name>")`` continues to work.
+    The verb-specific CMS callable is selected by the configured attribute
+    name on ``cms.services`` (``by_request_attr`` / ``by_id_attr``), so the
+    four lifecycle verbs share one dispatch body.
     """
     import cms.services as cms_services_mod
 
@@ -191,7 +209,7 @@ def _dispatch_range_lifecycle(
         try:
             if request_id:
                 getattr(cms_services_mod, by_request_attr)(user, request_id)
-                _logger().info(
+                logger.info(
                     "Range %s: user=%s request_id=%s",
                     log_verb,
                     safe_log_value(user.email),
@@ -199,14 +217,14 @@ def _dispatch_range_lifecycle(
                 )
             else:
                 getattr(cms_services_mod, by_id_attr)(user, range_id)
-                _logger().info(
+                logger.info(
                     "Range %s: user=%s range_id=%s",
                     log_verb,
                     safe_log_value(user.email),
                     safe_log_value(range_id),
                 )
         except CMSError as e:
-            _logger().exception(
+            logger.exception(
                 "Range %s failed: user=%s request_id=%s range_id=%s",
                 log_verb,
                 user.pk,
@@ -330,7 +348,7 @@ def list_agents(request: HttpRequest) -> JsonResponse:
     The os_slug field allows frontend to filter agents by OS type
     (e.g., 'windows' for DC agent dropdown in AD scenarios).
     """
-    agents = _pkg().cms_list_agents(_get_user(request))
+    agents = cms_list_agents(_get_user(request))
     return JsonResponse({"agents": agents})
 
 
@@ -343,5 +361,5 @@ def list_scenarios(request: HttpRequest) -> JsonResponse:
     Response (JSON):
         - scenarios: List of scenario dicts with agent_requirements field
     """
-    scenarios: list[dict[str, Any]] = _pkg().cms_list_launchable_scenarios(_get_user(request), "range_launch")
+    scenarios: list[dict[str, Any]] = cms_list_launchable_scenarios(_get_user(request), "range_launch")
     return JsonResponse({"scenarios": scenarios})
