@@ -1,4 +1,4 @@
-"""Explicit serializers for the workspace membership API."""
+"""Explicit serializers for the workspace membership and organization APIs."""
 
 from rest_framework import serializers
 
@@ -10,6 +10,45 @@ class OrganizationRefSerializer(serializers.Serializer):
 
     uuid = serializers.UUIDField(read_only=True)
     name = serializers.CharField(read_only=True)
+
+
+class OrganizationProfileSerializer(serializers.Serializer):
+    """Read-only organization profile projection (ADR-048, PLAT-232).
+
+    Emits the public ``uuid`` only; the internal integer primary key never
+    appears on the wire.
+    """
+
+    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    description = serializers.CharField(read_only=True)
+    support_email = serializers.EmailField(read_only=True)
+    support_url = serializers.URLField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+
+
+class OrganizationProfileUpdateSerializer(serializers.Serializer):
+    """Partial-update command for the organization profile (PATCH mask).
+
+    Every field is optional; an absent field is unchanged and an empty string
+    clears an optional field. Unknown fields are rejected rather than ignored,
+    and ``uuid``/timestamps are never writable here. The serializer owns HTTP
+    shape (lengths, primitive formats); ``workspaces.services`` owns authority
+    and persistence invariants.
+    """
+
+    name = serializers.CharField(max_length=200, allow_blank=False, required=False)
+    description = serializers.CharField(max_length=2000, allow_blank=True, required=False)
+    support_email = serializers.EmailField(max_length=254, allow_blank=True, required=False)
+    support_url = serializers.URLField(max_length=500, allow_blank=True, required=False)
+
+    def validate(self, attrs: dict) -> dict:
+        """Reject unknown fields so a stale or hostile client cannot smuggle keys."""
+        unknown = set(self.initial_data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError(dict.fromkeys(sorted(unknown), "Unknown field."))
+        return attrs
 
 
 class PrincipalWorkspaceContextSerializer(serializers.Serializer):

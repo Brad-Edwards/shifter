@@ -12,7 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shared.api.errors import api_error_response
-from shared.api.permissions import IsStaffSession
+from shared.api.permissions import IsAuthenticatedSession, IsStaffSession
 from shared.api.principals import active_actor_user
 from shared.api.schema import ApiErrorSerializer
 from shared.api_tokens.authentication import ApiTokenAuthentication
@@ -22,6 +22,8 @@ from workspaces.api.permissions import WORKSPACE_MEMBERSHIP_PERMISSIONS
 from workspaces.api.serializers import (
     AddWorkspaceMemberSerializer,
     ChangeWorkspaceMemberRoleSerializer,
+    OrganizationProfileSerializer,
+    OrganizationProfileUpdateSerializer,
     PrincipalWorkspaceContextSerializer,
     WorkspaceMembershipSerializer,
 )
@@ -286,3 +288,99 @@ class MembershipLeaveView(_WorkspaceAPIView):
         except (services.WorkspaceAuthorizationError, services.WorkspaceMembershipError) as exc:
             _raise_as_response(exc, request)
         return Response(WorkspaceMembershipSerializer(membership).data)
+
+
+def _organization_audit(request: Request) -> services.OrganizationAuditContext:
+    """Build trusted organization-update audit attribution from the request."""
+    actor_type, actor_id = get_actor_from_request(request)
+    return services.OrganizationAuditContext(
+        actor_type=actor_type,
+        actor_id=actor_id,
+        source_ip=get_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+        request_id=get_request_id(request),
+    )
+
+
+class OrganizationListView(ListAPIView):
+    """List the organizations the caller may administer (ADR-048 authority).
+
+    Session-only, like the profile detail view. The list is the authority-owned
+    discovery source for the settings surface: a superuser sees every
+    organization, every other actor sees only the organizations it holds an
+    ``admin`` membership in, and workspace reachability is never used. A caller
+    who administers none receives an empty page.
+    """
+
+    authentication_classes = [ApiTokenAuthentication, SessionAuthentication]
+    permission_classes = [IsAuthenticatedSession]
+    serializer_class = OrganizationProfileSerializer
+    # The service returns a materialized, already-ordered projection list, not a
+    # queryset, so the global ordering/search filter backends cannot apply.
+    filter_backends: list[type] = []
+
+    @extend_schema(
+        responses={200: OrganizationProfileSerializer(many=True), 403: ApiErrorSerializer},
+        operation_id="api_v1_organizations_administrable_list",
+    )
+    def get(self, request: Request, *args: object, **kwargs: object) -> Response:
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self) -> list[services.OrganizationProfile]:
+        return services.list_administrable_organizations(self.request.user)
+
+
+class OrganizationProfileView(APIView):
+    """Read or partially update an organization profile, keyed by public UUID.
+
+    Session-only and authorized by the ADR-048 organization-admin seam (or a
+    Django superuser override) inside ``workspaces.services``; a platform token
+    principal is refused by ``IsAuthenticatedSession``. A missing organization,
+    an organization outside the actor's authority, and insufficient authority
+    all return the same opaque 403 so the endpoint is not a tenant-enumeration
+    oracle.
+    """
+
+    # Bearer-first, fail-closed chain: an invalid ``shf_`` bearer is rejected
+    # outright; a valid token authenticates as an ApiToken principal, which
+    # IsAuthenticatedSession then refuses (this endpoint is session-only).
+    authentication_classes = [ApiTokenAuthentication, SessionAuthentication]
+    permission_classes = [IsAuthenticatedSession]
+
+    def _denied(self, request: Request) -> Response:
+        return api_error_response(
+            code="organization_access_denied",
+            message="Organization access denied",
+            status_code=403,
+            request=request,
+        )
+
+    @extend_schema(
+        responses={200: OrganizationProfileSerializer, 403: ApiErrorSerializer},
+        operation_id="api_v1_organization_retrieve",
+    )
+    def get(self, request: Request, organization_uuid: UUID) -> Response:
+        try:
+            profile = services.get_organization_profile(request.user, organization_uuid)
+        except services.OrganizationAuthorizationError:
+            return self._denied(request)
+        return Response(OrganizationProfileSerializer(profile).data)
+
+    @extend_schema(
+        request=OrganizationProfileUpdateSerializer,
+        responses={200: OrganizationProfileSerializer, 400: ApiErrorSerializer, 403: ApiErrorSerializer},
+        operation_id="api_v1_organization_update",
+    )
+    def patch(self, request: Request, organization_uuid: UUID) -> Response:
+        command = OrganizationProfileUpdateSerializer(data=request.data)
+        command.is_valid(raise_exception=True)
+        try:
+            profile = services.update_organization_profile(
+                request.user,
+                organization_uuid,
+                command.validated_data,
+                audit=_organization_audit(request),
+            )
+        except services.OrganizationAuthorizationError:
+            return self._denied(request)
+        return Response(OrganizationProfileSerializer(profile).data)
