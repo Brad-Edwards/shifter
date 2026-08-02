@@ -57,6 +57,14 @@ class TestSingleFlagNormalization:
                 actor_id=ctf_event_draft.created_by_id,
             )
 
+    def test_create_rejects_explicitly_empty_flags(self, ctf_event_draft):
+        with pytest.raises(CTFValidationError):
+            create_challenge(
+                event_id=ctf_event_draft.pk,
+                challenge_data=_base_challenge_data(flags=[]),
+                actor_id=ctf_event_draft.created_by_id,
+            )
+
     def test_update_with_plaintext_flag_replaces_flag_set(self, ctf_event_draft):
         challenge = create_challenge(
             event_id=ctf_event_draft.pk,

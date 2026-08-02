@@ -104,6 +104,20 @@ class TestChallengeExportImport:
             import_challenges(ctf_event_draft.pk, payload, actor_id=ctf_event_draft.created_by_id)
         assert exc.value.code == "CTF_UNSUPPORTED_FORMAT"
 
+    def test_shifter_import_rejects_entry_without_flags(self, ctf_event_draft):
+        """A shifter (v2) entry with no flag material is invalid (#532): CTFFlag
+        rows are the sole source of truth, so an imported challenge must carry
+        at least one flag."""
+        from ctf.services.transfer import import_challenges
+
+        payload = {
+            "format": "shifter-challenges/v2",
+            "challenges": [{"name": "Flagless", "description": "x", "category": "web", "points": 100, "flags": []}],
+        }
+        result = import_challenges(ctf_event_draft.pk, payload, actor_id=ctf_event_draft.created_by_id)
+        assert result["created"] == []
+        assert len(result["errors"]) == 1
+
 
 class TestResultsExport:
     def test_json_and_csv(self, ctf_event_active, authenticated_organizer_client):
