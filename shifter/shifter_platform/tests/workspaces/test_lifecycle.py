@@ -4,6 +4,9 @@ Drives the real service against real rows. Authorization and invariant tests
 exist to go red if the enforcement is removed: each asks the seam a question a
 caller would ask and asserts the effect (allowed / denied / persisted), not that
 a helper was called.
+
+Exception tests hoist the audit-context construction out of the ``pytest.raises``
+block so only the call under test can raise inside it (Sonar S5778).
 """
 
 from __future__ import annotations
@@ -84,9 +87,10 @@ def test_create_workspace_writes_a_strict_workspace_create_audit_event():
 def test_create_workspace_denies_a_non_admin_of_the_organization():
     organization = _org()
     outsider = _user("outsider")
+    audit = _audit(outsider)
 
     with pytest.raises(services.OrganizationAuthorizationError):
-        services.create_workspace(outsider, organization.uuid, "Blue Team", audit=_audit(outsider))
+        services.create_workspace(outsider, organization.uuid, "Blue Team", audit=audit)
     assert not Workspace.objects.filter(name="Blue Team").exists()
 
 
@@ -102,19 +106,21 @@ def test_create_workspace_allows_a_superuser_override():
 def test_create_workspace_rejects_a_blank_name():
     organization = _org()
     admin = _org_admin(organization)
+    audit = _audit(admin)
 
     with pytest.raises(services.WorkspaceLifecycleError) as exc:
-        services.create_workspace(admin, organization.uuid, "   ", audit=_audit(admin))
+        services.create_workspace(admin, organization.uuid, "   ", audit=audit)
     assert exc.value.code == "name_blank"
 
 
 def test_create_workspace_rejects_a_duplicate_name_within_the_organization():
     organization = _org()
     admin = _org_admin(organization)
-    services.create_workspace(admin, organization.uuid, "Blue Team", audit=_audit(admin))
+    audit = _audit(admin)
+    services.create_workspace(admin, organization.uuid, "Blue Team", audit=audit)
 
     with pytest.raises(services.WorkspaceLifecycleError) as exc:
-        services.create_workspace(admin, organization.uuid, "Blue Team", audit=_audit(admin))
+        services.create_workspace(admin, organization.uuid, "Blue Team", audit=audit)
     assert exc.value.code == "name_taken"
 
 
@@ -122,9 +128,10 @@ def test_create_workspace_denies_an_admin_of_a_different_organization():
     organization = _org("A")
     other = _org("B")
     other_admin = _org_admin(other, "other-admin")
+    audit = _audit(other_admin)
 
     with pytest.raises(services.OrganizationAuthorizationError):
-        services.create_workspace(other_admin, organization.uuid, "Blue Team", audit=_audit(other_admin))
+        services.create_workspace(other_admin, organization.uuid, "Blue Team", audit=audit)
 
 
 # ---------------------------------------------------------------------------
@@ -245,9 +252,10 @@ def test_rename_workspace_denies_a_bare_member():
     workspace = Workspace.objects.get(uuid=created.uuid)
     member = _user("member")
     _member(workspace, member, WorkspaceRole.MEMBER.value)
+    audit = _audit(member)
 
     with pytest.raises(services.WorkspaceAuthorizationError):
-        services.rename_workspace(member, created.uuid, "New", audit=_audit(member))
+        services.rename_workspace(member, created.uuid, "New", audit=audit)
     assert Workspace.objects.get(uuid=created.uuid).name == "Old"
 
 
@@ -256,9 +264,10 @@ def test_rename_workspace_rejects_a_duplicate_name():
     admin = _org_admin(organization)
     services.create_workspace(admin, organization.uuid, "Taken", audit=_audit(admin))
     created = services.create_workspace(admin, organization.uuid, "Free", audit=_audit(admin))
+    audit = _audit(admin)
 
     with pytest.raises(services.WorkspaceLifecycleError) as exc:
-        services.rename_workspace(admin, created.uuid, "Taken", audit=_audit(admin))
+        services.rename_workspace(admin, created.uuid, "Taken", audit=audit)
     assert exc.value.code == "name_taken"
 
 
@@ -317,9 +326,10 @@ def test_archive_workspace_denies_a_bare_member():
     workspace = Workspace.objects.get(uuid=created.uuid)
     member = _user("member")
     _member(workspace, member, WorkspaceRole.MEMBER.value)
+    audit = _audit(member)
 
     with pytest.raises(services.WorkspaceAuthorizationError):
-        services.archive_workspace(member, created.uuid, audit=_audit(member))
+        services.archive_workspace(member, created.uuid, audit=audit)
 
 
 # ---------------------------------------------------------------------------
@@ -353,9 +363,10 @@ def test_transfer_ownership_is_owner_only():
     _member(workspace, non_owner, WorkspaceRole.ADMIN.value)
     target = _user("target")
     _member(workspace, target, WorkspaceRole.MEMBER.value)
+    audit = _audit(non_owner)
 
     with pytest.raises(services.WorkspaceAuthorizationError):
-        services.transfer_workspace_ownership(non_owner, created.uuid, target.pk, audit=_audit(non_owner))
+        services.transfer_workspace_ownership(non_owner, created.uuid, target.pk, audit=audit)
     assert WorkspaceMembership.objects.get(workspace=workspace, user=admin).role == WorkspaceRole.OWNER.value
 
 
@@ -364,9 +375,10 @@ def test_transfer_ownership_rejects_a_non_member_target():
     admin = _org_admin(organization)
     created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
     stranger = _user("stranger")
+    audit = _audit(admin)
 
     with pytest.raises(services.WorkspaceLifecycleError) as exc:
-        services.transfer_workspace_ownership(admin, created.uuid, stranger.pk, audit=_audit(admin))
+        services.transfer_workspace_ownership(admin, created.uuid, stranger.pk, audit=audit)
     assert exc.value.code == "membership_not_found"
 
 
@@ -379,11 +391,12 @@ def test_personal_workspaces_reject_every_lifecycle_mutation():
     user = _user("personal-owner")
     authorization = services.resolve_personal_workspace(user)
     personal = Workspace.objects.get(pk=authorization.workspace_id)
+    audit = _audit(user)
 
     with pytest.raises(services.WorkspaceLifecycleError) as rename_exc:
-        services.rename_workspace(user, personal.uuid, "Renamed", audit=_audit(user))
+        services.rename_workspace(user, personal.uuid, "Renamed", audit=audit)
     assert rename_exc.value.code == "personal_workspace_protected"
     with pytest.raises(services.WorkspaceLifecycleError):
-        services.archive_workspace(user, personal.uuid, audit=_audit(user))
+        services.archive_workspace(user, personal.uuid, audit=audit)
     with pytest.raises(services.WorkspaceLifecycleError):
-        services.transfer_workspace_ownership(user, personal.uuid, user.pk, audit=_audit(user))
+        services.transfer_workspace_ownership(user, personal.uuid, user.pk, audit=audit)
