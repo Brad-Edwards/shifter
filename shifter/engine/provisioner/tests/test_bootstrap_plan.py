@@ -239,8 +239,9 @@ class TestPolarisRangeBootstrapPlan:
         with pytest.MonkeyPatch.context() as mp:
             mp.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "proj-123")
             instance = MockPolarisInstance(polaris_tests_url="")
+            plan = PolarisRangeBootstrapPlan(provider="gcp")
             with pytest.raises(ValueError, match="polaris_tests_url"):
-                PolarisRangeBootstrapPlan(provider="gcp").get_context(instance)
+                plan.get_context(instance)
 
     def test_gcp_context_carries_vertex_project_region_models(self):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
