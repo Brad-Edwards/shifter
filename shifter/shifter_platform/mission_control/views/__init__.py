@@ -1,7 +1,7 @@
 """Mission Control view package.
 
 The implementation is split across private submodules (``_pages``,
-``_ranges``, ``_ngfw``, ``_credentials``, ``_guacamole_bootstrap``) and the
+``_ngfw``, ``_credentials``, ``_guacamole_bootstrap``) and the
 view callables are re-exported here so existing
 ``from mission_control.views import X`` and ``from mission_control import views;
 views.X`` call sites (URL configuration) continue to work.
