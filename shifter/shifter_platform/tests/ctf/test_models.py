@@ -519,7 +519,6 @@ class TestCTFSubmissionModel:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="hash",
         )
         submission = CTFSubmission(
             id=uuid4(),
@@ -553,7 +552,6 @@ class TestCTFSubmissionModel:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="hash",
         )
         submission = CTFSubmission(
             id=uuid4(),

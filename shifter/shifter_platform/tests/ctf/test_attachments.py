@@ -68,7 +68,6 @@ def challenge(db, draft_event):
         category=ChallengeCategory.FORENSICS.value,
         points=200,
         difficulty=ChallengeDifficulty.MEDIUM.value,
-        flag_hash="$2b$12$hash_file_test",
     )
 
 
@@ -213,7 +212,6 @@ class TestAddChallengeFile:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$hash_active",
         )
         upload = _make_file()
         with pytest.raises(CTFStateError):

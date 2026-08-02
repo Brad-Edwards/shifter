@@ -36,8 +36,8 @@ inherit `CTFBaseModel` with a `SoftDeleteManager` (soft delete by default).
 | Model | Purpose |
 |-------|---------|
 | `CTFEvent` | Competition: window, scenario, capacity, team mode, throttles, scoreboard policy, cleanup policy |
-| `CTFChallenge` | Scored task: category, points, difficulty, hashed flag, release time, prerequisite, target instance/port, tags/topics |
-| `CTFFlag` | One or more flags per challenge; stored as a hash with type, case sensitivity, and validator config |
+| `CTFChallenge` | Scored task: category, points, difficulty, release time, prerequisite, target instance/port, tags/topics |
+| `CTFFlag` | The sole source of flag truth: one or more flags per challenge, each stored as a hash (static), pattern (regex), or sentinel (programmable/http) with type, case sensitivity, and validator config |
 | `CTFTopic`, `CTFChallengeTag`, `CTFChallengeFile`, `CTFChallengePrerequisite` | Challenge taxonomy, attachments, and unlock graph |
 | `CTFBracket`, `CTFTeam`, `CTFParticipant` | Cohorts, teams, and per-user participation |
 | `CTFSubmission`, `CTFAward` | Flag attempts (correctness, points, attempt number, source IP) and manual point awards |
@@ -46,8 +46,12 @@ inherit `CTFBaseModel` with a `SoftDeleteManager` (soft delete by default).
 | `CTFNotification`, `CTFEmailTemplate`, `CTFScheduledTask` | Announcements, reminder templates, and scheduled work |
 | `CTFContentHydrationReceipt` | Digest, object-identity fingerprints, bounded counts, and pristine/drifted state for scenario-managed event content |
 
-Flags are persisted only as hashes (`flag_hash`); plaintext is never stored after
-challenge creation, and submission checking compares against the hash.
+Flag material is persisted only as `CTFFlag` rows (static flags as hashes, regex as
+patterns, programmable/HTTP as validator config), never on the challenge itself.
+Plaintext is never stored after flag creation, and submission checking compares
+against the `CTFFlag` records. A single plaintext `flag` on challenge create/update
+is normalized into one static `CTFFlag`; a challenge with no flag rows is
+unverifiable (every submission is rejected).
 
 ## Services
 

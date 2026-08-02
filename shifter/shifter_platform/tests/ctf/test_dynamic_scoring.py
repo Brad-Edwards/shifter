@@ -82,7 +82,6 @@ class TestDynamicScoringEndToEnd:
             decay_function="linear",
             decay_solve_count=4,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         add_flag(challenge.pk, {"flag": "FLAG{decay}"}, actor_id=event.created_by_id)
         return challenge

@@ -130,7 +130,6 @@ class TestParticipantSolveHistoryView:
             category=ctf_challenge.category,
             points=150,
             difficulty=ctf_challenge.difficulty,
-            flag_hash="$2b$12$postfreeze_hash_placeholder",
             flag_format="FLAG{...}",
         )
         pre = CTFSubmission.objects.create(
@@ -183,7 +182,6 @@ class TestParticipantSolveHistoryView:
             category=ctf_challenge.category,
             points=150,
             difficulty=ctf_challenge.difficulty,
-            flag_hash="$2b$12$postfreeze_hash_placeholder",
             flag_format="FLAG{...}",
         )
         post = CTFSubmission.objects.create(

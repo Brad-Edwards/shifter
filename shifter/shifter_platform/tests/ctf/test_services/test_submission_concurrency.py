@@ -134,7 +134,6 @@ def challenge(db, event: CTFEvent) -> CTFChallenge:
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$placeholder",
         flag_format="FLAG{...}",
     )
     _add_static_flag(obj)
@@ -216,7 +215,6 @@ class TestConcurrentAttemptLimitLockout:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder",
             flag_format="FLAG{...}",
             max_attempts=self.MAX_ATTEMPTS,
         )
