@@ -21,12 +21,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 
+if TYPE_CHECKING:
+    from shared.schemas.cms_projections import AgentRequirements, ScenarioProjection
+
 # RAES catalog entries carry no cyberscript agent requirements.
-_RAES_AGENT_REQUIREMENTS = {"requires_windows": False, "requires_linux": False, "has_from_agent": False}
+_RAES_AGENT_REQUIREMENTS: AgentRequirements = {
+    "requires_windows": False,
+    "requires_linux": False,
+    "has_from_agent": False,
+}
 
 
 def active_cutover_map() -> Mapping[str, str]:
@@ -53,7 +60,7 @@ def routed_source_ids() -> frozenset[str]:
     return frozenset(active_cutover_map().values())
 
 
-def apply_cutover_routes(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def apply_cutover_routes(entries: list[ScenarioProjection]) -> list[ScenarioProjection]:
     """Overlay the ADR-031-R6 source routes onto the unified catalog projection.
 
     For each active ``public_id -> source_id`` route the public entry becomes the
@@ -70,7 +77,7 @@ def apply_cutover_routes(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return entries
     by_id = {entry["id"]: entry for entry in entries}
     suppressed = set(route_map.values())
-    overlaid: list[dict[str, Any]] = []
+    overlaid: list[ScenarioProjection] = []
     for entry in entries:
         entry_id = entry["id"]
         if entry_id in suppressed:
@@ -84,9 +91,11 @@ def apply_cutover_routes(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return overlaid
 
 
-def _overlay_raes_route(public_entry: dict[str, Any], source_entry: dict[str, Any] | None) -> dict[str, Any]:
+def _overlay_raes_route(
+    public_entry: ScenarioProjection, source_entry: ScenarioProjection | None
+) -> ScenarioProjection:
     """Return the public entry re-backed by its routed RAES source (fail-closed)."""
-    overlaid = dict(public_entry)
+    overlaid = public_entry.copy()
     overlaid["scenario_type"] = "raes"
     if source_entry is None or source_entry.get("scenario_type") != "raes":
         # Routed target absent, not visible, or not a registered RAES source ->
@@ -98,13 +107,13 @@ def _overlay_raes_route(public_entry: dict[str, Any], source_entry: dict[str, An
         overlaid["source_kind"] = ""
         overlaid["contract_kind"] = ""
         overlaid["contract_profile"] = ""
-        overlaid["agent_requirements"] = dict(_RAES_AGENT_REQUIREMENTS)
+        overlaid["agent_requirements"] = _RAES_AGENT_REQUIREMENTS.copy()
         return overlaid
     overlaid["launchable"] = bool(source_entry.get("launchable", False))
     overlaid["source_kind"] = source_entry.get("source_kind", "")
     overlaid["contract_kind"] = source_entry.get("contract_kind", "")
     overlaid["contract_profile"] = source_entry.get("contract_profile", "")
-    overlaid["agent_requirements"] = source_entry.get("agent_requirements", dict(_RAES_AGENT_REQUIREMENTS))
+    overlaid["agent_requirements"] = source_entry.get("agent_requirements", _RAES_AGENT_REQUIREMENTS.copy())
     return overlaid
 
 

@@ -559,3 +559,35 @@ class TestObjectSourceNotLaunchable:
             conformance_status="passed",
         )
         assert get_catalog_entry("polaris-repo")["launchable"] is True
+
+
+def test_registry_projections_conform_to_scenario_projection_contract(staff_user):
+    """Registry projections match the ScenarioProjection static contract (#317).
+
+    Drift guard: a key produced by ``_scenario_to_dict`` / ``_raes_source_to_dict``
+    that is not declared on ``ScenarioProjection`` (e.g. a new template field left
+    off the TypedDict) trips the undeclared-keys assertion. Exercises both the demo
+    (YAML) and RAES producer branches.
+    """
+    from shared.schemas.cms_projections import ScenarioProjection
+
+    _make_raes_source(staff_user, "polaris-drift", source_kind="repo")
+
+    declared = set(ScenarioProjection.__annotations__)
+    common_required = {
+        "id",
+        "name",
+        "description",
+        "scenario_type",
+        "enabled",
+        "staff_only",
+        "is_default",
+        "launchable",
+        "agent_requirements",
+    }
+    entries = list_all_scenarios(user=None)
+    assert entries, "expected YAML demo defaults plus the RAES source"
+    assert any(entry["scenario_type"] == "raes" for entry in entries)
+    for entry in entries:
+        assert common_required <= set(entry), f"missing common keys in {entry.get('id')}"
+        assert set(entry) <= declared, f"undeclared keys {set(entry) - declared} in {entry.get('id')}"

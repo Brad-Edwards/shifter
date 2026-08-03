@@ -8,6 +8,7 @@ within its size budget.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from cms.exceptions import CMSError
@@ -101,7 +102,7 @@ def _load_scenario_template_or_raise(scenario: str) -> ScenarioTemplate:
 
 
 def _check_scenario_agent_requirements(
-    scenario: str, requirements: dict[str, bool], agents_by_os: dict[str, int]
+    scenario: str, requirements: Mapping[str, object], agents_by_os: dict[str, int]
 ) -> None:
     """Raise CMSError when scenario requirements are not met by agents_by_os."""
     if requirements["requires_windows"] and "windows" not in agents_by_os:
