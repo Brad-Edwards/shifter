@@ -252,20 +252,8 @@ def _validate_terraform_inputs(
     return resolved
 
 
-def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
-    """Create platform namespaces and install cluster-scoped controllers.
-
-    Installs the AWS load-balancer controller (ALB ingress) and the
-    cluster-autoscaler (#1826). Both bind to their IRSA role via a service-account
-    role-arn annotation; the autoscaler is scoped to this cluster's ASG through
-    autoDiscovery.clusterName plus the node-group discovery tags applied in
-    Terraform, so it never touches another cluster's capacity.
-    """
-    roles = _output(outputs, "workload_role_arns")
-    if not isinstance(roles, Mapping) or not isinstance(roles.get("ingress"), str):
-        raise ValueError("workload_role_arns must include the ingress controller role")
-    if not isinstance(roles.get("cluster-autoscaler"), str):
-        raise ValueError("workload_role_arns must include the cluster-autoscaler role")
+def _apply_platform_namespaces() -> None:
+    """Create the restricted platform namespaces the chart deploys into."""
     with tempfile.TemporaryDirectory(prefix="shifter-eks-bootstrap-") as staging:
         staging_path = Path(staging)
         for namespace, plane in _PLATFORM_NAMESPACES.items():
@@ -287,16 +275,10 @@ def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
             manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
             run_cmd(["kubectl", "apply", "-f", str(manifest_path)])
 
-    run_cmd(
-        [
-            "helm",
-            "repo",
-            "add",
-            "eks",
-            "https://aws.github.io/eks-charts",
-            "--force-update",
-        ]
-    )
+
+def _install_load_balancer_controller(cluster_name: str, role_arn: str) -> None:
+    """Install the AWS load-balancer controller bound to its exact IRSA role."""
+    run_cmd(["helm", "repo", "add", "eks", "https://aws.github.io/eks-charts", "--force-update"])
     run_cmd(["helm", "repo", "update", "eks"])
     run_cmd(
         [
@@ -310,13 +292,13 @@ def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
             "--version",
             _LOAD_BALANCER_CONTROLLER_CHART_VERSION,
             "--set-string",
-            f"clusterName={_output(outputs, 'cluster_name')}",
+            f"clusterName={cluster_name}",
             "--set",
             "serviceAccount.create=true",
             "--set-string",
             "serviceAccount.name=aws-load-balancer-controller",
             "--set-string",
-            "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=" + str(roles["ingress"]),
+            "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=" + role_arn,
             "--atomic",
             "--wait",
             "--timeout",
@@ -335,16 +317,14 @@ def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
         ]
     )
 
-    run_cmd(
-        [
-            "helm",
-            "repo",
-            "add",
-            "autoscaler",
-            "https://kubernetes.github.io/autoscaler",
-            "--force-update",
-        ]
-    )
+
+def _install_cluster_autoscaler(cluster_name: str, region: str, role_arn: str) -> None:
+    """Install the cluster-autoscaler scoped to this cluster's ASG (#1826).
+
+    autoDiscovery.clusterName plus the node-group discovery tags applied in
+    Terraform keep it from touching another cluster's capacity.
+    """
+    run_cmd(["helm", "repo", "add", "autoscaler", "https://kubernetes.github.io/autoscaler", "--force-update"])
     run_cmd(["helm", "repo", "update", "autoscaler"])
     run_cmd(
         [
@@ -358,7 +338,7 @@ def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
             "--version",
             _CLUSTER_AUTOSCALER_CHART_VERSION,
             "--set-string",
-            f"autoDiscovery.clusterName={_output(outputs, 'cluster_name')}",
+            f"autoDiscovery.clusterName={cluster_name}",
             "--set-string",
             f"awsRegion={region}",
             "--set",
@@ -366,7 +346,7 @@ def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
             "--set-string",
             "rbac.serviceAccount.name=cluster-autoscaler",
             "--set-string",
-            "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=" + str(roles["cluster-autoscaler"]),
+            "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=" + role_arn,
             # Only scale ASGs this cluster owns, and let the autoscaler evict
             # pods without the restrictive system-pod guard blocking scale-down.
             "--set",
@@ -390,6 +370,24 @@ def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
             "--timeout=5m",
         ]
     )
+
+
+def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
+    """Create platform namespaces and install the cluster-scoped controllers.
+
+    The AWS load-balancer controller (ALB ingress) and the cluster-autoscaler
+    (#1826) each bind to their exact IRSA role via a service-account role-arn
+    annotation.
+    """
+    roles = _output(outputs, "workload_role_arns")
+    if not isinstance(roles, Mapping) or not isinstance(roles.get("ingress"), str):
+        raise ValueError("workload_role_arns must include the ingress controller role")
+    if not isinstance(roles.get("cluster-autoscaler"), str):
+        raise ValueError("workload_role_arns must include the cluster-autoscaler role")
+    cluster_name = str(_output(outputs, "cluster_name"))
+    _apply_platform_namespaces()
+    _install_load_balancer_controller(cluster_name, str(roles["ingress"]))
+    _install_cluster_autoscaler(cluster_name, region, str(roles["cluster-autoscaler"]))
 
 
 def render_aws_values(
