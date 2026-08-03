@@ -404,7 +404,7 @@ class ScenarioListView(MissionControlReadAPIView):
     @extend_schema(responses=ScenarioListResponseSerializer, operation_id="api_v1_mission_control_scenarios_list")
     def get(self, request: Request) -> Response:
         """Return scenarios available to the authenticated actor."""
-        scenarios: list[dict[str, Any]] = cms_list_launchable_scenarios(self.actor_user(), "range_launch")
+        scenarios = cms_list_launchable_scenarios(self.actor_user(), "range_launch")
         return Response({"scenarios": scenarios})
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 from django.contrib import messages
@@ -78,11 +79,11 @@ def scenario_create_form(request: HttpRequest) -> HttpResponse:
         return render_unexpected_error(request, logger, "scenario_create_form")
 
 
-def _handle_edit_post(request: HttpRequest, scenario_id: str, scenario: dict[str, Any]) -> HttpResponse:
+def _handle_edit_post(request: HttpRequest, scenario_id: str, scenario: Mapping[str, Any]) -> HttpResponse:
     """Update a scenario from submitted form data."""
     fields, errors = update_scenario_from_form_post(cast("User", request.user), scenario_id, request.POST)
     if errors:
-        return render(request, FORM_TEMPLATE, _edit_context(scenario, fields, errors))
+        return render(request, FORM_TEMPLATE, _edit_context(dict(scenario), fields, errors))
 
     logger.info(
         "scenario_edit_form: updated scenario_id=%s by user_id=%s",

@@ -14,6 +14,8 @@ from ._common import _validate_caller_user, _validate_nonempty_str, _validate_po
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from shared.schemas.cms_projections import UploadInitiation
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +39,7 @@ def _initiate_upload_inner(
     filename: str,
     file_size: int,
     agent_type: str,
-) -> dict[str, Any]:
+) -> UploadInitiation:
     """Quota check, extension validation, presigned-URL + upload-token issuance.
 
     Split out of `initiate_upload` so that function carries only input
@@ -112,12 +114,16 @@ def _initiate_upload_inner(
         safe_log_value(s3_key),
     )
 
-    return {
+    result: UploadInitiation = {
         "presigned_url": presigned_url,
         "s3_key": s3_key,
         "upload_token": upload_token,
-        "expected_os": file_format.os_slug,
+        # ``os_slug`` is the non-null narrowing of ``file_format.os_slug`` asserted
+        # above; the service boundary guarantees a non-null OS even though the DRF
+        # presentation schema permits null.
+        "expected_os": os_slug,
     }
+    return result
 
 
 def initiate_upload(
@@ -126,7 +132,7 @@ def initiate_upload(
     filename: str,
     file_size: int,
     agent_type: str = "xdr",
-) -> dict[str, Any]:
+) -> UploadInitiation:
     """Validate and generate presigned URL for direct S3 upload.
 
     Validates user quota, file extension, and generates all components needed
