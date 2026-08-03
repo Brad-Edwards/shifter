@@ -31,6 +31,7 @@ from config import (
     resolve_cloud_provider,
     resolve_ngfw_attachment_config,
 )
+from executors.factory import get_sftp_root_directory
 from provisioner_ami import get_ami_id
 from provisioner_db_ngfw import get_user_ngfw_data
 from state_helpers import _get_cloud_provider
@@ -103,6 +104,25 @@ def _resolve_agent_presigned_url_from_inst(inst: dict[str, Any]) -> str:
     return _resolve_agent_presigned_url(inst)
 
 
+def _resolve_instance_sftp_root(inst: dict[str, Any], os_type: str, role: str) -> str:
+    """Return the operator-owned Guacamole SFTP root for this AWS instance (#375).
+
+    The root is image metadata, never scenario-author input: an instance
+    specification is tenant-controlled and may not widen the guest SFTP root, so
+    the ``sftp_root_directory`` key is deliberately not read from ``inst``.
+
+    A per-instance ``ami_key`` selects an *overridden* AMI that has no
+    operator-owned root source, so it retains no root (empty) and the connection
+    layer disables SFTP — the built-in per-OS root is not a safe guess for an
+    arbitrary custom image. The base class AMI (no override) is the operator's
+    reference image for that OS and keeps its reference root, atomic with the same
+    ``os_type`` -> AMI pairing the module already uses.
+    """
+    if inst.get("ami_key"):
+        return ""
+    return get_sftp_root_directory(os_type, role)
+
+
 def _build_tf_instance(inst: dict[str, Any]) -> dict[str, Any]:
     """Map one spec instance into the dict shape the terraform module expects."""
     os_type = inst.get("os_type", "ubuntu")
@@ -120,6 +140,7 @@ def _build_tf_instance(inst: dict[str, Any]) -> dict[str, Any]:
         "agent_presigned_url": _resolve_agent_presigned_url(inst),
         "join_domain": inst.get("join_domain", False),
         "ami_id": get_ami_id(ami_key) if ami_key else "",
+        "sftp_root_directory": _resolve_instance_sftp_root(inst, os_type, role),
     }
 
 
