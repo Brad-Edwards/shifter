@@ -244,9 +244,12 @@ class TestNgfwTerraformOrchestrationHelpers:
         mock_aws_deprovision,
         monkeypatch,
     ):
-        """Provider dispatch should route up/destroy without early-return branches."""
-        from ngfw_terraform import _run_ngfw_operation_for_provider
+        """Provider dispatch should route up/destroy and inject the resolved strategy."""
+        from ngfw_terraform import _run_ngfw_operation_for_provider, _run_pan_os_post_provision
 
+        # No DB_PASSWORD -> the seam resolves the live production post-provision strategy,
+        # which dispatch must inject into the provider ``up`` path.
+        monkeypatch.delenv("DB_PASSWORD", raising=False)
         app_spec = {"user_id": 7}
         monkeypatch.setenv("CLOUD_PROVIDER", "aws")
         _run_ngfw_operation_for_provider("up", "req-1", "inst-1", app_spec, "americas")
@@ -256,9 +259,13 @@ class TestNgfwTerraformOrchestrationHelpers:
         _run_ngfw_operation_for_provider("up", "req-2", "inst-2", app_spec, "europe")
         _run_ngfw_operation_for_provider("destroy", "req-2", "inst-2", app_spec, "europe")
 
-        mock_aws_provision.assert_called_once_with("req-1", "inst-1", app_spec, "americas", operation_id=None)
+        mock_aws_provision.assert_called_once_with(
+            "req-1", "inst-1", app_spec, "americas", post_provision=_run_pan_os_post_provision, operation_id=None
+        )
         mock_aws_deprovision.assert_called_once_with("req-1", "inst-1", operation_id=None)
-        mock_gdc_provision.assert_called_once_with("req-2", "inst-2", app_spec, "europe", operation_id=None)
+        mock_gdc_provision.assert_called_once_with(
+            "req-2", "inst-2", app_spec, "europe", post_provision=_run_pan_os_post_provision, operation_id=None
+        )
         mock_gdc_deprovision.assert_called_once_with("req-2", operation_id=None)
 
         with pytest.raises(ValueError, match="Unknown operation"):
@@ -380,15 +387,17 @@ class TestNgfwTerraformOrchestrationHelpers:
         assert reported.kwargs["operation"] == "provision"
         assert reported.kwargs["error_message"] == "apply failed"
 
-    def test_short_circuit_local_dev_post_provision_marks_ready_then_paused(self):
+    def test_short_circuit_local_dev_post_provision_marks_ready_then_paused(self, monkeypatch):
         """Local-dev post-provision should emit ready and paused states without PAN-OS calls."""
         from ngfw_terraform import _short_circuit_local_dev_post_provision
 
         update_instance_state = MagicMock()
+        monkeypatch.setattr("ngfw_terraform.update_instance_state", update_instance_state)
         _short_circuit_local_dev_post_provision(
             request_id="req-1",
+            instance_id="inst-1",
             output_data={"cloud_provider": "gcp", "route_next_hop_ip": "10.0.0.1"},
-            update_instance_state=update_instance_state,
+            sls_region="americas",
         )
 
         update_instance_state.assert_has_calls(
@@ -418,17 +427,16 @@ class TestNgfwTerraformOrchestrationHelpers:
             ]
         )
 
-    @patch("ngfw_terraform._run_pan_os_post_provision")
     @patch("ngfw_terraform.terraform_runner.apply_ngfw")
     def test_run_provision_logs_only_redacted_output_summary(
         self,
         mock_apply_ngfw,
-        mock_post_provision,
         monkeypatch,
     ):
         """AWS provision should not log full Terraform output dictionaries."""
         from ngfw_terraform import _run_provision
 
+        mock_post_provision = MagicMock()
         mock_update_instance_state = MagicMock()
         monkeypatch.setattr("ngfw_terraform.update_instance_state", mock_update_instance_state)
         monkeypatch.setenv("SECRETS_KMS_KEY_ARN", "arn:aws:kms:us-east-2:123456789012:key/abcd-1234")
@@ -437,7 +445,7 @@ class TestNgfwTerraformOrchestrationHelpers:
             "ssh_key_secret_arn": "arn:aws:secretsmanager:us-east-2:123:secret:key",
         }
 
-        _run_provision("req-1", "inst-1", {"user_id": 7}, "americas")
+        _run_provision("req-1", "inst-1", {"user_id": 7}, "americas", post_provision=mock_post_provision)
 
         mock_update_instance_state.assert_called_once_with(
             "req-1",
@@ -454,10 +462,8 @@ class TestNgfwTerraformOrchestrationHelpers:
             operation_id=None,
         )
 
-    @patch("ngfw_terraform._run_pan_os_post_provision")
     def test_run_gdc_provision_persists_state_before_post_provision(
         self,
-        mock_post_provision,
         monkeypatch,
     ):
         """GDC provision should persist VM Runtime output state before PAN-OS setup."""
@@ -470,11 +476,12 @@ class TestNgfwTerraformOrchestrationHelpers:
             "data_attachment_id": "ngfw-user-42/vmseries:eth1",
         }
         fake_gdc = SimpleNamespace(apply_ngfw=MagicMock(return_value=output_data))
+        mock_post_provision = MagicMock()
         mock_update_instance_state = MagicMock()
         monkeypatch.setattr("ngfw_terraform.update_instance_state", mock_update_instance_state)
         monkeypatch.setitem(sys.modules, "gdc_vmseries_ngfw", fake_gdc)
 
-        _run_gdc_provision("req-1", "inst-1", {"user_id": 7}, "americas")
+        _run_gdc_provision("req-1", "inst-1", {"user_id": 7}, "americas", post_provision=mock_post_provision)
 
         assert mock_update_instance_state.call_count == 2
         persisted = mock_update_instance_state.call_args_list[1].kwargs
@@ -488,6 +495,22 @@ class TestNgfwTerraformOrchestrationHelpers:
             sls_region="americas",
             operation_id=None,
         )
+
+    def test_resolve_ngfw_post_provision_selects_local_dev_when_db_password_present(self):
+        """DB_PASSWORD in the resolved environment selects the local-dev short-circuit adapter."""
+        from ngfw_terraform import _resolve_ngfw_post_provision, _short_circuit_local_dev_post_provision
+
+        resolved = _resolve_ngfw_post_provision(env={"DB_PASSWORD": "local-dev-secret"})
+
+        assert resolved is _short_circuit_local_dev_post_provision
+
+    def test_resolve_ngfw_post_provision_selects_live_without_db_password(self):
+        """Absent DB_PASSWORD, the resolver selects the live PAN-OS post-provision path."""
+        from ngfw_terraform import _resolve_ngfw_post_provision, _run_pan_os_post_provision
+
+        resolved = _resolve_ngfw_post_provision(env={})
+
+        assert resolved is _run_pan_os_post_provision
 
 
 class TestNgfwTerraformCleanupHelpers:

@@ -8,8 +8,8 @@ the Engine-owned applier writes domain state, audit, and range-event intent.
 import logging
 import os
 import time
-from collections.abc import Callable
-from typing import Any, cast
+from collections.abc import Mapping
+from typing import Any, Protocol, cast
 
 from shared.operation_results import ResultStep
 
@@ -48,6 +48,43 @@ logger = logging.getLogger(__name__)
 _NGFW_TF_OP_TO_CANONICAL_OPERATION = {"up": "provision", "destroy": "deprovision"}
 
 
+class _NgfwPostProvision(Protocol):
+    """Post-Terraform NGFW bring-up strategy, resolved once at the operation seam.
+
+    Substitutes environment-specific behaviour without an environment branch in
+    the provisioning flow: production runs the live PAN-OS SSH bring-up, local
+    dev runs the short-circuit adapter. Both share this call signature so the
+    provider provision functions invoke the resolved collaborator without
+    knowing which one they hold.
+    """
+
+    def __call__(
+        self,
+        *,
+        request_id: str,
+        instance_id: str,
+        output_data: dict[str, Any],
+        sls_region: str,
+        operation_id: str | None = None,
+    ) -> None: ...
+
+
+def _resolve_ngfw_post_provision(env: Mapping[str, str] | None = None) -> _NgfwPostProvision:
+    """Select the NGFW post-provision strategy for the current environment.
+
+    Resolves the local-dev-versus-production decision once, at the seam, rather
+    than reading ``os.environ`` deep inside the provisioning flow. Local dev is
+    signalled by ``DB_PASSWORD`` (the same password-auth boundary signal
+    ``provisioner_db`` uses): PAN-OS is not reachable there, so the short-circuit
+    adapter stands in for the live SSH bring-up while still emitting the
+    ready-then-paused lifecycle transitions.
+    """
+    source = os.environ if env is None else env
+    if source.get("DB_PASSWORD"):
+        return _short_circuit_local_dev_post_provision
+    return _run_pan_os_post_provision
+
+
 def _run_ngfw_operation_for_provider(
     operation: str,
     request_id: str,
@@ -64,14 +101,28 @@ def _run_ngfw_operation_for_provider(
 
     if provider == "gcp":
         if operation == "up":
-            _run_gdc_provision(request_id, instance_id, app_spec, sls_region, operation_id=operation_id)
+            _run_gdc_provision(
+                request_id,
+                instance_id,
+                app_spec,
+                sls_region,
+                post_provision=_resolve_ngfw_post_provision(),
+                operation_id=operation_id,
+            )
         else:
             _run_gdc_deprovision(request_id, operation_id=operation_id)
         return
 
     if provider == "aws":
         if operation == "up":
-            _run_provision(request_id, instance_id, app_spec, sls_region, operation_id=operation_id)
+            _run_provision(
+                request_id,
+                instance_id,
+                app_spec,
+                sls_region,
+                post_provision=_resolve_ngfw_post_provision(),
+                operation_id=operation_id,
+            )
         else:
             _run_deprovision(request_id, instance_id, operation_id=operation_id)
         return
@@ -193,16 +244,19 @@ def _build_ngfw_ssh_executor_from_output(output_data: dict[str, Any]) -> tuple[s
 def _short_circuit_local_dev_post_provision(
     *,
     request_id: str,
+    instance_id: str,
     output_data: dict[str, Any],
-    update_instance_state: Callable[..., Any],
+    sls_region: str,
     operation_id: str | None = None,
 ) -> None:
     """Mark a local-dev NGFW as ready-then-paused without touching the device.
 
-    Local dev mode (presence of `DB_PASSWORD` in the env) bypasses the live
-    PAN-OS SSH bring-up because it isn't reachable. We still emit the ready
-    and paused state transitions so the platform UI reflects the expected
-    lifecycle.
+    Substituted for the live PAN-OS bring-up by :func:`_resolve_ngfw_post_provision`
+    when running in local dev, where PAN-OS is not reachable over SSH. We still
+    emit the ready and paused state transitions so the platform UI reflects the
+    expected lifecycle. ``instance_id`` and ``sls_region`` are accepted to match
+    the :class:`_NgfwPostProvision` seam signature; the short-circuit path needs
+    neither.
     """
     logger.info("LOCAL DEV MODE: Skipping post-infrastructure NGFW configuration")
     ready_state = _build_provider_state(output_data)
@@ -338,16 +392,12 @@ def _run_pan_os_post_provision(
     sls_region: str,
     operation_id: str | None = None,
 ) -> None:
-    """Run shared PAN-OS VM-Series post-boot configuration for any provider."""
-    if os.environ.get("DB_PASSWORD"):
-        _short_circuit_local_dev_post_provision(
-            request_id=request_id,
-            output_data=output_data,
-            update_instance_state=update_instance_state,
-            operation_id=operation_id,
-        )
-        return
+    """Run shared live PAN-OS VM-Series post-boot configuration for any provider.
 
+    The local-dev short-circuit is no longer branched here; the post-provision
+    strategy is resolved at the operation seam (:func:`_resolve_ngfw_post_provision`)
+    and this function is the production collaborator it returns.
+    """
     logger.info("Running post-infrastructure NGFW configuration...")
     management_ip, ssh_executor, serial_number = _wait_for_ngfw_management_plane(output_data)
     _run_ngfw_provision_plan(
@@ -403,9 +453,10 @@ def _run_provision(
     app_spec: dict[str, Any],
     sls_region: str,
     *,
+    post_provision: _NgfwPostProvision,
     operation_id: str | None = None,
 ) -> None:
-    """Run Terraform apply for NGFW, then run post-Terraform configuration."""
+    """Run Terraform apply for NGFW, then run the resolved post-provision strategy."""
     # Update local DB and emit provisioning status event
     update_instance_state(
         request_id,
@@ -433,7 +484,7 @@ def _run_provision(
         len(output_data),
     )
 
-    _run_pan_os_post_provision(
+    post_provision(
         request_id=request_id,
         instance_id=instance_id,
         output_data=output_data,
@@ -448,9 +499,10 @@ def _run_gdc_provision(
     app_spec: dict[str, Any],
     sls_region: str,
     *,
+    post_provision: _NgfwPostProvision,
     operation_id: str | None = None,
 ) -> None:
-    """Create a Palo Alto VM-Series firewall on GDC VM Runtime, then configure PAN-OS."""
+    """Create a Palo Alto VM-Series firewall on GDC VM Runtime, then run post-provision."""
     import gdc_vmseries_ngfw
 
     update_instance_state(
@@ -485,7 +537,7 @@ def _run_gdc_provision(
         ngfw_state=_build_provider_state(output_data),
     )
 
-    _run_pan_os_post_provision(
+    post_provision(
         request_id=request_id,
         instance_id=instance_id,
         output_data=output_data,
