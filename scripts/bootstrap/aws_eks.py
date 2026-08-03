@@ -30,13 +30,22 @@ _LOWERCASE_HEX = frozenset("0123456789abcdef")
 _EKS_NAMESPACE = "shifter-system"
 _HELM_RELEASE = "shifter"
 _LOAD_BALANCER_CONTROLLER_CHART_VERSION = "3.2.2"
+# Pinned cluster-autoscaler chart (#1826). The image tag must track the cluster's
+# Kubernetes minor; the chart's autoDiscovery + the node-group ASG discovery tags
+# (k8s.io/cluster-autoscaler/<cluster>) let it manage only this cluster's ASG.
+_CLUSTER_AUTOSCALER_CHART_VERSION = "9.37.0"
 _MAX_PROTECTED_JSON_BYTES = 1024 * 1024
 _TERRAFORM_NONINTERACTIVE = "-input=false"
 _PLATFORM_NAMESPACES = {
     "shifter-platform": "control",
     "shifter-jobs": "jobs",
 }
-_WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler"})
+# Chart service accounts that receive an IRSA role-arn annotation (#1826 adds the
+# provisioner Job launcher + the privileged provisioner). The add-on controller
+# roles (cni, ingress, ebs-csi, efs-csi, cluster-autoscaler) are wired to their
+# controllers directly (EKS add-on service_account_role_arn / Helm SA annotation),
+# not projected into the chart's identity.serviceAccountRoleArns.
+_WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler", "provisionerLauncher", "provisioner"})
 _RENDERER_OWNED_RUNTIME_ENV = frozenset(
     {
         "AUTH_PROVIDER",
@@ -239,11 +248,20 @@ def _validate_terraform_inputs(
     return resolved
 
 
-def _bootstrap_cluster(outputs: Mapping[str, object]) -> None:
-    """Create platform namespaces and install the AWS load-balancer controller."""
+def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
+    """Create platform namespaces and install cluster-scoped controllers.
+
+    Installs the AWS load-balancer controller (ALB ingress) and the
+    cluster-autoscaler (#1826). Both bind to their IRSA role via a service-account
+    role-arn annotation; the autoscaler is scoped to this cluster's ASG through
+    autoDiscovery.clusterName plus the node-group discovery tags applied in
+    Terraform, so it never touches another cluster's capacity.
+    """
     roles = _output(outputs, "workload_role_arns")
     if not isinstance(roles, Mapping) or not isinstance(roles.get("ingress"), str):
         raise ValueError("workload_role_arns must include the ingress controller role")
+    if not isinstance(roles.get("cluster-autoscaler"), str):
+        raise ValueError("workload_role_arns must include the cluster-autoscaler role")
     with tempfile.TemporaryDirectory(prefix="shifter-eks-bootstrap-") as staging:
         staging_path = Path(staging)
         for namespace, plane in _PLATFORM_NAMESPACES.items():
@@ -313,6 +331,62 @@ def _bootstrap_cluster(outputs: Mapping[str, object]) -> None:
         ]
     )
 
+    run_cmd(
+        [
+            "helm",
+            "repo",
+            "add",
+            "autoscaler",
+            "https://kubernetes.github.io/autoscaler",
+            "--force-update",
+        ]
+    )
+    run_cmd(["helm", "repo", "update", "autoscaler"])
+    run_cmd(
+        [
+            "helm",
+            "upgrade",
+            "--install",
+            "cluster-autoscaler",
+            "autoscaler/cluster-autoscaler",
+            "--namespace",
+            "kube-system",
+            "--version",
+            _CLUSTER_AUTOSCALER_CHART_VERSION,
+            "--set-string",
+            f"autoDiscovery.clusterName={_output(outputs, 'cluster_name')}",
+            "--set-string",
+            f"awsRegion={region}",
+            "--set",
+            "rbac.serviceAccount.create=true",
+            "--set-string",
+            "rbac.serviceAccount.name=cluster-autoscaler",
+            "--set-string",
+            "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=" + str(roles["cluster-autoscaler"]),
+            # Only scale ASGs this cluster owns, and let the autoscaler evict
+            # pods without the restrictive system-pod guard blocking scale-down.
+            "--set",
+            "extraArgs.balance-similar-node-groups=true",
+            "--set",
+            "extraArgs.skip-nodes-with-system-pods=false",
+            "--atomic",
+            "--wait",
+            "--timeout",
+            "10m",
+        ]
+    )
+    run_cmd(
+        [
+            "kubectl",
+            "rollout",
+            "status",
+            "deployment/cluster-autoscaler-aws-cluster-autoscaler",
+            "--namespace",
+            "kube-system",
+            "--timeout=5m",
+        ]
+    )
+
 
 def render_aws_values(
     config: RootConfig,
@@ -330,7 +404,8 @@ def render_aws_values(
     return {
         "provider": {"name": "aws"},
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
-        "capabilities": {"kubernetesJobLauncher": False},
+        "capabilities": {"kubernetesJobLauncher": True},
+        "provisioner": {"taskRunner": "aws"},
         "edge": {
             "hostname": config.deployment.domain,
             "certificateArn": _output(terraform_outputs, "certificate_arn"),
@@ -504,7 +579,7 @@ def deploy_eks(
         ],
         profile=aws_profile,
     )
-    _bootstrap_cluster(outputs)
+    _bootstrap_cluster(outputs, str(config.settings["region"]))
     values = render_aws_values(
         config,
         outputs,

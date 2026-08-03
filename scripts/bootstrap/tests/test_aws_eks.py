@@ -37,6 +37,9 @@ def _terraform_outputs() -> dict[str, object]:
                 "workers": "arn:aws:iam::123456789012:role/shifter-dev-workers",
                 "ctfScheduler": "arn:aws:iam::123456789012:role/shifter-dev-ctf-scheduler",
                 "ingress": "arn:aws:iam::123456789012:role/shifter-dev-ingress",
+                "provisionerLauncher": "arn:aws:iam::123456789012:role/shifter-dev-provisioner-launcher",
+                "provisioner": "arn:aws:iam::123456789012:role/shifter-dev-provisioner",
+                "cluster-autoscaler": "arn:aws:iam::123456789012:role/shifter-dev-cluster-autoscaler",
             }
         },
         "runtime_env": {
@@ -96,7 +99,11 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     values = aws_eks.render_aws_values(_config(), _terraform_outputs(), _images())
 
     assert values["provider"]["name"] == "aws"
-    assert values["capabilities"]["kubernetesJobLauncher"] is False
+    assert values["capabilities"]["kubernetesJobLauncher"] is True
+    assert values["provisioner"]["taskRunner"] == "aws"
+    sa_roles = values["identity"]["serviceAccountRoleArns"]
+    assert sa_roles["provisionerLauncher"].endswith("shifter-dev-provisioner-launcher")
+    assert sa_roles["provisioner"].endswith("shifter-dev-provisioner")
     assert values["edge"]["hostname"] == "shifter.example.com"
     assert values["edge"]["ingress"]["className"] == "alb"
     assert values["edge"]["ingress"]["annotations"]["alb.ingress.kubernetes.io/certificate-arn"].endswith(
@@ -214,6 +221,23 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         "rollout",
         "status",
         "deployment/aws-load-balancer-controller",
+        "--namespace",
+        "kube-system",
+        "--timeout=5m",
+    ] in calls
+    assert any(
+        cmd[:4] == ["helm", "upgrade", "--install", "cluster-autoscaler"]
+        and "autoscaler/cluster-autoscaler" in cmd
+        and "--version" in cmd
+        and "autoDiscovery.clusterName=shifter-dev-eks" in cmd
+        and "awsRegion=us-east-2" in cmd
+        for cmd in calls
+    )
+    assert [
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/cluster-autoscaler-aws-cluster-autoscaler",
         "--namespace",
         "kube-system",
         "--timeout=5m",

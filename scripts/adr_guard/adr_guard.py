@@ -47,6 +47,7 @@ _SOURCE_MODULES = (
     "_guard.checks.cloud_identifiers",
     "_guard.checks.published_contract",
     "_guard.checks.quality_ownership",
+    "_guard.checks.eks_cross_stack_sourcing",
     "_guard._registry",
     "_guard._cli",
 )
@@ -81,6 +82,7 @@ from _guard.checks import (  # noqa: E402
     complexity,
     deploy_workflow,
     documentation,
+    eks_cross_stack_sourcing,
     k8s_security,
     layer_imports,
     mcp_policy,
@@ -96,6 +98,7 @@ _SUBMODULES = (
     "complexity",
     "deploy_workflow",
     "documentation",
+    "eks_cross_stack_sourcing",
     "k8s_security",
     "layer_imports",
     "mcp_policy",

@@ -2407,6 +2407,13 @@
         "id": "ADR-044-R5",
         "description": "EKS infrastructure and legacy ECS/ASG infrastructure retain separate Terraform state and ownership. Compatibility migration must prevent both control planes from acting as concurrent active schedulers, queue consumers, outbox drainers, migration runners, or range launchers; cutover and rollback are explicit and must not rename, import, destroy, or silently adopt legacy resources.",
         "checks": []
+      },
+      {
+        "id": "ADR-044-R6",
+        "description": "For root-configured backend=aws deployments the EKS control plane composes over the existing portal and range data plane and must not introduce a standalone EKS data plane. The AWS EKS Terraform roots (platform/terraform/environments/*/eks) source cross-stack values (control-plane database endpoint and IAM-auth resource id, secrets KMS key, agent bucket, range VPC/subnets/route table/availability zone, prebaked AMIs, and range/NGFW instance roles) through native AWS data sources and SSM Parameter Store, never terraform_remote_state, keeping the consumer loosely coupled to producer state. The provisioner Job environment is one provider-neutral contract that AWS and GCP emit identically into the backend-neutral chart's runtimeEnv ConfigMap (ADR-044-R2), with secret payloads flowing only as references through the existing in-process hydration boundary.",
+        "checks": [
+          "eks-cross-stack-sourcing"
+        ]
       }
     ],
     "exceptions": [],
@@ -2431,7 +2438,11 @@
       "shifter/installation/runtime_inventory.py",
       "scripts/bootstrap/deploy.py",
       ".github/workflows/deploy.yml",
-      "scripts/adr_guard/adr_guard.py"
+      "scripts/adr_guard/adr_guard.py",
+      "scripts/adr_guard/_guard/checks/eks_cross_stack_sourcing.py",
+      "platform/terraform/environments/dev/eks/main.tf",
+      "platform/terraform/environments/prod/eks/main.tf",
+      "platform/terraform/environments/proof/eks/main.tf"
     ]
   },
   {
