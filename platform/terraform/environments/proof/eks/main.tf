@@ -73,6 +73,36 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
     }
+    # Dedicated provisioner Job launcher + the privileged provisioner Job (#1826).
+    # The provisioner's range-provisioning permission set is attached separately
+    # by module.provisioner_iam (shared with the ECS task role); these entries
+    # create the exact-subject IRSA roles and grant platform secret access.
+    provisionerLauncher = {
+      namespace       = "shifter-platform"
+      service_account = "provisioner-launcher"
+      policy_arns     = []
+      secret_names    = local.secret_names
+    }
+    provisioner = {
+      namespace       = "shifter-jobs"
+      service_account = "provisioner"
+      policy_arns     = []
+      secret_names    = local.secret_names
+    }
+    # EKS add-on controller identities (#1826). AWS-managed CSI driver policies;
+    # controllers run in kube-system with their driver-default service accounts.
+    ebs-csi = {
+      namespace       = "kube-system"
+      service_account = "ebs-csi-controller-sa"
+      policy_arns     = ["arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"]
+      secret_names    = []
+    }
+    efs-csi = {
+      namespace       = "kube-system"
+      service_account = "efs-csi-controller-sa"
+      policy_arns     = ["arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"]
+      secret_names    = []
+    }
   }
 
   tags = merge(var.tags, {

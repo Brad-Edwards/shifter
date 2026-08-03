@@ -290,6 +290,11 @@ modules:
     contract: terraform_test
     test: tests/az_count.tftest.hcl
     test_profile: aws-1.13.3
+  - path: platform/terraform/modules/provisioner-iam
+    owner: "@Brad-Edwards"
+    contract: deferred
+    reason: "Contract-test rollout tracked in #1597."
+    tracking: "#1597"
   - path: platform/terraform/modules/range/vpc
     owner: "@Brad-Edwards"
     contract: deferred

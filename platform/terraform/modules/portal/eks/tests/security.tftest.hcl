@@ -29,6 +29,38 @@ override_resource {
 }
 
 override_resource {
+  target = aws_iam_role.workload["ebs-csi"]
+  values = {
+    arn = "arn:aws:iam::123456789012:role/shifter-test-ebs-csi"
+  }
+}
+
+override_resource {
+  target = aws_iam_role.workload["efs-csi"]
+  values = {
+    arn = "arn:aws:iam::123456789012:role/shifter-test-efs-csi"
+  }
+}
+
+override_resource {
+  target = aws_iam_policy.cluster_autoscaler
+  values = {
+    arn = "arn:aws:iam::123456789012:policy/shifter-test-cluster-autoscaler"
+  }
+}
+
+override_resource {
+  target = aws_eks_node_group.this
+  values = {
+    resources = [{
+      autoscaling_groups = [{
+        name = "eks-shifter-test-mock-asg"
+      }]
+    }]
+  }
+}
+
+override_resource {
   target = aws_kms_key.cluster
   values = {
     arn = "arn:aws:kms:us-east-2:123456789012:key/11111111-1111-1111-1111-111111111111"
@@ -125,6 +157,26 @@ variables {
       service_account = "shifter-portal"
       policy_arns     = ["arn:aws:iam::123456789012:policy/shifter-test-portal"]
     }
+    provisionerLauncher = {
+      namespace       = "shifter-platform"
+      service_account = "provisioner-launcher"
+      secret_names    = ["database", "django"]
+    }
+    provisioner = {
+      namespace       = "shifter-jobs"
+      service_account = "provisioner"
+      secret_names    = ["database", "django"]
+    }
+    ebs-csi = {
+      namespace       = "kube-system"
+      service_account = "ebs-csi-controller-sa"
+      policy_arns     = ["arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"]
+    }
+    efs-csi = {
+      namespace       = "kube-system"
+      service_account = "efs-csi-controller-sa"
+      policy_arns     = ["arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"]
+    }
   }
   secret_names = [
     "database",
@@ -187,6 +239,74 @@ run "security_contract" {
   assert {
     condition     = !strcontains(aws_iam_role.workload["portal"].assume_role_policy, "system:serviceaccount:*")
     error_message = "Workload identity must not trust wildcard service-account subjects."
+  }
+
+  # #1826: every workload IRSA role, including the launcher/provisioner and the
+  # add-on controllers, must bind exactly one exact namespace/service-account
+  # subject so no service account can assume another's role.
+  assert {
+    condition = alltrue([
+      for name, identity in var.workload_identities :
+      strcontains(
+        aws_iam_role.workload[name].assume_role_policy,
+        "system:serviceaccount:${identity.namespace}:${identity.service_account}"
+      )
+    ])
+    error_message = "Every workload identity must bind its exact namespace/service-account subject."
+  }
+
+  assert {
+    condition = alltrue([
+      for name in keys(var.workload_identities) :
+      !strcontains(aws_iam_role.workload[name].assume_role_policy, "system:serviceaccount:*")
+    ])
+    error_message = "No workload identity may trust a wildcard service-account subject."
+  }
+
+  # The privileged provisioner Job runs as the dedicated shifter-jobs/provisioner
+  # subject, and the dedicated launcher creates those Jobs; neither may reuse the
+  # other's identity.
+  assert {
+    condition     = strcontains(aws_iam_role.workload["provisioner"].assume_role_policy, "system:serviceaccount:shifter-jobs:provisioner")
+    error_message = "The provisioner IRSA role must bind the exact shifter-jobs/provisioner subject."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_role.workload["provisionerLauncher"].assume_role_policy, "system:serviceaccount:shifter-platform:provisioner-launcher")
+    error_message = "The provisioner-launcher IRSA role must bind the exact shifter-platform/provisioner-launcher subject."
+  }
+
+  # cluster-autoscaler is a dedicated exact-subject role; its write permissions
+  # are scoped to ASGs this cluster owns, never every ASG in the account.
+  assert {
+    condition     = strcontains(aws_iam_role.cluster_autoscaler.assume_role_policy, "system:serviceaccount:kube-system:cluster-autoscaler")
+    error_message = "The cluster-autoscaler IRSA role must bind the exact kube-system/cluster-autoscaler subject."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_policy.cluster_autoscaler.policy, "k8s.io/cluster-autoscaler/${var.cluster_name}")
+    error_message = "cluster-autoscaler capacity writes must be scoped to ASGs this cluster owns."
+  }
+
+  # The VPC CNI network-policy agent must be enabled so the chart's default-deny
+  # NetworkPolicies are actually enforced on EKS, not merely rendered.
+  assert {
+    condition     = strcontains(aws_eks_addon.vpc_cni.configuration_values, "enableNetworkPolicy")
+    error_message = "The vpc-cni add-on must enable the NetworkPolicy agent for enforcement parity with GKE."
+  }
+
+  # EBS/EFS CSI drivers are installed as managed add-ons bound to their own
+  # exact-subject IRSA roles (least-privilege controller identity).
+  assert {
+    condition     = aws_eks_addon.ebs_csi.service_account_role_arn == aws_iam_role.workload["ebs-csi"].arn && aws_eks_addon.efs_csi.service_account_role_arn == aws_iam_role.workload["efs-csi"].arn
+    error_message = "The EBS and EFS CSI add-ons must use their dedicated controller IRSA roles."
+  }
+
+  # The autoscaler-discovery tags are applied to the managed node group's ASG so
+  # cluster-autoscaler can find the ASG it owns.
+  assert {
+    condition     = aws_autoscaling_group_tag.cluster_autoscaler_owned.tag[0].key == "k8s.io/cluster-autoscaler/${var.cluster_name}"
+    error_message = "The node group ASG must carry the cluster-autoscaler owned-discovery tag."
   }
 
   assert {
