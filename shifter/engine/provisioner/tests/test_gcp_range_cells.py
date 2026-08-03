@@ -1893,3 +1893,47 @@ def test_gce_output_preserves_provider_metadata_for_db_state(mocker):
     assert state["provider_metadata"]["gcp"]["image_key"] == "default"
     assert len(state["provider_metadata"]["gcp"]["image_profile_fingerprint"]) == 24
     assert state["provider_metadata"]["gcp"]["source_image"] == "projects/kali/global/images/kali"
+
+
+def test_instance_output_emits_sftp_root_directory_from_profile():
+    """The realized instance output carries the image's declared SFTP root (#375)."""
+    base = _sample_config()
+    config = dataclasses.replace(
+        base,
+        kali=dataclasses.replace(base.kali, sftp_root_directory="/home/kali"),
+    )
+    plan = render_range_cell_plan("req-123", _variables(payload=_scenario_payload()), config)
+    attacker = next(instance for instance in plan["instances"] if instance["role"] == "attacker")
+
+    output = instance_output(
+        plan,
+        attacker,
+        InstanceCredentials(
+            host_ssh_secret_ref="projects/test/secrets/host-ssh",
+            participant_ssh_secret_ref=None,
+            rdp_password_secret_ref="projects/test/secrets/rdp",
+            ssh_public_key="ssh-ed25519 HOST",
+        ),
+        config,
+    )
+    assert output["sftp_root_directory"] == "/home/kali"
+
+
+def test_instance_output_omits_sftp_root_when_profile_has_none():
+    """A profile with no declared root emits no key rather than an empty guess."""
+    config = _sample_config()
+    plan = render_range_cell_plan("req-123", _variables(payload=_scenario_payload()), config)
+    attacker = next(instance for instance in plan["instances"] if instance["role"] == "attacker")
+
+    output = instance_output(
+        plan,
+        attacker,
+        InstanceCredentials(
+            host_ssh_secret_ref="projects/test/secrets/host-ssh",
+            participant_ssh_secret_ref=None,
+            rdp_password_secret_ref="projects/test/secrets/rdp",
+            ssh_public_key="ssh-ed25519 HOST",
+        ),
+        config,
+    )
+    assert "sftp_root_directory" not in output

@@ -180,6 +180,51 @@ class TestProvision:
             }
         ]
 
+    def test_members_carry_declared_sftp_root_directory(self, patched):
+        """A realized instance's SFTP root reaches the member projection (#375)."""
+        patched.apply.return_value = {
+            "composition_verified_addresses": [],
+            "instances": [
+                {
+                    "uuid": "node.web#0",
+                    "name": "web",
+                    "os": "kali",
+                    "private_ip": "10.9.0.10",
+                    "instance_id": "shifter-r-7-lan-web",
+                    "subnet_name": "lan",
+                    "participant_access_channels": ["ssh"],
+                    "participant_access_usernames": {"ssh": "analyst"},
+                    "ssh_key_secret_arn": "projects/p/secrets/ssh",
+                    "sftp_root_directory": "/home/kali",
+                }
+            ],
+        }
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        members = _payload_for(patched, ResultStep.RAES_TERMINAL_READY)["members"]
+        assert members[0]["sftp_root_directory"] == "/home/kali"
+
+    def test_members_omit_sftp_root_directory_when_absent(self, patched):
+        """No declared root emits no key rather than an empty guess (#375)."""
+        patched.apply.return_value = {
+            "composition_verified_addresses": [],
+            "instances": [
+                {
+                    "uuid": "node.web#0",
+                    "name": "web",
+                    "os": "linux",
+                    "private_ip": "10.9.0.10",
+                    "instance_id": "shifter-r-7-lan-web",
+                    "subnet_name": "lan",
+                    "participant_access_channels": ["ssh"],
+                    "participant_access_usernames": {"ssh": "analyst"},
+                    "ssh_key_secret_arn": "projects/p/secrets/ssh",
+                }
+            ],
+        }
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        members = _payload_for(patched, ResultStep.RAES_TERMINAL_READY)["members"]
+        assert "sftp_root_directory" not in members[0]
+
     def test_members_never_carry_the_management_secret_reference(self, patched):
         """The provisioner-managed host key secret is not a participant credential."""
         patched.apply.return_value = {

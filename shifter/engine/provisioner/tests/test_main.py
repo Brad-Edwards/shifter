@@ -458,6 +458,23 @@ class TestRangeStatePayloads:
         assert payload["ssh_username"] == "Administrator"
         assert payload["cloud_provider"] == "gcp"
         assert payload["provider_metadata"] == {"gcp": {"vm_name": "vmrt-vm-1", "namespace": "range-42"}}
+        assert "sftp_root_directory" not in payload
+
+    def test_build_provisioned_instance_payload_carries_sftp_root_directory(self):
+        from state_helpers import _build_provisioned_instance_payload
+
+        payload = _build_provisioned_instance_payload(
+            {
+                "uuid": "inst-123",
+                "os": "kali",
+                "instance_id": "i-abc",
+                "private_ip": "10.1.1.10",
+                "sftp_root_directory": "/home/kali",
+            },
+            provider="gcp",
+        )
+
+        assert payload["sftp_root_directory"] == "/home/kali"
 
     def test_build_provisioned_instance_payload_propagates_rdp_password_secret_arn(self):
         # Per #762: Range.provisioned_instances entries carry the

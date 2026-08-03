@@ -172,7 +172,7 @@ def _validated_member_endpoints(members: list[dict[str, Any]], range_obj: Range)
 
 def _provisioned_instance(member: dict[str, Any]) -> dict[str, Any]:
     """Project one realized member into the portal's instance record."""
-    return {
+    instance = {
         "uuid": member["uuid"],
         "name": member["name"],
         "asset_type": "gce_vm",
@@ -188,6 +188,11 @@ def _provisioned_instance(member: dict[str, Any]) -> dict[str, Any]:
         "gcp_host_public_key": member.get("host_public_key", ""),
         "cloud_provider": "gcp",
     }
+    # Per-image Guacamole SFTP root (#375), when the realized member declared one.
+    sftp_root_directory = member.get("sftp_root_directory")
+    if sftp_root_directory:
+        instance["sftp_root_directory"] = sftp_root_directory
+    return instance
 
 
 def _apply_ready_with_realized_access(

@@ -93,21 +93,6 @@ def _guac_settings(service_name: str) -> GuacamoleSettings:
 # ---------------------------------------------------------------------------
 
 
-_SFTP_ROOT_BY_OS: dict[str, str] = {
-    "kali": "/home/kali",
-    "ubuntu": "/home/ubuntu",
-    # SFTP paths use forward slashes even on Windows.
-    "windows": "/C:/Users/Administrator/Downloads",
-}
-
-
-def _sftp_root_for_os(os_type: str | None) -> str | None:
-    """Return Guacamole SFTP root path for the given OS type, or None."""
-    if os_type is None:
-        return None
-    return _SFTP_ROOT_BY_OS.get(os_type)
-
-
 # Guacamole's RDP security mode, the same for every target: the mode is left to
 # the RDP handshake rather than pinned per OS.
 #
@@ -154,9 +139,14 @@ def _generate_rdp_url(
     """Generate the Guacamole RDP URL or raise ``BootstrapFailure``."""
     from mission_control.guacamole import GuacRDPUrlRequest, create_guacamole_rdp_url
 
-    os_type = conn_info.get("os_type")
-    sftp_enabled = conn_info.get("sftp_enabled") is not False
-    sftp_root_directory = _sftp_root_for_os(os_type) if sftp_enabled else None
+    # The SFTP root is realized per-image metadata resolved by the engine (#375);
+    # Mission Control consumes it and never derives it from ``os_type``. SFTP
+    # requires a pinned root: when the realized instance carries none (an older
+    # record, or a producer that omitted it), fail closed by disabling SFTP
+    # entirely rather than letting Guacamole fall back to its unrestricted default
+    # root, which would expose the guest filesystem beyond the intended directory.
+    sftp_root_directory = conn_info.get("sftp_root_directory")
+    sftp_enabled = conn_info.get("sftp_enabled") is not False and bool(sftp_root_directory)
     try:
         return create_guacamole_rdp_url(
             GuacRDPUrlRequest(
