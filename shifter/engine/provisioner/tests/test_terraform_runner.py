@@ -389,10 +389,10 @@ class TestNgfwTerraformOrchestrationHelpers:
 
     def test_short_circuit_local_dev_post_provision_marks_ready_then_paused(self, monkeypatch):
         """Local-dev post-provision should emit ready and paused states without PAN-OS calls."""
-        from ngfw_terraform import _short_circuit_local_dev_post_provision
+        from ngfw_post_provision import _short_circuit_local_dev_post_provision
 
         update_instance_state = MagicMock()
-        monkeypatch.setattr("ngfw_terraform.update_instance_state", update_instance_state)
+        monkeypatch.setattr("ngfw_post_provision.update_instance_state", update_instance_state)
         _short_circuit_local_dev_post_provision(
             request_id="req-1",
             instance_id="inst-1",
@@ -498,7 +498,8 @@ class TestNgfwTerraformOrchestrationHelpers:
 
     def test_resolve_ngfw_post_provision_selects_local_dev_when_db_password_present(self):
         """DB_PASSWORD in the resolved environment selects the local-dev short-circuit adapter."""
-        from ngfw_terraform import _resolve_ngfw_post_provision, _short_circuit_local_dev_post_provision
+        from ngfw_post_provision import _short_circuit_local_dev_post_provision
+        from ngfw_terraform import _resolve_ngfw_post_provision
 
         resolved = _resolve_ngfw_post_provision(env={"DB_PASSWORD": "local-dev-secret"})
 

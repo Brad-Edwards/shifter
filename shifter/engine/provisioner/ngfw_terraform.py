@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from collections.abc import Mapping
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from shared.operation_results import ResultStep
 
@@ -18,7 +18,6 @@ from cloud.exceptions import CloudProviderNotImplementedError
 from config import resolve_cloud_provider
 from events import (
     STATUS_FAILED,
-    STATUS_PAUSED,
     STATUS_PROVISIONING,
     STATUS_READY,
 )
@@ -29,6 +28,7 @@ from ngfw_polling import (
     poll_for_serial_and_cert,
     poll_for_serial_number,
 )
+from ngfw_post_provision import _NgfwPostProvision, _short_circuit_local_dev_post_provision
 from ngfw_runtime import update_instance_state
 from ngfw_runtime_ops import run_ngfw_operation
 from ngfw_terraform_cleanup import (
@@ -46,27 +46,6 @@ logger = logging.getLogger(__name__)
 
 # ADR-043: map the argv tf-op to the canonical operation name for the authoritative result append.
 _NGFW_TF_OP_TO_CANONICAL_OPERATION = {"up": "provision", "destroy": "deprovision"}
-
-
-class _NgfwPostProvision(Protocol):
-    """Post-Terraform NGFW bring-up strategy, resolved once at the operation seam.
-
-    Substitutes environment-specific behaviour without an environment branch in
-    the provisioning flow: production runs the live PAN-OS SSH bring-up, local
-    dev runs the short-circuit adapter. Both share this call signature so the
-    provider provision functions invoke the resolved collaborator without
-    knowing which one they hold.
-    """
-
-    def __call__(
-        self,
-        *,
-        request_id: str,
-        instance_id: str,
-        output_data: dict[str, Any],
-        sls_region: str,
-        operation_id: str | None = None,
-    ) -> None: ...
 
 
 def _resolve_ngfw_post_provision(env: Mapping[str, str] | None = None) -> _NgfwPostProvision:
@@ -239,43 +218,6 @@ def _build_ngfw_ssh_executor_from_output(output_data: dict[str, Any]) -> tuple[s
         raise RuntimeError(f"Failed to retrieve SSH key from Secrets Manager: {e}") from e
 
     return management_ip, NGFWExecutor(private_key=private_key)
-
-
-def _short_circuit_local_dev_post_provision(
-    *,
-    request_id: str,
-    instance_id: str,
-    output_data: dict[str, Any],
-    sls_region: str,
-    operation_id: str | None = None,
-) -> None:
-    """Mark a local-dev NGFW as ready-then-paused without touching the device.
-
-    Substituted for the live PAN-OS bring-up by :func:`_resolve_ngfw_post_provision`
-    when running in local dev, where PAN-OS is not reachable over SSH. We still
-    emit the ready and paused state transitions so the platform UI reflects the
-    expected lifecycle. ``instance_id`` and ``sls_region`` are accepted to match
-    the :class:`_NgfwPostProvision` seam signature; the short-circuit path needs
-    neither.
-    """
-    logger.info("LOCAL DEV MODE: Skipping post-infrastructure NGFW configuration")
-    ready_state = _build_provider_state(output_data)
-    update_instance_state(
-        request_id,
-        STATUS_READY,
-        step=ResultStep.NGFW_PROVISION_READY,
-        operation_id=operation_id,
-        operation="provision",
-        ngfw_state=ready_state,
-    )
-    logger.info("LOCAL DEV MODE: Setting NGFW status to paused")
-    update_instance_state(
-        request_id,
-        STATUS_PAUSED,
-        step=ResultStep.NGFW_PROVISION_AUTOSTOP,
-        operation_id=operation_id,
-        operation="provision",
-    )
 
 
 def _wait_for_ngfw_management_plane(output_data: dict[str, Any]) -> tuple[str, NGFWExecutor, str]:
