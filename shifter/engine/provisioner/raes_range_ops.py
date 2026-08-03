@@ -299,6 +299,9 @@ def _realized_members(apply_result: dict[str, object]) -> list[dict[str, object]
         host_public_key = str(instance.get("gcp_host_public_key", ""))
         if host_public_key:
             member["host_public_key"] = host_public_key
+        sftp_root_directory = str(instance.get("sftp_root_directory", ""))
+        if sftp_root_directory:
+            member["sftp_root_directory"] = sftp_root_directory
         for channel, key in (("ssh", "ssh_key_secret_arn"), ("rdp", "rdp_password_secret_arn")):
             if channel in channels:
                 member[key] = str(instance.get(key, ""))

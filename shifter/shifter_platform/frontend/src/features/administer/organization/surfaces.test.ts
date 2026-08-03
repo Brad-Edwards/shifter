@@ -50,8 +50,12 @@ describe("surfaceEnabled", () => {
     expect(surfaceEnabled(invitations, ctx({ capabilities: [] }))).toBe(true);
   });
 
-  it("gates a capability-bound surface on the advertised operation", () => {
+  it("gates a capability-bound surface on any advertised operation", () => {
+    // Roster access (owner/admin) enables it.
     expect(surfaceEnabled(membership, ctx({ capabilities: ["read_members"] }))).toBe(true);
+    // Self-service leave (every member) also enables it — a member lacks read_members.
+    expect(surfaceEnabled(membership, ctx({ capabilities: ["read_self_membership", "leave_workspace"] }))).toBe(true);
+    // Neither the roster nor the self-service capability → disabled.
     expect(surfaceEnabled(membership, ctx({ capabilities: ["read_self_membership"] }))).toBe(false);
     expect(surfaceEnabled(membership, null)).toBe(false);
   });

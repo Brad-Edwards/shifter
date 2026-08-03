@@ -28,6 +28,7 @@ output "instances" {
       public_key              = tls_private_key.instance[key].public_key_openssh
       xdr_agent_url           = local.instance_map[key].agent_url
       join_domain             = local.instance_map[key].join_domain
+      sftp_root_directory     = local.instance_map[key].sftp_root_directory
     }
   ]
 }
