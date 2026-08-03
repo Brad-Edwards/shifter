@@ -16,8 +16,10 @@ facade.
 from __future__ import annotations
 
 import os
+from collections.abc import Collection
 
 from django.conf import settings
+from installation.runtime_inventory import AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS
 
 _GCP_PROVISIONER_ENV_KEYS = (
     "CLOUD_PROVIDER",
@@ -140,76 +142,20 @@ _GCP_PROVISIONER_ENV_KEYS = (
 )
 
 
-# AWS (EKS) provisioner Job env contract (#1826). This mirrors the environment
-# the AWS provisioner used to receive from its ECS task definition
-# (platform/terraform/modules/engine-provisioner/task_definition.tf) — the
-# authoritative AWS provisioner runtime contract. On EKS the provisioner runs as
-# a Kubernetes Job with no task definition, so these are forwarded from the
-# platform runtime env. DB_PASSWORD / FIELD_ENCRYPTION_KEY are intentionally
-# absent: the AWS provisioner uses RDS IAM auth (DB_USER=provisioner_lambda) and
-# the entrypoint's AWSSecretsStore hydration for other secrets, exactly as the
-# ECS task definition does. DC_DOMAIN_PASSWORD is the one Secret-backed env
-# (routed to a secretKeyRef by shared.cloud.sensitive_env), matching the task
-# definition's ``secrets`` block. Keep this list in lockstep with
+# AWS (EKS) provisioner Job env contract (#1826). The authoritative key set is
+# the standalone bundle contract
 # ``installation.runtime_inventory.AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS``
-# and the AWS provisioner admission env allowlist in values-aws-*.yaml.
-_AWS_PROVISIONER_ENV_KEYS = (
-    "CLOUD_PROVIDER",
-    "ENVIRONMENT",
-    "AWS_REGION",
-    "SECRETS_KMS_KEY_ARN",
-    "DB_HOST",
-    "DB_PORT",
-    "DB_NAME",
-    "DB_USER",
-    "STATE_BUCKET_URL",
-    "RANGE_VPC_ID",
-    "RANGE_VPC_CIDR",
-    "RANGE_ROUTE_TABLE_ID",
-    "RANGE_AVAILABILITY_ZONE",
-    "RANGE_VPN_EDGE_SUBNET_ID",
-    "RANGE_VPN_GATEWAY_PERMISSIONS_BOUNDARY_ARN",
-    "RANGE_VPN_PROVIDER_ENDPOINT_SECURITY_GROUP_ID",
-    "RANGE_INSTANCE_PROFILE_NAME",
-    "RANGE_INSTANCE_ROLE_ARN",
-    "RANGE_EGRESS_MODE",
-    "KALI_AMI_ID",
-    "VICTIM_AMI_ID",
-    "WINDOWS_AMI_ID",
-    "DC_AMI_ID",
-    "DC_DOMAIN_NAME",
-    "KALI_INSTANCE_TYPE",
-    "VICTIM_INSTANCE_TYPE",
-    "AGENT_S3_BUCKET",
-    "S3_ENDPOINT_ID",
-    "FIREWALL_ENDPOINT_ID",
-    "SSM_ENDPOINTS_SUBNET_CIDR",
-    "PORTAL_VPC_CIDR",
-    "PORTAL_VPC_PEERING_ID",
-    "NGFW_AMI_ID",
-    "NGFW_INSTANCE_TYPE",
-    "NGFW_MGMT_SECURITY_GROUP_ID",
-    "NGFW_DATA_SECURITY_GROUP_ID",
-    "NGFW_VPC_ID",
-    "NGFW_SUBNET_ID",
-    "NGFW_SUBNET_CIDR",
-    "NGFW_BOOTSTRAP_BUCKET",
-    "NGFW_INSTANCE_PROFILE_NAME",
-    "AWS_POLARIS_AGENT_REGION",
-    "AWS_POLARIS_AGENT_MAIN_MODEL_ID",
-    "AWS_POLARIS_AGENT_SMALL_MODEL_ID",
-    "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN",
-    "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN",
-    "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS",
-    "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS",
-    "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS",
-    "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS",
-    "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN",
-    "DC_DOMAIN_PASSWORD",
-)
+# (single source of truth; kept in lockstep with the AWS provisioner admission
+# env allowlist in values-aws-*.yaml). It mirrors the environment the AWS
+# provisioner used to receive from its ECS task definition; on EKS the
+# provisioner runs as a Kubernetes Job and these are forwarded from the
+# platform runtime env. DB_PASSWORD / FIELD_ENCRYPTION_KEY are intentionally
+# absent (RDS IAM auth + entrypoint hydration); DC_DOMAIN_PASSWORD is the one
+# Secret-backed env, routed to a secretKeyRef by shared.cloud.sensitive_env.
+_AWS_PROVISIONER_ENV_KEYS = AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS
 
 
-def _forward_env(keys: tuple[str, ...], fallback_values: dict[str, str]) -> dict[str, str] | None:
+def _forward_env(keys: Collection[str], fallback_values: dict[str, str]) -> dict[str, str] | None:
     """Forward ``keys`` from the process env, applying fallbacks and dropping empties."""
     env_overrides: dict[str, str] = {}
     for key in keys:
