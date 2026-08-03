@@ -27,6 +27,16 @@ output "workload_role_arns" {
   )
 }
 
+output "workload_role_names" {
+  description = "IAM role name keyed by process-specific workload identity (for downstream policy attachment)."
+  value       = { for name, role in aws_iam_role.workload : name => role.name }
+}
+
+output "workload_role_ids" {
+  description = "IAM role id keyed by process-specific workload identity (for downstream inline-policy attachment)."
+  value       = { for name, role in aws_iam_role.workload : name => role.id }
+}
+
 output "workload_identity_subjects" {
   description = "Exact Kubernetes subjects keyed by process."
   value = {

@@ -255,6 +255,11 @@ modules:
     contract: terraform_test
     test: tests/security.tftest.hcl
     test_profile: aws-1.13.3
+  - path: platform/terraform/modules/portal/eks-provisioner-env
+    owner: "@Brad-Edwards"
+    contract: deferred
+    reason: "Contract-test rollout tracked in #1597."
+    tracking: "#1597"
   - path: platform/terraform/modules/portal/messaging
     owner: "@Brad-Edwards"
     contract: deferred

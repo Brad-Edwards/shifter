@@ -52,6 +52,10 @@ _RENDERER_OWNED_RUNTIME_ENV = frozenset(
         "CLOUD_PROVIDER",
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
+        # ENGINE_TASK_IMAGE is generated here from the attested provisioner image
+        # digest (mirrors GCP's render_runtime_env.py); the Terraform runtime_env
+        # must not supply it.
+        "ENGINE_TASK_IMAGE",
         "ENVIRONMENT",
         "SITE_URL",
     }
@@ -401,6 +405,14 @@ def render_aws_values(
     missing_roles = sorted(_WORKLOAD_ROLE_KEYS.difference(roles))
     if missing_roles:
         raise ValueError("workload_role_arns is missing chart workload roles: " + ", ".join(missing_roles))
+    validated_images = _validated_images(images)
+    if "provisioner" not in validated_images:
+        raise ValueError("images must include a digest-pinned 'provisioner' identity for the Kubernetes Job launcher")
+    # ENGINE_TASK_IMAGE is the provisioner Job image; the launcher resolves it
+    # from the runtime env. It is renderer-generated from the attested digest,
+    # mirroring GCP's render_runtime_env.py.
+    runtime_env = _runtime_env(config, terraform_outputs)
+    runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
     return {
         "provider": {"name": "aws"},
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
@@ -444,7 +456,7 @@ def render_aws_values(
             "rangeAccessPorts": [22, 3389],
         },
         "identity": {"serviceAccountRoleArns": {key: roles[key] for key in sorted(_WORKLOAD_ROLE_KEYS)}},
-        "runtimeEnv": _runtime_env(config, terraform_outputs),
+        "runtimeEnv": runtime_env,
         "runtime": {
             # References only. entrypoint.sh hydrates values from Secrets Manager
             # in-process; raw values never enter Helm history, ConfigMaps, or argv.
@@ -453,7 +465,7 @@ def render_aws_values(
                 "database": config.secrets["db_password"],
             }
         },
-        "images": _validated_images(images),
+        "images": validated_images,
     }
 
 

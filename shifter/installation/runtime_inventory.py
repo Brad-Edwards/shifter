@@ -27,10 +27,13 @@ GCP_BACKEND_OWNER = "gcp backend"
 AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "AWS_REGION",
-        "ENGINE_TASK_CLUSTER",
-        "ENGINE_TASK_DEFINITION",
-        "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID",
-        "ENGINE_TASK_NETWORK_SUBNET_IDS",
+        # ENGINE_TASK_* ECS coordinates are retired (#1826). The AWS provisioner
+        # dispatches as a Kubernetes Job: ENGINE_TASK_NAMESPACE and
+        # ENGINE_TASK_SERVICE_ACCOUNT_NAME are set by the chart, ENGINE_TASK_IMAGE
+        # is renderer-generated (aws_eks.render_aws_values), and the range/portal
+        # provisioner env is assembled by the eks-provisioner-env Terraform module
+        # (AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS), not required as a deploy
+        # tooling input here.
         "OIDC_AUTH_DOMAIN",
         "OIDC_ISSUER_URL",
         "OIDC_RP_CLIENT_ID",
