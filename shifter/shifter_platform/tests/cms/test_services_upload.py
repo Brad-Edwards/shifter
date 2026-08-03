@@ -65,6 +65,13 @@ class TestInitiateUploadReturns:
         result = services.initiate_upload(user, "Agent", "agent.deb", 1000)
         assert result["expected_os"] == "linux-debian"
 
+    def test_expected_os_is_non_null_string(self, user, s3_presign):
+        # The service boundary guarantees a non-null OS slug even though the DRF
+        # presentation schema permits null (#317, UploadInitiation.expected_os: str).
+        result = services.initiate_upload(user, "Agent", "agent.msi", 1000)
+        assert isinstance(result["expected_os"], str)
+        assert result["expected_os"]
+
     def test_agent_type_is_carried_into_token(self, user, s3_presign):
         result = services.initiate_upload(user, "Agent", "agent.msi", 1000, agent_type="xdr_collector")
         payload = verify_upload_token(result["upload_token"], user.id)
@@ -81,8 +88,9 @@ class TestInitiateUploadUserValidation:
             services.initiate_upload("not a user", "Agent", "agent.msi", 1000)
 
     def test_raises_valueerror_when_user_is_unsaved(self):
+        unsaved = User(username="unsaved")
         with pytest.raises(ValueError, match="user must be saved"):
-            services.initiate_upload(User(username="unsaved"), "Agent", "agent.msi", 1000)
+            services.initiate_upload(unsaved, "Agent", "agent.msi", 1000)
 
 
 class TestInitiateUploadInputValidation:

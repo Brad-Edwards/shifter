@@ -25,6 +25,8 @@ from ._common import (
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from shared.schemas.cms_projections import AgentListItem
+
 logger = logging.getLogger(__name__)
 
 
@@ -179,15 +181,15 @@ def delete_agent(user: User, agent_id: int) -> None:
         raise
 
 
-def list_agents(user: User) -> list[dict[str, Any]]:
+def list_agents(user: User) -> list[AgentListItem]:
     """Get user's agents as projection dicts.
 
     Args:
         user: User whose agents to retrieve
 
     Returns:
-        List of agent dicts with keys: id, name, os_name, os_slug, file_size_mb,
-        original_filename, created_at, agent_type, agent_type_display
+        List of ``AgentListItem`` dicts with keys: id, name, os_name, os_slug,
+        file_size_mb, original_filename, created_at, agent_type, agent_type_display
 
     Raises:
         TypeError: If user is None or invalid type

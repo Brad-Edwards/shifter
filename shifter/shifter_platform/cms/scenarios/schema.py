@@ -6,7 +6,7 @@ cms/scenarios/templates/. They provide type validation and default values.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Discriminator, field_validator, model_validator
 
@@ -21,6 +21,9 @@ from shared.schemas import (
     ServiceSpec,
     ZoneSpec,
 )
+
+if TYPE_CHECKING:
+    from shared.schemas.cms_projections import AgentRequirements
 
 
 class DCConfig(BaseModel):
@@ -185,7 +188,7 @@ class ScenarioTemplate(BaseModel):
         """Return True if any instance needs XDR agent."""
         return any(i.xdr_agent for i in self.instances)
 
-    def get_agent_requirements(self) -> dict:
+    def get_agent_requirements(self) -> AgentRequirements:
         """Determine agent requirements for this scenario.
 
         Returns:
@@ -195,7 +198,7 @@ class ScenarioTemplate(BaseModel):
                 "has_from_agent": bool,  # Needs OS selection
             }
         """
-        result = {
+        result: AgentRequirements = {
             "requires_windows": False,
             "requires_linux": False,
             "has_from_agent": False,

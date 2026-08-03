@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from cms.exceptions import CMSError
 from cms.models import AgentConfig
@@ -13,10 +13,12 @@ from ._common import _validate_caller_user
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from shared.schemas.cms_projections import ScenarioProjection
+
 logger = logging.getLogger(__name__)
 
 
-def list_scenarios(user: User) -> list[dict[str, Any]]:
+def list_scenarios(user: User) -> list[ScenarioProjection]:
     """Get available scenarios with metadata.
 
     Uses the scenario registry to combine YAML defaults and DB customs,
@@ -57,7 +59,7 @@ def list_scenarios(user: User) -> list[dict[str, Any]]:
         raise
 
 
-def list_launchable_scenarios(user: User, workflow: str = "range_launch") -> list[dict[str, Any]]:
+def list_launchable_scenarios(user: User, workflow: str = "range_launch") -> list[ScenarioProjection]:
     """Get scenarios a given launch workflow may consume.
 
     Staff review listings (the full catalog) use ``list_scenarios``; launch,
@@ -95,7 +97,7 @@ def list_launchable_scenarios(user: User, workflow: str = "range_launch") -> lis
         raise
 
 
-def get_scenario(scenario_id: str) -> dict[str, Any]:
+def get_scenario(scenario_id: str) -> ScenarioProjection:
     """Get a single scenario template by ID.
 
     Uses the scenario registry to check DB first, then YAML.

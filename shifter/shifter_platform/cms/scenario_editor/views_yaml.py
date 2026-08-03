@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 from django.contrib import messages
@@ -44,12 +45,12 @@ DEFINITION_RESPONSE_KEY = "definition"
 VALID_RESPONSE_KEY = "valid"
 
 
-def _yaml_editor_context(scenario: dict[str, Any], yaml_content: str, errors: list[str]) -> dict[str, Any]:
+def _yaml_editor_context(scenario: Mapping[str, Any], yaml_content: str, errors: list[str]) -> dict[str, Any]:
     """Build template context for the YAML editor."""
     return {SCENARIO_CONTEXT_KEY: scenario, YAML_CONTENT_CONTEXT_KEY: yaml_content, ERRORS_CONTEXT_KEY: errors}
 
 
-def _handle_yaml_editor_post(request: HttpRequest, scenario_id: str, scenario: dict[str, Any]) -> HttpResponse:
+def _handle_yaml_editor_post(request: HttpRequest, scenario_id: str, scenario: Mapping[str, Any]) -> HttpResponse:
     """Update a scenario from submitted YAML editor content."""
     submitted_yaml = request.POST.get(YAML_CONTENT_CONTEXT_KEY, "")
     errors = update_scenario_from_yaml_post(

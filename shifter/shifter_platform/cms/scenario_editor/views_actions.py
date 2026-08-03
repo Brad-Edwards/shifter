@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -135,7 +136,7 @@ def scenario_toggle_staff_only(request: HttpRequest, scenario_id: str) -> HttpRe
     )
 
 
-def _handle_clone_post(request: HttpRequest, scenario_id: str, source: dict[str, Any]) -> HttpResponse:
+def _handle_clone_post(request: HttpRequest, scenario_id: str, source: Mapping[str, Any]) -> HttpResponse:
     """Clone a scenario from submitted clone form data."""
     scenario, new_name, errors = clone_scenario_from_form_post(cast("User", request.user), scenario_id, request.POST)
     if errors:
