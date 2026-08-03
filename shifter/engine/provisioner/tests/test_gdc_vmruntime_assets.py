@@ -181,6 +181,7 @@ class TestApplyRangeAssets:
                 vcpus=2,
                 memory="8Gi",
                 disk_size_gib=64,
+                sftp_root_directory="/C:/Users/Administrator/Downloads",
             ),
         )
 
@@ -290,6 +291,7 @@ class TestApplyRangeAssets:
                 "vmruntime_disk_name": "range-42-victims-victim-1234-boot",
                 "gdc_vmi_name": "range-42-victims-victim-1234",
                 "gdc_node_name": "cluster1-abm-w1-001",
+                "sftp_root_directory": "/C:/Users/Administrator/Downloads",
             }
         ]
 
@@ -631,3 +633,18 @@ def test_build_vm_manifest_attaches_cloudinit_only_for_linux():
     assert windows["spec"]["firmware"]["bootloader"]["type"] == "uefi"
     assert windows["spec"]["firmware"]["bootloader"]["enableSecureBoot"] is False
     assert "firmware" not in linux["spec"]
+
+
+class TestSftpRootOutputField:
+    """The GDC VM-runtime output emits the profile's SFTP root, omitting it when absent (#375)."""
+
+    def test_emits_declared_root(self):
+        from gdc_vmruntime_assets import sftp_root_output_field
+
+        assert sftp_root_output_field("/home/kali") == {"sftp_root_directory": "/home/kali"}
+
+    def test_omits_root_when_profile_has_none(self):
+        from gdc_vmruntime_assets import sftp_root_output_field
+
+        assert sftp_root_output_field("") == {}
+        assert sftp_root_output_field(None) == {}

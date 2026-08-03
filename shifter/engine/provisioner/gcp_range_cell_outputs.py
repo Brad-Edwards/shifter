@@ -102,6 +102,13 @@ def instance_output(
     }
     if instance["profile"].source_machine_image:
         output.update(_machine_image_output(instance))
+    # The image's declared Guacamole SFTP root travels as realized per-instance
+    # metadata (#375) so Mission Control consumes it instead of an OS map. Emitted
+    # only when the profile declares one; a blank profile emits no key so the
+    # connection layer omits the SFTP directory rather than guessing.
+    sftp_root_directory = instance["profile"].sftp_root_directory
+    if sftp_root_directory:
+        output["sftp_root_directory"] = sftp_root_directory
     # Resolved per-channel participant logins (#1710). Emitted only on the
     # RAES-native path, where SSH and RDP may be brokered as different authored
     # accounts and the instance-wide ssh_username is the reserved management

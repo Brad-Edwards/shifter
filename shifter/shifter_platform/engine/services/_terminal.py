@@ -168,6 +168,10 @@ def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
         "rdp_password": rdp_password,
         "ssh_key": _fetch_sftp_ssh_key(instance, os_type),
         "sftp_enabled": instance.get("participant_sftp_enabled") is not False,
+        # Per-image realized SFTP root (#375). ``None`` when the realized instance
+        # declared none; Mission Control then omits the Guacamole SFTP directory
+        # rather than guessing one from ``os_type``.
+        "sftp_root_directory": instance.get("sftp_root_directory") or None,
     }
 
 

@@ -25,6 +25,7 @@ from cyberscript.enums import ResourceStatus
 from cyberscript.exceptions import ValidationError as OperationResultError
 
 from shared.raes.status import RAES_OPERATION_STATES, RAES_STATE_SUCCEEDED
+from shared.sftp_root import SftpRootError, normalize_sftp_root_directory
 
 __all__ = [
     "MAX_DIAGNOSTIC_CHARS",
@@ -101,7 +102,14 @@ RAES_MEMBER_REQUIRED_KEYS = frozenset(
         "participant_access_usernames",
     }
 )
-RAES_MEMBER_OPTIONAL_KEYS = frozenset({"ssh_key_secret_arn", "rdp_password_secret_arn", "host_public_key"})
+# Optional secret *references* and public material, one string per key. These
+# are the credential-shaped optionals; the channel gate below requires the SSH /
+# RDP refs when their channel is declared.
+_RAES_MEMBER_REF_KEYS = frozenset({"ssh_key_secret_arn", "rdp_password_secret_arn", "host_public_key"})
+# The full optional set the closed member shape accepts. ``sftp_root_directory``
+# is realized per-image metadata (#375), not a credential reference, so it is
+# parsed and shape-validated separately from the reference keys.
+RAES_MEMBER_OPTIONAL_KEYS = _RAES_MEMBER_REF_KEYS | frozenset({"sftp_root_directory"})
 #: Mirrors ``shared.raes.participant_access.SUPPORTED_ACCESS_CHANNELS`` without
 #: importing it, keeping this transport module dependency-light.
 RAES_MEMBER_CHANNELS = frozenset({"ssh", "rdp"})
@@ -421,7 +429,7 @@ def _member_credential_refs(entry: dict[str, Any], channels: list[str], field: s
     not a credential-less one: the portal would resolve nothing at dial time.
     """
     refs: dict[str, Any] = {}
-    for key in sorted(RAES_MEMBER_OPTIONAL_KEYS):
+    for key in sorted(_RAES_MEMBER_REF_KEYS):
         if key not in entry:
             continue
         value = entry[key]
@@ -432,6 +440,25 @@ def _member_credential_refs(entry: dict[str, Any], channels: list[str], field: s
         if channel in channels and not refs.get(key):
             raise OperationResultError(f"{field} declares {channel} without a {key} reference")
     return refs
+
+
+def _member_sftp_root(entry: dict[str, Any], field: str) -> dict[str, Any]:
+    """Return the validated per-image SFTP root, or ``{}`` when the member omits it.
+
+    The value is untrusted realized configuration: it is shape-checked at this
+    closed result boundary with the same helper the image-config parser uses, so
+    a malformed guest path fails the transport parse instead of reaching the
+    connection layer.
+    """
+    if "sftp_root_directory" not in entry:
+        return {}
+    value = entry["sftp_root_directory"]
+    if not isinstance(value, str):
+        raise OperationResultError(f"{field} sftp_root_directory must be a string")
+    try:
+        return {"sftp_root_directory": normalize_sftp_root_directory(value)}
+    except SftpRootError as exc:
+        raise OperationResultError(f"{field} sftp_root_directory is invalid: {exc}") from exc
 
 
 def _parse_raes_member(entry: dict[str, Any], field: str) -> dict[str, Any]:
@@ -449,6 +476,7 @@ def _parse_raes_member(entry: dict[str, Any], field: str) -> dict[str, Any]:
         "participant_access_channels": channels,
         "participant_access_usernames": _member_usernames(entry, channels, field),
         **_member_credential_refs(entry, channels, field),
+        **_member_sftp_root(entry, field),
     }
 
 

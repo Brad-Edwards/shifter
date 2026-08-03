@@ -235,7 +235,20 @@ def _build_pending_vm_runtime_instance(
         "public_key": public_key,
         "host_public_key": host_public_key,
         "static_ip": static_ip,
+        "sftp_root_directory": profile.sftp_root_directory,
     }
+
+
+def sftp_root_output_field(value: object) -> dict[str, str]:
+    """Return ``{"sftp_root_directory": <root>}`` when the image declares a root, else ``{}``.
+
+    Pure emit decision for the realized VM-runtime output (#375): a blank/absent
+    root emits no key, so the connection layer disables SFTP rather than pinning a
+    guessed directory. Kept as a module-level helper so the omit branch is unit
+    tested without patching the VM-runtime builder's cloud boundaries.
+    """
+    root = str(value or "")
+    return {"sftp_root_directory": root} if root else {}
 
 
 def _build_vm_runtime_output(
@@ -277,6 +290,11 @@ def _build_vm_runtime_output(
         "vmruntime_disk_name": pending["disk_name"],
         **vmi_metadata,
     }
+    # The per-image SFTP root (#375) travels as realized per-instance metadata so
+    # Mission Control consumes it instead of an OS map. Sourced from the resolved
+    # VM Runtime image profile so two images of the same os_type can pin different
+    # roots; emitted only when the image declares one.
+    output.update(sftp_root_output_field(pending.get("sftp_root_directory")))
     if rdp_password_secret_ref:
         # Surface the reference both at the top-level (mirrors the
         # AWS Terraform output's ssh_key_secret_arn / rdp_password_secret_arn
