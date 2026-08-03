@@ -34,6 +34,18 @@ def default_sftp_root_directory(os_type: str) -> str:
     return DEFAULT_SFTP_ROOT_BY_OS.get((os_type or "").strip().lower(), "")
 
 
+def sftp_root_output_field(value: object) -> dict[str, str]:
+    """Return ``{"sftp_root_directory": <root>}`` when an image declares one, else ``{}``.
+
+    Pure emit decision for a realized provisioner output (#375): a blank/absent
+    root emits no key, so the connection layer disables SFTP rather than pinning a
+    guessed directory. Kept here so producers get a tested omit-branch without
+    patching their cloud boundaries.
+    """
+    root = str(value or "")
+    return {"sftp_root_directory": root} if root else {}
+
+
 class SftpRootError(ValueError):
     """Raised when an SFTP root directory is malformed or unsafe."""
 
