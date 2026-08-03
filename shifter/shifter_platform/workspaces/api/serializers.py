@@ -89,3 +89,49 @@ class ChangeWorkspaceMemberRoleSerializer(serializers.Serializer):
     """Closed role-change command."""
 
     role = serializers.ChoiceField(choices=WorkspaceRole.choices)
+
+
+class WorkspaceSerializer(serializers.Serializer):
+    """Read-only workspace lifecycle projection (#1940, PLAT-233).
+
+    Emits the public ``uuid`` (of both workspace and owning organization) only;
+    internal integer primary keys never appear on the wire.
+    """
+
+    uuid = serializers.UUIDField(read_only=True)
+    organization_uuid = serializers.UUIDField(read_only=True)
+    organization_name = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    is_personal = serializers.BooleanField(read_only=True)
+    is_archived = serializers.BooleanField(read_only=True)
+    archived_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+
+
+class CreateWorkspaceSerializer(serializers.Serializer):
+    """Create-workspace command: an organization UUID and a display name.
+
+    The serializer owns HTTP shape (presence, length, UUID form);
+    ``workspaces.services`` owns authority and the name invariants.
+    """
+
+    organization_uuid = serializers.UUIDField()
+    name = serializers.CharField(max_length=200, allow_blank=False, trim_whitespace=True)
+
+
+class RenameWorkspaceSerializer(serializers.Serializer):
+    """Rename-workspace command (PATCH mask; a single writable field)."""
+
+    name = serializers.CharField(max_length=200, allow_blank=False, trim_whitespace=True)
+
+
+class TransferWorkspaceOwnershipSerializer(serializers.Serializer):
+    """Transfer-ownership command: the internal id of the new owner account.
+
+    The new owner is identified by the ``user_id`` already exposed on the
+    workspace membership roster projection, so no email or profile lookup is
+    performed at this boundary.
+    """
+
+    user_id = serializers.IntegerField(min_value=1)

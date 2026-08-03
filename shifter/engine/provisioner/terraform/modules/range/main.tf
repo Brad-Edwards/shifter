@@ -16,18 +16,19 @@ locals {
   all_instances = flatten([
     for subnet in var.subnets : [
       for inst in subnet.instances : {
-        key           = "${subnet.name}-${inst.role}-${inst.uuid}"
-        subnet_name   = subnet.name
-        subnet_uuid   = subnet.uuid
-        subnet_cidr   = subnet.cidr
-        instance_uuid = inst.uuid
-        name          = inst.name
-        role          = inst.role
-        os_type       = inst.os_type
-        instance_type = inst.instance_type
-        agent_url     = inst.agent_presigned_url
-        join_domain   = inst.join_domain
-        ami_id        = inst.ami_id
+        key                 = "${subnet.name}-${inst.role}-${inst.uuid}"
+        subnet_name         = subnet.name
+        subnet_uuid         = subnet.uuid
+        subnet_cidr         = subnet.cidr
+        instance_uuid       = inst.uuid
+        name                = inst.name
+        role                = inst.role
+        os_type             = inst.os_type
+        instance_type       = inst.instance_type
+        agent_url           = inst.agent_presigned_url
+        join_domain         = inst.join_domain
+        ami_id              = inst.ami_id
+        sftp_root_directory = inst.sftp_root_directory
       }
     ]
   ])

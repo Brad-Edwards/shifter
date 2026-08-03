@@ -8,6 +8,7 @@ helper used by the active-range / range-by-request-id projections.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from cms.models import AgentConfig
@@ -17,6 +18,7 @@ from shared.log_sanitize import safe_log_value
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from shared.schemas.cms_projections import AgentListItem
     from shared.schemas.range import InstanceContextBase
 
 logger = logging.getLogger(__name__)
@@ -134,7 +136,7 @@ _AGENT_PROJECTION_SHAPE: tuple[tuple[str, type | tuple[type, ...], bool, str], .
 )
 
 
-def _assert_agent_projection_shape(projection: dict[str, Any]) -> None:
+def _assert_agent_projection_shape(projection: Mapping[str, Any]) -> None:
     """Assert the projection dict satisfies the documented downstream contract.
 
     Iterates ``_AGENT_PROJECTION_SHAPE`` so the per-field branches don't
@@ -150,7 +152,7 @@ def _assert_agent_projection_shape(projection: dict[str, Any]) -> None:
         raise TypeError("agent.created_at must not be None")
 
 
-def _agent_projection_dict(agent: AgentConfig) -> dict[str, Any]:
+def _agent_projection_dict(agent: AgentConfig) -> AgentListItem:
     """Build the agent projection dict; verify the model shape on the way out.
 
     Centralizes the per-agent type-shape contract that `list_agents` enforces
@@ -159,7 +161,7 @@ def _agent_projection_dict(agent: AgentConfig) -> dict[str, Any]:
     """
     if not (hasattr(agent, "id") and hasattr(agent, "name") and hasattr(agent, "os")):
         raise TypeError("Model returned invalid agent object")
-    projection = {
+    projection: AgentListItem = {
         "id": agent.id,
         "name": agent.name,
         "os_name": agent.os.name,

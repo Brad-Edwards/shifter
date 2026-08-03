@@ -234,4 +234,9 @@ def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider:
     }
     if "participant_sftp_enabled" in instance_data:
         payload["participant_sftp_enabled"] = bool(instance_data["participant_sftp_enabled"])
+    # Per-image Guacamole SFTP root (#375): realized, non-secret metadata carried
+    # into Range.provisioned_instances so the connection layer sources it here
+    # instead of a Mission Control OS map.
+    if instance_data.get("sftp_root_directory"):
+        payload["sftp_root_directory"] = str(instance_data["sftp_root_directory"])
     return payload

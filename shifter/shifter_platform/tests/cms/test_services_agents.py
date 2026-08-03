@@ -24,6 +24,7 @@ from cms import services
 from cms.assets.services import AssetError
 from cms.exceptions import CMSError
 from cms.models import AgentConfig
+from shared.schemas.cms_projections import AgentListItem
 
 pytestmark = pytest.mark.django_db
 
@@ -65,6 +66,13 @@ class TestListAgents:
         assert row["original_filename"] == "agent.msi"
         assert isinstance(row["file_size_mb"], (int, float))
         assert row["created_at"] is not None
+
+    def test_row_keys_match_agent_list_item_contract(self, user, make_agent, windows_os):
+        # The projection builder and the AgentListItem TypedDict must stay in
+        # lockstep: a key added/removed on one but not the other trips here.
+        make_agent(user, name="Agent A")
+        row = services.list_agents(user)[0]
+        assert set(row) == set(AgentListItem.__annotations__)
 
     def test_excludes_other_users_agents(self, user, other_user, make_agent):
         make_agent(user, name="Mine")

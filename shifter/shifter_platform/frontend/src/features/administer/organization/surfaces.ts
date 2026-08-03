@@ -4,25 +4,33 @@
  * capability-aware navigation only; each surface here is a route *slot* whose
  * behavior lands with its own issue (PLAT-232–240).
  *
- * `requiredOperation`, when present, names a `WorkspaceOperation` code the
+ * `requiredAnyOperation`, when present, lists `WorkspaceOperation` codes the
  * selected workspace's role must permit for the surface to be enabled in the
- * in-console navigation. It is advisory presentation only: the server derives
- * capabilities centrally and every future endpoint reauthorizes. TypeScript must
- * never compare role strings to reconstruct policy.
+ * in-console navigation: the surface opens when the role permits ANY one of
+ * them. It is advisory presentation only: the server derives capabilities
+ * centrally and every endpoint reauthorizes. TypeScript must never compare role
+ * strings to reconstruct policy.
  */
 import type { PrincipalWorkspaceContext } from "@/api/types";
 
-/** A workspace-scoped console slot, optionally gated on a workspace capability. */
+/** A workspace-scoped console slot, optionally gated on workspace capabilities. */
 export interface WorkspaceSurface {
   readonly key: string;
   readonly label: string;
-  /** Advisory capability code; absent means "always shown (later slice)". */
-  readonly requiredOperation?: string;
+  /**
+   * Advisory capability codes; the surface is shown when the role permits any of
+   * them. Absent means "always shown (later slice)".
+   */
+  readonly requiredAnyOperation?: readonly string[];
 }
 
 /** Workspace-scoped slots reached under a selected workspace UUID. */
 export const WORKSPACE_SURFACES: readonly WorkspaceSurface[] = [
-  { key: "membership", label: "Membership", requiredOperation: "read_members" },
+  // Membership admits either roster access (owner/admin) or self-service leave
+  // (every member): a `member` lacks `read_members` but may still open the
+  // surface to view its own membership and leave (#1941, PLAT-234). The gate
+  // stays a capability predicate, never a role-code shortcut.
+  { key: "membership", label: "Membership", requiredAnyOperation: ["read_members", "leave_workspace"] },
   { key: "invitations", label: "Invitations" },
   { key: "users", label: "Users" },
   { key: "range-scoping", label: "Range scoping" },
@@ -33,8 +41,9 @@ export const WORKSPACE_SURFACES: readonly WorkspaceSurface[] = [
 
 /** True when the selected workspace's advisory capabilities permit the surface. */
 export function surfaceEnabled(surface: WorkspaceSurface, selected: PrincipalWorkspaceContext | null): boolean {
-  if (!surface.requiredOperation) return true;
-  return Boolean(selected?.capabilities.includes(surface.requiredOperation));
+  if (!surface.requiredAnyOperation) return true;
+  const capabilities = selected?.capabilities ?? [];
+  return surface.requiredAnyOperation.some((operation) => capabilities.includes(operation));
 }
 
 /**

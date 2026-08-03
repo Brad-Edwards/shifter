@@ -245,6 +245,7 @@ def range_rdp_instance(db):
         os_type: str = "kali",
         connection_name: str = "kali-1",
         host: str = "10.0.0.2",
+        sftp_root_directory: str | None = None,
         status=None,
     ):
         from uuid import UUID, uuid4
@@ -283,6 +284,8 @@ def range_rdp_instance(db):
             "private_ip": host,
             "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:1:secret:rdp",
         }
+        if sftp_root_directory is not None:
+            instance["sftp_root_directory"] = sftp_root_directory
         rng = Range.objects.create(
             workspace_id=workspace_id,
             user=user,

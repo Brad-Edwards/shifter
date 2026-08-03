@@ -59,11 +59,17 @@ is on.
   navigation contract (`frontend/src/app/nav.ts`), staff-gated and
   `administer_spa`-gated. The in-console section navigation is capability-aware
   (`surfaceEnabled`): sections whose required `WorkspaceOperation` the role does
-  not permit are shown disabled. The Django admin escape hatch remains an
-  unflagged external entry at `/admin/`, outside this subtree.
+  not permit are shown disabled. The membership surface is the deliberate
+  exception to a single-operation gate: `member` lacks `read_members` but may
+  read its own membership and leave, so it opens in a self-service state when
+  either server-advertised capability applies; it never derives that access from
+  a role code. The Django admin escape hatch remains an unflagged external entry
+  at `/admin/`, outside this subtree. See
+  [`workspace-membership-spa-preflight-1941.md`](../../architecture/workspace-membership-spa-preflight-1941.md).
 - **Slots.** The child surfaces are route slots rendering a placeholder
-  (`ConsoleSlotPage`) until their owning issues (PLAT-233–240) land. The
-  organization settings slot is now a real surface (see below).
+  (`ConsoleSlotPage`) until their owning issues (PLAT-235–240) land. The
+  organization settings, workspace lifecycle, and membership slots are now real
+  surfaces (see below).
 
 ## Organization profile & settings (issue #1939, PLAT-232)
 
@@ -147,3 +153,157 @@ hooks (`frontend/src/api/organization.ts`), submits only fields changed from the
 loaded snapshot (the PATCH mask, so a stale form cannot revert a concurrent
 edit), surfaces server field errors from the shared `ApiError` envelope, and
 never compares roles client-side.
+
+## Workspace lifecycle (issue #1940, PLAT-233)
+
+The second console surface to replace a placeholder. It adds the workspace
+create/list/rename/archive/restore/owner-transfer lifecycle behind the existing
+`workspaces.services` facade. The binding boundaries are recorded in ADR-046,
+ADR-048, and
+[`workspace-lifecycle-preflight-1940.md`](../../architecture/workspace-lifecycle-preflight-1940.md).
+
+### Two distinct authorities
+
+Lifecycle deliberately keeps organization authority and workspace authority
+separate (ADR-046-R8, ADR-048), never conflating them:
+
+- **Create and list** are organization-authorized. They resolve the target
+  organization by public UUID through `resolve_administrable_organization`
+  (`workspaces/services/_organization.py`), which reuses the ADR-048 `admin`
+  `OrganizationMembership` seam (or the recorded superuser override). Authority
+  is never derived from a workspace role, Django staff/groups, model
+  permissions, identity claims, or API-token scopes.
+- **Read detail, rename, archive, restore, and transfer** are authorized by the
+  workspace role seam for that exact public workspace UUID, via new
+  `WorkspaceOperation` codes (`read_workspace`, `rename_workspace`,
+  `archive_workspace`, `restore_workspace`, `transfer_ownership`). The
+  operation-to-role mapping lives only in `workspaces.roles.ROLE_OPERATIONS`:
+  owner and admin may read/rename/archive/restore; `transfer_ownership` is
+  owner-only. `create_workspace` seeds the creator as `OWNER` in the same
+  transaction, so a create-then-manage flow works without a separate grant.
+
+### Service (`workspaces/services/_lifecycle.py`)
+
+- **Transactional and locked.** Each mutation locks the workspace row and
+  re-checks the live grant under the lock (reusing
+  `_memberships._lock_workspace_and_actor`), performs the change, and writes one
+  strict, request-attributed `shared.audit` event (`AuditEntityType.WORKSPACE`)
+  in the same transaction, so an audit-write failure rolls the mutation back.
+  Audit records internal integer IDs, the action, and bounded state/field
+  *names* only—never the workspace or organization display name.
+- **Archive is a reversible marker.** A nullable `Workspace.archived_at`
+  timestamp; archive sets it, restore clears it. It never deletes, rehomes, or
+  cascades to the scalar `workspace_id` range bindings in CMS/Engine (those are
+  `IntegerField`s, not foreign keys). List defaults to active-only with an
+  explicit `include_archived` filter.
+- **Invariants.** Names stay unique within the organization (DB constraint;
+  `IntegrityError` is classified as `name_taken`, not surfaced raw). Owner
+  transfer promotes the target's existing active membership to `OWNER` and
+  demotes the acting owner to `ADMIN` in one atomic command, preserving the
+  last-owner invariant throughout. Personal compatibility workspaces are
+  rejected from every lifecycle mutation (`personal_workspace_protected`).
+- **Opaque denials.** A malformed UUID, an unknown workspace/organization, and
+  an unauthorized one all raise the same opaque denial, so the surface is not a
+  tenant-enumeration oracle.
+
+### Lifecycle API
+
+Mounted under `/api/v1/workspaces/` (`workspaces/api/views.py`,
+`workspaces/api/urls.py`):
+
+- `GET/POST /api/v1/workspaces/`: list (`?organization=<uuid>&include_archived=&search=`) or create.
+- `GET/PATCH /api/v1/workspaces/<uuid>/`: detail or rename.
+- `POST /api/v1/workspaces/<uuid>/archive/`, `.../restore/`, `.../transfer/`.
+
+- **Session-only, service-seam authorized.** Like the organization profile
+  endpoints (ADR-048, PLAT-232), the lifecycle views use
+  `IsAuthenticatedSession` with a bearer-first chain that refuses a valid
+  platform token; domain authority is enforced inside `workspaces.services`.
+  The console `/administer` route stays staff-gated at the SPA level for
+  defense-in-depth, but a non-staff organization admin can drive the API for
+  their own organization—`IsStaffSession` is deliberately *not* used here, so
+  workspace authority is not collapsed into Django staff.
+- **Serializers.** Explicit read (`WorkspaceSerializer`) and command
+  (`CreateWorkspaceSerializer`, `RenameWorkspaceSerializer`,
+  `TransferWorkspaceOwnershipSerializer`) serializers; the public workspace and
+  organization UUIDs only on the wire. Bounded service outcomes map through the
+  shared error envelope (`name_taken`→409, invalid name→400,
+  `personal_workspace_protected`→409, `membership_not_found`→404, authorization
+  →opaque 403).
+- **Contract.** Regenerated into `openapi/v1.json` and
+  `frontend/src/api/schema.d.ts` via `npm run gen:api`.
+
+### SPA lifecycle surface
+
+`features/administer/organization/WorkspaceListPage.tsx` replaces the workspaces
+slot (organization-scoped list, search, include-archived toggle, and create),
+and `WorkspaceDetailPage.tsx` renders the workspace-scope overview (rename,
+archive/restore with a confirm dialog, and owner transfer). Both use the shared
+`frontend/src/api/workspaces.ts` TanStack Query hooks (one typed client and
+query-key family; mutations never auto-retry and invalidate the affected
+caches), address workspaces by public UUID only, and never compare roles
+client-side.
+
+## Workspace membership & roles (issue #1941, PLAT-234)
+
+The third console surface to replace a placeholder, and the first that is
+**SPA-only**: it adds no endpoint, serializer, role, migration, or provider
+change. The membership API, the closed role vocabulary, the fail-closed
+role-to-operation policy, and the last-owner/personal-workspace/self-removal
+invariants all already exist server-side from the ADR-046 tenancy layer. The
+binding boundary is recorded in
+[`workspace-membership-spa-preflight-1941.md`](../../architecture/workspace-membership-spa-preflight-1941.md);
+PLAT-241 (cloud-agnostic, proven components) is satisfied without a new note
+because the surface is same-origin session traffic through the existing SPA data
+layer with no provider branch.
+
+### Consumed contract (unchanged)
+
+The surface consumes the existing membership endpoints under
+`/api/v1/workspaces/` (`workspaces/api/views.py`, `workspaces/api/urls.py`):
+
+- `GET/POST /api/v1/workspaces/<uuid>/memberships/`: roster or add-existing-account.
+- `POST /api/v1/workspaces/<uuid>/memberships/<user_id>/role/`: change role.
+- `POST /api/v1/workspaces/<uuid>/memberships/<user_id>/remove/`: remove another member.
+- `POST /api/v1/workspaces/<uuid>/memberships/leave/`: leave.
+- `GET /api/v1/workspaces/<uuid>/membership/`: the caller's own membership.
+
+Members are addressed by the server-provided `user_id` the roster projection
+exposes; the closed `WorkspaceRoleEnum` (`owner`, `admin`, `member`) is rendered
+as membership data and as the generated request enum only. The caller's advisory
+`capabilities` come from the console's already-loaded `PrincipalWorkspaceContext`
+(`workspaces.roles`), so the client never re-derives authority from a role code.
+
+### SPA membership surface
+
+`features/administer/organization/WorkspaceMembershipPage.tsx` replaces the
+membership slot and consumes the shared `frontend/src/api/memberships.ts`
+TanStack Query hooks (one typed client and a `membershipKeys` family keyed by
+public workspace UUID; mutations never auto-retry). It renders in two
+capability-driven modes:
+
+- **Roster mode** (`read_members`, owner/admin): a table of members with add,
+  change-role, remove, and leave actions, each gated on the matching advertised
+  capability (`add_member`, `change_member_role`, `remove_member`,
+  `leave_workspace`). The caller's own row offers **Leave** rather than
+  **Remove**, so self-removal always uses the dedicated leave endpoint.
+- **Self-service mode** (`leave_workspace` without `read_members`, member): an
+  honest card showing the caller's own role and a leave action, with no roster.
+
+The navigation gate (`surfaces.ts`) admits the surface for either capability, so
+a member reaches self-service leave; it is an any-of capability predicate, never
+a role-string shortcut.
+
+The **last-owner invariant** is shown from roster state (when exactly one owner
+remains, that owner's remove and demote are disabled and the caller's leave is
+disabled, with a plain explanation), but the server stays authoritative: the
+surface handles `409 last_owner_required` (and `owner_authority_required`,
+`use_leave_operation`, `personal_workspace_protected`, `membership_exists`,
+`member_add_failed`, `invalid_role`) as typed `ApiError` outcomes through the
+shared envelope, because a concurrent change can move the roster between render
+and submit. A visible action is never treated as a grant.
+
+Cache invalidation follows the API contract: roster mutations invalidate the
+roster, and a self role change or a leave additionally invalidate the self
+membership and the principal context (`principalContextKeys`), because the
+caller's capabilities and the console's selected-workspace validity can change.

@@ -39,6 +39,11 @@ class WorkspaceOperation(models.TextChoices):
     CHANGE_MEMBER_ROLE = "change_member_role", "Change a workspace member role"
     REMOVE_MEMBER = "remove_member", "Remove a workspace member"
     LEAVE_WORKSPACE = "leave_workspace", "Leave the workspace"
+    READ_WORKSPACE = "read_workspace", "Read a workspace's administrative detail"
+    RENAME_WORKSPACE = "rename_workspace", "Rename the workspace"
+    ARCHIVE_WORKSPACE = "archive_workspace", "Archive the workspace"
+    RESTORE_WORKSPACE = "restore_workspace", "Restore an archived workspace"
+    TRANSFER_OWNERSHIP = "transfer_ownership", "Transfer workspace ownership"
 
 
 #: Role-to-operation policy. Callers must not re-derive permissions from a role
@@ -63,10 +68,25 @@ _MEMBERSHIP_MANAGEMENT_OPERATIONS = frozenset(
         WorkspaceOperation.REMOVE_MEMBER.value,
     }
 )
+# Workspace lifecycle administration (#1940). Owner and admin may read the
+# administrative detail, rename, archive, and restore a workspace; transferring
+# ownership is owner-only, mirroring the owner-authority rule the membership
+# service already enforces for managing owners.
+_WORKSPACE_ADMIN_OPERATIONS = frozenset(
+    {
+        WorkspaceOperation.READ_WORKSPACE.value,
+        WorkspaceOperation.RENAME_WORKSPACE.value,
+        WorkspaceOperation.ARCHIVE_WORKSPACE.value,
+        WorkspaceOperation.RESTORE_WORKSPACE.value,
+    }
+)
+_OWNER_ONLY_OPERATIONS = frozenset({WorkspaceOperation.TRANSFER_OWNERSHIP.value})
 
 ROLE_OPERATIONS: dict[str, frozenset[str]] = {
-    WorkspaceRole.OWNER.value: _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS,
-    WorkspaceRole.ADMIN.value: _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS,
+    WorkspaceRole.OWNER.value: (
+        _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS | _WORKSPACE_ADMIN_OPERATIONS | _OWNER_ONLY_OPERATIONS
+    ),
+    WorkspaceRole.ADMIN.value: _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS | _WORKSPACE_ADMIN_OPERATIONS,
     WorkspaceRole.MEMBER.value: _RESOURCE_OPERATIONS,
 }
 

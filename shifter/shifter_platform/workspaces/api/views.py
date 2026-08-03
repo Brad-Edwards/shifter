@@ -71,6 +71,11 @@ class _WorkspaceAPIError(Exception):
         "personal_workspace_protected": 409,
         "use_leave_operation": 409,
         "invalid_role": 400,
+        # Workspace lifecycle (#1940)
+        "name_invalid": 400,
+        "name_blank": 400,
+        "name_too_long": 400,
+        "name_taken": 409,
     }
 
     def __init__(self, *, code: str, message: str, status_code: int, request: Request) -> None:
@@ -89,7 +94,14 @@ class _WorkspaceAPIError(Exception):
                 status_code=403,
                 request=request,
             )
-        if isinstance(exc, services.WorkspaceMembershipError):
+        if isinstance(exc, services.OrganizationAuthorizationError):
+            return cls(
+                code="organization_access_denied",
+                message="Organization access denied",
+                status_code=403,
+                request=request,
+            )
+        if isinstance(exc, (services.WorkspaceMembershipError, services.WorkspaceLifecycleError)):
             return cls(
                 code=exc.code,
                 message=exc.message,
