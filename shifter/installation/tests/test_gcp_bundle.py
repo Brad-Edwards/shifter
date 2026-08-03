@@ -92,7 +92,8 @@ class TestGcpSecretReferencePattern:
         pattern = next(
             s["reference_pattern"] for s in gcp["required_secrets"] if s["logical_name"] == "django_secret_key"
         )
-        assert pattern.startswith("^") and pattern.endswith("$")
+        assert pattern.startswith("^")
+        assert pattern.endswith("$")
         rx = re.compile(pattern)
         # Bare valid references match at the start.
         assert rx.match("DJANGO_SECRET_KEY")
