@@ -180,11 +180,14 @@ function MembershipRoster({
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{formatTimestamp(member.created_at)}</TableCell>
                   <TableCell className="text-right">
-                    {isSelf ? (
-                      canLeave ? <LeaveAction uuid={uuid} disabled={isLastOwner} /> : null
-                    ) : canRemove ? (
-                      <RemoveAction uuid={uuid} member={member} disabled={isLastOwner} />
-                    ) : null}
+                    <MemberRowActions
+                      uuid={uuid}
+                      member={member}
+                      isSelf={isSelf}
+                      isLastOwner={isLastOwner}
+                      canRemove={canRemove}
+                      canLeave={canLeave}
+                    />
                   </TableCell>
                 </TableRow>
               );
@@ -194,6 +197,32 @@ function MembershipRoster({
       </Card>
     </div>
   );
+}
+
+/**
+ * Per-row action for a roster member: the caller's own row offers Leave (self
+ * removal must use the leave endpoint), every other row offers Remove. Each is
+ * gated on the matching advertised capability.
+ */
+function MemberRowActions({
+  uuid,
+  member,
+  isSelf,
+  isLastOwner,
+  canRemove,
+  canLeave,
+}: Readonly<{
+  uuid: string;
+  member: WorkspaceMembership;
+  isSelf: boolean;
+  isLastOwner: boolean;
+  canRemove: boolean;
+  canLeave: boolean;
+}>) {
+  if (isSelf) {
+    return canLeave ? <LeaveAction uuid={uuid} disabled={isLastOwner} /> : null;
+  }
+  return canRemove ? <RemoveAction uuid={uuid} member={member} disabled={isLastOwner} /> : null;
 }
 
 /** Inline role control: an editable Select when permitted, otherwise a static badge. */
@@ -209,8 +238,7 @@ function RoleCell({
     return <Badge variant="outline">{roleLabel(member.role)}</Badge>;
   }
 
-  const error =
-    mutation.error instanceof ApiError ? mutation.error.message : mutation.error ? "The role could not be changed." : null;
+  const error = describeMutationError(mutation.error, "The role could not be changed.");
 
   return (
     <div className="flex flex-col gap-1">
