@@ -8,7 +8,13 @@ deployment:
 capabilities:
   gcpBackendConfig: false
   gcpManagedTls: false
-  kubernetesJobLauncher: false
+  kubernetesJobLauncher: true
+
+# The Shifter management plane runs on EKS and dispatches the provisioner as a
+# Kubernetes Job (#1826). taskRunner selects the AWS admission env contract and
+# the shifter.dev/task-runner label the fail-closed policy binds against.
+provisioner:
+  taskRunner: aws
 
 images:
   platform: 000000000000.dkr.ecr.us-east-1.amazonaws.com/shifter/platform@sha256:1111111111111111111111111111111111111111111111111111111111111111
