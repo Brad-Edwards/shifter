@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.539243Z
 updated_at: 2026-03-26T06:37:59.861516Z
 ---
 
-# CTF-501 — Team Mode Toggle
+# CTF-501: Team Mode Toggle
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system should support a per-event configuration option to enable or disable 
 
 ## Rationale
 
-Not all CTF events are team-based — some are individual competitions. Organizers need a per-event toggle to match the event format. Locking the mode after event start prevents mid-competition confusion where some participants have teams and others do not. (CTFd supports both modes as a per-event setting.)
+Not all CTF events are team-based, some are individual competitions. Organizers need a per-event toggle to match the event format. Locking the mode after event start prevents mid-competition confusion where some participants have teams and others do not. (CTFd supports both modes as a per-event setting.)
 
 ## Traceability
 

@@ -9,7 +9,7 @@ created_at: 2026-05-09T06:03:34.378181Z
 updated_at: 2026-05-09T06:03:34.378181Z
 ---
 
-# PLAT-211 — Scenario DSL Semantic Validation
+# PLAT-211: Scenario DSL Semantic Validation
 
 ## Statement
 

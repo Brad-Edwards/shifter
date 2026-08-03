@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.776711Z
 updated_at: 2026-03-26T06:36:29.757418Z
 ---
 
-# CTF-111 — Challenge Release Scheduling
+# CTF-111: Challenge Release Scheduling
 
 ## Statement
 
@@ -25,7 +25,7 @@ Timed challenge releases maintain engagement throughout multi-hour or multi-day 
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/challenge.py` (get_available_challenges release_time filter (line 282-284))
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/submission.py` (submit_flag is_released gate (lines 90-97))
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/management/commands/run_ctf_scheduler.py` (RELEASE_CHALLENGE handler and TASK_HANDLERS registration)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums.py` (ScheduledTaskType.RELEASE_CHALLENGE enum value)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/enums.py` (`ScheduledTaskType.RELEASE_CHALLENGE` enum value)
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_challenge_release.py` (Challenge release scheduling tests (15 tests))
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#545` (CTF-111: Challenge Release Scheduling)
 - IMPLEMENTS → GITHUB_ISSUE `539` (Issue #539 - automated coverage and Ground Control TESTS trace links for active CTF requirements)

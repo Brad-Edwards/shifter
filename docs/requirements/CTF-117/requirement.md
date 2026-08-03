@@ -9,7 +9,7 @@ created_at: 2026-03-18T20:38:43.027671Z
 updated_at: 2026-03-28T21:20:43.365661Z
 ---
 
-# CTF-117 — Challenge Solutions
+# CTF-117: Challenge Solutions
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system should support attaching an official solution or writeup to each chal
 
 ## Rationale
 
-Solutions serve as training material after events — participants learn how challenges were meant to be solved, which is critical for Shifter's training-focused use case. Without solutions, the educational value of completed events is lost. Organizers need a way to document the intended solve path per challenge and reveal it after the event ends. (CTFd supports a similar Solution tab per challenge.)
+Solutions serve as training material after events, participants learn how challenges were meant to be solved, which is critical for Shifter's training-focused use case. Without solutions, the educational value of completed events is lost. Organizers need a way to document the intended solve path per challenge and reveal it after the event ends. (CTFd supports a similar Solution tab per challenge.)
 
 ## Traceability
 

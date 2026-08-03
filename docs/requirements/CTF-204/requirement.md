@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.000543Z
 updated_at: 2026-03-26T06:37:13.297578Z
 ---
 
-# CTF-204 — Awards/Bonus Points
+# CTF-204: Awards/Bonus Points
 
 ## Statement
 

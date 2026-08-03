@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:39:02.769872Z
 updated_at: 2026-05-09T04:39:02.769872Z
 ---
 
-# UX-041 — Bundle size budgets
+# UX-041: Bundle size budgets
 
 ## Statement
 

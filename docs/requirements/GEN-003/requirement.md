@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.075004Z
 updated_at: 2026-05-09T05:11:30.084669Z
 ---
 
-# GEN-003 — Operator Automation Command Execution Safety
+# GEN-003: Operator Automation Command Execution Safety
 
 ## Statement
 

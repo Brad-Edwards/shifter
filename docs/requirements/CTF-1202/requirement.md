@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.136977Z
 updated_at: 2026-03-26T06:09:57.146709Z
 ---
 
-# CTF-1202 — API Authentication
+# CTF-1202: API Authentication
 
 ## Statement
 

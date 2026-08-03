@@ -9,7 +9,7 @@ created_at: 2026-05-09T06:03:34.456476Z
 updated_at: 2026-05-09T06:03:34.456476Z
 ---
 
-# PLAT-214 — Agent Runtime Safety Controls
+# PLAT-214: Agent Runtime Safety Controls
 
 ## Statement
 

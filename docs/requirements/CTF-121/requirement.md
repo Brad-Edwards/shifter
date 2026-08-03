@@ -9,15 +9,15 @@ created_at: 2026-03-18T20:39:01.445456Z
 updated_at: 2026-03-29T22:54:33.983378Z
 ---
 
-# CTF-121 — Next Challenge Navigation
+# CTF-121: Next Challenge Navigation
 
 ## Statement
 
-The system should support configuring a "next challenge" link per challenge that guides participants to a suggested follow-up challenge after solving. This is distinct from prerequisites (which gate access) — next-challenge navigation is a non-blocking UX recommendation. When a participant solves a challenge with a configured next challenge, the UI shall offer navigation to it.
+The system should support configuring a "next challenge" link per challenge that guides participants to a suggested follow-up challenge after solving. This is distinct from prerequisites (which gate access), next-challenge navigation is a non-blocking UX recommendation. When a participant solves a challenge with a configured next challenge, the UI shall offer navigation to it.
 
 ## Rationale
 
-For training-focused events, guided progression is valuable — organizers can design learning sequences where challenges build on each other conceptually without hard-gating access. A non-blocking "next challenge" recommendation helps participants follow a structured learning path after each solve. (CTFd supports a similar Next Challenge configuration.)
+For training-focused events, guided progression is valuable, organizers can design learning sequences where challenges build on each other conceptually without hard-gating access. A non-blocking "next challenge" recommendation helps participants follow a structured learning path after each solve. (CTFd supports a similar Next Challenge configuration.)
 
 ## Traceability
 

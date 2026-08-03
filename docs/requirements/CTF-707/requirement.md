@@ -9,7 +9,7 @@ created_at: 2026-03-18T07:23:16.931933Z
 updated_at: 2026-03-19T03:07:16.214511Z
 ---
 
-# CTF-707 — Event Metadata
+# CTF-707: Event Metadata
 
 ## Statement
 

@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.290765Z
 updated_at: 2026-03-26T06:10:17.958060Z
 ---
 
-# CTF-801 — Email Notifications
+# CTF-801: Email Notifications
 
 ## Statement
 

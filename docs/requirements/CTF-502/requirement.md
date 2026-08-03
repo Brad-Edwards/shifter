@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.576603Z
 updated_at: 2026-03-26T06:38:08.286656Z
 ---
 
-# CTF-502 — Team Creation
+# CTF-502: Team Creation
 
 ## Statement
 

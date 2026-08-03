@@ -9,7 +9,7 @@ created_at: 2026-04-16T22:48:07.172236Z
 updated_at: 2026-04-16T22:49:36.711007Z
 ---
 
-# CTF-908 — Event Capacity Declaration
+# CTF-908: Event Capacity Declaration
 
 ## Statement
 

@@ -9,11 +9,11 @@ created_at: 2026-07-02T01:00:00.023436Z
 updated_at: 2026-07-02T06:16:27.429121Z
 ---
 
-# CTF-1404 — Solve History Visibility
+# CTF-1404: Solve History Visibility
 
 ## Statement
 
-Participant solve history — the specific challenges a participant has solved — shall be visible only to that participant and to the event organizer. The public individual scoreboard (CTF-401) shall continue to expose aggregate ranking data (rank, display name, total score, solve count, and last-solve time) to all participants, but one participant's per-challenge solve history shall not be exposed to other participants unless the participant explicitly chooses to share it. Any solve-history projection shall be correct-solves-only and shall never expose submitted flag values, incorrect-attempt details, or attempt source IP addresses. This requirement clarifies and supersedes the literal "click a row to see that participant's solve history" clause of CTF-401, which read as exposing any participant's solve history to all participants. Governing decision: ADR-028.
+Participant solve history, the specific challenges a participant has solved, shall be visible only to that participant and to the event organizer. The public individual scoreboard (CTF-401) shall continue to expose aggregate ranking data (rank, display name, total score, solve count, and last-solve time) to all participants, but one participant's per-challenge solve history shall not be exposed to other participants unless the participant explicitly chooses to share it. Any solve-history projection shall be correct-solves-only and shall never expose submitted flag values, incorrect-attempt details, or attempt source IP addresses. This requirement clarifies and supersedes the literal "click a row to see that participant's solve history" clause of CTF-401, which read as exposing any participant's solve history to all participants. Governing decision: ADR-028.
 
 ## Rationale
 

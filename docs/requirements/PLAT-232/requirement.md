@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:36:51.541608Z
 updated_at: 2026-08-01T17:41:19.898017Z
 ---
 
-# PLAT-232 — Organization profile and settings surface
+# PLAT-232: Organization profile and settings surface
 
 ## Statement
 

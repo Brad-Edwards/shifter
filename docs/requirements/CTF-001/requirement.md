@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:20.896712Z
 updated_at: 2026-03-30T04:36:13.746955Z
 ---
 
-# CTF-001 — Challenge Management
+# CTF-001: Challenge Management
 
 ## Statement
 

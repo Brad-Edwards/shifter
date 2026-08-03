@@ -8,11 +8,11 @@ created_at: 2026-05-09T04:38:54.030422Z
 updated_at: 2026-05-09T04:38:54.030422Z
 ---
 
-# UX-032 — Progressive enhancement for read-only views
+# UX-032: Progressive enhancement for read-only views
 
 ## Statement
 
-Read-only participant views — scoreboard, challenge listing, public documentation — shall be usable when JavaScript is unavailable. Interactive features may degrade, but content shall remain accessible and the page shall not rely on JS to render its primary content.
+Read-only participant views, scoreboard, challenge listing, public documentation, shall be usable when JavaScript is unavailable. Interactive features may degrade, but content shall remain accessible and the page shall not rely on JS to render its primary content.
 
 ## Rationale
 

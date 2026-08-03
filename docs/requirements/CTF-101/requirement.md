@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.411948Z
 updated_at: 2026-03-26T06:34:39.140033Z
 ---
 
-# CTF-101 — Challenge CRUD
+# CTF-101: Challenge CRUD
 
 ## Statement
 

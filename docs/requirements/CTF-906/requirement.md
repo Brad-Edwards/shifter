@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.645727Z
 updated_at: 2026-03-19T04:02:50.856530Z
 ---
 
-# CTF-906 — Per-Event Instance Visibility
+# CTF-906: Per-Event Instance Visibility
 
 ## Statement
 

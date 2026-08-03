@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.245289Z
 updated_at: 2026-05-09T05:11:30.257558Z
 ---
 
-# PLAT-206 — NGFW Lifecycle and Access Management
+# PLAT-206: NGFW Lifecycle and Access Management
 
 ## Statement
 

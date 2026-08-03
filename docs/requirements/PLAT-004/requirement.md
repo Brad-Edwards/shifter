@@ -9,7 +9,7 @@ created_at: 2026-03-19T02:57:48.930387Z
 updated_at: 2026-05-09T05:11:30.442691Z
 ---
 
-# PLAT-004 — Independent Multi-Deployment
+# PLAT-004: Independent Multi-Deployment
 
 ## Statement
 

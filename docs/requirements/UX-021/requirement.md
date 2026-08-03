@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:38:29.675729Z
 updated_at: 2026-05-09T04:38:29.675729Z
 ---
 
-# UX-021 — Predictable interaction patterns
+# UX-021: Predictable interaction patterns
 
 ## Statement
 

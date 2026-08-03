@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.036262Z
 updated_at: 2026-03-19T03:07:28.770558Z
 ---
 
-# CTF-1103 — Event Export
+# CTF-1103: Event Export
 
 ## Statement
 

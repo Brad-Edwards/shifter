@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:22.466284Z
 updated_at: 2026-03-26T06:37:49.598511Z
 ---
 
-# CTF-406 — Tie-Breaking Rules
+# CTF-406: Tie-Breaking Rules
 
 ## Statement
 
-The system shall implement deterministic tie-breaking rules when two or more participants have the same total score. The primary tie-breaker shall be the timestamp of the participant's most recent solve — the participant who reached that score first shall rank higher. The tie-breaking rule shall be documented and visible to participants.
+The system shall implement deterministic tie-breaking rules when two or more participants have the same total score. The primary tie-breaker shall be the timestamp of the participant's most recent solve, the participant who reached that score first shall rank higher. The tie-breaking rule shall be documented and visible to participants.
 
 ## Rationale
 

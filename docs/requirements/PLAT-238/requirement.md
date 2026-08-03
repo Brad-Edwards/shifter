@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:37:32.031908Z
 updated_at: 2026-08-01T17:41:19.898045Z
 ---
 
-# PLAT-238 — Workspace-level network egress policy
+# PLAT-238: Workspace-level network egress policy
 
 ## Statement
 

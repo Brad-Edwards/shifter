@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.289425Z
 updated_at: 2026-03-26T06:37:37.525855Z
 ---
 
-# CTF-401 — Individual Scoreboard
+# CTF-401: Individual Scoreboard
 
 ## Statement
 
@@ -23,7 +23,7 @@ The individual scoreboard is the central competitive interface for non-team even
 
 - IMPLEMENTS → CODE_FILE `ctf/services/scoring.py` (Scoring service - get_scoreboard() ranked by descending score with solve_count, last_solve, rank)
 - IMPLEMENTS → CODE_FILE `ctf/views.py` (Scoreboard view (participant) and api_scoreboard JSON endpoint)
-- IMPLEMENTS → CODE_FILE `templates/ctf/participant/scoreboard.html` (Scoreboard template - renders rank, name, score, solves, last_solve with 15s auto-refresh polling)
+- IMPLEMENTS → CODE_FILE `templates/ctf/participant/scoreboard.html` (Scoreboard template - renders rank, name, score, solves, last_solve with 15-second auto-refresh polling)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/scoring/_read.py::get_scoreboard` (Individual scoreboard read path - rank, participant display, score, solve count, last solve)
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_scoring.py` (Scoring tests - individual scoreboard ranking, score recomputation/materialization, solve count and last solve)
 - IMPLEMENTS → GITHUB_ISSUE `539` (Issue #539 - automated coverage and Ground Control TESTS trace links for active CTF requirements)

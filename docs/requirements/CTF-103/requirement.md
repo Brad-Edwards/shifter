@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:21.480501Z
 updated_at: 2026-03-26T06:36:08.256970Z
 ---
 
-# CTF-103 — Challenge Difficulty Levels
+# CTF-103: Challenge Difficulty Levels
 
 ## Statement
 
-The system should support assigning a difficulty level to each challenge from a predefined scale (e.g. easy, medium, hard, expert). Difficulty levels shall be displayed alongside challenge listings to help participants gauge effort before attempting.
+The system should support assigning a difficulty level to each challenge from a predefined scale (for example easy, medium, hard, expert). Difficulty levels shall be displayed alongside challenge listings to help participants gauge effort before attempting.
 
 ## Rationale
 

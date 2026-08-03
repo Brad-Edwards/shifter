@@ -9,7 +9,7 @@ created_at: 2026-05-09T06:03:34.492977Z
 updated_at: 2026-05-09T06:03:34.492977Z
 ---
 
-# PLAT-216 — Range Readiness and Prerequisite Validation
+# PLAT-216: Range Readiness and Prerequisite Validation
 
 ## Statement
 

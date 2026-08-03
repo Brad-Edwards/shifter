@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.574150Z
 updated_at: 2026-03-30T05:24:25.480334Z
 ---
 
-# CTF-904 — Range Connection Info
+# CTF-904: Range Connection Info
 
 ## Statement
 

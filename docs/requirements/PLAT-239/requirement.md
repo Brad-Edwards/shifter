@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:37:36.027203Z
 updated_at: 2026-08-01T17:41:19.898050Z
 ---
 
-# PLAT-239 — Workspace resource quotas and usage
+# PLAT-239: Workspace resource quotas and usage
 
 ## Statement
 

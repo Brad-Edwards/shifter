@@ -9,7 +9,7 @@ created_at: 2026-05-10T02:49:54.998621Z
 updated_at: 2026-07-14T05:56:36.147080Z
 ---
 
-# PLAT-2004 — Branch-independent deployment targeting
+# PLAT-2004: Branch-independent deployment targeting
 
 ## Statement
 

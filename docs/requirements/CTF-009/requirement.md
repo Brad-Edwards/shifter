@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.194389Z
 updated_at: 2026-03-19T03:55:47.759542Z
 ---
 
-# CTF-009 — Range Integration
+# CTF-009: Range Integration
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system shall provide each CTF participant with an isolated, browser-accessib
 
 ## Rationale
 
-Range integration is what differentiates Shifter CTF from standalone CTFd. CTFd has no concept of lab infrastructure — Shifter provides each participant their own attack/victim environment. This is the core value proposition: turnkey, self-service cyber ranges tied to CTF challenges. Without this integration, participants would need to provision their own labs, defeating the purpose of the platform.
+Range integration is what differentiates Shifter CTF from standalone CTFd. CTFd has no concept of lab infrastructure, Shifter provides each participant their own attack/victim environment. This is the core value proposition: turnkey, self-service cyber ranges tied to CTF challenges. Without this integration, participants would need to provision their own labs, defeating the purpose of the platform.
 
 ## Traceability
 

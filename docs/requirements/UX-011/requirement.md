@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:37:50.375312Z
 updated_at: 2026-05-09T04:37:50.375312Z
 ---
 
-# UX-011 — Full keyboard operability
+# UX-011: Full keyboard operability
 
 ## Statement
 

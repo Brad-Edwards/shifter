@@ -9,11 +9,11 @@ created_at: 2026-03-26T06:09:37.484428Z
 updated_at: 2026-03-26T06:09:37.484428Z
 ---
 
-# PLAT-104 — Extensible Profile Fields
+# PLAT-104: Extensible Profile Fields
 
 ## Statement
 
-The platform could support admin-defined custom fields on user profiles and other entities. Custom fields shall have a name, field type (text, select, checkbox), and optional validation rules. Custom field values shall be available for display and filtering in admin views. Fields shall be configurable globally or per-context (e.g. per event).
+The platform could support admin-defined custom fields on user profiles and other entities. Custom fields shall have a name, field type (text, select, checkbox), and optional validation rules. Custom field values shall be available for display and filtering in admin views. Fields shall be configurable globally or per-context (for example per event).
 
 ## Rationale
 

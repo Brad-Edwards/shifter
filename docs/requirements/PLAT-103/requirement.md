@@ -9,7 +9,7 @@ created_at: 2026-03-26T06:09:28.301270Z
 updated_at: 2026-04-05T16:17:36.233197Z
 ---
 
-# PLAT-103 — Email Templating and Delivery Service
+# PLAT-103: Email Templating and Delivery Service
 
 ## Statement
 
@@ -22,7 +22,7 @@ Multiple platform features (CTF notifications, range readiness alerts, account m
 ## Traceability
 
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/shared/email.py` (Shared email templating and delivery service (render_template, send_email, send_email_async))
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/notification.py` (CTF notification service — delegates to shared.email for rendering and delivery)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/notification.py` (CTF notification service, delegates to shared.email for rendering and delivery)
 - TESTS → TEST `shifter/shifter_platform/tests/shared/test_email.py` (Tests for shared email service (render, send, async))
 - IMPLEMENTS → GITHUB_ISSUE `581`
 - TESTS → TEST `tests/ctf/test_services/test_notification.py` (CTF notification async-delivery tests (PLAT-103 clause 3))

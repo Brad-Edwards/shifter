@@ -8,7 +8,7 @@ created_at: 2026-07-26T16:31:32.402253Z
 updated_at: 2026-07-26T21:30:40.607851Z
 ---
 
-# PLAT-2011 — Organization/workspace tenancy boundary above range ownership
+# PLAT-2011: Organization/workspace tenancy boundary above range ownership
 
 ## Statement
 

@@ -8,11 +8,11 @@ created_at: 2026-05-09T04:37:30.339171Z
 updated_at: 2026-05-09T04:37:30.339171Z
 ---
 
-# UX-002 — OSS-friendly visual identity
+# UX-002: OSS-friendly visual identity
 
 ## Statement
 
-The platform's visual identity — including logo, color palette, typography, iconography, voice, and tone — shall be original to OSS Shifter. The codebase, assets, templates, stylesheets, documentation, and any shipped artifact shall not contain Palo Alto Networks trademarks, Cortex or XDR branding, proprietary marks, or proprietary visual assets. This applies to source files, generated assets, social-card images, favicons, and any embedded references.
+The platform's visual identity, including logo, color palette, typography, iconography, voice, and tone, shall be original to OSS Shifter. The codebase, assets, templates, stylesheets, documentation, and any shipped artifact shall not contain Palo Alto Networks trademarks, Cortex or XDR branding, proprietary marks, or proprietary visual assets. This applies to source files, generated assets, social-card images, favicons, and any embedded references.
 
 ## Rationale
 

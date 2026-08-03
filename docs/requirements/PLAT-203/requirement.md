@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.140971Z
 updated_at: 2026-07-26T04:51:48.818003Z
 ---
 
-# PLAT-203 — Risk Register and Audit Trail
+# PLAT-203: Risk Register and Audit Trail
 
 ## Statement
 

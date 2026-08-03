@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.819431Z
 updated_at: 2026-03-19T03:06:02.600119Z
 ---
 
-# CTF-1003 — Automated Range Cleanup
+# CTF-1003: Automated Range Cleanup
 
 ## Statement
 

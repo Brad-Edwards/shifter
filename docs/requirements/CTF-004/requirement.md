@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.012281Z
 updated_at: 2026-04-04T16:36:19.374295Z
 ---
 
-# CTF-004 — Scoreboard & Rankings
+# CTF-004: Scoreboard & Rankings
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system shall present a live scoreboard that ranks participants by score, pro
 
 ## Rationale
 
-The scoreboard is the primary competitive interface — participants check it constantly to gauge their standing. Scoreboard freeze near event end maintains suspense. A polished, real-time scoreboard is essential for engagement. The scoreboard is delivered as a CTF view within Mission Control's UI layer, and real-time updates should leverage the platform's WebSocket infrastructure (PLAT-105) when available.
+The scoreboard is the primary competitive interface, participants check it constantly to gauge their standing. Scoreboard freeze near event end maintains suspense. A polished, real-time scoreboard is essential for engagement. The scoreboard is delivered as a CTF view within Mission Control's UI layer, and real-time updates should leverage the platform's WebSocket infrastructure (PLAT-105) when available.
 
 ## Traceability
 

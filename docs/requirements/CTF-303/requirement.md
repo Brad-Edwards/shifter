@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.218465Z
 updated_at: 2026-03-30T04:53:19.251749Z
 ---
 
-# CTF-303 — Hint Usage Tracking
+# CTF-303: Hint Usage Tracking
 
 ## Statement
 

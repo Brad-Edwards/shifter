@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:21.848842Z
 updated_at: 2026-03-27T03:26:55.522847Z
 ---
 
-# CTF-113 — Challenge Tags
+# CTF-113: Challenge Tags
 
 ## Statement
 
-The system could support tagging challenges with freeform metadata labels (e.g. "XDR", "Cortex", "Linux", "Windows", "network"). Tags shall be searchable and filterable in the challenge listing. A challenge may have multiple tags. Tags shall be reusable across challenges within an event.
+The system could support tagging challenges with freeform metadata labels (for example `XDR`, `Cortex`, `Linux`, `Windows`, `network`). Tags shall be searchable and filterable in the challenge listing. A challenge may have multiple tags. Tags shall be reusable across challenges within an event.
 
 ## Rationale
 

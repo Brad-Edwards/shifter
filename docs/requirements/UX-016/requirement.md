@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:38:15.972972Z
 updated_at: 2026-05-09T04:38:15.972972Z
 ---
 
-# UX-016 — Reduced motion preference honored
+# UX-016: Reduced motion preference honored
 
 ## Statement
 

@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:22.183715Z
 updated_at: 2026-03-30T04:50:19.769553Z
 ---
 
-# CTF-302 — Hint Point Penalties
+# CTF-302: Hint Point Penalties
 
 ## Statement
 
-The system should support configuring a point penalty value for each hint. The penalty shall be expressed as a positive integer representing points deducted from the challenge score upon hint consumption. Different hints for the same challenge may have different penalty values (e.g. first hint costs 10 points, second costs 25). A penalty of zero shall be permitted for free hints.
+The system should support configuring a point penalty value for each hint. The penalty shall be expressed as a positive integer representing points deducted from the challenge score upon hint consumption. Different hints for the same challenge may have different penalty values (for example first hint costs 10 points, second costs 25). A penalty of zero shall be permitted for free hints.
 
 ## Rationale
 

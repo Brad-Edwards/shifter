@@ -9,7 +9,7 @@ created_at: 2026-03-18T20:39:10.693422Z
 updated_at: 2026-03-26T06:38:56.462239Z
 ---
 
-# CTF-1305 — Submission History
+# CTF-1305: Submission History
 
 ## Statement
 

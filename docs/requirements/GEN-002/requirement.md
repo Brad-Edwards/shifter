@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.016736Z
 updated_at: 2026-05-09T05:11:30.051524Z
 ---
 
-# GEN-002 — Executable Architecture Governance
+# GEN-002: Executable Architecture Governance
 
 ## Statement
 

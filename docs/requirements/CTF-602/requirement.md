@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.794291Z
 updated_at: 2026-03-26T07:07:11.579772Z
 ---
 
-# CTF-602 — Participant Invitation
+# CTF-602: Participant Invitation
 
 ## Statement
 

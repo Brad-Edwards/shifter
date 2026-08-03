@@ -9,7 +9,7 @@ created_at: 2026-04-16T22:48:15.828998Z
 updated_at: 2026-07-26T02:15:23.166938Z
 ---
 
-# PLAT-007 — Scenario Expressiveness Gap Tracking
+# PLAT-007: Scenario Expressiveness Gap Tracking
 
 ## Statement
 

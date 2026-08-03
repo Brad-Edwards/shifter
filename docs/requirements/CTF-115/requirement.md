@@ -9,11 +9,11 @@ created_at: 2026-03-18T07:23:03.277450Z
 updated_at: 2026-03-26T20:11:29.994135Z
 ---
 
-# CTF-115 — Per-Challenge Connection Info
+# CTF-115: Per-Challenge Connection Info
 
 ## Statement
 
-The system should support associating specific connection information (e.g. host, port, service endpoint) with individual challenges. When a challenge references a specific service on a participant's range VM, the system shall display the participant-specific connection details alongside the challenge description.
+The system should support associating specific connection information (for example host, port, service endpoint) with individual challenges. When a challenge references a specific service on a participant's range VM, the system shall display the participant-specific connection details alongside the challenge description.
 
 ## Rationale
 

@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.358352Z
 updated_at: 2026-04-02T04:27:56.326088Z
 ---
 
-# CTF-403 — Scoreboard Freeze
+# CTF-403: Scoreboard Freeze
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system could support freezing the public scoreboard at a configurable time b
 
 ## Rationale
 
-Scoreboard freeze is a standard CTF practice that maintains suspense in the final hours — participants know their own progress but cannot see if competitors are catching up. Without freeze, the final stretch loses its excitement as outcomes become obvious before the event ends. (CTFd supports scoreboard freeze.)
+Scoreboard freeze is a standard CTF practice that maintains suspense in the final hours, participants know their own progress but cannot see if competitors are catching up. Without freeze, the final stretch loses its excitement as outcomes become obvious before the event ends. (CTFd supports scoreboard freeze.)
 
 ## Traceability
 

@@ -8,11 +8,11 @@ created_at: 2026-05-09T04:38:07.243097Z
 updated_at: 2026-05-09T04:38:07.243097Z
 ---
 
-# UX-014 — Color is not the only signal
+# UX-014: Color is not the only signal
 
 ## Statement
 
-Every state communicated by color — including errors, warnings, success, scoring deltas, status badges, and chart data — shall also be communicated by an additional channel: text label, icon, pattern, or position. No information shall be conveyed by color alone.
+Every state communicated by color, including errors, warnings, success, scoring deltas, status badges, and chart data, shall also be communicated by an additional channel: text label, icon, pattern, or position. No information shall be conveyed by color alone.
 
 ## Rationale
 

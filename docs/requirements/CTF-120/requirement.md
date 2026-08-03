@@ -9,7 +9,7 @@ created_at: 2026-03-18T20:38:56.896572Z
 updated_at: 2026-03-29T04:21:23.169446Z
 ---
 
-# CTF-120 — Challenge Ratings
+# CTF-120: Challenge Ratings
 
 ## Statement
 

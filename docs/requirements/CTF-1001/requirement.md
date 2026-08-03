@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.731635Z
 updated_at: 2026-03-26T06:11:10.779892Z
 ---
 
-# CTF-1001 — Scheduled Task Framework
+# CTF-1001: Scheduled Task Framework
 
 ## Statement
 

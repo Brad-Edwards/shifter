@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:37:46.207763Z
 updated_at: 2026-08-01T17:41:19.898058Z
 ---
 
-# PLAT-241 — Admin layer stays cloud-agnostic and uses proven components
+# PLAT-241: Admin layer stays cloud-agnostic and uses proven components
 
 ## Statement
 

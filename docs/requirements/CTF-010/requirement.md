@@ -9,15 +9,15 @@ created_at: 2026-03-18T05:28:21.230446Z
 updated_at: 2026-03-26T06:33:55.418204Z
 ---
 
-# CTF-010 — Scheduled Tasks & Automation
+# CTF-010: Scheduled Tasks & Automation
 
 ## Statement
 
-The CTF layer should automate time-sensitive event operations — such as range provisioning, resource cleanup, and state transitions — using the platform's scheduler framework (see CTF-1001). Events run reliably without requiring organizer presence at exact moments.
+The CTF layer should automate time-sensitive event operations, such as range provisioning, resource cleanup, and state transitions, using the platform's scheduler framework (see CTF-1001). Events run reliably without requiring organizer presence at exact moments.
 
 ## Rationale
 
-CTF events have time-bound lifecycles that require actions at specific moments — ranges must be ready before start, torn down after end, reminders sent in advance. Manual execution is error-prone and requires organizer availability at exact times. CTF registers its task types with the platform scheduler rather than building its own automation infrastructure.
+CTF events have time-bound lifecycles that require actions at specific moments, ranges must be ready before start, torn down after end, reminders sent in advance. Manual execution is error-prone and requires organizer availability at exact times. CTF registers its task types with the platform scheduler rather than building its own automation infrastructure.
 
 ## Traceability
 

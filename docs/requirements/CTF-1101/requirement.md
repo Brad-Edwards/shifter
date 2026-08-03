@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.968994Z
 updated_at: 2026-03-19T03:06:45.142514Z
 ---
 
-# CTF-1101 — Challenge Import
+# CTF-1101: Challenge Import
 
 ## Statement
 

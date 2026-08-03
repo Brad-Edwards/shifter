@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.611975Z
 updated_at: 2026-03-26T06:38:09.740224Z
 ---
 
-# CTF-503 — Team Captains
+# CTF-503: Team Captains
 
 ## Statement
 

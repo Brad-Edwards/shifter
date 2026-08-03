@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:39:28.292124Z
 updated_at: 2026-05-09T04:39:28.292124Z
 ---
 
-# UX-061 — Right-to-left layout support
+# UX-061: Right-to-left layout support
 
 ## Statement
 

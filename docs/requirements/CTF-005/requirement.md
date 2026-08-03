@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.045742Z
 updated_at: 2026-03-26T06:35:58.597540Z
 ---
 
-# CTF-005 — Team Management
+# CTF-005: Team Management
 
 ## Statement
 

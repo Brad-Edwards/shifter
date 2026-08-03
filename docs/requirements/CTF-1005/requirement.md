@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:23.895669Z
 updated_at: 2026-04-05T18:26:31.188077Z
 ---
 
-# CTF-1005 — Scheduled Reminders
+# CTF-1005: Scheduled Reminders
 
 ## Statement
 
-The system could send automated reminder notifications at configurable intervals before event start (e.g. 24 hours, 1 hour before). Reminders shall be sent using the platform's email service (PLAT-103) to all registered participants who have not declined or been removed. The reminder content shall include event name, start time (in recipient's timezone), and access URL.
+The system could send automated reminder notifications at configurable intervals before event start (for example 24 hours, 1 hour before). Reminders shall be sent using the platform's email service (PLAT-103) to all registered participants who have not declined or been removed. The reminder content shall include event name, start time (in recipient's timezone), and access URL.
 
 ## Rationale
 
@@ -22,7 +22,7 @@ Participants who registered days ago may forget about the event. Reminders reduc
 ## Traceability
 
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/notification.py (send_reminder)` (send_reminder() service - sends reminder emails to registered participants)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/event.py (schedule 24h reminder)` (Event service auto-schedules SEND_REMINDER task 24h before event start)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/event.py (schedule 24h reminder)` (Event service auto-schedules SEND_REMINDER task 24 hours before event start)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/management/commands/run_ctf_scheduler.py (_handle_send_reminder)` (Scheduler handler for SEND_REMINDER - STUB, logs warning 'not yet implemented')
 - TESTS → TEST `shifter/shifter_platform/ctf/tests/test_services/test_notification.py (TestSendReminder)` (Tests for send_reminder - verifies sends to registered participants)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models.py (reminder_hours, event_timezone fields)` (CTFEvent model - reminder_hours and event_timezone fields)

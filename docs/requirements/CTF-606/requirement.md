@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.945170Z
 updated_at: 2026-03-26T06:38:35.858Z
 ---
 
-# CTF-606 — Hidden Users
+# CTF-606: Hidden Users
 
 ## Statement
 

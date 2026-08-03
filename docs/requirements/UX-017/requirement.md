@@ -8,11 +8,11 @@ created_at: 2026-05-09T04:38:20.932544Z
 updated_at: 2026-05-09T04:38:20.932544Z
 ---
 
-# UX-017 — Color scheme preference honored
+# UX-017: Color scheme preference honored
 
 ## Statement
 
-The platform shall honor the prefers-color-scheme CSS media query, supporting both light and dark themes. Both themes shall be built from the same design-system token set so visual decisions stay coherent and a third theme (e.g. high-contrast) can be added by extending the token system rather than by forking templates.
+The platform shall honor the prefers-color-scheme CSS media query, supporting both light and dark themes. Both themes shall be built from the same design-system token set so visual decisions stay coherent and a third theme (for example high-contrast) can be added by extending the token system rather than by forking templates.
 
 ## Rationale
 

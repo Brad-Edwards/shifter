@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.085872Z
 updated_at: 2026-03-24T05:08:33.060565Z
 ---
 
-# CTF-701 — Event Lifecycle
+# CTF-701: Event Lifecycle
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system shall manage CTF event states via a state machine with states: draft 
 
 ## Rationale
 
-Event lifecycle state controls what actions are available at each phase — you cannot submit flags before the event starts or register after it ends. CTFd manages event state. For Shifter, event state also gates range provisioning and teardown, making correct state management critical for infrastructure cost control.
+Event lifecycle state controls what actions are available at each phase, you cannot submit flags before the event starts or register after it ends. CTFd manages event state. For Shifter, event state also gates range provisioning and teardown, making correct state management critical for infrastructure cost control.
 
 ## Traceability
 

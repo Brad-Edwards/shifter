@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.172202Z
 updated_at: 2026-05-09T05:11:30.186097Z
 ---
 
-# PLAT-204 — Scenario Catalog and Editor
+# PLAT-204: Scenario Catalog and Editor
 
 ## Statement
 

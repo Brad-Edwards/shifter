@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:23.151161Z
 updated_at: 2026-03-26T06:11:19.205850Z
 ---
 
-# CTF-703 — Event Auto-Cleanup
+# CTF-703: Event Auto-Cleanup
 
 ## Statement
 
-The CTF layer should automatically clean up event resources after the event transitions to ended or cancelled state. Cleanup shall orchestrate Engine range destruction via cms.services.destroy_range() for all participant ranges. Cleanup shall be configurable with a delay (e.g. 2 hours after event end) to allow post-event review, or immediate on cancellation. Session management is a platform auth concern and not handled by CTF cleanup. The system shall log all cleanup actions.
+The CTF layer should automatically clean up event resources after the event transitions to ended or cancelled state. Cleanup shall orchestrate Engine range destruction via cms.services.destroy_range() for all participant ranges. Cleanup shall be configurable with a delay (for example 2 hours after event end) to allow post-event review, or immediate on cancellation. Session management is a platform auth concern and not handled by CTF cleanup. The system shall log all cleanup actions.
 
 ## Rationale
 

@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.124447Z
 updated_at: 2026-04-05T00:39:48.594798Z
 ---
 
-# CTF-007 — Event Management
+# CTF-007: Event Management
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system shall manage CTF events as time-bound competitions with a well-define
 
 ## Rationale
 
-Events are the top-level organizing unit for CTF competitions. Event state controls when participants can register, submit flags, and view results. In Shifter, event state also controls range provisioning lifecycle — an event in the wrong state can leave expensive cloud resources running. This tight coupling between event state and infrastructure cost is Shifter-specific and the primary reason state management must be rigorous.
+Events are the top-level organizing unit for CTF competitions. Event state controls when participants can register, submit flags, and view results. In Shifter, event state also controls range provisioning lifecycle, an event in the wrong state can leave expensive cloud resources running. This tight coupling between event state and infrastructure cost is Shifter-specific and the primary reason state management must be rigorous.
 
 ## Traceability
 

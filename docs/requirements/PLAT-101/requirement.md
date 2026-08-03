@@ -9,7 +9,7 @@ created_at: 2026-03-26T06:09:19.279433Z
 updated_at: 2026-04-06T04:55:03.932967Z
 ---
 
-# PLAT-101 — Passwordless Authentication (Magic Links)
+# PLAT-101: Passwordless Authentication (Magic Links)
 
 ## Statement
 
@@ -21,9 +21,9 @@ External users (customers, partners, CTF participants) need a frictionless authe
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models.py` (CTFParticipant model — configurable token expiration via MAGIC_LINK_EXPIRY_HOURS)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models.py` (CTFParticipant model, configurable token expiration via MAGIC_LINK_EXPIRY_HOURS)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/config/settings.py` (MAGIC_LINK_EXPIRY_HOURS and MAGIC_LINK_SINGLE_USE settings)
-- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_auth.py` (Magic link auth tests — expiration, single-use, rate limiting)
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_auth.py` (Magic link auth tests, expiration, single-use, rate limiting)
 - CONSTRAINS → ADR `ADR-009` (AWS and GCP keep provider-specific identity stacks behind a shared auth seam)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#585` (PLAT-101: Passwordless Authentication (Magic Links))
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/participant.py` (ctf_register view — token expiration enforcement, rate limiting helper)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/participant.py` (ctf_register view, token expiration enforcement, rate limiting helper)

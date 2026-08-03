@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.499978Z
 updated_at: 2026-03-26T04:03:27.290990Z
 ---
 
-# CTF-902 — Range Lifecycle Management
+# CTF-902: Range Lifecycle Management
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system shall manage range instance lifecycle states tied to event state: pro
 
 ## Rationale
 
-Range lifecycle must be tightly coupled to event lifecycle to prevent orphaned resources. Cloud VMs cost money every minute — ranges that outlive their event waste budget. CTFd has no infrastructure concept. Shifter must ensure ranges are created when needed and destroyed when done, with manual overrides for troubleshooting.
+Range lifecycle must be tightly coupled to event lifecycle to prevent orphaned resources. Cloud VMs cost money every minute, ranges that outlive their event waste budget. CTFd has no infrastructure concept. Shifter must ensure ranges are created when needed and destroyed when done, with manual overrides for troubleshooting.
 
 ## Traceability
 

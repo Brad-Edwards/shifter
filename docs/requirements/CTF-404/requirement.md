@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.393914Z
 updated_at: 2026-03-26T06:37:47.063667Z
 ---
 
-# CTF-404 — Scoreboard Visibility Controls
+# CTF-404: Scoreboard Visibility Controls
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system should support controlling scoreboard visibility with at least three 
 
 ## Rationale
 
-Not all CTF events should have public scoreboards — internal training events may want results restricted to participants, and practice events may hide scores entirely to focus on learning. For Shifter, enterprise events involving PANW customers should restrict scoring data to participants only. (CTFd supports similar visibility controls.)
+Not all CTF events should have public scoreboards, internal training events may want results restricted to participants, and practice events may hide scores entirely to focus on learning. For Shifter, enterprise events involving PANW customers should restrict scoring data to participants only. (CTFd supports similar visibility controls.)
 
 ## Traceability
 

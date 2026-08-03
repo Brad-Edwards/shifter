@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.159679Z
 updated_at: 2026-03-26T06:33:52.781713Z
 ---
 
-# CTF-008 — Notifications & Communications
+# CTF-008: Notifications & Communications
 
 ## Statement
 

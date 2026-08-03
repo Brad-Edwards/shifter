@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.170296Z
 updated_at: 2026-03-19T03:07:20.316593Z
 ---
 
-# CTF-1203 — Webhooks
+# CTF-1203: Webhooks
 
 ## Statement
 

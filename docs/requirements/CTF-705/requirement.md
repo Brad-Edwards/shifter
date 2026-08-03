@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.224185Z
 updated_at: 2026-03-19T03:08:12.174024Z
 ---
 
-# CTF-705 — Registration Deadline
+# CTF-705: Registration Deadline
 
 ## Statement
 

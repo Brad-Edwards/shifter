@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.814466Z
 updated_at: 2026-03-26T23:58:51.054994Z
 ---
 
-# CTF-112 — Challenge Attempt Limits
+# CTF-112: Challenge Attempt Limits
 
 ## Statement
 

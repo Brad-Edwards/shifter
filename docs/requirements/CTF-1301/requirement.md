@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.203801Z
 updated_at: 2026-03-31T03:28:44.047176Z
 ---
 
-# CTF-1301 — Organizer Dashboard
+# CTF-1301: Organizer Dashboard
 
 ## Statement
 

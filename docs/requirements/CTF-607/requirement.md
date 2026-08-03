@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.980327Z
 updated_at: 2026-03-26T06:38:37.230621Z
 ---
 
-# CTF-607 — Admin Roles (Moderator/Judge)
+# CTF-607: Admin Roles (Moderator/Judge)
 
 ## Statement
 

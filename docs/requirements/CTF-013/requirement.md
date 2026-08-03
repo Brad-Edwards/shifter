@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.341312Z
 updated_at: 2026-03-26T06:34:21.005018Z
 ---
 
-# CTF-013 — Administration
+# CTF-013: Administration
 
 ## Statement
 
@@ -17,7 +17,7 @@ The CTF layer shall provide organizers with administrative dashboards and analyt
 
 ## Rationale
 
-Organizers need operational visibility into running events — who is stuck, which challenges are too easy or too hard, whether ranges are healthy. Without administrative dashboards, organizers operate blind during events and cannot make real-time adjustments like releasing hints or extending time. CTF admin views are delivered within Mission Control, leveraging existing UI patterns and access controls.
+Organizers need operational visibility into running events, who is stuck, which challenges are too easy or too hard, whether ranges are healthy. Without administrative dashboards, organizers operate blind during events and cannot make real-time adjustments like releasing hints or extending time. CTF admin views are delivered within Mission Control, leveraging existing UI patterns and access controls.
 
 ## Traceability
 

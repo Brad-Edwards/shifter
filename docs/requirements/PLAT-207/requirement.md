@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.280032Z
 updated_at: 2026-05-09T05:11:30.292192Z
 ---
 
-# PLAT-207 — Credential and Artifact Management
+# PLAT-207: Credential and Artifact Management
 
 ## Statement
 

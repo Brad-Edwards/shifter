@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.254561Z
 updated_at: 2026-03-29T18:55:02.945357Z
 ---
 
-# CTF-304 — Hint Cost/Purchase
+# CTF-304: Hint Cost/Purchase
 
 ## Statement
 

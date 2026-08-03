@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.856556Z
 updated_at: 2026-04-04T22:15:12.663422Z
 ---
 
-# CTF-1004 — Event Start/End Automation
+# CTF-1004: Event Start/End Automation
 
 ## Statement
 

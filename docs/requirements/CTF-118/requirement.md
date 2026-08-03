@@ -9,7 +9,7 @@ created_at: 2026-03-18T20:38:48.685011Z
 updated_at: 2026-03-26T06:36:52.548888Z
 ---
 
-# CTF-118 — Programmable Flag Validation
+# CTF-118: Programmable Flag Validation
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system could support programmable flag validation where custom code or an HT
 
 ## Rationale
 
-Programmable flags enable dynamic validation logic — e.g., verifying a submission against the participant's specific range state, checking that an exploit actually worked on the target VM, or validating flags that change per participant. HTTP-based validators allow delegation to external services for validation, which is important for range-integrated challenges. (CTFd supports Programmable and HTTP flag types beyond static and regex.)
+Programmable flags enable dynamic validation logic, for example, verifying a submission against the participant's specific range state, checking that an exploit actually worked on the target VM, or validating flags that change per participant. HTTP-based validators allow delegation to external services for validation, which is important for range-integrated challenges. (CTFd supports Programmable and HTTP flag types beyond static and regex.)
 
 ## Traceability
 

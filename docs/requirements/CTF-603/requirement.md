@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.828692Z
 updated_at: 2026-03-19T03:08:05.504543Z
 ---
 
-# CTF-603 — Bulk Participant Import
+# CTF-603: Bulk Participant Import
 
 ## Statement
 

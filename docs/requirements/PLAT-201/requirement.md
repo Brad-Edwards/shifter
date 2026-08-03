@@ -9,7 +9,7 @@ created_at: 2026-04-16T22:49:24.290391Z
 updated_at: 2026-07-26T23:57:38.478001Z
 ---
 
-# PLAT-201 — Capacity-Aware Provisioning
+# PLAT-201: Capacity-Aware Provisioning
 
 ## Statement
 
@@ -17,7 +17,7 @@ The range provisioning engine shall consume event-level capacity declarations (s
 
 ## Rationale
 
-CTF-907 defers quota enforcement to the Engine/CMS layer "if needed". Polaris demonstrated the need is real and the concern is broader than static quotas: it is anticipatory planning for shared resources that don't surface in per-range provisioning (Bedrock throughput, NAT bandwidth, SSM concurrency, cross-account IAM capacity). Making the engine capacity-aware reduces operator firefighting and makes event feasibility assessable before participants arrive.
+CTF-907 defers quota enforcement to the Engine/CMS layer "if needed." Polaris demonstrated the need is real and the concern is broader than static quotas: it is anticipatory planning for shared resources that don't surface in per-range provisioning (Bedrock throughput, NAT bandwidth, SSM concurrency, cross-account IAM capacity). Making the engine capacity-aware reduces operator firefighting and makes event feasibility assessable before participants arrive.
 
 ## Traceability
 

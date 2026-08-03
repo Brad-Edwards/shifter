@@ -9,15 +9,15 @@ created_at: 2026-03-18T05:28:21.446320Z
 updated_at: 2026-03-26T06:36:07.487894Z
 ---
 
-# CTF-102 — Challenge Categories
+# CTF-102: Challenge Categories
 
 ## Statement
 
-The system shall support organizing challenges into named categories (e.g. web exploitation, cryptography, forensics, reverse engineering, pwn, OSINT, misc). Categories shall be definable per event by organizers. The challenge listing UI shall group and filter challenges by category.
+The system shall support organizing challenges into named categories (for example web exploitation, cryptography, forensics, reverse engineering, pwn, OSINT, misc). Categories shall be definable per event by organizers. The challenge listing UI shall group and filter challenges by category.
 
 ## Rationale
 
-Categories are the primary organizational axis for CTF challenges. Participants use categories to find challenges matching their skill set, and without them, a flat list of 20+ challenges becomes unnavigable — participants waste time finding relevant challenges instead of solving them. (CTFd uses categories as its core organizational structure.)
+Categories are the primary organizational axis for CTF challenges. Participants use categories to find challenges matching their skill set, and without them, a flat list of 20+ challenges becomes unnavigable, participants waste time finding relevant challenges instead of solving them. (CTFd uses categories as its core organizational structure.)
 
 ## Traceability
 

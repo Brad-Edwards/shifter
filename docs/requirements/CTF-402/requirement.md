@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.323485Z
 updated_at: 2026-04-02T03:26:28.266516Z
 ---
 
-# CTF-402 — Team Scoreboard
+# CTF-402: Team Scoreboard
 
 ## Statement
 

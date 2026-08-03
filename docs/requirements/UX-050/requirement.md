@@ -8,11 +8,11 @@ created_at: 2026-05-09T04:39:06.880538Z
 updated_at: 2026-05-09T04:39:06.880538Z
 ---
 
-# UX-050 — Automated accessibility testing in CI
+# UX-050: Automated accessibility testing in CI
 
 ## Statement
 
-Automated accessibility testing (e.g. axe-core or equivalent) shall run on every pull request against representative pages. New violations introduced by a pull request shall fail the build. Existing violations shall be tracked in a baseline that can only shrink, not grow.
+Automated accessibility testing (for example axe-core or equivalent) shall run on every pull request against representative pages. New violations introduced by a pull request shall fail the build. Existing violations shall be tracked in a baseline that can only shrink, not grow.
 
 ## Rationale
 

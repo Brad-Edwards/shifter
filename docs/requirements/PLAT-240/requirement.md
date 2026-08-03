@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:37:40.529658Z
 updated_at: 2026-08-01T17:41:19.898054Z
 ---
 
-# PLAT-240 — Administrative audit log and activity history
+# PLAT-240: Administrative audit log and activity history
 
 ## Statement
 

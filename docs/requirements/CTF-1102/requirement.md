@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.002432Z
 updated_at: 2026-03-19T03:07:17.633591Z
 ---
 
-# CTF-1102 — Challenge Export
+# CTF-1102: Challenge Export
 
 ## Statement
 

@@ -9,11 +9,11 @@ created_at: 2026-05-13T16:31:56.853436Z
 updated_at: 2026-05-25T23:52:03.781550Z
 ---
 
-# PLAT-220 — Configurable Range Egress IP Allowlist
+# PLAT-220: Configurable Range Egress IP Allowlist
 
 ## Statement
 
-The platform shall accept configuration for allowlisted egress IP ranges (CIDR blocks) that apply to range network egress. The allowlist shall be a first-class platform capability — defined declaratively, applied uniformly across supported cloud backends (AWS, GCP), and enforceable without bespoke per-scenario scripting. The platform default behavior in the absence of an explicit allowlist (deny-all, allow-all, or status-quo) shall be documented, and the configuration mechanism shall not be coupled to any single cloud's native firewall syntax.
+The platform shall accept configuration for allowlisted egress IP ranges (CIDR blocks) that apply to range network egress. The allowlist shall be a first-class platform capability, defined declaratively, applied uniformly across supported cloud backends (AWS, GCP), and enforceable without bespoke per-scenario scripting. The platform default behavior in the absence of an explicit allowlist (deny-all, allow-all, or status-quo) shall be documented, and the configuration mechanism shall not be coupled to any single cloud's native firewall syntax.
 
 ## Rationale
 

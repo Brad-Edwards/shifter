@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:38:25.890501Z
 updated_at: 2026-05-09T04:38:25.890501Z
 ---
 
-# UX-020 — Defined state coverage for every flow
+# UX-020: Defined state coverage for every flow
 
 ## Statement
 
@@ -16,4 +16,4 @@ Every user flow shall have explicitly defined empty, loading, error, partial, an
 
 ## Rationale
 
-Most "broken UX" complaints trace to undefined states: blank screens that should be empty states, spinners that hide errors, success toasts that fire on failure. Defining the full state matrix upfront is what separates designed UX from accidentally-shipped UX.
+Most "broken UX" complaints trace to undefined states: blank screens that should be empty states, spinners that hide errors, success toasts that fire on failure. Defining the full state matrix upfront is what separates designed UX from accidentally shipped UX.

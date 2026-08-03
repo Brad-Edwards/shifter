@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.720536Z
 updated_at: 2026-03-26T06:38:26.495565Z
 ---
 
-# CTF-506 — Team Password Joining
+# CTF-506: Team Password Joining
 
 ## Statement
 

@@ -8,7 +8,7 @@ created_at: 2026-03-20T21:18:27.032056Z
 updated_at: 2026-05-09T05:11:30.348297Z
 ---
 
-# GEN-001 — Documentation Required for Major Features
+# GEN-001: Documentation Required for Major Features
 
 ## Statement
 
@@ -29,4 +29,4 @@ As the platform grows, undocumented features become a liability for onboarding, 
 - DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/features/ctf.md` (CTF feature user documentation)
 - DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/features/ctf-organizer-guide.md` (CTF organizer guide)
 - DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/technical/shifter_platform/ctf.md` (CTF technical documentation)
-- IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/documentation.py` (documentation-coverage adr_guard check (ADR-022-R1) — check_documentation_coverage)
+- IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/documentation.py` (documentation-coverage adr_guard check (ADR-022-R1), check_documentation_coverage)

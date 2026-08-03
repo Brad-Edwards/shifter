@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.425637Z
 updated_at: 2026-04-05T04:08:45.281370Z
 ---
 
-# CTF-805 — Email Templates
+# CTF-805: Email Templates
 
 ## Statement
 

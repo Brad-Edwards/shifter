@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.306541Z
 updated_at: 2026-03-26T06:34:18.550993Z
 ---
 
-# CTF-012 — API & Integration
+# CTF-012: API & Integration
 
 ## Statement
 

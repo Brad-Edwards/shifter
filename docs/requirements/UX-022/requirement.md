@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:38:33.954289Z
 updated_at: 2026-05-09T04:38:33.954289Z
 ---
 
-# UX-022 — Plain-language error and empty messaging
+# UX-022: Plain-language error and empty messaging
 
 ## Statement
 

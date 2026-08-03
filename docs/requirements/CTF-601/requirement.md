@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.755543Z
 updated_at: 2026-03-26T06:10:35.143869Z
 ---
 
-# CTF-601 — Participant Registration
+# CTF-601: Participant Registration
 
 ## Statement
 

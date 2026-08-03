@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.503444Z
 updated_at: 2026-03-26T06:37:57.637601Z
 ---
 
-# CTF-407 — Challenge Statistics
+# CTF-407: Challenge Statistics
 
 ## Statement
 

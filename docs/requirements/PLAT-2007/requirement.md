@@ -9,11 +9,11 @@ created_at: 2026-07-08T07:05:21.044293Z
 updated_at: 2026-07-08T07:05:21.044293Z
 ---
 
-# PLAT-2007 — ACES-native provisioning spec (locked neutral contract)
+# PLAT-2007: ACES-native provisioning spec (locked neutral contract)
 
 ## Statement
 
-Shifter shall define an ACES-native, cyberscript-free provisioning specification (ProvisioningSpec) that losslessly represents the provisioning-only topology of a compiled ACES ProvisioningPlan: compute nodes (os family, count, cpu/memory resources, image reference, services, network membership) and networks (cidr, gateway, isolation, ACL rules). The spec shall be a versioned, validated contract with stable invariant identifiers (ACESPS-*) and an invariant-to-check inventory, shall contain no cyberscript concepts (no scenario_id, no role enum, no os_type enum), and shall be the sole persisted artifact the engine and provisioner consume for the ACES-native path — consumed without importing any ACES SDL package (aces_* imports remain confined to shared/aces per ADR-024).
+Shifter shall define an ACES-native, cyberscript-free provisioning specification (ProvisioningSpec) that losslessly represents the provisioning-only topology of a compiled ACES ProvisioningPlan: compute nodes (os family, count, cpu/memory resources, image reference, services, network membership) and networks (cidr, gateway, isolation, ACL rules). The spec shall be a versioned, validated contract with stable invariant identifiers (ACESPS-*) and an invariant-to-check inventory, shall contain no cyberscript concepts (no scenario_id, no role enum, no os_type enum), and shall be the sole persisted artifact the engine and provisioner consume for the ACES-native path, consumed without importing any ACES SDL package (aces_* imports remain confined to shared/aces per ADR-024).
 
 ## Rationale
 

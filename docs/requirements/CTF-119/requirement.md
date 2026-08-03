@@ -9,11 +9,11 @@ created_at: 2026-03-18T20:38:52.862447Z
 updated_at: 2026-03-29T02:37:42.776213Z
 ---
 
-# CTF-119 — Challenge Topics
+# CTF-119: Challenge Topics
 
 ## Statement
 
-The system should support assigning one or more topics to each challenge from a managed topic taxonomy. Topics shall represent knowledge areas or attack techniques (e.g., SQL Injection, Privilege Escalation, Network Analysis). Topics shall be distinct from categories and tags — categories organize challenges within an event, tags are freeform labels, and topics are a controlled vocabulary of subject matter. Participants and organizers shall be able to filter challenges by topic.
+The system should support assigning one or more topics to each challenge from a managed topic taxonomy. Topics shall represent knowledge areas or attack techniques (for example, SQL Injection, Privilege Escalation, Network Analysis). Topics shall be distinct from categories and tags, categories organize challenges within an event, tags are freeform labels, and topics are a controlled vocabulary of subject matter. Participants and organizers shall be able to filter challenges by topic.
 
 ## Rationale
 

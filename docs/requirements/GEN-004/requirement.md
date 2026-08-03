@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.106745Z
 updated_at: 2026-05-09T05:11:30.117438Z
 ---
 
-# GEN-004 — Authenticated In-App Documentation Portal
+# GEN-004: Authenticated In-App Documentation Portal
 
 ## Statement
 

@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:36:56.293306Z
 updated_at: 2026-08-01T17:41:19.898022Z
 ---
 
-# PLAT-233 — Workspace lifecycle management
+# PLAT-233: Workspace lifecycle management
 
 ## Statement
 

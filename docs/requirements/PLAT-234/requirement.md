@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:37:00.312992Z
 updated_at: 2026-08-01T17:41:19.898027Z
 ---
 
-# PLAT-234 — Workspace membership and roles administration surface
+# PLAT-234: Workspace membership and roles administration surface
 
 ## Statement
 

@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:23.462051Z
 updated_at: 2026-03-26T06:11:01.701812Z
 ---
 
-# CTF-901 — Per-Participant Range Provisioning
+# CTF-901: Per-Participant Range Provisioning
 
 ## Statement
 
-The CTF layer shall orchestrate per-participant range provisioning by calling the platform's CMS and Engine services. Each registered participant shall receive their own isolated set of VMs (attack box, victim machines) as defined by the event's scenario template. Provisioning shall be triggered at a configurable time before event start or manually by organizers. The CTF layer tracks provisioning status per participant (pending, provisioning, ready, failed) and maps participants to their CMS RangeInstance via a soft reference (integer ID). The CTF layer shall not implement its own provisioning logic — it delegates to cms.services.create_range().
+The CTF layer shall orchestrate per-participant range provisioning by calling the platform's CMS and Engine services. Each registered participant shall receive their own isolated set of VMs (attack box, victim machines) as defined by the event's scenario template. Provisioning shall be triggered at a configurable time before event start or manually by organizers. The CTF layer tracks provisioning status per participant (pending, provisioning, ready, failed) and maps participants to their CMS RangeInstance via a soft reference (integer ID). The CTF layer shall not implement its own provisioning logic, it delegates to cms.services.create_range().
 
 ## Rationale
 

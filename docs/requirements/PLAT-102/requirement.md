@@ -9,7 +9,7 @@ created_at: 2026-03-26T06:09:24.227792Z
 updated_at: 2026-06-23T06:18:35.043014Z
 ---
 
-# PLAT-102 — API Token Authentication
+# PLAT-102: API Token Authentication
 
 ## Statement
 
@@ -17,7 +17,7 @@ The platform shall support API authentication via session cookies (for browser-b
 
 ## Rationale
 
-Programmatic API access enables scripts, integrations, and automation workflows across all platform features — not just CTF. Scoped tokens follow the principle of least privilege. The platform already has API key authentication in risk_register; this extends it platform-wide with scope support.
+Programmatic API access enables scripts, integrations, and automation workflows across all platform features, not just CTF. Scoped tokens follow the principle of least privilege. The platform already has API key authentication in risk_register; this extends it platform-wide with scope support.
 
 ## Traceability
 

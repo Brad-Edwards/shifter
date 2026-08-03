@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:37:40.416267Z
 updated_at: 2026-05-09T04:37:40.416267Z
 ---
 
-# UX-004 — Design artifacts versioned with code
+# UX-004: Design artifacts versioned with code
 
 ## Statement
 

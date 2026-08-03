@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.048012Z
 updated_at: 2026-03-26T06:38:38.096787Z
 ---
 
-# CTF-609 — Participant Disqualification
+# CTF-609: Participant Disqualification
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system should support disqualifying participants from an event. A disqualifi
 
 ## Rationale
 
-Disqualification is a softer action than banning — it removes competitive standing without locking out the participant entirely. This is appropriate when rule violations are discovered but the participant should still be able to observe. For enterprise events, disqualification handles situations diplomatically. (CTFd supports a similar disqualification mechanism.)
+Disqualification is a softer action than banning, it removes competitive standing without locking out the participant entirely. This is appropriate when rule violations are discovered but the participant should still be able to observe. For enterprise events, disqualification handles situations diplomatically. (CTFd supports a similar disqualification mechanism.)
 
 ## Traceability
 

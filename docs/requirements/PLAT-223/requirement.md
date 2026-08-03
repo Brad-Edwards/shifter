@@ -9,7 +9,7 @@ created_at: 2026-05-13T16:32:20.425603Z
 updated_at: 2026-05-13T16:32:20.425603Z
 ---
 
-# PLAT-223 — RBAC for Egress Allowlist Management
+# PLAT-223: RBAC for Egress Allowlist Management
 
 ## Statement
 

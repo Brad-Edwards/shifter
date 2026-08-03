@@ -9,15 +9,15 @@ created_at: 2026-06-23T00:41:58.002548Z
 updated_at: 2026-06-25T02:41:49.102085Z
 ---
 
-# PLAT-106 — Unified DRF API Surface
+# PLAT-106: Unified DRF API Surface
 
 ## Statement
 
-All non-public platform HTTP/JSON API endpoints shall be served through Django REST Framework (DRF) and shall enforce the platform's API authentication and scope-based authorization established by PLAT-102: session-cookie authentication with CSRF for browser/SPA clients, and scoped API tokens for programmatic clients. Each endpoint shall declare its required scope(s) from the central scope registry. Application logic shall remain in the service layer; the DRF layer shall own only HTTP concerns (authentication, scope authorization, serialization/validation, error envelope, pagination). Ad-hoc Django function-view JSON endpoints outside DRF (Mission Control, CTF, CMS) shall be migrated onto this surface. The platform API shall expose an OpenAPI schema.
+All non-public platform HTTP/JSON API endpoints shall be served through Django REST Framework (DRF) and shall enforce the platform's API authentication and scope-based authorization established by PLAT-102: session-cookie authentication with CSRF for browser/SPA clients, and scoped API tokens for programmatic clients. Each endpoint shall declare its required scopes from the central scope registry. Application logic shall remain in the service layer; the DRF layer shall own only HTTP concerns (authentication, scope authorization, serialization/validation, error envelope, pagination). Ad-hoc Django function-view JSON endpoints outside DRF (Mission Control, CTF, CMS) shall be migrated onto this surface. The platform API shall expose an OpenAPI schema.
 
 ## Rationale
 
-PLAT-102 establishes the token + scope authentication foundation, but the platform currently has two divergent API styles: DRF (risk_register /api/v1) and ad-hoc Django function views (Mission Control, CTF, CMS). A single DRF-based API surface gives one authentication/authorization path, consistent error and pagination contracts, and an OpenAPI schema — the foundation a future SPA frontend and external integrations both consume over the same contract. Consolidating early, before the SPA is built, avoids migrating endpoints out from under a live frontend and removes a class of per-endpoint security retrofits. Business logic already lives in the service layer, so migration re-houses the HTTP layer rather than rewriting behavior.
+PLAT-102 establishes the token + scope authentication foundation, but the platform currently has two divergent API styles: DRF (risk_register /api/v1) and ad-hoc Django function views (Mission Control, CTF, CMS). A single DRF-based API surface gives one authentication/authorization path, consistent error and pagination contracts, and an OpenAPI schema, the foundation a future SPA frontend and external integrations both consume over the same contract. Consolidating early, before the SPA is built, avoids migrating endpoints out from under a live frontend and removes a class of per-endpoint security retrofits. Business logic already lives in the service layer, so migration re-houses the HTTP layer rather than rewriting behavior.
 
 ## Traceability
 

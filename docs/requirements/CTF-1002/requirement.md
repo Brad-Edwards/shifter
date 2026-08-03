@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:23.775033Z
 updated_at: 2026-03-19T04:24:14.741196Z
 ---
 
-# CTF-1002 — Automated Range Spinup
+# CTF-1002: Automated Range Spinup
 
 ## Statement
 
-The system should automatically trigger range provisioning for all registered participants at a configurable time before the event start (e.g. 30 minutes before). The spinup task shall use throttled provisioning to avoid overwhelming infrastructure. If provisioning is not complete by event start, the system shall continue provisioning while the event runs and notify organizers of the delay.
+The system should automatically trigger range provisioning for all registered participants at a configurable time before the event start (for example 30 minutes before). The spinup task shall use throttled provisioning to avoid overwhelming infrastructure. If provisioning is not complete by event start, the system shall continue provisioning while the event runs and notify organizers of the delay.
 
 ## Rationale
 

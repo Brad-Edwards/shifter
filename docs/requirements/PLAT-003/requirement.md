@@ -9,15 +9,15 @@ created_at: 2026-03-19T02:57:48.879958Z
 updated_at: 2026-05-09T05:11:30.415479Z
 ---
 
-# PLAT-003 — GCP Range Provisioning
+# PLAT-003: GCP Range Provisioning
 
 ## Statement
 
-The range provisioning engine shall support creating, managing, and destroying range instances on GCP. This includes: provisioning compute instances (Compute Engine), configuring networking (VPC, firewall rules, Cloud NAT), providing remote access to range VMs (e.g., via Apache Guacamole or equivalent), and managing range lifecycle (start, stop, restart, destroy). GCP range provisioning shall support the same scenario templates and range configurations as the AWS provisioning path.
+The range provisioning engine shall support creating, managing, and destroying range instances on GCP. This includes: provisioning compute instances (Compute Engine), configuring networking (VPC, firewall rules, Cloud NAT), providing remote access to range VMs (for example, via Apache Guacamole or equivalent), and managing range lifecycle (start, stop, restart, destroy). GCP range provisioning shall support the same scenario templates and range configurations as the AWS provisioning path.
 
 ## Rationale
 
-Ranges are the core infrastructure product of Shifter. If the platform deploys on GCP, ranges must also run on GCP — participants cannot access AWS VMs from a GCP-hosted platform without cross-cloud networking complexity. Same-cloud range provisioning keeps the architecture simple and latency low.
+Ranges are the core infrastructure product of Shifter. If the platform deploys on GCP, ranges must also run on GCP, participants cannot access AWS VMs from a GCP-hosted platform without cross-cloud networking complexity. Same-cloud range provisioning keeps the architecture simple and latency low.
 
 ## Traceability
 

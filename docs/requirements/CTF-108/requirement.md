@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.656090Z
 updated_at: 2026-03-26T06:11:27.701474Z
 ---
 
-# CTF-108 — Challenge File Attachments
+# CTF-108: Challenge File Attachments
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system should support attaching one or more files to a challenge for partici
 
 ## Rationale
 
-Many CTF challenges require participants to analyze provided files — pcap captures, memory dumps, binaries, encrypted archives, or configuration files. CTFd supports file attachments per challenge. Without this, organizers must host files externally and link them in descriptions, which is fragile and creates access control gaps.
+Many CTF challenges require participants to analyze provided files, pcap captures, memory dumps, binaries, encrypted archives, or configuration files. CTFd supports file attachments per challenge. Without this, organizers must host files externally and link them in descriptions, which is fragile and creates access control gaps.
 
 ## Traceability
 

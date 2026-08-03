@@ -9,7 +9,7 @@ created_at: 2026-03-26T06:09:43.562639Z
 updated_at: 2026-06-03T22:51:55.639651Z
 ---
 
-# PLAT-105 — WebSocket Notification Infrastructure
+# PLAT-105: WebSocket Notification Infrastructure
 
 ## Statement
 
@@ -17,7 +17,7 @@ The platform could provide a shared WebSocket notification infrastructure for de
 
 ## Rationale
 
-Multiple platform features need real-time push to browsers — range status updates, CTF score changes, provisioning progress. Mission Control already has WebSocket consumers for SSH and range status. A shared infrastructure avoids each feature building its own WebSocket layer.
+Multiple platform features need real-time push to browsers, range status updates, CTF score changes, provisioning progress. Mission Control already has WebSocket consumers for SSH and range status. A shared infrastructure avoids each feature building its own WebSocket layer.
 
 ## Traceability
 

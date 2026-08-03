@@ -9,7 +9,7 @@ created_at: 2026-05-13T16:32:04.586352Z
 updated_at: 2026-05-13T16:32:04.586352Z
 ---
 
-# PLAT-221 — Scenario-Level Egress Allowlist Overrides
+# PLAT-221: Scenario-Level Egress Allowlist Overrides
 
 ## Statement
 
@@ -17,7 +17,7 @@ Scenario definitions shall be able to declare additional egress CIDRs or overrid
 
 ## Rationale
 
-Scenarios have legitimate, scenario-specific egress needs — a phishing scenario needs reach to a controlled mail target, a malware-analysis scenario needs reach to a sandboxed payload host, a baseline scenario should not silently inherit anything broader than the platform default. Without a scenario-level surface, every author either fights the platform default or works around it via cloud-side hacks. Refines PLAT-220 by surfacing per-scenario egress as first-class composition rather than out-of-band bypass.
+Scenarios have legitimate, scenario-specific egress needs, a phishing scenario needs reach to a controlled mail target, a malware-analysis scenario needs reach to a sandboxed payload host, a baseline scenario should not silently inherit anything broader than the platform default. Without a scenario-level surface, every author either fights the platform default or works around it via cloud-side hacks. Refines PLAT-220 by surfacing per-scenario egress as first-class composition rather than out-of-band bypass.
 
 ## Traceability
 

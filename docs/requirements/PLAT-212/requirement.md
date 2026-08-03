@@ -9,7 +9,7 @@ created_at: 2026-05-09T06:03:34.419782Z
 updated_at: 2026-05-09T06:03:34.419782Z
 ---
 
-# PLAT-212 — Experiment Protocol and Run Evidence
+# PLAT-212: Experiment Protocol and Run Evidence
 
 ## Statement
 

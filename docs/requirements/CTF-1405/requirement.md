@@ -9,7 +9,7 @@ created_at: 2026-07-29T16:28:15.944295Z
 updated_at: 2026-07-29T20:35:31.435519Z
 ---
 
-# CTF-1405 — Digest-pinned scenario CTF content hydration
+# CTF-1405: Digest-pinned scenario CTF content hydration
 
 ## Statement
 
@@ -21,7 +21,7 @@ Private scenario playtests proved native Shifter challenges and signed-receipt s
 
 ## Traceability
 
-- DOCUMENTS → GITHUB_ISSUE `1907` (CTF-1405 — Digest-pinned scenario CTF content hydration)
+- DOCUMENTS → GITHUB_ISSUE `1907` (CTF-1405, Digest-pinned scenario CTF content hydration)
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_content_hydration.py` (CTF content hydration service tests)
 - TESTS → TEST `shifter/shifter_platform/tests/ctf/test_content_hydration_concurrency.py` (PostgreSQL hydration transaction tests)
 - DOCUMENTS → DOCUMENTATION `docs/dev/ctf-scenario-content.md` (Scenario CTF content operations)

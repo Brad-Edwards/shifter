@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.239482Z
 updated_at: 2026-03-19T03:07:21.612010Z
 ---
 
-# CTF-1302 — Analytics Dashboard
+# CTF-1302: Analytics Dashboard
 
 ## Statement
 

@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.257931Z
 updated_at: 2026-03-19T03:08:13.512253Z
 ---
 
-# CTF-706 — Event Cancellation
+# CTF-706: Event Cancellation
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system shall support cancelling events from any pre-ended state (draft, regi
 
 ## Rationale
 
-Events get cancelled due to insufficient registrations, scheduling conflicts, or infrastructure issues. Without a cancellation flow, organizers must manually notify participants and clean up resources. The cancelled state preserves audit trail while clearly distinguishing from normally-ended events.
+Events get cancelled due to insufficient registrations, scheduling conflicts, or infrastructure issues. Without a cancellation flow, organizers must manually notify participants and clean up resources. The cancelled state preserves audit trail while clearly distinguishing from normally ended events.
 
 ## Traceability
 

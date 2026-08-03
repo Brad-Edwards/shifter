@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.323699Z
 updated_at: 2026-03-26T06:10:13.736995Z
 ---
 
-# CTF-802 — Real-Time Notifications
+# CTF-802: Real-Time Notifications
 
 ## Statement
 

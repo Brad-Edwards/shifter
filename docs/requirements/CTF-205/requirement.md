@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.037940Z
 updated_at: 2026-03-26T06:37:14.290974Z
 ---
 
-# CTF-205 — First Blood Tracking
+# CTF-205: First Blood Tracking
 
 ## Statement
 

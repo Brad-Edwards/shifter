@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:39:10.382656Z
 updated_at: 2026-05-09T04:39:10.382656Z
 ---
 
-# UX-051 — Visual regression testing
+# UX-051: Visual regression testing
 
 ## Statement
 

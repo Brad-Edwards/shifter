@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:21:44.748107Z
 updated_at: 2026-06-29T02:44:49.181294Z
 ---
 
-# PLAT-209 — ACES Scenario Definition Migration Path
+# PLAT-209: ACES Scenario Definition Migration Path
 
 ## Statement
 

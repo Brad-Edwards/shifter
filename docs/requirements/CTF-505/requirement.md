@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.681595Z
 updated_at: 2026-03-26T06:38:25.614146Z
 ---
 
-# CTF-505 — Team Size Limits
+# CTF-505: Team Size Limits
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system should support configuring a maximum team size per event. The system 
 
 ## Rationale
 
-Team size limits ensure competitive balance — a team of 20 has an unfair advantage over a team of 3. For Shifter events, organizers may want to enforce balanced teams of 3-5 to ensure everyone participates rather than one expert carrying a large team. (CTFd supports team size configuration.)
+Team size limits ensure competitive balance, a team of 20 has an unfair advantage over a team of 3. For Shifter events, organizers may want to enforce balanced teams of 3-5 to ensure everyone participates rather than one expert carrying a large team. (CTFd supports team size configuration.)
 
 ## Traceability
 

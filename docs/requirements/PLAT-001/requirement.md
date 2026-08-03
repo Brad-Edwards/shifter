@@ -9,11 +9,11 @@ created_at: 2026-03-19T02:57:48.639105Z
 updated_at: 2026-05-09T05:11:30.369057Z
 ---
 
-# PLAT-001 — Cloud Provider Abstraction
+# PLAT-001: Cloud Provider Abstraction
 
 ## Statement
 
-The platform shall abstract all cloud provider dependencies so that the entire system — application services, data stores, object storage, task processing, and range infrastructure — can be deployed on either AWS or GCP as a configurable choice per deployment. No deployment shall require services from more than one cloud provider.
+The platform shall abstract all cloud provider dependencies so that the entire system, application services, data stores, object storage, task processing, and range infrastructure, can be deployed on either AWS or GCP as a configurable choice per deployment. No deployment shall require services from more than one cloud provider.
 
 ## Rationale
 
@@ -29,7 +29,7 @@ Shifter currently has hard dependencies on AWS services (S3, ECS, SSM, RDS, etc.
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#487` (PLAT-001: Cloud Provider Abstraction)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#488` (PLAT-001a: Platform cloud abstraction foundation)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#490` (PLAT-001c: AWS Secret Storage adapter (Platform))
-- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#491` (PLAT-001d: AWS Message Queue adapter (Platform))
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#491` (`PLAT-001d`: AWS Message Queue adapter (Platform))
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#492` (PLAT-001e: AWS Container Runner adapter (Platform))
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#493` (PLAT-001f: Provisioner cloud abstraction foundation + AWS implementations)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#494` (PLAT-001g: Migrate provisioner call sites to cloud abstractions)

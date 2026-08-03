@@ -9,7 +9,7 @@ created_at: 2026-05-09T06:03:34.475991Z
 updated_at: 2026-05-09T06:03:34.475991Z
 ---
 
-# PLAT-215 — LLM Runtime, Prompt, Token, and Cost Metering
+# PLAT-215: LLM Runtime, Prompt, Token, and Cost Metering
 
 ## Statement
 

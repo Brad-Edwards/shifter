@@ -9,11 +9,11 @@ created_at: 2026-03-18T07:23:07.670977Z
 updated_at: 2026-03-26T06:36:41.569246Z
 ---
 
-# CTF-116 — Flag Format Specification
+# CTF-116: Flag Format Specification
 
 ## Statement
 
-The system could allow organizers to configure and display an expected flag format prefix per event (e.g. flag{...}, CTF{...}). The configured format shall be displayed to participants on the event page. Flag validation shall not enforce the format prefix — it serves only as guidance to participants.
+The system could allow organizers to configure and display an expected flag format prefix per event (for example flag{...}, CTF{...}). The configured format shall be displayed to participants on the event page. Flag validation shall not enforce the format prefix, it serves only as guidance to participants.
 
 ## Rationale
 

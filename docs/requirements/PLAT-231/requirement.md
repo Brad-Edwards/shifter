@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:36:46.302686Z
 updated_at: 2026-08-01T17:41:19.898009Z
 ---
 
-# PLAT-231 — Organization/workspace administration console shell
+# PLAT-231: Organization/workspace administration console shell
 
 ## Statement
 
@@ -21,8 +21,8 @@ The workspace tenancy layer (PLAT-2011, program #1321) is API-only; the SPA expo
 ## Traceability
 
 - IMPLEMENTS → GITHUB_ISSUE `1938`
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/api/views.py` (PrincipalWorkspaceContextView — current-principal context endpoint)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/services/_context.py` (list_actor_workspace_contexts — read-only principal-context projection)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/api/views.py` (PrincipalWorkspaceContextView, current-principal context endpoint)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/services/_context.py` (list_actor_workspace_contexts, read-only principal-context projection)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/api/serializers.py` (PrincipalWorkspaceContextSerializer)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/api/urls.py` (/api/v1/workspaces/context/ route)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/frontend/src/features/administer/organization/OrganizationConsoleLayout.tsx` (Organization console shell layout (query, switcher, context, states))

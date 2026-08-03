@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.209115Z
 updated_at: 2026-05-09T05:11:30.223635Z
 ---
 
-# PLAT-205 — Experiment Run Orchestration
+# PLAT-205: Experiment Run Orchestration
 
 ## Statement
 

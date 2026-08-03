@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.378268Z
 updated_at: 2026-03-26T06:35:12.052649Z
 ---
 
-# CTF-1402 — Theming
+# CTF-1402: Theming
 
 ## Statement
 

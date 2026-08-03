@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:37:27.528393Z
 updated_at: 2026-08-01T17:41:19.898041Z
 ---
 
-# PLAT-237 — Range-to-workspace scoping administration
+# PLAT-237: Range-to-workspace scoping administration
 
 ## Statement
 

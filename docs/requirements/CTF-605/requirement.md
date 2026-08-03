@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.905246Z
 updated_at: 2026-03-26T06:10:47.505287Z
 ---
 
-# CTF-605 — User Banning
+# CTF-605: User Banning
 
 ## Statement
 

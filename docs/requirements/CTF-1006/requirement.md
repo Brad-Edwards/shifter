@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.932719Z
 updated_at: 2026-03-19T04:02:00.063473Z
 ---
 
-# CTF-1006 — Scheduler Auto-Start
+# CTF-1006: Scheduler Auto-Start
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system should automatically start the CTF task scheduler when the applicatio
 
 ## Rationale
 
-Manual scheduler startup is a deployment hazard — if someone deploys the application and forgets to start the scheduler, all automated tasks silently fail. Auto-start ensures the scheduler is always running when the application is running. Crash recovery prevents missed tasks after infrastructure incidents.
+Manual scheduler startup is a deployment hazard, if someone deploys the application and forgets to start the scheduler, all automated tasks silently fail. Auto-start ensures the scheduler is always running when the application is running. Crash recovery prevents missed tasks after infrastructure incidents.
 
 ## Traceability
 
@@ -36,6 +36,6 @@ Manual scheduler startup is a deployment hazard — if someone deploys the appli
 - IMPLEMENTS → CONFIG `platform/charts/shifter/values.yaml` (Helm ctfScheduler service account value)
 - TESTS → TEST `shifter/shifter_platform/tests/platform/test_ctf_scheduler_startup.py` (CTF scheduler startup deployment invariants)
 - TESTS → TEST `shifter/shifter_platform/tests/platform/test_gcp_job_launcher_manifests.py` (GCP job-launcher token and RBAC invariants)
-- IMPLEMENTS → CODE_FILE `platform/terraform/modules/portal/ec2/worker-health/shifter-worker-health.sh` (Worker health supervisor — detects a wedged/unhealthy ctf-scheduler (not just process exit) and restarts it, triggering its startup task re-evaluation (#953))
+- IMPLEMENTS → CODE_FILE `platform/terraform/modules/portal/ec2/worker-health/shifter-worker-health.sh` (Worker health supervisor, detects a wedged/unhealthy ctf-scheduler (not just process exit) and restarts it, triggering its startup task re-evaluation (#953))
 - TESTS → TEST `shifter/shifter_platform/tests/platform/test_worker_health_supervision.py` (Verifies the supervisor restarts unhealthy ctf-scheduler/workers and is installed on both AWS deploy paths (#953))
 - IMPLEMENTS → GITHUB_ISSUE `539` (Issue #539 - automated coverage and Ground Control TESTS trace links for active CTF requirements)

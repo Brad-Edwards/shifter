@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.376085Z
 updated_at: 2026-03-26T06:34:25.081480Z
 ---
 
-# CTF-014 — Customization & Extensibility
+# CTF-014: Customization & Extensibility
 
 ## Statement
 

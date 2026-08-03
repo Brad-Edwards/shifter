@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:20.976341Z
 updated_at: 2026-03-29T18:11:56.532816Z
 ---
 
-# CTF-003 — Hint System
+# CTF-003: Hint System
 
 ## Statement
 

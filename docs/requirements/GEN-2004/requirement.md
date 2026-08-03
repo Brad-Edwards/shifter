@@ -9,7 +9,7 @@ created_at: 2026-06-12T09:11:45.057786Z
 updated_at: 2026-06-12T23:13:51.078031Z
 ---
 
-# GEN-2004 — Terraform deploy plan/apply integrity
+# GEN-2004: Terraform deploy plan/apply integrity
 
 ## Statement
 
@@ -17,7 +17,7 @@ AWS deploy workflows MUST queue environment-branch apply runs instead of cancell
 
 ## Rationale
 
-Terraform applies mutate cloud infrastructure and state. Cancelling an in-flight apply or applying without a saved plan can create partially-applied infrastructure, stale locks, and TOCTOU drift between safety checks and execution. Raw binary plan artifacts can expose unredacted plan/state data, so the integrity contract uses local saved plans inside the apply job rather than artifact handoff.
+Terraform applies mutate cloud infrastructure and state. Cancelling an in-flight apply or applying without a saved plan can create partially applied infrastructure, stale locks, and TOCTOU drift between safety checks and execution. Raw binary plan artifacts can expose unredacted plan/state data, so the integrity contract uses local saved plans inside the apply job rather than artifact handoff.
 
 ## Traceability
 

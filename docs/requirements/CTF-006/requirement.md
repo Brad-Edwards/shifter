@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.088655Z
 updated_at: 2026-03-26T06:33:32.118062Z
 ---
 
-# CTF-006 — Participant Management
+# CTF-006: Participant Management
 
 ## Statement
 

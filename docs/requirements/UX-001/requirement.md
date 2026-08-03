@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:37:23.891718Z
 updated_at: 2026-05-09T04:37:23.891718Z
 ---
 
-# UX-001 — Design system as single source of truth
+# UX-001: Design system as single source of truth
 
 ## Statement
 

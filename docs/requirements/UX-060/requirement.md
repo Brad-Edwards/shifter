@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:39:19.649478Z
 updated_at: 2026-05-09T04:39:19.649478Z
 ---
 
-# UX-060 — Translatable strings externalized
+# UX-060: Translatable strings externalized
 
 ## Statement
 
@@ -16,7 +16,7 @@ Every user-facing string in the platform shall be externalized into the i18n cat
 
 ## Rationale
 
-Externalizing strings is cheap when done as code is written and prohibitively expensive as a retrofit. Doing it from the start of the redesign avoids retrofit cost and makes any future translation work strictly additive. CTF-1403 already specifies this for CTF only — there's no reason the rest of the platform should be left out.
+Externalizing strings is cheap when done as code is written and prohibitively expensive as a retrofit. Doing it from the start of the redesign avoids retrofit cost and makes any future translation work strictly additive. CTF-1403 already specifies this for CTF only, there's no reason the rest of the platform should be left out.
 
 ## Traceability
 

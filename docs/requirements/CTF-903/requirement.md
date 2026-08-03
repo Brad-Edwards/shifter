@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.534781Z
 updated_at: 2026-03-26T06:10:26.923031Z
 ---
 
-# CTF-903 — Browser-Based Range Access
+# CTF-903: Browser-Based Range Access
 
 ## Statement
 
@@ -17,7 +17,7 @@ CTF participants shall access their range VMs via the existing Mission Control t
 
 ## Rationale
 
-Browser-based access is non-negotiable for Shifter's target users — PANW consultants cannot install VPN clients, RDP tools, or SSH clients on their corporate laptops. Guacamole provides zero-install access to VMs via the browser. This already exists in Mission Control and must extend to CTF events so participants can seamlessly access their attack boxes.
+Browser-based access is non-negotiable for Shifter's target users, PANW consultants cannot install VPN clients, RDP tools, or SSH clients on their corporate laptops. Guacamole provides zero-install access to VMs via the browser. This already exists in Mission Control and must extend to CTF events so participants can seamlessly access their attack boxes.
 
 ## Traceability
 

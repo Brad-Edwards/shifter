@@ -9,7 +9,7 @@ created_at: 2026-05-10T02:50:04.466069Z
 updated_at: 2026-06-13T06:34:24.906309Z
 ---
 
-# PLAT-2006 — AWS/GCP compatibility and security preservation
+# PLAT-2006: AWS/GCP compatibility and security preservation
 
 ## Statement
 
@@ -48,8 +48,8 @@ The re-architecture should improve maintainability without silently weakening de
 - TESTS → TEST `scripts/adr_guard/tests/test_adr_guard.py` (ADR guard tests for Quality routing and PR Gate enforcement)
 - DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md` (CI/CD documentation for Quality routing)
 - DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md` (ADR enforcement documentation for Quality routing guardrails)
-- IMPLEMENTS → CODE_FILE `shifter/installation/registry.py` (installation.registry — AWS backend bundle migrated to a closed settings model, reference-pattern grammars, and the proof profile, preserving controls (#728))
-- IMPLEMENTS → CODE_FILE `shifter/installation/loader.py` (installation.loader — splits the shared range_egress key out of the closed AWS settings model, preserving its cross-backend security validation and verbatim CIDR diagnostics (#728))
-- TESTS → TEST `shifter/installation/tests/test_registry.py` (Tests: AWS bundle migration — closed settings model, reference patterns, and proof profile (#728))
+- IMPLEMENTS → CODE_FILE `shifter/installation/registry.py` (installation.registry, AWS backend bundle migrated to a closed settings model, reference-pattern grammars, and the proof profile, preserving controls (#728))
+- IMPLEMENTS → CODE_FILE `shifter/installation/loader.py` (installation.loader, splits the shared range_egress key out of the closed AWS settings model, preserving its cross-backend security validation and verbatim CIDR diagnostics (#728))
+- TESTS → TEST `shifter/installation/tests/test_registry.py` (Tests: AWS bundle migration, closed settings model, reference patterns, and proof profile (#728))
 - TESTS → TEST `shifter/installation/tests/test_loader.py` (Tests: AWS closed-model loader validation, secret reference patterns, proof profile, and range_egress verbatim CIDR errors (#728))
-- IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/deploy_workflow.py` (ADR-003-R2 quality/plan routing guardrail enforcement — check_deploy_workflow_plan_scope)
+- IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/deploy_workflow.py` (ADR-003-R2 quality/plan routing guardrail enforcement, check_deploy_workflow_plan_scope)

@@ -9,15 +9,15 @@ created_at: 2026-03-18T05:28:22.430300Z
 updated_at: 2026-04-02T17:20:30.521780Z
 ---
 
-# CTF-405 — Brackets
+# CTF-405: Brackets
 
 ## Statement
 
-The system could support grouping participants into named brackets (e.g. beginner, intermediate, advanced) with separate scoreboards per bracket. Bracket assignment shall be configurable per participant by organizers. Participants shall see both their bracket scoreboard and the overall scoreboard.
+The system could support grouping participants into named brackets (for example beginner, intermediate, advanced) with separate scoreboards per bracket. Bracket assignment shall be configurable per participant by organizers. Participants shall see both their bracket scoreboard and the overall scoreboard.
 
 ## Rationale
 
-Brackets enable fair competition when participants have vastly different skill levels — a beginner competing against experts has no chance of placing, which is demotivating. For Shifter, brackets allow mixed-experience events where junior and senior consultants compete within their tier. (CTFd supports a similar brackets feature.)
+Brackets enable fair competition when participants have vastly different skill levels, a beginner competing against experts has no chance of placing, which is demotivating. For Shifter, brackets allow mixed-experience events where junior and senior consultants compete within their tier. (CTFd supports a similar brackets feature.)
 
 ## Traceability
 

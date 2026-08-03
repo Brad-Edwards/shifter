@@ -9,7 +9,7 @@ created_at: 2026-05-09T06:03:34.438147Z
 updated_at: 2026-05-09T06:03:34.438147Z
 ---
 
-# PLAT-213 — Experiment Metrics and Benchmarking
+# PLAT-213: Experiment Metrics and Benchmarking
 
 ## Statement
 

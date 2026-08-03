@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:37:09.160800Z
 updated_at: 2026-08-01T17:41:19.898036Z
 ---
 
-# PLAT-236 — User lifecycle administration
+# PLAT-236: User lifecycle administration
 
 ## Statement
 

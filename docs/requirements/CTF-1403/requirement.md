@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.411313Z
 updated_at: 2026-03-26T06:35:14.180594Z
 ---
 
-# CTF-1403 — Internationalization
+# CTF-1403: Internationalization
 
 ## Statement
 
@@ -17,7 +17,7 @@ The CTF module could support multi-language UI using Django's built-in i18n fram
 
 ## Rationale
 
-Multi-language support enables running events for participants across different regions and language backgrounds. Django's i18n framework provides the standard gettext-based translation workflow, locale middleware, and template tags needed — no custom translation infrastructure required.
+Multi-language support enables running events for participants across different regions and language backgrounds. Django's i18n framework provides the standard gettext-based translation workflow, locale middleware, and template tags needed, no custom translation infrastructure required.
 
 ## Traceability
 

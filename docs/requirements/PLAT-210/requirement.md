@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:21:44.772541Z
 updated_at: 2026-06-29T02:44:58.682200Z
 ---
 
-# PLAT-210 — Shifter ACES Compatibility Profile
+# PLAT-210: Shifter ACES Compatibility Profile
 
 ## Statement
 

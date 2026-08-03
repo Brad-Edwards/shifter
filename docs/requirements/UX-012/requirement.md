@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:37:54.189357Z
 updated_at: 2026-05-09T04:37:54.189357Z
 ---
 
-# UX-012 — Visible focus indicators
+# UX-012: Visible focus indicators
 
 ## Statement
 

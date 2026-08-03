@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.273081Z
 updated_at: 2026-03-19T03:07:30.082368Z
 ---
 
-# CTF-1303 — Custom Pages
+# CTF-1303: Custom Pages
 
 ## Statement
 

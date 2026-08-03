@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:23.188146Z
 updated_at: 2026-04-05T01:48:53.958800Z
 ---
 
-# CTF-704 — Event Force Delete
+# CTF-704: Event Force Delete
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system should support force-deleting an event and all associated resources r
 
 ## Rationale
 
-Force delete is the nuclear option for events that need to be completely removed — failed test events, cancelled events with provisioned resources, or events created in error. Without force delete, organizers must manually clean up each resource type, and orphaned ranges continue accruing costs.
+Force delete is the nuclear option for events that need to be completely removed, failed test events, cancelled events with provisioned resources, or events created in error. Without force delete, organizers must manually clean up each resource type, and orphaned ranges continue accruing costs.
 
 ## Traceability
 

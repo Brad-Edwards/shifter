@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.069942Z
 updated_at: 2026-03-19T03:06:33.613384Z
 ---
 
-# CTF-1104 — CTFd Format Compatibility
+# CTF-1104: CTFd Format Compatibility
 
 ## Statement
 

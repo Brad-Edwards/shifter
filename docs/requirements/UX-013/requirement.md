@@ -8,11 +8,11 @@ created_at: 2026-05-09T04:37:59.031840Z
 updated_at: 2026-05-09T04:37:59.031840Z
 ---
 
-# UX-013 — Screen reader support
+# UX-013: Screen reader support
 
 ## Statement
 
-Every page shall use semantic HTML landmarks and a logical heading hierarchy. Every interactive element shall have a programmatic accessible name. ARIA shall be used only where native semantics are insufficient. Asynchronous state changes that affect the user — including range provisioning status, scoring updates, terminal output, and form submission results — shall be announced through ARIA live regions with appropriate politeness levels.
+Every page shall use semantic HTML landmarks and a logical heading hierarchy. Every interactive element shall have a programmatic accessible name. ARIA shall be used only where native semantics are insufficient. Asynchronous state changes that affect the user, including range provisioning status, scoring updates, terminal output, and form submission results, shall be announced through ARIA live regions with appropriate politeness levels.
 
 ## Rationale
 

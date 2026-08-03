@@ -8,7 +8,7 @@ created_at: 2026-05-09T04:39:14.193361Z
 updated_at: 2026-05-09T04:39:14.193361Z
 ---
 
-# UX-052 — Component documentation
+# UX-052: Component documentation
 
 ## Statement
 

@@ -9,11 +9,11 @@ created_at: 2026-03-18T05:28:22.869388Z
 updated_at: 2026-03-26T06:10:51.252561Z
 ---
 
-# CTF-604 — Participant Roles
+# CTF-604: Participant Roles
 
 ## Statement
 
-The system shall support distinct event-scoped participation roles: organizer (full event management), participant (can view challenges and submit flags), and observer (can view scoreboard but cannot submit flags). Role assignment shall be per-event — the same user may be an organizer in one event and a participant in another. Only organizers shall be able to change event roles. Event-scoped roles compose with the platform's existing role/permission system (Django Groups) and do not replace it.
+The system shall support distinct event-scoped participation roles: organizer (full event management), participant (can view challenges and submit flags), and observer (can view scoreboard but cannot submit flags). Role assignment shall be per-event, the same user may be an organizer in one event and a participant in another. Only organizers shall be able to change event roles. Event-scoped roles compose with the platform's existing role/permission system (Django Groups) and do not replace it.
 
 ## Rationale
 

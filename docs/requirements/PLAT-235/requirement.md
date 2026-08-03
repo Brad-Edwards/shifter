@@ -8,7 +8,7 @@ created_at: 2026-08-01T17:37:05.299523Z
 updated_at: 2026-08-01T17:41:19.898031Z
 ---
 
-# PLAT-235 — Member invitations and onboarding
+# PLAT-235: Member invitations and onboarding
 
 ## Statement
 

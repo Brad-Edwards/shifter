@@ -9,7 +9,7 @@ created_at: 2026-03-18T07:23:21.766014Z
 updated_at: 2026-04-02T01:35:10.742513Z
 ---
 
-# CTF-408 — Per-User Score Timeline
+# CTF-408: Per-User Score Timeline
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system could display a per-participant score progression graph showing cumul
 
 ## Rationale
 
-Score timelines help participants and organizers understand performance patterns — early bursts vs steady progress, plateaus where participants got stuck, and relative pacing compared to event duration. This adds analytical depth beyond the flat scoreboard ranking. (CTFd displays score graphs on user profiles.)
+Score timelines help participants and organizers understand performance patterns, early bursts vs steady progress, plateaus where participants got stuck, and relative pacing compared to event duration. This adds analytical depth beyond the flat scoreboard ranking. (CTFd displays score graphs on user profiles.)
 
 ## Traceability
 

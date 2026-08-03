@@ -9,7 +9,7 @@ created_at: 2026-05-09T05:11:30.315057Z
 updated_at: 2026-05-09T05:11:30.327734Z
 ---
 
-# PLAT-208 — Database Maintenance-Window Safety
+# PLAT-208: Database Maintenance-Window Safety
 
 ## Statement
 

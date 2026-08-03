@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:21.514764Z
 updated_at: 2026-03-26T06:36:09.748028Z
 ---
 
-# CTF-104 — Static Flag Validation
+# CTF-104: Static Flag Validation
 
 ## Statement
 
@@ -17,7 +17,7 @@ The system shall validate participant flag submissions by comparing the submitte
 
 ## Rationale
 
-Static flag validation is the most fundamental CTF mechanic — the participant finds a hidden string and submits it to prove they solved the challenge. Every scoring, ranking, and statistics feature depends on reliable flag validation. Recording attempts enables cheat detection and analytics. (CTFd uses this as its primary validation method.)
+Static flag validation is the most fundamental CTF mechanic, the participant finds a hidden string and submits it to prove they solved the challenge. Every scoring, ranking, and statistics feature depends on reliable flag validation. Recording attempts enables cheat detection and analytics. (CTFd uses this as its primary validation method.)
 
 ## Traceability
 

@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:24.103929Z
 updated_at: 2026-03-26T06:34:41.334709Z
 ---
 
-# CTF-1201 — REST API
+# CTF-1201: REST API
 
 ## Statement
 

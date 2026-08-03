@@ -9,7 +9,7 @@ created_at: 2026-03-18T05:28:22.133832Z
 updated_at: 2026-03-30T04:46:19.505995Z
 ---
 
-# CTF-301 — Hint Creation
+# CTF-301: Hint Creation
 
 ## Statement
 
