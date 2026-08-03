@@ -13,21 +13,12 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-# GCP key inventories live in a sibling module for file-size (S104) but remain
-# part of runtime_inventory's public surface. The explicit self-aliases mark the
-# re-export so the unused-import lint keeps the ones this module does not itself
-# consume (registry and the GCP parity test read them off runtime_inventory).
+# The GCP key inventories were split into a sibling module for file size (S104).
+# This module imports only the sets it uses internally; other consumers (registry,
+# the GCP parity test) import the full GCP set directly from runtime_inventory_gcp.
 from .runtime_inventory_gcp import (
-    GCP_GENERATED_RUNTIME_ENV_KEYS as GCP_GENERATED_RUNTIME_ENV_KEYS,
-)
-from .runtime_inventory_gcp import (
-    GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS as GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS,
-)
-from .runtime_inventory_gcp import (
-    GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS as GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS,
-)
-from .runtime_inventory_gcp import (
-    GCP_SECRET_RUNTIME_ENV_KEYS as GCP_SECRET_RUNTIME_ENV_KEYS,
+    GCP_GENERATED_RUNTIME_ENV_KEYS,
+    GCP_SECRET_RUNTIME_ENV_KEYS,
 )
 
 _ENV_KEY_RE = re.compile(r"^([A-Za-z_]\w*)=", re.ASCII)
