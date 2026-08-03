@@ -59,12 +59,17 @@ is on.
   navigation contract (`frontend/src/app/nav.ts`), staff-gated and
   `administer_spa`-gated. The in-console section navigation is capability-aware
   (`surfaceEnabled`): sections whose required `WorkspaceOperation` the role does
-  not permit are shown disabled. The Django admin escape hatch remains an
-  unflagged external entry at `/admin/`, outside this subtree.
+  not permit are shown disabled. The membership surface is the deliberate
+  exception to a single-operation gate: `member` lacks `read_members` but may
+  read its own membership and leave, so it opens in a self-service state when
+  either server-advertised capability applies; it never derives that access from
+  a role code. The Django admin escape hatch remains an unflagged external entry
+  at `/admin/`, outside this subtree. See
+  [`workspace-membership-spa-preflight-1941.md`](../../architecture/workspace-membership-spa-preflight-1941.md).
 - **Slots.** The child surfaces are route slots rendering a placeholder
-  (`ConsoleSlotPage`) until their owning issues (PLAT-234–240) land. The
-  organization settings and workspace lifecycle slots are now real surfaces
-  (see below).
+  (`ConsoleSlotPage`) until their owning issues (PLAT-235–240) land. The
+  organization settings, workspace lifecycle, and membership slots are now real
+  surfaces (see below).
 
 ## Organization profile & settings (issue #1939, PLAT-232)
 
@@ -238,3 +243,67 @@ archive/restore with a confirm dialog, and owner transfer). Both use the shared
 query-key family; mutations never auto-retry and invalidate the affected
 caches), address workspaces by public UUID only, and never compare roles
 client-side.
+
+## Workspace membership & roles (issue #1941, PLAT-234)
+
+The third console surface to replace a placeholder, and the first that is
+**SPA-only**: it adds no endpoint, serializer, role, migration, or provider
+change. The membership API, the closed role vocabulary, the fail-closed
+role-to-operation policy, and the last-owner/personal-workspace/self-removal
+invariants all already exist server-side from the ADR-046 tenancy layer. The
+binding boundary is recorded in
+[`workspace-membership-spa-preflight-1941.md`](../../architecture/workspace-membership-spa-preflight-1941.md);
+PLAT-241 (cloud-agnostic, proven components) is satisfied without a new note
+because the surface is same-origin session traffic through the existing SPA data
+layer with no provider branch.
+
+### Consumed contract (unchanged)
+
+The surface consumes the existing membership endpoints under
+`/api/v1/workspaces/` (`workspaces/api/views.py`, `workspaces/api/urls.py`):
+
+- `GET/POST /api/v1/workspaces/<uuid>/memberships/`: roster or add-existing-account.
+- `POST /api/v1/workspaces/<uuid>/memberships/<user_id>/role/`: change role.
+- `POST /api/v1/workspaces/<uuid>/memberships/<user_id>/remove/`: remove another member.
+- `POST /api/v1/workspaces/<uuid>/memberships/leave/`: leave.
+- `GET /api/v1/workspaces/<uuid>/membership/`: the caller's own membership.
+
+Members are addressed by the server-provided `user_id` the roster projection
+exposes; the closed `WorkspaceRoleEnum` (`owner`, `admin`, `member`) is rendered
+as membership data and as the generated request enum only. The caller's advisory
+`capabilities` come from the console's already-loaded `PrincipalWorkspaceContext`
+(`workspaces.roles`), so the client never re-derives authority from a role code.
+
+### SPA membership surface
+
+`features/administer/organization/WorkspaceMembershipPage.tsx` replaces the
+membership slot and consumes the shared `frontend/src/api/memberships.ts`
+TanStack Query hooks (one typed client and a `membershipKeys` family keyed by
+public workspace UUID; mutations never auto-retry). It renders in two
+capability-driven modes:
+
+- **Roster mode** (`read_members`, owner/admin): a table of members with add,
+  change-role, remove, and leave actions, each gated on the matching advertised
+  capability (`add_member`, `change_member_role`, `remove_member`,
+  `leave_workspace`). The caller's own row offers **Leave** rather than
+  **Remove**, so self-removal always uses the dedicated leave endpoint.
+- **Self-service mode** (`leave_workspace` without `read_members`, member): an
+  honest card showing the caller's own role and a leave action, with no roster.
+
+The navigation gate (`surfaces.ts`) admits the surface for either capability, so
+a member reaches self-service leave; it is an any-of capability predicate, never
+a role-string shortcut.
+
+The **last-owner invariant** is shown from roster state (when exactly one owner
+remains, that owner's remove and demote are disabled and the caller's leave is
+disabled, with a plain explanation), but the server stays authoritative: the
+surface handles `409 last_owner_required` (and `owner_authority_required`,
+`use_leave_operation`, `personal_workspace_protected`, `membership_exists`,
+`member_add_failed`, `invalid_role`) as typed `ApiError` outcomes through the
+shared envelope, because a concurrent change can move the roster between render
+and submit. A visible action is never treated as a grant.
+
+Cache invalidation follows the API contract: roster mutations invalidate the
+roster, and a self role change or a leave additionally invalidate the self
+membership and the principal context (`principalContextKeys`), because the
+caller's capabilities and the console's selected-workspace validity can change.

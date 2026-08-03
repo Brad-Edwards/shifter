@@ -16,6 +16,7 @@ import {
 } from "@/features/administer/organization/OrganizationSettingsPage";
 import { WorkspaceDetailPage } from "@/features/administer/organization/WorkspaceDetailPage";
 import { WorkspaceListPage } from "@/features/administer/organization/WorkspaceListPage";
+import { WorkspaceMembershipPage } from "@/features/administer/organization/WorkspaceMembershipPage";
 import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
 import { WORKSPACE_SURFACES } from "@/features/administer/organization/surfaces";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
@@ -235,9 +236,16 @@ export const router = createBrowserRouter(
                   element: <WorkspaceScopeLayout />,
                   children: [
                     { index: true, element: <WorkspaceDetailPage /> },
+                    // The membership slot (#1941, PLAT-234) is a real surface; the
+                    // remaining slots stay placeholders until PLAT-235–240 land.
                     ...WORKSPACE_SURFACES.map((surface) => ({
                       path: surface.key,
-                      element: <ConsoleSlotPage title={surface.label} />,
+                      element:
+                        surface.key === "membership" ? (
+                          <WorkspaceMembershipPage />
+                        ) : (
+                          <ConsoleSlotPage title={surface.label} />
+                        ),
                     })),
                   ],
                 },

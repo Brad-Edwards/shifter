@@ -53,6 +53,18 @@ export type CreateWorkspaceRequest = components["schemas"]["CreateWorkspace"];
 export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferWorkspaceOwnership"];
 
 /**
+ * Workspace membership & roles types (#1941, PLAT-234), re-exported from the
+ * generated OpenAPI schema. The `workspaces.services` membership seam + DRF
+ * serializers are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. A member is addressed by the server-provided
+ * `user_id` the roster projection exposes; the closed `WorkspaceRole` vocabulary
+ * is rendered as data/request values only and never used to reconstruct policy.
+ */
+export type WorkspaceMembership = components["schemas"]["WorkspaceMembership"];
+export type AddWorkspaceMemberRequest = components["schemas"]["AddWorkspaceMember"];
+export type ChangeWorkspaceMemberRoleRequest = components["schemas"]["ChangeWorkspaceMemberRole"];
+
+/**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
  * schema. Only the shapes this foundation chunk (and the pages/live-access
  * chunks that follow it) need are re-exported here; do not hand-copy field
