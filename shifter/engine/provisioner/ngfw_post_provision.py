@@ -46,26 +46,23 @@ class _NgfwPostProvision(Protocol):
         operation_id: str | None = None,
     ) -> None:
         """Run the post-Terraform NGFW bring-up for one provision request."""
-        ...
 
 
 def _short_circuit_local_dev_post_provision(
     *,
     request_id: str,
-    instance_id: str,
     output_data: dict[str, Any],
-    sls_region: str,
     operation_id: str | None = None,
+    **_unused: Any,
 ) -> None:
     """Mark a local-dev NGFW as ready-then-paused without touching the device.
 
     Substituted for the live PAN-OS bring-up by
     ``ngfw_terraform._resolve_ngfw_post_provision`` when running in local dev,
     where PAN-OS is not reachable over SSH. We still emit the ready and paused
-    state transitions so the platform UI reflects the expected lifecycle.
-    ``instance_id`` and ``sls_region`` are accepted to match the
-    :class:`_NgfwPostProvision` seam signature; the short-circuit path needs
-    neither.
+    state transitions so the platform UI reflects the expected lifecycle. The
+    live path's ``instance_id`` and ``sls_region`` seam arguments are absorbed
+    by ``**_unused``; the short-circuit path needs neither.
     """
     logger.info("LOCAL DEV MODE: Skipping post-infrastructure NGFW configuration")
     ready_state = _build_provider_state(output_data)
