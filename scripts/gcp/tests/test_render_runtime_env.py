@@ -115,9 +115,11 @@ def _outputs(
     identity_allowed_email_domain: str = "paloaltonetworks.com",
     identity_allowed_emails: list[str] | None = None,
     email_config: dict | None = None,
+    ctf_content_bucket_name: str = "",
 ) -> dict[str, object]:
     outputs = {
         "assets_bucket_name": {"value": "shifter-gcp-dev-gcp-dev-assets"},
+        "ctf_content_bucket_name": {"value": ctf_content_bucket_name},
         "terraform_state_bucket_name": {"value": "shifter-gcp-dev-terraform-state"},
         "platform_events_topic_id": {"value": "projects/shifter-gcp-dev/topics/shifter-gcp-dev-events"},
         "platform_event_subscriptions": {
@@ -263,11 +265,26 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
         _outputs(
             identity_allowed_emails=["alice@example.com", "bob@example.com"],
             email_config=_FULL_MAILGUN_EMAIL_CONFIG,
+            ctf_content_bucket_name="private-ctf-content",
         ),
         engine_image=PINNED_ENGINE_DIGEST,
     )
 
     assert _rendered_keys(rendered) == set(GCP_GENERATED_RUNTIME_ENV_KEYS | GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
+
+
+def test_render_env_projects_ctf_content_location_without_private_references():
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    rendered = module.render_env(
+        _outputs(ctf_content_bucket_name="private-ctf-content"),
+        engine_image=PINNED_ENGINE_DIGEST,
+    )
+
+    assert "SHIFTER_CTF_CONTENT_BUCKET=private-ctf-content\n" in rendered
+    assert "SHIFTER_CTF_CONTENT_PREFIX=ctf/content-bundles\n" in rendered
+    assert "SHIFTER_CTF_CONTENT_MAX_BYTES=8388608\n" in rendered
+    assert "SHIFTER_CTF_CONTENT_REFERENCES_JSON" not in rendered
 
 
 def test_render_env_forwards_gce_range_cell_contract(monkeypatch):

@@ -383,7 +383,7 @@
   {
     "rule_id": "ADR-004-R24",
     "owner": "@Brad-Edwards",
-    "reason": "Production build / deployment / runtime image owners with no dedicated blocking quality job yet (#1530). These are tracked build/runtime inputs, so ADR-004-R24 requires them to be quality units (not exclusions); they currently have no lint, security, or test lane of their own: container_images (GDC VM images, Guacamole/guacd runtime image inputs, Docker build config), charts (Helm charts), cloudformation (CloudFormation templates), and branding_assets (deploy-consumed logos/wordmarks/login stylesheet). Recorded as visible, dated gaps rather than hidden config exclusions. Gap-closure (helm lint, cfn-lint, image build/scan, asset checks) tracked by #1698.",
+    "reason": "Production build / deployment / runtime image owners with no dedicated blocking quality job yet (#1530). These are tracked build/runtime inputs, so ADR-004-R24 requires them to be quality units (not exclusions): container_images (GDC VM images, Guacamole/guacd runtime image inputs, Docker build config), charts (Helm charts), cloudformation (CloudFormation templates), and branding_assets (deploy-consumed logos/wordmarks/login stylesheet). charts now has a blocking TEST lane (chart-tests: the Helm chart contract suite, #1823) so charts:test is no longer a gap; its lint/security lanes and the other units' lanes remain gaps. Recorded as visible, dated gaps rather than hidden config exclusions. Gap-closure (helm lint, cfn-lint, image build/scan, asset checks) tracked by #1698.",
     "expires_on": "2026-10-17",
     "paths": [
       ".github/quality-path-filters.yaml#container_images:lint",
@@ -391,13 +391,23 @@
       ".github/quality-path-filters.yaml#container_images:test",
       ".github/quality-path-filters.yaml#charts:lint",
       ".github/quality-path-filters.yaml#charts:security",
-      ".github/quality-path-filters.yaml#charts:test",
       ".github/quality-path-filters.yaml#cloudformation:lint",
       ".github/quality-path-filters.yaml#cloudformation:security",
       ".github/quality-path-filters.yaml#cloudformation:test",
       ".github/quality-path-filters.yaml#branding_assets:lint",
       ".github/quality-path-filters.yaml#branding_assets:security",
       ".github/quality-path-filters.yaml#branding_assets:test"
+    ]
+  },
+  {
+    "rule_id": "ADR-040-R3",
+    "owner": "@Brad-Edwards",
+    "reason": "Issue #1924 deliberately narrows POST /api/v1/ctf/participants/{participant_id}/resend-invite/ from reset-and-email credentials to resend non-secret login information while preserving its operation, status, and response shape. The semantic break ends existing-password disclosure and reset-by-email behavior. The additive POST /api/v1/ctf/participants/{participant_id}/password/ operation is the replacement for explicit generated or organizer-set resets, and the organizer SPA list/detail flows migrate to it. Remove this exception after external consumers have migrated and the deprecated resend operation can be versioned or removed.",
+    "expires_on": "2026-10-29",
+    "paths": [
+      "shifter/shifter_platform/ctf/api/organizer/participants.py",
+      "shifter/shifter_platform/ctf/services/participant/accounts.py",
+      "shifter/shifter_platform/frontend/src/features/ctf/admin/ParticipantPasswordDialog.tsx"
     ]
   }
 ]

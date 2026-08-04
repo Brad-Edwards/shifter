@@ -24,15 +24,22 @@ from django.utils import timezone
 
 from engine.ecs import start_raes_range_provisioning
 from shared.enums import RequestType
+from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.participant_access import ParticipantAccessBinding
 
-from ._range_backend_binding import backend_binding_fields, require_workspace_binding, verify_existing_binding
+from ._range_backend_binding import (
+    backend_binding_fields,
+    require_workspace_binding,
+    verify_existing_binding,
+    verify_existing_workspace_binding,
+)
 
 if TYPE_CHECKING:
+    from engine.models import Range
     from shared.range_instantiation_policy import BackendAdmission
 
-__all__ = ["RaesRangeRef", "create_raes_range"]
+__all__ = ["RaesRangeRef", "RangeBindings", "create_raes_range"]
 
 
 @dataclass(frozen=True)
@@ -45,6 +52,22 @@ class RaesRangeRef:
     accepted: bool
 
 
+@dataclass(frozen=True)
+class RangeBindings:
+    """The byte-free sidecar bindings persisted beside a Range, in one argument.
+
+    Groups the three binding collections ``create_raes_range`` persists in the
+    same transaction as the Range -- content delivery (#1564, ``delivery``),
+    participant access (#1710, ``participant_access``), and generation-fenced
+    artifacts (#1580, ``artifact``) -- so the create seam takes one cohesive
+    argument. All three default empty; the common create passes none.
+    """
+
+    delivery: tuple[DeliveryBinding, ...] = ()
+    participant_access: tuple[ParticipantAccessBinding, ...] = ()
+    artifact: tuple[ArtifactBinding, ...] = ()
+
+
 def create_raes_range(
     *,
     request_id: str | UUID,
@@ -52,8 +75,7 @@ def create_raes_range(
     compiled_plan: dict[str, Any],
     workspace_id: int,
     backend_admission: BackendAdmission | None = None,
-    delivery_bindings: tuple[DeliveryBinding, ...] = (),
-    participant_access: tuple[ParticipantAccessBinding, ...] = (),
+    bindings: RangeBindings | None = None,
 ) -> RaesRangeRef:
     """Create + dispatch an RAES-native range from a serialized RAES plan.
 
@@ -76,23 +98,32 @@ def create_raes_range(
     persisted in the same transaction, so a range is never visible -- briefly or
     durably -- without its scope (ADR-046-R3).
 
-    ``delivery_bindings`` are the #1564 byte-free ``DeliveryBinding`` identities
-    that ride beside the plan; each is persisted as one
-    ``engine.models.RaesContentDeliveryBinding`` row in the same transaction as
-    the Range. On the idempotent existing-range reuse path bindings are not
-    re-created -- the first create already persisted them.
+    ``bindings`` groups the byte-free sidecar identities that ride beside the plan
+    (see :class:`RangeBindings`); each collection is persisted in the same
+    transaction as the Range. On the idempotent existing-range reuse path bindings
+    are not re-created -- the first create already persisted them.
 
-    ``participant_access`` are the #1710 non-secret ``ParticipantAccessBinding``
-    declarations that ride beside the plan the same way, persisted as
-    ``engine.models.RaesParticipantAccessBinding`` rows in the same transaction
-    (ADR-032-R10). Because they are the immutable declaration the realized access
-    is later compared against, an idempotent replay of the same ``request_id``
-    carrying *different* access intent is rejected rather than silently reusing
-    the first declaration.
+    ``bindings.delivery`` are the #1564 ``DeliveryBinding`` identities, each
+    persisted as one ``engine.models.RaesContentDeliveryBinding`` row.
+
+    ``bindings.participant_access`` are the #1710 non-secret
+    ``ParticipantAccessBinding`` declarations, persisted as
+    ``engine.models.RaesParticipantAccessBinding`` rows (ADR-032-R10). Because they
+    are the immutable declaration the realized access is later compared against, an
+    idempotent replay of the same ``request_id`` carrying *different* access intent
+    is rejected rather than silently reusing the first declaration.
+
+    ``bindings.artifact`` are the #1580 generation-fenced ``ArtifactBinding``
+    decisions -- each authored artifact requirement the CMS launch resolved to a
+    concrete backend image -- persisted as ``engine.models.RaesArtifactSatisfactionBinding``
+    rows (ADR-034-R8). The provisioner realizes exactly these and never
+    re-resolves; on the idempotent reuse path they are not re-created.
     """
+    bindings = bindings or RangeBindings()
     # Imported lazily (like the cyberscript ``create_range`` path) so importing
     # the ``engine`` app does not define models before the app registry is ready.
     from engine.models import (
+        RaesArtifactSatisfactionBinding,
         RaesContentDeliveryBinding,
         RaesParticipantAccessBinding,
         Range,
@@ -105,7 +136,8 @@ def create_raes_range(
     existing = Range.objects.filter(request__request_id=request_uuid).first()
     if existing is not None:
         verify_existing_binding(existing, request_uuid, backend_admission)
-        _verify_existing_participant_access(existing, participant_access)
+        verify_existing_workspace_binding(existing, request_uuid, workspace_id)
+        _verify_existing_participant_access(existing, bindings.participant_access)
         return RaesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
         )
@@ -140,7 +172,7 @@ def create_raes_range(
                 byte_count=binding.byte_count,
                 binding_version=binding.binding_version,
             )
-            for binding in delivery_bindings
+            for binding in bindings.delivery
         )
         RaesParticipantAccessBinding.objects.bulk_create(
             RaesParticipantAccessBinding(
@@ -150,7 +182,27 @@ def create_raes_range(
                 account_address=binding.account_address,
                 binding_version=binding.binding_version,
             )
-            for binding in participant_access
+            for binding in bindings.participant_access
+        )
+        RaesArtifactSatisfactionBinding.objects.bulk_create(
+            RaesArtifactSatisfactionBinding(
+                range=range_obj,
+                target_address=binding.target,
+                requirement_id=binding.requirement_id,
+                artifact_id=binding.artifact_id,
+                artifact_version=binding.version,
+                digest=binding.digest,
+                media_type=binding.media_type,
+                mechanism=binding.mechanism,
+                acquisition=binding.acquisition,
+                timing=binding.timing,
+                image_ref=binding.image_ref,
+                machine_type=binding.machine_type,
+                disk_size_gb=binding.disk_size_gb,
+                disk_type=binding.disk_type,
+                binding_version=1,
+            )
+            for binding in bindings.artifact
         )
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
@@ -168,7 +220,7 @@ def create_raes_range(
 
 
 def _verify_existing_participant_access(
-    existing: Any,
+    existing: Range,
     participant_access: tuple[ParticipantAccessBinding, ...],
 ) -> None:
     """Reject an idempotent replay that carries different access intent (#1710).

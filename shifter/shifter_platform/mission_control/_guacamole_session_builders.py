@@ -93,50 +93,31 @@ def _guac_settings(service_name: str) -> GuacamoleSettings:
 # ---------------------------------------------------------------------------
 
 
-_SFTP_ROOT_BY_OS: dict[str, str] = {
-    "kali": "/home/kali",
-    "ubuntu": "/home/ubuntu",
-    # SFTP paths use forward slashes even on Windows.
-    "windows": "/C:/Users/Administrator/Downloads",
-}
-
-
-def _sftp_root_for_os(os_type: str | None) -> str | None:
-    """Return Guacamole SFTP root path for the given OS type, or None."""
-    if os_type is None:
-        return None
-    return _SFTP_ROOT_BY_OS.get(os_type)
-
-
-def _rdp_security_for_os(os_type: str | None) -> str:
-    """Return Guacamole's RDP security mode for the given OS type.
-
-    Every target negotiates: the mode is left to the RDP handshake rather than
-    pinned per OS.
-
-    Issue #1801 pinned Kali to ``tls`` on the assumption that xrdp only speaks
-    TLS. That is not true of the range's Kali guest, and pinning breaks it: an
-    X.224 negotiation probe against a live range host shows the server answering
-    ``RDP_NEG_RSP`` with ``PROTOCOL_RDP`` (0) for *every* request — including
-    requests for TLS, HYBRID/NLA, and RDSTLS. Pinning ``tls`` therefore makes
-    guacd demand a protocol the guest never selects, and the session dies with
-    "Security negotiation failed (wrong security type?)" after the tunnel and
-    Guacamole authentication have both succeeded (issue #987).
-
-    ``any`` lets the handshake settle it, so a guest that offers only legacy RDP
-    security and a guest that offers TLS both connect without a per-image
-    allowlist here.
-    """
-    return "any"
+# Guacamole's RDP security mode, the same for every target: the mode is left to
+# the RDP handshake rather than pinned per OS.
+#
+# Issue #1801 pinned Kali to ``tls`` on the assumption that xrdp only speaks
+# TLS. That is not true of the range's Kali guest, and pinning breaks it: an
+# X.224 negotiation probe against a live range host shows the server answering
+# ``RDP_NEG_RSP`` with ``PROTOCOL_RDP`` (0) for *every* request — including
+# requests for TLS, HYBRID/NLA, and RDSTLS. Pinning ``tls`` therefore makes
+# guacd demand a protocol the guest never selects, and the session dies with
+# "Security negotiation failed (wrong security type?)" after the tunnel and
+# Guacamole authentication have both succeeded (issue #987).
+#
+# ``any`` lets the handshake settle it, so a guest that offers only legacy RDP
+# security and a guest that offers TLS both connect without a per-image
+# allowlist here.
+_RDP_SECURITY_MODE = "any"
 
 
 def _resolve_rdp_conn(user: User, instance_uuid: str) -> dict[str, Any]:
     """Resolve the RDP connection info or raise ``BootstrapFailure``."""
-    from engine.services import get_rdp_connection_info
+    from cms.services import get_range_rdp_connection_info
 
     try:
-        return get_rdp_connection_info(user, instance_uuid)
-    except ValueError as e:
+        return get_range_rdp_connection_info(user, instance_uuid)
+    except (PermissionError, ValueError) as e:
         logger.exception(
             "RDP connection lookup failed: user=%s instance_uuid=%s",
             safe_log_value(user.email),
@@ -158,9 +139,14 @@ def _generate_rdp_url(
     """Generate the Guacamole RDP URL or raise ``BootstrapFailure``."""
     from mission_control.guacamole import GuacRDPUrlRequest, create_guacamole_rdp_url
 
-    os_type = conn_info.get("os_type")
-    sftp_enabled = conn_info.get("sftp_enabled") is not False
-    sftp_root_directory = _sftp_root_for_os(os_type) if sftp_enabled else None
+    # The SFTP root is realized per-image metadata resolved by the engine (#375);
+    # Mission Control consumes it and never derives it from ``os_type``. SFTP
+    # requires a pinned root: when the realized instance carries none (an older
+    # record, or a producer that omitted it), fail closed by disabling SFTP
+    # entirely rather than letting Guacamole fall back to its unrestricted default
+    # root, which would expose the guest filesystem beyond the intended directory.
+    sftp_root_directory = conn_info.get("sftp_root_directory")
+    sftp_enabled = conn_info.get("sftp_enabled") is not False and bool(sftp_root_directory)
     try:
         return create_guacamole_rdp_url(
             GuacRDPUrlRequest(
@@ -176,7 +162,7 @@ def _generate_rdp_url(
                 sftp_root_directory=sftp_root_directory,
                 sftp_private_key=conn_info.get("ssh_key"),
                 sftp_enabled=sftp_enabled,
-                security=_rdp_security_for_os(os_type),
+                security=_RDP_SECURITY_MODE,
             )
         )
     except ValueError as e:
@@ -315,10 +301,10 @@ def _build_ngfw_ssh_url(*, user: User, app_id: str, guac_settings: GuacamoleSett
 
 def _resolve_range_ssh(user: User, instance_uuid: str) -> dict[str, Any]:
     """Look up the range SSH connection info or raise ``BootstrapFailure``."""
-    from engine.services import get_ssh_connection_info
+    from cms.services import get_range_ssh_connection_info
 
     try:
-        return get_ssh_connection_info(user, instance_uuid)
+        return get_range_ssh_connection_info(user, instance_uuid)
     except ValueError as e:
         logger.exception(
             "Range SSH access denied (ValueError): user=%s instance_uuid=%s",

@@ -50,6 +50,7 @@ from django.conf import settings
 from cms.scenarios.catalog_presentation import RAES_SCENARIO_TYPE
 from cms.scenarios.registry import get_catalog_entry
 from shared.log_sanitize import safe_log_value
+from shared.raes.artifact_inventory import BackendArtifact, build_artifact_availability
 from shared.raes.image_policy import is_concrete_image_ref, resolve_from_candidates
 from shared.raes.realizability import (
     GapCategory,
@@ -60,7 +61,7 @@ from shared.raes.realizability import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
     from contextlib import AbstractContextManager
 
     from cms.models import RaesPackageSource
@@ -102,7 +103,16 @@ def get_scenario_realizability(scenario_id: str) -> dict[str, Any] | None:
         return None
     if entry.get("scenario_type") != RAES_SCENARIO_TYPE:
         return _result(scenario_id, "", RealizabilityOutcome.NOT_APPLICABLE, ())
+    return _assess_raes_entry(scenario_id)
 
+
+def _assess_raes_entry(scenario_id: str) -> dict[str, Any]:
+    """Assess a catalog entry already known to be RAES-backed.
+
+    Resolves the registered package source and the server-selected target before
+    handing off to the pack assessment; either being unavailable is
+    ``indeterminate``, never realizable.
+    """
     source = _package_source(scenario_id)
     if source is None:
         return _result(scenario_id, "", RealizabilityOutcome.INDETERMINATE, (_gap_pack_unresolvable(),))
@@ -128,7 +138,9 @@ def _assess_registered_pack(scenario_id: str, source: RaesPackageSource, target_
 
 def _assess_trusted_path(scenario_id: str, scenario_path: Path, target_id: str) -> dict[str, Any]:
     """Combine capability and backend-supply contributors into one ordered answer."""
-    capability = assess_scenario_capability(scenario_path)
+    capability = assess_scenario_capability(
+        scenario_path, artifact_availability_provider=_availability_provider(target_id)
+    )
     supply_gaps = _supply_gaps(capability.image_demands, target_id=target_id)
     supply_outcome = RealizabilityOutcome.NOT_REALIZABLE if supply_gaps else RealizabilityOutcome.REALIZABLE
 
@@ -197,16 +209,21 @@ def _trusted_scenario_path(source: RaesPackageSource) -> Iterator[tuple[Path | N
         yield _repo_scenario_path(source)
         return
 
-    # ExitStack owns the staging teardown, and the try covers only entering it --
-    # a failure inside the assessment body must propagate, not be re-yielded.
+    # ExitStack owns the staging teardown, and the staging helper catches only
+    # the staging failure -- a failure inside the assessment body propagates out
+    # of the yield below rather than being re-yielded.
     with ExitStack() as stack:
-        try:
-            pack_root = stack.enter_context(_stage_object_pack(source))
-        except Exception as exc:
-            logger.info("raes realizability could not stage object pack (%s)", type(exc).__name__)
-            yield None, _gap_pack_unresolvable()
-        else:
-            yield _verified_object_scenario_path(pack_root, source)
+        yield _staged_object_scenario_path(stack, source)
+
+
+def _staged_object_scenario_path(stack: ExitStack, source: RaesPackageSource) -> tuple[Path | None, RealizabilityGap]:
+    """Stage the object pack into ``stack`` and resolve its verified SDL path."""
+    try:
+        pack_root = stack.enter_context(_stage_object_pack(source))
+    except Exception as exc:
+        logger.info("raes realizability could not stage object pack (%s)", type(exc).__name__)
+        return None, _gap_pack_unresolvable()
+    return _verified_object_scenario_path(pack_root, source)
 
 
 def _repo_scenario_path(source: RaesPackageSource) -> tuple[Path | None, RealizabilityGap]:
@@ -264,9 +281,10 @@ def _verified_object_scenario_path(pack_root: Path, source: RaesPackageSource) -
     from shared.raes.package_loader import resolve_pack_scenario_path
 
     try:
-        if validate_pack(pack_root) != source.scenario_id:
-            return None, _gap_untrusted()
-        if source.package_digest and not verify_pack_digest(pack_root, source.package_digest):
+        trusted = validate_pack(pack_root) == source.scenario_id and (
+            not source.package_digest or verify_pack_digest(pack_root, source.package_digest)
+        )
+        if not trusted:
             return None, _gap_untrusted()
         return resolve_pack_scenario_path(pack_root), _gap_untrusted()
     except Exception as exc:
@@ -301,9 +319,10 @@ def _supply_gap(
     # An unpinned authored source and a base-OS fallback both take the
     # any-version default row; a pinned source must match exactly.
     version = demand.source_version if demand.source_name else None
-    if resolve_from_candidates(candidates.get(name, []), version=version) is not None:
-        return None
-    if demand.source_name and is_concrete_image_ref(demand.source_name, provider=target_id):
+    supplied = resolve_from_candidates(candidates.get(name, []), version=version) is not None or bool(
+        demand.source_name and is_concrete_image_ref(demand.source_name, provider=target_id)
+    )
+    if supplied:
         return None
     return _gap(
         _MISSING_IMAGE_MAPPING,
@@ -355,6 +374,35 @@ def _registry_candidates(names: set[str], *, target_id: str) -> dict[str, list[d
             }
         )
     return grouped
+
+
+def _availability_provider(target_id: str) -> Callable[[Mapping[str, Any]], dict[str, Any]]:
+    """Return a provider that answers artifact availability from the tenant registry.
+
+    Injected into :func:`assess_scenario_capability` so the artifact-resolution
+    seam sees the backend-owned inventory without ``shared.raes`` ever reaching
+    into the engine registry (the catalog layer owns that read, exactly like the
+    image-supply contributor). The provider is typed with boundary-safe ``Any`` so
+    this catalog layer never has to name upstream RAES contract types (ADR-031-R1).
+    """
+
+    def provider(requirements: Mapping[str, Any]) -> dict[str, Any]:
+        """Answer per-requirement artifact availability for ``requirements`` from the registry."""
+        return build_artifact_availability(requirements, _backend_inventory(target_id))
+
+    return provider
+
+
+def _backend_inventory(target_id: str) -> list[BackendArtifact]:
+    """Read the backend-owned portable artifacts for ``target_id`` from the registry.
+
+    Delegates to the one shared projection (``engine.services.list_backend_artifacts``)
+    so the editor realizability contributor and the launch-time fencing resolver
+    agree on exactly what the backend owns.
+    """
+    from engine.services import list_backend_artifacts
+
+    return list_backend_artifacts(provider=target_id)
 
 
 def _lookup_name(demand: ImageDemand) -> str:

@@ -57,7 +57,8 @@ def _load_provisioner_reader():
     if provisioner_dir not in sys.path:
         sys.path.insert(0, provisioner_dir)
     spec = importlib.util.spec_from_file_location("raes_plan_provisioner", _PROVISIONER_READER)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -184,7 +185,7 @@ class TestProvisionerReaderContract:
     def test_environment_pack_and_raes_release_pair_is_exact(self):
         assert importlib.metadata.version("raes") == "2.0.0"
         assert importlib.metadata.version("raes") == _exact_dependency_pin("raes")
-        assert importlib.metadata.version("raes-env-packs") == "3.0.0"
+        assert importlib.metadata.version("raes-env-packs") == "3.1.0"
         assert importlib.metadata.version("raes-env-packs") == _exact_dependency_pin("raes-env-packs")
         requirements = importlib.metadata.requires("raes-env-packs") or []
         normalized = {requirement.replace(" ", "").lower() for requirement in requirements}
@@ -267,7 +268,8 @@ class TestProvisionerReaderContract:
         # Shifter-owned normalization: allow->accept, TCP->tcp; endpoint kept as ref
         # (resolved to a concrete CIDR at realization, fail-closed).
         assert (acl.action, acl.direction, acl.protocol, acl.ports) == ("accept", "in", "tcp", (22,))
-        assert acl.from_net == "provision.network.lan" and acl.to_net is None
+        assert acl.from_net == "provision.network.lan"
+        assert acl.to_net is None
 
 
 def _plan_with_services(services: list[dict]) -> ProvisioningPlan:

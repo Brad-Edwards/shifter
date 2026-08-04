@@ -113,6 +113,18 @@ variable "raes_package_prefix" {
   default     = ""
 }
 
+variable "ctf_content_bucket_arn" {
+  description = "Optional private S3 bucket ARN holding digest-pinned native CTF content bundles. Grants the portal prefix-scoped read access."
+  type        = string
+  default     = ""
+}
+
+variable "ctf_content_prefix" {
+  description = "Contained key prefix under the CTF content bucket the portal may read."
+  type        = string
+  default     = "ctf/content-bundles/"
+}
+
 variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)

@@ -41,6 +41,7 @@ _BLANK_KEEP_NEWLINES = {"\n": "\n"}
 
 
 def _blank_for(ch: str) -> str:
+    """Whitespace replacement for a consumed character, keeping newlines intact."""
     return _BLANK_KEEP_NEWLINES.get(ch, " ")
 
 
@@ -48,16 +49,15 @@ def _consume_code(text: str, i: int) -> tuple[int, str, str, str]:
     """Code state. Detects start of comment / string / nothing."""
     nxt = text[i + 1] if i + 1 < len(text) else ""
     ch = text[i]
-    if ch == "/" and nxt == "/":
-        return i + 2, "  ", "line_comment", ""
-    if ch == "/" and nxt == "*":
-        return i + 2, "  ", "block_comment", ""
+    if ch == "/" and nxt in ("/", "*"):
+        return i + 2, "  ", "line_comment" if nxt == "/" else "block_comment", ""
     if ch in ("'", '"', "`"):
         return i + 1, " ", "string", ch
     return i + 1, ch, "code", ""
 
 
 def _consume_line_comment(text: str, i: int) -> tuple[int, str, str, str]:
+    """Line-comment state. Returns to code at the newline, blanking the body."""
     ch = text[i]
     if ch == "\n":
         return i + 1, "\n", "code", ""
@@ -65,6 +65,7 @@ def _consume_line_comment(text: str, i: int) -> tuple[int, str, str, str]:
 
 
 def _consume_block_comment(text: str, i: int) -> tuple[int, str, str, str]:
+    """Block-comment state. Returns to code at `*/`, blanking the body."""
     nxt = text[i + 1] if i + 1 < len(text) else ""
     ch = text[i]
     if ch == "*" and nxt == "/":
@@ -73,6 +74,7 @@ def _consume_block_comment(text: str, i: int) -> tuple[int, str, str, str]:
 
 
 def _consume_string(text: str, i: int, quote: str) -> tuple[int, str, str, str]:
+    """String state. Returns to code at the matching `quote`, blanking the body."""
     nxt = text[i + 1] if i + 1 < len(text) else ""
     ch = text[i]
     if ch == "\\" and nxt:
@@ -178,7 +180,8 @@ def _strip_js_comments_and_strings(text: str) -> str:
             i, emit, state, quote = _consume_line_comment(text, i)
         elif state == "block_comment":
             i, emit, state, quote = _consume_block_comment(text, i)
-        else:  # state == "string"
+        else:
+            # state == "string"
             i, emit, state, quote = _consume_string(text, i, quote)
         out.append(emit)
     return "".join(out)
@@ -217,6 +220,63 @@ _SHELL_TRUE_SPAWN = re.compile(
     """,
 )
 
+_JS_SUFFIXES = (".js", ".mjs", ".cjs")
+_EXEC_CALL_MESSAGE = (
+    "Calls exec/execSync from child_process; MCP servers must invoke external CLIs "
+    "via argv arrays (spawn/spawnSync/execFile)"
+)
+_SHELL_TRUE_MESSAGE = (
+    "Uses spawn/spawnSync/execFile/execFileSync with { shell: true }; MCP servers must "
+    "invoke external CLIs via argv arrays without a shell"
+)
+
+
+def _js_candidate_paths(repo_root: Path, files: list[str] | None, scan_root: Path, prefix: str) -> list[Path]:
+    """JS/MJS/CJS candidates: the `prefix`-scoped subset of `files`, or a full scan."""
+    if files is not None:
+        return [repo_root / path for path in files if path.startswith(prefix) and path.endswith(_JS_SUFFIXES)]
+    return [
+        p
+        for p in scan_root.rglob("*")
+        if p.is_file() and p.suffix in _JS_SUFFIXES and "node_modules" not in p.parts
+    ]
+
+
+def _read_js_source(path: Path) -> str | None:
+    """Read a candidate JS file, returning None when it is missing or unreadable."""
+    if not path.exists():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _shell_exec_violation(path: Path, repo_root: Path) -> Violation | None:
+    """Return the ADR-010-R1 violation for one mcp/ JS file, or None when clean."""
+    text = _read_js_source(path)
+    # Import detection runs on raw text so the matched
+    # `"child_process"` string literal is preserved.
+    if text is None or not _CHILD_PROCESS_IMPORT.search(text):
+        return None
+
+    # Alias and call-site detection run on the comment-and-string
+    # flattened form so that an `execSync(` token inside a comment
+    # or string cannot trigger the check, a real `execSync(` call
+    # on a line containing a URL like `"https://..."` is not
+    # erased, and a comment like `// execSync as run` cannot
+    # synthesise a fake alias that turns innocent `run(` calls
+    # into false positives.
+    stripped = _strip_js_comments_and_strings(text)
+    aliases = _EXEC_SYNC_ALIAS.findall(stripped)
+    if _build_call_site_pattern(aliases).search(stripped):
+        message = _EXEC_CALL_MESSAGE
+    elif _SHELL_TRUE_SPAWN.search(stripped):
+        message = _SHELL_TRUE_MESSAGE
+    else:
+        return None
+    return Violation("mcp-no-shell-exec", "ADR-010-R1", _repo_relative(path, repo_root), message)
+
 
 def check_mcp_no_shell_exec(repo_root: Path, files: list[str] | None) -> list[Violation]:
     """Forbid execSync call sites in mcp/ servers (ADR-010-R1).
@@ -240,58 +300,11 @@ def check_mcp_no_shell_exec(repo_root: Path, files: list[str] | None) -> list[Vi
     if not mcp_root.exists():
         return []
 
-    if files is not None:
-        candidate_paths = [
-            repo_root / path for path in files if path.startswith("mcp/") and path.endswith((".js", ".mjs", ".cjs"))
-        ]
-    else:
-        candidate_paths = [
-            p
-            for p in mcp_root.rglob("*")
-            if p.is_file() and p.suffix in (".js", ".mjs", ".cjs") and "node_modules" not in p.parts
-        ]
-
     violations: list[Violation] = []
-    for path in candidate_paths:
-        if not path.exists():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        # Import detection runs on raw text so the matched
-        # `"child_process"` string literal is preserved.
-        if not _CHILD_PROCESS_IMPORT.search(text):
-            continue
-        # Alias and call-site detection run on the comment-and-string
-        # flattened form so that an `execSync(` token inside a comment
-        # or string cannot trigger the check, a real `execSync(` call
-        # on a line containing a URL like `"https://..."` is not
-        # erased, and a comment like `// execSync as run` cannot
-        # synthesise a fake alias that turns innocent `run(` calls
-        # into false positives.
-        stripped = _strip_js_comments_and_strings(text)
-        aliases = _EXEC_SYNC_ALIAS.findall(stripped)
-        call_pattern = _build_call_site_pattern(aliases)
-        rel = _repo_relative(path, repo_root)
-        if call_pattern.search(stripped):
-            violations.append(
-                Violation(
-                    "mcp-no-shell-exec",
-                    "ADR-010-R1",
-                    rel,
-                    "Calls exec/execSync from child_process; MCP servers must invoke external CLIs via argv arrays (spawn/spawnSync/execFile)",
-                )
-            )
-        elif _SHELL_TRUE_SPAWN.search(stripped):
-            violations.append(
-                Violation(
-                    "mcp-no-shell-exec",
-                    "ADR-010-R1",
-                    rel,
-                    "Uses spawn/spawnSync/execFile/execFileSync with { shell: true }; MCP servers must invoke external CLIs via argv arrays without a shell",
-                )
-            )
+    for path in _js_candidate_paths(repo_root, files, mcp_root, "mcp/"):
+        violation = _shell_exec_violation(path, repo_root)
+        if violation is not None:
+            violations.append(violation)
     return violations
 
 
@@ -339,28 +352,10 @@ def check_mcp_ops_tls_strict(repo_root: Path, files: list[str] | None) -> list[V
     if not ops_root.exists():
         return []
 
-    if files is not None:
-        candidate_paths = [
-            repo_root / path
-            for path in files
-            if path.startswith("mcp/ops/") and path.endswith((".js", ".mjs", ".cjs"))
-        ]
-    else:
-        candidate_paths = [
-            p
-            for p in ops_root.rglob("*")
-            if p.is_file()
-            and p.suffix in (".js", ".mjs", ".cjs")
-            and "node_modules" not in p.parts
-        ]
-
     violations: list[Violation] = []
-    for path in candidate_paths:
-        if not path.exists():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+    for path in _js_candidate_paths(repo_root, files, ops_root, "mcp/ops/"):
+        text = _read_js_source(path)
+        if text is None:
             continue
         # Strip comments only (not strings) so:
         #   - `// rejectUnauthorized: false` doc comments do not trip.

@@ -12,6 +12,7 @@ the source-capability projection the editor renders from.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from django.contrib.auth.models import User
@@ -99,7 +100,7 @@ def _classify(scenario_type: str, is_default: bool) -> tuple[str, bool, bool, bo
     return source, editable, deletable, exportable
 
 
-def _structural_detail_payload(detail: dict[str, Any]) -> dict[str, Any]:
+def _structural_detail_payload(detail: Mapping[str, Any]) -> dict[str, Any]:
     """Build the editor detail payload from a registry structural detail dict."""
     scenario_type = detail.get("scenario_type", "demo")
     is_default = bool(detail.get("is_default", False))

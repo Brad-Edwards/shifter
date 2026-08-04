@@ -27,6 +27,7 @@ from ctf.models import (
     CTFBracket,
     CTFChallenge,
     CTFEvent,
+    CTFFlag,
     CTFParticipant,
     CTFScheduledTask,
     CTFSubmission,
@@ -41,22 +42,10 @@ if TYPE_CHECKING:
 User = get_user_model()
 
 
-# Explicit, clearly synthetic CTF bootstrap credential for tests. Production code
-# fails closed (issue #1665): no repository literal may authenticate an account,
-# so tests configure this value explicitly through the autouse fixture below.
-# Chosen to satisfy the canonical ``AUTH_PASSWORD_VALIDATORS``.
+# Explicit, clearly synthetic per-event shared credential for tests that need a
+# stable login value. Production events default to unique generated credentials;
+# individual tests clear the event override when exercising that path.
 TEST_CTF_BOOTSTRAP_PASSWORD = "test-ctf-bootstrap-pw"  # nosec B105
-
-
-@pytest.fixture(autouse=True)
-def _ctf_bootstrap_password(settings):
-    """Supply an explicit test-only bootstrap credential for every CTF test.
-
-    Fail-closed tests set ``settings.CTF_DEFAULT_PARTICIPANT_PASSWORD = ""`` in
-    their own body (running after this autouse fixture) to exercise the
-    no-source-configured path.
-    """
-    settings.CTF_DEFAULT_PARTICIPANT_PASSWORD = TEST_CTF_BOOTSTRAP_PASSWORD
 
 
 # -----------------------------------------------------------------------------
@@ -100,7 +89,6 @@ def make_challenge(event=None, **overrides) -> CTFChallenge:
         "category": ChallengeCategory.WEB.value,
         "points": 100,
         "difficulty": ChallengeDifficulty.EASY.value,
-        "flag_hash": "$2b$12$test_hash_placeholder",
         "flag_format": "FLAG{...}",
         "release_time": None,
         "order": 0,
@@ -285,6 +273,7 @@ def ctf_event(db, organizer_user) -> CTFEvent:
         auto_cleanup=True,
         cleanup_delay_hours=24,
         team_mode=False,
+        participant_password_override=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
 
@@ -299,6 +288,7 @@ def ctf_event_draft(db, organizer_user) -> CTFEvent:
         event_start=timezone.now() + timedelta(days=7),
         event_end=timezone.now() + timedelta(days=7, hours=8),
         scenario_id="basic",
+        participant_password_override=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
 
@@ -313,6 +303,7 @@ def ctf_event_active(db, organizer_user) -> CTFEvent:
         event_start=timezone.now() - timedelta(hours=1),
         event_end=timezone.now() + timedelta(hours=7),
         scenario_id="basic",
+        participant_password_override=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
 
@@ -329,6 +320,7 @@ def ctf_event_team(db, organizer_user) -> CTFEvent:
         scenario_id="basic",
         team_mode=True,
         team_size_limit=4,
+        participant_password_override=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
 
@@ -337,19 +329,35 @@ def ctf_event_team(db, organizer_user) -> CTFEvent:
 # -----------------------------------------------------------------------------
 
 
+def _add_static_flag(challenge: CTFChallenge, flag: str = "FLAG{test}", *, order: int = 0) -> CTFFlag:
+    """Attach one static CTFFlag to a challenge (CTFFlag is the flag source of
+    truth; #532)."""
+    from ctf.services.challenge import hash_flag
+
+    return CTFFlag.objects.create(
+        challenge=challenge,
+        flag_hash=hash_flag(flag),
+        flag_type="static",
+        case_sensitive=True,
+        order=order,
+    )
+
+
 @pytest.fixture
 def ctf_challenge(db, ctf_event) -> CTFChallenge:
-    """Create a basic challenge."""
-    return CTFChallenge.objects.create(
+    """Create a basic challenge with one static flag (CTFFlag is the source of
+    truth; #532)."""
+    challenge = CTFChallenge.objects.create(
         event=ctf_event,
         name="Test Challenge",
         description="Find the flag in the source code",
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$test_hash_placeholder",
         flag_format="FLAG{...}",
     )
+    _add_static_flag(challenge, "FLAG{test}")
+    return challenge
 
 
 @pytest.fixture
@@ -362,7 +370,6 @@ def ctf_challenge_with_hint(db, ctf_event) -> CTFChallenge:
         category=ChallengeCategory.CRYPTO.value,
         points=200,
         difficulty=ChallengeDifficulty.MEDIUM.value,
-        flag_hash="$2b$12$another_hash_placeholder",
         hint="Look at the cipher mode",
         hint_penalty=25,
     )
@@ -378,7 +385,6 @@ def ctf_challenge_delayed(db, ctf_event) -> CTFChallenge:
         category=ChallengeCategory.PWN.value,
         points=300,
         difficulty=ChallengeDifficulty.HARD.value,
-        flag_hash="$2b$12$delayed_hash_placeholder",
         release_time=ctf_event.event_start + timedelta(hours=2),
     )
 
@@ -416,14 +422,14 @@ def ctf_participant(db, ctf_event, participant_user) -> CTFParticipant:
 
 
 @pytest.fixture
-def ctf_participant_invited(db, ctf_event) -> CTFParticipant:
-    """Create an invited (not yet registered) participant."""
+def ctf_participant_no_account(db, ctf_event) -> CTFParticipant:
+    """Create a participant row with no linked isolated account (``user`` is None)."""
     return CTFParticipant.objects.create(
         event=ctf_event,
-        email="invited@test.com",
-        name="Invited Participant",
-        status=ParticipantStatus.INVITED.value,
-        invited_at=timezone.now(),
+        email="no-account@test.com",
+        name="No Account Participant",
+        status=ParticipantStatus.REGISTERED.value,
+        login_info_sent_at=timezone.now(),
     )
 
 

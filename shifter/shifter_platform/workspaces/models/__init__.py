@@ -7,6 +7,7 @@ Split into one module per entity, mirroring ``engine/models/``. Only
 
 from ._membership import WorkspaceMembership
 from ._organization import Organization
+from ._organization_membership import OrganizationMembership
 from ._workspace import Workspace
 
-__all__ = ["Organization", "Workspace", "WorkspaceMembership"]
+__all__ = ["Organization", "OrganizationMembership", "Workspace", "WorkspaceMembership"]

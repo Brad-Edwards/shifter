@@ -474,6 +474,8 @@ CLAUDE.local.md
 
 # OpenAI Codex CLI
 .codex
+# Ground Control local runtime state (directory name includes a trailing space).
+/.codex\ /
 
 # Playwright MCP browser session artifacts (accessibility snapshots +
 # screenshots the plugin dumps into a per-session directory). These are

@@ -36,17 +36,22 @@ inherit `CTFBaseModel` with a `SoftDeleteManager` (soft delete by default).
 | Model | Purpose |
 |-------|---------|
 | `CTFEvent` | Competition: window, scenario, capacity, team mode, throttles, scoreboard policy, cleanup policy |
-| `CTFChallenge` | Scored task: category, points, difficulty, hashed flag, release time, prerequisite, target instance/port, tags/topics |
-| `CTFFlag` | One or more flags per challenge; stored as a hash with type, case sensitivity, and validator config |
+| `CTFChallenge` | Scored task: category, points, difficulty, release time, prerequisite, target instance/port, tags/topics |
+| `CTFFlag` | The sole source of flag truth: one or more flags per challenge, each stored as a hash (static), pattern (regex), or sentinel (programmable/http) with type, case sensitivity, and validator config |
 | `CTFTopic`, `CTFChallengeTag`, `CTFChallengeFile`, `CTFChallengePrerequisite` | Challenge taxonomy, attachments, and unlock graph |
 | `CTFBracket`, `CTFTeam`, `CTFParticipant` | Cohorts, teams, and per-user participation |
 | `CTFSubmission`, `CTFAward` | Flag attempts (correctness, points, attempt number, source IP) and manual point awards |
 | `CTFChallengeRating` | Participant difficulty ratings |
 | `CTFHint`, `CTFHintUsage` | Optional, point-reducing hints and usage tracking |
 | `CTFNotification`, `CTFEmailTemplate`, `CTFScheduledTask` | Announcements, reminder templates, and scheduled work |
+| `CTFContentHydrationReceipt` | Digest, object-identity fingerprints, bounded counts, and pristine/drifted state for scenario-managed event content |
 
-Flags are persisted only as hashes (`flag_hash`); plaintext is never stored after
-challenge creation, and submission checking compares against the hash.
+Flag material is persisted only as `CTFFlag` rows (static flags as hashes, regex as
+patterns, programmable/HTTP as validator config), never on the challenge itself.
+Plaintext is never stored after flag creation, and submission checking compares
+against the `CTFFlag` records. A single plaintext `flag` on challenge create/update
+is normalized into one static `CTFFlag`; a challenge with no flag rows is
+unverifiable (every submission is rejected).
 
 ## Services
 
@@ -59,6 +64,41 @@ Business logic lives under `ctf.services` (views stay thin):
   fallback (`get_scoreboard`, `calculate_score`, ranks, stats, timeline, and the
   `recompute_*` maintenance helpers).
 - `authorization`, `audit`: access checks and audit trail.
+
+### Scenario content hydration
+
+`ctf.services.content_resolution` resolves a deployment-owned scenario
+reference through the provider-neutral `shared.cloud.ObjectStorage` protocol.
+It performs a bounded head/download with an ETag, generation, or version
+precondition, verifies the declared SHA-256 digest before parsing, and removes
+temporary bytes in `finally`. Provider errors, object coordinates, validator
+configuration, and bundle bodies do not cross the public error boundary.
+
+`ctf.content_bundle` is a closed, data-only
+`shifter-ctf-content/v1` contract. It validates resource bounds, challenge
+identities and orders, native flag policy, prerequisite references, and the
+complete DAG before a database transaction begins. It supports native static,
+regex, and HTTPS HTTP validators; it does not execute package code or enable
+programmable validators.
+
+Event creation composes the resolver with
+`ctf.services.hydrate_event_ctf_content`. The service locks the event, checks
+ownership and state, writes the graph through native challenge/hint/prerequisite
+services, creates one receipt, and records a strict audit event in one atomic
+transaction. An exact pristine replay is a no-op. Foreign rows, changed source
+evidence, shape mismatch, or a drifted receipt fail closed.
+
+All native organizer mutation paths mark an existing receipt drifted inside
+their transaction. Both manual and scheduled activation require a pristine
+receipt whose scenario and digest match current deployment configuration.
+Scenarios without a configured content reference retain existing behavior.
+
+The deployment reference catalog is the separate closed contract
+`shifter-ctf-content-references/v1`, parsed at startup from private deployment
+configuration. This feature does not reuse the RAES package catalog or persist
+bundle bodies in scenario/event JSON. See the
+[operator runbook](../../dev/ctf-scenario-content) for publication, provider
+IAM, runtime settings, rotation, and failure recovery.
 
 ### Range Provisioning
 
@@ -148,3 +188,5 @@ Two management commands operate the event runtime:
 
 - [CTF](../../features/ctf): participant guide.
 - [CTF Organizer Guide](../../features/ctf-organizer-guide): running an event.
+- [Native CTF scenario content](../../dev/ctf-scenario-content): private
+  publication and deployment binding.

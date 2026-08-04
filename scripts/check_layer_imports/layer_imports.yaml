@@ -95,6 +95,9 @@ allowed:
     - management.services
     - mission_control.routing
     - mission_control.terminal_sessions
+    # ADR-046-R8: composition mounts the workspace domain's public membership
+    # routing surface; business logic remains behind workspaces.services.
+    - workspaces.api.urls
 
 # Per-symbol facade allowlists (ADR-001-R4). When a (layer -> facade) pair is
 # listed here, that layer may import from the facade ONLY the enumerated public

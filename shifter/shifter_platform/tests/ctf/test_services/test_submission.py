@@ -66,7 +66,6 @@ def challenge(db, active_event):
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$placeholder",
         flag_format="FLAG{...}",
     )
 
@@ -81,7 +80,6 @@ def challenge_b(db, active_event):
         category=ChallengeCategory.CRYPTO.value,
         points=200,
         difficulty=ChallengeDifficulty.MEDIUM.value,
-        flag_hash="$2b$12$placeholder2",
         flag_format="FLAG{...}",
     )
 
@@ -147,7 +145,6 @@ class TestSubmissionRateLimit:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder3",
         )
         part = CTFParticipant.objects.create(
             event=active_event_no_cooldown,
@@ -262,7 +259,6 @@ def limited_challenge_lockout(db, lockout_event):
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$placeholder_lock",
         max_attempts=3,
     )
 
@@ -277,7 +273,6 @@ def limited_challenge_timeout(db, timeout_event):
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$placeholder_time",
         max_attempts=3,
     )
 
@@ -338,7 +333,6 @@ class TestAttemptLimits:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_unlim",
             max_attempts=0,
         )
         p = CTFParticipant.objects.create(
@@ -489,7 +483,6 @@ class TestTimeBoundaryEnforcement:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_early",
         )
         participant = CTFParticipant.objects.create(
             event=future_start_event,
@@ -513,7 +506,6 @@ class TestTimeBoundaryEnforcement:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="$2b$12$placeholder_late",
         )
         participant = CTFParticipant.objects.create(
             event=past_end_event,
@@ -560,7 +552,6 @@ def hint_challenge(db, hint_event):
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$placeholder_hint_scoring",
     )
 
 

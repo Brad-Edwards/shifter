@@ -14,7 +14,6 @@ from config._runtime_env import AUTH_PROVIDER, required_runtime_env
 
 __all__ = [
     "AUTHENTICATION_BACKENDS",
-    "CTF_DEFAULT_PARTICIPANT_PASSWORD",
     "CTF_LOGIN_RATE_LIMIT_MAX",
     "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
     "CTF_LOGIN_SOURCE_RATE_LIMIT_MAX",
@@ -74,11 +73,6 @@ else:
         "config.auth.CTFParticipantBackend",
     ]
 
-# Optional platform-wide CTF bootstrap credential. Fails closed: the default is
-# empty, never an authenticating value. When unset, per-event
-# ``participant_password_override`` is the only accepted source and the
-# participant-account service refuses to provision without one (issue #1665).
-CTF_DEFAULT_PARTICIPANT_PASSWORD = os.environ.get("CTF_DEFAULT_PARTICIPANT_PASSWORD", "")
 CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS = int(os.environ.get("CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS", "24"))
 CTF_LOGIN_RATE_LIMIT_MAX = int(os.environ.get("CTF_LOGIN_RATE_LIMIT_MAX", "5"))
 CTF_LOGIN_SOURCE_RATE_LIMIT_MAX = int(os.environ.get("CTF_LOGIN_SOURCE_RATE_LIMIT_MAX", "100"))

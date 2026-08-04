@@ -121,13 +121,20 @@ def build_raes_range_cell_plan(
         "manage_network": manage_network,
         "subnets": subnet_plans,
         "instances": instance_plans,
-        "firewalls": _all_firewalls(range_id, subnet_plans, raes_plan, resolved_config),
+        "firewalls": _all_firewalls(
+            range_id,
+            subnet_plans,
+            instance_plans,
+            raes_plan,
+            resolved_config,
+        ),
     }
 
 
 def _all_firewalls(
     range_id: int,
     subnet_plans: list[SubnetPlan],
+    instance_plans: list[InstancePlan],
     raes_plan: RaesPlan,
     config: GCERangeCellConfig,
 ) -> list[FirewallPlan]:
@@ -137,7 +144,12 @@ def _all_firewalls(
     (ADR-032-R8): admitted only from the concrete CIDRs of networks in *this* compiled
     range, at a priority strictly above the node's ACL band so authored ACL denies win.
     """
-    firewalls = build_firewall_plan(range_id, subnet_plans, config)
+    firewalls = build_firewall_plan(
+        range_id,
+        subnet_plans,
+        config,
+        instance_plans=instance_plans,
+    )
     cidr_lookup = acl_cidr_lookup(raes_plan.networks)
     # Validate the range-scoped service source set once, up front, only when needed --
     # so a universal or portal-overlapping CIDR fails the whole plan before mutation.

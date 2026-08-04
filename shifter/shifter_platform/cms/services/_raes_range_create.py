@@ -30,6 +30,7 @@ from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from cms.services._range_backend_admission import assert_backend_admitted
 from cms.services._range_create import (
+    LaunchOptions,
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
@@ -39,7 +40,7 @@ from cms.services._range_create import (
     _validate_create_range_scenario,
     _validate_create_range_user,
 )
-from cms.services._range_workspace import resolve_launch_workspace
+from cms.services._range_workspace import admit_workspace_launch, resolve_launch_workspace
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -62,13 +63,6 @@ _NATIVE_DISABLED = "RAES-native provisioning is not enabled"
 _OBJECT_SOURCE_KIND = "object"
 # The only range backend raes_range_ops can realize today (#1354).
 _RAES_REALIZED_BACKEND = "gce"
-
-
-def _is_raes_scenario(scenario: str) -> bool:
-    """Return True if ``scenario`` names a registered RAES package."""
-    from cms.models import RaesPackageSource
-
-    return RaesPackageSource.objects.filter(scenario_id=scenario).exists()
 
 
 def _load_raes_source_or_raise(scenario: str) -> RaesPackageSource:
@@ -277,7 +271,13 @@ def _assert_raes_adapter_supports(backend_admission: BackendAdmission | None) ->
     )
 
 
-def create_raes_native_range(user: User, scenario: str, *, range_source: RangeSource | None = None) -> RangeContext:
+def create_raes_native_range(
+    user: User,
+    scenario: str,
+    *,
+    range_source: RangeSource | None = None,
+    workspace_uuid: str | UUID | None = None,
+) -> RangeContext:
     """Launch a registered RAES package through the native provisioning path.
 
     The generic RAES product facade, permanently live-fire and taking no
@@ -291,7 +291,11 @@ def create_raes_native_range(user: User, scenario: str, *, range_source: RangeSo
     error propagates.
     """
     return _create_raes_native_range_impl(
-        user, scenario, range_source=range_source, instantiation_purpose=InstantiationPurpose.LIVE_FIRE
+        user,
+        scenario,
+        range_source=range_source,
+        instantiation_purpose=InstantiationPurpose.LIVE_FIRE,
+        workspace_uuid=workspace_uuid,
     )
 
 
@@ -301,10 +305,17 @@ def _create_raes_native_range_impl(
     *,
     range_source: RangeSource | None,
     instantiation_purpose: InstantiationPurpose,
+    raes_source_id: str | None = None,
+    workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Shared RAES creation body, parameterized by minted launch authority.
 
-    Not a product facade; see ``_range_create._create_range_impl``.
+    Not a product facade; see ``_range_create._create_range_impl``. ``scenario``
+    is the stable public id used for persistence, correlation, and audit;
+    ``raes_source_id`` (default: ``scenario``) is the internal registered
+    package-source actually loaded, so a routed public id (``polaris``) launches
+    its distinct source (``polaris-raes``) while the range still correlates by the
+    public id (ADR-031-R5/R6).
     """
     from shared.enums import RangeSource
 
@@ -323,7 +334,7 @@ def _create_raes_native_range_impl(
     _assert_raes_adapter_supports(backend_admission)
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
-    source = _load_raes_source_or_raise(scenario)
+    source = _load_raes_source_or_raise(raes_source_id or scenario)
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the RAES RangeInstance (range_spec=None) for the reservation."""
@@ -340,8 +351,20 @@ def _create_raes_native_range_impl(
             maximum_expires_at=lease.maximum_expires_at,
         )
 
-    workspace_id = resolve_launch_workspace(user)
-    request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist, workspace_id)
+    from uuid import uuid4
+
+    request_id = uuid4()
+    workspace_id = resolve_launch_workspace(user, workspace_uuid)
+    admit_workspace_launch(
+        workspace_id=workspace_id,
+        user=user,
+        range_source=range_source,
+        instantiation_purpose=instantiation_purpose,
+        correlation_key=request_id,
+    )
+    _request_id, _cms_request, range_instance = _reserve_active_range_slot(
+        user, range_source, _persist, workspace_id, request_id
+    )
 
     try:
         _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id)
@@ -360,6 +383,7 @@ def create_range_dispatch(
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,
     remote_access_teardown_at: datetime | None = None,
+    workspace_uuid: str | UUID | None = None,
 ) -> RangeContext:
     """Route a launch to the RAES-native or cyberscript path.
 
@@ -369,15 +393,22 @@ def create_range_dispatch(
     scenario is launched through ``create_raes_native_range`` (``agents_by_os`` /
     ``ngfw_enabled`` do not apply to RAES packages); every other scenario stays
     on the cyberscript path.
+
+    ``workspace_uuid`` is the optional public workspace selection (ADR-046-R9),
+    threaded to whichever create path runs. Server-derived callers (e.g. the CTF
+    bridge) omit it, so their ranges bind to the launcher's personal workspace.
     """
     return dispatch_range_launch(
         user,
         scenario,
         agents_by_os,
-        ngfw_enabled=ngfw_enabled,
         range_source=range_source,
-        remote_access_teardown_at=remote_access_teardown_at,
         instantiation_purpose=InstantiationPurpose.LIVE_FIRE,
+        options=LaunchOptions(
+            ngfw_enabled=ngfw_enabled,
+            remote_access_teardown_at=remote_access_teardown_at,
+            workspace_uuid=workspace_uuid,
+        ),
     )
 
 
@@ -386,32 +417,40 @@ def dispatch_range_launch(
     scenario: str,
     agents_by_os: dict[str, int],
     *,
-    ngfw_enabled: bool,
     range_source: RangeSource | None,
-    remote_access_teardown_at: datetime | None,
     instantiation_purpose: InstantiationPurpose,
+    options: LaunchOptions,
 ) -> RangeContext:
     """Shared RAES/cyberscript routing body, parameterized by minted launch authority.
 
     Not a product facade; see ``_range_create._create_range_impl``. Internal to
     the CMS create seam -- ``cms.services`` exports the two facades that wrap it,
-    never this function.
+    never this function. ``options`` bundles the optional launch-shaping inputs
+    (see :class:`cms.services._range_create.LaunchOptions`).
     """
-    if settings.RAES_NATIVE_PROVISIONING_ENABLED and _is_raes_scenario(scenario):
-        if remote_access_teardown_at is not None:
-            raise CMSError("The RAES-native range adapter does not support CTF OpenVPN access")
-        return _create_raes_native_range_impl(
-            user,
-            scenario,
-            range_source=range_source,
-            instantiation_purpose=instantiation_purpose,
-        )
+    from cms.scenarios.cutover import resolve_launch
+
+    if settings.RAES_NATIVE_PROVISIONING_ENABLED:
+        resolution = resolve_launch(scenario)
+        if resolution.is_raes:
+            if resolution.raes_source_id is None:
+                # A routed internal source id is not offered as a direct launch choice.
+                raise CMSError(f"Scenario '{scenario}' is not available for launch")
+            if options.remote_access_teardown_at is not None:
+                raise CMSError("The RAES-native range adapter does not support CTF OpenVPN access")
+            return _create_raes_native_range_impl(
+                user,
+                scenario,
+                range_source=range_source,
+                instantiation_purpose=instantiation_purpose,
+                raes_source_id=resolution.raes_source_id,
+                workspace_uuid=options.workspace_uuid,
+            )
     return _create_range_impl(
         user,
         scenario,
         agents_by_os,
-        ngfw_enabled,
         range_source,
-        remote_access_teardown_at,
         instantiation_purpose,
+        options,
     )

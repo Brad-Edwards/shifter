@@ -27,6 +27,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from botocore.client import BaseClient
 from botocore.config import Config
 from django.conf import settings
 
@@ -69,7 +70,7 @@ def _client_config() -> Config:
     )
 
 
-def _default_client_factory(service: str, *, region: str, credentials: dict[str, str] | None = None) -> Any:
+def _default_client_factory(service: str, *, region: str, credentials: dict[str, str] | None = None) -> BaseClient:
     """Build a boto3 client, optionally from assumed-role credentials."""
     import boto3
 
@@ -148,12 +149,23 @@ class AWSCapacityInventory:
             )
             return ObservationResult(reason_code=CapacityReasonCode.MEASUREMENT_UNAVAILABLE)
 
-        limit = self._read_limit(spec, partition, credentials)
-        if limit is None:
-            return ObservationResult(reason_code=CapacityReasonCode.MEASUREMENT_UNAVAILABLE)
+        return self._observe_with_credentials(spec, partition, credentials)
 
-        usage = self._read_usage(spec, partition, credentials)
-        if usage is None:
+    def _observe_with_credentials(
+        self,
+        spec: CapacityMetricSpec,
+        partition: PartitionRef,
+        credentials: dict[str, str] | None,
+    ) -> ObservationResult:
+        """Read limit then usage; either one missing leaves the metric unmeasured.
+
+        Usage is only read once a limit is in hand: without a limit there is
+        nothing to compare it against, and the CloudWatch call would be spent
+        for a result that can only be ``unavailable``.
+        """
+        limit = self._read_limit(spec, partition, credentials)
+        usage = self._read_usage(spec, partition, credentials) if limit is not None else None
+        if limit is None or usage is None:
             return ObservationResult(reason_code=CapacityReasonCode.MEASUREMENT_UNAVAILABLE)
 
         usage_value, observed_at = usage

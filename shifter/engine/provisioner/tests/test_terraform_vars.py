@@ -70,3 +70,50 @@ class TestBuildRangeTerraformVariablesProviderDispatch:
                 user_id=2,
                 range_spec={"ngfw": False, "subnets": []},
             )
+
+
+class TestBuildTfInstanceSftpRoot:
+    """The AWS SFTP root is operator image metadata, never scenario input (#375)."""
+
+    def test_base_ami_keeps_the_reference_root_per_os(self):
+        import terraform_vars
+
+        assert (
+            terraform_vars._build_tf_instance({"os_type": "kali", "role": "attacker"})["sftp_root_directory"]
+            == "/home/kali"
+        )
+        assert (
+            terraform_vars._build_tf_instance({"os_type": "ubuntu", "role": "victim"})["sftp_root_directory"]
+            == "/home/ubuntu"
+        )
+        # DC keeps the Windows Administrator root.
+        assert (
+            terraform_vars._build_tf_instance({"os_type": "ubuntu", "role": "dc"})["sftp_root_directory"]
+            == "/C:/Users/Administrator/Downloads"
+        )
+
+    def test_scenario_supplied_root_is_ignored(self):
+        """Tenant/scenario input must not widen the guest SFTP root (security)."""
+        import terraform_vars
+
+        built = terraform_vars._build_tf_instance({"os_type": "kali", "role": "attacker", "sftp_root_directory": "/"})
+        assert built["sftp_root_directory"] == "/home/kali"
+
+    def test_ami_key_override_fails_closed_with_no_root(self):
+        """An overridden AMI has no operator root source, so it retains no root.
+
+        Exercised at the resolver (an ``ami_key`` in ``_build_tf_instance`` would
+        also trigger a live SSM AMI lookup, which is out of scope here).
+        """
+        import terraform_vars
+
+        inst = {"os_type": "kali", "role": "attacker", "ami_key": "custom-kali"}
+        assert terraform_vars._resolve_instance_sftp_root(inst, "kali", "attacker") == ""
+
+    def test_unknown_os_has_empty_root(self):
+        import terraform_vars
+
+        assert (
+            terraform_vars._build_tf_instance({"os_type": "amazon-linux", "role": "victim"})["sftp_root_directory"]
+            == ""
+        )

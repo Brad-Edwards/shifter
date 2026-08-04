@@ -15,6 +15,8 @@ Detailed guides for each Shifter feature.
 
 ## Governance
 
+- [Workspace Membership](workspaces) - Manage workspace members and fixed roles
+- [Organization/workspace admin console](org-workspace-admin-console) - Staff console shell for administering organizations and workspaces
 
 ## Advanced Features
 

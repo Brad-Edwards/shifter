@@ -21,6 +21,50 @@ export type PaginatedAdminUserListItemList = components["schemas"]["PaginatedAdm
 export type OrganizerGrantResult = components["schemas"]["OrganizerGrantResult"];
 
 /**
+ * Organization/workspace admin console types (#1938, PLAT-231), re-exported from
+ * the generated OpenAPI schema. The `workspaces.services` projection + DRF
+ * serializer are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. `role`/`capabilities` are advisory display data — the
+ * `/api/v1/workspaces/` endpoints reauthorize every operation.
+ */
+export type PrincipalWorkspaceContext = components["schemas"]["PrincipalWorkspaceContext"];
+export type PaginatedPrincipalWorkspaceContextList =
+  components["schemas"]["PaginatedPrincipalWorkspaceContextList"];
+export type OrganizationRef = components["schemas"]["OrganizationRef"];
+export type WorkspaceRole = components["schemas"]["WorkspaceRoleEnum"];
+
+/**
+ * Organization profile & settings types (#1939, PLAT-232), re-exported from the
+ * generated OpenAPI schema. The `workspaces.services` seam + DRF serializers are
+ * authoritative (ADR-048); regenerate `schema.d.ts` rather than hand-copying.
+ */
+export type OrganizationProfile = components["schemas"]["OrganizationProfile"];
+export type OrganizationProfileUpdate = components["schemas"]["PatchedOrganizationProfileUpdate"];
+export type PaginatedOrganizationProfileList = components["schemas"]["PaginatedOrganizationProfileList"];
+
+/**
+ * Workspace lifecycle types (#1940, PLAT-233), re-exported from the generated
+ * OpenAPI schema. The `workspaces.services` lifecycle seam + DRF serializers are
+ * authoritative; regenerate `schema.d.ts` via `npm run gen:api` rather than
+ * hand-copying. Workspaces are addressed by their public UUID only.
+ */
+export type Workspace = components["schemas"]["Workspace"];
+export type CreateWorkspaceRequest = components["schemas"]["CreateWorkspace"];
+export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferWorkspaceOwnership"];
+
+/**
+ * Workspace membership & roles types (#1941, PLAT-234), re-exported from the
+ * generated OpenAPI schema. The `workspaces.services` membership seam + DRF
+ * serializers are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. A member is addressed by the server-provided
+ * `user_id` the roster projection exposes; the closed `WorkspaceRole` vocabulary
+ * is rendered as data/request values only and never used to reconstruct policy.
+ */
+export type WorkspaceMembership = components["schemas"]["WorkspaceMembership"];
+export type AddWorkspaceMemberRequest = components["schemas"]["AddWorkspaceMember"];
+export type ChangeWorkspaceMemberRoleRequest = components["schemas"]["ChangeWorkspaceMemberRole"];
+
+/**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
  * schema. Only the shapes this foundation chunk (and the pages/live-access
  * chunks that follow it) need are re-exported here; do not hand-copy field
@@ -162,8 +206,10 @@ export type CtfOrganizerParticipantDetail = components["schemas"]["ParticipantDe
 export type CtfAward = components["schemas"]["Award"];
 export type CtfAwardListResponse = components["schemas"]["AwardListResponse"];
 export type CtfParticipantListResponse = components["schemas"]["ParticipantListResponse"];
-export type CtfParticipantInvite = components["schemas"]["ParticipantInvite"];
+export type CtfParticipantAdd = components["schemas"]["ParticipantAdd"];
 export type CtfParticipantImportResult = components["schemas"]["ParticipantImportResult"];
+export type CtfParticipantPasswordRequest = components["schemas"]["ParticipantPasswordRequest"];
+export type CtfParticipantPasswordResult = components["schemas"]["ParticipantPasswordResult"];
 export type CtfParticipantProfile = components["schemas"]["ParticipantProfile"];
 export type CtfProfileUpdateRequest = components["schemas"]["PatchedProfileUpdateRequest"];
 export type CtfEventStaffMember = components["schemas"]["EventStaffMember"];

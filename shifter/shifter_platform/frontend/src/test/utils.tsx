@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, type RenderResult } from "@testing-library/react";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import type { Bootstrap } from "@/api/types";
@@ -50,4 +51,15 @@ export function renderRoute(
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+}
+
+/**
+ * Canonical user-event setup for component tests. `delay: null` removes the
+ * default per-keystroke `setTimeout` yield, which under full-suite CPU
+ * contention can amplify a form-heavy test past vitest's `testTimeout` (see
+ * issue #1878). Use for typing-heavy tests; the default `userEvent.setup()`
+ * remains fine for click-only interactions.
+ */
+export function setupUser(): UserEvent {
+  return userEvent.setup({ delay: null });
 }

@@ -14,8 +14,8 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from workspaces.models import WorkspaceMembership
-from workspaces.roles import role_permits
+from workspaces.models import Workspace, WorkspaceMembership
+from workspaces.roles import WorkspaceRole, role_permits
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -137,3 +137,59 @@ def authorize_bound_workspace(
         raise _deny("no_membership")
     _check_operation(membership.role, operation)
     return _authorization_from(membership)
+
+
+def authorize_launch_workspace_locked(
+    actor: User,
+    workspace_id: int | None,
+    operation: object,
+) -> WorkspaceAuthorization:
+    """Authorize a launch against a bound ``workspace_id`` under the workspace mutex.
+
+    Identical in outcome to :func:`authorize_bound_workspace`, but it first takes
+    ``SELECT ... FOR UPDATE`` on the workspace row -- the same row mutation
+    commands lock in :func:`workspaces.services._memberships._lock_workspace_and_actor`
+    -- before reading the membership. A concurrent removal therefore either has
+    already committed (and this read denies) or blocks behind this lock until the
+    launch's enclosing transaction commits.
+
+    It MUST run inside a ``transaction.atomic()`` block: the row lock is held
+    until that transaction commits, so a caller that reserves the range in the
+    same transaction (ADR-046-R9) cannot have the membership revoked underneath
+    it after this check. A ``None`` binding is denied, never treated as "any
+    workspace".
+
+    Raises:
+        WorkspaceAuthorizationError: The binding is absent or unknown, the actor
+            holds no membership, or the role does not permit the operation.
+    """
+    if workspace_id is None:
+        raise _deny("unbound_workspace")
+
+    if Workspace.objects.select_for_update().filter(pk=workspace_id).first() is None:
+        raise _deny("unknown_workspace")
+    membership = (
+        WorkspaceMembership.objects.select_related("workspace").filter(workspace_id=workspace_id, user=actor).first()
+    )
+    if membership is None:
+        raise _deny("no_membership")
+    _check_operation(membership.role, operation)
+    return _authorization_from(membership)
+
+
+def authorized_workspace_ids(actor: User, operation: object) -> tuple[int, ...]:
+    """Return persisted workspace IDs where ``actor`` may perform ``operation``.
+
+    This is the query-side companion to :func:`authorize_bound_workspace`.
+    Callers use it to omit inaccessible tenant-bound rows from collection
+    surfaces without importing workspace models or role policy.
+    """
+    operation_code = _operation_value(operation)
+    permitted_roles = tuple(role for role in WorkspaceRole.values if role_permits(role, operation_code))
+    if not permitted_roles or getattr(actor, "id", None) is None:
+        return ()
+    return tuple(
+        WorkspaceMembership.objects.filter(user=actor, role__in=permitted_roles)
+        .order_by("workspace_id")
+        .values_list("workspace_id", flat=True)
+    )

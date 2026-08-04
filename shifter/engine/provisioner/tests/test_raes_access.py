@@ -101,60 +101,82 @@ class TestJoin:
 
 class TestFailClosed:
     def test_dangling_target_is_rejected(self):
+        transports = [_transport(target=_DC)]
+        plan = _plan()
         with pytest.raises(RaesAccessError, match="target"):
-            join_participant_access([_transport(target=_DC)], _plan())
+            join_participant_access(transports, plan)
 
     def test_multi_instance_target_is_rejected(self):
         """count > 1 has no authored instance selector; picking #0 invents semantics."""
+        transports = [_transport()]
+        plan = _plan(nodes=(_node(count=2),))
         with pytest.raises(RaesAccessError, match="exactly one instance"):
-            join_participant_access([_transport()], _plan(nodes=(_node(count=2),)))
+            join_participant_access(transports, plan)
 
     def test_unknown_account_is_rejected(self):
+        transports = [_transport(account="provision.account.ghost")]
+        plan = _plan()
         with pytest.raises(RaesAccessError, match="account"):
-            join_participant_access([_transport(account="provision.account.ghost")], _plan())
+            join_participant_access(transports, plan)
 
     def test_account_on_another_node_is_rejected(self):
         plan = _plan(nodes=(_node(), _node(address=_DC, name="dc")), accounts=(_account(target=_DC),))
+        transports = [_transport()]
         with pytest.raises(RaesAccessError, match="target"):
-            join_participant_access([_transport()], plan)
+            join_participant_access(transports, plan)
 
     def test_disabled_account_is_rejected(self):
+        transports = [_transport()]
+        plan = _plan(accounts=(_account(disabled=True),))
         with pytest.raises(RaesAccessError, match="disabled"):
-            join_participant_access([_transport()], _plan(accounts=(_account(disabled=True),)))
+            join_participant_access(transports, plan)
 
     @pytest.mark.parametrize("domain", [{"domain_ref": "corp"}, {"domain_id": "corp.local"}])
     def test_domain_account_is_rejected(self, domain):
         """Directory accounts have no bounded broker contract yet."""
+        transports = [_transport()]
+        plan = _plan(accounts=(_account(**domain),))
         with pytest.raises(RaesAccessError, match="local"):
-            join_participant_access([_transport()], _plan(accounts=(_account(**domain),)))
+            join_participant_access(transports, plan)
 
     def test_ssh_against_password_account_is_rejected(self):
         """Never silently add a second auth method to an authored account."""
+        transports = [_transport()]
+        plan = _plan(accounts=(_account(auth_method="password"),))
         with pytest.raises(RaesAccessError, match="auth method"):
-            join_participant_access([_transport()], _plan(accounts=(_account(auth_method="password"),)))
+            join_participant_access(transports, plan)
 
     def test_rdp_against_publickey_account_is_rejected(self):
+        transports = [_transport(channel="rdp")]
+        plan = _plan()
         with pytest.raises(RaesAccessError, match="auth method"):
-            join_participant_access([_transport(channel="rdp")], _plan())
+            join_participant_access(transports, plan)
 
     def test_duplicate_endpoint_is_rejected(self):
+        transports = [_transport(), _transport()]
+        plan = _plan()
         with pytest.raises(RaesAccessError, match="duplicate"):
-            join_participant_access([_transport(), _transport()], _plan())
+            join_participant_access(transports, plan)
 
     def test_unknown_channel_is_rejected(self):
+        transports = [_transport(channel="vnc")]
+        plan = _plan()
         with pytest.raises(RaesAccessError):
-            join_participant_access([_transport(channel="vnc")], _plan())
+            join_participant_access(transports, plan)
 
     def test_smuggled_transport_field_is_rejected(self):
         """A locator or credential must not reach realization through the sidecar."""
         tampered = {**_transport(), "credential_ref": "projects/p/secrets/s"}
+        plan = _plan()
         with pytest.raises(RaesAccessError):
-            join_participant_access([tampered], _plan())
+            join_participant_access([tampered], plan)
 
     def test_blank_account_address_is_rejected(self):
         """An omitted account must never fall back to the reserved management user."""
+        transports = [_transport(account="")]
+        plan = _plan()
         with pytest.raises(RaesAccessError):
-            join_participant_access([_transport(account="")], _plan())
+            join_participant_access(transports, plan)
 
 
 class TestManagementBoundary:
@@ -173,8 +195,9 @@ class TestManagementBoundary:
             nodes=(_node(os_family="windows"),),
             accounts=(_account(username=RESERVED_MANAGEMENT_LOGIN, auth_method=auth_method),),
         )
+        transports = [_transport(channel=channel)]
         with pytest.raises(RaesAccessError, match="reserved management login"):
-            join_participant_access([_transport(channel=channel)], plan)
+            join_participant_access(transports, plan)
 
     def test_a_differently_named_account_is_still_brokered(self):
         joined = join_participant_access([_transport()], _plan())

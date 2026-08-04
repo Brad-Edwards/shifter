@@ -192,7 +192,6 @@ class TestChallengeListView:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="hash1",
         )
         CTFChallenge.objects.create(
             event=ctf_event_draft,
@@ -201,7 +200,6 @@ class TestChallengeListView:
             category=ChallengeCategory.CRYPTO.value,
             points=200,
             difficulty=ChallengeDifficulty.MEDIUM.value,
-            flag_hash="hash2",
         )
 
         url = reverse("ctf:admin_challenge_list", kwargs={"event_id": ctf_event_draft.pk})
@@ -367,7 +365,6 @@ class TestChallengeEditView:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="hash",
         )
         url = reverse("ctf:admin_challenge_edit", kwargs={"challenge_id": challenge.pk})
         response = authenticated_organizer_client.get(url)

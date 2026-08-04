@@ -776,10 +776,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the event's pages in display order. */
+        /**
+         * @description Return the event's pages in display order (incl. the reserved briefing).
+         *
+         *     The organizer editor sees every page and separates the reserved briefing
+         *     into its own affordance; participant reads exclude it (#1854).
+         */
         get: operations["ctf_events_pages_retrieve"];
         put?: never;
-        /** @description Create a page; slugs are unique per event. */
+        /** @description Create a page through the CTF page service; slugs are unique per event. */
         post: operations["ctf_events_pages_create"];
         delete?: never;
         options?: never;
@@ -1079,6 +1084,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/me/briefing/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the reserved briefing page for the active event, or 404. */
+        get: operations["ctf_me_briefing_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/me/challenges/": {
         parameters: {
             query?: never;
@@ -1137,7 +1159,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the active event's pages in display order. */
+        /**
+         * @description Return the active event's generic pages in display order.
+         *
+         *     The reserved briefing page is excluded here; it owns the dedicated
+         *     briefing surface (``ParticipantBriefingView``) and must not appear a
+         *     second time in the generic event-pages list (#1854).
+         */
         get: operations["ctf_me_pages_retrieve"];
         put?: never;
         post?: never;
@@ -1491,6 +1519,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/participants/{participant_id}/password/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Authorize, rate-limit, issue, and return the password once. */
+        post: operations["ctf_participants_password_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/participants/{participant_id}/range/destroy/": {
         parameters: {
             query?: never;
@@ -1619,7 +1664,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Rate-limit, enforce ownership, then reset and resend the invite. */
+        /**
+         * @deprecated
+         * @description Rate-limit, enforce ownership, then resend non-secret login information.
+         */
         post: operations["ctf_participants_resend_invite_create"];
         delete?: never;
         options?: never;
@@ -2327,6 +2375,271 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List an organization's workspaces or create a new one (org-admin authority). */
+        get: operations["api_v1_workspaces_list"];
+        put?: never;
+        /** @description List an organization's workspaces or create a new one (org-admin authority). */
+        post: operations["api_v1_workspaces_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read a workspace's administrative detail or rename it (workspace role seam). */
+        get: operations["api_v1_workspace_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Read a workspace's administrative detail or rename it (workspace role seam). */
+        patch: operations["api_v1_workspace_rename"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/archive/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Archive a workspace (reversible soft-state marker). */
+        post: operations["api_v1_workspace_archive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/membership/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the caller's own effective membership. */
+        get: operations["api_v1_workspace_membership_self"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/memberships/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the roster or add an existing active account. */
+        get: operations["api_v1_workspace_memberships_list"];
+        put?: never;
+        /** @description Read the roster or add an existing active account. */
+        post: operations["api_v1_workspace_memberships_add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/memberships/{user_id}/remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Remove another workspace member. */
+        post: operations["api_v1_workspace_memberships_remove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/memberships/{user_id}/role/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Change one membership's role. */
+        post: operations["api_v1_workspace_memberships_change_role"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/memberships/leave/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Remove the caller's own workspace membership. */
+        post: operations["api_v1_workspace_memberships_leave"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/restore/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Restore an archived workspace. */
+        post: operations["api_v1_workspace_restore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/transfer/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Transfer workspace ownership to an existing member (owner-only). */
+        post: operations["api_v1_workspace_transfer_ownership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/context/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Read the caller's own organization/workspace context for the admin console.
+         *
+         *     A side-effect-free projection of the caller's existing workspace memberships
+         *     (organization, workspace, role, and role-permitted operations), used by the
+         *     ``/administer`` organization console shell and switcher (ADR-046-R11, #1938).
+         *
+         *     Staff-session only and deliberately **not** token-capable: the bearer-first,
+         *     fail-closed authentication ordering parses an invalid token before session
+         *     fallback, and ``IsStaffSession`` rejects any valid platform token (including
+         *     one owned by a staff user). Staff admission and workspace authority stay
+         *     additive -- staff admits the console, but each child resource endpoint still
+         *     reauthorizes its own workspace operation. The read never creates or repairs
+         *     tenancy state, so a staff caller with no membership receives an empty page.
+         */
+        get: operations["api_v1_workspaces_principal_context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/organizations/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description List the organizations the caller may administer (ADR-048 authority).
+         *
+         *     Session-only, like the profile detail view. The list is the authority-owned
+         *     discovery source for the settings surface: a superuser sees every
+         *     organization, every other actor sees only the organizations it holds an
+         *     ``admin`` membership in, and workspace reachability is never used. A caller
+         *     who administers none receives an empty page.
+         */
+        get: operations["api_v1_organizations_administrable_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/organizations/{organization_uuid}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Read or partially update an organization profile, keyed by public UUID.
+         *
+         *     Session-only and authorized by the ADR-048 organization-admin seam (or a
+         *     Django superuser override) inside ``workspaces.services``; a platform token
+         *     principal is refused by ``IsAuthenticatedSession``. A missing organization,
+         *     an organization outside the actor's authority, and insufficient authority
+         *     all return the same opaque 403 so the endpoint is not a tenant-enumeration
+         *     oracle.
+         */
+        get: operations["api_v1_organization_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * @description Read or partially update an organization profile, keyed by public UUID.
+         *
+         *     Session-only and authorized by the ADR-048 organization-admin seam (or a
+         *     Django superuser override) inside ``workspaces.services``; a platform token
+         *     principal is refused by ``IsAuthenticatedSession``. A missing organization,
+         *     an organization outside the actor's authority, and insufficient authority
+         *     all return the same opaque 403 so the endpoint is not a tenant-enumeration
+         *     oracle.
+         */
+        patch: operations["api_v1_organization_update"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2339,6 +2652,12 @@ export interface components {
          * @enum {string}
          */
         ActorTypeEnum: "user" | "apikey" | "system" | "cognito";
+        /** @description Add-existing-account command. */
+        AddWorkspaceMember: {
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["WorkspaceRoleEnum"];
+        };
         /**
          * @description Read-only detail view: list fields plus role provenance and group names.
          *
@@ -2674,6 +2993,10 @@ export interface components {
             topics?: string[];
             next_challenge?: string | null;
         };
+        /** @description Closed role-change command. */
+        ChangeWorkspaceMemberRole: {
+            role: components["schemas"]["WorkspaceRoleEnum"];
+        };
         /**
          * @description * `ssh` - ssh
          *     * `rdp` - rdp
@@ -2695,6 +3018,17 @@ export interface components {
         ConnectionUrl: {
             uuid: string | null;
             terminal_url: string;
+        };
+        /**
+         * @description Create-workspace command: an organization UUID and a display name.
+         *
+         *     The serializer owns HTTP shape (presence, length, UUID form);
+         *     ``workspaces.services`` owns authority and the name invariants.
+         */
+        CreateWorkspace: {
+            /** Format: uuid */
+            organization_uuid: string;
+            name: string;
         };
         /** @description Validate credential creation requests before schema-specific validation. */
         CredentialCreate: {
@@ -3068,6 +3402,12 @@ export interface components {
          * @enum {string}
          */
         InstancePresentationRoleEnum: "attacker" | "victim" | "dc" | "ngfw";
+        /**
+         * @description * `generated` - generated
+         *     * `set` - set
+         * @enum {string}
+         */
+        KindEnum: "generated" | "set";
         /** @description Validate range launch requests. */
         LaunchRange: {
             agents?: {
@@ -3076,6 +3416,8 @@ export interface components {
             agent_id?: number | null;
             /** @default basic */
             scenario: string;
+            /** Format: uuid */
+            workspace_uuid?: string | null;
         };
         /** @description Response body for ``LaunchRangeView.post``. */
         LaunchRangeResponse: {
@@ -3178,6 +3520,32 @@ export interface components {
         NotificationSendResult: {
             readonly notification_id: string;
             readonly status: string;
+        };
+        /**
+         * @description Read-only organization profile projection (ADR-048, PLAT-232).
+         *
+         *     Emits the public ``uuid`` only; the internal integer primary key never
+         *     appears on the wire.
+         */
+        OrganizationProfile: {
+            /** Format: uuid */
+            readonly uuid: string;
+            readonly name: string;
+            readonly description: string;
+            /** Format: email */
+            readonly support_email: string;
+            /** Format: uri */
+            readonly support_url: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Public organization projection (uuid + display name only). */
+        OrganizationRef: {
+            /** Format: uuid */
+            readonly uuid: string;
+            readonly name: string;
         };
         /** @description Full organizer-facing challenge detail projection. */
         OrganizerChallengeDetail: {
@@ -3298,6 +3666,54 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["AuditLog"][];
         };
+        PaginatedOrganizationProfileList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["OrganizationProfile"][];
+        };
+        PaginatedPrincipalWorkspaceContextList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["PrincipalWorkspaceContext"][];
+        };
+        /**
+         * @description Request body for inviting a single participant.
+         *
+         *     ``name`` and ``email`` are both required and non-blank (mirroring the legacy
+         *     truthiness check). ``email`` is a plain ``CharField`` rather than an
+         *     ``EmailField`` because the service layer owns email validation.
+         */
+        ParticipantAdd: {
+            name: string;
+            email: string;
+        };
+        /** @description Result returned after adding a single participant (provisioned and registered). */
+        ParticipantAddResult: {
+            readonly id: string;
+            readonly name: string;
+            readonly email: string;
+            readonly status: string;
+        };
         /** @description One sent announcement on the participant surface (CTF-803). */
         ParticipantAnnouncement: {
             readonly id: string;
@@ -3395,7 +3811,7 @@ export interface components {
             /** Format: date-time */
             readonly registered_at: string | null;
             /** Format: date-time */
-            readonly invited_at: string | null;
+            readonly login_info_sent_at: string | null;
             /** Format: date-time */
             readonly last_active_at: string | null;
             readonly total_score: number;
@@ -3475,25 +3891,6 @@ export interface components {
             readonly name: string;
             readonly email: string;
         };
-        /**
-         * @description Request body for inviting a single participant.
-         *
-         *     ``name`` and ``email`` are both required and non-blank (mirroring the legacy
-         *     truthiness check). ``email`` is a plain ``CharField`` rather than an
-         *     ``EmailField`` because the service layer owns email validation.
-         */
-        ParticipantInvite: {
-            name: string;
-            email: string;
-        };
-        /** @description Result returned after inviting a single participant. */
-        ParticipantInviteResult: {
-            readonly id: string;
-            readonly name: string;
-            readonly email: string;
-            readonly status: string;
-            readonly invited: boolean;
-        };
         /** @description Envelope returned by the event participant list. */
         ParticipantListResponse: {
             readonly participants: components["schemas"]["ParticipantSummary"][];
@@ -3502,6 +3899,19 @@ export interface components {
         /** @description Optional reason accompanying a ban or disqualification. */
         ParticipantModerationRequest: {
             reason?: string;
+        };
+        /** @description Closed write-only request for generated or supplied issuance. */
+        ParticipantPasswordRequest: {
+            kind: components["schemas"]["KindEnum"];
+            password?: string;
+        };
+        /** @description One-time participant password issuance returned by the mutation only. */
+        ParticipantPasswordResult: {
+            readonly participant_id: string;
+            readonly event_id: string;
+            readonly username: string;
+            readonly password: string;
+            readonly kind: components["schemas"]["KindEnum"];
         };
         /** @description Event-scoped self profile (CTF-610). */
         ParticipantProfile: {
@@ -3571,10 +3981,31 @@ export interface components {
         ParticipantUsernameRequest: {
             username: string;
         };
+        /**
+         * @description Partial-update command for the organization profile (PATCH mask).
+         *
+         *     Every field is optional; an absent field is unchanged and an empty string
+         *     clears an optional field. Unknown fields are rejected rather than ignored,
+         *     and ``uuid``/timestamps are never writable here. The serializer owns HTTP
+         *     shape (lengths, primitive formats); ``workspaces.services`` owns authority
+         *     and persistence invariants.
+         */
+        PatchedOrganizationProfileUpdate: {
+            name?: string;
+            description?: string;
+            /** Format: email */
+            support_email?: string;
+            /** Format: uri */
+            support_url?: string;
+        };
         /** @description Partial self-profile update: any omitted field is left unchanged. */
         PatchedProfileUpdateRequest: {
             name?: string;
             affiliation?: string;
+        };
+        /** @description Rename-workspace command (PATCH mask; a single writable field). */
+        PatchedRenameWorkspace: {
+            name?: string;
         };
         /** @description Metadata (availability/audience) update; both fields optional for PATCH. */
         PatchedScenarioMetadataUpdate: {
@@ -3613,6 +4044,22 @@ export interface components {
         PrerequisiteWrite: {
             /** Format: uuid */
             required_challenge_id: string;
+        };
+        /**
+         * @description One workspace the caller belongs to, with role and advisory capabilities.
+         *
+         *     ``role`` and ``capabilities`` are display/presentation hints derived from the
+         *     central role-to-operation policy; every resource endpoint still reauthorizes
+         *     the operation it performs (ADR-046-R11).
+         */
+        PrincipalWorkspaceContext: {
+            readonly organization: components["schemas"]["OrganizationRef"];
+            /** Format: uuid */
+            readonly workspace_uuid: string;
+            readonly workspace_name: string;
+            readonly is_personal: boolean;
+            readonly role: components["schemas"]["WorkspaceRoleEnum"];
+            readonly capabilities: string[];
         };
         /**
          * @description Public scoreboard read surface.
@@ -3688,6 +4135,18 @@ export interface components {
             enabled: boolean;
             /** @default  */
             notes: string;
+            /** @default  */
+            artifact_id: string;
+            /** @default  */
+            artifact_version: string;
+            /** @default  */
+            artifact_digest: string;
+            /** @default  */
+            media_type: string;
+            /** @default  */
+            integrity_ref: string;
+            /** @default  */
+            provenance_ref: string;
         };
         /**
          * @description Allowlisted read projection shared by the register, list, and disable responses.
@@ -3706,6 +4165,12 @@ export interface components {
             readonly disk_type: string;
             readonly enabled: boolean;
             readonly notes: string;
+            readonly artifact_id: string;
+            readonly artifact_version: string;
+            readonly artifact_digest: string;
+            readonly media_type: string;
+            readonly integrity_ref: string;
+            readonly provenance_ref: string;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
@@ -3957,11 +4422,10 @@ export interface components {
             readonly category: string;
             readonly message: string;
         };
-        /** @description Confirmation returned after resetting and resending a participant invite. */
-        ResendInviteResult: {
+        /** @description Confirmation returned after resending non-secret login information. */
+        ResendLoginInfoResult: {
             readonly success: boolean;
             readonly id: string;
-            readonly invited: boolean;
         };
         /**
          * @description * `pending` - pending
@@ -4154,7 +4618,7 @@ export interface components {
             }[];
         };
         /** @description Result returned after queuing invitation emails for an event. */
-        SendInvitationsResult: {
+        SendLoginInfoResult: {
             readonly success: boolean;
             readonly event_id: string;
             readonly total: number;
@@ -4233,6 +4697,16 @@ export interface components {
         TeamMemberRequest: {
             /** Format: uuid */
             participant_id: string;
+        };
+        /**
+         * @description Transfer-ownership command: the internal id of the new owner account.
+         *
+         *     The new owner is identified by the ``user_id`` already exposed on the
+         *     workspace membership roster projection, so no email or profile lookup is
+         *     performed at this boundary.
+         */
+        TransferWorkspaceOwnership: {
+            user_id: number;
         };
         /** @description Validate agent-upload cancel requests. */
         UploadCancel: {
@@ -4313,6 +4787,46 @@ export interface components {
             secret?: string;
             subscribed_events?: string[];
         };
+        /**
+         * @description Read-only workspace lifecycle projection (#1940, PLAT-233).
+         *
+         *     Emits the public ``uuid`` (of both workspace and owning organization) only;
+         *     internal integer primary keys never appear on the wire.
+         */
+        Workspace: {
+            /** Format: uuid */
+            readonly uuid: string;
+            /** Format: uuid */
+            readonly organization_uuid: string;
+            readonly organization_name: string;
+            readonly name: string;
+            readonly is_personal: boolean;
+            readonly is_archived: boolean;
+            /** Format: date-time */
+            readonly archived_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Minimum public membership projection. */
+        WorkspaceMembership: {
+            readonly membership_id: number;
+            /** Format: uuid */
+            readonly workspace_uuid: string;
+            readonly user_id: number;
+            readonly display_name: string;
+            readonly role: components["schemas"]["WorkspaceRoleEnum"];
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /**
+         * @description * `owner` - Owner
+         *     * `admin` - Admin
+         *     * `member` - Member
+         * @enum {string}
+         */
+        WorkspaceRoleEnum: "owner" | "admin" | "member";
         /** @description Validate a YAML-content request body. */
         YAMLContent: {
             yaml_content: string;
@@ -6584,7 +7098,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SendInvitationsResult"];
+                    "application/json": components["schemas"]["SendLoginInfoResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -6909,9 +7423,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ParticipantInvite"];
-                "application/x-www-form-urlencoded": components["schemas"]["ParticipantInvite"];
-                "multipart/form-data": components["schemas"]["ParticipantInvite"];
+                "application/json": components["schemas"]["ParticipantAdd"];
+                "application/x-www-form-urlencoded": components["schemas"]["ParticipantAdd"];
+                "multipart/form-data": components["schemas"]["ParticipantAdd"];
             };
         };
         responses: {
@@ -6920,7 +7434,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ParticipantInviteResult"];
+                    "application/json": components["schemas"]["ParticipantAddResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -7666,6 +8180,50 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiError"];
                 };
+            };
+        };
+    };
+    ctf_me_briefing_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventPage"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The active event has no briefing; the client falls back to generic help. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -8805,6 +9363,51 @@ export interface operations {
             };
         };
     };
+    ctf_participants_password_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                participant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantPasswordRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ParticipantPasswordRequest"];
+                "multipart/form-data": components["schemas"]["ParticipantPasswordRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantPasswordResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_participants_range_destroy_create: {
         parameters: {
             query?: never;
@@ -9100,7 +9703,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ResendInviteResult"];
+                    "application/json": components["schemas"]["ResendLoginInfoResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -10994,6 +11597,847 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspaces_list: {
+        parameters: {
+            query: {
+                /** @description Include archived workspaces (default false: active only). */
+                include_archived?: boolean;
+                /** @description Public UUID of the organization to scope the list to. */
+                organization: string;
+                /** @description Case-insensitive workspace-name substring filter. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspaces_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkspace"];
+                "application/x-www-form-urlencoded": components["schemas"]["CreateWorkspace"];
+                "multipart/form-data": components["schemas"]["CreateWorkspace"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_rename: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedRenameWorkspace"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedRenameWorkspace"];
+                "multipart/form-data": components["schemas"]["PatchedRenameWorkspace"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_membership_self: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMembership"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_memberships_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMembership"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_memberships_add: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddWorkspaceMember"];
+                "application/x-www-form-urlencoded": components["schemas"]["AddWorkspaceMember"];
+                "multipart/form-data": components["schemas"]["AddWorkspaceMember"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMembership"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_memberships_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMembership"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_memberships_change_role: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeWorkspaceMemberRole"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChangeWorkspaceMemberRole"];
+                "multipart/form-data": components["schemas"]["ChangeWorkspaceMemberRole"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMembership"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_memberships_leave: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMembership"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_restore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_transfer_ownership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferWorkspaceOwnership"];
+                "application/x-www-form-urlencoded": components["schemas"]["TransferWorkspaceOwnership"];
+                "multipart/form-data": components["schemas"]["TransferWorkspaceOwnership"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspaces_principal_context: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedPrincipalWorkspaceContextList"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_organizations_administrable_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedOrganizationProfileList"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_organization_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationProfile"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_organization_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedOrganizationProfileUpdate"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedOrganizationProfileUpdate"];
+                "multipart/form-data": components["schemas"]["PatchedOrganizationProfileUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationProfile"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

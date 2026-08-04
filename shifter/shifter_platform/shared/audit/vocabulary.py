@@ -23,6 +23,7 @@ class AuditAction(models.TextChoices):
     CREATE = "create", "Create"
     UPDATE = "update", "Update"
     DELETE = "delete", "Delete"
+    ARCHIVE = "archive", "Archive"
     RESTORE = "restore", "Restore"
     CLOSE = "close", "Close"
     REOPEN = "reopen", "Reopen"
@@ -65,6 +66,9 @@ class AuditEntityType(models.TextChoices):
     EXPERIMENT = "experiment", "Experiment"
     SCENARIO = "scenario", "Scenario"
     SCRIPT = "script", "Script"
+    WORKSPACE_MEMBERSHIP = "workspace_membership", "Workspace Membership"
+    WORKSPACE = "workspace", "Workspace"
+    ORGANIZATION = "organization", "Organization"
 
 
 class AuditActorType(models.TextChoices):

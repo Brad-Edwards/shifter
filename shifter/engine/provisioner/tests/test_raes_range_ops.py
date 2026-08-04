@@ -74,6 +74,7 @@ def _projection(**overrides) -> RaesOperationInput:
         "plan": _serialized_plan(),
         "delivery_bindings": (_BINDING,),
         "access_bindings": (),
+        "artifact_bindings": (),
         "range_backend": "gce",
         "instantiation_purpose": "live_fire",
         "legacy_range_id": 7,
@@ -178,6 +179,51 @@ class TestProvision:
                 "ssh_key_secret_arn": "projects/p/secrets/ssh",
             }
         ]
+
+    def test_members_carry_declared_sftp_root_directory(self, patched):
+        """A realized instance's SFTP root reaches the member projection (#375)."""
+        patched.apply.return_value = {
+            "composition_verified_addresses": [],
+            "instances": [
+                {
+                    "uuid": "node.web#0",
+                    "name": "web",
+                    "os": "kali",
+                    "private_ip": "10.9.0.10",
+                    "instance_id": "shifter-r-7-lan-web",
+                    "subnet_name": "lan",
+                    "participant_access_channels": ["ssh"],
+                    "participant_access_usernames": {"ssh": "analyst"},
+                    "ssh_key_secret_arn": "projects/p/secrets/ssh",
+                    "sftp_root_directory": "/home/kali",
+                }
+            ],
+        }
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        members = _payload_for(patched, ResultStep.RAES_TERMINAL_READY)["members"]
+        assert members[0]["sftp_root_directory"] == "/home/kali"
+
+    def test_members_omit_sftp_root_directory_when_absent(self, patched):
+        """No declared root emits no key rather than an empty guess (#375)."""
+        patched.apply.return_value = {
+            "composition_verified_addresses": [],
+            "instances": [
+                {
+                    "uuid": "node.web#0",
+                    "name": "web",
+                    "os": "linux",
+                    "private_ip": "10.9.0.10",
+                    "instance_id": "shifter-r-7-lan-web",
+                    "subnet_name": "lan",
+                    "participant_access_channels": ["ssh"],
+                    "participant_access_usernames": {"ssh": "analyst"},
+                    "ssh_key_secret_arn": "projects/p/secrets/ssh",
+                }
+            ],
+        }
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        members = _payload_for(patched, ResultStep.RAES_TERMINAL_READY)["members"]
+        assert "sftp_root_directory" not in members[0]
 
     def test_members_never_carry_the_management_secret_reference(self, patched):
         """The provisioner-managed host key secret is not a participant credential."""
@@ -452,3 +498,35 @@ class TestRegistryResolver:
         raes_range_ops._registry_resolver(_projection())(_node(RaesPlanImage(name="nope")))
 
         resolve.assert_called_once_with(_node(RaesPlanImage(name="nope")), [])
+
+    def test_resolver_consumes_a_fenced_artifact_binding(self, monkeypatch):
+        # A generation-fenced binding for the node realizes its image verbatim and
+        # never touches the legacy registry-projection resolver (#1580, ADR-034-R8).
+        from shared.raes.artifact_binding import ArtifactBinding
+
+        binding = ArtifactBinding(
+            target="node.web",
+            requirement_id="r",
+            artifact_id="img-web",
+            version="1.0.0",
+            digest="sha256:" + "a" * 64,
+            media_type="application/vnd.raes.image",
+            mechanism="exact-artifact",
+            acquisition="local-lookup",
+            timing="backend-preparation",
+            image_ref="projects/x/global/images/fenced",
+            machine_type="e2-medium",
+        )
+        legacy_candidate = {"source_version": None, "image_ref": "projects/x/global/images/legacy"}
+        projection = _projection(
+            artifact_bindings=(binding,),
+            _image_candidates={"gce:ubuntu": (legacy_candidate,)},
+        )
+        legacy = MagicMock()
+        monkeypatch.setattr(raes_range_ops, "resolve_gce_image", legacy)
+
+        profile = raes_range_ops._registry_resolver(projection)(_node(RaesPlanImage(name="ubuntu")))
+
+        legacy.assert_not_called()
+        assert profile.source_image == "projects/x/global/images/fenced"
+        assert profile.machine_type == "e2-medium"

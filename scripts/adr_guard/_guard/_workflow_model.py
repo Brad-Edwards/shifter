@@ -1,10 +1,43 @@
-"""Workflow-as-data model (_dw_*): safe YAML load, constrained expr eval, path filters."""
+"""Workflow-as-data model (_dw_*): safe YAML load, constrained expr eval, path filters.
+
+The constrained ``if:`` expression evaluator lives in ``_workflow_model_expr``
+(split out to keep each module under the file-length limit) and is re-exported
+here, so this module remains the single import site for the whole model.
+"""
 from __future__ import annotations
 
 import os
 import re
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
+
+from ._workflow_model_expr import (
+    _DW_CANONICAL_REPOSITORY,
+    _DW_EXPR_TOKEN,
+    _DW_EXPR_WRAPPER,
+    _DW_RESULT_REF,
+    _DwExprError,
+    _DwParser,
+    _DwScenario,
+    _DwShapeError,
+    _dw_call_function,
+    _dw_evaluate_if,
+    _dw_evaluate_scenario,
+    _dw_head_repo_full_name,
+    _dw_job_denied_on_pull_request,
+    _dw_job_denied_when_upstream,
+    _dw_job_runs_when_eligible,
+    _dw_loose_eq,
+    _dw_normalize_expr,
+    _dw_resolve_github,
+    _dw_resolve_needs,
+    _dw_resolve_operand,
+    _dw_result_guarded_upstreams,
+    _dw_tokenize,
+    _dw_truthy,
+    _dw_unwrap_expr,
+)
 
 
 _CORE_WORKFLOW_PATH = ".github/workflows/_core.yml"
@@ -33,43 +66,20 @@ _DW_REUSABLE_WORKFLOW_PATHS = (
     _PLATFORM_WORKFLOW_PATH,
     _GCP_DEV_WORKFLOW_PATH,
 )
-_DW_RESULT_REF = re.compile(r"needs\.([A-Za-z0-9_-]+)\.result")
-_DW_EXPR_TOKEN = re.compile(
-    r"""\s+
-        |(?P<str>'[^']*')
-        |(?P<op>==|!=|&&|\|\||!|\(|\))
-        |(?P<ident>[A-Za-z0-9_.\-]+)""",
-    re.VERBOSE,
-)
-# `if:` accepts a condition with or without the `${{ }}` wrapper; the workflows
-# here use both styles, so the evaluator normalizes to the bare expression.
-_DW_EXPR_WRAPPER = re.compile(r"^\$\{\{(?P<body>.*)\}\}$", re.DOTALL)
-# The one repository whose runs are the canonical CI. Steps that must not
-# silently no-op compare `github.repository` against this literal rather than
-# testing whether their configuration variables happen to be set (ADR-003-R7).
-_DW_CANONICAL_REPOSITORY = "Brad-Edwards/shifter"
+
+# The top-level deploy workflow, used as the error-message name for the jobs and
+# steps this model reads out of it.
+_DW_DEPLOY_WORKFLOW_NAME = "deploy.yml"
 
 
-class _DwShapeError(Exception):
-    """A deploy workflow is missing a structurally-required key.
-
-    Raised instead of returning a default so the model fails closed: an absent
-    job, filter, ``needs``, or ``if`` block is an error, never a silent
-    "not applicable".
-    """
-
-
-class _DwExprError(_DwShapeError):
-    """An ``if:`` expression used a construct the constrained evaluator rejects."""
-
-
-def _dw_load_workflow(repo_root: Path, rel: str) -> dict:
+def _dw_load_workflow(repo_root: Path, rel: str) -> dict[str, object]:
     """Load a workflow as a dict, normalizing the YAML 1.1 ``on:`` key.
 
     PyYAML resolves the bare word ``on`` to the Python boolean ``True``; map it
     back to the string ``"on"`` so callers can read triggers normally.
     """
-    import yaml  # local import: keeps PyYAML optional for non-deploy checks
+    # local import: keeps PyYAML optional for non-deploy checks
+    import yaml
 
     path = repo_root / rel
     if not path.is_file():
@@ -77,42 +87,35 @@ def _dw_load_workflow(repo_root: Path, rel: str) -> dict:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise _DwShapeError(f"{rel}: top-level YAML is not a mapping")
-    if True in data:  # bare `on:` parsed as boolean True under YAML 1.1
+    # bare `on:` parsed as boolean True under YAML 1.1
+    if True in data:
         data["on"] = data.pop(True)
     return data
 
 
-def _dw_jobs(wf: dict, name: str = "<workflow>") -> dict:
+def _dw_jobs(wf: dict[str, object], name: str = "<workflow>") -> dict[str, dict[str, object]]:
+    """Return the workflow's ``jobs`` mapping, failing closed when it is absent."""
     js = wf.get("jobs")
     if not isinstance(js, dict) or not js:
         raise _DwShapeError(f"{name}: missing or empty 'jobs' mapping")
     return js
 
 
-def _dw_get_job(wf: dict, job_id: str, name: str = "<workflow>") -> dict:
+def _dw_get_job(wf: dict[str, object], job_id: str, name: str = "<workflow>") -> dict[str, object]:
+    """Return one job by id, failing closed when the workflow has no such job."""
     js = _dw_jobs(wf, name)
     if job_id not in js:
         raise _DwShapeError(f"{name}: job '{job_id}' not found")
     return js[job_id]
 
 
-def _dw_normalize_expr(expr) -> str:
-    """Collapse whitespace (incl. block-scalar newlines) to single spaces."""
-    return " ".join(str(expr or "").split())
-
-
-def _dw_unwrap_expr(expr: str) -> str:
-    """Strip a single enclosing ``${{ }}`` so the tokenizer sees a bare
-    expression. Anything else is returned unchanged."""
-    match = _DW_EXPR_WRAPPER.match(expr)
-    return match.group("body").strip() if match else expr
-
-
-def _dw_job_if(job: dict) -> str:
+def _dw_job_if(job: dict[str, object]) -> str:
+    """Return the job's normalized ``if:`` expression, or ``""`` when it has none."""
     return _dw_normalize_expr(job.get("if", ""))
 
 
-def _dw_runs_on(job: dict):
+def _dw_runs_on(job: dict[str, object]) -> str | list[str] | None:
+    """Return the job's ``runs-on`` value: a label, a list of labels, or None."""
     return job.get("runs-on")
 
 
@@ -126,7 +129,8 @@ def _dw_runs_on(job: dict):
 _SELF_HOSTED_CLASS_LABELS = frozenset({"self-hosted", "gcp-dev"})
 
 
-def _dw_is_self_hosted(job: dict) -> bool:
+def _dw_is_self_hosted(job: dict[str, object]) -> bool:
+    """True iff the job selects a runner label treated as self-hosted-class."""
     ro = _dw_runs_on(job)
     if isinstance(ro, str):
         return ro in _SELF_HOSTED_CLASS_LABELS
@@ -135,218 +139,15 @@ def _dw_is_self_hosted(job: dict) -> bool:
     return False
 
 
-def _dw_result_guarded_upstreams(if_expr) -> set:
-    """Upstream job ids referenced as ``needs.<job>.result`` in an ``if:``."""
-    return set(_DW_RESULT_REF.findall(_dw_normalize_expr(if_expr)))
-
-
-# --- Constrained GitHub Actions `if:` expression evaluator ----------------- #
-# A substring check cannot PROVE fail-closed gating: an expression that also
-# ORs in `failure`/`cancelled` still contains the `success || skipped` text,
-# and a correct gate written a different way would be wrongly rejected. So the
-# model parses the `if:` and evaluates the denied scenarios (`failure`,
-# `cancelled`, `pull_request`) over the finite result/event vocabulary, then
-# asserts the job does not run. Supports only the operators these workflows
-# use - `==`, `!=`, `&&`, `||`, `!`, parentheses, string literals, and the
-# `always()` status function; operands are `needs.<job>.result`,
-# `needs.<job>.outputs.<key>`, `inputs.<key>`, `vars.<name>`, and
-# `github.<field>`.
-def _dw_truthy(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value != ""
-    return bool(value)
-
-
-def _dw_loose_eq(left, right) -> bool:
-    # GitHub Actions `==` compares strings case-insensitively.
-    if isinstance(left, str) and isinstance(right, str):
-        return left.lower() == right.lower()
-    return left == right
-
-
-def _dw_call_function(name: str) -> bool:
-    if name == "always":
-        return True
-    raise _DwExprError(f"unsupported function in if-expression: {name}()")
-
-
-def _dw_tokenize(expr: str) -> list:
-    tokens: list = []
-    pos, end = 0, len(expr)
-    while pos < end:
-        match = _DW_EXPR_TOKEN.match(expr, pos)
-        if not match or match.end() == pos:
-            raise _DwExprError(f"cannot tokenize: {expr[pos : pos + 20]!r}")
-        pos = match.end()
-        kind = match.lastgroup
-        if kind == "str":
-            tokens.append(("str", match.group("str")[1:-1]))
-        elif kind == "op":
-            tokens.append(("op", match.group("op")))
-        elif kind == "ident":
-            tokens.append(("ident", match.group("ident")))
-        # whitespace (no named group) is skipped
-    tokens.append(("end", ""))
-    return tokens
-
-
-class _DwParser:
-    """Recursive-descent evaluator: `!` > comparison > `&&` > `||`."""
-
-    def __init__(self, tokens, resolve):
-        self._toks = tokens
-        self._i = 0
-        self._resolve = resolve
-
-    def _peek(self):
-        return self._toks[self._i]
-
-    def _advance(self):
-        tok = self._toks[self._i]
-        self._i += 1
-        return tok
-
-    def _expect(self, op):
-        if self._advance() != ("op", op):
-            raise _DwExprError(f"expected {op!r}")
-
-    def evaluate(self):
-        value = self._parse_or()
-        if self._peek()[0] != "end":
-            raise _DwExprError(f"trailing tokens: {self._toks[self._i :]!r}")
-        return value
-
-    def _parse_or(self):
-        value = self._parse_and()
-        while self._peek() == ("op", "||"):
-            self._advance()
-            value = _dw_truthy(value) | _dw_truthy(self._parse_and())
-        return value
-
-    def _parse_and(self):
-        value = self._parse_not()
-        while self._peek() == ("op", "&&"):
-            self._advance()
-            value = _dw_truthy(value) & _dw_truthy(self._parse_not())
-        return value
-
-    def _parse_not(self):
-        if self._peek() == ("op", "!"):
-            self._advance()
-            return not _dw_truthy(self._parse_not())
-        return self._parse_cmp()
-
-    def _parse_cmp(self):
-        left = self._parse_primary()
-        token = self._peek()
-        if token in (("op", "=="), ("op", "!=")):
-            self._advance()
-            equal = _dw_loose_eq(left, self._parse_primary())
-            return equal if token == ("op", "==") else not equal
-        return left
-
-    def _parse_primary(self):
-        token = self._advance()
-        if token == ("op", "("):
-            value = self._parse_or()
-            self._expect(")")
-            return value
-        if token[0] == "str":
-            return token[1]
-        if token[0] == "ident":
-            if self._peek() == ("op", "("):
-                self._advance()
-                self._expect(")")
-                return _dw_call_function(token[1])
-            return self._resolve(token[1])
-        raise _DwExprError(f"unexpected token {token!r}")
-
-
-def _dw_evaluate_if(
-    if_expr,
-    *,
-    results=None,
-    event_name="workflow_dispatch",
-    ref="refs/heads/aws-dev",
-    base_ref="",
-    repository=_DW_CANONICAL_REPOSITORY,
-    inputs_true=True,
-    vars_set=True,
-    fork_pr=False,
-) -> bool:
-    """Evaluate a job or step ``if:`` against a permissive context; return
-    whether it would run. Unspecified upstream results default to ``success``,
-    every ``needs.*.outputs.*`` to ``true``, every ``inputs.*`` to
-    ``inputs_true``, and every ``vars.*`` to a non-empty value when
-    ``vars_set`` - so the only thing that flips the outcome is the scenario
-    under test (a failed upstream, a pull_request event, a fork's
-    ``repository``, an unset repository variable)."""
-    expr = _dw_unwrap_expr(_dw_normalize_expr(if_expr))
-    if not expr:
-        return True  # no `if:` at all is always eligible
-    results = results or {}
-
-    def resolve(path):
-        parts = path.split(".")
-        head = parts[0]
-        if head == "needs" and len(parts) >= 3:
-            job, field = parts[1], parts[2]
-            if field == "result":
-                return results.get(job, "success")
-            if field == "outputs":
-                return "true"
-            return "success"
-        if head == "inputs":
-            return inputs_true
-        if head == "vars":
-            return "true" if vars_set else ""
-        if path in ("true", "false"):
-            return path == "true"
-        if head == "github":
-            # Fork-origin PRs run in the base repository's context, so
-            # `github.repository` alone cannot distinguish them.
-            if path == "github.event.pull_request.head.repo.fork":
-                return fork_pr
-            field = parts[1] if len(parts) > 1 else ""
-            return {
-                "event_name": event_name,
-                "ref": ref,
-                "base_ref": base_ref,
-                "repository": repository,
-            }.get(field, "")
-        raise _DwExprError(f"unresolvable operand: {path}")
-
-    return _dw_truthy(_DwParser(_dw_tokenize(expr), resolve).evaluate())
-
-
-def _dw_job_denied_when_upstream(if_expr, upstream, result) -> bool:
-    """True iff the job does NOT run when ``upstream`` has ``result`` (every
-    other condition permissive). Proves a failed/cancelled upstream blocks the
-    deploy job (#781)."""
-    return not _dw_evaluate_if(if_expr, results={upstream: result})
-
-
-def _dw_job_denied_on_pull_request(if_expr) -> bool:
-    """True iff the job does NOT run on a ``pull_request`` event (every other
-    condition permissive). Proves PR events cannot reach the job (ADR-003-R5)."""
-    return not _dw_evaluate_if(if_expr, event_name="pull_request")
-
-
-def _dw_job_runs_when_eligible(if_expr) -> bool:
-    """Sanity: the permissive context actually runs the job, so a denied-case
-    assertion is meaningful and not vacuously satisfied."""
-    return _dw_evaluate_if(if_expr)
-
-
-def _dw_upstream_gating_violations(wf, deploy_job_ids):
+def _dw_upstream_gating_violations(
+    wf: dict[str, object], deploy_job_ids: Iterable[str]
+) -> list[tuple[str, str, str]]:
     """Return ``[(job_id, upstream, result), ...]`` for deploy jobs that still
     RUN when a result-gated upstream is ``failure`` or ``cancelled`` (fail-open,
     the #781 class). Empty list means every deploy job fails closed."""
-    found = []
+    found: list[tuple[str, str, str]] = []
     for jid in deploy_job_ids:
-        expr = _dw_job_if(_dw_get_job(wf, jid, "deploy.yml"))
+        expr = _dw_job_if(_dw_get_job(wf, jid, _DW_DEPLOY_WORKFLOW_NAME))
         for upstream in sorted(_dw_result_guarded_upstreams(expr)):
             for bad in ("failure", "cancelled"):
                 if not _dw_job_denied_when_upstream(expr, upstream, bad):
@@ -355,7 +156,12 @@ def _dw_upstream_gating_violations(wf, deploy_job_ids):
 
 
 # --- dorny/paths-filter change-filter coverage (#913 / R-A2) --------------- #
-def _dw_parse_paths_filter(wf, job_id, step_id, name="deploy.yml") -> dict:
+def _dw_parse_paths_filter(
+    wf: dict[str, object],
+    job_id: str,
+    step_id: str,
+    name: str = _DW_DEPLOY_WORKFLOW_NAME,
+) -> dict[str, list[str]]:
     """Return ``{filter_name: [patterns]}`` from a dorny/paths-filter step.
 
     The action's ``filters`` input is itself a YAML document (a block scalar in
@@ -387,7 +193,8 @@ def _dw_glob_to_regex(pattern: str) -> str:
             if pattern[i : i + 2] == "**":
                 j = i + 2
                 if pattern[j : j + 1] == "/":
-                    out.append("(?:.*/)?")  # `**/` => zero or more directories
+                    # `**/` => zero or more directories
+                    out.append("(?:.*/)?")
                     i = j + 1
                 else:
                     out.append(".*")
@@ -402,7 +209,7 @@ def _dw_glob_to_regex(pattern: str) -> str:
     return "".join(out)
 
 
-def _dw_path_matches_any(path: str, patterns) -> bool:
+def _dw_path_matches_any(path: str, patterns: Iterable[str]) -> bool:
     """True iff ``path`` matches any positive pattern. The deploy filters use no
     ``!`` negation and the default ``some`` quantifier, so positive-pattern
     membership is the full contract for them."""
@@ -415,7 +222,9 @@ def _dw_path_matches_any(path: str, patterns) -> bool:
 
 
 # --- branch/event routing (#892) ------------------------------------------- #
-def _dw_extract_set_environment_script(wf, name="deploy.yml") -> str:
+def _dw_extract_set_environment_script(
+    wf: dict[str, object], name: str = _DW_DEPLOY_WORKFLOW_NAME
+) -> str:
     """Return the ``run`` body of the ``changes`` job's ``Set environment`` step."""
     job = _dw_get_job(wf, "changes", name)
     for step in job.get("steps", []) or []:
@@ -427,7 +236,9 @@ def _dw_extract_set_environment_script(wf, name="deploy.yml") -> str:
     raise _DwShapeError(f"{name}: no 'Set environment' step in 'changes' job")
 
 
-def _dw_evaluate_env(script, event_name, ref="", base_ref="") -> dict:
+def _dw_evaluate_env(
+    script: str, event_name: str, ref: str = "", base_ref: str = ""
+) -> dict[str, str]:
     """Execute the workflow's own ``Set environment`` bash and return its
     ``GITHUB_OUTPUT`` key/value pairs. Only literal event/branch strings reach
     bash - no secrets, no shell trace - matching GitHub's default
@@ -464,3 +275,53 @@ def _dw_evaluate_env(script, event_name, ref="", base_ref="") -> dict:
                 key, val = line.split("=", 1)
                 outputs[key] = val
     return outputs
+
+
+# Public surface of the workflow-as-data model, including the names re-exported
+# from ``_workflow_model_expr`` so importers see one module.
+__all__ = [
+    "_CORE_WORKFLOW_PATH",
+    "_DW_CANONICAL_REPOSITORY",
+    "_DW_DEPLOY_WORKFLOW_NAME",
+    "_DW_EXPR_TOKEN",
+    "_DW_EXPR_WRAPPER",
+    "_DW_RESULT_REF",
+    "_DW_REUSABLE_WORKFLOW_PATHS",
+    "_DwExprError",
+    "_DwParser",
+    "_DwScenario",
+    "_DwShapeError",
+    "_ENGINE_WORKFLOW_PATH",
+    "_GCP_DEV_WORKFLOW_PATH",
+    "_PLATFORM_WORKFLOW_PATH",
+    "_RANGE_WORKFLOW_PATH",
+    "_SELF_HOSTED_CLASS_LABELS",
+    "_dw_call_function",
+    "_dw_evaluate_env",
+    "_dw_evaluate_if",
+    "_dw_evaluate_scenario",
+    "_dw_extract_set_environment_script",
+    "_dw_get_job",
+    "_dw_glob_to_regex",
+    "_dw_head_repo_full_name",
+    "_dw_is_self_hosted",
+    "_dw_job_denied_on_pull_request",
+    "_dw_job_denied_when_upstream",
+    "_dw_job_if",
+    "_dw_job_runs_when_eligible",
+    "_dw_jobs",
+    "_dw_load_workflow",
+    "_dw_loose_eq",
+    "_dw_normalize_expr",
+    "_dw_parse_paths_filter",
+    "_dw_path_matches_any",
+    "_dw_resolve_github",
+    "_dw_resolve_needs",
+    "_dw_resolve_operand",
+    "_dw_result_guarded_upstreams",
+    "_dw_runs_on",
+    "_dw_tokenize",
+    "_dw_truthy",
+    "_dw_unwrap_expr",
+    "_dw_upstream_gating_violations",
+]

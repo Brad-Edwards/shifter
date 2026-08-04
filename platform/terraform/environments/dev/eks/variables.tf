@@ -70,6 +70,18 @@ variable "runtime_env" {
   }
 }
 
+variable "ctf_content_bucket_arn" {
+  description = "Optional private S3 bucket ARN holding digest-pinned native CTF content bundles."
+  type        = string
+  default     = ""
+}
+
+variable "ctf_content_prefix" {
+  description = "Contained key prefix holding native CTF content bundles."
+  type        = string
+  default     = "ctf/content-bundles/"
+}
+
 variable "vpc_cidr" {
   description = "EKS-owned VPC CIDR."
   type        = string

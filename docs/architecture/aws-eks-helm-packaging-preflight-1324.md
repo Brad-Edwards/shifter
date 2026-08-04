@@ -188,6 +188,49 @@ BackendConfig, and GCE ingress behavior. An empty source list, disabled policy,
 or absent certificate must not silently widen access or select a development
 edge.
 
+#### Narrow edge projection contract (#1823)
+
+Issue #1823 is a projection change inside the existing chart boundary, not a
+new edge abstraction. The standard `Ingress`, `edge.ingress` values,
+`services.*.annotations`, and the existing GCP capability gates are the
+incumbent seams. Templates must not branch on `provider.name`, and the change
+must not add an `awsAlb` values schema, a second ingress template, or AWS
+certificate/WAF Kubernetes objects. ACM and WAF remain Terraform-owned; the AWS
+Load Balancer Controller associates them from the rendered Ingress annotations.
+
+`scripts/bootstrap/aws_eks.py:render_aws_values` is the production materializer.
+It derives the hostname, ACM ARN, WAF ARN, source CIDRs, and workload-role ARNs
+from validated root config and Terraform outputs. The checked-in
+`values-aws-dev.yaml` is a non-operational render scaffold with placeholders,
+not a competing production configuration. Where the current values surface
+carries ACM/WAF identity both as explicit `edge` fields and as controller
+annotations, the renderer and contract tests must keep those representations
+equal; do not introduce a third copy or let operators author the production
+copies independently.
+
+Keep the following layer distinctions explicit:
+
+- `identity.serviceAccountRoleArns` is the IRSA projection consumed by
+  `serviceaccounts.yaml`; do not duplicate those role ARNs in the raw
+  `serviceAccounts.*.annotations` maps.
+- `network.ingressSourceCidrs` governs pod-layer NetworkPolicy and is not, by
+  itself, an ALB listener/security-group source restriction. Any ALB
+  `inbound-cidrs` projection must come from the same validated Terraform output
+  rather than a second allowlist.
+- Portal and Guacamole target groups have different canonical health paths and
+  success behavior (`/health/` with `200`; `/guacamole/` with `200,302`) in the
+  existing AWS ALB modules. Reuse the existing per-Service annotation seam so
+  one ingress-wide default does not make either target unhealthy. Preserve the
+  established Guacamole stickiness and connection-drain posture rather than
+  treating path routing as the whole edge contract.
+
+GCP compatibility is a byte contract, not only a resource-presence assertion.
+Use one pinned Helm version, release name, and command shape to freeze the
+`values-gcp-dev.yaml` and `values-gcp-prod.yaml` renders before changing shared
+templates; both rendered byte streams must remain unchanged. Every checked-in
+provider scaffold and generated AWS projection must also pass the chart schema,
+Helm lint/template, ADR-006 render guards, kube-linter, and strict kubeconform.
+
 ### Image and secret handling
 
 Every deployed image is a fully qualified `repository@sha256:<digest>`.

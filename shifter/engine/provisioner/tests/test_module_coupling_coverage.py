@@ -449,7 +449,7 @@ def test_gcp_ngfw_operation_marks_failed_on_power_error(monkeypatch: pytest.Monk
     monkeypatch.setattr("ngfw_runtime_ops.update_instance_state", update_state)
 
     with pytest.raises(RuntimeError, match="power failed"):
-        _run_gcp_ngfw_operation("start", "ngfw-req", "inst-uuid", {"cloud_provider": "gcp"})
+        _run_gcp_ngfw_operation("start", "ngfw-req", {"cloud_provider": "gcp"})
 
     failure = update_state.call_args_list[-1]
     assert failure.args[:2] == ("ngfw-req", "failed")
@@ -478,7 +478,7 @@ def test_aws_ngfw_operation_marks_failed_when_plan_fails(monkeypatch: pytest.Mon
     monkeypatch.setattr("ngfw_runtime_ops.update_instance_state", update_state)
 
     with pytest.raises(RuntimeError, match="Operation stop failed"):
-        _run_aws_ngfw_operation("stop", "ngfw-req", "inst-uuid", "i-ngfw")
+        _run_aws_ngfw_operation("stop", "ngfw-req", "i-ngfw")
 
     failure = update_state.call_args_list[-1]
     assert failure.args[:2] == ("ngfw-req", "failed")

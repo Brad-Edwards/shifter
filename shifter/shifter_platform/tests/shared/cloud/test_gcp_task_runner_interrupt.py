@@ -14,8 +14,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from shared.cloud.exceptions import CloudTaskError
-from shared.cloud.gcp.base import build_idempotent_job_name
 from shared.cloud.gcp.task_runner import GCPTaskRunner
+from shared.cloud.kubernetes.naming import build_idempotent_job_name
 from shared.cloud.types import TaskInterruptDisposition
 from tests.shared.cloud.test_gcp_task_runner import _ApiException, _make_fake_k8s_client, _observed_job
 
@@ -121,5 +121,6 @@ class TestGCPTaskRunnerInterrupt:
 
     def test_missing_task_ref_raises(self):
         runner = GCPTaskRunner()
+        identity = _expected_identity()
         with pytest.raises(CloudTaskError):
-            runner.interrupt_task(_NAMESPACE, "", _expected_identity())
+            runner.interrupt_task(_NAMESPACE, "", identity)

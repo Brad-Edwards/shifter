@@ -99,6 +99,39 @@ resource "aws_ssm_parameter" "s3_bucket" {
   tags = local.common_tags
 }
 
+resource "aws_ssm_parameter" "ctf_content_bucket" {
+  count = var.ctf_content_bucket_name != "" ? 1 : 0
+
+  name        = "${local.ps_prefix}/ctf-content-bucket"
+  description = "Private S3 bucket holding digest-pinned native CTF content bundles"
+  type        = "String"
+  value       = var.ctf_content_bucket_name
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "ctf_content_prefix" {
+  count = var.ctf_content_bucket_name != "" ? 1 : 0
+
+  name        = "${local.ps_prefix}/ctf-content-prefix"
+  description = "Contained key prefix under the native CTF content bucket"
+  type        = "String"
+  value       = var.ctf_content_prefix
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "ctf_content_max_bytes" {
+  count = var.ctf_content_bucket_name != "" ? 1 : 0
+
+  name        = "${local.ps_prefix}/ctf-content-max-bytes"
+  description = "Maximum accepted native CTF content bundle size"
+  type        = "String"
+  value       = tostring(var.ctf_content_max_bytes)
+
+  tags = local.common_tags
+}
+
 resource "aws_ssm_parameter" "db_secret_arn" {
   name        = "${local.ps_prefix}/db-secret-arn"
   description = "Database credentials secret ARN"
@@ -369,6 +402,34 @@ resource "aws_ssm_parameter" "terminal_max_sessions_per_user" {
   description = "Terminal SSH sessions per user, per worker process (TERMINAL_MAX_SESSIONS_PER_USER)"
   type        = "String"
   value       = tostring(var.terminal_max_sessions_per_user)
+
+  tags = local.common_tags
+}
+
+# RAES default-cutover selector + capability gate (#1310, ADR-031-R6). Non-secret,
+# fleet-uniform; user_data + the redeploy script read both and put them in the
+# container env so every portal/CMS/engine/MC/CTF/worker sees the same value.
+# Committed at the preserved-legacy posture; the flip (native true + a
+# polaris=polaris-raes route) is a deferred, reviewed per-environment tfvar change
+# once the plugin system + Polaris adapter deliver a conformance-passed pack.
+resource "aws_ssm_parameter" "shifter_raes_native_provisioning" {
+  name        = "${local.ps_prefix}/shifter-raes-native-provisioning"
+  description = "RAES-native provisioning capability/rollback gate (SHIFTER_RAES_NATIVE_PROVISIONING)"
+  type        = "String"
+  value       = tostring(var.shifter_raes_native_provisioning)
+
+  tags = local.common_tags
+}
+
+# SSM parameter values may not be empty, so the route param exists only when a
+# route is configured; the empty (preserved-legacy) posture is the parameter's
+# absence, which the readers resolve to "" via their get_param fallback.
+resource "aws_ssm_parameter" "shifter_raes_catalog_cutovers" {
+  count       = var.shifter_raes_catalog_cutovers != "" ? 1 : 0
+  name        = "${local.ps_prefix}/shifter-raes-catalog-cutovers"
+  description = "RAES catalog source-route selector: comma-separated public=source slug pairs (SHIFTER_RAES_CATALOG_CUTOVERS)"
+  type        = "String"
+  value       = var.shifter_raes_catalog_cutovers
 
   tags = local.common_tags
 }

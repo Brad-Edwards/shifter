@@ -108,11 +108,6 @@
       "source_file": "config/settings.py"
     },
     {
-      "default": "''",
-      "name": "CTF_DEFAULT_PARTICIPANT_PASSWORD",
-      "source_file": "config/_oidc_settings.py"
-    },
-    {
       "default": "'30'",
       "name": "CTF_DEFAULT_RANGE_SPINUP_MINUTES",
       "source_file": "config/settings.py"
@@ -546,6 +541,31 @@
       "default": "'31536000'",
       "name": "SECURE_HSTS_SECONDS",
       "source_file": "config/settings.py"
+    },
+    {
+      "default": "''",
+      "name": "SHIFTER_CTF_CONTENT_BUCKET",
+      "source_file": "config/_ctf_content_settings.py"
+    },
+    {
+      "default": "str(_DEFAULT_MAX_BYTES)",
+      "name": "SHIFTER_CTF_CONTENT_MAX_BYTES",
+      "source_file": "config/_ctf_content_settings.py"
+    },
+    {
+      "default": "'ctf/content-bundles'",
+      "name": "SHIFTER_CTF_CONTENT_PREFIX",
+      "source_file": "config/_ctf_content_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "SHIFTER_CTF_CONTENT_REFERENCES_JSON",
+      "source_file": "config/_ctf_content_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "SHIFTER_RAES_CATALOG_CUTOVERS",
+      "source_file": "config/_raes_settings.py"
     },
     {
       "default": "'268435456'",

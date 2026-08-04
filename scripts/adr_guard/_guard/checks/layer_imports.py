@@ -10,6 +10,32 @@ from .._common import (
     Violation,
     _repo_relative,
 )
+from ._layer_imports_installed_apps import (
+    _INSTALLED_APPS,
+    _LAYER_POLICY_REL,
+    _OPAQUE_INSTALLED_APPS_METHODS,
+    _PLATFORM_REL,
+    _SETTINGS_REL,
+    _classified_packages,
+    _installed_apps_append_entries,
+    _installed_apps_call_entries,
+    _is_installed_apps_add,
+    _is_installed_apps_attribute,
+    _local_appconfig_packages,
+    _parse_installed_apps,
+    _sequence_entries,
+    _targets_installed_apps,
+    check_installed_apps_classified,
+)
+from ._layer_imports_policy import (
+    _is_item_line,
+    _is_key_line,
+    _iter_yaml_section,
+    _section_lines,
+    load_allowed_imports,
+    load_allowed_symbols,
+    load_classification,
+)
 
 
 IMPORT_PATTERN = re.compile(
@@ -24,90 +50,28 @@ CYBERSCRIPT_IMPORT_PATTERN = re.compile(
 CYBERSCRIPT_ALLOWED_LAYER = "shared"
 
 
-def _iter_yaml_section(config_path: Path, section: str) -> "list[tuple[str, list[str]]]":
-    """Parse one top-level ``section:`` of the layer-policy YAML.
+def _facade_entry_allows(entry: str, module_path: str) -> bool:
+    """True when a dotted facade entry sanctions ``module_path`` (ADR-001-R1).
 
-    Minimal, dependency-free reader for the two-level shape used by
-    layer_imports.yaml (``section:`` -> ``key:`` -> ``- item`` list). Only the
-    requested top-level section is parsed; other sections are ignored, so the
-    ``classification`` and ``allowed`` blocks never bleed into each other.
+    The exact facade and its public submodules are allowed; a private
+    split-package submodule — any path component after the facade that starts
+    with ``_`` (``cms.services._range_pause``) — is not a cross-layer seam.
     """
-    result: dict[str, list[str]] = {}
-    current_section: str | None = None
-    current_key: str | None = None
-
-    for raw_line in config_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split("#", 1)[0].rstrip()
-        if not line.strip():
-            continue
-        stripped = line.strip()
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-
-        if indent == 0 and stripped.endswith(":"):
-            current_section = stripped[:-1]
-            current_key = None
-            continue
-        if current_section != section:
-            continue
-        if indent == 2 and stripped.endswith(":"):
-            current_key = stripped[:-1]
-            result[current_key] = []
-            continue
-        if current_key is not None and indent >= 4 and stripped.startswith("- "):
-            result[current_key].append(stripped[2:].strip())
-
-    return list(result.items())
+    if module_path == entry:
+        return True
+    if not module_path.startswith(entry + "."):
+        return False
+    remainder = module_path[len(entry) + 1 :]
+    return not any(part.startswith("_") for part in remainder.split("."))
 
 
-def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
-    """Load the simple layer import policy without external YAML dependencies."""
-    return dict(_iter_yaml_section(config_path, "allowed"))
-
-
-def load_allowed_symbols(config_path: Path) -> dict[str, dict[str, list[str]]]:
-    """Parse the 3-level ``allowed_symbols:`` block (layer -> facade -> [symbols]).
-
-    Dependency-free reader mirroring ``_iter_yaml_section`` one level deeper, for
-    the per-symbol facade allowlists (ADR-001-R4). Only the ``allowed_symbols``
-    top-level section is parsed; other sections are ignored.
-    """
-    result: dict[str, dict[str, list[str]]] = {}
-    in_section = False
-    current_layer: str | None = None
-    current_facade: str | None = None
-
-    for raw_line in config_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split("#", 1)[0].rstrip()
-        if not line.strip():
-            continue
-        stripped = line.strip()
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-
-        if indent == 0 and stripped.endswith(":"):
-            in_section = stripped[:-1] == "allowed_symbols"
-            current_layer = None
-            current_facade = None
-            continue
-        if not in_section:
-            continue
-        if indent == 2 and stripped.endswith(":"):
-            current_layer = stripped[:-1]
-            result[current_layer] = {}
-            current_facade = None
-            continue
-        if indent == 4 and stripped.endswith(":") and current_layer is not None:
-            current_facade = stripped[:-1]
-            result[current_layer][current_facade] = []
-            continue
-        if current_layer is not None and current_facade is not None and indent >= 6 and stripped.startswith("- "):
-            result[current_layer][current_facade].append(stripped[2:].strip())
-
-    return result
-
-
-def load_classification(config_path: Path) -> dict[str, list[str]]:
-    """Load the canonical package classification without external YAML deps."""
-    return dict(_iter_yaml_section(config_path, "classification"))
+def _entry_allows_module(entry: str, module_path: str) -> bool:
+    """True when one ``allowed:`` policy entry sanctions ``module_path``."""
+    if entry == "shared":
+        return module_path == "shared" or module_path.startswith("shared.")
+    if "." in entry:
+        return _facade_entry_allows(entry, module_path)
+    return module_path == entry
 
 
 def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list[str]]) -> bool:
@@ -119,20 +83,7 @@ def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list
     (``cms.services._range_pause``) — is not a cross-layer seam (ADR-001-R1).
     ``shared`` is the contracts layer and stays freely importable.
     """
-    for entry in allowed.get(from_layer, []):
-        if entry == "shared":
-            if module_path == "shared" or module_path.startswith("shared."):
-                return True
-        elif "." in entry:
-            if module_path == entry:
-                return True
-            if module_path.startswith(entry + "."):
-                remainder = module_path[len(entry) + 1 :]
-                if not any(part.startswith("_") for part in remainder.split(".")):
-                    return True
-        elif module_path == entry:
-            return True
-    return False
+    return any(_entry_allows_module(entry, module_path) for entry in allowed.get(from_layer, []))
 
 
 def iter_layer_files(repo_root: Path, files: list[str] | None) -> list[tuple[str, str]]:
@@ -199,6 +150,39 @@ def _is_public_facade_descendant(module: str, facade: str) -> bool:
     return not any(part.startswith("_") for part in remainder.split("."))
 
 
+def _reaches_facade(module: str, facade: str) -> bool:
+    """True when ``module`` is the restricted facade itself or a public descendant."""
+    return module == facade or _is_public_facade_descendant(module, facade)
+
+
+def _classify_import_from(
+    node: ast.ImportFrom,
+    restricted_facades: set[str],
+    from_symbols: dict[str, set[str]],
+    module_bypass: set[str],
+) -> None:
+    """Record the sanctioned symbols and facade bypasses of one ``from ... import``."""
+    module = node.module
+    if not module:
+        return
+    for facade in restricted_facades:
+        if node.level == 0 and module == facade:
+            public = {alias.name for alias in node.names if not alias.name.startswith("_")}
+            if public:
+                from_symbols.setdefault(facade, set()).update(public)
+        elif _reaches_facade(module, facade):
+            # Relative facade import (level > 0) or a facade descendant.
+            module_bypass.add(module)
+
+
+def _classify_bare_import(node: ast.Import, restricted_facades: set[str], module_bypass: set[str]) -> None:
+    """Record ``import <facade>`` / ``import <facade>.sub`` bypasses of one statement."""
+    for alias in node.names:
+        for facade in restricted_facades:
+            if _reaches_facade(alias.name, facade):
+                module_bypass.add(alias.name)
+
+
 def iter_facade_symbol_imports(text: str, restricted_facades: set[str]) -> "tuple[dict[str, set[str]], set[str]]":
     """Return (public symbols imported per restricted facade, non-facade bypasses).
 
@@ -221,22 +205,9 @@ def iter_facade_symbol_imports(text: str, restricted_facades: set[str]) -> "tupl
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            module = node.module
-            if not module:
-                continue
-            for facade in restricted_facades:
-                if node.level == 0 and module == facade:
-                    for alias in node.names:
-                        if not alias.name.startswith("_"):
-                            from_symbols.setdefault(facade, set()).add(alias.name)
-                elif module == facade or _is_public_facade_descendant(module, facade):
-                    # Relative facade import (level > 0) or a facade descendant.
-                    module_bypass.add(module)
+            _classify_import_from(node, restricted_facades, from_symbols, module_bypass)
         elif isinstance(node, ast.Import):
-            for alias in node.names:
-                for facade in restricted_facades:
-                    if alias.name == facade or _is_public_facade_descendant(alias.name, facade):
-                        module_bypass.add(alias.name)
+            _classify_bare_import(node, restricted_facades, module_bypass)
     return from_symbols, module_bypass
 
 
@@ -346,147 +317,6 @@ def check_cross_layer_model_imports(repo_root: Path, files: list[str] | None) ->
     return violations
 
 
-_PLATFORM_REL = "shifter/shifter_platform"
-_SETTINGS_REL = "shifter/shifter_platform/config/settings.py"
-_LAYER_POLICY_REL = "scripts/check_layer_imports/layer_imports.yaml"
-
-
-def _classified_packages(repo_root: Path) -> set[str]:
-    """Return the union of every canonically classified first-party package."""
-    classification = load_classification(repo_root / _LAYER_POLICY_REL)
-    return {pkg for packages in classification.values() for pkg in packages}
-
-
-def _local_appconfig_packages(repo_root: Path) -> set[str]:
-    """Return local packages under shifter_platform whose apps.py defines an AppConfig.
-
-    A tracked local Django app is a top-level package with an ``apps.py`` that
-    subclasses ``AppConfig``. Directories without an AppConfig (e.g. the retired
-    ``documentation`` package, ADR-038) are not tracked apps and are excluded.
-    """
-    platform = repo_root / _PLATFORM_REL
-    found: set[str] = set()
-    for apps_py in platform.glob("*/apps.py"):
-        try:
-            text = apps_py.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if re.search(r"class\s+\w+\s*\(\s*[\w.]*AppConfig\b", text):
-            found.add(apps_py.parent.name)
-    return found
-
-
-def _parse_installed_apps(settings_text: str) -> tuple[list[str], list[str]]:
-    """Return (resolved app strings, unresolved dynamic reprs) from INSTALLED_APPS.
-
-    Parses the ``INSTALLED_APPS = [...]`` literal plus ``INSTALLED_APPS.append(...)``
-    calls. Any entry that is not a string constant — a dynamic expression, or an
-    ``extend``/``insert`` mutation — is returned as unresolved so the check fails
-    closed rather than silently skipping it.
-    """
-    resolved: list[str] = []
-    unresolved: list[str] = []
-
-    def _collect_sequence(value: ast.expr, dynamic_detail: str) -> None:
-        """Add string-literal elements of a list/tuple; flag anything else."""
-        if isinstance(value, (ast.List, ast.Tuple)):
-            for elt in value.elts:
-                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                    resolved.append(elt.value)
-                else:
-                    unresolved.append("non-literal INSTALLED_APPS entry")
-        else:
-            unresolved.append(dynamic_detail)
-
-    tree = ast.parse(settings_text)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "INSTALLED_APPS":
-                    _collect_sequence(node.value, "INSTALLED_APPS not assigned a list/tuple literal")
-        elif isinstance(node, ast.AugAssign):
-            # INSTALLED_APPS += [...] / += SOME_APPS
-            target = node.target
-            if isinstance(target, ast.Name) and target.id == "INSTALLED_APPS" and isinstance(node.op, ast.Add):
-                _collect_sequence(node.value, "unresolvable INSTALLED_APPS += mutation")
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            func = node.func
-            if isinstance(func.value, ast.Name) and func.value.id == "INSTALLED_APPS":
-                if func.attr == "append":
-                    arg = node.args[0] if node.args else None
-                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                        resolved.append(arg.value)
-                    else:
-                        unresolved.append("non-literal INSTALLED_APPS.append() argument")
-                elif func.attr in {"extend", "insert", "__iadd__", "__add__"}:
-                    unresolved.append(f"unresolvable INSTALLED_APPS.{func.attr}() mutation")
-    return resolved, unresolved
-
-
-def check_installed_apps_classified(repo_root: Path, files: list[str] | None) -> list[Violation]:
-    """Fail closed when a first-party INSTALLED_APPS app is unclassified (#1523).
-
-    Enforces set-equality between the canonical classification
-    (layer_imports.yaml), the tracked local AppConfig packages, and the
-    first-party apps actually installed. Adding a local app to INSTALLED_APPS
-    without classifying it, leaving a stale classification entry, or introducing
-    a dynamic INSTALLED_APPS entry the checker cannot resolve, all fail closed.
-    """
-    del files  # whole-tree invariant; not file-scoped
-    settings_path = repo_root / _SETTINGS_REL
-    policy_path = repo_root / _LAYER_POLICY_REL
-    if not settings_path.exists() or not policy_path.exists():
-        return []
-
-    violations: list[Violation] = []
-    classified = _classified_packages(repo_root)
-    local_apps = _local_appconfig_packages(repo_root)
-    installed, unresolved = _parse_installed_apps(settings_path.read_text(encoding="utf-8"))
-
-    for detail in unresolved:
-        violations.append(
-            Violation(
-                "installed-apps-classified",
-                "ADR-001-R3",
-                _SETTINGS_REL,
-                f"INSTALLED_APPS has an entry the classifier cannot resolve ({detail}); "
-                "use a string literal so first-party apps stay classifiable",
-            )
-        )
-
-    installed_first_party = {entry.split(".")[0] for entry in installed} & local_apps
-
-    for pkg in sorted(installed_first_party - classified):
-        violations.append(
-            Violation(
-                "installed-apps-classified",
-                "ADR-001-R3",
-                _SETTINGS_REL,
-                f"first-party app '{pkg}' is in INSTALLED_APPS but not classified in {_LAYER_POLICY_REL}",
-            )
-        )
-    for pkg in sorted(local_apps - classified):
-        violations.append(
-            Violation(
-                "installed-apps-classified",
-                "ADR-001-R3",
-                _LAYER_POLICY_REL,
-                f"local app '{pkg}' has an AppConfig but is not classified in {_LAYER_POLICY_REL}",
-            )
-        )
-    for pkg in sorted(classified - local_apps):
-        violations.append(
-            Violation(
-                "installed-apps-classified",
-                "ADR-001-R3",
-                _LAYER_POLICY_REL,
-                f"classified package '{pkg}' has no local AppConfig under {_PLATFORM_REL} (stale classification)",
-            )
-        )
-
-    return violations
-
-
 CLOUD_ROOTS = (
     "shifter/shifter_platform/shared/cloud",
     "shifter/engine/provisioner/cloud",
@@ -533,3 +363,52 @@ def check_cloud_factory_seam(repo_root: Path, files: list[str] | None) -> list[V
                 )
             )
     return violations
+
+
+# The policy reader and the INSTALLED_APPS check live in the two private
+# sibling modules imported above; their names are re-exported here so
+# `_guard.checks.layer_imports` keeps the single, stable import-time surface
+# that `adr_guard.py` copies and the tests reach through.
+__all__ = [
+    "CLOUD_ROOTS",
+    "CLOUD_SKIP_FILES",
+    "CYBERSCRIPT_ALLOWED_LAYER",
+    "CYBERSCRIPT_IMPORT_PATTERN",
+    "IMPORT_PATTERN",
+    "_INSTALLED_APPS",
+    "_LAYER_POLICY_REL",
+    "_OPAQUE_INSTALLED_APPS_METHODS",
+    "_PLATFORM_REL",
+    "_SETTINGS_REL",
+    "_classified_packages",
+    "_classify_bare_import",
+    "_classify_import_from",
+    "_entry_allows_module",
+    "_facade_entry_allows",
+    "_installed_apps_append_entries",
+    "_installed_apps_call_entries",
+    "_is_installed_apps_add",
+    "_is_installed_apps_attribute",
+    "_is_item_line",
+    "_is_key_line",
+    "_is_public_facade_descendant",
+    "_iter_yaml_section",
+    "_local_appconfig_packages",
+    "_parse_installed_apps",
+    "_reaches_facade",
+    "_section_lines",
+    "_sequence_entries",
+    "_symbol_facade_violations",
+    "_targets_installed_apps",
+    "check_cloud_factory_seam",
+    "check_cross_layer_model_imports",
+    "check_installed_apps_classified",
+    "check_layer_imports",
+    "is_import_allowed",
+    "iter_facade_symbol_imports",
+    "iter_layer_files",
+    "iter_private_facade_imports",
+    "load_allowed_imports",
+    "load_allowed_symbols",
+    "load_classification",
+]

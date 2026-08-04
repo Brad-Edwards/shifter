@@ -3689,7 +3689,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SendInvitationsResult"
+                  "$ref": "#/components/schemas/SendLoginInfoResult"
                 }
               }
             },
@@ -3998,7 +3998,7 @@
     "/api/v1/ctf/events/{event_id}/pages/": {
       "get": {
         "operationId": "ctf_events_pages_retrieve",
-        "description": "Return the event's pages in display order.",
+        "description": "Return the event's pages in display order (incl. the reserved briefing).\n\nThe organizer editor sees every page and separates the reserved briefing\ninto its own affordance; participant reads exclude it (#1854).",
         "parameters": [
           {
             "in": "path",
@@ -4056,7 +4056,7 @@
       },
       "post": {
         "operationId": "ctf_events_pages_create",
-        "description": "Create a page; slugs are unique per event.",
+        "description": "Create a page through the CTF page service; slugs are unique per event.",
         "parameters": [
           {
             "in": "path",
@@ -4213,17 +4213,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ParticipantInvite"
+                "$ref": "#/components/schemas/ParticipantAdd"
               }
             },
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/ParticipantInvite"
+                "$ref": "#/components/schemas/ParticipantAdd"
               }
             },
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/ParticipantInvite"
+                "$ref": "#/components/schemas/ParticipantAdd"
               }
             }
           },
@@ -4242,7 +4242,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ParticipantInviteResult"
+                  "$ref": "#/components/schemas/ParticipantAddResult"
                 }
               }
             },
@@ -5420,6 +5420,58 @@
         }
       }
     },
+    "/api/v1/ctf/me/briefing/": {
+      "get": {
+        "operationId": "ctf_me_briefing_retrieve",
+        "description": "Return the reserved briefing page for the active event, or 404.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "The active event has no briefing; the client falls back to generic help."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/me/challenges/": {
       "get": {
         "operationId": "ctf_me_challenges_list",
@@ -5584,7 +5636,7 @@
     "/api/v1/ctf/me/pages/": {
       "get": {
         "operationId": "ctf_me_pages_retrieve",
-        "description": "Return the active event's pages in display order.",
+        "description": "Return the active event's generic pages in display order.\n\nThe reserved briefing page is excluded here; it owns the dedicated\nbriefing surface (``ParticipantBriefingView``) and must not appear a\nsecond time in the generic event-pages list (#1854).",
         "tags": [
           "ctf"
         ],
@@ -7158,6 +7210,86 @@
         }
       }
     },
+    "/api/v1/ctf/participants/{participant_id}/password/": {
+      "post": {
+        "operationId": "ctf_participants_password_create",
+        "description": "Authorize, rate-limit, issue, and return the password once.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantPasswordRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantPasswordRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantPasswordResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/participants/{participant_id}/range/destroy/": {
       "post": {
         "operationId": "ctf_participants_range_destroy_create",
@@ -7601,7 +7733,7 @@
     "/api/v1/ctf/participants/{participant_id}/resend-invite/": {
       "post": {
         "operationId": "ctf_participants_resend_invite_create",
-        "description": "Rate-limit, enforce ownership, then reset and resend the invite.",
+        "description": "Rate-limit, enforce ownership, then resend non-secret login information.",
         "parameters": [
           {
             "in": "path",
@@ -7624,12 +7756,13 @@
             "cookieAuth": []
           }
         ],
+        "deprecated": true,
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResendInviteResult"
+                  "$ref": "#/components/schemas/ResendLoginInfoResult"
                 }
               }
             },
@@ -10515,6 +10648,1372 @@
           "mission_control:upload:write"
         ]
       }
+    },
+    "/api/v1/workspaces/": {
+      "get": {
+        "operationId": "api_v1_workspaces_list",
+        "description": "List an organization's workspaces or create a new one (org-admin authority).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Include archived workspaces (default false: active only)."
+          },
+          {
+            "in": "query",
+            "name": "organization",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Public UUID of the organization to scope the list to.",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Case-insensitive workspace-name substring filter."
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Workspace"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      },
+      "post": {
+        "operationId": "api_v1_workspaces_create",
+        "description": "List an organization's workspaces or create a new one (org-admin authority).",
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspace"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspace"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspace"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/": {
+      "get": {
+        "operationId": "api_v1_workspace_detail",
+        "description": "Read a workspace's administrative detail or rename it (workspace role seam).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      },
+      "patch": {
+        "operationId": "api_v1_workspace_rename",
+        "description": "Read a workspace's administrative detail or rename it (workspace role seam).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedRenameWorkspace"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedRenameWorkspace"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedRenameWorkspace"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/archive/": {
+      "post": {
+        "operationId": "api_v1_workspace_archive",
+        "description": "Archive a workspace (reversible soft-state marker).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/membership/": {
+      "get": {
+        "operationId": "api_v1_workspace_membership_self",
+        "description": "Read the caller's own effective membership.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMembership"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        },
+        "x-required-scopes": [
+          "workspaces:membership:read"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/memberships/": {
+      "get": {
+        "operationId": "api_v1_workspace_memberships_list",
+        "description": "Read the roster or add an existing active account.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceMembership"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        },
+        "x-required-scopes": [
+          "workspaces:membership:read"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_workspace_memberships_add",
+        "description": "Read the roster or add an existing active account.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddWorkspaceMember"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AddWorkspaceMember"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AddWorkspaceMember"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMembership"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        },
+        "x-required-scopes": [
+          "workspaces:membership:write"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/memberships/{user_id}/remove/": {
+      "post": {
+        "operationId": "api_v1_workspace_memberships_remove",
+        "description": "Remove another workspace member.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMembership"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        },
+        "x-required-scopes": [
+          "workspaces:membership:write"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/memberships/{user_id}/role/": {
+      "post": {
+        "operationId": "api_v1_workspace_memberships_change_role",
+        "description": "Change one membership's role.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeWorkspaceMemberRole"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeWorkspaceMemberRole"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeWorkspaceMemberRole"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMembership"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        },
+        "x-required-scopes": [
+          "workspaces:membership:write"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/memberships/leave/": {
+      "post": {
+        "operationId": "api_v1_workspace_memberships_leave",
+        "description": "Remove the caller's own workspace membership.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMembership"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        },
+        "x-required-scopes": [
+          "workspaces:membership:write"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/restore/": {
+      "post": {
+        "operationId": "api_v1_workspace_restore",
+        "description": "Restore an archived workspace.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/transfer/": {
+      "post": {
+        "operationId": "api_v1_workspace_transfer_ownership",
+        "description": "Transfer workspace ownership to an existing member (owner-only).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferWorkspaceOwnership"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferWorkspaceOwnership"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferWorkspaceOwnership"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/context/": {
+      "get": {
+        "operationId": "api_v1_workspaces_principal_context",
+        "description": "Read the caller's own organization/workspace context for the admin console.\n\nA side-effect-free projection of the caller's existing workspace memberships\n(organization, workspace, role, and role-permitted operations), used by the\n``/administer`` organization console shell and switcher (ADR-046-R11, #1938).\n\nStaff-session only and deliberately **not** token-capable: the bearer-first,\nfail-closed authentication ordering parses an invalid token before session\nfallback, and ``IsStaffSession`` rejects any valid platform token (including\none owned by a staff user). Staff admission and workspace authority stay\nadditive -- staff admits the console, but each child resource endpoint still\nreauthorizes its own workspace operation. The read never creates or repairs\ntenancy state, so a staff caller with no membership receives an empty page.",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedPrincipalWorkspaceContextList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/organizations/": {
+      "get": {
+        "operationId": "api_v1_organizations_administrable_list",
+        "description": "List the organizations the caller may administer (ADR-048 authority).\n\nSession-only, like the profile detail view. The list is the authority-owned\ndiscovery source for the settings surface: a superuser sees every\norganization, every other actor sees only the organizations it holds an\n``admin`` membership in, and workspace reachability is never used. A caller\nwho administers none receives an empty page.",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedOrganizationProfileList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/organizations/{organization_uuid}/": {
+      "get": {
+        "operationId": "api_v1_organization_retrieve",
+        "description": "Read or partially update an organization profile, keyed by public UUID.\n\nSession-only and authorized by the ADR-048 organization-admin seam (or a\nDjango superuser override) inside ``workspaces.services``; a platform token\nprincipal is refused by ``IsAuthenticatedSession``. A missing organization,\nan organization outside the actor's authority, and insufficient authority\nall return the same opaque 403 so the endpoint is not a tenant-enumeration\noracle.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProfile"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      },
+      "patch": {
+        "operationId": "api_v1_organization_update",
+        "description": "Read or partially update an organization profile, keyed by public UUID.\n\nSession-only and authorized by the ADR-048 organization-admin seam (or a\nDjango superuser override) inside ``workspaces.services``; a platform token\nprincipal is refused by ``IsAuthenticatedSession``. A missing organization,\nan organization outside the actor's authority, and insufficient authority\nall return the same opaque 403 so the endpoint is not a tenant-enumeration\noracle.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedOrganizationProfileUpdate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedOrganizationProfileUpdate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedOrganizationProfileUpdate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationProfile"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -10528,6 +12027,24 @@
         ],
         "type": "string",
         "description": "* `user` - User\n* `apikey` - API Key\n* `system` - System\n* `cognito` - Cognito"
+      },
+      "AddWorkspaceMember": {
+        "type": "object",
+        "description": "Add-existing-account command.",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "role": {
+            "$ref": "#/components/schemas/WorkspaceRoleEnum"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ]
       },
       "AdminUserDetail": {
         "type": "object",
@@ -11647,6 +13164,18 @@
           "name"
         ]
       },
+      "ChangeWorkspaceMemberRole": {
+        "type": "object",
+        "description": "Closed role-change command.",
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/WorkspaceRoleEnum"
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
       "ChannelEnum": {
         "enum": [
           "ssh",
@@ -11695,6 +13224,24 @@
         "required": [
           "terminal_url",
           "uuid"
+        ]
+      },
+      "CreateWorkspace": {
+        "type": "object",
+        "description": "Create-workspace command: an organization UUID and a display name.\n\nThe serializer owns HTTP shape (presence, length, UUID form);\n``workspaces.services`` owns authority and the name invariants.",
+        "properties": {
+          "organization_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "name",
+          "organization_uuid"
         ]
       },
       "CredentialCreate": {
@@ -12260,7 +13807,8 @@
             "pattern": "^[-a-zA-Z0-9_]+$"
           },
           "body": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "order": {
             "type": "integer",
@@ -12786,6 +14334,14 @@
         "type": "string",
         "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc\n* `ngfw` - ngfw"
       },
+      "KindEnum": {
+        "enum": [
+          "generated",
+          "set"
+        ],
+        "type": "string",
+        "description": "* `generated` - generated\n* `set` - set"
+      },
       "LaunchRange": {
         "type": "object",
         "description": "Validate range launch requests.",
@@ -12804,6 +14360,11 @@
           "scenario": {
             "type": "string",
             "default": "basic"
+          },
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         }
       },
@@ -13085,6 +14646,73 @@
         "required": [
           "notification_id",
           "status"
+        ]
+      },
+      "OrganizationProfile": {
+        "type": "object",
+        "description": "Read-only organization profile projection (ADR-048, PLAT-232).\n\nEmits the public ``uuid`` only; the internal integer primary key never\nappears on the wire.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "description": {
+            "type": "string",
+            "readOnly": true
+          },
+          "support_email": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true
+          },
+          "support_url": {
+            "type": "string",
+            "format": "uri",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "name",
+          "support_email",
+          "support_url",
+          "updated_at",
+          "uuid"
+        ]
+      },
+      "OrganizationRef": {
+        "type": "object",
+        "description": "Public organization projection (uuid + display name only).",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "name",
+          "uuid"
         ]
       },
       "OrganizerChallengeDetail": {
@@ -13449,6 +15077,112 @@
             }
           }
         }
+      },
+      "PaginatedOrganizationProfileList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationProfile"
+            }
+          }
+        }
+      },
+      "PaginatedPrincipalWorkspaceContextList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrincipalWorkspaceContext"
+            }
+          }
+        }
+      },
+      "ParticipantAdd": {
+        "type": "object",
+        "description": "Request body for inviting a single participant.\n\n``name`` and ``email`` are both required and non-blank (mirroring the legacy\ntruthiness check). ``email`` is a plain ``CharField`` rather than an\n``EmailField`` because the service layer owns email validation.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name"
+        ]
+      },
+      "ParticipantAddResult": {
+        "type": "object",
+        "description": "Result returned after adding a single participant (provisioned and registered).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "readOnly": true
+          },
+          "status": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "id",
+          "name",
+          "status"
+        ]
       },
       "ParticipantAnnouncement": {
         "type": "object",
@@ -13856,7 +15590,7 @@
             "readOnly": true,
             "nullable": true
           },
-          "invited_at": {
+          "login_info_sent_at": {
             "type": "string",
             "format": "date-time",
             "readOnly": true,
@@ -13912,8 +15646,8 @@
           "event_id",
           "hidden",
           "id",
-          "invited_at",
           "last_active_at",
+          "login_info_sent_at",
           "name",
           "registered_at",
           "role",
@@ -14150,55 +15884,6 @@
           "name"
         ]
       },
-      "ParticipantInvite": {
-        "type": "object",
-        "description": "Request body for inviting a single participant.\n\n``name`` and ``email`` are both required and non-blank (mirroring the legacy\ntruthiness check). ``email`` is a plain ``CharField`` rather than an\n``EmailField`` because the service layer owns email validation.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "email",
-          "name"
-        ]
-      },
-      "ParticipantInviteResult": {
-        "type": "object",
-        "description": "Result returned after inviting a single participant.",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "name": {
-            "type": "string",
-            "readOnly": true
-          },
-          "email": {
-            "type": "string",
-            "readOnly": true
-          },
-          "status": {
-            "type": "string",
-            "readOnly": true
-          },
-          "invited": {
-            "type": "boolean",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "email",
-          "id",
-          "invited",
-          "name",
-          "status"
-        ]
-      },
       "ParticipantListResponse": {
         "type": "object",
         "description": "Envelope returned by the event participant list.",
@@ -14229,6 +15914,59 @@
             "maxLength": 2000
           }
         }
+      },
+      "ParticipantPasswordRequest": {
+        "type": "object",
+        "description": "Closed write-only request for generated or supplied issuance.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/KindEnum"
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "ParticipantPasswordResult": {
+        "type": "object",
+        "description": "One-time participant password issuance returned by the mutation only.",
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "event_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "username": {
+            "type": "string",
+            "readOnly": true
+          },
+          "password": {
+            "type": "string",
+            "readOnly": true
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KindEnum"
+              }
+            ],
+            "readOnly": true
+          }
+        },
+        "required": [
+          "event_id",
+          "kind",
+          "participant_id",
+          "password",
+          "username"
+        ]
       },
       "ParticipantProfile": {
         "type": "object",
@@ -14533,6 +16271,30 @@
           "username"
         ]
       },
+      "PatchedOrganizationProfileUpdate": {
+        "type": "object",
+        "description": "Partial-update command for the organization profile (PATCH mask).\n\nEvery field is optional; an absent field is unchanged and an empty string\nclears an optional field. Unknown fields are rejected rather than ignored,\nand ``uuid``/timestamps are never writable here. The serializer owns HTTP\nshape (lengths, primitive formats); ``workspaces.services`` owns authority\nand persistence invariants.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "support_email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "support_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 500
+          }
+        }
+      },
       "PatchedProfileUpdateRequest": {
         "type": "object",
         "description": "Partial self-profile update: any omitted field is left unchanged.",
@@ -14544,6 +16306,16 @@
           "affiliation": {
             "type": "string",
             "maxLength": 120
+          }
+        }
+      },
+      "PatchedRenameWorkspace": {
+        "type": "object",
+        "description": "Rename-workspace command (PATCH mask; a single writable field).",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
           }
         }
       },
@@ -14676,6 +16448,56 @@
         },
         "required": [
           "required_challenge_id"
+        ]
+      },
+      "PrincipalWorkspaceContext": {
+        "type": "object",
+        "description": "One workspace the caller belongs to, with role and advisory capabilities.\n\n``role`` and ``capabilities`` are display/presentation hints derived from the\ncentral role-to-operation policy; every resource endpoint still reauthorizes\nthe operation it performs (ADR-046-R11).",
+        "properties": {
+          "organization": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrganizationRef"
+              }
+            ],
+            "readOnly": true
+          },
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "workspace_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_personal": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceRoleEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "capabilities",
+          "is_personal",
+          "organization",
+          "role",
+          "workspace_name",
+          "workspace_uuid"
         ]
       },
       "PublicScoreboardResponse": {
@@ -14863,6 +16685,36 @@
           "notes": {
             "type": "string",
             "default": ""
+          },
+          "artifact_id": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "artifact_version": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "artifact_digest": {
+            "type": "string",
+            "default": "",
+            "maxLength": 71
+          },
+          "media_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "integrity_ref": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
+          },
+          "provenance_ref": {
+            "type": "string",
+            "default": "",
+            "maxLength": 256
           }
         },
         "required": [
@@ -14916,6 +16768,30 @@
             "type": "string",
             "readOnly": true
           },
+          "artifact_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "artifact_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "artifact_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "media_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "integrity_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "provenance_ref": {
+            "type": "string",
+            "readOnly": true
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -14928,14 +16804,20 @@
           }
         },
         "required": [
+          "artifact_digest",
+          "artifact_id",
+          "artifact_version",
           "created_at",
           "disk_size_gb",
           "disk_type",
           "enabled",
           "id",
           "image_ref",
+          "integrity_ref",
           "machine_type",
+          "media_type",
           "notes",
+          "provenance_ref",
           "provider",
           "source_name",
           "source_version",
@@ -15655,9 +17537,9 @@
           "message"
         ]
       },
-      "ResendInviteResult": {
+      "ResendLoginInfoResult": {
         "type": "object",
-        "description": "Confirmation returned after resetting and resending a participant invite.",
+        "description": "Confirmation returned after resending non-secret login information.",
         "properties": {
           "success": {
             "type": "boolean",
@@ -15666,15 +17548,10 @@
           "id": {
             "type": "string",
             "readOnly": true
-          },
-          "invited": {
-            "type": "boolean",
-            "readOnly": true
           }
         },
         "required": [
           "id",
-          "invited",
           "success"
         ]
       },
@@ -16218,7 +18095,7 @@
           "timeline"
         ]
       },
-      "SendInvitationsResult": {
+      "SendLoginInfoResult": {
         "type": "object",
         "description": "Result returned after queuing invitation emails for an event.",
         "properties": {
@@ -16470,6 +18347,19 @@
           "participant_id"
         ]
       },
+      "TransferWorkspaceOwnership": {
+        "type": "object",
+        "description": "Transfer-ownership command: the internal id of the new owner account.\n\nThe new owner is identified by the ``user_id`` already exposed on the\nworkspace membership roster projection, so no email or profile lookup is\nperformed at this boundary.",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
       "UploadCancel": {
         "type": "object",
         "description": "Validate agent-upload cancel requests.",
@@ -16699,6 +18589,118 @@
         "required": [
           "url"
         ]
+      },
+      "Workspace": {
+        "type": "object",
+        "description": "Read-only workspace lifecycle projection (#1940, PLAT-233).\n\nEmits the public ``uuid`` (of both workspace and owning organization) only;\ninternal integer primary keys never appear on the wire.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "organization_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "organization_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_personal": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "is_archived": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "archived_at",
+          "created_at",
+          "is_archived",
+          "is_personal",
+          "name",
+          "organization_name",
+          "organization_uuid",
+          "updated_at",
+          "uuid"
+        ]
+      },
+      "WorkspaceMembership": {
+        "type": "object",
+        "description": "Minimum public membership projection.",
+        "properties": {
+          "membership_id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "user_id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "display_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceRoleEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "display_name",
+          "membership_id",
+          "role",
+          "user_id",
+          "workspace_uuid"
+        ]
+      },
+      "WorkspaceRoleEnum": {
+        "enum": [
+          "owner",
+          "admin",
+          "member"
+        ],
+        "type": "string",
+        "description": "* `owner` - Owner\n* `admin` - Admin\n* `member` - Member"
       },
       "YAMLContent": {
         "type": "object",

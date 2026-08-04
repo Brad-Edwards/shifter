@@ -19,6 +19,12 @@ class TestKnownScopes:
         assert scopes.MISSION_CONTROL_RANGE_READ in scopes.KNOWN_SCOPES
         assert scopes.MISSION_CONTROL_RANGE_WRITE in scopes.KNOWN_SCOPES
 
+    def test_workspace_membership_scopes_are_registered(self):
+        assert scopes.WORKSPACES_MEMBERSHIP_READ == "workspaces:membership:read"
+        assert scopes.WORKSPACES_MEMBERSHIP_WRITE == "workspaces:membership:write"
+        assert scopes.WORKSPACES_MEMBERSHIP_READ in scopes.KNOWN_SCOPES
+        assert scopes.WORKSPACES_MEMBERSHIP_WRITE in scopes.KNOWN_SCOPES
+
     def test_migration_scopes_are_registered(self):
         # Mission Control scopes are enforced by PLAT-106 issue #1120; CTF/CMS
         # scopes remain registered for their follow-on migrations.
@@ -38,6 +44,8 @@ class TestKnownScopes:
             "ctf:vpn-profile:read",
             "cms:authoring:read",
             "cms:authoring:write",
+            "workspaces:membership:read",
+            "workspaces:membership:write",
         ):
             assert reserved in scopes.KNOWN_SCOPES
 
@@ -47,7 +55,8 @@ class TestKnownScopes:
             assert scope == scope.lower()
             assert "*" not in scope
             assert scope.count(":") >= 1
-            assert not scope.startswith(":") and not scope.endswith(":")
+            assert not scope.startswith(":")
+            assert not scope.endswith(":")
 
 
 class TestValidateScopes:

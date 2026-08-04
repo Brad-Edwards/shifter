@@ -68,6 +68,17 @@ class Command(BaseCommand):
         parser.add_argument("--disk-size-gb", type=int, default=None, help="Optional boot disk size in GB.")
         parser.add_argument("--disk-type", default="", help="Optional provider disk type.")
         parser.add_argument("--notes", default="", help="Optional free-text notes.")
+        # Portable RAES artifact identity + admission evidence (#1580). Supply all
+        # five to register a portable mapping that satisfies an authored artifact
+        # requirement; omit all five for a legacy alias-only mapping.
+        parser.add_argument("--artifact-id", default="", help="Portable RAES ArtifactIdentity id this image realizes.")
+        parser.add_argument("--artifact-version", default="", help="Portable ArtifactIdentity version.")
+        parser.add_argument(
+            "--artifact-digest", default="", help="Portable ArtifactIdentity sha256 digest ('sha256:'+64 hex)."
+        )
+        parser.add_argument("--media-type", default="", help="Portable ArtifactIdentity media type.")
+        parser.add_argument("--integrity-ref", default="", help="Verified integrity evidence reference.")
+        parser.add_argument("--provenance-ref", default="", help="Verified provenance evidence reference.")
         parser.add_argument(
             "--disabled",
             action="store_true",
@@ -110,6 +121,12 @@ class Command(BaseCommand):
                     disk_type=options["disk_type"],
                     enabled=not options["disabled"],
                     notes=options["notes"],
+                    artifact_id=options["artifact_id"],
+                    artifact_version=options["artifact_version"],
+                    artifact_digest=options["artifact_digest"],
+                    media_type=options["media_type"],
+                    integrity_ref=options["integrity_ref"],
+                    provenance_ref=options["provenance_ref"],
                 ),
             )
         except RaesImageMappingError as exc:

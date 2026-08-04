@@ -39,7 +39,7 @@ from ctf.api.serializers import (
     NotificationAnnounceResultSerializer,
     NotificationListResponseSerializer,
     NotificationSendResultSerializer,
-    SendInvitationsResultSerializer,
+    SendLoginInfoResultSerializer,
 )
 from shared.log_sanitize import safe_log_value
 
@@ -63,7 +63,7 @@ def _dispatch_notification_send(notif: CTFNotification) -> None:
     from ctf.services import notification
 
     type_dispatch = {
-        NotificationType.INVITE.value: lambda n: notification.send_invitations(n.event_id),
+        NotificationType.INVITE.value: lambda n: notification.send_login_info(n.event_id),
         NotificationType.CREDENTIALS.value: lambda n: notification.send_credentials(n.event_id),
         NotificationType.REMINDER.value: lambda n: notification.send_reminder(n.event_id),
         NotificationType.ANNOUNCEMENT.value: lambda n: notification.send_announcement(
@@ -111,23 +111,23 @@ def _validate_email_template_bodies(html_body: str, text_body: str, notification
             _raise_bad_request(f"Invalid template syntax in {label}: {violations[0]}")
 
 
-class SendInvitationsView(APIView):
+class SendLoginInfoView(APIView):
     """Send invitation emails to all uninvited participants of an owned event."""
 
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(request=None, responses=SendInvitationsResultSerializer)
+    @extend_schema(request=None, responses=SendLoginInfoResultSerializer)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Rate-limit, enforce ownership, then queue the invitation emails."""
-        from ctf.services.notification import send_invitations
+        from ctf.services.notification import send_login_info
         from ctf.views._access import _check_credential_delivery_rate_limit
 
         try:
             if not _check_credential_delivery_rate_limit(_actor(request).pk):
                 _raise_throttled("Too many invitations. Try again later.")
             _resolve_owned_event(request, event_id, capability="notifications")
-            result = send_invitations(event_id)
+            result = send_login_info(event_id)
             return Response({"success": True, **result})
         except _CtfApiError as exc:
             return exc.to_response(request)

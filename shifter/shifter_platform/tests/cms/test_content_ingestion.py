@@ -159,7 +159,8 @@ class TestRegisterPackEntitlementBlind:
             user=staff_user,
             request=_request("packs/pack-private", scenario_id="pack-private", provenance={"repo": "licensed/private"}),
         )
-        assert public.created and private.created
+        assert public.created
+        assert private.created
         assert RaesPackageSource.objects.filter(scenario_id__in=["pack-public", "pack-private"]).count() == 2
 
 

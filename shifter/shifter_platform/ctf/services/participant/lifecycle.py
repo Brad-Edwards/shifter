@@ -1,4 +1,4 @@
-"""Participant lifecycle operations (invite, resend, delete, disqualify)."""
+"""Participant lifecycle operations (add, resend login info, delete)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from uuid import UUID
 
 from django.db import transaction
 
-from ctf.enums import ParticipantStatus
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
 from ctf.models import CTFEvent, CTFParticipant, CTFTeam
 from shared.log_sanitize import safe_log_value
@@ -19,17 +18,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def invite_participant(
+def add_participant(
     event_id: UUID,
     email: str,
     name: str,
     team_id: UUID | None = None,
 ) -> CTFParticipant:
-    """Invite a participant to a CTF event.
+    """Add a participant to a CTF event by provisioning a fresh isolated account.
+
+    Immediate seat provisioning: the returned participation is ``registered``
+    with a linked isolated account -- there is no invitation awaiting acceptance.
 
     Args:
         event_id: UUID of the event.
-        email: Participant's email address.
+        email: Optional delivery email for non-secret login information.
         name: Participant's display name.
         team_id: Optional team UUID to assign.
 
@@ -101,19 +103,17 @@ def invite_participant(
                     details={"team_id": str(locked_team.pk)},
                 )
 
-        participant = CTFParticipant.objects.create(
-            event=event,
-            email=email.lower().strip(),
-            name=name.strip(),
-            team=team,
-            status=ParticipantStatus.INVITED.value,
-        )
+        from ctf.services.participant.accounts import provision_participant_seat
+        from ctf.services.range import request_event_provisioning
 
-        # Auto-register: create Django user and link to participant
-        _auto_register_participant(participant)
+        # Organizer add is immediate seat provisioning: the participation is
+        # registered with a fresh isolated account in one step (no transient
+        # INVITED hop, no invitation awaiting acceptance).
+        participant = provision_participant_seat(event, email=normalized_email, name=name.strip(), team=team)
+        transaction.on_commit(lambda: request_event_provisioning(event.pk, source="participant_accounts"))
 
         logger.info(
-            "Created participant account for event %s (id: %s)",
+            "Provisioned participant account for event %s (id: %s)",
             safe_log_value(event_id),
             participant.id,
         )
@@ -164,19 +164,11 @@ def delete_participant(participant_id: UUID) -> bool:
     return True
 
 
-def resend_invite(participant_id: UUID) -> CTFParticipant:
-    """Compatibility facade for the reset-and-send credential operation."""
-    from ctf.services.participant.accounts import reset_participant_credentials
+def resend_login_info(participant_id: UUID) -> CTFParticipant:
+    """Compatibility facade for resending non-secret login information."""
+    from ctf.services.participant.credentials import reset_participant_credentials
 
     return reset_participant_credentials(participant_id)
-
-
-def _auto_register_participant(participant: CTFParticipant) -> None:
-    """Attach a fresh isolated account; retained as the bulk-import seam."""
-    from ctf.services.participant.accounts import attach_isolated_account
-
-    attach_isolated_account(participant)
-    logger.info("Created isolated account for participant %s", participant.pk)
 
 
 def _set_ctf_participant_profile(user: User, event: CTFEvent) -> None:

@@ -560,7 +560,8 @@ class TestScenarioBakeTemplates:
         assert "aws_polling" in content
         m = re.search(r"max_attempts\s*=\s*(\d+)", content)
         delay = re.search(r"delay_seconds\s*=\s*(\d+)", content)
-        assert m and delay, "aws_polling must set delay_seconds + max_attempts"
+        assert m, "aws_polling must set max_attempts"
+        assert delay, "aws_polling must set delay_seconds"
         # >= 45 min of headroom for the large-image snapshot.
         assert int(m.group(1)) * int(delay.group(1)) >= 2700
 
@@ -837,7 +838,9 @@ class TestBaseImageValidationGate:
         # This goes red if the reject arm (`exit 1`) is removed or the allow arm
         # is widened to accept another ref.
         gate = self._step_run_script(PACKER_WORKFLOW.read_text(), "Validate build ref")
-        assert "case" in gate and "REF" in gate  # sanity: we extracted the gate
+        # Sanity: we extracted the gate.
+        assert "case" in gate
+        assert "REF" in gate
 
         def run(ref: str) -> int:
             return subprocess.run(  # noqa: S603
@@ -1030,7 +1033,8 @@ class TestDcAmiProvenance:
 
     def test_promote_ref_gate_rejects_unreviewed_refs(self):
         gate = self._step_run_script(self.PROMOTE_WORKFLOW.read_text(), "Validate promote ref")
-        assert "case" in gate and "REF" in gate
+        assert "case" in gate
+        assert "REF" in gate
 
         def run(ref: str) -> int:
             return subprocess.run(  # noqa: S603

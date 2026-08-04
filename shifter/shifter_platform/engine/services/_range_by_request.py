@@ -39,18 +39,25 @@ def range_owner_reassignment_available_by_request(request_id: UUID) -> bool:
 def destroy_range_by_request(request_id: UUID) -> bool:
     """Tear down range infrastructure by request_id.
 
-    Follows same pattern as destroy_ngfw(). Looks up Range via Request FK
-    and triggers ECS teardown.
+    Selects the teardown entrypoint from the persisted, validated
+    ``range_config.kind``: an RAES-native range (kind ``raes_provisioning_plan``)
+    dispatches ``start_raes_range_teardown`` (the ``raes-range destroy`` command),
+    while every legacy range keeps ``start_range_teardown``. The choice derives
+    from the persisted plan, never from the current catalog selector or capability
+    flag, so an existing RAES range stays destroyable after a rollback empties the
+    route or disables the native flag (ADR-031-R6).
     """
-    from engine.ecs import start_range_teardown
+    from engine.ecs import start_raes_range_teardown, start_range_teardown
     from engine.models import Range
+    from shared.raes.runtime_target import is_raes_provisioning_plan
 
     logger.debug("destroy_range_by_request: request_id=%s", request_id)
     range_obj = Range.objects.filter(request__request_id=request_id).first()
     if not range_obj:
         logger.warning("destroy_range_by_request: no range for request_id=%s", request_id)
         return False
-    return _apply_destroy_by_request(range_obj, request_id, start_range_teardown)
+    teardown = start_raes_range_teardown if is_raes_provisioning_plan(range_obj.range_config) else start_range_teardown
+    return _apply_destroy_by_request(range_obj, request_id, teardown)
 
 
 def _apply_destroy_by_request(
@@ -106,20 +113,9 @@ def cancel_range_by_request(request_id: UUID) -> bool:
         if not range_obj:
             logger.warning("cancel_range_by_request: no range for request_id=%s", request_id)
             return False
-        if range_obj.status == Range.Status.DESTROYING:
-            logger.info(
-                "cancel_range_by_request: already destroying request_id=%s range_id=%s",
-                request_id,
-                range_obj.id,
-            )
-            return True
-        if range_obj.status not in (Range.Status.PENDING, Range.Status.PROVISIONING):
-            logger.warning(
-                "cancel_range_by_request: not cancellable status=%s request_id=%s",
-                range_obj.status,
-                request_id,
-            )
-            return False
+        settled = _cancellation_already_settled(range_obj, request_id)
+        if settled is not None:
+            return settled
         range_obj.status = Range.Status.DESTROYING
         range_obj.save(update_fields=["status"])
         request_provision_interrupt(range_obj)
@@ -129,6 +125,32 @@ def cancel_range_by_request(request_id: UUID) -> bool:
             range_obj.id,
         )
         return True
+
+
+def _cancellation_already_settled(range_obj: Range, request_id: UUID) -> bool | None:
+    """Return the cancellation outcome when the range's status already decides it.
+
+    ``True`` when a teardown is already under way, ``False`` when the status is
+    not cancellable, and ``None`` when the caller should proceed with the
+    cancellation. Caller holds the row lock.
+    """
+    from engine.models import Range
+
+    if range_obj.status == Range.Status.DESTROYING:
+        logger.info(
+            "cancel_range_by_request: already destroying request_id=%s range_id=%s",
+            request_id,
+            range_obj.id,
+        )
+        return True
+    if range_obj.status in (Range.Status.PENDING, Range.Status.PROVISIONING):
+        return None
+    logger.warning(
+        "cancel_range_by_request: not cancellable status=%s request_id=%s",
+        range_obj.status,
+        request_id,
+    )
+    return False
 
 
 def rebind_range_workspace_by_request(request_id: UUID, workspace_id: int) -> bool:

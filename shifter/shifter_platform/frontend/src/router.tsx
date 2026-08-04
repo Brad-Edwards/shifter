@@ -7,6 +7,18 @@ import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
 import { UsersListPage } from "@/features/administer/UsersListPage";
+import { ConsoleSlotPage } from "@/features/administer/organization/ConsoleSlotPage";
+import { OrganizationConsoleLayout } from "@/features/administer/organization/OrganizationConsoleLayout";
+import { OrganizationOverviewPage } from "@/features/administer/organization/OrganizationOverviewPage";
+import {
+  OrganizationSettingsDetailPage,
+  OrganizationSettingsPage,
+} from "@/features/administer/organization/OrganizationSettingsPage";
+import { WorkspaceDetailPage } from "@/features/administer/organization/WorkspaceDetailPage";
+import { WorkspaceListPage } from "@/features/administer/organization/WorkspaceListPage";
+import { WorkspaceMembershipPage } from "@/features/administer/organization/WorkspaceMembershipPage";
+import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
+import { WORKSPACE_SURFACES } from "@/features/administer/organization/surfaces";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
 import { ChallengesPage } from "@/features/ctf/ChallengesPage";
 import { AdminDashboardPage } from "@/features/ctf/admin/AdminDashboardPage";
@@ -19,6 +31,7 @@ import { EventsListPage } from "@/features/ctf/admin/EventsListPage";
 import { MonitoringPage } from "@/features/ctf/admin/MonitoringPage";
 import { ParticipantDetailPage } from "@/features/ctf/admin/ParticipantDetailPage";
 import { ParticipantsPage } from "@/features/ctf/admin/ParticipantsPage";
+import { BriefingPage } from "@/features/ctf/BriefingPage";
 import { EventHomePage } from "@/features/ctf/EventHomePage";
 import { HelpPage } from "@/features/ctf/HelpPage";
 import { RangePage } from "@/features/ctf/RangePage";
@@ -145,6 +158,7 @@ export const router = createBrowserRouter(
             { path: "team", element: <TeamPage /> },
             { path: "account", element: <AccountPage /> },
             { path: "help", element: <HelpPage /> },
+            { path: "briefing", element: <BriefingPage /> },
           ],
         },
         {
@@ -202,6 +216,41 @@ export const router = createBrowserRouter(
             { path: "users/:id", element: <UserDetailPage /> },
             { path: "cost", element: <CostPage /> },
             { path: "settings", element: <PlatformSettingsPage /> },
+            {
+              // Organization/workspace admin console (#1938, PLAT-231). The shell
+              // owns routing, the switcher, context, and capability-aware nav; the
+              // child surface slots (org settings, workspaces, and the
+              // workspace-scoped membership/invitations/users/range-scoping/policy/
+              // quota/audit routes) are placeholders owned by PLAT-232–240. The
+              // selected workspace is the public-UUID route param; the host
+              // catch-all already serves /administer/* so deep links resolve.
+              path: "organization",
+              element: <OrganizationConsoleLayout />,
+              children: [
+                { index: true, element: <OrganizationOverviewPage /> },
+                { path: "settings", element: <OrganizationSettingsPage /> },
+                { path: "settings/:organizationUuid", element: <OrganizationSettingsDetailPage /> },
+                { path: "workspaces", element: <WorkspaceListPage /> },
+                {
+                  path: "workspaces/:workspaceUuid",
+                  element: <WorkspaceScopeLayout />,
+                  children: [
+                    { index: true, element: <WorkspaceDetailPage /> },
+                    // The membership slot (#1941, PLAT-234) is a real surface; the
+                    // remaining slots stay placeholders until PLAT-235–240 land.
+                    ...WORKSPACE_SURFACES.map((surface) => ({
+                      path: surface.key,
+                      element:
+                        surface.key === "membership" ? (
+                          <WorkspaceMembershipPage />
+                        ) : (
+                          <ConsoleSlotPage title={surface.label} />
+                        ),
+                    })),
+                  ],
+                },
+              ],
+            },
           ],
         },
         { path: "*", element: <NotFoundPage /> },

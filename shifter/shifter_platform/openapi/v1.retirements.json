@@ -60,6 +60,25 @@
           "property": "aces"
         }
       ]
+    },
+    {
+      "adr": "ADR-049",
+      "issue": 535,
+      "paths": [],
+      "response_schema_properties": [
+        {
+          "schema": "ParticipantInviteResult",
+          "property": "invited"
+        },
+        {
+          "schema": "ResendInviteResult",
+          "property": "invited"
+        },
+        {
+          "schema": "ParticipantDetail",
+          "property": "invited_at"
+        }
+      ]
     }
   ]
 }

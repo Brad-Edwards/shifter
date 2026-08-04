@@ -201,6 +201,14 @@ def add_challenge_file(
         )
         next_order = (max_order or 0) + 1
 
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(
+            challenge.event_id,
+            actor_id=actor_id,
+            reason="attachment_added",
+        )
+
         try:
             s3_key, sha256_hash, actual_size = upload_challenge_file(
                 file_obj,
@@ -261,15 +269,25 @@ def remove_challenge_file(file_id: UUID, *, actor_id: int) -> None:
             details={"file_id": str(file_id), "event_status": challenge_file.challenge.event.status},
         )
 
-    # Delete from S3 (best effort — don't fail the soft-delete if S3 errors)
-    try:
-        delete_challenge_file(challenge_file.s3_key)
-    except CTFFileError:
-        logger.warning(
-            "Failed to delete S3 object %s, proceeding with soft delete", safe_log_value(challenge_file.s3_key)
+    with transaction.atomic():
+        from ctf.services.content_hydration import mark_content_hydration_drift
+
+        mark_content_hydration_drift(
+            challenge_file.challenge.event_id,
+            actor_id=actor_id,
+            reason="attachment_removed",
         )
 
-    challenge_file.delete(soft=True)
+        # Delete from S3 (best effort — don't fail the soft-delete if S3 errors)
+        try:
+            delete_challenge_file(challenge_file.s3_key)
+        except CTFFileError:
+            logger.warning(
+                "Failed to delete S3 object %s, proceeding with soft delete",
+                safe_log_value(challenge_file.s3_key),
+            )
+
+        challenge_file.delete(soft=True)
     logger.info("Removed file %s", file_id)
 
 

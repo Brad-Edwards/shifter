@@ -15,10 +15,19 @@ from typing import TYPE_CHECKING
 
 from django.db import transaction
 
-from workspaces.models import Organization, Workspace, WorkspaceMembership
-from workspaces.roles import WorkspaceRole
+from workspaces.models import (
+    Organization,
+    OrganizationMembership,
+    Workspace,
+    WorkspaceMembership,
+)
+from workspaces.roles import OrganizationRole, WorkspaceRole
 
-from ._authorization import WorkspaceAuthorization
+from ._authorization import (
+    WorkspaceAuthorization,
+    WorkspaceAuthorizationError,
+    _authorization_from,
+)
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -31,14 +40,29 @@ logger = logging.getLogger(__name__)
 PERSONAL_NAME = "Personal"
 
 
-def _authorization_for(workspace: Workspace, role: str) -> WorkspaceAuthorization:
-    """Build the immutable result for an owned personal workspace."""
-    return WorkspaceAuthorization(
-        workspace_id=workspace.pk,
-        workspace_uuid=workspace.uuid,
-        organization_id=workspace.organization_id,
-        role=role,
+def _persisted_owner_authorization(workspace: Workspace, user: User) -> WorkspaceAuthorization:
+    """Return the persisted personal-owner grant or fail closed.
+
+    A personal workspace without its owner's membership is malformed authority,
+    not permission to synthesize or silently repair a grant during a request.
+    """
+    membership = (
+        WorkspaceMembership.objects.select_related("workspace")
+        .filter(
+            workspace=workspace,
+            user=user,
+            role=WorkspaceRole.OWNER.value,
+        )
+        .first()
     )
+    if membership is None:
+        logger.warning(
+            "resolve_personal_workspace: invalid persisted owner membership user_id=%s workspace_id=%s",
+            user.pk,
+            workspace.pk,
+        )
+        raise WorkspaceAuthorizationError("Workspace access denied")
+    return _authorization_from(membership)
 
 
 def resolve_personal_workspace(user: User) -> WorkspaceAuthorization:
@@ -55,7 +79,7 @@ def resolve_personal_workspace(user: User) -> WorkspaceAuthorization:
     """
     existing = Workspace.objects.filter(personal_for_user=user).first()
     if existing is not None:
-        return _authorization_for(existing, WorkspaceRole.OWNER.value)
+        return _persisted_owner_authorization(existing, user)
 
     try:
         with transaction.atomic():
@@ -65,10 +89,18 @@ def resolve_personal_workspace(user: User) -> WorkspaceAuthorization:
                 name=PERSONAL_NAME,
                 personal_for_user=user,
             )
-            WorkspaceMembership.objects.create(
+            membership = WorkspaceMembership.objects.create(
                 workspace=workspace,
                 user=user,
                 role=WorkspaceRole.OWNER.value,
+            )
+            # The personal organization's bootstrap admin is its owner (ADR-048).
+            # Persisted here so organization authority is read from the membership
+            # row, never re-inferred from the workspace role at authorization time.
+            OrganizationMembership.objects.create(
+                organization=organization,
+                user=user,
+                role=OrganizationRole.ADMIN.value,
             )
     except Exception:
         # A concurrent caller may have won the unique personal_for_user race.
@@ -76,7 +108,7 @@ def resolve_personal_workspace(user: User) -> WorkspaceAuthorization:
         if concurrent is None:
             raise
         logger.debug("resolve_personal_workspace: reusing concurrently created workspace user_id=%s", user.pk)
-        return _authorization_for(concurrent, WorkspaceRole.OWNER.value)
+        return _persisted_owner_authorization(concurrent, user)
 
     logger.info("resolve_personal_workspace: created personal workspace user_id=%s", user.pk)
-    return _authorization_for(workspace, WorkspaceRole.OWNER.value)
+    return _authorization_from(membership)

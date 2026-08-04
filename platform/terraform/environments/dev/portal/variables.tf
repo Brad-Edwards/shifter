@@ -720,6 +720,18 @@ variable "terminal_max_sessions_per_user" {
   default     = 10
 }
 
+variable "shifter_raes_native_provisioning" {
+  description = "RAES-native provisioning capability/rollback gate (SHIFTER_RAES_NATIVE_PROVISIONING). False is the preserved-legacy posture."
+  type        = bool
+  default     = false
+}
+
+variable "shifter_raes_catalog_cutovers" {
+  description = "RAES catalog source-route selector: comma-separated public=source slug pairs (SHIFTER_RAES_CATALOG_CUTOVERS). Empty is the preserved-legacy/rollback posture."
+  type        = string
+  default     = ""
+}
+
 variable "terminal_idle_timeout_seconds" {
   description = "Idle terminal session timeout in seconds (TERMINAL_IDLE_TIMEOUT_SECONDS)."
   type        = number
@@ -904,4 +916,27 @@ variable "raes_package_prefix" {
   description = "Optional key prefix under the RAES package bucket the portal may read (least-privilege scoping)."
   type        = string
   default     = ""
+}
+
+variable "ctf_content_bucket_arn" {
+  description = "Optional private S3 bucket ARN holding digest-pinned native CTF content bundles. Empty disables the portal grant."
+  type        = string
+  default     = ""
+}
+
+variable "ctf_content_prefix" {
+  description = "Contained key prefix under the CTF content bucket the portal may read."
+  type        = string
+  default     = "ctf/content-bundles/"
+}
+
+variable "ctf_content_max_bytes" {
+  description = "Maximum accepted native CTF content bundle size."
+  type        = number
+  default     = 8388608
+
+  validation {
+    condition     = var.ctf_content_max_bytes > 0 && var.ctf_content_max_bytes <= 8388608
+    error_message = "ctf_content_max_bytes must be between 1 and 8388608."
+  }
 }

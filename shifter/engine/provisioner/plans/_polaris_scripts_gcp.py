@@ -19,33 +19,45 @@ GCP_AGENT_COMPOSE_BLOCK = (
 )
 
 
-# GCE twin of FETCH_POLARIS_TESTS_SCRIPT. Pulls the tests/ tree from a GCS
-# bucket instead of S3. The range host VM authenticates with its attached
-# service account via Application Default Credentials (metadata server), so no
-# explicit keys are handled. `gcloud storage` is preferred with a `gsutil`
-# fallback; both ship on the polaris-vm GCE image.
+# GCE twin of FETCH_POLARIS_TESTS_SCRIPT. Pulls the tests/ tree from a
+# provisioner-minted, short-lived, generation-bound V4 signed download URL
+# (agent_assets.get_polaris_tests_presigned_url) instead of using the range-host
+# SA's ADC. The range host is participant-controllable, so it holds NO Cloud
+# Storage identity: a project-level objectViewer let a rooted guest read across
+# tenants (#1644). `curl -sSfL` keeps the URL out of step stdout; nothing here
+# handles credentials or reaches the metadata server.
 FETCH_POLARIS_TESTS_SCRIPT_GCS = """#!/bin/bash
 set -euo pipefail
 
-BUCKET="{{ polaris_tests_bucket }}"
-KEY="{{ polaris_tests_key }}"
+PRESIGNED_URL="{{ polaris_tests_url }}"
 DEST_ROOT="/opt/polaris/scenario-dev/polaris"
 TARBALL="/tmp/polaris-tests.tar.gz"
+# The signed URL is minted before the guest channel opens and expires after
+# 900s (agent_assets._POLARIS_TESTS_URL_EXPIRY_SECONDS); the polaris_fetch_tests
+# SetupStep caps this whole script at 120s. Keep the total connect+transfer+
+# backoff budget well inside both so a retry never operates on an already-expired
+# capability: 3 attempts * 30s max-time + (5s + 10s) backoff = ~105s worst case.
+max_retries=3
+retry_delay_seconds=5
 
 mkdir -p "$DEST_ROOT"
 
-# ADC via the VM service account; no explicit credentials handled here.
-if command -v gcloud >/dev/null 2>&1; then
-  gcloud storage cp "gs://$BUCKET/$KEY" "$TARBALL"
-elif command -v gsutil >/dev/null 2>&1; then
-  gsutil cp "gs://$BUCKET/$KEY" "$TARBALL"
-else
-  echo "polaris tests fetch: neither gcloud nor gsutil is installed on the range host" >&2
-  exit 1
-fi
+last_error=""
+for attempt in $(seq 1 "$max_retries"); do
+  if curl -sSfL --connect-timeout 15 --max-time 30 -o "$TARBALL" "$PRESIGNED_URL"; then
+    break
+  fi
+  last_error="curl failed on attempt $attempt"
+  if [[ "$attempt" -lt "$max_retries" ]]; then
+    delay=$((retry_delay_seconds * (2 ** (attempt - 1))))
+    echo "polaris tests fetch: download attempt $attempt failed, retrying in ${delay}s" >&2
+    rm -f "$TARBALL"
+    sleep "$delay"
+  fi
+done
 
 if [[ ! -s "$TARBALL" ]]; then
-  echo "polaris tests fetch: downloaded tarball is empty" >&2
+  echo "polaris tests fetch: tarball was not downloaded (${last_error:-empty file})" >&2
   exit 1
 fi
 

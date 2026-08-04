@@ -82,6 +82,15 @@ function RegisterForm() {
         disk_type: diskType,
         enabled: true,
         notes,
+        // This form registers a legacy alias-only mapping; portable RAES artifact
+        // identity (#1580) is admitted through the API/CLI, so the optional
+        // identity + evidence fields are left blank here.
+        artifact_id: "",
+        artifact_version: "",
+        artifact_digest: "",
+        media_type: "",
+        integrity_ref: "",
+        provenance_ref: "",
       },
       {
         onSuccess: () => {

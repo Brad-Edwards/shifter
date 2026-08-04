@@ -28,7 +28,7 @@ from __future__ import annotations
 from cms.assets.services import AgentUploadSpec
 from cms.assets.services import create_agent as assets_create_agent
 from cms.assets.services import delete_agent as assets_delete_agent
-from cms.exceptions import CMSError
+from cms.exceptions import CMSError, WorkspaceLaunchDenied
 from cms.models import AgentConfig, RangeInstance
 from cms.scenarios.images import project_scenario_images
 from cms.signals import range_status_changed as range_status_changed
@@ -87,6 +87,11 @@ from ._queries import (
     get_range_target_instances,
 )
 from ._raes_range_create import create_raes_native_range, create_range_dispatch
+from ._range_access import (
+    connect_range_terminal,
+    get_range_rdp_connection_info,
+    get_range_ssh_connection_info,
+)
 from ._range_create import create_range
 from ._range_destroy import (
     cancel_range,
@@ -160,6 +165,7 @@ __all__ = (
     "RangeLeaseConflict",
     "RangeLeaseNotFound",
     "RegisteredPack",
+    "WorkspaceLaunchDenied",
     "assets_create_agent",
     "assets_delete_agent",
     "audit_log",
@@ -167,6 +173,7 @@ __all__ = (
     "cancel_range_by_request_id",
     "cancel_upload",
     "complete_upload",
+    "connect_range_terminal",
     "create_agent",
     "create_credential",
     "create_ngfw",
@@ -208,7 +215,9 @@ __all__ = (
     "get_ngfw",
     "get_range",
     "get_range_by_request_id",
+    "get_range_rdp_connection_info",
     "get_range_spec_by_id",
+    "get_range_ssh_connection_info",
     "get_range_status_by_id",
     "get_range_target_instances",
     "get_scenario",

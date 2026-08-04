@@ -23,17 +23,24 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
-from engine.services import create_raes_range
+from engine.services import RangeBindings, create_raes_range
 from shared.raes.dispatch_port import ShifterDispatchResult
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from shared.raes.artifact_binding import ArtifactBinding
+    from shared.raes.artifact_inventory import BackendArtifact
     from shared.raes.content_delivery import DeliveryBinding
     from shared.raes.participant_access import ParticipantAccessBinding
     from shared.range_instantiation_policy import BackendAdmission
 
 __all__ = ["CmsRaesDispatchPort"]
+
+# Realization backends whose tenant image registry can own portable artifacts
+# (the RAES-native GCE adapter). A backend outside this set has no artifact
+# inventory, so resolution is skipped rather than querying an unknown provider.
+_ARTIFACT_REGISTRY_PROVIDERS = frozenset({"gce"})
 
 
 @dataclass(frozen=True)
@@ -77,18 +84,60 @@ class CmsRaesDispatchPort:
         participant_access: Sequence[ParticipantAccessBinding] = (),
     ) -> ShifterDispatchResult:
         delivery_bindings = self._prepare_delivery(compiled_plan)
+        artifact_bindings = self._resolve_artifact_bindings(compiled_plan)
         ref = create_raes_range(
             request_id=self.request_id,
             user_id=self.user_id,
             compiled_plan=compiled_plan,
             backend_admission=self.backend_admission,
-            delivery_bindings=delivery_bindings,
-            participant_access=tuple(participant_access),
+            bindings=RangeBindings(
+                delivery=delivery_bindings,
+                participant_access=tuple(participant_access),
+                artifact=artifact_bindings,
+            ),
             workspace_id=self.workspace_id,
         )
         return ShifterDispatchResult(
             request_id=ref.request_id, accepted=ref.accepted, status=ref.status, range_id=ref.range_id
         )
+
+    def _resolve_artifact_bindings(self, compiled_plan: dict[str, Any]) -> tuple[ArtifactBinding, ...]:
+        """Resolve authored artifact requirements to fenced bindings at launch (#1580).
+
+        ALWAYS runs the resolver over the plan's authored requirements -- it never
+        short-circuits on the backend before inspecting requirements. A plan with no
+        artifact requirement resolves to no bindings; a plan carrying a requirement
+        the selected backend cannot satisfy (including a backend with no artifact
+        registry, whose inventory is empty) fails closed: ``resolve_plan_artifact_bindings``
+        raises, the dispatch is not accepted, and the range reservation is marked
+        FAILED rather than a missing binding letting the provisioner fall through to
+        legacy resolution. An exact requirement is never substituted (ADR-034-R8;
+        codex #1580 review).
+        """
+        from shared.raes.artifact_inventory import resolve_plan_artifact_bindings
+        from shared.raes.manifest import shifter_artifact_mechanism_capabilities, shifter_backend_apparatus
+
+        return resolve_plan_artifact_bindings(
+            compiled_plan,
+            inventory=self._backend_inventory(),
+            capabilities=shifter_artifact_mechanism_capabilities(),
+            backend=shifter_backend_apparatus(),
+        )
+
+    def _backend_inventory(self) -> tuple[BackendArtifact, ...]:
+        """Return the selected backend's owned artifact inventory, or empty when it has none.
+
+        A backend outside the artifact-registry set (or an absent admission) owns no
+        portable artifacts, so its inventory is empty and any authored requirement
+        resolves unsatisfiable -- the resolver then fails the launch closed rather
+        than skipping resolution.
+        """
+        provider = self.backend_admission.backend if self.backend_admission is not None else None
+        if provider not in _ARTIFACT_REGISTRY_PROVIDERS:
+            return ()
+        from engine.services import list_backend_artifacts
+
+        return tuple(list_backend_artifacts(provider=provider))
 
     def _prepare_delivery(self, compiled_plan: dict[str, Any]) -> tuple[DeliveryBinding, ...]:
         """Materialize + promote source-backed content, returning byte-free bindings.

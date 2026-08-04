@@ -63,6 +63,30 @@ def backend_binding_fields(backend_admission: BackendAdmission | None) -> dict[s
     return {"range_backend": backend, "instantiation_purpose": purpose.value}
 
 
+def verify_existing_workspace_binding(
+    existing_range: Range,
+    request_id: UUID,
+    workspace_id: int,
+) -> None:
+    """Reject an idempotent create replay whose workspace scope differs (ADR-046-R9).
+
+    Engine create is idempotent on ``request_id``; a replay must carry the same
+    tenancy scope the range was created with. A replay that names a *different*
+    ``workspace_id`` is a cross-tenant binding conflict -- silently reusing the
+    first range for the differently scoped replay would leak a range across
+    workspaces -- so it is refused here rather than reused, exactly as a
+    conflicting backend/participant/remote-access replay is. This is Engine's
+    defense-in-depth half of the scope resolved and authorized by CMS; Engine
+    still never resolves or authorizes a workspace itself (ADR-046-R1).
+    """
+    if existing_range.workspace_id != workspace_id:
+        raise EngineError(
+            f"Range workspace binding conflict for request {request_id}: persisted "
+            f"workspace {existing_range.workspace_id} differs from requested workspace "
+            f"{workspace_id} (ADR-046-R9 conflict; a scoped range is never silently reused)"
+        )
+
+
 def verify_existing_binding(
     existing_range: Range,
     request_id: UUID,

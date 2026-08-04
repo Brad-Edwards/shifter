@@ -14,12 +14,14 @@ from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from shared.constants import USER_CANNOT_BE_NONE
 from shared.log_sanitize import safe_log_value
+from workspaces.services import WorkspaceOperation
 
 from ._common import (
     _instance_contexts_from_range_spec,
     _resolve_runtime_ips,
     _validate_caller_user,
 )
+from ._range_workspace import authorize_range_workspace, authorized_range_workspace_ids
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -48,7 +50,10 @@ def list_ranges(user: User) -> list[RangeInstance]:
     logger.debug("list_ranges called for user_id=%s", user.id)
 
     try:
-        result = RangeInstance.objects.filter(user_id=user.id)
+        result = RangeInstance.objects.filter(
+            user_id=user.id,
+            workspace_id__in=authorized_range_workspace_ids(user, WorkspaceOperation.READ_RANGE),
+        )
 
         if result is None:
             logger.error(
@@ -121,6 +126,7 @@ def list_mission_control_range_history(user: User) -> list[RangeInstance]:
         RangeInstance.all_objects.filter(
             user_id=user.id,
             range_source=RangeSource.MISSION_CONTROL.value,
+            workspace_id__in=authorized_range_workspace_ids(user, WorkspaceOperation.READ_RANGE),
         )
         .select_related("request")
         .order_by("-created_at")
@@ -201,6 +207,7 @@ def get_range(user: User, range_id: int) -> RangeInstance:
                 user.id,
             )
             raise CMSError(f"Range {range_id} not found")
+        authorize_range_workspace(user, range_obj.workspace_id, WorkspaceOperation.READ_RANGE)
 
         logger.debug(
             "get_range returning range_id=%s for user_id=%s",
@@ -277,6 +284,7 @@ def get_active_range(user: User, range_source: RangeSource | None = None) -> Ran
     try:
         instance = (
             RangeInstance.objects.filter(user_id=user.id, range_source=range_source.value)
+            .filter(workspace_id__in=authorized_range_workspace_ids(user, WorkspaceOperation.READ_RANGE))
             .exclude(status=ResourceStatus.DESTROYING.value)
             .select_related("agent", "request")
             .order_by("-created_at")
@@ -357,6 +365,7 @@ def has_ready_active_range(user: User, range_source: RangeSource | None = None) 
 
     status = (
         RangeInstance.objects.filter(user_id=user.id, range_source=range_source.value)
+        .filter(workspace_id__in=authorized_range_workspace_ids(user, WorkspaceOperation.READ_RANGE))
         .exclude(status=ResourceStatus.DESTROYING.value)
         .order_by("-created_at")
         .values_list("status", flat=True)
@@ -398,6 +407,7 @@ def get_range_by_request_id(user: User, request_id: str) -> RangeContext:
     instance = RangeInstance.objects.filter(
         request__request_id=request_id,
         user_id=user.id,
+        workspace_id__in=authorized_range_workspace_ids(user, WorkspaceOperation.READ_RANGE),
     ).first()
 
     if not instance:

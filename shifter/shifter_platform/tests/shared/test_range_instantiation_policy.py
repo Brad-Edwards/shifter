@@ -72,7 +72,8 @@ class TestLiveFireAdmission:
         assert result.admitted is False
         assert result.code == POLICY_DENIAL_CODE
         assert result.backend == "gdc"
-        assert "GDC" in result.reason and "gce" in result.reason.lower()
+        assert "GDC" in result.reason
+        assert "gce" in result.reason.lower()
 
     def test_gdc_via_plane_alias_is_denied(self):
         result = evaluate_gcp_backend_admission(None, "gdc", InstantiationPurpose.LIVE_FIRE)

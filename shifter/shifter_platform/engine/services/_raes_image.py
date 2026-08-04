@@ -9,8 +9,11 @@ platform writes, the provisioner reads).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from shared.raes.artifact_inventory import BackendArtifact
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -22,6 +25,7 @@ __all__ = [
     "RaesImageMappingOptions",
     "RaesImageMappingView",
     "disable_raes_image_mapping",
+    "list_backend_artifacts",
     "list_raes_image_mappings",
     "upsert_raes_image_mapping",
 ]
@@ -33,7 +37,14 @@ class RaesImageMappingError(ValueError):
 
 @dataclass(frozen=True)
 class RaesImageMappingOptions:
-    """Optional fields for an RAES image mapping (beyond the natural key + image ref)."""
+    """Optional fields for an RAES image mapping (beyond the natural key + image ref).
+
+    The portable-identity block (``artifact_id`` / ``artifact_digest`` /
+    ``media_type`` / ``integrity_ref`` / ``provenance_ref``) binds the mapping to a
+    portable RAES ``ArtifactIdentity`` and its admission evidence (#1580). Either
+    leave all five blank (a legacy alias-only mapping) or supply all five (a
+    portable mapping that can satisfy an authored artifact requirement).
+    """
 
     source_version: str = ""
     machine_type: str = ""
@@ -41,6 +52,12 @@ class RaesImageMappingOptions:
     disk_type: str = ""
     enabled: bool = True
     notes: str = ""
+    artifact_id: str = ""
+    artifact_version: str = ""
+    artifact_digest: str = ""
+    media_type: str = ""
+    integrity_ref: str = ""
+    provenance_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -63,6 +80,12 @@ class RaesImageMappingView:
     disk_type: str
     enabled: bool
     notes: str
+    artifact_id: str
+    artifact_version: str
+    artifact_digest: str
+    media_type: str
+    integrity_ref: str
+    provenance_ref: str
     created_at: datetime
     updated_at: datetime
 
@@ -89,6 +112,7 @@ def upsert_raes_image_mapping(
     ref = _require(image_ref, field="image_ref")
     if opts.disk_size_gb is not None and opts.disk_size_gb <= 0:
         raise RaesImageMappingError("disk_size_gb must be a positive integer when set")
+    portable = _validate_portable_identity(opts)
 
     mapping, _created = RaesImageMapping.objects.update_or_create(
         provider=normalized_provider,
@@ -101,6 +125,7 @@ def upsert_raes_image_mapping(
             "disk_type": (opts.disk_type or "").strip(),
             "enabled": opts.enabled,
             "notes": opts.notes or "",
+            **portable,
         },
     )
     return mapping
@@ -127,6 +152,34 @@ def list_raes_image_mappings(
     if not include_disabled:
         queryset = queryset.filter(enabled=True)
     return [_to_view(row) for row in queryset]
+
+
+def list_backend_artifacts(*, provider: str) -> list[BackendArtifact]:
+    """Return the enabled portable-identity registry rows for ``provider`` as backend artifacts.
+
+    Only rows carrying a portable ``ArtifactIdentity`` (a non-blank
+    ``artifact_digest``) are backend-owned artifacts the resolution seam can
+    satisfy against; legacy alias-only rows resolve the source-name path and never
+    satisfy a portable artifact requirement. This is the one projection both the
+    catalog realizability contributor and the launch-time fencing resolver consume,
+    so they agree on what the backend owns.
+    """
+    return [
+        BackendArtifact(
+            artifact_id=row.artifact_id,
+            version=row.artifact_version,
+            digest=row.artifact_digest,
+            media_type=row.media_type,
+            integrity_ref=row.integrity_ref,
+            provenance_ref=row.provenance_ref,
+            image_ref=row.image_ref,
+            machine_type=row.machine_type,
+            disk_size_gb=row.disk_size_gb,
+            disk_type=row.disk_type,
+        )
+        for row in list_raes_image_mappings(provider=provider, include_disabled=False)
+        if row.artifact_digest
+    ]
 
 
 def disable_raes_image_mapping(
@@ -174,9 +227,53 @@ def _to_view(mapping: RaesImageMapping) -> RaesImageMappingView:
         disk_type=mapping.disk_type,
         enabled=mapping.enabled,
         notes=mapping.notes,
+        artifact_id=mapping.artifact_id,
+        artifact_version=mapping.artifact_version,
+        artifact_digest=mapping.artifact_digest,
+        media_type=mapping.media_type,
+        integrity_ref=mapping.integrity_ref,
+        provenance_ref=mapping.provenance_ref,
         created_at=mapping.created_at,
         updated_at=mapping.updated_at,
     )
+
+
+_SHA256_DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
+
+
+def _stripped(value: str | None) -> str:
+    """Return ``value`` stripped, or ``""`` when it is None/blank."""
+    return (value or "").strip()
+
+
+def _validate_portable_identity(opts: RaesImageMappingOptions) -> dict[str, str]:
+    """Return the normalized portable-identity fields, or raise on a half-populated set.
+
+    Either all five portable fields are blank (a legacy alias-only mapping) or all
+    are present (a portable mapping); a partial set is rejected here with a clear
+    error before the database CheckConstraint would reject it, and the digest must
+    be a canonical ``sha256:`` value so a disclosure built from it is well-formed.
+    """
+    fields = {
+        "artifact_id": _stripped(opts.artifact_id),
+        "artifact_version": _stripped(opts.artifact_version),
+        "artifact_digest": _stripped(opts.artifact_digest),
+        "media_type": _stripped(opts.media_type),
+        "integrity_ref": _stripped(opts.integrity_ref),
+        "provenance_ref": _stripped(opts.provenance_ref),
+    }
+    present = [key for key, value in fields.items() if value]
+    if not present:
+        return fields
+    if len(present) != len(fields):
+        missing = sorted(set(fields) - set(present))
+        raise RaesImageMappingError(
+            f"a portable artifact mapping requires all of artifact_id, artifact_version, artifact_digest, "
+            f"media_type, integrity_ref, provenance_ref; missing: {', '.join(missing)}"
+        )
+    if not _SHA256_DIGEST.fullmatch(fields["artifact_digest"]):
+        raise RaesImageMappingError("artifact_digest must be a canonical 'sha256:<64 hex>' value")
+    return fields
 
 
 def _normalize_provider(provider: str) -> str:

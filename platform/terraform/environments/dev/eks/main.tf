@@ -56,6 +56,11 @@ module "eks" {
       service_account = "portal"
       policy_arns     = []
       secret_names    = local.secret_names
+      object_read_arns = (
+        var.ctf_content_bucket_arn == ""
+        ? []
+        : ["${var.ctf_content_bucket_arn}/${var.ctf_content_prefix}*"]
+      )
     }
     workers = {
       namespace       = "shifter-platform"

@@ -345,6 +345,73 @@ class TestLaunchRange:
         # No second range row was created.
         assert Range.objects.count() == 1
 
+    @staticmethod
+    def _member_workspace(user):
+        from workspaces.models import Organization, Workspace, WorkspaceMembership
+        from workspaces.roles import WorkspaceRole
+
+        organization = Organization.objects.create(name="API Shared Org")
+        workspace = Workspace.objects.create(organization=organization, name="API Shared")
+        WorkspaceMembership.objects.create(workspace=workspace, user=user, role=WorkspaceRole.MEMBER.value)
+        return workspace
+
+    def test_launch_with_member_workspace_uuid_binds_that_workspace(
+        self, authenticated_client, make_agent, hydratable_scenario
+    ):
+        client, user = authenticated_client(email="wslaunch@example.com")
+        agent = make_agent(user)
+        workspace = self._member_workspace(user)
+
+        response = self._launch(
+            client,
+            {
+                "agent_id": agent.id,
+                "scenario": hydratable_scenario.scenario_id,
+                "workspace_uuid": str(workspace.uuid),
+            },
+        )
+
+        assert response.status_code == 200
+        assert Range.objects.get().workspace_id == workspace.id
+
+    def test_launch_rejects_a_malformed_workspace_uuid_at_the_serializer(
+        self, authenticated_client, make_agent, hydratable_scenario
+    ):
+        client, user = authenticated_client(email="wsbad@example.com")
+        agent = make_agent(user)
+
+        response = self._launch(
+            client,
+            {"agent_id": agent.id, "scenario": hydratable_scenario.scenario_id, "workspace_uuid": "not-a-uuid"},
+        )
+
+        assert response.status_code == 400
+        assert Range.objects.count() == 0
+
+    def test_launch_with_a_non_member_workspace_is_denied(
+        self, authenticated_client, make_agent, hydratable_scenario, django_user_model
+    ):
+        from workspaces.models import Organization, Workspace
+
+        client, user = authenticated_client(email="wsnonmember@example.com")
+        agent = make_agent(user)
+        organization = Organization.objects.create(name="Foreign Org")
+        workspace = Workspace.objects.create(organization=organization, name="Foreign")
+
+        response = self._launch(
+            client,
+            {
+                "agent_id": agent.id,
+                "scenario": hydratable_scenario.scenario_id,
+                "workspace_uuid": str(workspace.uuid),
+            },
+        )
+
+        # Authorized-shape but unavailable scope is an opaque 403 (ADR-046-R9),
+        # distinct from the serializer's 400 for a malformed UUID.
+        assert response.status_code == 403
+        assert Range.objects.count() == 0
+
 
 # ---------------------------------------------------------------------------
 # cancel_range / destroy_range

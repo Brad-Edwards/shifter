@@ -191,6 +191,24 @@ class TestFirewalls:
         assert any("ingress" in name for name in names)
         assert any("egress-deny" in name for name in names)
 
+    @pytest.mark.parametrize("allow_public_web_egress", [False, True])
+    def test_resolved_image_profile_controls_public_web_egress(self, allow_public_web_egress):
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/kali-1",
+            allow_public_web_egress=allow_public_web_egress,
+        )
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(profile),
+            _config(),
+        )
+        web_rules = [firewall for firewall in plan["firewalls"] if firewall["name"] == "shifter-r-7-egress-web"]
+        assert bool(web_rules) is allow_public_web_egress
+        if web_rules:
+            assert web_rules[0]["allowed"] == [{"IPProtocol": "tcp", "ports": ["80", "443"]}]
+
     def test_authored_acls_realized_as_node_firewalls(self):
         acl = RaesPlanAcl(
             name="ssh", action="accept", direction="in", protocol="tcp", ports=(22,), from_net="net.a", to_net=None

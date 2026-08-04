@@ -30,17 +30,31 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from raes.scenarios import ScenarioError, load_scenario
+from raes_env_packs.publication import authored_artifact_requirements
 
+from shared.raes.artifact_resolution import ArtifactResolutionStatus, resolve_artifact_requirement
+from shared.raes.manifest import shifter_artifact_mechanism_capabilities, shifter_backend_apparatus
 from shared.raes.runtime_target import ShifterProvisioner, create_shifter_backend_target
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
 
+    from raes._source import ArtifactRequirement
+    from raes_contracts.apparatus import ApparatusIdentity
+    from raes_contracts.contracts import ArtifactMechanismCapability, ArtifactRequirementAvailability
     from raes_contracts.diagnostics import Diagnostic
+    from raes_processor.models.runtime_model import ExecutionPlan
+
+    #: Injected by the catalog layer to supply backend-owned inventory availability
+    #: for a scenario's authored requirements (keeps the registry read out of shared).
+    ArtifactAvailabilityProvider = Callable[
+        [Mapping[str, ArtifactRequirement | None]],
+        Mapping[str, ArtifactRequirementAvailability],
+    ]
 
 __all__ = [
     "CapabilityAssessment",
@@ -49,8 +63,13 @@ __all__ = [
     "RealizabilityGap",
     "RealizabilityOutcome",
     "assess_scenario_capability",
+    "resolve_artifact_gaps",
     "worst_outcome",
 ]
+
+#: Gap code for an artifact requirement whose compiled address is ambiguous
+#: (two owners rendered the same address), so it cannot be resolved.
+AMBIGUOUS_ARTIFACT_ADDRESS_CODE = "shifter-realizability.artifact-ambiguous-address"
 
 #: RAES plan resource type carrying a provisioned node.
 _NODE_RESOURCE_TYPE = "node"
@@ -85,6 +104,7 @@ class GapCategory(StrEnum):
     IMAGE_SUPPLY = "image_supply"
     SOURCE_INTEGRITY = "source_integrity"
     TARGET = "target"
+    ARTIFACT = "artifact"
 
 
 @dataclass(frozen=True, order=True)
@@ -150,7 +170,8 @@ class _NeverDispatchPort:
         """Identify the assessment; no Shifter request is ever created."""
         return "realizability-assessment"
 
-    def realize(self, compiled_plan: dict[str, Any], participant_access: object = ()) -> Any:
+    @staticmethod
+    def realize(compiled_plan: dict[str, Any], participant_access: object = ()) -> NoReturn:
         """Refuse to dispatch -- assessment is an authoring check, not a launch."""
         raise AssertionError("realizability assessment must never dispatch a provisioning plan")
 
@@ -159,6 +180,7 @@ def assess_scenario_capability(
     scenario_path: Path,
     *,
     parameters: Mapping[str, object] | None = None,
+    artifact_availability_provider: ArtifactAvailabilityProvider | None = None,
 ) -> CapabilityAssessment:
     """Assess whether the declared capability envelope admits this RAES scenario.
 
@@ -187,12 +209,87 @@ def assess_scenario_capability(
         return _indeterminate("scenario could not be planned", exc)
 
     diagnostics = [*manager_plan.diagnostics, *ShifterProvisioner.validate(manager_plan.provisioning)]
-    gaps = _project_gaps(diagnostics)
+    gaps = tuple(
+        sorted({*_project_gaps(diagnostics), *_artifact_gaps_for_scenario(scenario, artifact_availability_provider)})
+    )
     outcome = RealizabilityOutcome.NOT_REALIZABLE if gaps else RealizabilityOutcome.REALIZABLE
     return CapabilityAssessment(
         outcome=outcome,
         gaps=gaps,
         image_demands=_project_image_demands(manager_plan.provisioning),
+    )
+
+
+def resolve_artifact_gaps(
+    requirements: Mapping[str, ArtifactRequirement | None],
+    *,
+    capabilities: Sequence[ArtifactMechanismCapability],
+    availability_by_address: Mapping[str, ArtifactRequirementAvailability],
+    backend: ApparatusIdentity,
+) -> tuple[RealizabilityGap, ...]:
+    """Project per-requirement artifact resolution into ordered realizability gaps.
+
+    Each authored artifact requirement (keyed by compiled address) is resolved
+    against the backend's declared mechanism capabilities and the availability
+    facts scoped to its address. A ``None`` value marks an ambiguous compiled
+    address that cannot be resolved. Only ``UNRESOLVABLE`` outcomes become gaps;
+    ``SATISFIED``, ``DELEGATED`` (open, realized at apply time), and ``SKIPPED``
+    add none. This is the ADR-034-R2/R8 posture evaluation surfaced to the author.
+    """
+    gaps: list[RealizabilityGap] = []
+    for address, requirement in requirements.items():
+        if requirement is None:
+            gaps.append(
+                RealizabilityGap(
+                    code=AMBIGUOUS_ARTIFACT_ADDRESS_CODE,
+                    address=address,
+                    category=GapCategory.ARTIFACT,
+                    message="two authored requirements resolved to the same compiled address; it is ambiguous",
+                )
+            )
+            continue
+        resolution = resolve_artifact_requirement(
+            requirement,
+            address=address,
+            capabilities=capabilities,
+            availability=availability_by_address.get(address),
+            backend=backend,
+        )
+        if resolution.status is ArtifactResolutionStatus.UNRESOLVABLE:
+            gaps.append(
+                RealizabilityGap(
+                    code=resolution.code,
+                    address=address,
+                    category=GapCategory.ARTIFACT,
+                    message=resolution.message,
+                )
+            )
+    return tuple(sorted(set(gaps)))
+
+
+def _artifact_gaps_for_scenario(
+    scenario: object,
+    availability_provider: ArtifactAvailabilityProvider | None,
+) -> tuple[RealizabilityGap, ...]:
+    """Resolve a compiled scenario's authored artifact requirements into gaps.
+
+    Absent concerns (a ``Source`` with no requirement) never appear here -- the
+    upstream extractor only indexes declared requirements -- so a pack that
+    carries none produces no artifact gaps and stays realizable (ADR-034 AC8).
+    ``availability_provider`` supplies the backend-owned inventory facts for the
+    extracted requirements (the catalog layer injects the registry read); when it
+    is absent, availability is empty and any authored requirement resolves
+    fail-closed rather than being silently satisfied.
+    """
+    requirements = authored_artifact_requirements([scenario])
+    if not requirements:
+        return ()
+    availability = availability_provider(requirements) if availability_provider is not None else {}
+    return resolve_artifact_gaps(
+        requirements,
+        capabilities=shifter_artifact_mechanism_capabilities(),
+        availability_by_address=availability,
+        backend=shifter_backend_apparatus(),
     )
 
 
@@ -214,7 +311,7 @@ def worst_outcome(outcomes: Iterable[RealizabilityOutcome]) -> RealizabilityOutc
     return RealizabilityOutcome.REALIZABLE
 
 
-def _plan(scenario: object, parameters: Mapping[str, object] | None) -> Any:
+def _plan(scenario: object, parameters: Mapping[str, object] | None) -> ExecutionPlan:
     """Compile and plan ``scenario`` against the Shifter backend without applying."""
     from raes_runtime import RuntimeManager
 
@@ -241,7 +338,7 @@ def _project_gaps(diagnostics: Iterable[Diagnostic]) -> tuple[RealizabilityGap, 
     return tuple(sorted(gaps))
 
 
-def _project_image_demands(provisioning_plan: Any) -> tuple[ImageDemand, ...]:
+def _project_image_demands(provisioning_plan: object) -> tuple[ImageDemand, ...]:
     """Project each planned node into its bounded image identity.
 
     Reads the serialized RAES plan payload directly, the same way the

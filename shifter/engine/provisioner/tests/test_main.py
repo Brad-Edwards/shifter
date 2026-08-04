@@ -458,6 +458,23 @@ class TestRangeStatePayloads:
         assert payload["ssh_username"] == "Administrator"
         assert payload["cloud_provider"] == "gcp"
         assert payload["provider_metadata"] == {"gcp": {"vm_name": "vmrt-vm-1", "namespace": "range-42"}}
+        assert "sftp_root_directory" not in payload
+
+    def test_build_provisioned_instance_payload_carries_sftp_root_directory(self):
+        from state_helpers import _build_provisioned_instance_payload
+
+        payload = _build_provisioned_instance_payload(
+            {
+                "uuid": "inst-123",
+                "os": "kali",
+                "instance_id": "i-abc",
+                "private_ip": "10.1.1.10",
+                "sftp_root_directory": "/home/kali",
+            },
+            provider="gcp",
+        )
+
+        assert payload["sftp_root_directory"] == "/home/kali"
 
     def test_build_provisioned_instance_payload_propagates_rdp_password_secret_arn(self):
         # Per #762: Range.provisioned_instances entries carry the
@@ -1097,8 +1114,10 @@ class TestGdcProvisioning:
         setup.assert_not_called()
         preconfigured_setup.assert_called_once()
 
-    def test_polaris_bootstrap_gcp_routes_ssh_and_uses_gcp_plan(self, monkeypatch):
+    def test_polaris_bootstrap_gcp_routes_ssh_and_uses_gcp_plan(self, monkeypatch, caplog):
         """GCP polaris bootstrap uses the routed executor and a gcp plan. No IMDS mutation exists anywhere (#1377)."""
+        import logging
+
         import polaris_bootstrap
 
         captured = {}
@@ -1123,26 +1142,67 @@ class TestGdcProvisioning:
                 captured["target"] = target
                 captured["plan_provider"] = plan.provider
                 captured["document_name"] = document_name
+                captured["context"] = context
                 return SimpleNamespace(success=True, error=None)
 
+        signed_url = "https://storage.googleapis.com/assets/polaris?X-Goog-Signature=sig&generation=42"
         monkeypatch.setattr(polaris_bootstrap, "build_guest_execution_context", fake_build_context)
         monkeypatch.setattr(polaris_bootstrap, "SetupOrchestrator", _FakeOrchestrator)
-        monkeypatch.setenv("POLARIS_TESTS_BUCKET", "gcs-bucket")
+        monkeypatch.setattr("agent_assets.get_polaris_tests_presigned_url", lambda: signed_url)
         monkeypatch.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "proj-123")
 
-        polaris_bootstrap._run_polaris_range_bootstrap(
-            instance_data={"instance_id": "shifter-r-9-polaris-kali", "os": "kali", "role": "attacker"},
-            instance_id="shifter-r-9-polaris-kali",
-            dc_ip="10.50.2.4",
-            public_key="ssh-ed25519 AAAA",
-            provider="gcp",
-        )
+        with caplog.at_level(logging.DEBUG):
+            polaris_bootstrap._run_polaris_range_bootstrap(
+                instance_data={"instance_id": "shifter-r-9-polaris-kali", "os": "kali", "role": "attacker"},
+                instance_id="shifter-r-9-polaris-kali",
+                dc_ip="10.50.2.4",
+                public_key="ssh-ed25519 AAAA",
+                provider="gcp",
+            )
 
         assert captured["plan_provider"] == "gcp"
         assert captured["target"] == "10.50.2.3"
         assert captured["closed"] is True
+        # #1644: the provisioner-minted signed URL is threaded into the render
+        # context so the guest fetches the tarball without a GCS identity.
+        assert captured["context"]["polaris_tests_url"] == signed_url
+        assert "polaris_tests_bucket" not in captured["context"]
+        # The signed capability must never reach the logs.
+        assert signed_url not in caplog.text
         # The insecure hop-limit path is gone entirely, not merely skipped.
         assert not hasattr(polaris_bootstrap, "_set_aws_imds_hop_limit")
+
+    def test_polaris_bootstrap_gcp_mint_failure_fails_closed(self, monkeypatch):
+        """A signed-URL mint failure aborts the setup with a sanitized error and
+        never opens the guest channel or falls back to guest ADC (#1644)."""
+        import polaris_bootstrap
+        from cloud.exceptions import CloudStorageError
+        from orchestrators.setup_orchestrator import SetupError
+
+        opened = {"built": False}
+
+        def fake_build_context(instance_data, *, os_type, role):
+            opened["built"] = True
+            raise AssertionError("guest channel must not open when minting fails")
+
+        def failing_mint():
+            raise CloudStorageError("gs://assets/polaris/tests/polaris-tests.tar.gz not found")
+
+        monkeypatch.setattr(polaris_bootstrap, "build_guest_execution_context", fake_build_context)
+        monkeypatch.setattr("agent_assets.get_polaris_tests_presigned_url", failing_mint)
+
+        with pytest.raises(SetupError) as exc:
+            polaris_bootstrap._run_polaris_range_bootstrap(
+                instance_data={"instance_id": "shifter-r-9-polaris-kali", "os": "kali", "role": "attacker"},
+                instance_id="shifter-r-9-polaris-kali",
+                dc_ip="10.50.2.4",
+                public_key="ssh-ed25519 AAAA",
+                provider="gcp",
+            )
+
+        assert opened["built"] is False
+        # Sanitized message: no bucket/key/URL leaked into the SetupError text.
+        assert "polaris-tests.tar.gz" not in str(exc.value)
 
     def test_polaris_bootstrap_aws_uses_aws_plan_and_threads_role_arn(self, monkeypatch, aws_polaris_agent_env):
         """AWS polaris bootstrap uses the aws plan and threads the per-range role ARN (#1377).

@@ -193,14 +193,61 @@ def test_dispatch_routes_native_for_raes_when_flag_on(user, native_on, monkeypat
     routed = {}
     monkeypatch.setattr(
         "cms.services._raes_range_create._create_raes_native_range_impl",
-        lambda u, s, *, range_source=None, instantiation_purpose=None: routed.update(
-            scenario=s, purpose=instantiation_purpose
+        lambda u, s, *, range_source=None, instantiation_purpose=None, raes_source_id=None, workspace_uuid=None: (
+            routed.update(scenario=s, purpose=instantiation_purpose, source=raes_source_id)
         ),
     )
     create_range_dispatch(user, "raes-x", {})
     assert routed["scenario"] == "raes-x"
+    # Unrouted direct RAES pick loads its own id as the internal source.
+    assert routed["source"] == "raes-x"
     # The product router always mints live-fire authority (#1354, ADR-030-R6).
     assert routed["purpose"] is InstantiationPurpose.LIVE_FIRE
+
+
+@pytest.mark.django_db
+def test_dispatch_loads_distinct_routed_source_not_public_id(user, native_on, monkeypatch):
+    # ADR-031-R6 core deliverable. Drive the real resolve -> load chain for a
+    # routed public id (polaris -> polaris-raes) and observe which source
+    # actually reaches the dispatch seam: it must be the DISTINCT registered
+    # source (polaris-raes), not the public id passed straight through, while the
+    # persisted range still correlates by the stable public id. Unlike the
+    # unrouted case (scenario_id == source id) above, the differing ids make a
+    # straight-through regression observable at the seam.
+    from django.conf import settings
+
+    _make_source(user, scenario_id="polaris-raes")
+    monkeypatch.setattr(settings, "RAES_CATALOG_CUTOVERS", {"polaris": "polaris-raes"})
+    seen = {}
+    monkeypatch.setattr(
+        _DISPATCH,
+        lambda request_id, u, source, backend_admission=None, workspace_id=None: seen.update(
+            loaded_source_id=source.scenario_id
+        ),
+    )
+
+    ctx = create_range_dispatch(user, "polaris", {})
+
+    # The distinct internal source was actually loaded, not the public id.
+    assert seen["loaded_source_id"] == "polaris-raes"
+    # The range still correlates by the stable public id (projection + persistence).
+    assert ctx.scenario_id == "polaris"
+    assert RangeInstance.objects.get(request__request_id=ctx.request_id).scenario_id == "polaris"
+
+
+@pytest.mark.django_db
+def test_dispatch_fails_closed_for_route_to_legacy_target(user, native_on, monkeypatch):
+    # ADR-031-R6: a route to an existing legacy id ("basic") has no backing
+    # RaesPackageSource. Dispatch must fail closed -- refuse before any load --
+    # rather than advertise a launch that then crashes on a missing source.
+    from django.conf import settings
+
+    monkeypatch.setattr(settings, "RAES_CATALOG_CUTOVERS", {"polaris": "basic"})
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: pytest.fail("dispatch reached for a fail-closed route"))
+
+    with pytest.raises(CMSError):
+        create_range_dispatch(user, "polaris", {})
+    assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
 
 
 @pytest.mark.django_db
@@ -232,13 +279,12 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
         user_id,
         compiled_plan,
         backend_admission=None,
-        delivery_bindings=(),
-        participant_access=(),
+        bindings=None,
         workspace_id=None,
     ):
         captured["kind"] = compiled_plan.get("kind")
         captured["request_id"] = request_id
-        captured["delivery_bindings"] = delivery_bindings
+        captured["delivery_bindings"] = bindings.delivery if bindings else ()
         return RaesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
 
     monkeypatch.setattr("cms.raes.dispatch.create_raes_range", fake_create_raes_range)
@@ -249,6 +295,33 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
     assert captured["kind"] == "raes_provisioning_plan"
     assert captured["request_id"] == str(ctx.request_id)
     assert RangeInstance.objects.get(request__request_id=ctx.request_id).status == ResourceStatus.PROVISIONING.value
+
+
+@pytest.mark.django_db
+def test_unsatisfiable_artifact_requirement_fails_launch_closed(user, native_on, make_pack, tmp_path, monkeypatch):
+    # An authored artifact requirement the backend cannot satisfy raises
+    # ArtifactSatisfactionError in the dispatch resolver (ADR-034-R8, fail closed).
+    # The launch must surface a domain CMSError -- the range is not accepted -- and
+    # the engine seam is never reached, rather than an unhandled 500 or a fall-through.
+    from django.conf import settings
+
+    from shared.raes.artifact_inventory import ArtifactSatisfactionError
+
+    root = make_pack(tmp_path / _PACK_REF, name="raes-launch")
+    monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path))
+
+    def _unsatisfiable(*_args, **_kwargs):
+        raise ArtifactSatisfactionError("artifact requirement at provision.node.web is unsatisfiable")
+
+    monkeypatch.setattr("shared.raes.artifact_inventory.resolve_plan_artifact_bindings", _unsatisfiable)
+    monkeypatch.setattr(
+        "cms.raes.dispatch.create_raes_range",
+        lambda **_kwargs: pytest.fail("an unsatisfiable requirement must not reach the engine seam"),
+    )
+    _make_source(user, package_digest=pack_digest(root))
+
+    with pytest.raises(CMSError):
+        create_raes_native_range(user, "raes-launch")
 
 
 @pytest.mark.django_db
@@ -344,8 +417,7 @@ class TestObjectPackageLaunch:
             user_id,
             compiled_plan,
             backend_admission=None,
-            delivery_bindings=(),
-            participant_access=(),
+            bindings=None,
             workspace_id=None,
         ):
             captured["kind"] = compiled_plan.get("kind")

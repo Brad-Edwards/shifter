@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
+from cms.scenarios._projection import _scenario_to_dict
+from cms.scenarios.cutover import apply_cutover_routes
 from cms.scenarios.loader import get_all_scenarios as get_yaml_scenarios
 from cms.scenarios.loader import list_scenario_ids as list_yaml_ids
 from cms.scenarios.loader import load_scenario as load_yaml_scenario
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from cms.models import RaesPackageSource
+    from shared.schemas.cms_projections import ScenarioProjection
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +195,7 @@ def _raes_source_to_dict(
     *,
     metadata: dict[str, Any] | None,
     launchable: bool,
-) -> dict[str, Any]:
+) -> ScenarioProjection:
     """Build a catalog projection entry for an RAES package-source row.
 
     RAES rows are provenance-only, so display fields are derived (name from
@@ -248,49 +251,7 @@ def is_default_scenario(scenario_id: str) -> bool:
     return scenario_id in list_yaml_ids()
 
 
-def _scenario_to_dict(
-    template: AnyScenarioTemplate,
-    *,
-    is_default: bool,
-    metadata: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Convert a ScenarioTemplate to a dict with metadata overlay.
-
-    Args:
-        template: Validated scenario template.
-        is_default: Whether this is a YAML-based default.
-        metadata: Override dict with enabled/staff_only, or None for defaults.
-
-    Returns:
-        Dict with scenario fields plus is_default, enabled, staff_only,
-        and agent_requirements.
-    """
-    data = template.model_dump()
-
-    # Apply metadata overlay (defaults: enabled=True, staff_only=False)
-    if metadata is not None:
-        data["enabled"] = metadata["enabled"]
-        data["staff_only"] = metadata.get("staff_only", False)
-    else:
-        # No metadata row — use template's own enabled flag, default staff_only
-        data["staff_only"] = False
-
-    data["is_default"] = is_default
-    # Legacy YAML defaults and DB custom scenarios have always been launchable;
-    # expose it as an explicit, uniform flag so launch consumers can filter on it.
-    data["launchable"] = True
-    if isinstance(template, ScenarioTemplate):
-        data["agent_requirements"] = template.get_agent_requirements()
-    else:
-        data["agent_requirements"] = {
-            "requires_windows": False,
-            "requires_linux": False,
-            "has_from_agent": False,
-        }
-    return data
-
-
-def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
+def list_all_scenarios(user: User | None = None) -> list[ScenarioProjection]:
     """Get all scenarios from both sources with metadata applied.
 
     Combines YAML defaults and DB customs, applies metadata overlays,
@@ -309,18 +270,16 @@ def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
     yaml_entries, yaml_ids = _yaml_source_entries(metadata_map)
     db_entries, db_ids = _db_source_entries(metadata_map, yaml_ids)
     raes_entries = _raes_source_entries(metadata_map, yaml_ids | db_ids)
-    result = yaml_entries + db_entries + raes_entries
+    # Overlay the ADR-031-R6 source routes (see cms.scenarios.cutover); empty route = unchanged.
+    result = apply_cutover_routes(yaml_entries + db_entries + raes_entries)
 
-    # Access filtering
     if user is not None and not (user.is_staff or user.is_superuser):
         result = [s for s in result if s["enabled"] and not s["staff_only"]]
-
-    # Sort by name
     result.sort(key=lambda s: s["name"])
     return result
 
 
-def _yaml_source_entries(metadata_map: dict[str, Any]) -> tuple[list[dict[str, Any]], set[str]]:
+def _yaml_source_entries(metadata_map: dict[str, Any]) -> tuple[list[ScenarioProjection], set[str]]:
     """Build projection entries for YAML defaults; return (entries, ids)."""
     entries = []
     yaml_ids = set()
@@ -330,7 +289,7 @@ def _yaml_source_entries(metadata_map: dict[str, Any]) -> tuple[list[dict[str, A
     return entries, yaml_ids
 
 
-def _db_source_entries(metadata_map: dict[str, Any], yaml_ids: set[str]) -> tuple[list[dict[str, Any]], set[str]]:
+def _db_source_entries(metadata_map: dict[str, Any], yaml_ids: set[str]) -> tuple[list[ScenarioProjection], set[str]]:
     """Build entries for DB customs, skipping ids that collide with YAML defaults."""
     entries = []
     db_ids = set()
@@ -343,7 +302,7 @@ def _db_source_entries(metadata_map: dict[str, Any], yaml_ids: set[str]) -> tupl
     return entries, db_ids
 
 
-def _raes_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> list[dict[str, Any]]:
+def _raes_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> list[ScenarioProjection]:
     """Build RAES entries, fail-closed skipping any id that shadows an active legacy scenario."""
     entries = []
     for source in _get_raes_sources():
@@ -360,7 +319,7 @@ def _raes_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> l
     return entries
 
 
-def get_catalog_entry(scenario_id: str) -> dict[str, Any] | None:
+def get_catalog_entry(scenario_id: str) -> ScenarioProjection | None:
     """Return the unified projection entry for a scenario id, or None if absent.
 
     Uses the unfiltered projection (no access filtering) so callers can inspect
@@ -375,7 +334,7 @@ def get_catalog_entry(scenario_id: str) -> dict[str, Any] | None:
 def list_launchable_scenarios(
     user: User | None = None,
     workflow: ScenarioWorkflow = ScenarioWorkflow.RANGE_LAUNCH,
-) -> list[dict[str, Any]]:
+) -> list[ScenarioProjection]:
     """List scenarios a given workflow may launch.
 
     ``STAFF_REVIEW`` returns the full access-filtered projection (including
@@ -406,7 +365,7 @@ def is_scenario_launchable(
     return bool(entry.get("launchable", True))
 
 
-def get_scenario_detail(scenario_id: str) -> dict[str, Any]:
+def get_scenario_detail(scenario_id: str) -> ScenarioProjection:
     """Get a single scenario by ID from either source.
 
     Checks the database first, then falls back to YAML.
@@ -449,7 +408,7 @@ def load_demo_scenario_template(scenario_id: str) -> ScenarioTemplate:
     return template
 
 
-def check_scenario_access(scenario_id: str, user: User) -> dict[str, Any]:
+def check_scenario_access(scenario_id: str, user: User) -> ScenarioProjection:
     """Check if a user can access a scenario. Returns detail dict or raises ValueError.
 
     Staff and superusers can access all scenarios. Non-staff users are blocked

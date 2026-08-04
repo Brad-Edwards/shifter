@@ -540,6 +540,13 @@ module "ssm" {
   domain_name       = var.domain_name
   s3_bucket_name    = var.user_storage_bucket
   ctfd_platform_url = var.enable_ctfd ? "${module.ctfd[0].url}/login" : ""
+  ctf_content_bucket_name = (
+    var.ctf_content_bucket_arn == ""
+    ? ""
+    : trimprefix(var.ctf_content_bucket_arn, "arn:aws:s3:::")
+  )
+  ctf_content_prefix    = var.ctf_content_prefix
+  ctf_content_max_bytes = var.ctf_content_max_bytes
 
   # Engine provisioner configuration
   engine_ecs_cluster_arn        = module.engine_provisioner.ecs_cluster_arn
@@ -579,9 +586,14 @@ module "ssm" {
   portal_web_workers             = var.portal_web_workers
   terminal_max_sessions          = var.terminal_max_sessions
   terminal_max_sessions_per_user = var.terminal_max_sessions_per_user
-  terminal_idle_timeout_seconds  = var.terminal_idle_timeout_seconds
-  terminal_max_session_seconds   = var.terminal_max_session_seconds
-  terminal_read_poll_seconds     = var.terminal_read_poll_seconds
+
+  # RAES default cutover (#1310, ADR-031-R6): capability gate + source-route selector.
+  shifter_raes_native_provisioning = var.shifter_raes_native_provisioning
+  shifter_raes_catalog_cutovers    = var.shifter_raes_catalog_cutovers
+
+  terminal_idle_timeout_seconds = var.terminal_idle_timeout_seconds
+  terminal_max_session_seconds  = var.terminal_max_session_seconds
+  terminal_read_poll_seconds    = var.terminal_read_poll_seconds
 
   # Portal web capacity metrics (#940). Enable flag and busy-ratio denominator
   # are env-owned and hydrated by both first-boot user_data and SSM redeploy.
@@ -630,6 +642,8 @@ module "ec2" {
   s3_bucket_arn               = module.s3.bucket_arn
   raes_package_bucket_arn     = var.raes_package_bucket_arn
   raes_package_prefix         = var.raes_package_prefix
+  ctf_content_bucket_arn      = var.ctf_content_bucket_arn
+  ctf_content_prefix          = var.ctf_content_prefix
   app_port                    = var.app_port
   root_volume_size            = var.ec2_root_volume_size
 

@@ -9,8 +9,10 @@ instead of patching ``engine.services.*`` / ``mission_control.guacamole.*`` /
 the bootstrap enqueue.
 
 NGFW SSH paths are exercised in ``test_api_ngfw_ssh_url.py``; the bootstrap
-status/open polling views and the ``_sftp_root_for_os`` helper are pure (no
-first-party patching) and unchanged.
+status/open polling views are pure (no first-party patching) and unchanged. The
+per-image SFTP root (#375) is realized metadata resolved by the engine, so
+Mission Control consumes ``conn_info['sftp_root_directory']`` rather than an OS
+map; ``TestGenerateRdpUrlSftpRoot`` covers that pass-through.
 """
 
 from __future__ import annotations
@@ -336,23 +338,39 @@ class TestGuacamoleRDPURL:
         assert _json(status)["error"] == "Failed to generate RDP URL"
 
 
-class TestSftpRootHelper:
-    def test_known_os_returns_path(self):
-        from mission_control._guacamole_session_builders import _sftp_root_for_os
+class TestGenerateRdpUrlSftpRoot:
+    """Mission Control forwards the engine's realized SFTP root, never guesses it (#375).
 
-        assert _sftp_root_for_os("kali") == "/home/kali"
-        assert _sftp_root_for_os("ubuntu") == "/home/ubuntu"
-        assert _sftp_root_for_os("windows").startswith("/C:")
+    Asserts the decrypted Guacamole payload actually POSTed (the network boundary),
+    so it stays green only while the realized root reaches the connection params.
+    """
 
-    def test_unknown_os_returns_none(self):
-        from mission_control._guacamole_session_builders import _sftp_root_for_os
+    def _rdp_params(self, rf, user, guac_configured, secrets_boundary, guac_exchange, instance):
+        from mission_control.api.views import guacamole_rdp_url
 
-        assert _sftp_root_for_os("unknown") is None
+        request = _post(rf, "/mc/guac/rdp/", {"instance_uuid": instance["uuid"]}, user)
+        with secrets_boundary(), guac_exchange() as exchange:
+            guacamole_rdp_url(request)
+        payload = exchange.posted_payload(VALID_SECRET)
+        return payload["connections"][instance["name"]]["parameters"]
 
-    def test_none_returns_none(self):
-        from mission_control._guacamole_session_builders import _sftp_root_for_os
+    def test_realized_root_reaches_the_guacamole_params(
+        self, rf, user, guac_configured, range_rdp_instance, secrets_boundary, guac_exchange
+    ):
+        _rng, instance = range_rdp_instance(user, os_type="kali", sftp_root_directory="/home/kali")
+        params = self._rdp_params(rf, user, guac_configured, secrets_boundary, guac_exchange, instance)
+        assert params["sftp-root-directory"] == "/home/kali"
+        assert params["sftp-directory"] == "/home/kali"
 
-        assert _sftp_root_for_os(None) is None
+    def test_absent_root_fails_closed_by_disabling_sftp(
+        self, rf, user, guac_configured, range_rdp_instance, secrets_boundary, guac_exchange
+    ):
+        """A record with no realized root must not fall back to Guacamole's unrestricted SFTP root."""
+        _rng, instance = range_rdp_instance(user, os_type="kali")
+        params = self._rdp_params(rf, user, guac_configured, secrets_boundary, guac_exchange, instance)
+        assert "enable-sftp" not in params
+        assert "sftp-root-directory" not in params
+        assert "sftp-directory" not in params
 
 
 # ---------------------------------------------------------------------------

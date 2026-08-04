@@ -44,4 +44,21 @@ Object.defineProperty(globalThis, "ResizeObserver", {
   value: ResizeObserverStub,
 });
 
+// jsdom does not implement the Pointer Capture API or scrollIntoView, which
+// Radix UI primitives (Select, Dialog, etc.) call from their pointer handlers.
+// Register no-op stubs so component tests can drive those primitives instead of
+// crashing with "hasPointerCapture is not a function" (#1938).
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+}
+if (!Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {};
+}
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = () => {};
+}
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 export { ResizeObserverStub };
