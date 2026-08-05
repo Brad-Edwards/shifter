@@ -139,17 +139,22 @@ def get_owned_instance_request_ref(user: User, instance_uuid: str) -> str | None
     """
     from engine.models import Instance
 
-    if user is None or not instance_uuid:
+    user_id = getattr(user, "id", None)
+    if user_id is None or not instance_uuid:
         return None
     try:
         instance = (
             Instance.objects.select_related("request")
-            .filter(uuid=instance_uuid, request__user_id=getattr(user, "id", None))
+            .filter(uuid=instance_uuid, request__user_id=user_id)
             .first()
         )
     except (DjangoValidationError, ValueError):
         return None
-    return str(instance.request.request_id) if instance is not None else None
+    # ``request`` is nullable on the model, so an instance whose request row was
+    # detached resolves to no ref rather than raising.
+    if instance is None or instance.request is None:
+        return None
+    return str(instance.request.request_id)
 
 
 def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
