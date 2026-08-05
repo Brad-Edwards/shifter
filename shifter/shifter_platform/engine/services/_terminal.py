@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from engine.secrets import SecretsError
 from shared.enums import ResourceStatus
@@ -114,6 +115,41 @@ def _require_declared_participant_channel(instance: dict[str, Any], channel: str
         return
     if channel not in declared:
         raise ValueError(f"{channel} access is not a declared participant endpoint for this instance")
+
+
+def get_owned_instance_request_ref(user: User, instance_uuid: str) -> str | None:
+    """Return the provisioning request ref owning ``instance_uuid``, or ``None``.
+
+    The ref is the request's ``request_id`` UUID -- the correlation key shared
+    with other layers' own request rows. It is deliberately not the numeric
+    primary key: ``engine_request`` and ``cms_request`` are separate tables
+    whose ids only happen to run in step, so joining on pk would silently
+    resolve the wrong row once they diverge.
+
+    Realized range instances live in ``engine.models.Instance``; the CMS-side
+    ``cms.models.Instance`` table is written only by NGFW provisioning. Callers
+    outside ``engine`` therefore cannot resolve a range instance from their own
+    models and reach this through ``engine.services`` (ADR-001: layers cross only
+    at the public service facade, never at another layer's models).
+
+    Ownership is enforced here so the caller receives an id only for an instance
+    the user actually owns; the caller remains responsible for any further
+    authorization (for example the workspace binding recorded on its own request
+    row) before granting access.
+    """
+    from engine.models import Instance
+
+    if user is None or not instance_uuid:
+        return None
+    try:
+        instance = (
+            Instance.objects.select_related("request")
+            .filter(uuid=instance_uuid, request__user_id=getattr(user, "id", None))
+            .first()
+        )
+    except (DjangoValidationError, ValueError):
+        return None
+    return str(instance.request.request_id) if instance is not None else None
 
 
 def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
