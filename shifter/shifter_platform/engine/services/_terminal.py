@@ -144,9 +144,7 @@ def get_owned_instance_request_ref(user: User, instance_uuid: str) -> str | None
         return None
     try:
         instance = (
-            Instance.objects.select_related("request")
-            .filter(uuid=instance_uuid, request__user_id=user_id)
-            .first()
+            Instance.objects.select_related("request").filter(uuid=instance_uuid, request__user_id=user_id).first()
         )
     except (DjangoValidationError, ValueError):
         return None

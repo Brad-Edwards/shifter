@@ -17,24 +17,55 @@ images:
 
 imagePullPolicy: Always
 
+# Event capacity (KeplerOps CTF, 300 concurrent ranges). Static on purpose:
+# an HPA reacts after CPU climbs, which is the wrong shape when 300 participants
+# connect inside the same few minutes. RDP is the only participant access path,
+# so guacd is the tier that must not pin. Scale back down after the event.
 portal:
-  replicas: 2
+  replicas: 24
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+      ephemeral-storage: 128Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+      ephemeral-storage: 256Mi
 
 workers:
   cms:
-    replicas: 1
+    replicas: 3
   engine:
-    replicas: 1
+    replicas: 3
   mc:
-    replicas: 1
+    replicas: 3
   ctfScheduler:
     replicas: 1
 
 guacd:
-  replicas: 1
+  replicas: 120
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+      ephemeral-storage: 128Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+      ephemeral-storage: 256Mi
 
 guacamoleClient:
-  replicas: 1
+  replicas: 24
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+      ephemeral-storage: 128Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+      ephemeral-storage: 256Mi
 
 services:
   portal:

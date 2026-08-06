@@ -34,8 +34,12 @@ AWS_DEV_WAF_ACL_ARN = (
 # change either GCP profile's rendered bytes. Frozen with Helm 3.15.4 and release
 # name "contract-test"; regenerate deliberately only when GCP output is meant to
 # change.
+#
+# gcp-dev regenerated deliberately for the KeplerOps event capacity change
+# (static portal/guacd/guacamole-client/worker replicas and resources). gcp-prod
+# is unchanged and still pins the pre-existing bytes.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "79e284e9145afad833f6e58e6b2a45188908558d83b0155926ea45e0935adcb7",
+    "gcp-dev": "92b8024d9d51149e31d8060218dd7c28615926e64160f0f5d81f09d095f02a1a",
     "gcp-prod": "aaf01034765cca95ce9813115bff8c5382bff82493676c33c70bf10036658589",
 }
 

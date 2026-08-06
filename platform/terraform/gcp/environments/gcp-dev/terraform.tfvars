@@ -22,18 +22,31 @@ gke_master_ipv4_cidr = "172.16.0.0/28"
 gke_master_authorized_cidrs = []
 range_network_cidr          = "10.50.0.0/16"
 
-web_machine_type         = "e2-standard-4"
-worker_machine_type      = "e2-standard-4"
+# Event capacity (KeplerOps CTF, 300 concurrent ranges). The cluster is REGIONAL,
+# so *_node_count is PER ZONE and multiplies by 3:
+#   web        14/zone x3 = 42 nodes x 8 vCPU = 336 vCPU
+#              carries guacd (120 x 2 vCPU), guacamole-client (24 x 2), portal (24 x 2)
+#   workers     1/zone x3 =  3 nodes x 8 vCPU =  24 vCPU
+#   provisioner 3/zone x3 =  9 nodes x 8 vCPU =  72 vCPU
+# Control plane ~432 vCPU; with 100 ranges here (1200 vCPU) that is ~1632 against
+# the 2400 per-project-per-region CPUS quota. The other 200 ranges live in other
+# regions, each with its own 2400.
+#
+# Capacity is STATIC deliberately: an HPA scales only after CPU climbs, which is
+# the wrong shape when 300 participants connect inside the same few minutes.
+# Scale back down after the event.
+web_machine_type         = "e2-standard-8"
+worker_machine_type      = "e2-standard-8"
 provisioner_machine_type = "n2-standard-8"
 
-web_node_count         = 1
+web_node_count         = 14
 worker_node_count      = 1
-provisioner_node_count = 1
+provisioner_node_count = 3
 
 cloud_sql_database_version  = "POSTGRES_15"
-cloud_sql_tier              = "db-custom-1-3840"
-cloud_sql_availability_type = "ZONAL"
-cloud_sql_disk_size_gb      = 20
+cloud_sql_tier              = "db-custom-8-30720"
+cloud_sql_availability_type = "REGIONAL"
+cloud_sql_disk_size_gb      = 100
 cloud_sql_database_name     = "shifter"
 cloud_sql_user_name         = "shifter"
 
@@ -41,7 +54,7 @@ cloud_sql_user_name         = "shifter"
 # AUTH and SERVER_AUTHENTICATION TLS are enforced unconditionally by the
 # platform-core module regardless of tier (ADR-008-R6, #963).
 redis_tier           = "STANDARD_HA"
-redis_memory_size_gb = 1
+redis_memory_size_gb = 16
 
 public_hostname         = "shifter.example.com"
 enable_managed_tls      = true
