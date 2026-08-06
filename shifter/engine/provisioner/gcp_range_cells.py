@@ -6,7 +6,7 @@ import base64
 import logging
 from collections.abc import Callable
 
-from config import GCERangeCellConfig, load_gce_range_cell_config
+from config import GCERangeCellConfig, load_gce_range_cell_config, range_cell_config_for_slot
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_credentials import (
     GCEGuestSecretOps,
@@ -398,13 +398,18 @@ def apply_range_cell(
     # provider or secret client, let alone mutating a cloud resource. The gateway
     # VM runs as the range's reserved pool identity (ADR-008-R7).
     range_data = get_range_data_by_request_id(request_uuid)
+    # Bind the config to this range's zone before anything reads region/zone:
+    # the fleet spans regions because Compute CPU quota is per project per
+    # region. Derived from the allocation slot, so destroy resolves identically.
+    _slot = int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+    resolved_config = range_cell_config_for_slot(resolved_config, _slot)
     plan = render_range_cell_plan(
         request_uuid,
         variables,
         resolved_config,
         vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
         range_host_pool_slot=(
-            int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+            _slot
         ),
     )
     resolved_clients = clients or _build_clients()

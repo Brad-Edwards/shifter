@@ -35,12 +35,17 @@ AWS_DEV_WAF_ACL_ARN = (
 # name "contract-test"; regenerate deliberately only when GCP output is meant to
 # change.
 #
-# gcp-dev regenerated deliberately for the KeplerOps event capacity change
-# (static portal/guacd/guacamole-client/worker replicas and resources). gcp-prod
-# is unchanged and still pins the pre-existing bytes.
+# Regenerated deliberately, twice over:
+#  - gcp-dev for the KeplerOps event capacity change (static portal, guacd,
+#    guacamole-client and worker replicas/resources);
+#  - both profiles for RANGE_NETWORK_ZONES joining the provisioner-Job env
+#    allowlist in the shared admission policy. That addition is purely
+#    permissive and inert on any deployment whose ConfigMap does not set the
+#    key, because the projection forwards only non-empty values -- but the
+#    policy template is shared, so prod's rendered bytes move with it.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "92b8024d9d51149e31d8060218dd7c28615926e64160f0f5d81f09d095f02a1a",
-    "gcp-prod": "aaf01034765cca95ce9813115bff8c5382bff82493676c33c70bf10036658589",
+    "gcp-dev": "9f808e6e10875598c6b1e9b39afb9b6016fc30cbb403d2be7581b79e9e397a58",
+    "gcp-prod": "4779ca4a118e1448e340a446528bf1ff3ea80e22f4725e5c23b7b93e2276ddaa",
 }
 
 

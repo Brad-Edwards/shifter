@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from config import GCERangeCellConfig, load_gce_range_cell_config
+from config import GCERangeCellConfig, load_gce_range_cell_config, range_cell_config_for_slot
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_credentials import (
     GCEGuestSecretOps,
@@ -162,6 +162,11 @@ def destroy_range_cell(
     # but the range's reserved pool slot (ADR-008-R7) is read so the plan renders
     # consistently with provision. The row exists while the range is DESTROYING.
     range_data = get_range_data_by_request_id(request_uuid)
+    # Bind the config to this range's zone before anything reads region/zone:
+    # the fleet spans regions because Compute CPU quota is per project per
+    # region. Derived from the allocation slot, so destroy resolves identically.
+    _slot = int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+    resolved_config = range_cell_config_for_slot(resolved_config, _slot)
     plan = render_range_cell_plan(
         request_uuid,
         variables,
@@ -169,7 +174,7 @@ def destroy_range_cell(
         require_images=False,
         vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
         range_host_pool_slot=(
-            int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+            _slot
         ),
     )
     resolved_clients = clients or _build_clients()

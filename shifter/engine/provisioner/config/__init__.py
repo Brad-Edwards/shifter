@@ -45,6 +45,7 @@ from ._gce import (
     GCERangeImageProfile,
     gce_image_profile_fingerprint,
     load_gce_range_cell_config,
+    range_cell_config_for_slot,
 )
 from ._gcp_backend import (
     get_gcp_range_backend,
@@ -109,6 +110,7 @@ __all__ = [
     "is_gce_range_cell_backend",
     "load_aws_polaris_agent_config",
     "load_gce_range_cell_config",
+    "range_cell_config_for_slot",
     "load_gdc_network_access_config",
     "load_gdc_palo_alto_vmseries_config",
     "load_gdc_scenario_pod_config",
