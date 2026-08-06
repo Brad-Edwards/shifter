@@ -23,20 +23,32 @@ gke_master_authorized_cidrs = []
 range_network_cidr          = "10.50.0.0/16"
 
 # Event capacity (KeplerOps CTF, 300 concurrent ranges). The cluster is REGIONAL,
-# so *_node_count is PER ZONE and multiplies by 3:
-#   web        20/zone x3 = 60 nodes x 4 vCPU = 240 vCPU
-#              carries guacd (120 x 2 vCPU), guacamole-client (24 x 2), portal (24 x 2)
-#   workers     3/zone x3 =  9 nodes x 4 vCPU =  36 vCPU
-#   provisioner 3/zone x3 =  9 nodes x 8 vCPU =  72 vCPU
-# Control plane ~348 vCPU; with 100 ranges here (1200 vCPU) that is ~1548 against
-# the 2400 per-project-per-region CPUS quota. The other 200 ranges live in other
-# regions, each with its own 2400.
+# so *_node_count is PER ZONE and multiplies by 3.
 #
-# web/workers stay on e2-standard-4 and reach capacity through node count rather
-# than machine size. A machine_type change forces GKE to REPLACE the node pool,
-# which is not something to trigger from a routine deploy while an event is being
-# staged; the vCPU total is what matters and count delivers it non-destructively.
-# Moving to larger machines is a deliberate migration, not a tfvars edit.
+# THESE COUNTS ARE CAPPED BY AN IP RANGE, NOT BY QUOTA OR COST.
+#
+# All three pools below share the `gke-provisioner-pods` secondary range
+# (10.46.0.0/20) at maxPodsPerNode=110. GKE carves a /24 out of that range per
+# node, so the range holds 4096/256 = 16 nodes TOTAL across all three pools
+# combined. The range reports utilization 1.0 today. Any apply that asks for
+# more than 16 nodes between these pools does not fail fast -- it hangs retrying
+# node creation against an exhausted range ("IP space of subnet ... is
+# exhausted") and blocks the deploy before Helm ever runs.
+#
+#   web         3/zone x3 = 9 nodes ]
+#   workers     1/zone x3 = 3 nodes ]- 15 of the 16 the /20 can hold
+#   provisioner 1/zone x3 = 3 nodes ]
+#
+# Real event capacity does NOT come from these pools. The cluster's default pod
+# range `gke-pods` (10.44.0.0/16) holds 256 nodes and was sitting entirely
+# unused; the workload pool carrying guacd/guacamole-client/portal lives there
+# instead. Growing event capacity means adding nodes on `gke-pods`, never
+# raising the counts below.
+#
+# The durable fix is to move these pools onto `gke-pods` too, which requires
+# REPLACING them (pod range is immutable on an existing pool) and so is a
+# planned migration, not a tfvars edit. Same reason web/workers stay on
+# e2-standard-4: a machine_type change also forces pool replacement.
 #
 # Capacity is STATIC deliberately: an HPA scales only after CPU climbs, which is
 # the wrong shape when 300 participants connect inside the same few minutes.
@@ -45,9 +57,9 @@ web_machine_type         = "e2-standard-4"
 worker_machine_type      = "e2-standard-4"
 provisioner_machine_type = "n2-standard-8"
 
-web_node_count         = 20
-worker_node_count      = 3
-provisioner_node_count = 3
+web_node_count         = 3
+worker_node_count      = 1
+provisioner_node_count = 1
 
 cloud_sql_database_version  = "POSTGRES_15"
 cloud_sql_tier              = "db-custom-8-30720"
