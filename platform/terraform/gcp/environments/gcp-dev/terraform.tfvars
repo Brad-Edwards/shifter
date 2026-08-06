@@ -24,23 +24,29 @@ range_network_cidr          = "10.50.0.0/16"
 
 # Event capacity (KeplerOps CTF, 300 concurrent ranges). The cluster is REGIONAL,
 # so *_node_count is PER ZONE and multiplies by 3:
-#   web        14/zone x3 = 42 nodes x 8 vCPU = 336 vCPU
+#   web        20/zone x3 = 60 nodes x 4 vCPU = 240 vCPU
 #              carries guacd (120 x 2 vCPU), guacamole-client (24 x 2), portal (24 x 2)
-#   workers     1/zone x3 =  3 nodes x 8 vCPU =  24 vCPU
+#   workers     3/zone x3 =  9 nodes x 4 vCPU =  36 vCPU
 #   provisioner 3/zone x3 =  9 nodes x 8 vCPU =  72 vCPU
-# Control plane ~432 vCPU; with 100 ranges here (1200 vCPU) that is ~1632 against
+# Control plane ~348 vCPU; with 100 ranges here (1200 vCPU) that is ~1548 against
 # the 2400 per-project-per-region CPUS quota. The other 200 ranges live in other
 # regions, each with its own 2400.
+#
+# web/workers stay on e2-standard-4 and reach capacity through node count rather
+# than machine size. A machine_type change forces GKE to REPLACE the node pool,
+# which is not something to trigger from a routine deploy while an event is being
+# staged; the vCPU total is what matters and count delivers it non-destructively.
+# Moving to larger machines is a deliberate migration, not a tfvars edit.
 #
 # Capacity is STATIC deliberately: an HPA scales only after CPU climbs, which is
 # the wrong shape when 300 participants connect inside the same few minutes.
 # Scale back down after the event.
-web_machine_type         = "e2-standard-8"
-worker_machine_type      = "e2-standard-8"
+web_machine_type         = "e2-standard-4"
+worker_machine_type      = "e2-standard-4"
 provisioner_machine_type = "n2-standard-8"
 
-web_node_count         = 14
-worker_node_count      = 1
+web_node_count         = 20
+worker_node_count      = 3
 provisioner_node_count = 3
 
 cloud_sql_database_version  = "POSTGRES_15"
