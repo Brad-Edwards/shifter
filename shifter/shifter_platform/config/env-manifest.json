@@ -513,6 +513,11 @@
       "source_file": "config/_cloud.py"
     },
     {
+      "default": "'true'",
+      "name": "RANGE_OPENVPN_ENABLED",
+      "source_file": "config/_cloud.py"
+    },
+    {
       "default": "'100'",
       "name": "RANGE_RECONCILE_BATCH_SIZE",
       "source_file": "config/settings.py"
