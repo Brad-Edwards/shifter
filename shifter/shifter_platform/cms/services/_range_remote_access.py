@@ -25,8 +25,27 @@ def _build_remote_access_capability(
     backend_admitted: bool = True,
     required: bool,
 ) -> dict[str, object] | None:
-    """Mint OpenVPN authority when the product and scenario support it."""
+    """Mint OpenVPN authority when the product and scenario support it.
+
+    ``RANGE_OPENVPN_ENABLED`` is the deployment's answer to "do we want OpenVPN
+    at all", distinct from ``backend_admitted``, which answers "can this backend
+    do OpenVPN". Without the deployment switch, every CTF range on a capable
+    backend whose scenario exposes a single participant-visible Kali attacker
+    provisions a dedicated gateway VM, an external address, and per-range VPN
+    secrets, and runs an extra guest-setup step that can fail -- real cost and a
+    real failure mode for an access path an event may never use. An event that
+    reaches ranges only through the portal turns this off.
+
+    A caller that explicitly requires OpenVPN still fails loudly rather than
+    silently launching without it.
+    """
+    from django.conf import settings
+
     capability = None
+    if not getattr(settings, "RANGE_OPENVPN_ENABLED", True):
+        if required:
+            raise CMSError("OpenVPN access is disabled for this deployment")
+        return None
     if teardown_at is not None and not backend_admitted:
         if required:
             raise CMSError("OpenVPN access is unavailable on the selected range backend")

@@ -479,6 +479,67 @@ class TestRangeSourceAdmission:
                 required=True,
             )
 
+    def test_disabled_deployment_mints_no_capability_for_a_valid_target(self, settings):
+        """``RANGE_OPENVPN_ENABLED=False`` suppresses OpenVPN on an otherwise valid launch.
+
+        Without the switch, any CTF range whose scenario exposes a single
+        participant-visible Kali attacker provisions a gateway VM, an external
+        address, and per-range VPN secrets. Events that reach ranges only through
+        the portal turn it off; the capability must be absent even though the
+        scenario and backend would both support it.
+        """
+        from types import SimpleNamespace
+
+        from cms.services._range_remote_access import _build_remote_access_capability
+
+        settings.RANGE_OPENVPN_ENABLED = False
+        target = SimpleNamespace(uuid="11111111-1111-4111-8111-111111111111", role="attacker", os_type="kali")
+        range_spec = SimpleNamespace(participant_access=[], all_instances=[target])
+
+        assert (
+            _build_remote_access_capability(
+                range_spec,
+                timezone.now() + timedelta(days=1),
+                required=False,
+            )
+            is None
+        )
+
+    def test_disabled_deployment_fails_loud_when_openvpn_is_required(self, settings):
+        """A caller that requires OpenVPN is refused, not silently launched without it."""
+        from types import SimpleNamespace
+
+        from cms.services._range_remote_access import _build_remote_access_capability
+
+        settings.RANGE_OPENVPN_ENABLED = False
+        target = SimpleNamespace(uuid="11111111-1111-4111-8111-111111111111", role="attacker", os_type="kali")
+        range_spec = SimpleNamespace(participant_access=[], all_instances=[target])
+
+        with pytest.raises(CMSError, match="disabled for this deployment"):
+            _build_remote_access_capability(
+                range_spec,
+                timezone.now() + timedelta(days=1),
+                required=True,
+            )
+
+    def test_enabled_deployment_still_mints_the_capability(self, settings):
+        """The default path is unchanged: an eligible launch still gets OpenVPN."""
+        from types import SimpleNamespace
+
+        from cms.services._range_remote_access import _build_remote_access_capability
+
+        settings.RANGE_OPENVPN_ENABLED = True
+        target = SimpleNamespace(uuid="11111111-1111-4111-8111-111111111111", role="attacker", os_type="kali")
+        range_spec = SimpleNamespace(participant_access=[], all_instances=[target])
+
+        capability = _build_remote_access_capability(
+            range_spec,
+            timezone.now() + timedelta(days=1),
+            required=True,
+        )
+
+        assert capability is not None
+
 
 class TestActiveRangeConstraintBackstop:
     """The DB constraint is the race-proof backstop behind the friendly pre-check (#307).

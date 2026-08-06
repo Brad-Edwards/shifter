@@ -38,6 +38,7 @@ __all__ = [
     "PROVISIONER_PATH",
     "QUEUE_CONFIG",
     "RANGE_EVENTS_TOPIC_ID",
+    "RANGE_OPENVPN_ENABLED",
     "SNS_RANGE_EVENTS_ARN",
     "SQS_QUEUE_CONFIG",
     "STORAGE_BUCKET_NAME",
@@ -130,6 +131,19 @@ ENGINE_PRIVATE_SUBNET_IDS = ENGINE_TASK_NETWORK_SUBNET_IDS
 # (``IS_TEST_RUN`` false) is unchanged.
 LOCAL_PROVISIONER = "" if IS_TEST_RUN else os.environ.get("LOCAL_PROVISIONER", "")
 PROVISIONER_PATH = os.environ.get("PROVISIONER_PATH", "")
+
+# Whether a range launch mints OpenVPN authority at all. The backend-capability
+# gate in ``cms.services._range_backend_admission`` answers "can this backend do
+# OpenVPN"; this answers "does this deployment want it". Defaults true so
+# existing deployments are unchanged; set false for events that reach ranges
+# only through the portal, which avoids provisioning a gateway VM, an external
+# address, and per-range VPN secrets for every range.
+RANGE_OPENVPN_ENABLED = os.environ.get("RANGE_OPENVPN_ENABLED", "true").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
 
 # ------------------------------------------------------------------------------
 # SQS / Pub-Sub Worker Queues
