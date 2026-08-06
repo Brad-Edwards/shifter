@@ -408,9 +408,7 @@ def apply_range_cell(
         variables,
         resolved_config,
         vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
-        range_host_pool_slot=(
-            _slot
-        ),
+        range_host_pool_slot=(_slot),
     )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
