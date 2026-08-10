@@ -37,17 +37,18 @@ def _terraform_outputs() -> dict[str, object]:
                 "workers": "arn:aws:iam::123456789012:role/shifter-dev-workers",
                 "ctfScheduler": "arn:aws:iam::123456789012:role/shifter-dev-ctf-scheduler",
                 "ingress": "arn:aws:iam::123456789012:role/shifter-dev-ingress",
+                "provisionerLauncher": "arn:aws:iam::123456789012:role/shifter-dev-provisioner-launcher",
+                "provisioner": "arn:aws:iam::123456789012:role/shifter-dev-provisioner",
+                "cluster-autoscaler": "arn:aws:iam::123456789012:role/shifter-dev-cluster-autoscaler",
             }
         },
         "runtime_env": {
             "value": {
                 "AWS_REGION": "us-east-2",
-                "ENGINE_TASK_CLUSTER": "arn:aws:ecs:us-east-2:123456789012:cluster/shifter-dev",
-                "ENGINE_TASK_DEFINITION": (
-                    "arn:aws:ecs:us-east-2:123456789012:task-definition/shifter-dev-provisioner:1"
-                ),
-                "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID": "sg-0123456789abcdef0",
-                "ENGINE_TASK_NETWORK_SUBNET_IDS": "subnet-private-a,subnet-private-b",
+                # The EKS provisioner env (range/portal coordinates) is assembled by
+                # the eks-provisioner-env Terraform module and arrives merged into
+                # this output; the mgmt-plane keys below are the deploy-tooling input.
+                "RANGE_VPC_ID": "vpc-xxxxxxxxxxxxxxxxx",
                 "OIDC_AUTH_DOMAIN": "https://shifter-dev.auth.us-east-2.amazoncognito.com",
                 "OIDC_ISSUER_URL": "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_example",
                 "OIDC_RP_CLIENT_ID": "example-client-id",
@@ -75,6 +76,7 @@ def _images() -> dict[str, str]:
         "platform": f"123456789012.dkr.ecr.us-east-2.amazonaws.com/shifter/platform@sha256:{digest}",
         "guacd": f"123456789012.dkr.ecr.us-east-2.amazonaws.com/shifter/guacd@sha256:{digest}",
         "guacamoleClient": (f"123456789012.dkr.ecr.us-east-2.amazonaws.com/shifter/guacamole-client@sha256:{digest}"),
+        "provisioner": (f"123456789012.dkr.ecr.us-east-2.amazonaws.com/shifter/engine-provisioner@sha256:{digest}"),
     }
 
 
@@ -96,7 +98,11 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     values = aws_eks.render_aws_values(_config(), _terraform_outputs(), _images())
 
     assert values["provider"]["name"] == "aws"
-    assert values["capabilities"]["kubernetesJobLauncher"] is False
+    assert values["capabilities"]["kubernetesJobLauncher"] is True
+    assert values["provisioner"]["taskRunner"] == "aws"
+    sa_roles = values["identity"]["serviceAccountRoleArns"]
+    assert sa_roles["provisionerLauncher"].endswith("shifter-dev-provisioner-launcher")
+    assert sa_roles["provisioner"].endswith("shifter-dev-provisioner")
     assert values["edge"]["hostname"] == "shifter.example.com"
     assert values["edge"]["ingress"]["className"] == "alb"
     assert values["edge"]["ingress"]["annotations"]["alb.ingress.kubernetes.io/certificate-arn"].endswith(
@@ -110,7 +116,10 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     assert values["runtimeEnv"]["CLOUD_PROVIDER"] == "aws"
     assert values["runtimeEnv"]["ENVIRONMENT"] == "development"
     assert values["runtimeEnv"]["AUTH_PROVIDER"] == "oidc"
-    assert values["runtimeEnv"]["ENGINE_TASK_CLUSTER"].endswith("cluster/shifter-dev")
+    # ENGINE_TASK_IMAGE is renderer-generated from the attested provisioner digest.
+    assert values["runtimeEnv"]["ENGINE_TASK_IMAGE"].endswith("engine-provisioner@sha256:" + ("a" * 64))
+    # Provisioner env assembled by Terraform flows through the merged output.
+    assert values["runtimeEnv"]["RANGE_VPC_ID"] == "vpc-xxxxxxxxxxxxxxxxx"
     assert values["runtimeEnv"]["QUEUE_ENGINE_CONSUMER_ID"].endswith("/engine")
     assert values["runtimeEnv"]["OIDC_SECRET_ID"] == "shifter/dev/cognito"
     assert values["runtime"]["secretReferences"] == {
@@ -125,11 +134,21 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
 
 def test_render_values_rejects_incomplete_runtime_contract():
     outputs = _terraform_outputs()
-    outputs["runtime_env"]["value"].pop("ENGINE_TASK_CLUSTER")
+    outputs["runtime_env"]["value"].pop("OIDC_ISSUER_URL")
     config = _config()
     images = _images()
 
-    with pytest.raises(ValueError, match="ENGINE_TASK_CLUSTER"):
+    with pytest.raises(ValueError, match="OIDC_ISSUER_URL"):
+        aws_eks.render_aws_values(config, outputs, images)
+
+
+def test_render_values_requires_provisioner_image_for_job_launcher():
+    outputs = _terraform_outputs()
+    config = _config()
+    images = _images()
+    images.pop("provisioner")
+
+    with pytest.raises(ValueError, match="provisioner"):
         aws_eks.render_aws_values(config, outputs, images)
 
 
@@ -214,6 +233,23 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         "rollout",
         "status",
         "deployment/aws-load-balancer-controller",
+        "--namespace",
+        "kube-system",
+        "--timeout=5m",
+    ] in calls
+    assert any(
+        cmd[:4] == ["helm", "upgrade", "--install", "cluster-autoscaler"]
+        and "autoscaler/cluster-autoscaler" in cmd
+        and "--version" in cmd
+        and "autoDiscovery.clusterName=shifter-dev-eks" in cmd
+        and "awsRegion=us-east-2" in cmd
+        for cmd in calls
+    )
+    assert [
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/cluster-autoscaler-aws-cluster-autoscaler",
         "--namespace",
         "kube-system",
         "--timeout=5m",

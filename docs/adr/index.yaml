@@ -416,7 +416,7 @@
       },
       {
         "id": "ADR-006-R4",
-        "description": "Creation of Jobs running as the privileged provisioner service account in the jobs namespace and mutation of their per-intent sensitive-env Secrets must be owned by one dedicated provisioner-launcher workload identity. Portal, CTF scheduler, general workers, and the provisioner runtime identity have no provisioner Job-launch or Secret mutation grant and mount no Kubernetes API token; the provisioner Job also disables token automount while retaining GKE Workload Identity. RBAC, default-deny egress, runtime configuration, and the fail-closed ValidatingAdmissionPolicy (equivalent across the GCP base and Helm default render, with Helm identity/namespace fields derived from canonical values) name one launcher principal. Admission denies non-provisioner Jobs from that launcher and denies provisioner Jobs unless they mirror the canonical GCPTaskRunner contract: pinned image/pull policy and literal values, exact operation/identifier grammar with an optional validated operation-generation UUID suffix, deterministic task/Secret identity, required Secret-backed database bindings, one non-indexed execution, exact bounded volumes/mounts, no auxiliary execution fields, and canonical pod/container security. Structured non-secret runtime values such as the bounded GCE image-key profile map remain literal ConfigMap data and admission requires their exact value to match platform-runtime; they never move to argv or the sensitive Secret. Dynamic creates cannot be constrained with RBAC resourceNames known at deployment time; use the dedicated principal, semantic admission, deterministic create-or-observe identity, ownerReferences, and resourceNames only for fixed targets. Enforced by effective-authorization, Helm override/parity, and rendered-CEL semantic denial tests. Recorded by the architecture preflights for #1518 and #1761.",
+        "description": "Creation of Jobs running as the privileged provisioner service account in the jobs namespace and mutation of their per-intent sensitive-env Secrets must be owned by one dedicated provisioner-launcher workload identity. Portal, CTF scheduler, general workers, and the provisioner runtime identity have no provisioner Job-launch or Secret mutation grant and mount no Kubernetes API token; the provisioner Job also disables token automount while retaining the selected provider's exact workload identity. RBAC, default-deny egress, runtime configuration, and the fail-closed ValidatingAdmissionPolicy (equivalent across the GCP base and every Helm render that enables the Kubernetes Job launcher, with identity/namespace fields derived from canonical values) name one launcher principal. Admission denies non-provisioner Jobs from that launcher and denies provisioner Jobs unless they mirror the provider-selected KubernetesTaskRunner profile: pinned image/pull policy and literal values, exact operation/identifier grammar with an optional validated operation-generation UUID suffix, deterministic task/Secret identity, required Secret-backed database bindings, one non-indexed execution, exact bounded volumes/mounts, no auxiliary execution fields, and canonical pod/container security. Structured non-secret runtime values remain literal ConfigMap data and admission requires their exact value to match platform-runtime; they never move to argv or the sensitive Secret. Dynamic creates cannot be constrained with RBAC resourceNames known at deployment time; use the dedicated principal, semantic admission, deterministic create-or-observe identity, ownerReferences, and resourceNames only for fixed targets. Enforced by effective-authorization, Helm override/parity, and rendered-CEL semantic denial tests. Recorded by the architecture preflights for #1518, #1761, and #1826.",
         "checks": []
       }
     ],
@@ -2392,7 +2392,7 @@
       },
       {
         "id": "ADR-044-R3",
-        "description": "For root-configured backend=aws deployments, EKS is the canonical platform compute without introducing an aws-eks backend. This does not by itself move the AWS provisioner task runner from private ECS tasks, replace ADR-039's AWS Terraform range-substrate adapter, or change Cognito/OIDC. GCP Job-launch RBAC/admission resources must not render on EKS unless a separately reviewed Kubernetes task-runner contract requires and tests them.",
+        "description": "For root-configured backend=aws deployments, EKS is the canonical platform compute without introducing an aws-eks backend. AWS range-substrate ownership remains ADR-039 and Cognito/OIDC remains the user-identity boundary. When EKS enables the Kubernetes provisioner Job launcher, it must use the existing provider-neutral KubernetesTaskRunner mechanics with an AWS-specific adapter/profile, exact-subject IRSA for the launcher and provisioner service accounts, and the same dedicated-launcher RBAC, fail-closed admission, restricted-PSS, and default-deny-network contracts required by ADR-006-R4; it must not reuse GCP literal environment, Workload Identity, or range-cell assumptions. That capability requires rendered parity and effective-permission tests before it is enabled for an AWS profile.",
         "checks": []
       },
       {
@@ -2407,6 +2407,13 @@
         "id": "ADR-044-R5",
         "description": "EKS infrastructure and legacy ECS/ASG infrastructure retain separate Terraform state and ownership. Compatibility migration must prevent both control planes from acting as concurrent active schedulers, queue consumers, outbox drainers, migration runners, or range launchers; cutover and rollback are explicit and must not rename, import, destroy, or silently adopt legacy resources.",
         "checks": []
+      },
+      {
+        "id": "ADR-044-R6",
+        "description": "For root-configured backend=aws deployments the EKS control plane composes over the existing portal and range data plane and must not introduce a standalone EKS data plane. The AWS EKS Terraform roots (platform/terraform/environments/*/eks) source cross-stack values (control-plane database endpoint and IAM-auth resource id, secrets KMS key, agent bucket, range VPC/subnets/route table/availability zone, prebaked AMIs, and range/NGFW instance roles) through native AWS data sources and SSM Parameter Store, never terraform_remote_state, keeping the consumer loosely coupled to producer state. The provisioner Job environment is one provider-neutral contract that AWS and GCP emit identically into the backend-neutral chart's runtimeEnv ConfigMap (ADR-044-R2), with secret payloads flowing only as references through the existing in-process hydration boundary.",
+        "checks": [
+          "eks-cross-stack-sourcing"
+        ]
       }
     ],
     "exceptions": [],
@@ -2431,7 +2438,11 @@
       "shifter/installation/runtime_inventory.py",
       "scripts/bootstrap/deploy.py",
       ".github/workflows/deploy.yml",
-      "scripts/adr_guard/adr_guard.py"
+      "scripts/adr_guard/adr_guard.py",
+      "scripts/adr_guard/_guard/checks/eks_cross_stack_sourcing.py",
+      "platform/terraform/environments/dev/eks/main.tf",
+      "platform/terraform/environments/prod/eks/main.tf",
+      "platform/terraform/environments/proof/eks/main.tf"
     ]
   },
   {

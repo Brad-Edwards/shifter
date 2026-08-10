@@ -8,7 +8,7 @@ generic bundle invariants lives in ``test_registry.py``.
 
 from __future__ import annotations
 
-from installation import runtime_inventory
+from installation import runtime_inventory_gcp
 from installation.contract import (
     PROMPT_REFERENCE,
     OutputDestination,
@@ -92,7 +92,8 @@ class TestGcpSecretReferencePattern:
         pattern = next(
             s["reference_pattern"] for s in gcp["required_secrets"] if s["logical_name"] == "django_secret_key"
         )
-        assert pattern.startswith("^") and pattern.endswith("$")
+        assert pattern.startswith("^")
+        assert pattern.endswith("$")
         rx = re.compile(pattern)
         # Bare valid references match at the start.
         assert rx.match("DJANGO_SECRET_KEY")
@@ -111,8 +112,8 @@ class TestGcpGeneratedOutputs:
         # The GeneratedOutput RUNTIME_ENV projection is the single, drift-proof mirror of
         # runtime_inventory's authoritative GCP key set (required + optional).
         names = {o.name for o in _gcp().generated_outputs if o.kind is OutputKind.RUNTIME_ENV}
-        expected = set(runtime_inventory.GCP_GENERATED_RUNTIME_ENV_KEYS) | set(
-            runtime_inventory.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS
+        expected = set(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS) | set(
+            runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS
         )
         assert names == expected
 
@@ -161,7 +162,7 @@ class TestGcpGeneratedOutputs:
     def test_forwarded_role_set_is_a_subset_of_the_generated_keys(self):
         # The forwarded manifest must not name a key the bundle does not generate.
         generated = {o.name for o in _gcp().generated_outputs if o.kind is OutputKind.RUNTIME_ENV}
-        assert generated >= runtime_inventory.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS
+        assert generated >= runtime_inventory_gcp.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS
 
 
 class TestGcpPublishedSettingsSchemaConstraints:

@@ -30,19 +30,32 @@ _LOWERCASE_HEX = frozenset("0123456789abcdef")
 _EKS_NAMESPACE = "shifter-system"
 _HELM_RELEASE = "shifter"
 _LOAD_BALANCER_CONTROLLER_CHART_VERSION = "3.2.2"
+# Pinned cluster-autoscaler chart (#1826). The image tag must track the cluster's
+# Kubernetes minor; the chart's autoDiscovery + the node-group ASG discovery tags
+# (k8s.io/cluster-autoscaler/<cluster>) let it manage only this cluster's ASG.
+_CLUSTER_AUTOSCALER_CHART_VERSION = "9.37.0"
 _MAX_PROTECTED_JSON_BYTES = 1024 * 1024
 _TERRAFORM_NONINTERACTIVE = "-input=false"
 _PLATFORM_NAMESPACES = {
     "shifter-platform": "control",
     "shifter-jobs": "jobs",
 }
-_WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler"})
+# Chart service accounts that receive an IRSA role-arn annotation (#1826 adds the
+# provisioner Job launcher + the privileged provisioner). The add-on controller
+# roles (cni, ingress, ebs-csi, efs-csi, cluster-autoscaler) are wired to their
+# controllers directly (EKS add-on service_account_role_arn / Helm SA annotation),
+# not projected into the chart's identity.serviceAccountRoleArns.
+_WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler", "provisionerLauncher", "provisioner"})
 _RENDERER_OWNED_RUNTIME_ENV = frozenset(
     {
         "AUTH_PROVIDER",
         "CLOUD_PROVIDER",
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
+        # ENGINE_TASK_IMAGE is generated here from the attested provisioner image
+        # digest (mirrors GCP's render_runtime_env.py); the Terraform runtime_env
+        # must not supply it.
+        "ENGINE_TASK_IMAGE",
         "ENVIRONMENT",
         "SITE_URL",
     }
@@ -239,11 +252,8 @@ def _validate_terraform_inputs(
     return resolved
 
 
-def _bootstrap_cluster(outputs: Mapping[str, object]) -> None:
-    """Create platform namespaces and install the AWS load-balancer controller."""
-    roles = _output(outputs, "workload_role_arns")
-    if not isinstance(roles, Mapping) or not isinstance(roles.get("ingress"), str):
-        raise ValueError("workload_role_arns must include the ingress controller role")
+def _apply_platform_namespaces() -> None:
+    """Create the restricted platform namespaces the chart deploys into."""
     with tempfile.TemporaryDirectory(prefix="shifter-eks-bootstrap-") as staging:
         staging_path = Path(staging)
         for namespace, plane in _PLATFORM_NAMESPACES.items():
@@ -265,16 +275,10 @@ def _bootstrap_cluster(outputs: Mapping[str, object]) -> None:
             manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
             run_cmd(["kubectl", "apply", "-f", str(manifest_path)])
 
-    run_cmd(
-        [
-            "helm",
-            "repo",
-            "add",
-            "eks",
-            "https://aws.github.io/eks-charts",
-            "--force-update",
-        ]
-    )
+
+def _install_load_balancer_controller(cluster_name: str, role_arn: str) -> None:
+    """Install the AWS load-balancer controller bound to its exact IRSA role."""
+    run_cmd(["helm", "repo", "add", "eks", "https://aws.github.io/eks-charts", "--force-update"])
     run_cmd(["helm", "repo", "update", "eks"])
     run_cmd(
         [
@@ -288,13 +292,13 @@ def _bootstrap_cluster(outputs: Mapping[str, object]) -> None:
             "--version",
             _LOAD_BALANCER_CONTROLLER_CHART_VERSION,
             "--set-string",
-            f"clusterName={_output(outputs, 'cluster_name')}",
+            f"clusterName={cluster_name}",
             "--set",
             "serviceAccount.create=true",
             "--set-string",
             "serviceAccount.name=aws-load-balancer-controller",
             "--set-string",
-            "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=" + str(roles["ingress"]),
+            "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=" + role_arn,
             "--atomic",
             "--wait",
             "--timeout",
@@ -314,6 +318,78 @@ def _bootstrap_cluster(outputs: Mapping[str, object]) -> None:
     )
 
 
+def _install_cluster_autoscaler(cluster_name: str, region: str, role_arn: str) -> None:
+    """Install the cluster-autoscaler scoped to this cluster's ASG (#1826).
+
+    autoDiscovery.clusterName plus the node-group discovery tags applied in
+    Terraform keep it from touching another cluster's capacity.
+    """
+    run_cmd(["helm", "repo", "add", "autoscaler", "https://kubernetes.github.io/autoscaler", "--force-update"])
+    run_cmd(["helm", "repo", "update", "autoscaler"])
+    run_cmd(
+        [
+            "helm",
+            "upgrade",
+            "--install",
+            "cluster-autoscaler",
+            "autoscaler/cluster-autoscaler",
+            "--namespace",
+            "kube-system",
+            "--version",
+            _CLUSTER_AUTOSCALER_CHART_VERSION,
+            "--set-string",
+            f"autoDiscovery.clusterName={cluster_name}",
+            "--set-string",
+            f"awsRegion={region}",
+            "--set",
+            "rbac.serviceAccount.create=true",
+            "--set-string",
+            "rbac.serviceAccount.name=cluster-autoscaler",
+            "--set-string",
+            "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=" + role_arn,
+            # Only scale ASGs this cluster owns, and let the autoscaler evict
+            # pods without the restrictive system-pod guard blocking scale-down.
+            "--set",
+            "extraArgs.balance-similar-node-groups=true",
+            "--set",
+            "extraArgs.skip-nodes-with-system-pods=false",
+            "--atomic",
+            "--wait",
+            "--timeout",
+            "10m",
+        ]
+    )
+    run_cmd(
+        [
+            "kubectl",
+            "rollout",
+            "status",
+            "deployment/cluster-autoscaler-aws-cluster-autoscaler",
+            "--namespace",
+            "kube-system",
+            "--timeout=5m",
+        ]
+    )
+
+
+def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
+    """Create platform namespaces and install the cluster-scoped controllers.
+
+    The AWS load-balancer controller (ALB ingress) and the cluster-autoscaler
+    (#1826) each bind to their exact IRSA role via a service-account role-arn
+    annotation.
+    """
+    roles = _output(outputs, "workload_role_arns")
+    if not isinstance(roles, Mapping) or not isinstance(roles.get("ingress"), str):
+        raise ValueError("workload_role_arns must include the ingress controller role")
+    if not isinstance(roles.get("cluster-autoscaler"), str):
+        raise ValueError("workload_role_arns must include the cluster-autoscaler role")
+    cluster_name = str(_output(outputs, "cluster_name"))
+    _apply_platform_namespaces()
+    _install_load_balancer_controller(cluster_name, str(roles["ingress"]))
+    _install_cluster_autoscaler(cluster_name, region, str(roles["cluster-autoscaler"]))
+
+
 def render_aws_values(
     config: RootConfig,
     terraform_outputs: Mapping[str, object],
@@ -327,10 +403,19 @@ def render_aws_values(
     missing_roles = sorted(_WORKLOAD_ROLE_KEYS.difference(roles))
     if missing_roles:
         raise ValueError("workload_role_arns is missing chart workload roles: " + ", ".join(missing_roles))
+    validated_images = _validated_images(images)
+    if "provisioner" not in validated_images:
+        raise ValueError("images must include a digest-pinned 'provisioner' identity for the Kubernetes Job launcher")
+    # ENGINE_TASK_IMAGE is the provisioner Job image; the launcher resolves it
+    # from the runtime env. It is renderer-generated from the attested digest,
+    # mirroring GCP's render_runtime_env.py.
+    runtime_env = _runtime_env(config, terraform_outputs)
+    runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
     return {
         "provider": {"name": "aws"},
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
-        "capabilities": {"kubernetesJobLauncher": False},
+        "capabilities": {"kubernetesJobLauncher": True},
+        "provisioner": {"taskRunner": "aws"},
         "edge": {
             "hostname": config.deployment.domain,
             "certificateArn": _output(terraform_outputs, "certificate_arn"),
@@ -369,7 +454,7 @@ def render_aws_values(
             "rangeAccessPorts": [22, 3389],
         },
         "identity": {"serviceAccountRoleArns": {key: roles[key] for key in sorted(_WORKLOAD_ROLE_KEYS)}},
-        "runtimeEnv": _runtime_env(config, terraform_outputs),
+        "runtimeEnv": runtime_env,
         "runtime": {
             # References only. entrypoint.sh hydrates values from Secrets Manager
             # in-process; raw values never enter Helm history, ConfigMaps, or argv.
@@ -378,7 +463,7 @@ def render_aws_values(
                 "database": config.secrets["db_password"],
             }
         },
-        "images": _validated_images(images),
+        "images": validated_images,
     }
 
 
@@ -504,7 +589,7 @@ def deploy_eks(
         ],
         profile=aws_profile,
     )
-    _bootstrap_cluster(outputs)
+    _bootstrap_cluster(outputs, str(config.settings["region"]))
     values = render_aws_values(
         config,
         outputs,
