@@ -14,8 +14,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GITHUB_OIDC_CANONICAL_PATH = Path("platform/terraform/global/iam/github-oidc.tf")
-ENGINE_PROVISIONER_IAM_CANONICAL_PATH = Path(
-    "platform/terraform/modules/engine-provisioner/iam.tf"
+# #1826: the provisioner permission set — including the per-range
+# vpn_gateway_role_management identity policy — moved into the shared
+# provisioner-iam module, attached to both the ECS task role and the EKS
+# provisioner IRSA role. The canonical location of that policy is now the shared
+# module, so the "required on its canonical path" guard follows it there.
+PROVISIONER_IAM_CANONICAL_PATH = Path(
+    "platform/terraform/modules/provisioner-iam/main.tf"
 )
 
 IAM_MODULE_GLOBS: tuple[str, ...] = (
@@ -26,6 +31,7 @@ IAM_MODULE_GLOBS: tuple[str, ...] = (
     "platform/terraform/modules/portal/ctfd/*.tf",
     "platform/terraform/modules/range/vpc/*.tf",
     "platform/terraform/modules/engine-provisioner/*.tf",
+    "platform/terraform/modules/provisioner-iam/*.tf",
     "platform/terraform/modules/guacamole/*.tf",
     "platform/terraform/modules/log-aggregation/*.tf",
 )
@@ -431,7 +437,7 @@ def check_vpn_gateway_identity_policy(
         path,
         lines,
         VPN_GATEWAY_IDENTITY_POLICY_RE,
-        canonical_path=ENGINE_PROVISIONER_IAM_CANONICAL_PATH,
+        canonical_path=PROVISIONER_IAM_CANONICAL_PATH,
         resource_label="VPN gateway identity aws_iam_role_policy.vpn_gateway_role_management",
         repo_root=repo_root,
     )
