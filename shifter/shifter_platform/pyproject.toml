@@ -10,7 +10,10 @@ dependencies = [
     "channels",
     "channels-redis",
     "daphne",
-    "django>=6.0.7",
+    # Held on the 6.0.x line: django 6.1 drops django.utils.cache.cc_delim_re,
+    # which djangorestframework still imports. >=6.0.7 clears GHSA-8qcx-xf44-272x
+    # (CVE-2026-53878) and the two sibling advisories on the same release.
+    "django>=6.0.7,<6.1",
     # GCP transactional-email backends (SendGrid / Mailgun) for PLAT-002 parity;
     # AWS continues to use django-ses. See config/_email.py.
     "django-anymail",
