@@ -173,11 +173,23 @@ def _get_gcp_provisioner_env_overrides() -> dict[str, str] | None:
     if settings.CLOUD_PROVIDER != "gcp":
         return None
 
+    # Only keys the GCP deployment contract actually defines may be fabricated
+    # here. The provisioner-Job admission policy (restrict-provisioner-jobs)
+    # requires every literal env entry to mirror a key of the runtime ConfigMap
+    # with an identical value, so inventing a value the ConfigMap cannot carry
+    # gets the whole Job denied -- not just that variable dropped.
+    #
+    # AWS_REGION is deliberately absent: scripts/gcp/render_runtime_env.py never
+    # emits it, and settings.AWS_REGION still carries an AWS-shaped default on
+    # GCP, so falling back to it forged an `AWS_REGION` literal that no GCP
+    # ConfigMap contains and every provisioner Job was rejected. It stays in
+    # _GCP_PROVISIONER_ENV_KEYS so a deployment that really does define it is
+    # still forwarded (and then matches params.data); it is simply never
+    # invented from settings.
     fallback_values = {
         "CLOUD_PROVIDER": settings.CLOUD_PROVIDER,
         "ENVIRONMENT": getattr(settings, "ENVIRONMENT", ""),
         "CLOUD_REGION": getattr(settings, "CLOUD_REGION", ""),
-        "AWS_REGION": getattr(settings, "AWS_REGION", ""),
         "GCP_REGION": os.environ.get("GCP_REGION") or getattr(settings, "CLOUD_REGION", ""),
         "GCP_PROJECT_ID": getattr(settings, "GCP_PROJECT_ID", ""),
         "GOOGLE_CLOUD_PROJECT": getattr(settings, "GCP_PROJECT_ID", ""),
