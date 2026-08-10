@@ -26,9 +26,13 @@ def _load_module(module_filename: str, module_name: str):
     return _load_module_from_path(Path(__file__).resolve().parents[1] / module_filename, module_name)
 
 
+# The GCP key inventories moved to runtime_inventory_gcp (#1826, S104 split).
+# Load that module directly: it has no package imports, so it loads standalone
+# without pulling in the installation package (runtime_inventory.py now uses a
+# relative import that a bare file load cannot resolve).
 runtime_inventory = _load_module_from_path(
-    REPO_ROOT / "shifter/installation/runtime_inventory.py",
-    "installation_runtime_inventory_for_gcp_tests",
+    REPO_ROOT / "shifter/installation/runtime_inventory_gcp.py",
+    "installation_runtime_inventory_gcp_for_gcp_tests",
 )
 GCP_GENERATED_RUNTIME_ENV_KEYS = runtime_inventory.GCP_GENERATED_RUNTIME_ENV_KEYS
 GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS = runtime_inventory.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS

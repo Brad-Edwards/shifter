@@ -15,6 +15,28 @@ from dataclasses import dataclass
 # A writable mount: (volume name, mount path, emptyDir medium or None, size limit or None).
 WritableMount = tuple[str, str, "str | None", "str | None"]
 
+# Provisioner runtime identity and writable surface (issue #950/#1103). These are
+# image-specific and cloud-neutral: the same provisioner image runs on GKE and
+# EKS, so both the GCP and AWS adapters share one hardening contract here rather
+# than each duplicating the uid/gid/mount layout.
+_PROVISIONER_RUN_AS_UID = 1000
+_PROVISIONER_RUN_AS_GID = 1000
+# Memory-backed workspace volume size cap. Terraform staging trees are tiny, but a
+# runaway plan log or provider download could otherwise consume node memory
+# unbounded; 256Mi is generous for the staged terraform/ tree plus plan output.
+_PROVISIONER_WORKSPACE_SIZE_LIMIT = "256Mi"
+# Writable mount points the provisioner image needs at runtime. /app and the rest
+# of the root filesystem are read-only (issue #1103); these explicit emptyDir
+# volumes are the only paths the runtime user can write to. workspace is
+# memory-backed so terraform.tfvars.json (which can carry secrets) never persists
+# on disk.
+_PROVISIONER_WRITABLE_MOUNTS: tuple[WritableMount, ...] = (
+    ("provisioner-workspace", "/var/run/provisioner/workspace", "Memory", _PROVISIONER_WORKSPACE_SIZE_LIMIT),
+    ("tmp", "/tmp", None, None),  # noqa: S108 # nosec B108 — Kubernetes mount path, not a tempfile API call
+    ("tf-plugin-cache", "/home/appuser/.terraform.d/plugin-cache", None, None),
+    ("pulumi-home", "/home/appuser/.pulumi", None, None),
+)
+
 
 @dataclass(frozen=True)
 class ProvisionerHardeningProfile:
@@ -50,3 +72,19 @@ class KubernetesTaskProfile:
         if self.hardening is not None and container_name == self.hardening.container_name:
             return self.hardening
         return None
+
+
+def standard_provisioner_hardening(container_name: str) -> ProvisionerHardeningProfile:
+    """Return the cloud-neutral provisioner hardening contract for the shared image.
+
+    The provisioner image, its non-root uid/gid, and its writable-mount layout are
+    identical on every cloud, so both the GKE and EKS adapters build their
+    ``KubernetesTaskProfile`` hardening from this single source of truth rather
+    than each duplicating the uid/gid/mount layout.
+    """
+    return ProvisionerHardeningProfile(
+        container_name=container_name,
+        run_as_uid=_PROVISIONER_RUN_AS_UID,
+        run_as_gid=_PROVISIONER_RUN_AS_GID,
+        writable_mounts=_PROVISIONER_WRITABLE_MOUNTS,
+    )

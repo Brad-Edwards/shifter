@@ -110,8 +110,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                             f"{profile}: {image}",
                         )
 
-    def test_aws_profiles_exclude_kubernetes_job_launcher_capability(self) -> None:
-        forbidden = {
+    def test_aws_profiles_include_kubernetes_job_launcher_capability(self) -> None:
+        """#1826: AWS (EKS) dispatches the provisioner as a Kubernetes Job, so every
+        AWS profile renders the dedicated launcher identity, RBAC, ServiceAccounts,
+        and the fail-closed admission policy bound to the AWS task-runner contract."""
+        required = {
             ("Deployment", "worker-provisioner-launcher"),
             ("ServiceAccount", "provisioner-launcher"),
             ("ServiceAccount", "provisioner"),
@@ -122,9 +125,13 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         }
         for profile in ("aws-dev", "aws-proof", "aws-prod"):
             with self.subTest(profile=profile):
-                _, documents = _render(VALUES_FILES[profile])
+                rendered, documents = _render(VALUES_FILES[profile])
                 identities = {_identity(document) for document in documents}
-                self.assertTrue(forbidden.isdisjoint(identities))
+                self.assertTrue(required.issubset(identities))
+                # AWS binds the admission policy to its own task-runner contract,
+                # never the GCP one (the AWS-derived env allowlist, not a GCP copy).
+                self.assertIn("shifter.dev/task-runner'] == 'aws'", rendered)
+                self.assertNotIn("shifter.dev/task-runner'] == 'gcp'", rendered)
 
     def test_gcp_profiles_retain_compatible_provider_capabilities(self) -> None:
         for profile in ("gcp-dev", "gcp-prod"):
@@ -207,7 +214,9 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         self.assertIn('APP_SECRET_ID: "shifter/dev/app"', rendered)
         self.assertIn('DB_SECRET_ID: "shifter/dev/database"', rendered)
         self.assertNotIn("kind: Secret", rendered)
-        self.assertNotIn(("Deployment", "worker-provisioner-launcher"), {_identity(d) for d in documents})
+        # #1826: AWS dispatches the provisioner as a Kubernetes Job, so the
+        # dedicated launcher renders alongside the edge/secret projection.
+        self.assertIn(("Deployment", "worker-provisioner-launcher"), {_identity(d) for d in documents})
 
     def test_aws_dev_scaffold_renders_alb_edge_with_acm_and_waf(self) -> None:
         rendered, documents = _render(VALUES_FILES["aws-dev"])

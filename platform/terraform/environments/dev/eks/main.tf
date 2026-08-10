@@ -13,10 +13,17 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
   environment  = "dev"
   cluster_name = "shifter-${local.environment}-eks"
   secret_names = toset(["database", "django", "redis"])
+
+  # The EKS control plane composes over the existing portal data plane
+  # (ADR-044-R6): portal resources are named "${environment}-portal-*".
+  portal_name_prefix       = "${local.environment}-portal"
+  permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/shifter-${local.environment}-ci-role-boundary"
 }
 
 module "eks" {
@@ -74,7 +81,62 @@ module "eks" {
       policy_arns     = []
       secret_names    = local.secret_names
     }
+    # Dedicated provisioner Job launcher + the privileged provisioner Job (#1826).
+    # The provisioner's range-provisioning permission set is attached separately
+    # by module.provisioner_iam (shared with the ECS task role); these entries
+    # create the exact-subject IRSA roles and grant platform secret access.
+    provisionerLauncher = {
+      namespace       = "shifter-platform"
+      service_account = "provisioner-launcher"
+      policy_arns     = []
+      secret_names    = local.secret_names
+    }
+    provisioner = {
+      namespace       = "shifter-jobs"
+      service_account = "provisioner"
+      policy_arns     = []
+      secret_names    = local.secret_names
+    }
+    # EKS add-on controller identities (#1826). AWS-managed CSI driver policies;
+    # controllers run in kube-system with their driver-default service accounts.
+    ebs-csi = {
+      namespace       = "kube-system"
+      service_account = "ebs-csi-controller-sa"
+      policy_arns     = ["arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"]
+      secret_names    = []
+    }
+    efs-csi = {
+      namespace       = "kube-system"
+      service_account = "efs-csi-controller-sa"
+      policy_arns     = ["arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"]
+      secret_names    = []
+    }
   }
+
+  tags = merge(var.tags, {
+    Environment = local.environment
+    ManagedBy   = "terraform"
+    Project     = "shifter"
+    Substrate   = "eks"
+  })
+}
+
+# Compose the provisioner Job environment over the existing portal + range data
+# plane (ADR-044-R6) and attach the shared provisioner permission set to the
+# provisioner IRSA role.
+module "eks_provisioner_env" {
+  source = "../../../modules/portal/eks-provisioner-env"
+
+  environment              = local.environment
+  name_prefix              = local.portal_name_prefix
+  runtime_env              = var.runtime_env
+  provisioner_role_name    = module.eks.workload_role_names["provisioner"]
+  provisioner_role_id      = module.eks.workload_role_ids["provisioner"]
+  permissions_boundary_arn = local.permissions_boundary_arn
+  storage_bucket_name      = var.runtime_env["STORAGE_BUCKET_NAME"]
+  db_name                  = var.db_name
+  dc_domain_name           = var.dc_domain_name
+  extra_env                = var.provisioner_extra_env
 
   tags = merge(var.tags, {
     Environment = local.environment

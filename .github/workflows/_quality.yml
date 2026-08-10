@@ -268,6 +268,7 @@ jobs:
         run: |
           python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py \
             platform/terraform/modules/engine-provisioner/*.tf \
+            platform/terraform/modules/provisioner-iam/*.tf \
             platform/terraform/modules/portal/ec2/*.tf \
             platform/terraform/modules/guacamole/*.tf
 
@@ -277,7 +278,7 @@ jobs:
       - name: Run check-tf-iam-elb-scope
         run: |
           python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
-            platform/terraform/modules/engine-provisioner/iam.tf \
+            platform/terraform/modules/provisioner-iam/main.tf \
             shifter/engine/provisioner/terraform/modules/range/vpn.tf
 
       # Issue #1179: SSM Run Command IAM scoping on the engine provisioner
@@ -288,7 +289,8 @@ jobs:
       - name: Run check-tf-iam-ssm-scope
         run: |
           python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
-            platform/terraform/modules/engine-provisioner/iam.tf
+            platform/terraform/modules/engine-provisioner/iam.tf \
+            platform/terraform/modules/provisioner-iam/main.tf
 
       # Issue #1846: this checker previously ran only in pre-commit and as a
       # unit test in CI, unlike its elb/ssm siblings above, so a commit that
@@ -296,7 +298,8 @@ jobs:
       - name: Run check-tf-iam-ec2-scope
         run: |
           python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py \
-            platform/terraform/modules/engine-provisioner/iam.tf
+            platform/terraform/modules/engine-provisioner/iam.tf \
+            platform/terraform/modules/provisioner-iam/main.tf
 
       - name: Run check-tf-iam-role-naming
         run: |
