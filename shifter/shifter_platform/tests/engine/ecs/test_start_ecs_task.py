@@ -53,14 +53,17 @@ class TestStartEcsTaskEnqueue:
 
 class TestStartEcsTaskConfigurationValidation:
     """Incomplete task-runner config makes the entrypoint a no-op (returns None):
-    it persists no intent (no ghost launch) and never reaches ``boto3``."""
+    it persists no intent (no ghost launch) and never reaches the provider port.
+
+    Since #1826 the provisioner dispatches as a Kubernetes Job on both AWS (EKS)
+    and GCP (GKE), so the config gate requires only the namespace
+    (``ENGINE_TASK_CLUSTER``) and image (``ENGINE_TASK_DEFINITION``); the former
+    ECS security-group / subnet requirements no longer gate dispatch."""
 
     def test_returns_none_when_cluster_missing(self, aws_ecs_unconfigured, settings, ecs_client):
         from engine.ecs import _start_ecs_task
 
         settings.ENGINE_TASK_DEFINITION = "test-taskdef"
-        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-1,subnet-2"
 
         range_row = make_authorized_legacy_range()
         assert _start_ecs_task(range_id=range_row.pk, user_id=range_row.user_id, command="provision") is None
@@ -71,51 +74,7 @@ class TestStartEcsTaskConfigurationValidation:
         from engine.ecs import _start_ecs_task
 
         settings.ENGINE_TASK_CLUSTER = "test-cluster"
-        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-1,subnet-2"
 
-        range_row = make_authorized_legacy_range()
-        assert _start_ecs_task(range_id=range_row.pk, user_id=range_row.user_id, command="provision") is None
-        assert not ProvisionerLaunchIntent.objects.exists()
-        ecs_client.run_task.assert_not_called()
-
-    def test_returns_none_when_security_group_missing(self, aws_ecs_unconfigured, settings, ecs_client):
-        from engine.ecs import _start_ecs_task
-
-        settings.ENGINE_TASK_CLUSTER = "test-cluster"
-        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-1,subnet-2"
-
-        range_row = make_authorized_legacy_range()
-        assert _start_ecs_task(range_id=range_row.pk, user_id=range_row.user_id, command="provision") is None
-        assert not ProvisionerLaunchIntent.objects.exists()
-        ecs_client.run_task.assert_not_called()
-
-    def test_returns_none_when_subnet_ids_missing(self, aws_ecs_unconfigured, settings, ecs_client):
-        from engine.ecs import _start_ecs_task
-
-        settings.ENGINE_TASK_CLUSTER = "test-cluster"
-        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
-        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
-
-        range_row = make_authorized_legacy_range()
-        assert _start_ecs_task(range_id=range_row.pk, user_id=range_row.user_id, command="provision") is None
-        assert not ProvisionerLaunchIntent.objects.exists()
-        ecs_client.run_task.assert_not_called()
-
-    def test_returns_none_when_subnet_ids_empty(self, aws_ecs_configured, settings, ecs_client):
-        from engine.ecs import _start_ecs_task
-
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = ""
-        range_row = make_authorized_legacy_range()
-        assert _start_ecs_task(range_id=range_row.pk, user_id=range_row.user_id, command="provision") is None
-        assert not ProvisionerLaunchIntent.objects.exists()
-        ecs_client.run_task.assert_not_called()
-
-    def test_returns_none_when_subnet_ids_whitespace(self, aws_ecs_configured, settings, ecs_client):
-        from engine.ecs import _start_ecs_task
-
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "   ,   ,   "
         range_row = make_authorized_legacy_range()
         assert _start_ecs_task(range_id=range_row.pk, user_id=range_row.user_id, command="provision") is None
         assert not ProvisionerLaunchIntent.objects.exists()

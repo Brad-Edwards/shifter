@@ -27,7 +27,13 @@ from shared.cloud import PROVISIONER_CONTAINER_NAME, get_task_runner
 from shared.enums import ResourceType
 
 from ._config import _get_engine_task_config
-from ._env import _GCP_PROVISIONER_ENV_KEYS, _get_gcp_provisioner_env_overrides
+from ._env import (
+    _AWS_PROVISIONER_ENV_KEYS,
+    _GCP_PROVISIONER_ENV_KEYS,
+    _get_aws_provisioner_env_overrides,
+    _get_gcp_provisioner_env_overrides,
+    _get_provisioner_env_overrides,
+)
 from ._local import _is_local_provisioner_enabled, _run_local_provisioner
 from ._status import get_task_status
 
@@ -92,7 +98,7 @@ def dispatch_provisioner_command(command: list[str], *, task_identity: str | Non
         cluster=cluster,
         command=command,
         container_name=PROVISIONER_CONTAINER_NAME,
-        env_overrides=_get_gcp_provisioner_env_overrides(),
+        env_overrides=_get_provisioner_env_overrides(),
         network_config=network_config,
         task_identity=task_identity,
     )
@@ -438,9 +444,12 @@ def start_ngfw_operation(request_id: UUID, operation: str) -> str | None:
 
 __all__ = [
     # Internal seams re-exported for tests, kept stable across the #685 split.
+    "_AWS_PROVISIONER_ENV_KEYS",
     "_GCP_PROVISIONER_ENV_KEYS",
+    "_get_aws_provisioner_env_overrides",
     "_get_engine_task_config",
     "_get_gcp_provisioner_env_overrides",
+    "_get_provisioner_env_overrides",
     "_is_local_provisioner_enabled",
     "_run_local_provisioner",
     "_start_ecs_task",
