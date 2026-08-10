@@ -88,11 +88,41 @@ resource "aws_eks_node_group" "this" {
     max_unavailable_percentage = 25
   }
 
+  # cluster-autoscaler owns desired capacity within [min_size, max_size] (#1826).
+  # Without this, every Terraform apply would reset desired_size back to the
+  # static var and fight the autoscaler over the live node count.
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
+  }
+
   depends_on = [aws_iam_role_policy_attachment.node]
 
   tags = merge(var.tags, {
     Name = "${var.cluster_name}-platform"
   })
+}
+
+# cluster-autoscaler auto-discovers the managed node group's ASG by these tags
+# (#1826). EKS creates the ASG, so tag it explicitly rather than relying on
+# node-group tag propagation.
+resource "aws_autoscaling_group_tag" "cluster_autoscaler_enabled" {
+  autoscaling_group_name = aws_eks_node_group.this.resources[0].autoscaling_groups[0].name
+
+  tag {
+    key                 = "k8s.io/cluster-autoscaler/enabled"
+    value               = "true"
+    propagate_at_launch = false
+  }
+}
+
+resource "aws_autoscaling_group_tag" "cluster_autoscaler_owned" {
+  autoscaling_group_name = aws_eks_node_group.this.resources[0].autoscaling_groups[0].name
+
+  tag {
+    key                 = "k8s.io/cluster-autoscaler/${var.cluster_name}"
+    value               = "owned"
+    propagate_at_launch = false
+  }
 }
 
 resource "aws_launch_template" "node" {
@@ -142,6 +172,34 @@ resource "aws_eks_addon" "vpc_cni" {
   cluster_name             = aws_eks_cluster.this.name
   addon_name               = "vpc-cni"
   service_account_role_arn = aws_iam_role.workload["cni"].arn
+
+  # Enforce Kubernetes NetworkPolicies on EKS (#1826). The chart renders the
+  # default-deny + scoped-allow policies for both clouds, but on EKS they are
+  # inert unless the VPC CNI network-policy agent is enabled — this closes the
+  # "rendered but not enforced" gap so NetworkPolicy parity with GKE is real.
+  configuration_values = jsonencode({
+    enableNetworkPolicy = "true"
+  })
+
+  depends_on = [aws_eks_node_group.this]
+
+  tags = var.tags
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name             = aws_eks_cluster.this.name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = aws_iam_role.workload["ebs-csi"].arn
+
+  depends_on = [aws_eks_node_group.this]
+
+  tags = var.tags
+}
+
+resource "aws_eks_addon" "efs_csi" {
+  cluster_name             = aws_eks_cluster.this.name
+  addon_name               = "aws-efs-csi-driver"
+  service_account_role_arn = aws_iam_role.workload["efs-csi"].arn
 
   depends_on = [aws_eks_node_group.this]
 

@@ -221,22 +221,29 @@ repos:
         files: ^platform/terraform/environments/(dev|proof|prod)/portal/main\.tf$
 
       - id: check-tf-iam-ec2-scope
-        name: AWS EC2 lifecycle IAM scoping (engine provisioner)
+        name: AWS EC2 lifecycle IAM scoping (shared provisioner IAM)
         entry: python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py
         language: system
-        files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
+        # #1826: the provisioner permission set moved into the shared
+        # provisioner-iam module (attached to the ECS task role and the EKS
+        # provisioner IRSA role); scope the check to that module's policies.
+        files: ^platform/terraform/modules/(engine-provisioner/iam|provisioner-iam/main)\.tf$
 
       - id: check-tf-iam-elb-scope
-        name: AWS ELBv2 (GWLB/VPN NLB) IAM scoping (engine provisioner)
+        name: AWS ELBv2 (GWLB/VPN NLB) IAM scoping (shared provisioner IAM)
         entry: python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py
         language: system
-        files: ^(platform/terraform/modules/engine-provisioner/iam|shifter/engine/provisioner/terraform/modules/range/vpn)\.tf$
+        # #1826: the GWLB policy moved entirely into the shared provisioner-iam
+        # module, so the check (which requires aws_iam_policy.gwlb to be present)
+        # targets that module, not the now-delegating engine-provisioner/iam.tf.
+        files: ^(platform/terraform/modules/provisioner-iam/main|shifter/engine/provisioner/terraform/modules/range/vpn)\.tf$
 
       - id: check-tf-iam-ssm-scope
-        name: AWS SSM Run Command IAM scoping (engine provisioner)
+        name: AWS SSM Run Command IAM scoping (shared provisioner IAM)
         entry: python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py
         language: system
-        files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
+        # #1826: SSM Run Command policy moved into the shared provisioner-iam module.
+        files: ^platform/terraform/modules/(engine-provisioner/iam|provisioner-iam/main)\.tf$
 
       - id: check-tf-iam-role-naming
         name: AWS IAM role naming seam (shifter-* prefix)
@@ -337,11 +344,12 @@ repos:
           bash -c '
           python3 scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py
           platform/terraform/modules/engine-provisioner/*.tf
+          platform/terraform/modules/provisioner-iam/*.tf
           platform/terraform/modules/portal/ec2/*.tf
           platform/terraform/modules/guacamole/*.tf
           '
         language: system
-        files: ^platform/terraform/modules/(engine-provisioner|portal/ec2|guacamole)/.+\.tf$
+        files: ^platform/terraform/modules/(engine-provisioner|provisioner-iam|portal/ec2|guacamole)/.+\.tf$
         pass_filenames: false
 
       # ADR-008-R7 / issue #1517: GCP application workload identities (portal,

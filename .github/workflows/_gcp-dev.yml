@@ -182,6 +182,7 @@ jobs:
           GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
           GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
           GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
+          GCP_CTF_CONTENT_BUCKET: ${{ vars.GCP_CTF_CONTENT_BUCKET }}
         # The committed `terraform.tfvars` ships an example.com baseline that
         # fails-loud on apply. Each deployment provides its real values via
         # the GitHub secrets/variables listed above; this step renders them
@@ -228,6 +229,17 @@ jobs:
           fi
           if [ -n "${GCP_BOOTSTRAP_ADMIN_PASSWORD}" ]; then
             printf 'gcp_bootstrap_admin_password = "%s"\n' "${GCP_BOOTSTRAP_ADMIN_PASSWORD}" >> "${TF_DIR}/local.auto.tfvars"
+          fi
+          # Private native-CTF content bucket (#1665 content references). The
+          # bucket name is public location policy, not a credential, so it rides
+          # a repo variable; the digest-pinned reference catalog itself stays in
+          # the app secret bundle. scripts/gcp/render_runtime_env.py emits
+          # SHIFTER_CTF_CONTENT_BUCKET only when this Terraform output is set,
+          # and config/_ctf_content_settings.py refuses to start when references
+          # are configured without it -- so leaving this unset silently wipes the
+          # binding from the runtime ConfigMap and crashloops the portal.
+          if [ -n "${GCP_CTF_CONTENT_BUCKET}" ]; then
+            printf 'ctf_content_bucket_name       = "%s"\n' "${GCP_CTF_CONTENT_BUCKET}" >> "${TF_DIR}/local.auto.tfvars"
           fi
       - name: Render range egress allowlist from shifter.yaml
         env:

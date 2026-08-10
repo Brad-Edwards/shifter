@@ -543,6 +543,20 @@ The first slice intentionally stays small:
   ranges. Runs in the `ci` level and shares the Helm-rendered
   validation boundary with `k8s-deployment-security-context`.
 
+- `eks-cross-stack-sourcing`
+  Enforces ADR-044-R6 against the AWS EKS Terraform roots under
+  `platform/terraform/environments/*/eks/`. The EKS control plane
+  composes over the existing portal and range data plane and must
+  source cross-stack values (control-plane database, secrets KMS key,
+  agent bucket, range VPC/subnets/AMIs/instance roles) through native
+  AWS data sources and SSM Parameter Store. The check fails closed on
+  any `terraform_remote_state` data source in those roots, which would
+  couple the consumer to another stack's whole state file. Runs in both
+  the `fast` and `ci` levels. The AWS/GCP provisioner-env contract
+  parity that R6 also requires is proven by the platform test suite
+  (`tests/shared/cloud/test_aws_runtime_role_parity.py`), not this
+  structural guard.
+
 - `no-plaintext-secrets-in-tfvars`
   Architecture check that scans `*.tfvars` files committed under
   `platform/terraform/environments/` and `platform/terraform/global/`

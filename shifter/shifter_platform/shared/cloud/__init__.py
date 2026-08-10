@@ -74,12 +74,19 @@ def get_object_storage() -> ObjectStorage:
 
 
 def get_task_runner() -> TaskRunner:
-    """Return a TaskRunner implementation for the configured provider."""
+    """Return a TaskRunner implementation for the configured provider.
+
+    Both AWS and GCP dispatch the provisioner as a Kubernetes Job: the Shifter
+    management plane runs on EKS/GKE and launches the provisioner through the
+    provider-neutral ``KubernetesTaskRunner`` (#1826). AWS range/target delivery
+    remains ECS/VM behind the ADR-039 range adapter, which is a separate transport
+    from this provisioner-dispatch runner.
+    """
     provider = _require_capability(BackendCapability.TASK_RUNNER)
     if provider == "aws":
-        from shared.cloud.aws.task_runner import AWSTaskRunner
+        from shared.cloud.aws.task_runner import AWSKubernetesTaskRunner
 
-        return AWSTaskRunner()
+        return AWSKubernetesTaskRunner()
     if provider == "gcp":
         from shared.cloud.gcp.task_runner import GCPTaskRunner
 

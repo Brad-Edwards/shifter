@@ -126,10 +126,9 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
 
     runtime_env = {
         "AWS_REGION": "us-east-2",
-        "ENGINE_TASK_CLUSTER": "arn:aws:ecs:us-east-2:123456789012:cluster/shifter-dev",
-        "ENGINE_TASK_DEFINITION": ("arn:aws:ecs:us-east-2:123456789012:task-definition/shifter-dev-provisioner:1"),
-        "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID": "sg-0123456789abcdef0",
-        "ENGINE_TASK_NETWORK_SUBNET_IDS": "subnet-private-a",
+        # ENGINE_TASK_* ECS coordinates are retired (#1826); the provisioner
+        # dispatches as a Kubernetes Job. The range/portal provisioner env is
+        # assembled by Terraform and ENGINE_TASK_IMAGE is renderer-generated.
         "OIDC_AUTH_DOMAIN": "https://shifter-dev.auth.us-east-2.amazoncognito.com",
         "OIDC_ISSUER_URL": "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_example",
         "OIDC_RP_CLIENT_ID": "example-client-id",
@@ -151,6 +150,8 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
                 "ingress": "arn:aws:iam::123456789012:role/shifter-dev-ingress",
                 "portal": "arn:aws:iam::123456789012:role/shifter-dev-portal",
                 "workers": "arn:aws:iam::123456789012:role/shifter-dev-workers",
+                "provisionerLauncher": "arn:aws:iam::123456789012:role/shifter-dev-provisioner-launcher",
+                "provisioner": "arn:aws:iam::123456789012:role/shifter-dev-provisioner",
             }
         },
         "certificate_arn": {"value": "arn:aws:acm:us-east-2:123456789012:certificate/example"},
@@ -178,6 +179,7 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
         "platform": f"example.invalid/shifter/platform@sha256:{digest}",
         "guacd": f"example.invalid/shifter/guacd@sha256:{digest}",
         "guacamoleClient": f"example.invalid/shifter/guacamole-client@sha256:{digest}",
+        "provisioner": f"example.invalid/shifter/engine-provisioner@sha256:{digest}",
     }
 
     values = aws_eks.render_aws_values(config, outputs, images)
