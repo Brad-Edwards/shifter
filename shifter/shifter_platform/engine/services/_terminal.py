@@ -144,14 +144,13 @@ def get_owned_instance_request_ref(user: User, instance_uuid: str) -> str | None
         return None
     try:
         instance = (
-            Instance.objects.select_related("request")
-            .filter(uuid=instance_uuid, request__user_id=user_id)
-            .first()
+            Instance.objects.select_related("request").filter(uuid=instance_uuid, request__user_id=user_id).first()
         )
     except (DjangoValidationError, ValueError):
-        return None
+        instance = None
     # ``request`` is nullable on the model, so an instance whose request row was
-    # detached resolves to no ref rather than raising.
+    # detached resolves to no ref rather than raising. A malformed uuid (caught
+    # above) lands here as ``instance = None`` and resolves to no ref too.
     if instance is None or instance.request is None:
         return None
     return str(instance.request.request_id)

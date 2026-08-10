@@ -7,6 +7,7 @@ SSH key fetched over the ``boto3`` Secrets Manager boundary, instead of patching
 """
 
 import logging
+import uuid
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -202,3 +203,40 @@ class TestConnectTerminalSessionIds:
         with boto3_secrets(make_secrets_client()):
             result = connect_terminal(user, "win-uuid")
         assert result.session_id is None
+
+
+class TestGetOwnedInstanceRequestRef:
+    """Ownership resolution for realized range instances (issue #1978).
+
+    ``get_owned_instance_request_ref`` is the engine seam CMS uses to resolve a
+    range instance's owning request ref; it returns the request's ``request_id``
+    UUID only for an instance the user actually owns.
+    """
+
+    def test_returns_the_owning_request_ref(self, user):
+        from engine.models import Instance, Request
+        from engine.services import get_owned_instance_request_ref
+
+        request = Request.objects.create(request_id=uuid.uuid4(), request_type="range", user=user)
+        instance = Instance.objects.create(uuid=str(uuid.uuid4()), request=request, role="attacker", status="ready")
+
+        assert get_owned_instance_request_ref(user, instance.uuid) == str(request.request_id)
+
+    def test_none_for_an_instance_owned_by_another_user(self, user):
+        from engine.models import Instance, Request
+        from engine.services import get_owned_instance_request_ref
+
+        request = Request.objects.create(request_id=uuid.uuid4(), request_type="range", user=user)
+        instance = Instance.objects.create(uuid=str(uuid.uuid4()), request=request, role="attacker", status="ready")
+        stranger = User.objects.create_user(username="ref-stranger@example.com", email="ref-stranger@example.com")
+
+        assert get_owned_instance_request_ref(stranger, instance.uuid) is None
+
+    def test_none_when_user_is_unsaved_or_uuid_is_empty(self, user):
+        """The guard returns None before any query for a null user id or empty uuid."""
+        from django.contrib.auth import get_user_model
+
+        from engine.services import get_owned_instance_request_ref
+
+        assert get_owned_instance_request_ref(get_user_model()(), "some-uuid") is None
+        assert get_owned_instance_request_ref(user, "") is None
