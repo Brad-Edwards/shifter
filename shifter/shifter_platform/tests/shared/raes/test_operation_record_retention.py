@@ -94,6 +94,7 @@ def test_prune_deletes_expired_rows_and_retains_unexpired():
     assert RaesOperationRecord.objects.filter(pk=unexpired.pk).exists()
 
 
+@override_settings(RAES_OPERATION_RECORD_RETENTION_DAYS=0)
 @pytest.mark.django_db
 def test_prune_ignores_rows_without_retention_boundary():
     kept = _persist(retention_expires_at=None)
