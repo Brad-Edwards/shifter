@@ -294,7 +294,12 @@ The first slice intentionally stays small:
   change filter in `.github/workflows/deploy.yml` must stay scoped to
   Terraform-consumed platform files. Quality routing is separate and runs by
   exclusion: `.github/workflows/deploy.yml` must expose a `quality_relevant`
-  output that runs Quality unless the diff is ordinary docs-only. Guardrail
+  output that runs Quality unless the diff is ordinary docs-only. That output
+  also fails closed on an empty or undetermined changed-file set: an
+  `any_changed` classifier is false when the GitHub PR-files API returns zero
+  files (its eventual consistency can do this for a freshly created PR), and
+  `quality_relevant` ORs in `any_changed != 'true'` so an unclassifiable diff
+  runs Quality instead of silently bypassing it (#2024). Guardrail
   docs, including `.github/pull_request_template.md`,
   `.github/copilot-instructions.md`, `docs/adr/**`, and this ADR enforcement
   page, are explicitly quality-relevant so ADR guard validates them. PR Gate
