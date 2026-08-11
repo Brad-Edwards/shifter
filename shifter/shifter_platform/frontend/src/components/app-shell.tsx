@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LogOut,
   Moon,
+  ScrollText,
   Server,
   Settings,
   Shield,
@@ -48,6 +49,7 @@ const ICONS: Record<NavIconKey, ComponentType<{ className?: string }>> = {
   settings: Settings,
   "file-code": FileCode,
   "user-cog": UserCog,
+  "scroll-text": ScrollText,
   "circle-dollar-sign": CircleDollarSign,
 };
 

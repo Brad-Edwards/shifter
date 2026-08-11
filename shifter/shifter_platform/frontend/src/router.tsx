@@ -3,6 +3,7 @@ import { createBrowserRouter } from "react-router";
 import { RootLayout, type RouteHandle } from "@/app/RootLayout";
 import { NotFoundPage } from "@/components/not-found";
 import { RaesImageRegistryPage } from "@/features/raes-image-registry/RaesImageRegistryPage";
+import { AuditPage } from "@/features/administer/AuditPage";
 import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
@@ -216,6 +217,10 @@ export const router = createBrowserRouter(
             { path: "users/:id", element: <UserDetailPage /> },
             { path: "cost", element: <CostPage /> },
             { path: "settings", element: <PlatformSettingsPage /> },
+            // Administrator audit / activity history (#1947, PLAT-240): a
+            // deployment-global, staff-only surface. Top-level (not workspace
+            // scoped) because the audit store carries no per-row tenant scope.
+            { path: "audit", element: <AuditPage /> },
             {
               // Organization/workspace admin console (#1938, PLAT-231). The shell
               // owns routing, the switcher, context, and capability-aware nav; the
