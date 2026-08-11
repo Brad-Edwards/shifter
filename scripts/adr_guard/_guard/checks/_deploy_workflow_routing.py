@@ -24,7 +24,8 @@ from ._deploy_workflow_text import (
 
 _QUALITY_RELEVANT_OUTPUT = (
     "quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || "
-    "steps.quality_guardrails.outputs.guardrail_docs == 'true' }}"
+    "steps.quality_guardrails.outputs.guardrail_docs == 'true' || "
+    "steps.filter.outputs.any_changed != 'true' }}"
 )
 _QUALITY_RELEVANT_CONDITION = "needs.changes.outputs.quality_relevant == 'true'"
 _QUALITY_PREDICATE = "predicate-quantifier: every"

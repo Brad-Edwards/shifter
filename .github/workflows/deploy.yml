@@ -63,7 +63,7 @@ jobs:
       range: ${{ steps.filter.outputs.range }}
       shifter_engine: ${{ steps.filter.outputs.shifter_engine }}
       shifter_platform: ${{ steps.filter.outputs.shifter_platform }}
-      quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' }}
+      quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' || steps.filter.outputs.any_changed != 'true' }}
       portal_image: ${{ steps.filter.outputs.portal_image }}
       stack_smoke: ${{ steps.filter.outputs.stack_smoke }}
       mcp: ${{ steps.filter.outputs.mcp }}
@@ -87,6 +87,15 @@ jobs:
         id: filter
         with:
           filters: |
+            # Fail-closed signal for an empty or undetermined changed-file set
+            # (#2024). GitHub's PR "list files" API is eventually consistent and
+            # can return zero files for a freshly created PR; when that happens
+            # every classifier below evaluates false and Quality would skip. This
+            # `any_changed` filter is false in exactly that case, and the
+            # `quality_relevant` output ORs in `any_changed != 'true'` so an
+            # unclassifiable diff runs Quality instead of silently bypassing it.
+            any_changed:
+              - '**'
             core:
               - 'platform/terraform/modules/ecr/**'
               - 'platform/terraform/environments/*/*.tf'
