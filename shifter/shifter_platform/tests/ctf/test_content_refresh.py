@@ -198,13 +198,9 @@ def test_refresh_restores_drifted_managed_content(organizer_user) -> None:
 @pytest.mark.django_db
 def test_live_refresh_rejects_scoring_change_atomically(organizer_user) -> None:
     event = _hydrate_then_set(organizer_user, status=EventStatus.ACTIVE.value)
+    resolved = _resolved(_bundle(one_name="Should Not Apply", one_points=999), _DIGEST_B)
     with pytest.raises(CTFStateError) as error:
-        refresh_event_ctf_content(
-            event.pk,
-            _resolved(_bundle(one_name="Should Not Apply", one_points=999), _DIGEST_B),
-            actor_id=organizer_user.pk,
-            expected_current_digest=_DIGEST_A,
-        )
+        refresh_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk, expected_current_digest=_DIGEST_A)
     assert error.value.code == "CTF_CONTENT_REFRESH_UNSAFE"
     # Atomic rollback: neither the name nor the digest changed.
     assert CTFChallenge.objects.get(event=event, source_id="challenge-one").name == "Challenge One"
@@ -214,65 +210,46 @@ def test_live_refresh_rejects_scoring_change_atomically(organizer_user) -> None:
 @pytest.mark.django_db
 def test_live_refresh_rejects_membership_change(organizer_user) -> None:
     event = _hydrate_then_set(organizer_user, status=EventStatus.ACTIVE.value)
+    resolved = _resolved(_bundle(include_two=False), _DIGEST_B)
     with pytest.raises(CTFStateError) as error:
-        refresh_event_ctf_content(
-            event.pk,
-            _resolved(_bundle(include_two=False), _DIGEST_B),
-            actor_id=organizer_user.pk,
-            expected_current_digest=_DIGEST_A,
-        )
+        refresh_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk, expected_current_digest=_DIGEST_A)
     assert error.value.code == "CTF_CONTENT_REFRESH_UNSAFE"
 
 
 @pytest.mark.django_db
 def test_stale_expected_digest_is_a_conflict(organizer_user) -> None:
     event = _hydrate_then_set(organizer_user, status=EventStatus.ACTIVE.value)
+    resolved = _resolved(_bundle(one_flag="TEST{x}"), _DIGEST_B)
     with pytest.raises(CTFStateError) as error:
-        refresh_event_ctf_content(
-            event.pk,
-            _resolved(_bundle(one_flag="TEST{x}"), _DIGEST_B),
-            actor_id=organizer_user.pk,
-            expected_current_digest=_DIGEST_B,  # not the current receipt digest
-        )
+        # expected_current_digest is not the current receipt digest
+        refresh_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk, expected_current_digest=_DIGEST_B)
     assert error.value.code == "CTF_CONTENT_REFRESH_CONFLICT"
 
 
 @pytest.mark.django_db
 def test_unmanaged_event_cannot_refresh(organizer_user) -> None:
     event = _event(organizer_user)  # no hydration receipt
+    resolved = _resolved(_bundle(), _DIGEST_A)
     with pytest.raises(CTFStateError) as error:
-        refresh_event_ctf_content(
-            event.pk,
-            _resolved(_bundle(), _DIGEST_A),
-            actor_id=organizer_user.pk,
-            expected_current_digest=_DIGEST_A,
-        )
+        refresh_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk, expected_current_digest=_DIGEST_A)
     assert error.value.code == "CTF_CONTENT_REFRESH_STATE"
 
 
 @pytest.mark.django_db
 def test_ended_event_is_not_refreshable(organizer_user) -> None:
     event = _hydrate_then_set(organizer_user, status=EventStatus.ENDED.value)
+    resolved = _resolved(_bundle(one_flag="TEST{x}"), _DIGEST_B)
     with pytest.raises(CTFStateError) as error:
-        refresh_event_ctf_content(
-            event.pk,
-            _resolved(_bundle(one_flag="TEST{x}"), _DIGEST_B),
-            actor_id=organizer_user.pk,
-            expected_current_digest=_DIGEST_A,
-        )
+        refresh_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk, expected_current_digest=_DIGEST_A)
     assert error.value.code == "CTF_CONTENT_REFRESH_STATE"
 
 
 @pytest.mark.django_db
 def test_non_owner_cannot_refresh(organizer_user, participant_user) -> None:
     event = _hydrate_then_set(organizer_user, status=EventStatus.ACTIVE.value)
+    resolved = _resolved(_bundle(), _DIGEST_A)
     with pytest.raises(CTFPermissionError):
-        refresh_event_ctf_content(
-            event.pk,
-            _resolved(_bundle(), _DIGEST_A),
-            actor_id=participant_user.pk,
-            expected_current_digest=_DIGEST_A,
-        )
+        refresh_event_ctf_content(event.pk, resolved, actor_id=participant_user.pk, expected_current_digest=_DIGEST_A)
 
 
 @pytest.mark.django_db
@@ -312,11 +289,7 @@ def test_structural_reconcile_refused_when_scoring_ledger_exists(organizer_user)
         participant=participant, challenge=challenge, submitted_flag="x", is_correct=True, points_awarded=100
     )
 
+    resolved = _resolved(_bundle(include_three=True), _DIGEST_B)
     with pytest.raises(CTFStateError) as error:
-        refresh_event_ctf_content(
-            event.pk,
-            _resolved(_bundle(include_three=True), _DIGEST_B),
-            actor_id=organizer_user.pk,
-            expected_current_digest=_DIGEST_A,
-        )
+        refresh_event_ctf_content(event.pk, resolved, actor_id=organizer_user.pk, expected_current_digest=_DIGEST_A)
     assert error.value.code == "CTF_CONTENT_REFRESH_STATE"

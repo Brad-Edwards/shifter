@@ -40,32 +40,13 @@ from ctf.services.content_hydration import (
     _expected_counts,
     _receipt_matches,
 )
+from ctf.services.content_refresh_diff import (
+    ALL_MANAGED_FIELDS,
+    LIVE_SAFE_FIELDS,
+    UNSAFE_LIVE_CATEGORIES,
+    semantic_diff,
+)
 from ctf.services.content_resolution import ResolvedCtfContent
-
-# Bundle-owned scalar fields safe to change on a live (ACTIVE/PAUSED) event:
-# presentation and connection metadata that never touch authoritative scoring.
-_LIVE_SAFE_FIELDS = (
-    "name",
-    "description",
-    "category",
-    "difficulty",
-    "flag_format",
-    "solution",
-    "order",
-    "visibility",
-    "target_instance_name",
-    "target_port",
-)
-# Fields that drive authoritative submissions, attempt gates, and dynamic
-# repricing. Changing these on a live event would rewrite competition history.
-_SCORING_FIELDS = (
-    "points",
-    "minimum_points",
-    "decay_function",
-    "decay_solve_count",
-    "max_attempts",
-)
-_ALL_MANAGED_FIELDS = _LIVE_SAFE_FIELDS + _SCORING_FIELDS
 
 _LIVE_STATES = frozenset({EventStatus.ACTIVE, EventStatus.PAUSED})
 _PRE_ACTIVATION_STATES = frozenset({EventStatus.DRAFT, EventStatus.REGISTRATION})
@@ -92,91 +73,6 @@ def _managed_challenges(event: CTFEvent) -> dict[str, CTFChallenge]:
         .prefetch_related("flags", "hints", "prerequisites__required_challenge")
     )
     return {row.source_id: row for row in rows}
-
-
-# Categories a live (ACTIVE/PAUSED) refresh must never change: they rewrite
-# authoritative submissions, attempt gates, dynamic repricing, hint usage, or
-# challenge membership. Only "presentation" and "flags" are live-safe.
-_UNSAFE_LIVE_CATEGORIES = frozenset({"membership", "scoring", "hints", "prerequisites"})
-
-
-def _presentation_differs(challenge: CTFChallenge, bundle_challenge: BundleChallenge) -> bool:
-    """Return whether any bundle-owned presentation field diverges."""
-    return any(getattr(challenge, name) != getattr(bundle_challenge, name) for name in _LIVE_SAFE_FIELDS)
-
-
-def _flags_differ(challenge: CTFChallenge, bundle_challenge: BundleChallenge) -> bool:
-    """Return whether the persisted flag set diverges from the bundle declaration.
-
-    Static flag hashes are salted, so equality is proven by verifying the target
-    plaintext against the stored hash rather than comparing hashes. Regex
-    patterns and HTTP validator configs are compared directly (they are stored in
-    the clear). No proof value is logged or persisted for comparison.
-    """
-    from ctf.services.challenge import verify_single_flag
-
-    existing = list(challenge.flags.all().order_by("order"))
-    target = sorted(bundle_challenge.flags, key=lambda flag: flag.order)
-    if len(existing) != len(target):
-        return True
-    for current, wanted in zip(existing, target, strict=True):
-        if (
-            current.flag_type != wanted.flag_type
-            or current.order != wanted.order
-            or current.case_sensitive != wanted.case_sensitive
-        ):
-            return True
-        if wanted.flag_type == "static":
-            if not verify_single_flag(current, wanted.value):
-                return True
-        elif wanted.flag_type == "regex":
-            if current.flag_hash != wanted.value:
-                return True
-        elif (current.validator_config or {}) != (wanted.validator_config or {}):
-            return True
-    return False
-
-
-def _hints_differ(challenge: CTFChallenge, bundle_challenge: BundleChallenge) -> bool:
-    """Return whether persisted hints diverge from the bundle declaration."""
-    existing = sorted((h.order, h.penalty, h.text) for h in challenge.hints.all())
-    target = sorted((h.order, h.penalty, h.text) for h in bundle_challenge.hints)
-    return existing != target
-
-
-def _prerequisites_differ(challenge: CTFChallenge, bundle_challenge: BundleChallenge) -> bool:
-    """Return whether persisted prerequisite edges diverge from the bundle."""
-    existing = {edge.required_challenge.source_id for edge in challenge.prerequisites.all()}
-    return existing != set(bundle_challenge.prerequisites)
-
-
-def _semantic_diff(
-    existing: dict[str, CTFChallenge],
-    bundle_by_id: dict[str, BundleChallenge],
-) -> frozenset[str]:
-    """Return the value-free set of categories that actually differ.
-
-    One diff drives live-policy enforcement, the applied change, and the reported
-    result/audit categories, so the strict audit records what really changed
-    rather than a fixed superset.
-    """
-    categories: set[str] = set()
-    if set(existing) != set(bundle_by_id):
-        categories.add("membership")
-    for source_id in set(existing) & set(bundle_by_id):
-        row = existing[source_id]
-        target = bundle_by_id[source_id]
-        if _presentation_differs(row, target):
-            categories.add("presentation")
-        if any(getattr(row, name) != getattr(target, name) for name in _SCORING_FIELDS):
-            categories.add("scoring")
-        if _flags_differ(row, target):
-            categories.add("flags")
-        if _hints_differ(row, target):
-            categories.add("hints")
-        if _prerequisites_differ(row, target):
-            categories.add("prerequisites")
-    return frozenset(categories)
 
 
 def _flag_rows(bundle_challenge: BundleChallenge) -> list[CTFFlag]:
@@ -249,9 +145,11 @@ def _create_managed_challenge(
     so a bundle reconcile does not emit misleading per-item drift/live-repair
     audit records; the single revision audit is written by the caller.
     """
-    del actor_id  # ownership is enforced once by the caller; kept for symmetry
+    # Ownership is enforced once by the caller; actor_id is kept for symmetry
+    # with the other reconcile helpers and future per-write attribution.
+    del actor_id
     challenge = CTFChallenge(event=event, source_id=bundle_challenge.source_id)
-    for name in _ALL_MANAGED_FIELDS:
+    for name in ALL_MANAGED_FIELDS:
         setattr(challenge, name, getattr(bundle_challenge, name))
     challenge.save()
     for row in _flag_rows(bundle_challenge):
@@ -305,8 +203,8 @@ def _reconcile_live(event: CTFEvent, bundle: CtfContentBundle, *, actor_id: int)
     del actor_id
     existing = _managed_challenges(event)
     bundle_by_id = {challenge.source_id: challenge for challenge in bundle.challenges}
-    changed = _semantic_diff(existing, bundle_by_id)
-    unsafe = changed & _UNSAFE_LIVE_CATEGORIES
+    changed = semantic_diff(existing, bundle_by_id)
+    unsafe = changed & UNSAFE_LIVE_CATEGORIES
     if unsafe:
         raise CTFStateError(
             "Live event refresh cannot change scoring or structure.",
@@ -316,7 +214,7 @@ def _reconcile_live(event: CTFEvent, bundle: CtfContentBundle, *, actor_id: int)
     _two_phase_rename(existing, bundle_by_id)
     for source_id, row in existing.items():
         target = bundle_by_id[source_id]
-        _apply_challenge_fields(row, target, field_names=_LIVE_SAFE_FIELDS)
+        _apply_challenge_fields(row, target, field_names=LIVE_SAFE_FIELDS)
         _replace_flags(row, target)
     return tuple(sorted(changed))
 
@@ -330,7 +228,7 @@ def _reconcile_full(event: CTFEvent, bundle: CtfContentBundle, *, actor_id: int)
     _assert_no_scoring_ledger(event)
     existing = _managed_challenges(event)
     bundle_by_id = {challenge.source_id: challenge for challenge in bundle.challenges}
-    changed = _semantic_diff(existing, bundle_by_id)
+    changed = semantic_diff(existing, bundle_by_id)
 
     for source_id, row in existing.items():
         if source_id not in bundle_by_id:
@@ -348,7 +246,7 @@ def _reconcile_full(event: CTFEvent, bundle: CtfContentBundle, *, actor_id: int)
         if current is None:
             managed[source_id] = _create_managed_challenge(event, target, actor_id=actor_id)
         else:
-            _apply_challenge_fields(current, target, field_names=_ALL_MANAGED_FIELDS)
+            _apply_challenge_fields(current, target, field_names=ALL_MANAGED_FIELDS)
             _replace_flags(current, target)
             _replace_hints(current, target)
             managed[source_id] = current
