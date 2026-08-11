@@ -22,6 +22,7 @@ import type {
   CtfChallengeMutationResult,
   CtfChallengeWrite,
   CtfEventDetail,
+  CtfEventContentRefreshResult,
   CtfEventListResponse,
   CtfEventMutationResult,
   CtfEventWrite,
@@ -111,6 +112,27 @@ export function useForceDeleteCtfEvent(eventId: string) {
         body: { confirmation_name: confirmationName },
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.events() }),
+  });
+}
+
+/**
+ * Refresh a managed event's content to the configured, digest-pinned revision
+ * (#1971). `expectedCurrentDigest` is the optimistic fence the organizer
+ * currently sees; the server owns the target. Invalidates the event detail and
+ * its challenge lists so corrected titles/flags surface immediately.
+ */
+export function useRefreshCtfEventContent(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (expectedCurrentDigest: string) =>
+      apiFetch<CtfEventContentRefreshResult>(`${BASE}/events/${eventId}/content/refresh/`, {
+        method: "POST",
+        body: { expected_current_digest: expectedCurrentDigest },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.challenges() });
+    },
   });
 }
 

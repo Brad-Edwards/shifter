@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
+import { EventContentCard } from "./EventContentCard";
 import { EventLifecycleCard } from "./EventLifecycleCard";
 import { EventStaffCard } from "./EventStaffCard";
 import { EventPagesCard } from "./EventPagesCard";
@@ -221,6 +222,7 @@ export function EventDetailPage() {
       <div className="space-y-6">
         <EventLifecycleCard event={event} />
         <EventOverview event={event} />
+        <EventContentCard event={event} />
         <EventStaffCard eventId={event.id} />
         <EventWebhooksCard eventId={event.id} />
         <EventPagesCard eventId={event.id} />

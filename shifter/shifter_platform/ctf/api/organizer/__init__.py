@@ -33,6 +33,7 @@ from ctf.api.organizer.challenges import (
     HintDeleteView,
     RemoveFlagView,
 )
+from ctf.api.organizer.content import EventContentRefreshView
 from ctf.api.organizer.events import (
     EventDetailView,
     EventListView,
@@ -121,6 +122,7 @@ __all__ = [
     "ChallengePrerequisitesView",
     "EventAnalyticsView",
     "EventCleanupControlView",
+    "EventContentRefreshView",
     "EventDetailView",
     "EventEmailTemplateView",
     "EventLifecycleView",
