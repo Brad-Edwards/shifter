@@ -78,6 +78,21 @@ class TestCreateRangePersistence:
         create_range(make_request_spec(user_id=user.id), workspace_id=_WORKSPACE_ID)
         assert Range.objects.get().subnet_index is not None
 
+    def test_selects_placement_zone_from_the_pool_at_creation(self, user, monkeypatch):
+        """#2029: the legacy create path also stores the realized zone chosen from
+        RANGE_NETWORK_ZONES, so the provisioner reads it back on apply/destroy."""
+        monkeypatch.setenv("RANGE_NETWORK_ZONES", "us-central1-a,us-east4-a,us-east1-b")
+        create_range(make_request_spec(user_id=user.id), workspace_id=_WORKSPACE_ID)
+
+        range_obj = Range.objects.get()
+        zones = ("us-central1-a", "us-east4-a", "us-east1-b")
+        assert range_obj.placement_zone == zones[(range_obj.subnet_index - 1) % len(zones)]
+
+    def test_placement_zone_is_empty_without_a_pool(self, user, monkeypatch):
+        monkeypatch.delenv("RANGE_NETWORK_ZONES", raising=False)
+        create_range(make_request_spec(user_id=user.id), workspace_id=_WORKSPACE_ID)
+        assert Range.objects.get().placement_zone == ""
+
     def test_creates_range_with_provisioning_status_and_request(self, user):
         spec = make_request_spec(user_id=user.id)
         create_range(spec, workspace_id=_WORKSPACE_ID)
