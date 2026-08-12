@@ -102,6 +102,7 @@ module "range_vpc" {
   operator_admin_cidrs       = var.operator_admin_cidrs
   range_egress_mode          = var.range_egress_mode
   range_egress_allowed_cidrs = var.range_egress_allowed_cidrs
+  range_network_zones        = var.range_network_zones
 
   depends_on = [module.project_services]
 }
