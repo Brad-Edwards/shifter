@@ -232,6 +232,13 @@ class WorkspaceRestoreView(_WorkspaceLifecycleAPIView):
         return Response(WorkspaceSerializer(workspace).data)
 
 
+#: Cookie-only OpenAPI auth for the session-only egress-policy operation, matching
+#: the audit endpoint's canonical override so the contract does not advertise
+#: platform-token access the runtime refuses (drf-spectacular's ``auth`` argument
+#: is loosely typed, hence the ignore at the call site).
+_EGRESS_SCHEMA_AUTH: list[dict[str, list[str]]] = [{"cookieAuth": []}]
+
+
 class WorkspaceEgressPolicyView(_WorkspaceLifecycleAPIView):
     """Set the network egress policy of a workspace (owner/admin, PLAT-238, #1945)."""
 
@@ -247,7 +254,7 @@ class WorkspaceEgressPolicyView(_WorkspaceLifecycleAPIView):
         # ApiToken principal only for IsAuthenticatedSession to refuse it, so the
         # published contract must advertise cookie auth alone and not imply token
         # access (mirrors the audit endpoint's canonical override).
-        auth=[{"cookieAuth": []}],
+        auth=_EGRESS_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def put(self, request: Request, workspace_uuid: UUID) -> Response:
         command = SetWorkspaceEgressPolicySerializer(data=request.data)

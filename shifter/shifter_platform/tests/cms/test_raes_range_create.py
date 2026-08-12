@@ -420,7 +420,7 @@ class TestObjectPackageLaunch:
             backend_admission=None,
             bindings=None,
             workspace_id=None,
-        egress_mode=None,
+            egress_mode=None,
         ):
             captured["kind"] = compiled_plan.get("kind")
             return RaesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")

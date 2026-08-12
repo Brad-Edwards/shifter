@@ -1700,7 +1700,7 @@ class TestGdcProvisioning:
                 scenario_artifact=artifact,
             )
 
-        assert variables["operation"] == {"request_id": "req-gce", "range_id": 42}
+        assert variables["operation"] == {"request_id": "req-gce", "range_id": 42, "egress_mode": "status-quo"}
         host, dc = variables["scenario_artifact"]["payload"]["subnets"][0]["instances"]
         assert host["ami_key"] == "polaris-vm"
         assert host["os_type"] == "kali"
