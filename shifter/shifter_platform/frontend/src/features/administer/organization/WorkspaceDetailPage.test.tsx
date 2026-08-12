@@ -27,6 +27,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     is_personal: false,
     is_archived: false,
     archived_at: null,
+    egress_policy: "status-quo",
     created_at: "2026-02-01T00:00:00Z",
     updated_at: "2026-02-01T00:00:00Z",
     ...overrides,
@@ -64,6 +65,11 @@ function stubApi(initial: Workspace | ApiError) {
     }
     if (path === `/workspaces/${WS}/restore/`) {
       current = workspace({ ...current, is_archived: false, archived_at: null });
+      return Promise.resolve(current);
+    }
+    if (path === `/workspaces/${WS}/egress-policy/` && method === "PUT") {
+      const body = options?.body as { egress_policy?: Workspace["egress_policy"] } | undefined;
+      current = workspace({ ...current, egress_policy: body?.egress_policy ?? current.egress_policy });
       return Promise.resolve(current);
     }
     if (path === `/workspaces/${WS}/transfer/`) return Promise.resolve(current);
@@ -128,6 +134,35 @@ describe("WorkspaceDetailPage", () => {
     // shows and the page heading reflects the new name.
     expect(await screen.findByText("Saved.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Renamed" })).toBeInTheDocument();
+  });
+
+  it("shows the current network egress policy and disables save until it changes", async () => {
+    stubApi(workspace({ egress_policy: "none" }));
+    renderDetail();
+    await screen.findByRole("heading", { name: "Blue" });
+    // The posture renders (overview detail + the select's current value).
+    expect(screen.getAllByText("Zero egress (no outbound NAT path)").length).toBeGreaterThan(0);
+    // Save is disabled while the selection equals the persisted value.
+    expect(screen.getByRole("button", { name: "Save egress policy" })).toBeDisabled();
+  });
+
+  it("sets the workspace egress policy through the API", async () => {
+    const user = setupUser();
+    stubApi(workspace({ egress_policy: "status-quo" }));
+    renderDetail();
+    await screen.findByRole("heading", { name: "Blue" });
+
+    await user.click(screen.getByRole("combobox", { name: "Network egress policy" }));
+    await user.click(await screen.findByRole("option", { name: "Zero egress (no outbound NAT path)" }));
+    await user.click(screen.getByRole("button", { name: "Save egress policy" }));
+
+    await waitFor(() =>
+      expect(mockApi).toHaveBeenCalledWith(
+        `/workspaces/${WS}/egress-policy/`,
+        expect.objectContaining({ method: "PUT", body: { egress_policy: "none" } }),
+      ),
+    );
+    expect(await screen.findByText("Saved.")).toBeInTheDocument();
   });
 
   it("archives the workspace after confirmation", async () => {
