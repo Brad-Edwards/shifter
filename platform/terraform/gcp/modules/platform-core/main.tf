@@ -1,7 +1,55 @@
 locals {
   name_prefix                = "shifter-${var.environment}"
   normalized_public_hostname = trimspace(trim(var.public_hostname, "."))
-  portal_network_cidrs       = compact([var.gke_subnet_cidr, var.gke_pods_cidr])
+  # Management-source identity for per-range host management ingress and the
+  # OpenVPN health probe (#1711 / ADR-039-R9). Narrowed to the provisioner pod
+  # range: provisioner Jobs are pinned to the tainted provisioner node pool, so
+  # this is the only platform source that drives range hosts. Participant SSH/RDP
+  # is a separate rule sourced from access_network_cidrs (the access pod range),
+  # never from this management source. Do not widen this back to the node subnet
+  # or the broad default-pod range.
+  portal_network_cidrs = compact([var.gke_provisioner_pods_cidr])
+  access_network_cidrs = compact([var.gke_access_pods_cidr])
+  # Full network topology (#1711 / ADR-039-R9): every statically-known GKE,
+  # service, control-plane, and range CIDR must be canonical and mutually
+  # disjoint. Overlap is computed as integer [start,end] range intersection
+  # (version-safe: no cidrcontains, required_version is >= 1.5.0) and asserted
+  # before apply by terraform_data.network_topology_invariant, so an invalid
+  # environment fails deterministically rather than relying on provider
+  # rejection as the first line of defense. private-service is auto-allocated by
+  # google_compute_global_address, so its final range is provider-owned.
+  topology_cidrs = {
+    gke_subnet       = var.gke_subnet_cidr
+    gke_pods         = var.gke_pods_cidr
+    gke_services     = var.gke_services_cidr
+    provisioner_pods = var.gke_provisioner_pods_cidr
+    access_pods      = var.gke_access_pods_cidr
+    control_plane    = var.gke_master_ipv4_cidr
+    range_network    = var.range_network_cidr
+  }
+  topology_cidr_names = keys(local.topology_cidrs)
+  topology_cidr_bounds = {
+    for name, cidr in local.topology_cidrs : name => {
+      start = (tonumber(split(".", cidrhost(cidr, 0))[0]) * 16777216
+        + tonumber(split(".", cidrhost(cidr, 0))[1]) * 65536
+        + tonumber(split(".", cidrhost(cidr, 0))[2]) * 256
+      + tonumber(split(".", cidrhost(cidr, 0))[3]))
+      end = (tonumber(split(".", cidrhost(cidr, 0))[0]) * 16777216
+        + tonumber(split(".", cidrhost(cidr, 0))[1]) * 65536
+        + tonumber(split(".", cidrhost(cidr, 0))[2]) * 256
+        + tonumber(split(".", cidrhost(cidr, 0))[3])
+      + pow(2, 32 - tonumber(split("/", cidr)[1])) - 1)
+    }
+  }
+  # Index-based dedup: HCL `<` requires numbers, so compare positions in the
+  # sorted key list rather than the string keys themselves.
+  topology_cidr_overlaps = [
+    for pair in setproduct(range(length(local.topology_cidr_names)), range(length(local.topology_cidr_names))) :
+    "${local.topology_cidr_names[pair[0]]} (${local.topology_cidrs[local.topology_cidr_names[pair[0]]]}) overlaps ${local.topology_cidr_names[pair[1]]} (${local.topology_cidrs[local.topology_cidr_names[pair[1]]]})"
+    if pair[0] < pair[1]
+    && local.topology_cidr_bounds[local.topology_cidr_names[pair[0]]].start <= local.topology_cidr_bounds[local.topology_cidr_names[pair[1]]].end
+    && local.topology_cidr_bounds[local.topology_cidr_names[pair[1]]].start <= local.topology_cidr_bounds[local.topology_cidr_names[pair[0]]].end
+  ]
   identity_authorized_domains = distinct(compact([
     local.normalized_public_hostname,
     "${var.project_id}.firebaseapp.com",
@@ -72,6 +120,20 @@ module "project_services" {
   required_services = local.required_services
 }
 
+# #1711 / ADR-039-R9: fail deterministically before any cloud mutation when the
+# GKE/service/control-plane/range CIDRs are not mutually disjoint. The access pod
+# range is the GCE firewall's participant-access source identity, so an overlap
+# with the provisioner/management, node, default-pod, service, control-plane, or
+# range network would collapse the very isolation this issue establishes.
+resource "terraform_data" "network_topology_invariant" {
+  lifecycle {
+    precondition {
+      condition     = length(local.topology_cidr_overlaps) == 0
+      error_message = "Network CIDRs must be mutually disjoint (#1711/ADR-039-R9). Overlaps: ${join("; ", local.topology_cidr_overlaps)}."
+    }
+  }
+}
+
 module "portal_vpc" {
   source = "../portal/vpc"
 
@@ -82,9 +144,11 @@ module "portal_vpc" {
   gke_pods_cidr                             = var.gke_pods_cidr
   gke_services_cidr                         = var.gke_services_cidr
   gke_provisioner_pods_cidr                 = var.gke_provisioner_pods_cidr
+  gke_access_pods_cidr                      = var.gke_access_pods_cidr
   gke_pods_secondary_range_name             = var.gke_pods_secondary_range_name
   gke_services_secondary_range_name         = var.gke_services_secondary_range_name
   gke_provisioner_pods_secondary_range_name = var.gke_provisioner_pods_secondary_range_name
+  gke_access_pods_secondary_range_name      = var.gke_access_pods_secondary_range_name
   private_service_range_prefix_length       = var.private_service_range_prefix_length
   operator_admin_cidrs                      = var.operator_admin_cidrs
 
@@ -305,15 +369,18 @@ module "portal_gke" {
   gke_pods_secondary_range_name             = var.gke_pods_secondary_range_name
   gke_services_secondary_range_name         = var.gke_services_secondary_range_name
   gke_provisioner_pods_secondary_range_name = var.gke_provisioner_pods_secondary_range_name
+  gke_access_pods_secondary_range_name      = var.gke_access_pods_secondary_range_name
   gke_master_ipv4_cidr                      = var.gke_master_ipv4_cidr
   gke_master_authorized_cidrs               = var.gke_master_authorized_cidrs
   gke_release_channel                       = var.gke_release_channel
   web_machine_type                          = var.web_machine_type
   worker_machine_type                       = var.worker_machine_type
   provisioner_machine_type                  = var.provisioner_machine_type
+  access_machine_type                       = var.access_machine_type
   web_node_count                            = var.web_node_count
   worker_node_count                         = var.worker_node_count
   provisioner_node_count                    = var.provisioner_node_count
+  access_node_count                         = var.access_node_count
   node_service_account_email                = module.portal_iam.node_service_account_email
 
   # The cluster already orders after the node service account via the

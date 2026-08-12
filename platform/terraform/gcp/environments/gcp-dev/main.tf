@@ -69,9 +69,11 @@ module "platform_core" {
   web_machine_type                  = var.web_machine_type
   worker_machine_type               = var.worker_machine_type
   provisioner_machine_type          = var.provisioner_machine_type
+  access_machine_type               = var.access_machine_type
   web_node_count                    = var.web_node_count
   worker_node_count                 = var.worker_node_count
   provisioner_node_count            = var.provisioner_node_count
+  access_node_count                 = var.access_node_count
   cloud_sql_database_version        = var.cloud_sql_database_version
   cloud_sql_tier                    = var.cloud_sql_tier
   cloud_sql_availability_type       = var.cloud_sql_availability_type

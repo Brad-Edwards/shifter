@@ -95,7 +95,13 @@ def test_prune_deletes_expired_rows_and_retains_unexpired():
 
 
 @pytest.mark.django_db
+@override_settings(RAES_OPERATION_RECORD_RETENTION_DAYS=0)
 def test_prune_ignores_rows_without_retention_boundary():
+    # A non-positive retention window disables the stamp, so persisting with no
+    # explicit boundary yields a genuine NULL retention_expires_at (the case this
+    # test names). Without pinning the window, _persist derives
+    # source_timestamp + RETENTION_DAYS, which becomes a past (prunable) boundary
+    # once the wall clock advances past it -- a time-dependent false failure.
     kept = _persist(retention_expires_at=None)
 
     deleted = prune_expired_raes_operation_records(batch_size=100)

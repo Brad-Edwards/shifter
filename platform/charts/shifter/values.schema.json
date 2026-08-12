@@ -59,12 +59,14 @@
       "required": [
         "gcpBackendConfig",
         "gcpManagedTls",
-        "kubernetesJobLauncher"
+        "kubernetesJobLauncher",
+        "gcpAccessNodePool"
       ],
       "properties": {
         "gcpBackendConfig": { "type": "boolean" },
         "gcpManagedTls": { "type": "boolean" },
-        "kubernetesJobLauncher": { "type": "boolean" }
+        "kubernetesJobLauncher": { "type": "boolean" },
+        "gcpAccessNodePool": { "type": "boolean" }
       }
     },
     "namespaces": {

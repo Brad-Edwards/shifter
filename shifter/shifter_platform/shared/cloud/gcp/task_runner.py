@@ -25,6 +25,19 @@ from shared.cloud.kubernetes import KubernetesTaskProfile, KubernetesTaskRunner,
 # GCP task-runner provider tag stamped on Job/Secret metadata.
 _SHIFTER_TASK_RUNNER_GCP = "gcp"
 
+# Exclusive provisioner node-pool placement (#1711). Provisioner Jobs SSH-drive
+# range hosts and probe the OpenVPN gateway; pinning them to the tainted
+# provisioner pool gives their pods alias IPs from the provisioner pod range,
+# which is the only source the range VPC's management ingress admits. The node
+# node label matches the pool's ``node-restriction.kubernetes.io/shifter-pool``
+# label and the toleration matches its ``dedicated=provisioner:NoSchedule`` taint
+# (both in platform/terraform/gcp/modules/portal/gke/main.tf). The selector keys
+# on the NodeRestriction-protected prefix (not the generic ``role`` label) so a
+# compromised kubelet cannot self-label its node to attract provisioner Jobs
+# (#1711 codex security finding).
+_PROVISIONER_NODE_SELECTOR = {"node-restriction.kubernetes.io/shifter-pool": "provisioner"}
+_PROVISIONER_TOLERATIONS = (("dedicated", "Equal", "provisioner", "NoSchedule"),)
+
 # Provisioner runtime identity (issue #950/#1103). Non-root uid/gid the
 # provisioner image runs as; the hardened writable surface is chowned to the gid.
 _PROVISIONER_RUN_AS_UID = 1000
@@ -72,6 +85,8 @@ def _build_gcp_task_profile() -> KubernetesTaskProfile:
             run_as_gid=_PROVISIONER_RUN_AS_GID,
             writable_mounts=_PROVISIONER_WRITABLE_MOUNTS,
         ),
+        node_selector=_PROVISIONER_NODE_SELECTOR,
+        tolerations=_PROVISIONER_TOLERATIONS,
     )
 
 

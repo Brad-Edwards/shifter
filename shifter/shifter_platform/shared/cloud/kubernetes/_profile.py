@@ -10,10 +10,14 @@ provider module.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 # A writable mount: (volume name, mount path, emptyDir medium or None, size limit or None).
 WritableMount = tuple[str, str, "str | None", "str | None"]
+
+# A node scheduling toleration: (key, operator, value or None, effect).
+Toleration = tuple[str, str, "str | None", str]
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,13 @@ class KubernetesTaskProfile:
     backoff_limit: int
     ttl_seconds_after_finished: int
     hardening: ProvisionerHardeningProfile | None = None
+    # Provider-injected node placement for launched task Jobs. Empty by default so
+    # the neutral core and non-GCP adapters are unchanged; the GCP adapter pins
+    # provisioner Jobs onto the exclusive provisioner node pool (#1711) so their
+    # pod IPs come from the provisioner pod range that the range VPC's management
+    # ingress is scoped to.
+    node_selector: Mapping[str, str] | None = None
+    tolerations: tuple[Toleration, ...] = field(default_factory=tuple)
 
     def hardening_for(self, container_name: str) -> ProvisionerHardeningProfile | None:
         """Return the hardening profile when it applies to ``container_name``."""

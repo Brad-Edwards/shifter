@@ -40,9 +40,29 @@ variable "gke_services_cidr" {
 }
 
 variable "gke_provisioner_pods_cidr" {
-  description = "Dedicated secondary pod range for the provisioner node pool. Isolating the provisioner's pod IPs from the shared pods range lets the range-VPC firewall scope admin-port ingress to just the provisioner — a compromised portal/worker/guacamole pod sourced from the shared pods range no longer satisfies range-allow-platform-provisioner (ADR-008-R4, #959)."
+  description = "Dedicated secondary pod range for the provisioner node pool. Isolating the provisioner's pod IPs from the shared pods range lets the range-VPC firewall scope admin-port ingress to just the provisioner — a compromised portal/worker/guacamole pod sourced from the shared pods range no longer satisfies range-allow-platform-provisioner (ADR-008-R4, #959). Also the per-range host-management ingress source (portal_network_cidrs) now that provisioner Jobs are pinned to the tainted provisioner pool (#1711)."
   type        = string
   default     = "10.46.0.0/20"
+}
+
+variable "gke_access_pods_cidr" {
+  description = "Dedicated secondary pod range for the access node pool. Portal + guacd pods receive alias IPs from this range on the exclusive (tainted) access pool, so the per-range GCE ingress firewall scopes participant SSH/RDP (22/3389) to just these access dialers instead of the broad platform pod range (ADR-039-R9, #1711). Must be disjoint from every other GKE, service, control-plane, private-service, and range network."
+  type        = string
+  default     = "10.47.0.0/20"
+
+  # Canonical IPv4 CIDR with an explicit, non-universal prefix. Full-topology
+  # disjointness (against every other network) is enforced deterministically by
+  # the network_topology_invariant precondition in main.tf before apply, per the
+  # #1711 preflight (provider rejection is only a backstop).
+  validation {
+    condition = (
+      can(cidrhost(var.gke_access_pods_cidr, 0))
+      && can(regex("/[0-9]+$", var.gke_access_pods_cidr))
+      && tonumber(regex("/([0-9]+)$", var.gke_access_pods_cidr)[0]) > 0
+      && cidrhost(var.gke_access_pods_cidr, 0) == split("/", var.gke_access_pods_cidr)[0]
+    )
+    error_message = "gke_access_pods_cidr must be a canonical IPv4 CIDR (network address, explicit /N, not /0)."
+  }
 }
 
 variable "gke_master_ipv4_cidr" {
@@ -113,6 +133,12 @@ variable "gke_provisioner_pods_secondary_range_name" {
   default     = "gke-provisioner-pods"
 }
 
+variable "gke_access_pods_secondary_range_name" {
+  description = "Secondary range name on the GKE subnet for the access node pool's dedicated pod range (#1711)."
+  type        = string
+  default     = "gke-access-pods"
+}
+
 variable "private_service_range_prefix_length" {
   description = "Prefix length for the reserved service networking range."
   type        = number
@@ -137,6 +163,12 @@ variable "provisioner_machine_type" {
   default     = "n2-standard-8"
 }
 
+variable "access_machine_type" {
+  description = "Machine type for the exclusive access node pool that hosts portal + guacd (#1711)."
+  type        = string
+  default     = "e2-standard-4"
+}
+
 variable "web_node_count" {
   description = "Desired size for the web node pool."
   type        = number
@@ -151,6 +183,12 @@ variable "worker_node_count" {
 
 variable "provisioner_node_count" {
   description = "Desired size for the provisioner node pool."
+  type        = number
+  default     = 1
+}
+
+variable "access_node_count" {
+  description = "Desired size for the exclusive access node pool that hosts portal + guacd (#1711)."
   type        = number
   default     = 1
 }

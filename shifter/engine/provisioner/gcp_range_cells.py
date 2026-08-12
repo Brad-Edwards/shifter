@@ -82,15 +82,25 @@ def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetP
 
 
 def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: FirewallPlan) -> None:
-    """Create one range firewall rule if it is missing."""
+    """Create one range firewall rule, or reconcile an existing rule to the plan.
+
+    Name existence is not correctness (#1711 / ADR-039-R9): a rule that already
+    exists may carry a stale, broader body -- most importantly a legacy combined
+    ``*-mgmt`` rule that opened participant RDP from the broad management source
+    before this issue split participant access onto its own dedicated-source rule.
+    Trusting the name would leave that broad rule live on already-active cells.
+    So an existing rule is patched to converge on the freshly rendered body rather
+    than skipped. Patch is idempotent: an already-matching rule is a no-op update.
+    """
     name = firewall["name"]
+    body = firewall_resource(plan, firewall)
     existing = _get_or_none(clients.firewalls.get, clients.google_exceptions, project=plan["project_id"], firewall=name)
-    if existing is not None:
-        logger.info("GCE range firewall exists name_fp=%s", safe_log_fingerprint(name))
+    if existing is None:
+        operation = clients.firewalls.insert(project=plan["project_id"], firewall_resource=body)
+        _wait_for_operation(plan, clients, operation, "global")
         return
-    operation = clients.firewalls.insert(
-        project=plan["project_id"], firewall_resource=firewall_resource(plan, firewall)
-    )
+    logger.info("GCE range firewall reconcile name_fp=%s", safe_log_fingerprint(name))
+    operation = clients.firewalls.patch(project=plan["project_id"], firewall=name, firewall_resource=body)
     _wait_for_operation(plan, clients, operation, "global")
 
 

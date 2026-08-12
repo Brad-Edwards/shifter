@@ -34,9 +34,12 @@ AWS_DEV_WAF_ACL_ARN = (
 # change either GCP profile's rendered bytes. Frozen with Helm 3.15.4 and release
 # name "contract-test"; regenerate deliberately only when GCP output is meant to
 # change.
+# Regenerated for #1711: portal + guacd now carry the exclusive access node-pool
+# placement (nodeSelector role=access + dedicated=access:NoSchedule toleration)
+# under capabilities.gcpAccessNodePool, which GCP profiles enable.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "79e284e9145afad833f6e58e6b2a45188908558d83b0155926ea45e0935adcb7",
-    "gcp-prod": "aaf01034765cca95ce9813115bff8c5382bff82493676c33c70bf10036658589",
+    "gcp-dev": "da0f87d88387e3c1cc4ab04d1aff35dc5efc73df258edb0433110c56821ec2f9",
+    "gcp-prod": "0fcaea53563169f4bb3f84a3d87465a8944f690272c563231e771ea4e707326c",
 }
 
 
@@ -339,6 +342,52 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                         self.assertIn("ALL", context["capabilities"]["drop"])
                         self.assertIn("requests", container["resources"])
                         self.assertIn("limits", container["resources"])
+
+    def test_access_node_pool_placement_is_scoped_to_the_gcp_dialers(self) -> None:
+        # #1711 / ADR-039-R9: the access-workload isolation depends on portal + guacd
+        # (and only those) landing on the exclusive access pool. Assert the actual
+        # pod-spec placement rather than trusting the opaque byte-hash contract: a
+        # wrong selector key, a dropped toleration, or a NoExecute/NoSchedule slip
+        # would silently regain a green hash after regeneration.
+        expected_selector = {"node-restriction.kubernetes.io/shifter-pool": "access"}
+        expected_toleration = {
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "access",
+            "effect": "NoSchedule",
+        }
+
+        def _pod_spec(documents: list[dict[str, object]], name: str) -> dict[str, object]:
+            for document in documents:
+                if _identity(document) == ("Deployment", name):
+                    return document["spec"]["template"]["spec"]
+            raise AssertionError(f"Deployment {name} not rendered")
+
+        for profile in ("gcp-dev", "gcp-prod"):
+            with self.subTest(profile=profile):
+                _, documents = _render(VALUES_FILES[profile])
+                for dialer in ("portal-web", "guacd"):
+                    pod_spec = _pod_spec(documents, dialer)
+                    self.assertEqual(pod_spec.get("nodeSelector"), expected_selector)
+                    self.assertIn(expected_toleration, pod_spec.get("tolerations", []))
+                # Non-dialers must never carry the access placement.
+                for other in ("guacamole-client", "worker-engine"):
+                    pod_spec = _pod_spec(documents, other)
+                    self.assertNotIn(
+                        "node-restriction.kubernetes.io/shifter-pool",
+                        pod_spec.get("nodeSelector", {}),
+                    )
+
+        # AWS/neutral profiles (gcpAccessNodePool false) never acquire the GCP label.
+        for profile in ("aws-dev", "aws-proof", "aws-prod"):
+            with self.subTest(profile=profile):
+                _, documents = _render(VALUES_FILES[profile])
+                for dialer in ("portal-web", "guacd"):
+                    pod_spec = _pod_spec(documents, dialer)
+                    self.assertNotIn(
+                        "node-restriction.kubernetes.io/shifter-pool",
+                        pod_spec.get("nodeSelector", {}),
+                    )
 
     def test_schema_rejects_tag_shaped_image_identity(self) -> None:
         result = _helm(
