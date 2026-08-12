@@ -230,6 +230,7 @@ def render_range_cell_plan(
     require_images: bool = True,
     vpn_gateway_pool_slot: int | None = None,
     range_host_pool_slot: int | None = None,
+    egress_mode: str = "status-quo",
 ) -> RangeCellPlan:
     """Render the deterministic GCE resources for one range cell.
 
@@ -309,6 +310,7 @@ def render_range_cell_plan(
             vpn_gateway,
             instance_plans=instance_plans,
             include_optional_cleanup=not require_images,
+            egress_mode=egress_mode,
         ),
     }
     if vpn_gateway is not None:

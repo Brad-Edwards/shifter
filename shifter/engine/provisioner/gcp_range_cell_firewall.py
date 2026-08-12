@@ -279,17 +279,32 @@ def build_firewall_plan(
     *,
     instance_plans: list[InstancePlan] | None = None,
     include_optional_cleanup: bool = False,
+    egress_mode: str = "status-quo",
 ) -> list[FirewallPlan]:
-    """Render the firewall plan for internal range traffic and management."""
+    """Render the firewall plan for internal range traffic and management.
+
+    ``egress_mode`` is the effective posture pinned on the range (PLAT-238). A
+    ``none`` range is zero egress (ADR-026): it forces the public-web-egress lane
+    off and drops any configured allow-CIDR lane, so only the default egress-deny
+    (and intra-range + Private Google Access management fabric, which is not a NAT
+    path) remain. Firewall denial is defense in depth here -- a ``none`` range must
+    also carry no Cloud NAT enrollment (that is the range-cell NAT decision).
+    """
     if os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}:
         return []
+    zero_egress = (egress_mode or "status-quo").strip().lower() == "none"
     range_tag = _network_tag(range_id)
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
     portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)
     access_network_cidrs = _validated_boundary_cidrs("access_network_cidrs", config.access_network_cidrs)
-    egress_allow_cidrs = _validated_boundary_cidrs("egress_allow_cidrs", config.egress_allow_cidrs)
-    allow_public_web_egress = include_optional_cleanup or any(
-        instance["profile"].allow_public_web_egress for instance in (instance_plans or [])
+    # A zero-egress range opens no public-web lane and no configured allow-CIDR
+    # lane, regardless of instance profiles or deployment config.
+    egress_allow_cidrs = (
+        [] if zero_egress else _validated_boundary_cidrs("egress_allow_cidrs", config.egress_allow_cidrs)
+    )
+    allow_public_web_egress = not zero_egress and (
+        include_optional_cleanup
+        or any(instance["profile"].allow_public_web_egress for instance in (instance_plans or []))
     )
     firewalls = _subnet_ingress_rules(range_id, subnet_plans)
     firewalls.extend(_boundary_ingress_rules(range_id, range_tag, access_network_cidrs, portal_network_cidrs, config))

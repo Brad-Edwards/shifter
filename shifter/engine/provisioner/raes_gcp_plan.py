@@ -70,6 +70,7 @@ def build_raes_range_cell_plan(
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
     config: GCERangeCellConfig | None = None,
     access_bindings: Sequence[RealizedAccessBinding] = (),
+    egress_mode: str = "status-quo",
 ) -> RangeCellPlan:
     """Render the deterministic GCE range-cell plan for a parsed RAES plan.
 
@@ -127,6 +128,7 @@ def build_raes_range_cell_plan(
             instance_plans,
             raes_plan,
             resolved_config,
+            egress_mode,
         ),
     }
 
@@ -137,6 +139,7 @@ def _all_firewalls(
     instance_plans: list[InstancePlan],
     raes_plan: RaesPlan,
     config: GCERangeCellConfig,
+    egress_mode: str = "status-quo",
 ) -> list[FirewallPlan]:
     """Base range firewalls (reused, neutral) plus authored node ACL and service firewalls.
 
@@ -149,6 +152,7 @@ def _all_firewalls(
         subnet_plans,
         config,
         instance_plans=instance_plans,
+        egress_mode=egress_mode,
     )
     cidr_lookup = acl_cidr_lookup(raes_plan.networks)
     # Validate the range-scoped service source set once, up front, only when needed --

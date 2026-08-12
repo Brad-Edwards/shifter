@@ -251,6 +251,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
             options=RaesGceApplyOptions(config=config),
             delivery_bindings=operation_input.binding_transport(),
             access_bindings=operation_input.access_binding_transport(),
+            egress_mode=operation_input.egress_mode,
         )
         verified_addresses = apply_result.get("composition_verified_addresses")
         if not isinstance(verified_addresses, list) or not all(

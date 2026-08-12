@@ -78,6 +78,7 @@ def _projection(**overrides) -> RaesOperationInput:
         "range_backend": "gce",
         "instantiation_purpose": "live_fire",
         "legacy_range_id": 7,
+        "egress_mode": "status-quo",
         "_image_candidates": {},
     }
     kwargs.update(overrides)

@@ -209,6 +209,25 @@ class TestFirewalls:
         if web_rules:
             assert web_rules[0]["allowed"] == [{"IPProtocol": "tcp", "ports": ["80", "443"]}]
 
+    def test_zero_egress_overrides_a_web_permitting_profile(self):
+        """A pinned `none` range opens no public-web egress lane, even if the profile would."""
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/kali-1",
+            allow_public_web_egress=True,
+        )
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(profile),
+            _config(),
+            egress_mode="none",
+        )
+        names = {fw["name"] for fw in plan["firewalls"]}
+        # The default egress-deny stays; the public-web lane is suppressed.
+        assert any("egress-deny" in name for name in names)
+        assert "shifter-r-7-egress-web" not in names
+
     def test_authored_acls_realized_as_node_firewalls(self):
         acl = RaesPlanAcl(
             name="ssh", action="accept", direction="in", protocol="tcp", ports=(22,), from_net="net.a", to_net=None

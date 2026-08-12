@@ -382,6 +382,7 @@ def apply_raes_range_cell(
     options: RaesGceApplyOptions | None = None,
     delivery_bindings: list[dict[str, Any]] | None = None,
     access_bindings: list[dict[str, Any]] | None = None,
+    egress_mode: str = "status-quo",
 ) -> ResourceDict:
     """Provision an RAES GCE range cell and return provisioner outputs.
 
@@ -405,7 +406,9 @@ def apply_raes_range_cell(
     }
     # Build and size-check the complete sanitized evidence shape before cloud mutation.
     snapshot_resources(raes_plan, expected_composition)
-    plan = build_raes_range_cell_plan(request_uuid, range_id, raes_plan, resolve_image, runtime.config, realized_access)
+    plan = build_raes_range_cell_plan(
+        request_uuid, range_id, raes_plan, resolve_image, runtime.config, realized_access, egress_mode
+    )
     try:
         instance_outputs = _provision_raes_resources(
             plan,
