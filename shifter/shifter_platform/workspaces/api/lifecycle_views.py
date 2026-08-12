@@ -243,6 +243,11 @@ class WorkspaceEgressPolicyView(_WorkspaceLifecycleAPIView):
             403: ApiErrorSerializer,
         },
         operation_id="api_v1_workspace_set_egress_policy",
+        # Session-only: the bearer-first chain admits a platform token as an
+        # ApiToken principal only for IsAuthenticatedSession to refuse it, so the
+        # published contract must advertise cookie auth alone and not imply token
+        # access (mirrors the audit endpoint's canonical override).
+        auth=[{"cookieAuth": []}],
     )
     def put(self, request: Request, workspace_uuid: UUID) -> Response:
         command = SetWorkspaceEgressPolicySerializer(data=request.data)

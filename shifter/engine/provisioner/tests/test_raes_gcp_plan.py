@@ -228,6 +228,19 @@ class TestFirewalls:
         assert any("egress-deny" in name for name in names)
         assert "shifter-r-7-egress-web" not in names
 
+    def test_deny_all_also_suppresses_the_web_egress_lane(self):
+        """deny-all forbids general egress too; a web-permitting profile must not leak."""
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/kali-1",
+            allow_public_web_egress=True,
+        )
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(profile), _config(), egress_mode="deny-all"
+        )
+        names = {fw["name"] for fw in plan["firewalls"]}
+        assert any("egress-deny" in name for name in names)
+        assert "shifter-r-7-egress-web" not in names
+
     def test_authored_acls_realized_as_node_firewalls(self):
         acl = RaesPlanAcl(
             name="ssh", action="accept", direction="in", protocol="tcp", ports=(22,), from_net="net.a", to_net=None

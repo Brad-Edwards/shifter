@@ -112,9 +112,17 @@ def _resolve_range_egress_mode(pinned_mode: str) -> str:
     return "allowlist"
 
 
-def _resolve_agent_presigned_url(inst: dict[str, Any]) -> str:
-    """Generate a presigned URL for the instance's XDR agent S3 object, if any."""
-    if _range_egress_mode() == "none":
+def _resolve_agent_presigned_url(inst: dict[str, Any], egress_mode: str | None = None) -> str:
+    """Generate a presigned URL for the instance's XDR agent S3 object, if any.
+
+    ``egress_mode`` is the *pinned* effective range posture (PLAT-238): a zero-egress
+    (``none``) range gets no presigned agent URL, because its guests have no route
+    to fetch it and the URL is a sensitive artifact that should never be minted for
+    a no-egress range. When omitted, this falls back to the deployment env for
+    non-range callers, preserving prior behavior.
+    """
+    mode = egress_mode if egress_mode is not None else _range_egress_mode()
+    if mode == "none":
         return ""
     agent_data = inst.get("agent") or {}
     agent_s3_key = agent_data.get("s3_key")
@@ -126,9 +134,9 @@ def _resolve_agent_presigned_url(inst: dict[str, Any]) -> str:
     )
 
 
-def _resolve_agent_presigned_url_from_inst(inst: dict[str, Any]) -> str:
+def _resolve_agent_presigned_url_from_inst(inst: dict[str, Any], egress_mode: str | None = None) -> str:
     """Generate a presigned URL for the instance's XDR agent S3 object, if any."""
-    return _resolve_agent_presigned_url(inst)
+    return _resolve_agent_presigned_url(inst, egress_mode)
 
 
 def _resolve_instance_sftp_root(inst: dict[str, Any], os_type: str, role: str) -> str:
@@ -150,7 +158,7 @@ def _resolve_instance_sftp_root(inst: dict[str, Any], os_type: str, role: str) -
     return get_sftp_root_directory(os_type, role)
 
 
-def _build_tf_instance(inst: dict[str, Any]) -> dict[str, Any]:
+def _build_tf_instance(inst: dict[str, Any], egress_mode: str | None = None) -> dict[str, Any]:
     """Map one spec instance into the dict shape the terraform module expects."""
     os_type = inst.get("os_type", "ubuntu")
     role = inst.get("role", "victim")
@@ -164,14 +172,14 @@ def _build_tf_instance(inst: dict[str, Any]) -> dict[str, Any]:
         "role": role,
         "os_type": tf_os_type,
         "instance_type": instance_type,
-        "agent_presigned_url": _resolve_agent_presigned_url(inst),
+        "agent_presigned_url": _resolve_agent_presigned_url(inst, egress_mode),
         "join_domain": inst.get("join_domain", False),
         "ami_id": get_ami_id(ami_key) if ami_key else "",
         "sftp_root_directory": _resolve_instance_sftp_root(inst, os_type, role),
     }
 
 
-def _build_tf_subnets(spec_subnets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_tf_subnets(spec_subnets: list[dict[str, Any]], egress_mode: str | None = None) -> list[dict[str, Any]]:
     """Translate spec subnets+instances into the terraform module's nested format."""
     return [
         {
@@ -180,7 +188,7 @@ def _build_tf_subnets(spec_subnets: list[dict[str, Any]]) -> list[dict[str, Any]
             # Pre-allocated CIDR.
             "cidr": subnet.get("cidr", ""),
             "connected_to": subnet.get("connected_to", []),
-            "instances": [_build_tf_instance(inst) for inst in subnet.get("instances", [])],
+            "instances": [_build_tf_instance(inst, egress_mode) for inst in subnet.get("instances", [])],
         }
         for subnet in spec_subnets
     ]
@@ -324,7 +332,10 @@ def _build_range_terraform_variables(
     default route/NAT/IGW regardless of the deployment env, while ``status-quo``
     inherits the deployment baseline.
     """
-    tf_subnets = _build_tf_subnets(range_spec.get("subnets", []))
+    # Resolve the effective posture first so the per-instance agent-delivery
+    # decision follows the pinned range mode, not the deployment env (PLAT-238).
+    egress_mode = _resolve_range_egress_mode(pinned_egress_mode)
+    tf_subnets = _build_tf_subnets(range_spec.get("subnets", []), egress_mode)
 
     ngfw_data_eni_id = ""
     ngfw_attachment: dict[str, Any] | None = None
@@ -332,7 +343,6 @@ def _build_range_terraform_variables(
         ngfw_data_eni_id, ngfw_attachment = _resolve_ngfw_for_range(user_id, range_id)
 
     range_network = load_range_network_config()
-    egress_mode = _resolve_range_egress_mode(pinned_egress_mode)
     variables = {
         "range_id": range_id,
         "user_id": user_id,

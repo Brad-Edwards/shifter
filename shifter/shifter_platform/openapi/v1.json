@@ -11219,9 +11219,6 @@
         },
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
