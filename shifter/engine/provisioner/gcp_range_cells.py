@@ -37,6 +37,7 @@ from gcp_range_cell_types import (
 )
 from log_redact import safe_log_fingerprint
 from provisioner_db import get_range_data_by_request_id
+from range_placement import resolve_placement_from_range_data
 from utils.crypto import generate_ssh_host_keypair
 
 __all__ = [
@@ -408,14 +409,17 @@ def apply_range_cell(
     # provider or secret client, let alone mutating a cloud resource. The gateway
     # VM runs as the range's reserved pool identity (ADR-008-R7).
     range_data = get_range_data_by_request_id(request_uuid)
+    # Bind the config to this range's realized zone (chosen at range creation and
+    # stored on the row) before anything reads region/zone. Empty placement keeps
+    # the scalar single-zone config. Never recomputed from the pool here.
+    range_host_pool_slot = int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+    resolved_config = resolve_placement_from_range_data(resolved_config, range_data)
     plan = render_range_cell_plan(
         request_uuid,
         variables,
         resolved_config,
         vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
-        range_host_pool_slot=(
-            int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
-        ),
+        range_host_pool_slot=range_host_pool_slot,
     )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()

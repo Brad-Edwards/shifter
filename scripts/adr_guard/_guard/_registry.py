@@ -29,6 +29,9 @@ from .checks.documentation import (
     check_guardrail_docs,
     check_no_agent_attribution,
 )
+from .checks.eks_cross_stack_sourcing import (
+    check_eks_cross_stack_sourcing,
+)
 from .checks.k8s_security import (
     check_k8s_deployment_security_context,
     check_k8s_network_policy_coverage,
@@ -86,6 +89,7 @@ CHECKS = {
     "published-contract-snapshots-immutable": check_published_contract_snapshots_immutable,
     "no-agent-attribution": check_no_agent_attribution,
     "quality-path-ownership": check_quality_path_ownership,
+    "eks-cross-stack-sourcing": check_eks_cross_stack_sourcing,
 }
 CHECK_LEVELS = {
     "fast": [
@@ -116,6 +120,7 @@ CHECK_LEVELS = {
         "published-contract-snapshots-immutable",
         "no-agent-attribution",
         "quality-path-ownership",
+        "eks-cross-stack-sourcing",
     ],
     "ci": [
         "adr-registry",
@@ -146,6 +151,7 @@ CHECK_LEVELS = {
         "published-contract-snapshots-immutable",
         "no-agent-attribution",
         "quality-path-ownership",
+        "eks-cross-stack-sourcing",
     ],
     "all": list(CHECKS),
 }

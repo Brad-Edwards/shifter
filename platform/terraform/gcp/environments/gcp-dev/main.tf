@@ -96,6 +96,7 @@ module "platform_core" {
   email_sender_domain               = var.email_sender_domain
   range_egress_mode                 = var.range_egress_mode
   range_egress_allowed_cidrs        = var.range_egress_allowed_cidrs
+  range_network_zones               = var.range_network_zones
   raes_package_bucket_name          = var.raes_package_bucket_name
   ctf_content_bucket_name           = var.ctf_content_bucket_name
   labels                            = local.labels

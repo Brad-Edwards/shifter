@@ -124,6 +124,7 @@ class Range(models.Model):
     vpn_gateway_pool_slot = models.PositiveIntegerField(
         null=True, blank=True, help_text="Reserved GCP OpenVPN gateway SA pool slot (single-project pool)"
     )
+    placement_zone = models.CharField(max_length=63, blank=True, default="", help_text="GCE placement zone (#2029)")
     victim_ip = models.GenericIPAddressField(null=True, blank=True)
     victim_instance_id = models.CharField(
         max_length=50,
@@ -467,11 +468,7 @@ class Range(models.Model):
 
     @property
     def victim_instances(self) -> list[dict[str, Any]]:
-        """Get all victim instance details.
-
-        Returns:
-            List of victim instance dictionaries
-        """
+        """Get all victim instance details."""
         from engine._range_state import victim_instances
 
         return victim_instances(self.provisioned_instances)

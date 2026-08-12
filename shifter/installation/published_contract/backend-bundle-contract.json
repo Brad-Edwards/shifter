@@ -2153,6 +2153,19 @@
           "source": "rendered from validated Terraform outputs and the normalized root config"
         },
         {
+          "description": "Public GCP runtime configuration value (RANGE_NETWORK_ZONES) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "RANGE_NETWORK_ZONES",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
           "description": "Public GCP runtime configuration value (SHIFTER_CTF_CONTENT_BUCKET) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
           "destination": "runtime-env",
           "kind": "runtime-env",

@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import runtime_inventory
+from . import runtime_inventory_gcp
 from .contract import (
     BackendBundle,
     BackendCapability,
@@ -310,13 +310,13 @@ def _gcp_output_roles(name: str) -> tuple[ProcessRole, ...]:
     Every generated key rides the shared runtime env the portal/worker platform image
     loads, so portal and worker always consume it. The standalone provisioner Job receives
     only the forwarded subset the platform task runner propagates
-    (``runtime_inventory.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS``, kept in parity with
+    (``runtime_inventory_gcp.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS``, kept in parity with
     ``engine.ecs._GCP_PROVISIONER_ENV_KEYS``). Among those, the ``GCP_RANGE_*`` keys are the
     range-guest realization configuration the provisioner applies to range tasks, so they
     also declare the range-task consumer. This is derived per key, not a blanket assignment.
     """
     roles: list[ProcessRole] = [ProcessRole.PORTAL, ProcessRole.WORKER]
-    if name in runtime_inventory.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS:
+    if name in runtime_inventory_gcp.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS:
         roles.append(ProcessRole.PROVISIONER)
         if name.startswith("GCP_RANGE_"):
             roles.append(ProcessRole.RANGE_TASK)
@@ -370,8 +370,8 @@ def _gcp_generated_outputs() -> tuple[GeneratedOutput, ...]:
     generated outputs are exactly the keys the renderer emits — enumerated, not just the
     handful the provisional entry carried.
     """
-    required = sorted(runtime_inventory.GCP_GENERATED_RUNTIME_ENV_KEYS)
-    optional = sorted(runtime_inventory.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
+    required = sorted(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS)
+    optional = sorted(runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
     return (
         *(_gcp_runtime_output(name, optional=False) for name in required),
         *(_gcp_runtime_output(name, optional=True) for name in optional),

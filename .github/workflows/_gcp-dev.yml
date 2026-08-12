@@ -182,6 +182,7 @@ jobs:
           GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
           GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
           GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
+          GCP_CTF_CONTENT_BUCKET: ${{ vars.GCP_CTF_CONTENT_BUCKET }}
         # The committed `terraform.tfvars` ships an example.com baseline that
         # fails-loud on apply. Each deployment provides its real values via
         # the GitHub secrets/variables listed above; this step renders them
@@ -228,6 +229,17 @@ jobs:
           fi
           if [ -n "${GCP_BOOTSTRAP_ADMIN_PASSWORD}" ]; then
             printf 'gcp_bootstrap_admin_password = "%s"\n' "${GCP_BOOTSTRAP_ADMIN_PASSWORD}" >> "${TF_DIR}/local.auto.tfvars"
+          fi
+          # Private native-CTF content bucket (#1665 content references). The
+          # bucket name is public location policy, not a credential, so it rides
+          # a repo variable; the digest-pinned reference catalog itself stays in
+          # the app secret bundle. scripts/gcp/render_runtime_env.py emits
+          # SHIFTER_CTF_CONTENT_BUCKET only when this Terraform output is set,
+          # and config/_ctf_content_settings.py refuses to start when references
+          # are configured without it -- so leaving this unset silently wipes the
+          # binding from the runtime ConfigMap and crashloops the portal.
+          if [ -n "${GCP_CTF_CONTENT_BUCKET}" ]; then
+            printf 'ctf_content_bucket_name       = "%s"\n' "${GCP_CTF_CONTENT_BUCKET}" >> "${TF_DIR}/local.auto.tfvars"
           fi
       - name: Render range egress allowlist from shifter.yaml
         env:
@@ -324,6 +336,22 @@ jobs:
             -reconfigure \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
             -backend-config="prefix=${TF_BACKEND_PREFIX}"
+      - name: Derive range_network_zones tfvar from the canonical pool
+        # #2029: RANGE_NETWORK_ZONES is the single canonical operator input for
+        # multi-region range placement. The runtime env consumes it as CSV (the
+        # renderer step); Terraform's range_network_zones consumes it as a list to
+        # derive per-region range NAT. Both are projected from the SAME
+        # `vars.RANGE_NETWORK_ZONES` here, so NAT coverage cannot drift from where
+        # the provisioner places range cells. Empty -> [] -> single-region NAT.
+        env:
+          RANGE_NETWORK_ZONES: ${{ vars.RANGE_NETWORK_ZONES }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, os
+
+          zones = [z.strip() for z in os.environ.get("RANGE_NETWORK_ZONES", "").split(",") if z.strip()]
+          print("TF_VAR_range_network_zones=" + json.dumps(zones))
+          PY
       - name: Terraform apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
@@ -544,6 +572,10 @@ jobs:
           # variable GCP_RANGE_BACKEND=gdc to roll back to GDC VM Runtime.
           GCP_RANGE_BACKEND: ${{ vars.GCP_RANGE_BACKEND }}
           RANGE_NETWORK_ZONE: ${{ vars.RANGE_NETWORK_ZONE }}
+          # Optional ordered multi-region pool; empty keeps single-zone placement
+          # (RANGE_NETWORK_ZONE). GitHub vars do not reach the renderer unless
+          # projected here explicitly.
+          RANGE_NETWORK_ZONES: ${{ vars.RANGE_NETWORK_ZONES }}
           GCP_RANGE_CELL_PROJECT_ID: ${{ vars.GCP_RANGE_CELL_PROJECT_ID }}
           GCP_RANGE_LINUX_IMAGE: ${{ vars.GCP_RANGE_LINUX_IMAGE }}
           GCP_RANGE_KALI_IMAGE: ${{ vars.GCP_RANGE_KALI_IMAGE }}

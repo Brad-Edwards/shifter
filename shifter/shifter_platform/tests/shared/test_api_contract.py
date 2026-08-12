@@ -103,6 +103,36 @@ class TestPublishedContract:
         assert "400" not in audit["responses"]
         assert "404" not in audit["responses"]
 
+    def test_audit_publishes_real_filters_and_drops_inert_search_ordering(
+        self, openapi_document: dict[str, Any]
+    ) -> None:
+        # The audit read must advertise the exact structured filters it applies
+        # and must not advertise the global SearchFilter/OrderingFilter params it
+        # ignores (they were inert). `page` stays for the canonical pagination.
+        params = {parameter["name"] for parameter in openapi_document["paths"]["/api/v1/audit/"]["get"]["parameters"]}
+        assert {
+            "entity_type",
+            "entity_id",
+            "action",
+            "actor_type",
+            "actor_id",
+            "request_id",
+            "from_date",
+            "to_date",
+            "page",
+        } <= params
+        assert "search" not in params
+        assert "ordering" not in params
+
+    def test_audit_advertises_only_the_credential_it_accepts(self, openapi_document: dict[str, Any]) -> None:
+        # The runtime authenticates bearer-first to fail closed, but the audit
+        # permission rejects every API-token principal, so the published contract
+        # must advertise session-cookie auth only — never ApiTokenAuth as an
+        # accepted alternative for either audit operation.
+        for path in ("/api/v1/audit/", "/api/v1/audit/{id}/"):
+            security = openapi_document["paths"][path]["get"]["security"]
+            assert security == [{"cookieAuth": []}]
+
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.
         ngfw = openapi_document["paths"]["/api/v1/mission-control/ngfw/"]["post"]

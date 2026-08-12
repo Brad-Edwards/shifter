@@ -534,7 +534,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
         portal_image_globs: list[str] | None = None,
         quality_only_globs: list[str] | None = None,
         quality_condition: str = "needs.changes.outputs.quality_relevant == 'true'",
-        quality_output: str = "quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' }}",
+        quality_output: str = "quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' || steps.filter.outputs.any_changed != 'true' }}",
         include_quality_non_docs_filter: bool = True,
         include_guardrail_docs_filter: bool = True,
         quality_predicate: str = "predicate-quantifier: every",
@@ -1114,7 +1114,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "jobs:\n"
                 "  changes:\n"
                 "    outputs:\n"
-                "      # quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' }}\n"
+                "      # quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' || steps.filter.outputs.any_changed != 'true' }}\n"
                 "      portal_image: ${{ steps.filter.outputs.portal_image }}\n"
                 "      quality_only: ${{ steps.filter.outputs.quality_only }}\n"
                 "    steps:\n"

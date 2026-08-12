@@ -94,15 +94,15 @@ def test_prune_deletes_expired_rows_and_retains_unexpired():
     assert RaesOperationRecord.objects.filter(pk=unexpired.pk).exists()
 
 
-@pytest.mark.django_db
+# A non-positive retention window is the documented way to persist a row with no
+# boundary (``_resolve_retention_expires_at``). Without it the settings default
+# (30 days) stamps ``SOURCE_TS + 30d`` instead, so this exercised an expiring row
+# and only passed while that derived boundary was still in the future.
 @override_settings(RAES_OPERATION_RECORD_RETENTION_DAYS=0)
+@pytest.mark.django_db
 def test_prune_ignores_rows_without_retention_boundary():
-    # A non-positive retention window disables the stamp, so persisting with no
-    # explicit boundary yields a genuine NULL retention_expires_at (the case this
-    # test names). Without pinning the window, _persist derives
-    # source_timestamp + RETENTION_DAYS, which becomes a past (prunable) boundary
-    # once the wall clock advances past it -- a time-dependent false failure.
     kept = _persist(retention_expires_at=None)
+    assert kept.retention_expires_at is None
 
     deleted = prune_expired_raes_operation_records(batch_size=100)
 
