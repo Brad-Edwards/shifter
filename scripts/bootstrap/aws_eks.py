@@ -37,6 +37,9 @@ _LOAD_BALANCER_CONTROLLER_CHART_VERSION = "3.2.2"
 _CLUSTER_AUTOSCALER_CHART_VERSION = "9.37.0"
 _MAX_PROTECTED_JSON_BYTES = 1024 * 1024
 _TERRAFORM_NONINTERACTIVE = "-input=false"
+_KUBECTL_TIMEOUT = "--timeout=5m"
+_KUBECTL_IGNORE_NOT_FOUND = "--ignore-not-found=true"
+_KUBECTL_NO_WAIT = "--wait=false"
 _PLATFORM_NAMESPACES = {
     "shifter-platform": "control",
     "shifter-jobs": "jobs",
@@ -360,7 +363,7 @@ def _install_load_balancer_controller(cluster_name: str, role_arn: str) -> None:
             "deployment/aws-load-balancer-controller",
             "--namespace",
             "kube-system",
-            "--timeout=5m",
+            _KUBECTL_TIMEOUT,
         ]
     )
 
@@ -414,7 +417,7 @@ def _install_cluster_autoscaler(cluster_name: str, region: str, role_arn: str) -
             "deployment/cluster-autoscaler-aws-cluster-autoscaler",
             "--namespace",
             "kube-system",
-            "--timeout=5m",
+            _KUBECTL_TIMEOUT,
         ]
     )
 
@@ -526,7 +529,7 @@ def _verify_effective_irsa(roles: Mapping[str, object], platform_image: str) -> 
                         "--namespace",
                         namespace,
                         "--for=jsonpath={.status.phase}=Succeeded",
-                        "--timeout=5m",
+                        _KUBECTL_TIMEOUT,
                     ]
                 )
                 result = run_cmd(["kubectl", "logs", pod_name, "--namespace", namespace], capture=True)
@@ -541,13 +544,14 @@ def _verify_effective_irsa(roles: Mapping[str, object], platform_image: str) -> 
                         pod_name,
                         "--namespace",
                         namespace,
-                        "--ignore-not-found=true",
-                        "--wait=false",
+                        _KUBECTL_IGNORE_NOT_FOUND,
+                        _KUBECTL_NO_WAIT,
                     ]
                 )
 
 
 def _restricted_probe_container(platform_image: str, workload: str) -> dict[str, object]:
+    """Build a restricted container that records denied API egress."""
     marker_path = "/var/run/shifter-readiness/networkpolicy-ok"
     success_action = (
         f'Path("{marker_path}").touch()\ntime.sleep(300)' if workload == "deployment" else "raise SystemExit(0)"
@@ -595,8 +599,8 @@ else:
     return container
 
 
-def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
-    """Prove admission denial and strict NetworkPolicy on Deployment and Job pods."""
+def _assert_admission_policy_fail_closed() -> None:
+    """Require the provisioner admission policy and binding to deny failures."""
     policy = run_cmd(
         [
             "kubectl",
@@ -622,6 +626,11 @@ def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
     if getattr(policy, "stdout", "").strip() != "Fail" or getattr(binding, "stdout", "").strip() != "Deny":
         raise RuntimeError("provisioner admission policy is not active in fail-closed deny mode")
 
+
+def _networkpolicy_probe_manifests(
+    platform_image: str,
+) -> tuple[str, str, dict[str, object], dict[str, object], dict[str, object]]:
+    """Build the valid readiness workloads and invalid admission probe."""
     deployment_name = "shifter-networkpolicy-deployment"
     job_name = "shifter-networkpolicy-job"
     pod_security_context = {
@@ -683,7 +692,17 @@ def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
             },
         },
     }
+    return deployment_name, job_name, deployment, job, rejected_job
 
+
+def _run_networkpolicy_readiness_probes(
+    deployment_name: str,
+    job_name: str,
+    deployment: Mapping[str, object],
+    job: Mapping[str, object],
+    rejected_job: Mapping[str, object],
+) -> None:
+    """Apply the probes and require admission and network denial evidence."""
     with tempfile.TemporaryDirectory(prefix="shifter-k8s-readiness-") as staging:
         staging_path = Path(staging)
         deployment_path = staging_path / "deployment.json"
@@ -708,7 +727,7 @@ def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
                     f"deployment/{deployment_name}",
                     "--namespace",
                     "shifter-platform",
-                    "--timeout=5m",
+                    _KUBECTL_TIMEOUT,
                 ]
             )
             run_cmd(
@@ -719,7 +738,7 @@ def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
                     "--namespace",
                     "shifter-jobs",
                     "--for=condition=complete",
-                    "--timeout=5m",
+                    _KUBECTL_TIMEOUT,
                 ]
             )
             for resource, namespace, expected in (
@@ -738,8 +757,8 @@ def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
                     deployment_name,
                     "--namespace",
                     "shifter-platform",
-                    "--ignore-not-found=true",
-                    "--wait=false",
+                    _KUBECTL_IGNORE_NOT_FOUND,
+                    _KUBECTL_NO_WAIT,
                 ]
             )
             run_cmd(
@@ -750,10 +769,17 @@ def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
                     job_name,
                     "--namespace",
                     "shifter-jobs",
-                    "--ignore-not-found=true",
-                    "--wait=false",
+                    _KUBECTL_IGNORE_NOT_FOUND,
+                    _KUBECTL_NO_WAIT,
                 ]
             )
+
+
+def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
+    """Prove admission denial and strict NetworkPolicy on Deployment and Job pods."""
+    _assert_admission_policy_fail_closed()
+    probes = _networkpolicy_probe_manifests(platform_image)
+    _run_networkpolicy_readiness_probes(*probes)
 
 
 def render_aws_values(

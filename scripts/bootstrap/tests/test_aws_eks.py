@@ -216,12 +216,11 @@ def test_effective_irsa_probe_fails_closed_on_missing_success_evidence(monkeypat
         return SimpleNamespace(stdout="")
 
     monkeypatch.setattr(aws_eks, "run_cmd", runner)
+    roles = _terraform_outputs()["workload_role_arns"]["value"]
+    platform_image = _images()["platform"]
 
     with pytest.raises(RuntimeError, match="effective IRSA readiness failed"):
-        aws_eks._verify_effective_irsa(
-            _terraform_outputs()["workload_role_arns"]["value"],
-            _images()["platform"],
-        )
+        aws_eks._verify_effective_irsa(roles, platform_image)
 
     assert any(cmd[:3] == ["kubectl", "delete", "pod"] for cmd in calls)
 
@@ -305,9 +304,10 @@ def test_kubernetes_security_probe_fails_closed_on_missing_enforcement_evidence(
         "run_cmd_secret_stdin",
         lambda _cmd, *, secret_stdin: dry_run_code,
     )
+    platform_image = _images()["platform"]
 
     with pytest.raises(RuntimeError, match=error):
-        aws_eks._verify_kubernetes_security_enforcement(_images()["platform"])
+        aws_eks._verify_kubernetes_security_enforcement(platform_image)
 
     applied = [cmd for cmd in calls if cmd[:3] == ["kubectl", "apply", "-f"]]
     if policy_mode != "Fail" or dry_run_code == 0:
