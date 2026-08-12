@@ -177,3 +177,31 @@ class TestBackendEgressNoneCapabilityGate:
 
         # Only a `none` decision is gated; status-quo passes for any backend.
         assert_backend_supports_egress_none("gdc", "status-quo")
+
+    def test_none_launch_on_gdc_is_refused_at_the_real_create_path(self, user):
+        """The capability gate must fire where it is wired, not only as a unit call."""
+        admission = evaluate_gcp_backend_admission("gdc", None, InstantiationPurpose.NON_USER_DEMO)
+        request_id = uuid4()
+        with pytest.raises(EngineError, match="does not support the zero-egress"):
+            _create_raes_range(
+                request_id=request_id,
+                user_id=user.id,
+                compiled_plan=make_compiled_plan(),
+                backend_admission=admission,
+                egress_mode="none",
+            )
+        assert not Range.objects.filter(request__request_id=request_id).exists()
+
+    def test_none_launch_on_gce_is_admitted_and_pinned(self, user):
+        admission = evaluate_gcp_backend_admission("gce", None, InstantiationPurpose.LIVE_FIRE)
+        request_id = uuid4()
+        _create_raes_range(
+            request_id=request_id,
+            user_id=user.id,
+            compiled_plan=make_compiled_plan(),
+            backend_admission=admission,
+            egress_mode="none",
+        )
+        rng = Range.objects.get(request__request_id=request_id)
+        assert rng.range_backend == "gce"
+        assert rng.egress_mode == "none"

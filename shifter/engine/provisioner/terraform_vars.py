@@ -372,8 +372,13 @@ def _build_gce_range_cell_variables(
     range_spec: dict[str, Any],
     scenario_artifact: dict[str, Any] | None,
     remote_access_capability: dict[str, object] | None,
+    egress_mode: str = "status-quo",
 ) -> dict[str, Any]:
-    """Build the closed GCE VM-cell request around an opaque scenario artifact."""
+    """Build the closed GCE VM-cell request around an opaque scenario artifact.
+
+    ``egress_mode`` is the pinned effective posture (PLAT-238), carried in the cell
+    request so the GCE cell plan realizes it (firewall + range-owned NAT).
+    """
     if scenario_artifact is None:
         raise RuntimeError("GCP/GCE range cells require a digest-bound scenario artifact")
     bindings = [
@@ -393,6 +398,7 @@ def _build_gce_range_cell_variables(
         network_bindings=bindings,
         access_declarations=access_declarations,
         remote_access=remote_access_capability,
+        egress_mode=egress_mode,
     )
 
 
@@ -431,6 +437,7 @@ def build_range_variables(
             range_spec,
             scenario_artifact,
             remote_access_capability,
+            egress_mode,
         )
     return _build_range_terraform_variables(
         request_id,

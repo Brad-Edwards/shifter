@@ -236,3 +236,31 @@ class TestGetRangeDataNGFWLookup:
         result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
         assert result["remote_access_capability"] == capability
+
+
+class TestGetRangeDataEgressMode:
+    """The pinned range egress mode is read from the range row (PLAT-238)."""
+
+    def test_reads_the_pinned_egress_mode_from_the_row(self, monkeypatch):
+        from provisioner_db import get_range_data_by_request_id
+
+        # Override egress_mode (index 10) to a non-default value and prove it is
+        # surfaced; a mis-indexed or dropped column would leave this default.
+        row = (*_RANGE_ROW_NO_NGFW[:10], "none")
+        mock_conn, _mock_cursor = _make_mock_cursor(row)
+        monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
+
+        result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+        assert result["egress_mode"] == "none"
+
+    def test_null_egress_mode_falls_back_to_status_quo(self, monkeypatch):
+        from provisioner_db import get_range_data_by_request_id
+
+        row = (*_RANGE_ROW_NO_NGFW[:10], None)
+        mock_conn, _mock_cursor = _make_mock_cursor(row)
+        monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
+
+        result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+        assert result["egress_mode"] == "status-quo"

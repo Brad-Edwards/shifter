@@ -15,6 +15,7 @@ from cms.models import RaesPackageSource, RangeInstance
 from cms.scenarios.pack_validation import pack_digest
 from cms.services import create_raes_native_range
 from workspaces import services as workspace_services
+from workspaces.models import Workspace
 
 _PACK_REF = "packs/raes-ws"
 
@@ -67,15 +68,27 @@ def test_raes_launch_binds_cms_rows_and_carries_the_scope_to_engine(user, native
         egress_mode=None,
     ):
         captured["workspace_id"] = workspace_id
+        captured["egress_mode"] = egress_mode
         return RaesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
 
     monkeypatch.setattr("cms.raes.dispatch.create_raes_range", fake_create_raes_range)
     _make_source(user, pack_digest(root))
 
+    # Opt the launcher's workspace into zero egress so the effective mode CMS
+    # resolves under the workspace lock is a non-default value that must be
+    # forwarded to the engine seam (PLAT-238), not silently dropped.
+    expected = workspace_services.resolve_personal_workspace(user).workspace_id
+    workspace_services.set_workspace_egress_policy(
+        user,
+        Workspace.objects.get(pk=expected).uuid,
+        "none",
+        audit=workspace_services.WorkspaceAuditContext(actor_type="user", actor_id=user.pk),
+    )
+
     ctx = create_raes_native_range(user, "raes-ws")
 
-    expected = workspace_services.resolve_personal_workspace(user).workspace_id
     instance = RangeInstance.objects.get(request__request_id=ctx.request_id)
     assert instance.workspace_id == expected
     assert instance.request.workspace_id == expected
     assert captured["workspace_id"] == expected
+    assert captured["egress_mode"] == "none"

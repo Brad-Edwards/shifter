@@ -163,6 +163,11 @@ describe("WorkspaceDetailPage", () => {
       ),
     );
     expect(await screen.findByText("Saved.")).toBeInTheDocument();
+    // Only correct via the hook's onSuccess cache write: the fresh snapshot has
+    // egress_policy="none", so the selection now equals the persisted value and
+    // the Save button disables again. A broken cache write would leave it enabled
+    // (the UI showing a stale policy after "saving").
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save egress policy" })).toBeDisabled());
   });
 
   it("archives the workspace after confirmation", async () => {
