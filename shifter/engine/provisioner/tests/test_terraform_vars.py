@@ -143,6 +143,14 @@ class TestPinnedRangeEgressMode:
         assert terraform_vars._resolve_range_egress_mode("deny-all") == "allowlist"
         assert terraform_vars._resolve_range_egress_mode("allowlist") == "allowlist"
 
+    def test_unknown_pinned_mode_fails_closed_instead_of_routing(self):
+        import terraform_vars
+
+        # A malformed/unknown pinned posture must never silently resolve to a routed
+        # (egress-capable) bridge.
+        with pytest.raises(ValueError, match="Unknown pinned range egress mode"):
+            terraform_vars._resolve_range_egress_mode("wide-open")
+
     def test_pinned_none_yields_no_nat_terraform_vars(self, monkeypatch):
         import terraform_vars
 

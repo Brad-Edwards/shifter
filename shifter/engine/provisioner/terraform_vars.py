@@ -109,7 +109,12 @@ def _resolve_range_egress_mode(pinned_mode: str) -> str:
         return "none"
     if normalized == "status-quo":
         return _range_egress_mode()
-    return "allowlist"
+    if normalized in {"deny-all", "allowlist"}:
+        # Both keep a routed, firewall-enforced egress path in the AWS runtime bridge.
+        return "allowlist"
+    # Fail closed: an unrecognized pinned posture must never silently resolve to a
+    # routed (egress-capable) bridge. A malformed value is a wire/contract error.
+    raise ValueError(f"Unknown pinned range egress mode: {pinned_mode!r}")
 
 
 def _resolve_agent_presigned_url(inst: dict[str, Any], egress_mode: str | None = None) -> str:

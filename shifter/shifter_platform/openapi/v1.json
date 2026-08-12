@@ -10812,9 +10812,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -10891,9 +10888,6 @@
           "required": true
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -10972,9 +10966,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -11048,9 +11039,6 @@
           }
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -11128,9 +11116,6 @@
           "workspaces"
         ],
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -11811,9 +11796,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -11900,9 +11882,6 @@
           "required": true
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
