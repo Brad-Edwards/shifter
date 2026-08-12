@@ -855,9 +855,10 @@ def test_range_cell_firewalls_reject_access_management_source_overlap():
         portal_network_cidrs=("10.46.0.0/20",),
         access_network_cidrs=("10.46.1.0/24",),
     )
+    variables = _variables()
 
     with pytest.raises(RuntimeError, match="must not overlap portal_network_cidrs"):
-        render_range_cell_plan("req-123", _variables(), config)
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_range_cell_firewalls_deduplicate_explicit_egress_cidrs():

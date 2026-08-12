@@ -13,11 +13,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+# An optional string field in the positional tuple type aliases below.
+OptionalStr = str | None
+
 # A writable mount: (volume name, mount path, emptyDir medium or None, size limit or None).
-WritableMount = tuple[str, str, "str | None", "str | None"]
+WritableMount = tuple[str, str, OptionalStr, OptionalStr]
 
 # A node scheduling toleration: (key, operator, value or None, effect).
-Toleration = tuple[str, str, "str | None", str]
+Toleration = tuple[str, str, OptionalStr, str]
 
 # Provisioner runtime identity and writable surface (issue #950/#1103). These are
 # image-specific and cloud-neutral: the same provisioner image runs on GKE and
