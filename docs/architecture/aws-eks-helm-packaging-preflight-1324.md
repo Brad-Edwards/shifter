@@ -4,6 +4,8 @@ Status: pre-implementation architecture guidance
 
 Date: 2026-07-25
 
+Updated: 2026-08-12 for the #1826 EKS add-on and workload-security contract.
+
 Issue: GitHub #1324, "Canonical Kubernetes/Helm packaging:
 backend-neutral chart plus an AWS EKS bundle"
 
@@ -25,18 +27,19 @@ platform deployments remain an explicitly documented compatibility path during
 migration; they are not the authoring model for a new root-configured
 deployment.
 
-This changes platform workload packaging, not every use of ECS. In particular:
+This changes platform workload packaging and the AWS control-plane task
+transport, not the AWS range substrate. For EKS profiles, the existing
+backend-neutral `KubernetesTaskRunner` launches the standalone provisioner as a
+Kubernetes Job with an AWS task profile and exact-subject IRSA. The legacy ECS
+task transport remains compatibility behavior for legacy ECS/ASG platform
+deployments only. ADR-039's AWS Terraform range-substrate adapter remains the
+range lifecycle implementation, and AWS Cognito/OIDC remains the browser
+identity system.
 
-- the existing AWS `TaskRunner` may continue to launch the standalone
-  provisioner on private ECS tasks;
-- ADR-039's AWS Terraform range-substrate adapter remains the range lifecycle
-  implementation; and
-- AWS Cognito/OIDC remains the browser identity system.
-
-Moving either task delivery or range convergence into EKS is a separate
-runtime/security decision. The EKS chart must not render the GCP Kubernetes Job
-launcher, its RBAC, or its admission policy merely because the platform itself
-runs on Kubernetes.
+The EKS chart renders the existing dedicated launcher, narrowly scoped RBAC,
+provisioner ServiceAccount, and fail-closed admission policy. It must select the
+AWS env/admission profile rather than copying GCP literals, Workload Identity,
+or range-cell assumptions.
 
 ADR-044 records the cross-backend packaging rule. ADR-007 remains the GCP
 specialization; ADR-006 remains the Kubernetes workload-security authority;
@@ -151,9 +154,17 @@ or shared cluster-admin application role is acceptable.
 
 The AWS platform renderer must emit the existing canonical runtime bindings,
 including explicit `CLOUD_PROVIDER=aws`, Cognito/OIDC configuration, provider
-resource identifiers, ECS task-runner placement, and Secrets Manager
-references. Deployed startup must never rely on the AWS compatibility defaults
-in `entrypoint.sh`, `entrypoint-lib.sh`, or Django settings.
+resource identifiers, Kubernetes Job task-runner placement, a digest-pinned
+provisioner image, and Secrets Manager references. Deployed startup must never
+rely on the AWS compatibility defaults in `entrypoint.sh`,
+`entrypoint-lib.sh`, or Django settings.
+
+The workflow image artifact, renderer input, `values.schema.json`, ConfigMap
+projection, and admission parameter must agree on the provisioner image
+identity. The workflow must carry the already-attested upstream provisioner
+digest; it must not rediscover a mutable tag. A field required by the renderer
+but rejected by the chart schema is a broken deployment contract, even if the
+renderer and chart tests pass independently.
 
 ### Kubernetes and edge boundary
 
@@ -168,11 +179,61 @@ Every supported chart render, including AWS, remains subject to ADR-006:
 - least-privilege service accounts with API-token automount disabled except
   where a reviewed Kubernetes API client requires it.
 
-For the initial EKS packaging, the GCP provisioner-launcher Deployment,
-Job-launch RBAC, provisioner ServiceAccount, and GCPTaskRunner admission policy
-are disabled as one capability. Do not render a token-bearing idle launcher or
-generalize its GCP-labelled admission contract to AWS without an actual
-Kubernetes Job task-runner design and equivalent denial/conformance tests.
+For EKS, `capabilities.kubernetesJobLauncher` enables the launcher Deployment,
+Job-launch RBAC, provisioner ServiceAccount, and admission policy as one
+capability. The launcher alone mounts a Kubernetes API token. The provisioner
+Job keeps token automount disabled while IRSA supplies AWS identity. The policy
+must bind the AWS task-runner label and AWS env contract and retain the same
+deny tests as the GCP profile.
+
+### EKS add-on and effective-enforcement boundary (#1826)
+
+Reuse the existing split ownership: the EKS Terraform module owns AWS-managed
+add-ons and their IAM prerequisites; `scripts/bootstrap/aws_eks.py` owns the
+pinned AWS Load Balancer Controller and cluster-autoscaler Helm releases; the
+Shifter chart owns only Shifter workloads and policies. Do not introduce a
+second add-on orchestrator or put provider controllers in the Shifter chart.
+
+- VPC CNI must enable network-policy support and strict startup enforcement.
+  Rendering default-deny policies is not parity if pods start fail-open or the
+  deployed CNI version cannot enforce them. Live evidence must cover both a
+  Deployment pod and a provisioner Job pod.
+- EBS and EFS CSI remain separate managed add-ons with exact controller
+  service-account roles. Add-on versions are explicit inputs selected from the
+  cluster Kubernetes version compatibility matrix; an unpinned provider
+  default is not a reproducible deployment.
+- Install the AWS Secrets Store CSI Driver provider as the issue-selected
+  Secrets Manager integration. The add-on itself needs no workload IAM role;
+  a consuming pod uses its own existing exact-subject IRSA role. Installation
+  does not authorize a second secret schema or an incidental migration away
+  from `runtime.secretReferences` and the existing entrypoint hydration
+  boundary. A later CSI consumer must add a non-secret `SecretProviderClass`
+  reference and focused rotation/restart semantics without putting payloads in
+  Helm state.
+- AWS Load Balancer Controller and cluster-autoscaler chart versions and image
+  identities remain reviewed, pinned deployment inputs. Autoscaler writes stay
+  constrained by this cluster's discovery tags and configured min/max bounds.
+- Exact-subject trust is only half of least privilege. Controller permission
+  documents must be Terraform-owned or otherwise checked against a reviewed
+  canonical policy; accepting an arbitrary policy ARN from protected tfvars is
+  not evidence of scope. Extend the existing Terraform IAM/ELB scope checker
+  where its incumbent rules apply instead of adding a second IAM scanner.
+- Static Terraform trust-policy assertions are necessary but do not satisfy
+  the issue's effective-permission acceptance criterion. After rollout, a
+  short-lived diagnostic pod for each Shifter ServiceAccount must observe its
+  expected caller role and fail to exchange the same projected token for every
+  other workload role. The test must not print or pass tokens through argv and
+  must delete all diagnostic objects. Add-on controller identities need the
+  equivalent caller-role proof where they carry IAM permissions.
+
+Public client CIDRs and pod-observed ALB source CIDRs are distinct projections.
+The validated public allowlist must configure the ALB listener/security group
+(for example, the controller's `inbound-cidrs` contract). Pod NetworkPolicy must
+allow the private ALB-to-target source actually observed at the pod, not assume
+the original client IP survives the proxy hop. Both values derive from
+Terraform/network outputs; neither may be a second operator-authored allowlist.
+The readiness gate must prove HTTPS through the ALB and prove that a disallowed
+source is rejected at the edge.
 
 Ingress, identity annotations, service annotations, provider API egress, load
 balancer source ranges, Kubernetes API CIDRs, and private service CIDRs are
@@ -270,7 +331,7 @@ Kubernetes Secret manifests, provider responses, or kubeconfig content.
 | Terraform validation/state | `platform/terraform/validation-inventory.yaml`, `scripts/check_tf_roots`, `scripts/terraform/render_aws_backend_configs.py`, `.tflint.hcl`, `platform/terraform/.checkov.yaml` | Register each new root/toolchain, preserve remote-state encryption/access/locking and saved-plan apply, and run existing policy gates. |
 | Helm packaging | `platform/charts/shifter`, `ensure_gcp_control_plane_namespaces`, GCP bootstrap `helm upgrade --install --atomic --wait`, ADR-006 chart render guards | Generalize the namespace/PSS and Helm release mechanics where semantics match while keeping provider authentication/rendering separate; do not create an AWS chart or ad hoc `kubectl apply` path. |
 | Kubernetes enforcement | `scripts/adr_guard` Kubernetes checks, `.kube-linter.yaml`, kube-linter, kubeconform, Helm lint, `test_gcp_job_launcher_manifests.py` | Add the AWS values render to every supported-values matrix and preserve GCP admission parity where that capability is enabled. |
-| AWS cloud adapters | `shifter_platform.shared.cloud.aws`, `engine/provisioner/cloud/aws`, `engine.ecs`, `config/_cloud.py` | Keep storage, queues, secrets, event bus, database auth, network inventory, and ECS task delivery behind existing protocols/factories. |
+| AWS cloud adapters and task delivery | `shifter_platform.shared.cloud.aws`, `engine/provisioner/cloud/aws`, `shared.cloud.kubernetes`, `engine.ecs`, `config/_cloud.py` | Keep storage, queues, secrets, event bus, database auth, and network inventory behind existing protocols/factories. EKS supplies an AWS profile to the neutral Kubernetes task runner; legacy ECS dispatch remains behind its existing compatibility facade. |
 | Identity | ADR-009, `config/_oidc_settings.py`, `config/oidc.py`, `management/services.py`, Cognito Terraform | Keep user identity independent of backend and EKS workload identity; preserve issuer/subject, verified-email, MFA, bootstrap, and session gates. |
 | Secret hydration | `entrypoint.sh`, `entrypoint-lib.sh`, AWS Secrets Manager/KMS, existing Guacamole secret reference | Pass references through rendered config and fetch payloads at the existing boundary; no values in Helm history, argv, or logs. |
 | Errors and observability | `InstallationConfigError`, both existing cloud exception families, `shared.errors`, `shared.api.errors`, `shared.log_sanitize`, provisioner `log_redact`, `config._posture` | Keep config/deploy/runtime errors distinct and public envelopes fixed/sanitized. Reuse structured non-secret posture and existing health/smoke logic. |
@@ -400,8 +461,18 @@ The following surfaces are in scope for design and validation:
 - Do not conflate platform compute (EKS), task transport (ECS or Kubernetes
   Job), range substrate (AWS Terraform), cloud backend (`aws`), identity
   provider (`oidc`), deployment profile, or persisted resource provider.
-- Do not render GCP Job-launch RBAC/admission on EKS when AWS still uses the ECS
-  task runner. A token-bearing unused launcher is a privilege regression.
+- Do not copy GCP Job env literals or identity assumptions into the AWS task
+  profile. Do not grant the portal, scheduler, general workers, or provisioner
+  runtime the launcher's Kubernetes API permissions.
+- Do not treat an exact IRSA trust-policy string test as an effective-permission
+  test, and do not share a role between chart ServiceAccounts or controllers.
+- Do not treat `enableNetworkPolicy` or rendered YAML alone as enforcement
+  evidence. Preserve strict startup behavior and exercise real EKS traffic.
+- Do not use public client CIDRs as the pod-side ALB source contract or omit the
+  ALB-side inbound restriction; those are different hops.
+- Do not install both External Secrets and Secrets Store CSI, create a
+  controller-wide secret-reader role, or migrate secret payloads into Helm
+  values, ConfigMaps, process argv, or deployment logs.
 - Do not put provider defaults or raw provider objects into neutral
   `values.yaml`; do not make chart templates discover Terraform state or parse
   `shifter.yaml`.
@@ -433,8 +504,9 @@ The following surfaces are in scope for design and validation:
 
 - No implementation, cloud mutation, deployment, or migration is part of this
   preflight.
-- No replacement of the AWS range-substrate adapter, ECS provisioner task
-  transport, or ADR-039 lifecycle contract.
+- No replacement of the AWS range-substrate adapter or ADR-039 lifecycle
+  contract. The legacy ECS provisioner transport remains only for legacy
+  ECS/ASG platform compatibility; this issue does not remove its code or state.
 - No redesign of Cognito/OIDC, account binding, MFA, session policy, bootstrap
   authorization, or user-facing auth APIs.
 - No redesign of Django cloud protocols, standalone-provisioner protocols,
@@ -444,7 +516,8 @@ The following surfaces are in scope for design and validation:
   migration strategy change, or compatibility alias cleanup without its own
   reviewed migration.
 - No Azure/local backend, generic multi-cluster orchestrator, GitOps controller,
-  service mesh, external-secret operator, autoscaling redesign, or chart
-  marketplace publication.
+  service mesh, External Secrets operator, autoscaling redesign, or chart
+  marketplace publication. #1826 selects the AWS Secrets Store CSI Driver
+  provider rather than a second secret-delivery controller.
 - No claim that Kubernetes packages live-fire ranges. EKS is the Shifter
   management plane; ADR-030 and ADR-039 continue to govern range containment.

@@ -9,24 +9,31 @@ variable "deployment_role_arn" {
   type        = string
 }
 
-variable "load_balancer_controller_policy_arn" {
-  description = "Environment-scoped IAM policy for the AWS Load Balancer Controller."
-  type        = string
-}
-
 variable "domain_name" {
   description = "Public deployment hostname."
   type        = string
 }
 
-variable "ingress_source_cidrs" {
+variable "edge_client_cidrs" {
   description = "Validated public source CIDRs allowed to reach HTTPS ingress."
   type        = list(string)
 
   validation {
-    condition     = length(var.ingress_source_cidrs) > 0
+    condition     = length(var.edge_client_cidrs) > 0
     error_message = "At least one explicit ingress source CIDR is required."
   }
+}
+
+variable "addon_versions" {
+  description = "Reviewed EKS add-on versions compatible with kubernetes_version."
+  type = object({
+    vpc_cni           = string
+    ebs_csi           = string
+    efs_csi           = string
+    coredns           = string
+    kube_proxy        = string
+    secrets_store_csi = string
+  })
 }
 
 variable "provider_api_cidrs" {

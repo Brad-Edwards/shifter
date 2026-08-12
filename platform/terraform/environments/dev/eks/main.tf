@@ -29,22 +29,24 @@ locals {
 module "eks" {
   source = "../../../modules/portal/eks"
 
-  environment          = local.environment
-  aws_region           = var.aws_region
-  cluster_name         = local.cluster_name
-  deployment_role_arn  = var.deployment_role_arn
-  vpc_cidr             = var.vpc_cidr
-  availability_zones   = var.availability_zones
-  private_subnet_cidrs = var.private_subnet_cidrs
-  public_subnet_cidrs  = var.public_subnet_cidrs
-  kubernetes_version   = var.kubernetes_version
-  node_instance_types  = var.node_instance_types
-  node_desired_size    = var.node_desired_size
-  node_min_size        = var.node_min_size
-  node_max_size        = var.node_max_size
-  domain_name          = var.domain_name
-  oidc_thumbprints     = var.oidc_thumbprints
-  secret_names         = local.secret_names
+  environment              = local.environment
+  aws_region               = var.aws_region
+  cluster_name             = local.cluster_name
+  deployment_role_arn      = var.deployment_role_arn
+  permissions_boundary_arn = local.permissions_boundary_arn
+  vpc_cidr                 = var.vpc_cidr
+  availability_zones       = var.availability_zones
+  private_subnet_cidrs     = var.private_subnet_cidrs
+  public_subnet_cidrs      = var.public_subnet_cidrs
+  kubernetes_version       = var.kubernetes_version
+  addon_versions           = var.addon_versions
+  node_instance_types      = var.node_instance_types
+  node_desired_size        = var.node_desired_size
+  node_min_size            = var.node_min_size
+  node_max_size            = var.node_max_size
+  domain_name              = var.domain_name
+  oidc_thumbprints         = var.oidc_thumbprints
+  secret_names             = local.secret_names
   workload_identities = {
     cni = {
       namespace       = "kube-system"
@@ -55,7 +57,7 @@ module "eks" {
     ingress = {
       namespace       = "kube-system"
       service_account = "aws-load-balancer-controller"
-      policy_arns     = [var.load_balancer_controller_policy_arn]
+      policy_arns     = []
       secret_names    = []
     }
     portal = {

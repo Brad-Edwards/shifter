@@ -230,13 +230,13 @@ repos:
         files: ^platform/terraform/modules/(engine-provisioner/iam|provisioner-iam/main)\.tf$
 
       - id: check-tf-iam-elb-scope
-        name: AWS ELBv2 (GWLB/VPN NLB) IAM scoping (shared provisioner IAM)
+        name: AWS ELBv2 (GWLB/VPN NLB/EKS ALB controller) IAM scoping
         entry: python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py
         language: system
         # #1826: the GWLB policy moved entirely into the shared provisioner-iam
         # module, so the check (which requires aws_iam_policy.gwlb to be present)
         # targets that module, not the now-delegating engine-provisioner/iam.tf.
-        files: ^(platform/terraform/modules/provisioner-iam/main|shifter/engine/provisioner/terraform/modules/range/vpn)\.tf$
+        files: ^(platform/terraform/modules/provisioner-iam/main|platform/terraform/modules/portal/eks/load_balancer_controller_iam|shifter/engine/provisioner/terraform/modules/range/vpn)\.tf$
 
       - id: check-tf-iam-ssm-scope
         name: AWS SSM Run Command IAM scoping (shared provisioner IAM)

@@ -1183,6 +1183,117 @@ resource "aws_iam_policy" "security" {
   })
 }
 
+# EKS lifecycle and its tightly coupled IAM seams. Kept separate from the
+# security category because that managed policy is already near AWS's 6,144
+# character document limit; the deploy role remains at the repository's
+# six-attachment cap.
+resource "aws_iam_policy" "eks" {
+  name = "shifter-${var.environment}-eks"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ManageEnvironmentEks"
+        Effect = "Allow"
+        Action = [
+          "eks:AssociateAccessPolicy",
+          "eks:CreateAccessEntry",
+          "eks:CreateAddon",
+          "eks:CreateCluster",
+          "eks:CreateNodegroup",
+          "eks:DeleteAccessEntry",
+          "eks:DeleteAddon",
+          "eks:DeleteCluster",
+          "eks:DeleteNodegroup",
+          "eks:DescribeAccessEntry",
+          "eks:DescribeAddon",
+          "eks:DescribeCluster",
+          "eks:DescribeNodegroup",
+          "eks:DisassociateAccessPolicy",
+          "eks:ListAssociatedAccessPolicies",
+          "eks:TagResource",
+          "eks:UntagResource",
+          "eks:UpdateAccessEntry",
+          "eks:UpdateAddon",
+          "eks:UpdateClusterConfig",
+          "eks:UpdateClusterVersion",
+          "eks:UpdateNodegroupConfig",
+          "eks:UpdateNodegroupVersion"
+        ]
+        Resource = [
+          "arn:aws:eks:${var.aws_region}:${data.aws_caller_identity.current.account_id}:access-entry/shifter-${var.environment}-eks/*/*",
+          "arn:aws:eks:${var.aws_region}:${data.aws_caller_identity.current.account_id}:addon/shifter-${var.environment}-eks/*/*",
+          "arn:aws:eks:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/shifter-${var.environment}-eks",
+          "arn:aws:eks:${var.aws_region}:${data.aws_caller_identity.current.account_id}:nodegroup/shifter-${var.environment}-eks/*/*"
+        ]
+      },
+      {
+        Sid    = "ReadEksCatalogAndOperations"
+        Effect = "Allow"
+        Action = [
+          "eks:DescribeAddonConfiguration",
+          "eks:DescribeAddonVersions",
+          "eks:DescribeUpdate",
+          "eks:ListAccessEntries",
+          "eks:ListAddons",
+          "eks:ListClusters",
+          "eks:ListNodegroups",
+          "eks:ListTagsForResource",
+          "eks:ListUpdates"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ManageEksOidcProvider"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateOpenIDConnectProvider",
+          "iam:DeleteOpenIDConnectProvider",
+          "iam:GetOpenIDConnectProvider",
+          "iam:ListOpenIDConnectProviderTags",
+          "iam:TagOpenIDConnectProvider",
+          "iam:UntagOpenIDConnectProvider",
+          "iam:UpdateOpenIDConnectProviderThumbprint"
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/oidc.eks.${var.aws_region}.amazonaws.com/id/*"
+      },
+      {
+        Sid    = "AttachEksManagedPolicies"
+        Effect = "Allow"
+        Action = [
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy"
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-eks-*"
+        Condition = {
+          ArnEquals = {
+            "iam:PolicyArn" = [
+              "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+              "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
+              "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+              "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+              "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy",
+              "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
+            ]
+          }
+        }
+      },
+      {
+        Sid      = "PassEksRolesOnlyToEks"
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-eks-*"
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "eks.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
+
 # Management: SSM, Cognito, CloudWatch (Logs + Alarms), SNS, EventBridge
 # checkov:skip=CKV_AWS_355:CI/CD requires broad SSM/Cognito/observability permissions. Risk accepted, see #44
 # checkov:skip=CKV_AWS_290:CI/CD requires broad SSM/Cognito/observability permissions. Risk accepted, see #44
@@ -1436,6 +1547,11 @@ resource "aws_iam_role_policy_attachment" "security" {
 resource "aws_iam_role_policy_attachment" "management" {
   role       = aws_iam_role.github_actions.name
   policy_arn = aws_iam_policy.management.arn
+}
+
+resource "aws_iam_role_policy_attachment" "eks" {
+  role       = aws_iam_role.github_actions.name
+  policy_arn = aws_iam_policy.eks.arn
 }
 
 # ------------------------------------------------------------------------------

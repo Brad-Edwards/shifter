@@ -11,9 +11,17 @@ move.
    keys. Do not add imports, moved blocks, or shared ownership.
 3. Validate `shifter.yaml` with `backend: aws` and prepare an attested image
    file containing only `repository@sha256:<digest>` values.
-4. Apply EKS prerequisites without directing production traffic to EKS.
-5. Verify private placement, exact service-account IAM subjects,
-   certificate/WAF/DNS outputs, restricted chart render, and HTTPS health.
+4. Apply the environment's `platform/terraform/global/iam` stack, then verify
+   the deploy role can manage only the scoped EKS/OIDC resources and can pass
+   the bounded `shifter-<env>-eks-*` roles only to EKS.
+5. Prepare the EKS input with explicit compatible add-on versions and distinct
+   edge-client/provider-API CIDRs. Apply EKS prerequisites without directing
+   production traffic to EKS.
+6. Verify private placement, every managed add-on `ACTIVE`, effective
+   exact-role IRSA (including sibling-role denial), strict NetworkPolicy on
+   Deployment and Job pods, fail-closed admission denial,
+   certificate/WAF/ALB-source restrictions, restricted chart render, and HTTPS
+   health.
 
 ## Serialized cutover
 

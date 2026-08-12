@@ -143,6 +143,7 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
         "STORAGE_BUCKET_NAME": "shifter-dev-storage",
     }
     outputs = {
+        "cluster_name": {"value": "shifter-dev-eks"},
         "runtime_env": {"value": runtime_env},
         "workload_role_arns": {
             "value": {
@@ -156,6 +157,7 @@ def test_aws_eks_runtime_projection_initializes_deployed_settings(monkeypatch) -
         },
         "certificate_arn": {"value": "arn:aws:acm:us-east-2:123456789012:certificate/example"},
         "waf_acl_arn": {"value": "arn:aws:wafv2:us-east-2:123456789012:regional/webacl/example/id"},
+        "edge_client_cidrs": {"value": ["203.0.113.0/24"]},
         "ingress_source_cidrs": {"value": ["10.42.0.0/16"]},
         "provider_api_cidrs": {"value": ["10.42.0.0/16"]},
         "private_service_cidrs": {"value": ["10.42.0.0/16"]},

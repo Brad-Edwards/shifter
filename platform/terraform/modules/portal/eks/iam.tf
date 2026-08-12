@@ -21,7 +21,8 @@ locals {
 }
 
 resource "aws_iam_role" "cluster" {
-  name = "${var.cluster_name}-cluster"
+  name                 = "${var.cluster_name}-cluster"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -62,7 +63,8 @@ resource "aws_iam_role_policy" "cluster_kms" {
 }
 
 resource "aws_iam_role" "node" {
-  name = "${var.cluster_name}-node"
+  name                 = "${var.cluster_name}-node"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -97,7 +99,8 @@ resource "aws_iam_openid_connect_provider" "cluster" {
 resource "aws_iam_role" "workload" {
   for_each = var.workload_identities
 
-  name = "${var.cluster_name}-${each.key}"
+  name                 = "${var.cluster_name}-${each.key}"
+  permissions_boundary = var.permissions_boundary_arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -229,7 +232,8 @@ resource "aws_iam_policy" "cluster_autoscaler" {
 }
 
 resource "aws_iam_role" "cluster_autoscaler" {
-  name = "${var.cluster_name}-cluster-autoscaler"
+  name                 = "${var.cluster_name}-cluster-autoscaler"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

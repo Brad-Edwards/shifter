@@ -11,6 +11,11 @@ variable "aws_region" {
 variable "cluster_name" {
   description = "Name of the EKS cluster."
   type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,22}$", var.cluster_name))
+    error_message = "cluster_name must be at most 23 alphanumeric-or-hyphen characters so the owned ALB name remains valid."
+  }
 }
 
 variable "deployment_role_arn" {
@@ -20,6 +25,16 @@ variable "deployment_role_arn" {
   validation {
     condition     = can(regex("^arn:aws:iam::[0-9]{12}:role/.+", var.deployment_role_arn))
     error_message = "deployment_role_arn must be an IAM role ARN."
+  }
+}
+
+variable "permissions_boundary_arn" {
+  description = "Installation CI permissions boundary applied to every IAM role created by this module."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:iam::[0-9]{12}:policy/shifter-[A-Za-z0-9+=,.@_/-]+-ci-role-boundary$", var.permissions_boundary_arn))
+    error_message = "permissions_boundary_arn must be the installation shifter-* CI role-boundary policy ARN."
   }
 }
 
@@ -63,6 +78,26 @@ variable "kubernetes_version" {
   type        = string
 }
 
+variable "addon_versions" {
+  description = "Reviewed EKS add-on versions compatible with kubernetes_version."
+  type = object({
+    vpc_cni           = string
+    ebs_csi           = string
+    efs_csi           = string
+    coredns           = string
+    kube_proxy        = string
+    secrets_store_csi = string
+  })
+
+  validation {
+    condition = alltrue([
+      for version in values(var.addon_versions) :
+      can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+-eksbuild\\.[0-9]+$", version))
+    ])
+    error_message = "Every EKS add-on version must be an explicit vX.Y.Z-eksbuild.N release."
+  }
+}
+
 variable "node_instance_types" {
   description = "Allowed instance types for the managed private node group."
   type        = list(string)
@@ -101,6 +136,7 @@ variable "log_retention_days" {
     condition     = var.log_retention_days >= 365
     error_message = "EKS control-plane logs must be retained for at least 365 days."
   }
+
 }
 
 variable "domain_name" {
@@ -144,6 +180,15 @@ variable "workload_identities" {
       var.workload_identities["cni"].service_account == "aws-node"
     )
     error_message = "workload_identities must bind cni to the exact kube-system/aws-node service account so CNI permissions are not placed on the node role."
+  }
+
+  validation {
+    condition = (
+      contains(keys(var.workload_identities), "ingress") &&
+      var.workload_identities["ingress"].namespace == "kube-system" &&
+      var.workload_identities["ingress"].service_account == "aws-load-balancer-controller"
+    )
+    error_message = "workload_identities must bind ingress to the exact kube-system/aws-load-balancer-controller service account."
   }
 }
 
