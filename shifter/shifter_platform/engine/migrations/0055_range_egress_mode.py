@@ -4,15 +4,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('engine', '0053_remove_raesimagemapping_raes_image_mapping_portable_identity_complete_and_more'),
+        ("engine", "0054_range_placement_zone"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='range',
-            name='egress_mode',
-            field=models.CharField(choices=[('status-quo', 'status-quo'), ('deny-all', 'deny-all'), ('allowlist', 'allowlist'), ('none', 'none')], default='status-quo', help_text='Effective range egress posture pinned at create (PLAT-238; ADR-017-R5/ADR-026).', max_length=16),
+            model_name="range",
+            name="egress_mode",
+            field=models.CharField(
+                choices=[
+                    ("status-quo", "status-quo"),
+                    ("deny-all", "deny-all"),
+                    ("allowlist", "allowlist"),
+                    ("none", "none"),
+                ],
+                default="status-quo",
+                help_text="Effective range egress posture pinned at create (PLAT-238; ADR-017-R5/ADR-026).",
+                max_length=16,
+            ),
         ),
     ]
