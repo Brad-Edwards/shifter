@@ -367,14 +367,21 @@ class TestEventStatusTransitions:
         assert mock_event_active.status == EventStatus.PAUSED.value
         mock_event_active.save.assert_called_once()
 
-    def test_resume_paused_event(self):
-        """Should be able to resume a paused event."""
+    @pytest.mark.django_db
+    def test_resume_paused_event(self, organizer_user):
+        """Should be able to resume a paused event.
+
+        ``resume_event`` locks the row and re-enforces managed-content
+        readiness under the lock (issue #1971), so this is DB-backed; an
+        unmanaged event with no configured reference is ready.
+        """
         from ctf.services import resume_event
 
-        paused_event = _make_mock_event(status=EventStatus.PAUSED.value)
-        result = resume_event(paused_event)
+        event = _make_db_event(organizer_user, EventStatus.PAUSED.value)
+        result = resume_event(event)
         assert result is True
-        assert paused_event.status == EventStatus.ACTIVE.value
+        event.refresh_from_db()
+        assert event.status == EventStatus.ACTIVE.value
 
     def test_archive_ended_event(self):
         """Should be able to archive an ended event."""
@@ -393,13 +400,16 @@ class TestEventStatusTransitions:
         assert result is False
         assert mock_event_draft.status == EventStatus.DRAFT.value
 
-    def test_cannot_resume_active_event(self, mock_event_active):
+    @pytest.mark.django_db
+    def test_cannot_resume_active_event(self, organizer_user):
         """Should not be able to resume an already active event."""
         from ctf.services import resume_event
 
-        result = resume_event(mock_event_active)
+        event = _make_db_event(organizer_user, EventStatus.ACTIVE.value)
+        result = resume_event(event)
         assert result is False
-        assert mock_event_active.status == EventStatus.ACTIVE.value
+        event.refresh_from_db()
+        assert event.status == EventStatus.ACTIVE.value
 
     def test_cannot_archive_active_event(self, mock_event_active):
         """Should not be able to archive an active event."""

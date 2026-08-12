@@ -36,7 +36,10 @@ export const WORKSPACE_SURFACES: readonly WorkspaceSurface[] = [
   { key: "range-scoping", label: "Range scoping" },
   { key: "policy", label: "Policy" },
   { key: "quota", label: "Quota" },
-  { key: "audit", label: "Audit" },
+  // Audit is intentionally NOT a workspace-scoped surface (#1947, PLAT-240): the
+  // audit store is deployment-global with no per-row workspace scope, so a
+  // workspace-nested entry would falsely imply the switcher scopes/authorizes the
+  // feed. The administrator audit history lives at the top-level /administer/audit.
 ];
 
 /** True when the selected workspace's advisory capabilities permit the surface. */

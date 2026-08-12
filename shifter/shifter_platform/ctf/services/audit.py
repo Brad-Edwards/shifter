@@ -85,6 +85,45 @@ def audit_content_hydration(
     )
 
 
+def audit_content_refresh(
+    *,
+    actor_id: int,
+    event: CTFEvent,
+    receipt: CTFContentHydrationReceipt,
+    outcome: str,
+    previous_digest: str,
+    changed_categories: tuple[str, ...],
+) -> None:
+    """Strictly record an in-place managed-content refresh (issue #1971).
+
+    Records the previous and target digests, bounded counts, and the categories
+    of change (never content values, flag material, or object coordinates).
+    """
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event.pk),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            previous_state={"declared_digest": previous_digest},
+            new_state={
+                "ctf_content_refresh": outcome,
+                "event_id": str(event.pk),
+                "scenario_id": receipt.scenario_id,
+                "declared_digest": receipt.declared_digest,
+                "challenge_count": receipt.challenge_count,
+                "flag_count": receipt.flag_count,
+                "hint_count": receipt.hint_count,
+                "prerequisite_count": receipt.prerequisite_count,
+                "changed_categories": list(changed_categories),
+            },
+            context="ctf_content_refresh",
+        ),
+        strict=True,
+    )
+
+
 def audit_content_hydration_drift(
     *,
     actor_id: int | None,

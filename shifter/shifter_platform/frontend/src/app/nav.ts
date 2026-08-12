@@ -57,6 +57,7 @@ export type NavIconKey =
   | "settings"
   | "file-code"
   | "user-cog"
+  | "scroll-text"
   | "circle-dollar-sign";
 
 export interface NavEntry {
@@ -269,6 +270,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         purpose: "Administer organizations and workspaces.",
         routePath: "/administer/organization",
         iconKey: "boxes",
+        external: false,
+        featureFlag: "administer_spa",
+      },
+      // In-SPA administrator audit / activity history (#1947, PLAT-240), gated by
+      // administer_spa. Deployment-global, staff-only read over shared.audit; a
+      // top-level surface (not workspace-scoped) since the store carries no
+      // per-row tenant scope. The /api/v1/audit/ endpoint remains the authority.
+      {
+        surface: "Audit",
+        routeName: "administer:audit",
+        purpose: "Search and filter administrative activity history.",
+        routePath: "/administer/audit",
+        iconKey: "scroll-text",
         external: false,
         featureFlag: "administer_spa",
       },
