@@ -109,6 +109,28 @@ fixed, closed set: **owner**, **admin**, and **member**.
   and is the final authority. Managing owners is restricted to owners, so an
   admin may be shown an action on an owner that the server then declines.
 
+## Network egress policy
+
+Each workspace has a network egress policy that controls outbound internet
+access for the ranges launched in it. An owner or admin sets it on the workspace
+detail surface. Two choices are available:
+
+- **Inherit deployment baseline** (the default): ranges keep the deployment's
+  existing network posture, so behavior is unchanged from before this setting
+  existed.
+- **Zero egress (no outbound NAT path)**: newly provisioned ranges have no
+  outbound path to the internet. On AWS the participant subnets receive no
+  default route, NAT, or internet-gateway path. On GCP the range's subnets are
+  attached to no Cloud NAT and the guests have no external address, so a
+  guest cannot reach the internet even though internal range traffic and the
+  management fabric still work.
+
+The policy applies only to ranges provisioned after the change; it never alters
+a range that is already running. Changing it is audited (the old and new value
+are recorded) and authorized by the workspace role, the same as rename and
+archive. Personal workspaces can set the policy too, so a single-user install
+can opt its own ranges into zero egress.
+
 ## What is not here yet
 
 This release delivers the console shell, navigation, workspace context,
