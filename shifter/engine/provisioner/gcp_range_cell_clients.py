@@ -52,6 +52,7 @@ class GCEClients:
     subnetworks: ComputeCollectionClient
     firewalls: ComputeCollectionClient
     addresses: ComputeCollectionClient
+    routers: ComputeCollectionClient
     instances: ComputeInstancesClient
     global_operations: OperationWaitClient
     region_operations: OperationWaitClient
@@ -68,6 +69,7 @@ def _build_clients() -> GCEClients:
         subnetworks=compute.SubnetworksClient(),
         firewalls=compute.FirewallsClient(),
         addresses=compute.AddressesClient(),
+        routers=compute.RoutersClient(),
         instances=compute.InstancesClient(),
         global_operations=compute.GlobalOperationsClient(),
         region_operations=compute.RegionOperationsClient(),

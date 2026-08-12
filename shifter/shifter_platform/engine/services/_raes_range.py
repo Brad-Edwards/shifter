@@ -30,6 +30,7 @@ from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.participant_access import ParticipantAccessBinding
 
 from ._range_backend_binding import (
+    assert_backend_supports_egress_none,
     backend_binding_fields,
     egress_binding_fields,
     require_workspace_binding,
@@ -149,6 +150,7 @@ def create_raes_range(
 
     binding_fields = backend_binding_fields(backend_admission)
     egress_fields = egress_binding_fields(egress_mode)
+    assert_backend_supports_egress_none(binding_fields.get("range_backend"), egress_fields["egress_mode"])
     user_model = get_user_model()
     with transaction.atomic():
         user = user_model.objects.get(id=user_id)

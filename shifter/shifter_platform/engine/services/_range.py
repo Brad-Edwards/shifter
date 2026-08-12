@@ -17,6 +17,7 @@ from shared.schemas.persistence import wrap_persisted_spec
 
 from ._common import EngineError, _persist_task_arn, _resolve_instance_host
 from ._range_backend_binding import (
+    assert_backend_supports_egress_none,
     backend_binding_fields,
     egress_binding_fields,
     require_workspace_binding,
@@ -173,6 +174,7 @@ def _persist_range_atomically(
     )
     workspace_fields = {"workspace_id": workspace_id} if workspace_id is not None else {}
     egress_fields = egress_binding_fields(egress_mode)
+    assert_backend_supports_egress_none(binding_fields.get("range_backend"), egress_fields["egress_mode"])
 
     with _atomic():
         request = interpret(request_spec)

@@ -203,6 +203,7 @@ def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
         subnetworks=service(),
         firewalls=service(),
         addresses=service(),
+        routers=service(),
         instances=service(),
         global_operations=op_service,
         region_operations=op_service,
@@ -1694,10 +1695,12 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     global_operations = object()
     region_operations = object()
     zone_operations = object()
+    router = object()
     compute_module.NetworksClient = mocker.Mock(return_value=network)
     compute_module.SubnetworksClient = mocker.Mock(return_value=subnetwork)
     compute_module.FirewallsClient = mocker.Mock(return_value=firewall)
     compute_module.AddressesClient = mocker.Mock(return_value=address)
+    compute_module.RoutersClient = mocker.Mock(return_value=router)
     compute_module.InstancesClient = mocker.Mock(return_value=instance)
     compute_module.GlobalOperationsClient = mocker.Mock(return_value=global_operations)
     compute_module.RegionOperationsClient = mocker.Mock(return_value=region_operations)
@@ -1716,6 +1719,7 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     assert clients.subnetworks is subnetwork
     assert clients.firewalls is firewall
     assert clients.addresses is address
+    assert clients.routers is router
     assert clients.instances is instance
     assert clients.global_operations is global_operations
     assert clients.region_operations is region_operations

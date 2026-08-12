@@ -101,6 +101,7 @@ def _clients(*, exists: bool = False, instance_insert_error: Exception | None = 
         subnetworks=service(),
         firewalls=service(),
         addresses=service(),
+        routers=service(),
         instances=service(instance_insert_error),
         global_operations=op_service,
         region_operations=op_service,

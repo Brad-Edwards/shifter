@@ -368,3 +368,24 @@ class TestParticipantAccess:
         instance = plan["instances"][0]
         assert instance["ssh_username"] == RESERVED_MANAGEMENT_LOGIN
         assert instance["participant_access_usernames"]["ssh"] != RESERVED_MANAGEMENT_LOGIN
+
+
+class TestRangeOwnedNat:
+    """A non-`none` range owns a Cloud Router+NAT; a `none` range has none (PLAT-238)."""
+
+    def test_status_quo_range_gets_a_router_nat_scoped_to_its_subnets(self):
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), egress_mode="status-quo"
+        )
+        router_nat = plan.get("router_nat")
+        assert router_nat is not None
+        assert router_nat["router_name"] == "shifter-r-7-nat-router"
+        expected = [subnet["self_link"] for subnet in plan["subnets"]]
+        assert router_nat["subnetwork_self_links"] == expected
+        assert expected  # the range has at least one subnet to NAT
+
+    def test_none_range_has_no_router_nat(self):
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), egress_mode="none"
+        )
+        assert "router_nat" not in plan

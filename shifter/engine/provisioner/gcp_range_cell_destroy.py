@@ -104,7 +104,22 @@ def _destroy_instances(plan: RangeCellPlan, clients: GCEClients, secret_ops: GCE
 
 
 def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None:
-    """Delete firewalls, subnets, and (when range-owned) the VPC itself."""
+    """Delete the range-owned router/NAT, firewalls, subnets, and (when range-owned) the VPC."""
+    # The range-owned Cloud Router (carrying the Cloud NAT) references this range's
+    # subnets, so it is torn down before them (PLAT-238). Absent for a `none` range.
+    router_nat = plan.get("router_nat")
+    if router_nat is not None:
+        _delete_resource(
+            plan,
+            clients,
+            clients.routers.get,
+            clients.routers.delete,
+            "region",
+            project=plan["project_id"],
+            region=plan["region"],
+            router=router_nat["router_name"],
+        )
+
     for firewall in reversed(plan["firewalls"]):
         _delete_resource(
             plan,

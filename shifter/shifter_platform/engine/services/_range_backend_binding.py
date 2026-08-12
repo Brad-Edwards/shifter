@@ -89,6 +89,35 @@ def verify_existing_workspace_binding(
         )
 
 
+# Range backends proven to realize the ADR-026 no-NAT ``none`` posture natively.
+# The AWS path carries no GCP ``range_backend`` (it is ``None``) and realizes
+# ``none`` through its Terraform route/NAT suppression; GCE realizes it by omitting
+# the range-owned Cloud NAT. GDC (ADR-030) is excluded. A backend outside this set
+# fails closed for a ``none`` launch rather than silently substituting its default
+# egress behavior (PLAT-238 backend egress-capability gate, ADR-026-R6).
+_EGRESS_NONE_CAPABLE_GCP_BACKENDS = frozenset({"gce"})
+
+
+def assert_backend_supports_egress_none(range_backend: str | None, egress_mode: str) -> None:
+    """Fail closed when a ``none`` range is bound to a backend without native no-NAT support.
+
+    Called in the Engine create transaction with the resolved backend binding, so a
+    zero-egress launch that landed on a backend that cannot prove no-NAT support is
+    rejected before dispatch rather than silently getting that backend's default
+    (possibly egress-capable) posture. ``None`` is the AWS path, which realizes
+    ``none`` via its Terraform route suppression and is always capable.
+    """
+    if egress_mode != RangeEgressMode.NONE.value:
+        return
+    if range_backend is None:
+        return
+    if range_backend not in _EGRESS_NONE_CAPABLE_GCP_BACKENDS:
+        raise EngineError(
+            f"Range backend {range_backend!r} does not support the zero-egress ('none') posture; "
+            "a backend must prove native no-NAT support before a none range is admitted (ADR-026-R6)"
+        )
+
+
 def egress_binding_fields(egress_mode: str) -> dict[str, str]:
     """Validate the pinned effective egress mode against the canonical vocabulary (PLAT-238).
 

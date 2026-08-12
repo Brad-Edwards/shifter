@@ -119,7 +119,9 @@ class TestAutoCleanupPassesVariables:
         with pytest.raises(RuntimeError, match="NGFW config failed"):
             run_range_terraform("up", "req-1")
 
-        mock_build_vars.assert_called_once_with("req-1", 80, 20, {"ngfw": False, "subnets": []}, backend=None)
+        mock_build_vars.assert_called_once_with(
+            "req-1", 80, 20, {"ngfw": False, "subnets": []}, backend=None, egress_mode="status-quo"
+        )
         mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars, backend=None)
 
     def test_cleanup_failure_logged_not_swallowed(self, monkeypatch, caplog):

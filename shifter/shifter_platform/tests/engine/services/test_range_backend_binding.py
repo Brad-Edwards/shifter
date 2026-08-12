@@ -149,3 +149,31 @@ class TestOperatorBackfill:
         range_id = str(legacy.id)
         with pytest.raises(CommandError):
             call_command("backfill_range_backend_binding", "--range-id", range_id, "--backend", "bogus")
+
+
+class TestBackendEgressNoneCapabilityGate:
+    """A `none` range fails closed on a backend without native no-NAT support (PLAT-238)."""
+
+    def test_gce_supports_none(self):
+        from engine.services._range_backend_binding import assert_backend_supports_egress_none
+
+        # No raise: GCE realizes `none` by omitting the range-owned Cloud NAT.
+        assert_backend_supports_egress_none("gce", "none")
+
+    def test_aws_path_none_backend_supports_none(self):
+        from engine.services._range_backend_binding import assert_backend_supports_egress_none
+
+        # The AWS path carries no GCP range_backend and realizes `none` via Terraform.
+        assert_backend_supports_egress_none(None, "none")
+
+    def test_gdc_rejects_none(self):
+        from engine.services._range_backend_binding import assert_backend_supports_egress_none
+
+        with pytest.raises(EngineError, match="does not support the zero-egress"):
+            assert_backend_supports_egress_none("gdc", "none")
+
+    def test_status_quo_is_never_gated(self):
+        from engine.services._range_backend_binding import assert_backend_supports_egress_none
+
+        # Only a `none` decision is gated; status-quo passes for any backend.
+        assert_backend_supports_egress_none("gdc", "status-quo")

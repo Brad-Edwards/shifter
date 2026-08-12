@@ -40,6 +40,7 @@ from gcp_range_cells import (
     _ensure_address,
     _ensure_firewall,
     _ensure_network,
+    _ensure_router_nat,
     _ensure_subnetwork,
     _host_public_key_from_instance,
 )
@@ -216,6 +217,7 @@ def _provision_raes_resources(
         _ensure_network(plan, runtime.clients)
     for subnet in plan["subnets"]:
         _ensure_subnetwork(plan, runtime.clients, subnet)
+    _ensure_router_nat(plan, runtime.clients)
     for firewall in plan["firewalls"]:
         _ensure_firewall(plan, runtime.clients, firewall)
     instance_outputs: list[ResourceDict] = []

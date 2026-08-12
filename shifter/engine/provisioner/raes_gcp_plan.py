@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ipaddress
 from collections.abc import Callable, Sequence
+from typing import cast
 
 from config import (
     GCERangeCellConfig,
@@ -35,12 +36,14 @@ from gcp_range_cell_naming import (
     _short_resource_name,
     _subnet_tag,
     _subnetwork_self_link,
+    range_router_nat_plan,
 )
 from gcp_range_cell_plan import _range_labels
 from gcp_range_cell_types import (
     FirewallPlan,
     InstancePlan,
     RangeCellPlan,
+    RouterNatPlan,
     SubnetPlan,
 )
 from raes_access import RealizedAccessBinding
@@ -110,7 +113,7 @@ def build_raes_range_cell_plan(
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
 
-    return {
+    plan: RangeCellPlan = {
         "project_id": resolved_config.project_id,
         "region": resolved_config.region,
         "zone": resolved_config.zone,
@@ -131,6 +134,14 @@ def build_raes_range_cell_plan(
             egress_mode,
         ),
     }
+    # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
+    # a `none` (zero-egress) range omits it so its subnets carry no NAT path.
+    if (egress_mode or "status-quo").strip().lower() != "none":
+        plan["router_nat"] = cast(
+            RouterNatPlan,
+            range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans]),
+        )
+    return plan
 
 
 def _all_firewalls(
