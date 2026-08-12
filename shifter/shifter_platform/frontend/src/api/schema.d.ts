@@ -5131,12 +5131,16 @@ export interface operations {
     audit_list: {
         parameters: {
             query?: {
-                /** @description Which field to use when ordering the results. */
-                ordering?: string;
+                action?: string;
+                actor_id?: number;
+                actor_type?: string;
+                entity_id?: number;
+                entity_type?: string;
+                from_date?: string;
                 /** @description A page number within the paginated result set. */
                 page?: number;
-                /** @description A search term. */
-                search?: string;
+                request_id?: string;
+                to_date?: string;
             };
             header?: never;
             path?: never;
