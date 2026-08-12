@@ -64,6 +64,7 @@ def test_raes_launch_binds_cms_rows_and_carries_the_scope_to_engine(user, native
         backend_admission=None,
         bindings=None,
         workspace_id=None,
+        egress_mode=None,
     ):
         captured["workspace_id"] = workspace_id
         return RaesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")

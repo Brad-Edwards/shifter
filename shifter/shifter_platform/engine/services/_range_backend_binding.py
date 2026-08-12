@@ -11,6 +11,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from installation.range_egress import RangeEgressMode
+
 from shared.range_instantiation_policy import (
     InstantiationPurpose,
     evaluate_gcp_backend_admission,
@@ -84,6 +86,46 @@ def verify_existing_workspace_binding(
             f"Range workspace binding conflict for request {request_id}: persisted "
             f"workspace {existing_range.workspace_id} differs from requested workspace "
             f"{workspace_id} (ADR-046-R9 conflict; a scoped range is never silently reused)"
+        )
+
+
+def egress_binding_fields(egress_mode: str) -> dict[str, str]:
+    """Validate the pinned effective egress mode against the canonical vocabulary (PLAT-238).
+
+    The mode is resolved and authorized by the CMS launch-admission seam under the
+    workspace mutex (ADR-017-R5); Engine re-validates it is a closed
+    ``RangeEgressMode`` value before persisting, so a fabricated or malformed mode
+    from a refactored in-process caller can never be pinned on a range. Engine never
+    resolves the workspace policy itself -- it only persists the value CMS decided.
+    """
+    try:
+        mode = RangeEgressMode(egress_mode)
+    except ValueError as exc:
+        raise EngineError(f"Range egress mode is not a closed policy value: {exc}") from exc
+    return {"egress_mode": mode.value}
+
+
+def verify_existing_egress_binding(
+    existing_range: Range,
+    request_id: UUID,
+    egress_mode: str,
+) -> None:
+    """Reject an idempotent create replay whose pinned egress mode differs (ADR-017-R5).
+
+    Engine create is idempotent on ``request_id``; a replay must carry the same
+    effective egress posture the range was pinned with. A replay that names a
+    *different* mode is a decision conflict -- silently reusing the first range would
+    let a re-resolved (and possibly weaker) posture attach to an already-provisioned
+    range -- so it is refused rather than reused, exactly as a conflicting
+    backend/workspace replay is. The pinned mode is authoritative; the deployment
+    baseline is never re-consulted here (anti-pattern: deployment ``RANGE_EGRESS_MODE``
+    must not override a pinned decision).
+    """
+    if existing_range.egress_mode != egress_mode:
+        raise EngineError(
+            f"Range egress binding conflict for request {request_id}: persisted "
+            f"{existing_range.egress_mode!r} differs from requested {egress_mode!r} "
+            f"(ADR-017-R5 conflict; a pinned egress decision is never silently re-resolved)"
         )
 
 

@@ -400,3 +400,113 @@ def test_personal_workspaces_reject_every_lifecycle_mutation():
         services.archive_workspace(user, personal.uuid, audit=audit)
     with pytest.raises(services.WorkspaceLifecycleError):
         services.transfer_workspace_ownership(user, personal.uuid, user.pk, audit=audit)
+
+
+# ---------------------------------------------------------------------------
+# set_workspace_egress_policy (PLAT-238, #1945)
+# ---------------------------------------------------------------------------
+
+
+def test_workspace_defaults_to_status_quo_egress_policy():
+    organization = _org()
+    admin = _org_admin(organization)
+
+    created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
+
+    assert created.egress_policy == "status-quo"
+    assert Workspace.objects.get(uuid=created.uuid).egress_policy == "status-quo"
+
+
+def test_set_egress_policy_to_none_for_owner_persists_and_projects():
+    organization = _org()
+    admin = _org_admin(organization)
+    created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
+
+    result = services.set_workspace_egress_policy(admin, created.uuid, "none", audit=_audit(admin))
+
+    assert result.egress_policy == "none"
+    assert Workspace.objects.get(uuid=created.uuid).egress_policy == "none"
+
+
+def test_set_egress_policy_allows_a_workspace_admin():
+    organization = _org()
+    admin = _org_admin(organization)
+    created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
+    workspace = Workspace.objects.get(uuid=created.uuid)
+    ws_admin = _user("ws-admin")
+    _member(workspace, ws_admin, WorkspaceRole.ADMIN.value)
+
+    result = services.set_workspace_egress_policy(ws_admin, created.uuid, "none", audit=_audit(ws_admin))
+
+    assert result.egress_policy == "none"
+
+
+def test_set_egress_policy_denies_a_bare_member():
+    organization = _org()
+    admin = _org_admin(organization)
+    created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
+    workspace = Workspace.objects.get(uuid=created.uuid)
+    member = _user("member")
+    _member(workspace, member, WorkspaceRole.MEMBER.value)
+    audit = _audit(member)
+
+    with pytest.raises(services.WorkspaceAuthorizationError):
+        services.set_workspace_egress_policy(member, created.uuid, "none", audit=audit)
+    assert Workspace.objects.get(uuid=created.uuid).egress_policy == "status-quo"
+
+
+def test_set_egress_policy_records_old_and_new_mode_audit():
+    organization = _org()
+    admin = _org_admin(organization)
+    created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
+
+    services.set_workspace_egress_policy(admin, created.uuid, "none", audit=_audit(admin))
+
+    event = AuditLog.objects.get(entity_type="workspace", action="update", entity_id__isnull=False)
+    assert event.previous_state.get("egress_policy") == "status-quo"
+    assert event.new_state.get("egress_policy") == "none"
+
+
+def test_set_egress_policy_no_op_writes_no_audit_event():
+    organization = _org()
+    admin = _org_admin(organization)
+    created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
+
+    services.set_workspace_egress_policy(admin, created.uuid, "status-quo", audit=_audit(admin))
+
+    assert not AuditLog.objects.filter(entity_type="workspace", action="update").exists()
+
+
+def test_set_egress_policy_rejects_a_deployment_only_mode():
+    organization = _org()
+    admin = _org_admin(organization)
+    created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
+    audit = _audit(admin)
+
+    # deny-all / allowlist are deployment-baseline-only, never a workspace selection.
+    with pytest.raises(services.WorkspaceLifecycleError) as exc:
+        services.set_workspace_egress_policy(admin, created.uuid, "deny-all", audit=audit)
+    assert exc.value.code == "egress_policy_invalid"
+    assert Workspace.objects.get(uuid=created.uuid).egress_policy == "status-quo"
+
+
+def test_set_egress_policy_rejects_an_unknown_value():
+    organization = _org()
+    admin = _org_admin(organization)
+    created = services.create_workspace(admin, organization.uuid, "Team", audit=_audit(admin))
+    audit = _audit(admin)
+
+    with pytest.raises(services.WorkspaceLifecycleError) as exc:
+        services.set_workspace_egress_policy(admin, created.uuid, "bogus", audit=audit)
+    assert exc.value.code == "egress_policy_invalid"
+
+
+def test_set_egress_policy_is_allowed_on_a_personal_workspace():
+    user = _user("personal-egress-owner")
+    authorization = services.resolve_personal_workspace(user)
+    personal = Workspace.objects.get(pk=authorization.workspace_id)
+
+    result = services.set_workspace_egress_policy(user, personal.uuid, "none", audit=_audit(user))
+
+    assert result.egress_policy == "none"
+    assert Workspace.objects.get(pk=personal.pk).egress_policy == "none"

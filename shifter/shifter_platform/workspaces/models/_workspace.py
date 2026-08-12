@@ -4,6 +4,18 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from installation.range_egress import RangeEgressMode
+
+#: The contextual subset of ``installation.range_egress.RangeEgressMode`` a workspace
+#: administrator may select (ADR-017-R5, PLAT-238). ``status-quo`` inherits the
+#: deployment baseline; ``none`` requests ADR-026 zero egress. The other canonical
+#: modes (``deny-all``, ``allowlist``) are deployment-baseline-only and are never a
+#: workspace selection. The pinned *effective* range value still uses the full enum.
+EGRESS_POLICY_CHOICES = (
+    (RangeEgressMode.STATUS_QUO.value, "Inherit deployment baseline"),
+    (RangeEgressMode.NONE.value, "Zero egress (no outbound NAT path)"),
+)
+WORKSPACE_EGRESS_POLICY_VALUES = frozenset(value for value, _ in EGRESS_POLICY_CHOICES)
 
 
 class Workspace(models.Model):
@@ -62,6 +74,18 @@ class Workspace(models.Model):
             "rehomes ranges bound to the workspace (#1940, PLAT-233)."
         ),
     )
+    egress_policy = models.CharField(
+        max_length=16,
+        choices=EGRESS_POLICY_CHOICES,
+        default=RangeEgressMode.STATUS_QUO.value,
+        help_text=(
+            "Workspace network egress selector (PLAT-238). The compatibility default "
+            "'status-quo' inherits the deployment baseline; 'none' requests the ADR-026 "
+            "zero-egress (no outbound NAT path) posture for newly provisioned ranges. This "
+            "is the contextual subset of the canonical installation.range_egress vocabulary; "
+            "the workspace never stores CIDRs or provider configuration (ADR-017-R5)."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -76,6 +100,10 @@ class Workspace(models.Model):
             models.UniqueConstraint(
                 fields=["organization", "name"],
                 name="uniq_workspace_name_per_organization",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(egress_policy__in=WORKSPACE_EGRESS_POLICY_VALUES),
+                name="workspace_egress_policy_closed_vocabulary",
             ),
         ]
 

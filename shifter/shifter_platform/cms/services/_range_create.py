@@ -38,6 +38,7 @@ from cms.services._range_remote_access import _build_remote_access_capability
 from cms.services._range_workspace import (
     admit_workspace_launch,
     reauthorize_launch_workspace_locked,
+    resolve_effective_egress_mode_locked,
     resolve_launch_workspace,
 )
 from shared.audit import (
@@ -74,13 +75,16 @@ def _engine_create_range_call(
     backend_admission: BackendAdmission | None,
     remote_access_capability: dict[str, object] | None,
     workspace_id: int,
+    egress_mode: str,
 ) -> RangeRef:
     """Late-bound call to ``cms.services.engine_create_range`` so test patches apply.
 
     ``backend_admission`` is the trusted #1348 admission result carried beside the
     RequestSpec (never inside it); the Engine persists the backend/purpose binding
     from it at create (#1666). ``workspace_id`` is the trusted #1325 tenancy
-    scope and travels the same way (ADR-046-R3).
+    scope and travels the same way (ADR-046-R3). ``egress_mode`` is the effective
+    range egress posture resolved under the workspace lock (PLAT-238, ADR-017-R5),
+    pinned on the Engine range at create beside the spec.
     """
     from cms import services as _cs
 
@@ -89,12 +93,14 @@ def _engine_create_range_call(
             request_spec,
             backend_admission=backend_admission,
             workspace_id=workspace_id,
+            egress_mode=egress_mode,
         )
     return _cs.engine_create_range(
         request_spec,
         backend_admission=backend_admission,
         remote_access_capability=remote_access_capability,
         workspace_id=workspace_id,
+        egress_mode=egress_mode,
     )
 
 
@@ -166,7 +172,7 @@ def _reserve_active_range_slot(
     persist_instance: Callable[[Request], RangeInstance],
     workspace_id: int,
     request_id: UUID | None = None,
-) -> tuple[UUID, Request, RangeInstance]:
+) -> tuple[UUID, Request, RangeInstance, str]:
     """Atomically reserve the single active-range slot for ``(user, range_source)``.
 
     One transaction reauthorizes the workspace scope under the workspace mutex
@@ -183,6 +189,12 @@ def _reserve_active_range_slot(
     ``request_id`` is the caller's pre-minted correlation key (so workspace
     admission and reservation share one id); it is minted here when omitted.
 
+    The effective range egress mode (PLAT-238, ADR-017-R5) is resolved here, under
+    the same workspace row lock used for launch reauthorization, so the pinned
+    decision reflects the workspace policy as of the reservation rather than a racy
+    pre-reservation read. It is returned to the caller to pin on the Engine range
+    and deliver to the provisioner.
+
     Cloud/engine dispatch MUST happen outside this call — never hold the
     transaction open across an Engine/RAES/broker call (#307 preflight).
     """
@@ -193,6 +205,7 @@ def _reserve_active_range_slot(
     try:
         with transaction.atomic():
             reauthorize_launch_workspace_locked(user, workspace_id)
+            egress_mode = resolve_effective_egress_mode_locked(workspace_id)
             cms_request = _create_cms_request(user, workspace_id, request_id)
             range_instance = persist_instance(cms_request)
             _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
@@ -205,7 +218,7 @@ def _reserve_active_range_slot(
             )
             raise CMSError(_ACTIVE_RANGE_MESSAGE) from exc
         raise
-    return request_id, cms_request, range_instance
+    return request_id, cms_request, range_instance, egress_mode
 
 
 def _lookup_agents_by_os(user: User, agents_by_os: dict[str, int]) -> dict[str, AgentConfig]:
@@ -239,6 +252,7 @@ def _dispatch_engine_range(
     backend_admission: BackendAdmission | None,
     remote_access_capability: dict[str, object] | None,
     workspace_id: int,
+    egress_mode: str,
 ) -> None:
     """Dispatch range provisioning to engine for an already-owned CMS request.
 
@@ -247,6 +261,8 @@ def _dispatch_engine_range(
     ``workspace_id`` is the trusted #1325 tenancy scope, carried the same way
     (beside, never inside, the spec) so Engine persists it in the range's create
     transaction without CMS reaching into Engine's models (ADR-046-R3).
+    ``egress_mode`` is the effective egress posture resolved under the workspace
+    lock (PLAT-238, ADR-017-R5), pinned on the range the same way.
     """
     from shared.schemas import RequestSpec
 
@@ -255,7 +271,7 @@ def _dispatch_engine_range(
         user_id=user.id,
         items=[range_spec],
     )
-    _engine_create_range_call(request_spec, backend_admission, remote_access_capability, workspace_id)
+    _engine_create_range_call(request_spec, backend_admission, remote_access_capability, workspace_id, egress_mode)
 
 
 def _set_range_instance_status(range_instance: RangeInstance, status: ResourceStatus) -> None:
@@ -443,7 +459,7 @@ def _create_range_impl(
             instantiation_purpose=instantiation_purpose,
             correlation_key=request_id,
         )
-        _request_id, _cms_request, range_instance = _reserve_active_range_slot(
+        _request_id, _cms_request, range_instance, egress_mode = _reserve_active_range_slot(
             user, range_source, _persist, workspace_id, request_id
         )
         try:
@@ -454,6 +470,7 @@ def _create_range_impl(
                 backend_admission,
                 remote_access_capability,
                 workspace_id,
+                egress_mode,
             )
         except Exception:
             _set_range_instance_status(range_instance, ResourceStatus.FAILED)

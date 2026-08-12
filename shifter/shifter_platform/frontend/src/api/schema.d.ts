@@ -2428,6 +2428,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_uuid}/egress-policy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Set the network egress policy of a workspace (owner/admin, PLAT-238, #1945). */
+        put: operations["api_v1_workspace_set_egress_policy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_uuid}/membership/": {
         parameters: {
             query?: never;
@@ -3100,6 +3117,12 @@ export interface components {
         DeleteSuccess: {
             readonly success: boolean;
         };
+        /**
+         * @description * `status-quo` - Inherit deployment baseline
+         *     * `none` - Zero egress (no outbound NAT path)
+         * @enum {string}
+         */
+        EgressPolicyEnum: "status-quo" | "none";
         /** @description Per-event email-template override projection. */
         EmailTemplateResponse: {
             readonly id: string;
@@ -4629,6 +4652,17 @@ export interface components {
         SetActiveRequest: {
             is_active: boolean;
         };
+        /**
+         * @description Set-egress-policy command: one closed choice from the workspace subset (PLAT-238).
+         *
+         *     The workspace-selectable vocabulary is the contextual subset of the canonical
+         *     ``installation.range_egress.RangeEgressMode`` (``status-quo`` / ``none``). The
+         *     serializer owns HTTP shape and rejects unknown fields; ``workspaces.services``
+         *     re-validates against the canonical enum and owns authority and persistence.
+         */
+        SetWorkspaceEgressPolicy: {
+            egress_policy: components["schemas"]["EgressPolicyEnum"];
+        };
         /** @description Organizer spare-pool top-up request body (``count`` bounded non-negative). */
         SparePoolRequest: {
             count: number;
@@ -4804,6 +4838,7 @@ export interface components {
             readonly is_archived: boolean;
             /** Format: date-time */
             readonly archived_at: string | null;
+            readonly egress_policy: components["schemas"]["EgressPolicyEnum"];
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
@@ -11850,6 +11885,58 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_set_egress_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceEgressPolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["SetWorkspaceEgressPolicy"];
+                "multipart/form-data": components["schemas"]["SetWorkspaceEgressPolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

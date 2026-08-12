@@ -6,6 +6,7 @@ from workspaces.api.lifecycle_views import (
     WorkspaceArchiveView,
     WorkspaceCollectionView,
     WorkspaceDetailView,
+    WorkspaceEgressPolicyView,
     WorkspaceRestoreView,
     WorkspaceTransferOwnershipView,
 )
@@ -37,6 +38,11 @@ urlpatterns = [
     path("<uuid:workspace_uuid>/", WorkspaceDetailView.as_view(), name="workspace-detail"),
     path("<uuid:workspace_uuid>/archive/", WorkspaceArchiveView.as_view(), name="workspace-archive"),
     path("<uuid:workspace_uuid>/restore/", WorkspaceRestoreView.as_view(), name="workspace-restore"),
+    path(
+        "<uuid:workspace_uuid>/egress-policy/",
+        WorkspaceEgressPolicyView.as_view(),
+        name="workspace-egress-policy",
+    ),
     path("<uuid:workspace_uuid>/transfer/", WorkspaceTransferOwnershipView.as_view(), name="workspace-transfer"),
     path("<uuid:workspace_uuid>/membership/", SelfMembershipView.as_view(), name="membership-self"),
     path("<uuid:workspace_uuid>/memberships/", MembershipListAddView.as_view(), name="memberships"),

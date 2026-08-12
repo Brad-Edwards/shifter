@@ -33,7 +33,9 @@ from ._lifecycle import (
     list_workspaces,
     rename_workspace,
     restore_workspace,
+    set_workspace_egress_policy,
     transfer_workspace_ownership,
+    workspace_egress_policy,
 )
 from ._memberships import (
     MembershipAuditContext,
@@ -99,6 +101,8 @@ __all__ = [
     "resolve_administrable_organization",
     "resolve_personal_workspace",
     "restore_workspace",
+    "set_workspace_egress_policy",
     "transfer_workspace_ownership",
     "update_organization_profile",
+    "workspace_egress_policy",
 ]

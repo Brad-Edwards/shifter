@@ -139,3 +139,68 @@ def test_create_raes_range_rejects_a_replay_that_names_a_different_workspace(use
         create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=replay_plan, workspace_id=22)
 
     assert Range.objects.get(request__request_id=request_id).workspace_id == 11
+
+
+# ---------------------------------------------------------------------------
+# Pinned effective egress mode (PLAT-238, ADR-017-R5)
+# ---------------------------------------------------------------------------
+
+
+def test_create_range_pins_the_effective_egress_mode(user):
+    ref = create_range(_spec(user), workspace_id=4242, egress_mode="none")
+
+    assert Range.objects.get(request__request_id=ref.request_id).egress_mode == "none"
+
+
+def test_create_range_defaults_egress_mode_to_status_quo(user):
+    ref = create_range(_spec(user), workspace_id=4242)
+
+    assert Range.objects.get(request__request_id=ref.request_id).egress_mode == "status-quo"
+
+
+def test_create_range_rejects_a_non_closed_egress_mode_and_persists_nothing(user):
+    spec = _spec(user)
+
+    with pytest.raises(EngineError):
+        create_range(spec, workspace_id=4242, egress_mode="wide-open")
+
+    assert not Range.objects.filter(request__request_id=spec.request_id).exists()
+
+
+def test_create_range_rejects_a_replay_that_names_a_different_egress_mode(user):
+    """A pinned egress decision is never silently re-resolved on replay."""
+    spec = _spec(user)
+    create_range(spec, workspace_id=101, egress_mode="none")
+
+    with pytest.raises(EngineError):
+        create_range(spec, workspace_id=101, egress_mode="status-quo")
+
+    assert Range.objects.get(request__request_id=spec.request_id).egress_mode == "none"
+
+
+def test_create_raes_range_pins_the_effective_egress_mode(user):
+    request_id = uuid4()
+
+    create_raes_range(
+        request_id=request_id, user_id=user.id, compiled_plan=_raes_plan(), workspace_id=7373, egress_mode="none"
+    )
+
+    assert Range.objects.get(request__request_id=request_id).egress_mode == "none"
+
+
+def test_create_raes_range_rejects_a_replay_that_names_a_different_egress_mode(user):
+    request_id = uuid4()
+    create_raes_range(
+        request_id=request_id, user_id=user.id, compiled_plan=_raes_plan(), workspace_id=11, egress_mode="none"
+    )
+
+    with pytest.raises(EngineError):
+        create_raes_range(
+            request_id=request_id,
+            user_id=user.id,
+            compiled_plan=_raes_plan(),
+            workspace_id=11,
+            egress_mode="status-quo",
+        )
+
+    assert Range.objects.get(request__request_id=request_id).egress_mode == "none"

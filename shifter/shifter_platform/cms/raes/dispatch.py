@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from installation.range_egress import RangeEgressMode
 
 from engine.services import RangeBindings, create_raes_range
 from shared.raes.dispatch_port import ShifterDispatchResult
@@ -77,6 +78,11 @@ class CmsRaesDispatchPort:
     workspace_id: int
     backend_admission: BackendAdmission | None = None
     pack_root: Path | None = None
+    # Effective range egress posture resolved under the workspace mutex by the CMS
+    # launch-admission seam (PLAT-238, ADR-017-R5). Rides beside the plan like
+    # ``workspace_id``; the Engine pins it on the range at create. Defaults to the
+    # compatibility ``status-quo`` for constructors that predate the field.
+    egress_mode: str = RangeEgressMode.STATUS_QUO.value
 
     def realize(
         self,
@@ -96,6 +102,7 @@ class CmsRaesDispatchPort:
                 artifact=artifact_bindings,
             ),
             workspace_id=self.workspace_id,
+            egress_mode=self.egress_mode,
         )
         return ShifterDispatchResult(
             request_id=ref.request_id, accepted=ref.accepted, status=ref.status, range_id=ref.range_id

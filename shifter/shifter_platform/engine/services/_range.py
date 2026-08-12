@@ -7,6 +7,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from installation.range_egress import RangeEgressMode
+
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
 from shared.range_cells import build_scenario_artifact
 from shared.remote_access import parse_openvpn_capability
@@ -16,8 +18,10 @@ from shared.schemas.persistence import wrap_persisted_spec
 from ._common import EngineError, _persist_task_arn, _resolve_instance_host
 from ._range_backend_binding import (
     backend_binding_fields,
+    egress_binding_fields,
     require_workspace_binding,
     verify_existing_binding,
+    verify_existing_egress_binding,
     verify_existing_workspace_binding,
 )
 from ._range_by_request import cancel_range_by_request, destroy_range_by_request
@@ -54,6 +58,7 @@ def create_range(
     request_spec: RequestSpec,
     *,
     workspace_id: int,
+    egress_mode: str = RangeEgressMode.STATUS_QUO.value,
     backend_admission: BackendAdmission | None = None,
     remote_access_capability: dict[str, object] | None = None,
 ) -> RangeRef:
@@ -111,6 +116,7 @@ def create_range(
         logger.info("create_range: reusing existing range request_id=%s", request_spec.request_id)
         verify_existing_binding(existing_range, request_spec.request_id, backend_admission)
         verify_existing_workspace_binding(existing_range, request_spec.request_id, workspace_id)
+        verify_existing_egress_binding(existing_range, request_spec.request_id, egress_mode)
         if existing_range.remote_access_capability != normalized_remote_access:
             raise EngineError("Existing range remote-access capability does not match the create request")
         return _range_ref_from_range(existing_range, request_spec, range_spec)
@@ -123,6 +129,7 @@ def create_range(
         backend_admission,
         normalized_remote_access,
         workspace_id,
+        egress_mode,
     )
 
     try:
@@ -147,6 +154,7 @@ def _persist_range_atomically(
     backend_admission: BackendAdmission | None = None,
     remote_access_capability: dict[str, object] | None = None,
     workspace_id: int | None = None,
+    egress_mode: str = RangeEgressMode.STATUS_QUO.value,
 ) -> Range:
     """Run the interpret + Range + Subnet inserts under a single transaction.
 
@@ -164,6 +172,7 @@ def _persist_range_atomically(
         {"remote_access_capability": remote_access_capability} if remote_access_capability is not None else {}
     )
     workspace_fields = {"workspace_id": workspace_id} if workspace_id is not None else {}
+    egress_fields = egress_binding_fields(egress_mode)
 
     with _atomic():
         request = interpret(request_spec)
@@ -196,6 +205,7 @@ def _persist_range_atomically(
                 **remote_access_fields,
                 **binding_fields,
                 **workspace_fields,
+                **egress_fields,
             )
         else:
             range_obj = range_model.objects.create(
@@ -209,6 +219,7 @@ def _persist_range_atomically(
                 **remote_access_fields,
                 **binding_fields,
                 **workspace_fields,
+                **egress_fields,
             )
 
         logger.info(

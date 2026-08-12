@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.db import models, transaction
+from installation.range_egress import RangeEgressMode
 
 from shared.schemas.persistence import unwrap_persisted_spec
 
@@ -13,6 +14,12 @@ from ._request import Request
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
+
+#: Django ``choices`` for the pinned effective range egress mode, built from the
+#: canonical ``installation.range_egress.RangeEgressMode`` StrEnum (which is not a
+#: Django ``TextChoices`` and so exposes no ``.choices``). Kept in lockstep with
+#: the enum so a new canonical mode is a one-line update here.
+RANGE_EGRESS_MODE_CHOICES = tuple((mode.value, mode.value) for mode in RangeEgressMode)
 
 
 class Range(models.Model):
@@ -56,6 +63,19 @@ class Range(models.Model):
     # cross-layer FK (ADR-001-R2), supplied by the trusted CMS launch path. Non-null
     # with no default -- unlike the backend binding below, NULL is not a sentinel.
     workspace_id = models.IntegerField(db_index=True, help_text="Workspace scope (soft reference; ADR-046).")
+    # Effective network egress posture pinned at create from the workspace launch
+    # admission (PLAT-238, #1945, ADR-017-R5). Immutable per range: resolved under
+    # the workspace mutex, verified on idempotent replay, and delivered in the
+    # operation-generation input so the provisioner never reads workspace state.
+    # ``none`` is ADR-026 zero egress (no outbound NAT path); ``status-quo`` inherits
+    # the deployment baseline. Stored as the canonical installation.range_egress
+    # vocabulary; the provisioner is the sole realizer.
+    egress_mode = models.CharField(
+        max_length=16,
+        choices=RANGE_EGRESS_MODE_CHOICES,
+        default=RangeEgressMode.STATUS_QUO.value,
+        help_text="Effective range egress posture pinned at create (PLAT-238; ADR-017-R5/ADR-026).",
+    )
     ngfw_instance = models.ForeignKey(
         "Instance",
         on_delete=models.SET_NULL,

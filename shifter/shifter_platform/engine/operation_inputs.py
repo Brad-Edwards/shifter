@@ -193,6 +193,7 @@ def _raes_input_payload(target: Range, request: Request) -> dict[str, object]:
         range_backend=_resolved_range_backend(target, request),
         instantiation_purpose=target.instantiation_purpose or None,
         legacy_range_id=target.id,
+        egress_mode=target.egress_mode,
     )
 
 
@@ -210,5 +211,11 @@ def operation_input_payload(target: Range | Instance, resource: str, request: Re
         return {
             "range_spec": target.range_config or {},
             "legacy_range_backend": _resolved_range_backend(target, request),
+            # Effective egress posture pinned at create (PLAT-238, ADR-017-R5).
+            # Delivered per-range so the provisioner realizes it from the operation
+            # input, never from the deployment-owned RANGE_EGRESS_MODE env once a
+            # decision is pinned. Always present on a new generation; the provisioner
+            # parser fails closed on absence rather than defaulting (ADR-043 window).
+            "egress_mode": target.egress_mode,
         }
     return {"role": str(target.role), "os_type": str(target.os_type)}

@@ -28,6 +28,7 @@ from workspaces import services
 from workspaces.api.serializers import (
     CreateWorkspaceSerializer,
     RenameWorkspaceSerializer,
+    SetWorkspaceEgressPolicySerializer,
     TransferWorkspaceOwnershipSerializer,
     WorkspaceSerializer,
 )
@@ -224,6 +225,33 @@ class WorkspaceRestoreView(_WorkspaceLifecycleAPIView):
             workspace = services.restore_workspace(
                 request.user,
                 workspace_uuid,
+                audit=_workspace_lifecycle_audit(request),
+            )
+        except (services.WorkspaceAuthorizationError, services.WorkspaceLifecycleError) as exc:
+            _raise_as_response(exc, request)
+        return Response(WorkspaceSerializer(workspace).data)
+
+
+class WorkspaceEgressPolicyView(_WorkspaceLifecycleAPIView):
+    """Set the network egress policy of a workspace (owner/admin, PLAT-238, #1945)."""
+
+    @extend_schema(
+        request=SetWorkspaceEgressPolicySerializer,
+        responses={
+            200: WorkspaceSerializer,
+            400: ApiErrorSerializer,
+            403: ApiErrorSerializer,
+        },
+        operation_id="api_v1_workspace_set_egress_policy",
+    )
+    def put(self, request: Request, workspace_uuid: UUID) -> Response:
+        command = SetWorkspaceEgressPolicySerializer(data=request.data)
+        command.is_valid(raise_exception=True)
+        try:
+            workspace = services.set_workspace_egress_policy(
+                request.user,
+                workspace_uuid,
+                command.validated_data["egress_policy"],
                 audit=_workspace_lifecycle_audit(request),
             )
         except (services.WorkspaceAuthorizationError, services.WorkspaceLifecycleError) as exc:

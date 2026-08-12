@@ -2,6 +2,7 @@
 
 from rest_framework import serializers
 
+from workspaces.models import EGRESS_POLICY_CHOICES
 from workspaces.roles import WorkspaceRole
 
 
@@ -105,6 +106,7 @@ class WorkspaceSerializer(serializers.Serializer):
     is_personal = serializers.BooleanField(read_only=True)
     is_archived = serializers.BooleanField(read_only=True)
     archived_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    egress_policy = serializers.ChoiceField(read_only=True, choices=EGRESS_POLICY_CHOICES)
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
 
@@ -124,6 +126,25 @@ class RenameWorkspaceSerializer(serializers.Serializer):
     """Rename-workspace command (PATCH mask; a single writable field)."""
 
     name = serializers.CharField(max_length=200, allow_blank=False, trim_whitespace=True)
+
+
+class SetWorkspaceEgressPolicySerializer(serializers.Serializer):
+    """Set-egress-policy command: one closed choice from the workspace subset (PLAT-238).
+
+    The workspace-selectable vocabulary is the contextual subset of the canonical
+    ``installation.range_egress.RangeEgressMode`` (``status-quo`` / ``none``). The
+    serializer owns HTTP shape and rejects unknown fields; ``workspaces.services``
+    re-validates against the canonical enum and owns authority and persistence.
+    """
+
+    egress_policy = serializers.ChoiceField(choices=EGRESS_POLICY_CHOICES)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Reject unknown fields so a stale or hostile client cannot smuggle keys."""
+        unknown = set(self.initial_data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError(dict.fromkeys(sorted(unknown), "Unknown field."))
+        return attrs
 
 
 class TransferWorkspaceOwnershipSerializer(serializers.Serializer):
