@@ -194,11 +194,12 @@ def test_create_raes_range_rejects_a_replay_that_names_a_different_egress_mode(u
         request_id=request_id, user_id=user.id, compiled_plan=_raes_plan(), workspace_id=11, egress_mode="none"
     )
 
+    replay_plan = _raes_plan()
     with pytest.raises(EngineError):
         create_raes_range(
             request_id=request_id,
             user_id=user.id,
-            compiled_plan=_raes_plan(),
+            compiled_plan=replay_plan,
             workspace_id=11,
             egress_mode="status-quo",
         )

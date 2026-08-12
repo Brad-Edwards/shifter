@@ -182,11 +182,12 @@ class TestBackendEgressNoneCapabilityGate:
         """The capability gate must fire where it is wired, not only as a unit call."""
         admission = evaluate_gcp_backend_admission("gdc", None, InstantiationPurpose.NON_USER_DEMO)
         request_id = uuid4()
+        plan = make_compiled_plan()
         with pytest.raises(EngineError, match="does not support the zero-egress"):
             _create_raes_range(
                 request_id=request_id,
                 user_id=user.id,
-                compiled_plan=make_compiled_plan(),
+                compiled_plan=plan,
                 backend_admission=admission,
                 egress_mode="none",
             )

@@ -54,11 +54,9 @@ class Range(models.Model):
         help_text="User ID from CMS (may differ from Django user.id)",
     )
     # Soft reference to workspaces.Workspace (ADR-046-R3, #1325): a scalar, not a
-    # cross-layer FK (ADR-001-R2), supplied by the trusted CMS launch path. Non-null
-    # with no default -- unlike the backend binding below, NULL is not a sentinel.
+    # cross-layer FK (ADR-001-R2) from the trusted CMS launch path; non-null, no default.
     workspace_id = models.IntegerField(db_index=True, help_text="Workspace scope (soft reference; ADR-046).")
-    # Effective egress posture pinned at create under the workspace mutex,
-    # replay-verified, delivered in the operation input (PLAT-238, ADR-017-R5/ADR-026).
+    # Effective egress posture pinned at create under the workspace mutex, replay-verified (PLAT-238).
     egress_mode = models.CharField(
         max_length=16,
         choices=RANGE_EGRESS_MODE_CHOICES,
