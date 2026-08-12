@@ -178,12 +178,15 @@ def identity_platform_client_config() -> dict[str, Any]:
     if not auth_domain and project_id:
         auth_domain = f"{project_id}.firebaseapp.com"
 
+    # The approved email domain and per-address allow-list are policy/PII
+    # projections and are deliberately NOT exposed to the anonymous browser
+    # (issue #1920). Email admission stays authoritative server-side in
+    # ``is_allowed_identity_email``/``IdentityPlatformBackend`` and at
+    # registration in the provider ``beforeCreate`` hook.
     return {
         "apiKey": _identity_api_key(),
         "authDomain": auth_domain,
         "projectId": project_id,
-        "allowedEmailDomain": _allowed_email_domain(),
-        "allowedEmails": sorted(_allowed_emails()),
         "issuer": getattr(settings, "IDENTITY_PLATFORM_ISSUER", "Shifter"),
         "totpDisplayName": getattr(settings, "IDENTITY_PLATFORM_TOTP_DISPLAY_NAME", "Shifter Authenticator"),
     }
