@@ -34,6 +34,7 @@ from django.utils import timezone
 
 from ._base import CTFBaseModel, SoftDeleteManager
 from .challenge import CTFChallenge
+from .content_hydration import CTFContentHydrationReceipt
 from .event import CTFEvent, CTFEventPage, CTFEventStaff
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
@@ -59,6 +60,7 @@ __all__ = [
     "CTFChallengePrerequisite",
     "CTFChallengeRating",
     "CTFChallengeTag",
+    "CTFContentHydrationReceipt",
     "CTFEmailTemplate",
     "CTFEvent",
     "CTFEventPage",

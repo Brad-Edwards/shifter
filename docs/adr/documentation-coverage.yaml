@@ -45,18 +45,32 @@
       "technical_docs": ["technical/shifter_platform/ctf.md"]
     },
     {
+      "id": "workspaces",
+      "title": "Workspace membership",
+      "requirement": "PLAT-2011",
+      "user_docs": ["features/workspaces.md"],
+      "technical_docs": ["technical/shifter_platform/workspaces.md"]
+    },
+    {
+      "id": "org-workspace-admin-console",
+      "title": "Organization/workspace admin console",
+      "requirement": "PLAT-231",
+      "user_docs": ["features/org-workspace-admin-console.md"],
+      "technical_docs": ["technical/shifter_platform/org-workspace-admin-console.md"]
+    },
+    {
+      "id": "admin-audit-activity",
+      "title": "Administrator audit and activity history",
+      "requirement": "PLAT-240",
+      "user_docs": ["features/admin-audit-activity.md"],
+      "technical_docs": ["technical/shifter_platform/admin-audit-activity.md"]
+    },
+    {
       "id": "aws-eks-backend-bundle",
       "title": "AWS EKS backend bundle",
       "requirement": "GEN-001",
       "user_docs": ["how-to/aws-ecs-to-eks-migration.md"],
       "technical_docs": ["technical/platform_infrastructure/aws-eks-bundle.md"]
-    },
-    {
-      "id": "risk-register",
-      "title": "Risk Register",
-      "requirement": "GEN-001",
-      "user_docs": ["features/risk-register.md"],
-      "technical_docs": ["technical/shifter_platform/risk_register.md"]
     }
   ]
 }

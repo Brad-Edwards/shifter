@@ -14,7 +14,12 @@ from shared.schemas import RangeRef, RangeSpec, RequestSpec
 from shared.schemas.persistence import wrap_persisted_spec
 
 from ._common import EngineError, _persist_task_arn, _resolve_instance_host
-from ._range_backend_binding import backend_binding_fields, verify_existing_binding
+from ._range_backend_binding import (
+    backend_binding_fields,
+    require_workspace_binding,
+    verify_existing_binding,
+    verify_existing_workspace_binding,
+)
 from ._range_by_request import cancel_range_by_request, destroy_range_by_request
 
 if TYPE_CHECKING:
@@ -48,6 +53,7 @@ def _atomic() -> ContextManager[None]:
 def create_range(
     request_spec: RequestSpec,
     *,
+    workspace_id: int,
     backend_admission: BackendAdmission | None = None,
     remote_access_capability: dict[str, object] | None = None,
 ) -> RangeRef:
@@ -61,6 +67,14 @@ def create_range(
     (backend, purpose) is persisted as the write-once #1666 ownership binding in
     the same transaction as the Range, before dispatch, so destroy/reconcile
     route from it instead of the mutable process selector. ``None`` on non-GCP.
+
+    ``workspace_id`` is the trusted #1325 tenancy scope resolved and authorized
+    by the CMS launch facade, carried the same way. It is **required**: a range
+    with no tenancy scope is exactly the unscoped row ADR-046-R3/R4 exists to
+    prevent, so the boundary refuses rather than persisting NULL and leaving the
+    gap for a later reader to discover. Engine persists the value; it never
+    resolves or authorizes a workspace itself, which is what keeps the tenancy
+    domain out of Engine (ADR-046-R1).
     """
     from django.contrib.auth import get_user_model
 
@@ -71,6 +85,7 @@ def create_range(
 
     if not isinstance(request_spec, RequestSpec):
         raise TypeError(f"request_spec must be RequestSpec, got {type(request_spec).__name__}")
+    require_workspace_binding(workspace_id)
 
     range_spec: RangeSpec | None = None
     for item in request_spec.items:
@@ -95,6 +110,7 @@ def create_range(
     if existing_range is not None:
         logger.info("create_range: reusing existing range request_id=%s", request_spec.request_id)
         verify_existing_binding(existing_range, request_spec.request_id, backend_admission)
+        verify_existing_workspace_binding(existing_range, request_spec.request_id, workspace_id)
         if existing_range.remote_access_capability != normalized_remote_access:
             raise EngineError("Existing range remote-access capability does not match the create request")
         return _range_ref_from_range(existing_range, request_spec, range_spec)
@@ -106,6 +122,7 @@ def create_range(
         Range,
         backend_admission,
         normalized_remote_access,
+        workspace_id,
     )
 
     try:
@@ -129,12 +146,15 @@ def _persist_range_atomically(
     range_model: type[Range],
     backend_admission: BackendAdmission | None = None,
     remote_access_capability: dict[str, object] | None = None,
+    workspace_id: int | None = None,
 ) -> Range:
     """Run the interpret + Range + Subnet inserts under a single transaction.
 
     The #1666 backend/purpose ownership binding (when present) is written on the
     Range in this same transaction, before any launch dispatch, so it is durable
-    ownership from the instant the range exists.
+    ownership from the instant the range exists. The #1325 workspace scope
+    binding is written the same way, so a range is never briefly visible without
+    the tenancy scope it belongs to (ADR-046-R3).
     """
     from engine.interpreter import interpret
     from engine.models import Subnet
@@ -143,6 +163,7 @@ def _persist_range_atomically(
     remote_access_fields = (
         {"remote_access_capability": remote_access_capability} if remote_access_capability is not None else {}
     )
+    workspace_fields = {"workspace_id": workspace_id} if workspace_id is not None else {}
 
     with _atomic():
         request = interpret(request_spec)
@@ -174,6 +195,7 @@ def _persist_range_atomically(
                 range_config=range_artifact,
                 **remote_access_fields,
                 **binding_fields,
+                **workspace_fields,
             )
         else:
             range_obj = range_model.objects.create(
@@ -186,6 +208,7 @@ def _persist_range_atomically(
                 range_config=range_artifact,
                 **remote_access_fields,
                 **binding_fields,
+                **workspace_fields,
             )
 
         logger.info(
@@ -307,28 +330,32 @@ def cancel_range(range_ref: RangeRef) -> None:
         range_ref.user_id,
         range_ref.status,
     )
+    from engine.launch_intents import request_provision_interrupt
     from engine.models import Range
 
     range_id = range_ref.range_id
-    try:
-        range_obj = Range.objects.get(id=range_id)
-    except Range.DoesNotExist:
-        logger.warning("cancel_range: range not found range_id=%s", range_id)
-        return
+    with _atomic():
+        try:
+            range_obj = Range.objects.select_for_update().get(id=range_id)
+        except Range.DoesNotExist:
+            logger.warning("cancel_range: range not found range_id=%s", range_id)
+            return
 
-    if ResourceStatus(range_obj.status) not in CANCELLABLE_STATUSES:
-        logger.warning(
-            "cancel_range: range not cancellable range_id=%s status=%s",
-            range_id,
-            range_obj.status,
-        )
-        return
+        if ResourceStatus(range_obj.status) not in CANCELLABLE_STATUSES:
+            logger.warning(
+                "cancel_range: range not cancellable range_id=%s status=%s",
+                range_id,
+                range_obj.status,
+            )
+            return
 
-    range_obj.status = Range.Status.DESTROYING
-    range_obj.save(update_fields=["status"])
-    # Provisioner will poll for status and destroy when it sees DESTROYING
-    # accept small risk of race condition. TODO: #465
-    logger.info("cancel_range: cancelled range_id=%s", range_id)
+        range_obj.status = Range.Status.DESTROYING
+        range_obj.save(update_fields=["status"])
+        # Record a durable interrupt against the current provision generation
+        # (#277); the launcher worker stops the in-flight task and converges the
+        # canonical destroy. No teardown is dispatched inline here.
+        request_provision_interrupt(range_obj)
+        logger.info("cancel_range: cancelled range_id=%s", range_id)
 
 
 def get_instance_ips_by_uuid(range_id: int) -> dict[str, str]:

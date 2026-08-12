@@ -41,7 +41,6 @@ class CTFChallenge(CTFBaseModel):
         category: Organizer-authored category or mission name.
         points: Points awarded for solving.
         difficulty: Challenge difficulty level.
-        flag_hash: Hashed flag value (bcrypt).
         flag_format: Optional format hint (e.g., "FLAG{...}").
         max_attempts: Maximum submission attempts (0 = unlimited).
         release_time: When challenge becomes visible (null = immediately).
@@ -53,6 +52,12 @@ class CTFChallenge(CTFBaseModel):
         on_delete=models.CASCADE,
         related_name="challenges",
         help_text="Event this challenge belongs to",
+    )
+    source_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Stable bundle-local challenge identity for managed event content",
     )
     name = models.CharField(
         max_length=200,
@@ -75,10 +80,6 @@ class CTFChallenge(CTFBaseModel):
         choices=ChallengeDifficulty.choices(),
         default=ChallengeDifficulty.MEDIUM.value,
         help_text="Challenge difficulty level",
-    )
-    flag_hash = models.CharField(
-        max_length=255,
-        help_text="Hashed flag value (bcrypt)",
     )
     flag_format = models.CharField(
         max_length=100,
@@ -172,6 +173,11 @@ class CTFChallenge(CTFBaseModel):
                 fields=["event", "name"],
                 condition=Q(deleted_at__isnull=True),
                 name="unique_active_challenge_name_per_event",
+            ),
+            models.UniqueConstraint(
+                fields=["event", "source_id"],
+                condition=Q(deleted_at__isnull=True) & ~Q(source_id=""),
+                name="unique_active_challenge_source_per_event",
             ),
         ]
         indexes = [

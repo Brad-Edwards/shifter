@@ -4,9 +4,10 @@ ADR-043 Phase 2 (#1834). The engine materializes one immutable, versioned
 operation-input projection keyed by the canonical ``operation_id`` (created in
 the same transaction as the launch intent), and the provisioner appends versioned
 results to a dedicated append-only inbox. An engine-owned applier validates and
-records a disposition. In shadow mode direct provisioner SQL remains the sole
-authoritative writer; the applier records a disposition but does not mutate
-domain state, audit an applied transition, or enqueue range events.
+records a disposition. For operation families with a declared step contract, the
+applier authoritatively mutates domain state, audits the transition, and enqueues
+range events in one transaction. Families that have not cut over retain direct
+provisioner SQL and receive a validation-only shadow disposition.
 
 Both tables carry the transport envelope (validated by
 ``shared.operation_envelope``) plus flattened discriminator columns for indexing
@@ -26,8 +27,11 @@ class OperationResultKind(models.TextChoices):
 
 
 class OperationResultDisposition(models.TextChoices):
-    """Applier disposition for an inbox result. Distinct from range status; in
-    shadow mode it is the only state the applier writes."""
+    """Applier disposition for an inbox result, distinct from range status.
+
+    ``VALIDATED`` marks a compatibility-family shadow result; authoritative
+    families finish as ``APPLIED`` or a fail-closed rejection.
+    """
 
     PENDING = "PENDING", "Pending"
     VALIDATED = "VALIDATED", "Validated (shadow)"
@@ -36,6 +40,8 @@ class OperationResultDisposition(models.TextChoices):
     REJECTED_VERSION = "REJECTED_VERSION", "Rejected: unsupported contract version"
     REJECTED_CONFLICT = "REJECTED_CONFLICT", "Rejected: conflicting replay"
     REJECTED_INVALID = "REJECTED_INVALID", "Rejected: invalid payload"
+    REJECTED_ORDERING = "REJECTED_ORDERING", "Rejected: illegal step order for the operation"
+    APPLIED = "APPLIED", "Applied to domain state"
 
 
 class OperationInput(models.Model):
@@ -78,6 +84,11 @@ class OperationResultInbox(models.Model):
     operation = models.CharField(max_length=32)
     contract_version = models.CharField(max_length=16)
     result_kind = models.CharField(max_length=32, choices=OperationResultKind.choices)
+    # Closed per-operation step key (``shared.operation_results.ResultStep``).
+    # One operation emits several results of the same kind, so the step — not the
+    # kind — is what orders them and what a conflicting replay collides on. Blank
+    # on pre-cutover shadow rows, which the authoritative applier will not apply.
+    result_step = models.CharField(max_length=48, blank=True, default="", db_index=True)
     result_identity = models.CharField(max_length=255, unique=True)
     # "sha256:" prefix + 64 hex characters
     payload_digest = models.CharField(max_length=71)

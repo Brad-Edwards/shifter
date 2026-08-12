@@ -15,7 +15,9 @@ Detailed guides for each Shifter feature.
 
 ## Governance
 
-- [Risk Register](risk-register) - Track security risks with severity, status, comments, and audit history
+- [Workspace Membership](workspaces) - Manage workspace members and fixed roles
+- [Organization/workspace admin console](org-workspace-admin-console) - Staff console shell for administering organizations and workspaces
+- [Audit and activity history](admin-audit-activity) - Staff-facing search over the platform audit record
 
 ## Advanced Features
 

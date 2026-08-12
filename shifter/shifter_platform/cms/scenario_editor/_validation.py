@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any
 
 import yaml
@@ -42,7 +43,7 @@ def validate_scenario_id(scenario_id: str) -> None:
         )
 
 
-def structural_definition_from_detail(detail: dict[str, Any]) -> dict[str, Any]:
+def structural_definition_from_detail(detail: Mapping[str, Any]) -> dict[str, Any]:
     """Return the persistable definition payload from a registry detail dict."""
     return copy.deepcopy({key: value for key, value in detail.items() if key not in _DETAIL_NON_DEFINITION_KEYS})
 

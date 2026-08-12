@@ -17,7 +17,7 @@ The boundary:
 - **keeps object-backed packs non-launchable** until #1567 supplies a
   containment-checked object resolver (an object row may not be registered
   conformance-``passed``, which is what would make it launchable);
-- **persists a provenance-only reference** (:class:`cms.models.AcesPackageSource`,
+- **persists a provenance-only reference** (:class:`cms.models.RaesPackageSource`,
   whose ``save`` enforces the reference-only contract) and **audits** the result
   with sanitized fields only.
 
@@ -37,7 +37,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
-from cms.models import AcesPackageSource
+from cms.models import RaesPackageSource
 from cms.scenarios.legacy_ids import ScenarioIdCollisionError, ensure_scenario_id_available
 from cms.scenarios.pack_validation import (
     PackDigestError,
@@ -48,7 +48,7 @@ from cms.scenarios.pack_validation import (
 from shared.audit import AuditAction, AuditActorType, AuditEntityType, AuditEvent, audit_log
 from shared.auth import validate_cms_authoring_user
 from shared.log_sanitize import safe_log_value
-from shared.schemas.aces_package_source import AcesPackageSourceError
+from shared.schemas.raes_package_source import RaesPackageSourceError
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 _OBJECT_SOURCE_KIND = "object"
 
 # Registration is not conformance. Conformance ("passed") is a trust fact
-# established by a separate, trusted conformance process (the ACES conformance
+# established by a separate, trusted conformance process (the RAES conformance
 # gate), never asserted by the registering caller — otherwise an API/CLI caller
 # could promote its own claim into the registry's authoritative launchability
 # decision. Every registration therefore lands non-passed, and conformance is
@@ -135,14 +135,14 @@ def register_pack(
         ensure_scenario_id_available(request.scenario_id, registering="pack")
     except ScenarioIdCollisionError as exc:
         raise CMSError(str(exc)) from exc
-    existing = AcesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
+    existing = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
     if existing is not None:
         return _reuse_existing(existing, request, idempotent=idempotent)
     _bind_scenario_id_to_pack_identity(request)
 
     try:
         with transaction.atomic():
-            row = AcesPackageSource.objects.create(
+            row = RaesPackageSource.objects.create(
                 scenario_id=request.scenario_id,
                 source_kind=request.source_kind,
                 contract_kind=request.contract_kind,
@@ -163,12 +163,12 @@ def register_pack(
                 registered_by=user,
             )
             _audit_registration(row, user, request_id)
-    except AcesPackageSourceError as exc:
+    except RaesPackageSourceError as exc:
         # Reference-shape violation from the model's provenance-only validator.
         raise CMSError("Invalid pack reference") from exc
     except IntegrityError as exc:
         if idempotent:
-            raced = AcesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
+            raced = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
             if raced is not None:
                 return _reuse_existing(raced, request, idempotent=True)
         raise CMSError(f"A pack with id '{request.scenario_id}' is already registered") from exc
@@ -189,7 +189,7 @@ def register_pack(
 
 
 def _reuse_existing(
-    row: AcesPackageSource,
+    row: RaesPackageSource,
     request: PackRegistrationRequest,
     *,
     idempotent: bool,
@@ -239,7 +239,7 @@ def _bind_scenario_id_to_pack_identity(request: PackRegistrationRequest) -> None
 
     For repo packs the pack is validated as foreign input, the caller's
     ``scenario_id`` MUST equal the pack's validated identity, and the advertised
-    digest MUST match the canonical ACES associated-artifact identity. Staging
+    digest MUST match the canonical RAES associated-artifact identity. Staging
     is required to remain immutable; launch repeats the byte binding immediately
     before SDL load so a later replacement fails closed.
 
@@ -276,20 +276,20 @@ def _bind_scenario_id_to_pack_identity(request: PackRegistrationRequest) -> None
 
 def _resolve_repo_pack_root(package_ref: str) -> Path:
     """Resolve a repo-relative package_ref to a contained pack root directory."""
-    root = Path(settings.ACES_PACKAGE_ROOT).resolve()
+    root = Path(settings.RAES_PACKAGE_ROOT).resolve()
     candidate = (root / package_ref).resolve()
     if candidate != root and root not in candidate.parents:
         raise CMSError("package_ref escapes the configured package root")
     return candidate
 
 
-def _audit_registration(row: AcesPackageSource, user: User, request_id: str) -> None:
+def _audit_registration(row: RaesPackageSource, user: User, request_id: str) -> None:
     """Record the sanitized registration audit as a fail-closed safety control."""
     try:
         audit_log(
             AuditEvent(
                 entity_type=AuditEntityType.SCENARIO,
-                # AcesPackageSource PKs are UUIDs; existing scenario audit records
+                # RaesPackageSource PKs are UUIDs; existing scenario audit records
                 # use 0 and carry the scenario_id in the state payload.
                 entity_id=0,
                 action=AuditAction.CREATE,

@@ -15,6 +15,7 @@
     "images",
     "imagePullPolicy",
     "identity",
+    "provisioner",
     "runtime",
     "portal",
     "workers",
@@ -137,6 +138,14 @@
         }
       }
     },
+    "provisioner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskRunner"],
+      "properties": {
+        "taskRunner": { "enum": ["gcp", "aws"] }
+      }
+    },
     "runtime": {
       "type": "object",
       "additionalProperties": false,
@@ -163,7 +172,7 @@
         "mc",
         "ctfScheduler",
         "guacamolePrune",
-        "acesOperationRecordPrune",
+        "raesOperationRecordPrune",
         "operationResultApplier",
         "outboxDrainer",
         "provisionerLauncher",
@@ -175,7 +184,7 @@
         "mc": { "$ref": "#/$defs/scaledWorkload" },
         "ctfScheduler": { "$ref": "#/$defs/scaledWorkload" },
         "guacamolePrune": { "$ref": "#/$defs/scaledWorkload" },
-        "acesOperationRecordPrune": { "$ref": "#/$defs/scaledWorkload" },
+        "raesOperationRecordPrune": { "$ref": "#/$defs/scaledWorkload" },
         "operationResultApplier": { "$ref": "#/$defs/scaledWorkload" },
         "outboxDrainer": { "$ref": "#/$defs/scaledWorkload" },
         "provisionerLauncher": { "$ref": "#/$defs/scaledWorkload" },
@@ -438,6 +447,114 @@
                   "enabled": { "const": true },
                   "host": { "minLength": 1 }
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "edge": {
+            "properties": {
+              "ingress": {
+                "properties": {
+                  "className": { "const": "alb" }
+                },
+                "required": ["className"]
+              }
+            },
+            "required": ["ingress"]
+          }
+        },
+        "required": ["edge"]
+      },
+      "then": {
+        "properties": {
+          "edge": {
+            "properties": {
+              "certificateArn": { "minLength": 1 },
+              "wafAclArn": { "minLength": 1 },
+              "hostname": { "minLength": 1 },
+              "ingress": {
+                "properties": {
+                  "enabled": { "const": true },
+                  "host": { "minLength": 1 },
+                  "tls": {
+                    "properties": { "enabled": { "const": false } }
+                  },
+                  "annotations": {
+                    "required": [
+                      "alb.ingress.kubernetes.io/certificate-arn",
+                      "alb.ingress.kubernetes.io/wafv2-acl-arn",
+                      "alb.ingress.kubernetes.io/listen-ports"
+                    ],
+                    "properties": {
+                      "alb.ingress.kubernetes.io/certificate-arn": {
+                        "pattern": "^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/[A-Za-z0-9-]+$"
+                      },
+                      "alb.ingress.kubernetes.io/wafv2-acl-arn": {
+                        "pattern": "^arn:aws:wafv2:[a-z0-9-]+:[0-9]{12}:regional/webacl/[A-Za-z0-9._-]+/[A-Za-z0-9-]+$"
+                      },
+                      "alb.ingress.kubernetes.io/listen-ports": {
+                        "pattern": "^\\[\\{\"HTTPS\":[0-9]{1,5}\\}\\]$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "edge": {
+            "properties": {
+              "certificateArn": { "minLength": 1 }
+            },
+            "required": ["certificateArn"]
+          }
+        },
+        "required": ["edge"]
+      },
+      "then": {
+        "properties": {
+          "edge": {
+            "properties": {
+              "wafAclArn": { "minLength": 1 },
+              "hostname": { "minLength": 1 },
+              "ingress": {
+                "properties": {
+                  "enabled": { "const": true },
+                  "className": { "const": "alb" },
+                  "host": { "minLength": 1 },
+                  "tls": {
+                    "properties": { "enabled": { "const": false } }
+                  },
+                  "annotations": {
+                    "required": [
+                      "alb.ingress.kubernetes.io/certificate-arn",
+                      "alb.ingress.kubernetes.io/wafv2-acl-arn",
+                      "alb.ingress.kubernetes.io/listen-ports"
+                    ],
+                    "properties": {
+                      "alb.ingress.kubernetes.io/certificate-arn": {
+                        "pattern": "^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/[A-Za-z0-9-]+$"
+                      },
+                      "alb.ingress.kubernetes.io/wafv2-acl-arn": {
+                        "pattern": "^arn:aws:wafv2:[a-z0-9-]+:[0-9]{12}:regional/webacl/[A-Za-z0-9._-]+/[A-Za-z0-9-]+$"
+                      },
+                      "alb.ingress.kubernetes.io/listen-ports": {
+                        "pattern": "^\\[\\{\"HTTPS\":[0-9]{1,5}\\}\\]$"
+                      }
+                    }
+                  }
+                },
+                "required": ["className"]
               }
             }
           }

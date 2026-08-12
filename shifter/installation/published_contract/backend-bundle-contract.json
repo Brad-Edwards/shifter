@@ -12,7 +12,8 @@
           "config-store",
           "event-bus",
           "database-auth",
-          "network-inventory"
+          "network-inventory",
+          "capacity-inventory"
         ],
         "title": "BackendCapability",
         "type": "string"
@@ -533,6 +534,7 @@
   "backends": {
     "aws": {
       "capabilities": [
+        "capacity-inventory",
         "config-store",
         "database-auth",
         "event-bus",
@@ -742,6 +744,7 @@
     },
     "gcp": {
       "capabilities": [
+        "capacity-inventory",
         "config-store",
         "database-auth",
         "event-bus",
@@ -1371,8 +1374,7 @@
           "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
           "process_roles": [
             "portal",
-            "worker",
-            "provisioner"
+            "worker"
           ],
           "sensitivity": "public",
           "source": "rendered from validated Terraform outputs and the normalized root config"
@@ -1672,6 +1674,21 @@
           "destination": "runtime-env",
           "kind": "runtime-env",
           "name": "GCP_RANGE_EGRESS_ALLOW_CIDRS",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker",
+            "provisioner",
+            "range-task"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (GCP_RANGE_HOST_IDENTITY_POOL_SIZE) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "GCP_RANGE_HOST_IDENTITY_POOL_SIZE",
           "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
           "process_roles": [
             "portal",
@@ -2117,6 +2134,45 @@
             "portal",
             "worker",
             "provisioner"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (SHIFTER_CTF_CONTENT_BUCKET) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "SHIFTER_CTF_CONTENT_BUCKET",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (SHIFTER_CTF_CONTENT_MAX_BYTES) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "SHIFTER_CTF_CONTENT_MAX_BYTES",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
+          ],
+          "sensitivity": "public",
+          "source": "rendered from validated Terraform outputs and the normalized root config"
+        },
+        {
+          "description": "Public GCP runtime configuration value (SHIFTER_CTF_CONTENT_PREFIX) emitted into the platform runtime environment. Optional; emitted only when the deployment configures it.",
+          "destination": "runtime-env",
+          "kind": "runtime-env",
+          "name": "SHIFTER_CTF_CONTENT_PREFIX",
+          "owner": "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
+          "process_roles": [
+            "portal",
+            "worker"
           ],
           "sensitivity": "public",
           "source": "rendered from validated Terraform outputs and the normalized root config"

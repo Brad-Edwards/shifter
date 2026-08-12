@@ -27,7 +27,13 @@ from shared.cloud import PROVISIONER_CONTAINER_NAME, get_task_runner
 from shared.enums import ResourceType
 
 from ._config import _get_engine_task_config
-from ._env import _GCP_PROVISIONER_ENV_KEYS, _get_gcp_provisioner_env_overrides
+from ._env import (
+    _AWS_PROVISIONER_ENV_KEYS,
+    _GCP_PROVISIONER_ENV_KEYS,
+    _get_aws_provisioner_env_overrides,
+    _get_gcp_provisioner_env_overrides,
+    _get_provisioner_env_overrides,
+)
 from ._local import _is_local_provisioner_enabled, _run_local_provisioner
 from ._status import get_task_status
 
@@ -92,10 +98,35 @@ def dispatch_provisioner_command(command: list[str], *, task_identity: str | Non
         cluster=cluster,
         command=command,
         container_name=PROVISIONER_CONTAINER_NAME,
-        env_overrides=_get_gcp_provisioner_env_overrides(),
+        env_overrides=_get_provisioner_env_overrides(),
         network_config=network_config,
         task_identity=task_identity,
     )
+
+
+def interrupt_provisioner_task(task_ref: str, command: list[str], task_identity: str) -> str | None:
+    """Interrupt a dispatched provisioner task; callable only by the launcher worker (#277).
+
+    Resolves the provider task runner and verifies the workload against the trusted
+    launch identity (image/command/container/service-account + the deterministic
+    Job identity) before stopping it. Returns a ``TaskInterruptDisposition`` value,
+    or ``None`` when the engine task runner is not configured.
+    """
+    from django.conf import settings
+
+    task_config = _get_engine_task_config()
+    if task_config is None:
+        return None
+    cluster, task_definition, _network_config = task_config
+    runner = get_task_runner()
+    expected_identity = {
+        "task_identity": task_identity,
+        "image": task_definition,
+        "command": command,
+        "container_name": PROVISIONER_CONTAINER_NAME,
+        "service_account_name": str(getattr(settings, "ENGINE_TASK_SERVICE_ACCOUNT_NAME", "") or ""),
+    }
+    return runner.interrupt_task(cluster, task_ref, expected_identity)
 
 
 def _start_ecs_task(range_id: int, user_id: int, command: str) -> str | None:
@@ -189,9 +220,9 @@ def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range
         request_id: UUID of the Request to operate on
         command: Command to run ("provision" or "destroy")
         resource: Provisioner subcommand/resource group. Defaults to ``"range"``
-            (the cyberscript path, unchanged). The ACES-native path passes
-            ``"aces-range"`` so the provisioner realizes a persisted serialized
-            ACES plan instead of a wrapped RangeSpec (ADR-031/ADR-032); the
+            (the cyberscript path, unchanged). The RAES-native path passes
+            ``"raes-range"`` so the provisioner realizes a persisted serialized
+            RAES plan instead of a wrapped RangeSpec (ADR-031/ADR-032); the
             local/ECS dispatch mechanics are identical.
 
     Returns:
@@ -240,32 +271,32 @@ def start_range_provisioning(request_id: UUID) -> str | None:
     return _start_range_ecs_task(request_id, "provision")
 
 
-def start_aces_range_provisioning(request_id: UUID) -> str | None:
-    """Start provisioning an ACES-native range via the provisioner ``aces-range``
+def start_raes_range_provisioning(request_id: UUID) -> str | None:
+    """Start provisioning an RAES-native range via the provisioner ``raes-range``
     command using request_id (ADR-031, feature-flagged parallel path).
 
     Identical dispatch mechanics to :func:`start_range_provisioning` (local
     subprocess or ECS Fargate); only the provisioner subcommand differs, so the
-    provisioner realizes a persisted serialized ACES plan rather than a RangeSpec.
+    provisioner realizes a persisted serialized RAES plan rather than a RangeSpec.
 
     Returns:
         Task ARN / local handle if dispatched, None if ECS is not configured.
     """
-    return _start_range_ecs_task(request_id, "provision", resource="aces-range")
+    return _start_range_ecs_task(request_id, "provision", resource="raes-range")
 
 
-def start_aces_range_teardown(request_id: UUID) -> str | None:
-    """Start teardown of an ACES-native range via the provisioner ``aces-range``
+def start_raes_range_teardown(request_id: UUID) -> str | None:
+    """Start teardown of an RAES-native range via the provisioner ``raes-range``
     command using request_id (ADR-031, feature-flagged parallel path).
 
     Identical dispatch mechanics to :func:`start_range_teardown`; only the
     provisioner subcommand differs, so the provisioner reconstructs the range
-    resources from the persisted serialized ACES plan and deletes them.
+    resources from the persisted serialized RAES plan and deletes them.
 
     Returns:
         Task ARN / local handle if dispatched, None if ECS is not configured.
     """
-    return _start_range_ecs_task(request_id, "destroy", resource="aces-range")
+    return _start_range_ecs_task(request_id, "destroy", resource="raes-range")
 
 
 def start_range_teardown(request_id: UUID) -> str | None:
@@ -413,9 +444,12 @@ def start_ngfw_operation(request_id: UUID, operation: str) -> str | None:
 
 __all__ = [
     # Internal seams re-exported for tests, kept stable across the #685 split.
+    "_AWS_PROVISIONER_ENV_KEYS",
     "_GCP_PROVISIONER_ENV_KEYS",
+    "_get_aws_provisioner_env_overrides",
     "_get_engine_task_config",
     "_get_gcp_provisioner_env_overrides",
+    "_get_provisioner_env_overrides",
     "_is_local_provisioner_enabled",
     "_run_local_provisioner",
     "_start_ecs_task",
@@ -423,12 +457,12 @@ __all__ = [
     # Public provisioner dispatch entrypoints.
     "dispatch_provisioner_command",
     "get_task_status",
-    "start_aces_range_provisioning",
-    "start_aces_range_teardown",
     "start_ngfw_operation",
     "start_ngfw_provisioning",
     "start_ngfw_teardown",
     "start_provisioning",
+    "start_raes_range_provisioning",
+    "start_raes_range_teardown",
     "start_range_operation",
     "start_range_provisioning",
     "start_range_teardown",

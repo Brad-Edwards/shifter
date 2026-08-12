@@ -9,13 +9,11 @@ binding the module-level constants used in the re-export.
 from __future__ import annotations
 
 import os
-import warnings
 
-from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, required_runtime_env
+from config._runtime_env import AUTH_PROVIDER, required_runtime_env
 
 __all__ = [
     "AUTHENTICATION_BACKENDS",
-    "CTF_DEFAULT_PARTICIPANT_PASSWORD",
     "CTF_LOGIN_RATE_LIMIT_MAX",
     "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
     "CTF_LOGIN_SOURCE_RATE_LIMIT_MAX",
@@ -46,7 +44,6 @@ __all__ = [
     "OIDC_USERNAME_ALGO",
     "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
     "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
-    "RISK_REGISTER_ALLOWED_COGNITO_GROUPS",
     "SESSION_COOKIE_AGE",
 ]
 
@@ -76,11 +73,6 @@ else:
         "config.auth.CTFParticipantBackend",
     ]
 
-# Optional platform-wide CTF bootstrap credential. Fails closed: the default is
-# empty, never an authenticating value. When unset, per-event
-# ``participant_password_override`` is the only accepted source and the
-# participant-account service refuses to provision without one (issue #1665).
-CTF_DEFAULT_PARTICIPANT_PASSWORD = os.environ.get("CTF_DEFAULT_PARTICIPANT_PASSWORD", "")
 CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS = int(os.environ.get("CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS", "24"))
 CTF_LOGIN_RATE_LIMIT_MAX = int(os.environ.get("CTF_LOGIN_RATE_LIMIT_MAX", "5"))
 CTF_LOGIN_SOURCE_RATE_LIMIT_MAX = int(os.environ.get("CTF_LOGIN_SOURCE_RATE_LIMIT_MAX", "100"))
@@ -193,12 +185,3 @@ OIDC_EXEMPT_URLS = [
 # CTF sessions are additionally bounded by the live-event account policy.
 # 14 days
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
-
-# Risk register Cognito group gate (issue #151). Fail closed when unset outside tests.
-RISK_REGISTER_ALLOWED_COGNITO_GROUPS = _env_list("RISK_REGISTER_ALLOWED_COGNITO_GROUPS")
-if not RISK_REGISTER_ALLOWED_COGNITO_GROUPS and not IS_TEST_RUN:
-    warnings.warn(
-        "RISK_REGISTER_ALLOWED_COGNITO_GROUPS is unset; risk register access is denied for all principals.",
-        RuntimeWarning,
-        stacklevel=2,
-    )

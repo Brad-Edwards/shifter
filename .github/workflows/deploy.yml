@@ -63,7 +63,7 @@ jobs:
       range: ${{ steps.filter.outputs.range }}
       shifter_engine: ${{ steps.filter.outputs.shifter_engine }}
       shifter_platform: ${{ steps.filter.outputs.shifter_platform }}
-      quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' }}
+      quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' || steps.filter.outputs.any_changed != 'true' }}
       portal_image: ${{ steps.filter.outputs.portal_image }}
       stack_smoke: ${{ steps.filter.outputs.stack_smoke }}
       mcp: ${{ steps.filter.outputs.mcp }}
@@ -87,6 +87,15 @@ jobs:
         id: filter
         with:
           filters: |
+            # Fail-closed signal for an empty or undetermined changed-file set
+            # (#2024). GitHub's PR "list files" API is eventually consistent and
+            # can return zero files for a freshly created PR; when that happens
+            # every classifier below evaluates false and Quality would skip. This
+            # `any_changed` filter is false in exactly that case, and the
+            # `quality_relevant` output ORs in `any_changed != 'true'` so an
+            # unclassifiable diff runs Quality instead of silently bypassing it.
+            any_changed:
+              - '**'
             core:
               - 'platform/terraform/modules/ecr/**'
               - 'platform/terraform/environments/*/*.tf'
@@ -293,10 +302,6 @@ jobs:
           . "${RUNNER_TEMP}/precommit-venv/bin/activate"
           python -m pip install --upgrade pip
           python -m pip install 'pre-commit==4.3.0'
-          # adr-guard-parity-inventory (ADR-024-R4 / #1313) is a global invariant
-          # that must run even when the Quality workflow's adr_guard path filter is
-          # false (e.g. a docs-only change that deletes an inventory-referenced
-          # file), so it rides this always-present pre-commit job.
           hooks=(
             trailing-whitespace
             end-of-file-fixer
@@ -306,7 +311,6 @@ jobs:
             check-merge-conflict
             detect-private-key
             gitleaks
-            adr-guard-parity-inventory
           )
           for hook in "${hooks[@]}"; do
             pre-commit run "$hook" --all-files --show-diff-on-failure
@@ -407,7 +411,8 @@ jobs:
     needs: [changes, quality]
     # `_gcp-dev.yml::deploy` requests `id-token: write` (GCP OIDC via
     # workload identity federation) and `attestations: write` (SBOM +
-    # provenance attestation, ADR-037-R5/R6). Reusable workflows can't request
+    # provenance attestation, ADR-037-R5/R6). `post-deploy-smoke` requests
+    # `issues: write` (smoke failure issues). Reusable workflows can't request
     # higher GITHUB_TOKEN scopes than the caller grants — without this
     # block the workflow fails at startup with
     # `nested job 'deploy' is requesting 'id-token: write', but is only
@@ -416,6 +421,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+      issues: write
     if: |
       always() &&
       github.event_name != 'pull_request' &&
@@ -446,11 +452,13 @@ jobs:
       GCP_PUBLIC_HOSTNAME: ${{ secrets.GCP_PUBLIC_HOSTNAME }}
       GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
       GCP_MASTER_AUTHORIZED_CIDRS: ${{ secrets.GCP_MASTER_AUTHORIZED_CIDRS }}
+      GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
       SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
       GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
       GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
       PLATFORM_BOOTSTRAP_STAFF_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_STAFF_EMAILS }}
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
+      SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
 
   core:
     name: Core

@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 
 import { UserPlus } from "lucide-react";
 
-import { useCtfParticipants, useInviteCtfParticipant, useResendCtfInvite } from "@/api/ctfAdmin";
+import { useCtfParticipants, useAddCtfParticipant } from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { ParticipantImportDialog } from "./ParticipantImportDialog";
+import { ParticipantPasswordDialog } from "./ParticipantPasswordDialog";
 import { Card } from "@/components/ui/card";
 import {
   Dialog,
@@ -29,7 +30,7 @@ import { titleCase } from "../format";
 import { ctfAdminEventPath, ctfAdminEventsPath, ctfAdminParticipantPath } from "../routes";
 
 function InviteDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: string; open: boolean; onOpenChange: (open: boolean) => void }>) {
-  const invite = useInviteCtfParticipant(eventId);
+  const invite = useAddCtfParticipant(eventId);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const error = describeMutationError(invite.error, "Could not invite the participant.");
@@ -96,15 +97,6 @@ function InviteDialog({ eventId, open, onOpenChange }: Readonly<{ eventId: strin
   );
 }
 
-function ResendButton({ participantId }: Readonly<{ participantId: string }>) {
-  const resend = useResendCtfInvite(participantId);
-  return (
-    <Button variant="ghost" size="sm" disabled={resend.isPending} onClick={() => resend.mutate()}>
-      {resend.isSuccess ? "Sent" : "Resend"}
-    </Button>
-  );
-}
-
 function ParticipantsBody({ query }: Readonly<{ query: ReturnType<typeof useCtfParticipants> }>) {
   if (query.isLoading) {
     return (
@@ -162,7 +154,7 @@ function ParticipantsBody({ query }: Readonly<{ query: ReturnType<typeof useCtfP
             </TableCell>
             <TableCell className="text-right font-mono text-sm tabular-nums">{participant.total_score}</TableCell>
             <TableCell className="text-right">
-              <ResendButton participantId={participant.id} />
+              <ParticipantPasswordDialog participantId={participant.id} participantName={participant.name} />
             </TableCell>
           </TableRow>
         ))}

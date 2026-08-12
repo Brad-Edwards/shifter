@@ -25,6 +25,7 @@ urlpatterns = [
     path("me/team/regenerate-code/", team_views.TeamRegenerateCodeView.as_view(), name="api_team_regenerate_code"),
     path("me/announcements/", participant_views.ParticipantAnnouncementsView.as_view(), name="api_me_announcements"),
     path("me/pages/", participant_views.ParticipantPagesView.as_view(), name="api_me_pages"),
+    path("me/briefing/", participant_views.ParticipantBriefingView.as_view(), name="api_me_briefing"),
     path("me/profile/", participant_views.ParticipantProfileView.as_view(), name="api_me_profile"),
     path("me/username/", participant_views.ParticipantUsernameSelfView.as_view(), name="api_me_username"),
     path(
@@ -40,6 +41,11 @@ urlpatterns = [
         "events/<uuid:event_id>/force-delete/",
         organizer.ForceDeleteEventView.as_view(),
         name="api_force_delete_event",
+    ),
+    path(
+        "events/<uuid:event_id>/content/refresh/",
+        organizer.EventContentRefreshView.as_view(),
+        name="api_event_content_refresh",
     ),
     path("scenarios/", organizer.ScenarioListView.as_view(), name="api_scenarios"),
     path(
@@ -93,8 +99,13 @@ urlpatterns = [
     ),
     path(
         "participants/<uuid:participant_id>/resend-invite/",
-        organizer.ParticipantResendInviteView.as_view(),
+        organizer.ParticipantResendLoginInfoView.as_view(),
         name="api_participant_resend_invite",
+    ),
+    path(
+        "participants/<uuid:participant_id>/password/",
+        organizer.ParticipantPasswordView.as_view(),
+        name="api_participant_password_reset",
     ),
     path(
         "participants/<uuid:participant_id>/ban/",
@@ -287,7 +298,7 @@ urlpatterns = [
     ),
     path(
         "events/<uuid:event_id>/invitations/send/",
-        organizer.SendInvitationsView.as_view(),
+        organizer.SendLoginInfoView.as_view(),
         name="api_send_invitations",
     ),
     path(

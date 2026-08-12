@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
@@ -15,6 +15,7 @@ from django.views.decorators.http import require_http_methods
 from shared.rate_limit import consume_fixed_window
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import User
     from django.http import HttpRequest
 
 _CTF_LOGIN_TEMPLATE = "ctf/participant/login.html"
@@ -103,22 +104,14 @@ def _bootstrap_credential_reused(request: HttpRequest, new_password: str) -> boo
     source is later removed or rotated (issue #1665): rejecting a match closes the
     quarantine escape where a participant submits the known bootstrap value as both
     old and new password (``PasswordChangeForm`` does not itself require the new
-    password to differ from the current one). The effective-bootstrap comparison is
-    an additional guard for when the source still resolves.
+    password to differ from the current one). The explicit event-shared value is
+    the only additional known credential that must be rejected.
     """
-    from ctf.exceptions import CTFValidationError
-    from ctf.services.participant.accounts import effective_bootstrap_password, live_participant_for_user
+    from ctf.services.participant.credentials import participant_password_is_reused
 
-    if request.user.check_password(new_password):
-        return True
-    participant = live_participant_for_user(request.user)
-    reused = False
-    if participant is not None:
-        try:
-            reused = new_password == effective_bootstrap_password(participant.event)
-        except CTFValidationError:
-            reused = False
-    return reused
+    if not request.user.is_authenticated:
+        return False
+    return participant_password_is_reused(cast("User", request.user), new_password)
 
 
 @never_cache

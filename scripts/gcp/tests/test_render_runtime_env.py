@@ -26,9 +26,13 @@ def _load_module(module_filename: str, module_name: str):
     return _load_module_from_path(Path(__file__).resolve().parents[1] / module_filename, module_name)
 
 
+# The GCP key inventories moved to runtime_inventory_gcp (#1826, S104 split).
+# Load that module directly: it has no package imports, so it loads standalone
+# without pulling in the installation package (runtime_inventory.py now uses a
+# relative import that a bare file load cannot resolve).
 runtime_inventory = _load_module_from_path(
-    REPO_ROOT / "shifter/installation/runtime_inventory.py",
-    "installation_runtime_inventory_for_gcp_tests",
+    REPO_ROOT / "shifter/installation/runtime_inventory_gcp.py",
+    "installation_runtime_inventory_gcp_for_gcp_tests",
 )
 GCP_GENERATED_RUNTIME_ENV_KEYS = runtime_inventory.GCP_GENERATED_RUNTIME_ENV_KEYS
 GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS = runtime_inventory.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS
@@ -63,6 +67,7 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "RANGE_NETWORK_ZONE": "us-central1-b",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@example.iam.gserviceaccount.com",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES": "https://www.googleapis.com/auth/cloud-platform",
+        "GCP_RANGE_HOST_IDENTITY_POOL_SIZE": "200",
         "GCP_RANGE_LINUX_IMAGE": "projects/debian-cloud/global/images/family/debian-12",
         "GCP_RANGE_LINUX_MACHINE_TYPE": "e2-small",
         "GCP_RANGE_LINUX_DISK_SIZE_GB": "20",
@@ -114,9 +119,11 @@ def _outputs(
     identity_allowed_email_domain: str = "paloaltonetworks.com",
     identity_allowed_emails: list[str] | None = None,
     email_config: dict | None = None,
+    ctf_content_bucket_name: str = "",
 ) -> dict[str, object]:
     outputs = {
         "assets_bucket_name": {"value": "shifter-gcp-dev-gcp-dev-assets"},
+        "ctf_content_bucket_name": {"value": ctf_content_bucket_name},
         "terraform_state_bucket_name": {"value": "shifter-gcp-dev-terraform-state"},
         "platform_events_topic_id": {"value": "projects/shifter-gcp-dev/topics/shifter-gcp-dev-events"},
         "platform_event_subscriptions": {
@@ -262,11 +269,26 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
         _outputs(
             identity_allowed_emails=["alice@example.com", "bob@example.com"],
             email_config=_FULL_MAILGUN_EMAIL_CONFIG,
+            ctf_content_bucket_name="private-ctf-content",
         ),
         engine_image=PINNED_ENGINE_DIGEST,
     )
 
     assert _rendered_keys(rendered) == set(GCP_GENERATED_RUNTIME_ENV_KEYS | GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
+
+
+def test_render_env_projects_ctf_content_location_without_private_references():
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    rendered = module.render_env(
+        _outputs(ctf_content_bucket_name="private-ctf-content"),
+        engine_image=PINNED_ENGINE_DIGEST,
+    )
+
+    assert "SHIFTER_CTF_CONTENT_BUCKET=private-ctf-content\n" in rendered
+    assert "SHIFTER_CTF_CONTENT_PREFIX=ctf/content-bundles\n" in rendered
+    assert "SHIFTER_CTF_CONTENT_MAX_BYTES=8388608\n" in rendered
+    assert "SHIFTER_CTF_CONTENT_REFERENCES_JSON" not in rendered
 
 
 def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
@@ -280,6 +302,7 @@ def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
     assert "GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range\n" in rendered
     assert "RANGE_NETWORK_ZONE=us-central1-b\n" in rendered
     assert "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=range-host@example.iam.gserviceaccount.com\n" in rendered
+    assert "GCP_RANGE_HOST_IDENTITY_POOL_SIZE=200\n" in rendered
     assert "GCP_RANGE_LINUX_IMAGE=projects/debian-cloud/global/images/family/debian-12\n" in rendered
     assert "GCP_RANGE_EGRESS_ALLOW_CIDRS=10.60.0.0/16\n" in rendered
     mapping_line = next(line for line in rendered.splitlines() if line.startswith("GCP_RANGE_IMAGE_KEY_PROFILES_JSON="))

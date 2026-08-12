@@ -161,7 +161,7 @@ class CTFChallengeAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
         (
             "Flag",
             {
-                "fields": ["flag_hash", "flag_format"],
+                "fields": ["flag_format"],
             },
         ),
         (

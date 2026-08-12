@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { Plus } from "lucide-react";
 
@@ -21,7 +21,7 @@ import { titleCase } from "./format";
 import { scenarioCreatePath, scenarioPath } from "./routes";
 
 const ALL = "all";
-const SOURCES = ["builtin", "custom", "aces", "ctf"] as const;
+const SOURCES = ["builtin", "custom", "raes", "ctf"] as const;
 
 export function ScenarioListPage() {
   const bootstrap = useBootstrapContext();

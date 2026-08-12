@@ -1,12 +1,25 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter } from "react-router";
 
 import { RootLayout, type RouteHandle } from "@/app/RootLayout";
 import { NotFoundPage } from "@/components/not-found";
-import { AcesImageRegistryPage } from "@/features/aces-image-registry/AcesImageRegistryPage";
+import { RaesImageRegistryPage } from "@/features/raes-image-registry/RaesImageRegistryPage";
+import { AuditPage } from "@/features/administer/AuditPage";
 import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
 import { UsersListPage } from "@/features/administer/UsersListPage";
+import { ConsoleSlotPage } from "@/features/administer/organization/ConsoleSlotPage";
+import { OrganizationConsoleLayout } from "@/features/administer/organization/OrganizationConsoleLayout";
+import { OrganizationOverviewPage } from "@/features/administer/organization/OrganizationOverviewPage";
+import {
+  OrganizationSettingsDetailPage,
+  OrganizationSettingsPage,
+} from "@/features/administer/organization/OrganizationSettingsPage";
+import { WorkspaceDetailPage } from "@/features/administer/organization/WorkspaceDetailPage";
+import { WorkspaceListPage } from "@/features/administer/organization/WorkspaceListPage";
+import { WorkspaceMembershipPage } from "@/features/administer/organization/WorkspaceMembershipPage";
+import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
+import { WORKSPACE_SURFACES } from "@/features/administer/organization/surfaces";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
 import { ChallengesPage } from "@/features/ctf/ChallengesPage";
 import { AdminDashboardPage } from "@/features/ctf/admin/AdminDashboardPage";
@@ -19,6 +32,7 @@ import { EventsListPage } from "@/features/ctf/admin/EventsListPage";
 import { MonitoringPage } from "@/features/ctf/admin/MonitoringPage";
 import { ParticipantDetailPage } from "@/features/ctf/admin/ParticipantDetailPage";
 import { ParticipantsPage } from "@/features/ctf/admin/ParticipantsPage";
+import { BriefingPage } from "@/features/ctf/BriefingPage";
 import { EventHomePage } from "@/features/ctf/EventHomePage";
 import { HelpPage } from "@/features/ctf/HelpPage";
 import { RangePage } from "@/features/ctf/RangePage";
@@ -38,28 +52,24 @@ import { RangeDetailPage } from "@/features/mission-control/RangeDetailPage";
 import { RangeHistoryPage } from "@/features/mission-control/RangeHistoryPage";
 import { RangeLaunchPage } from "@/features/mission-control/RangeLaunchPage";
 import { TerminalPage } from "@/features/mission-control/TerminalPage";
-import { RiskDetailPage } from "@/features/risk-register/RiskDetailPage";
-import { RiskFormPage } from "@/features/risk-register/RiskFormPage";
-import { RiskListPage } from "@/features/risk-register/RiskListPage";
+import { TerminalWorkspacePage } from "@/features/mission-control/TerminalWorkspacePage";
 import { ScenarioDetailPage } from "@/features/scenario-editor/ScenarioDetailPage";
 import { ScenarioFormPage } from "@/features/scenario-editor/ScenarioFormPage";
 import { ScenarioListPage } from "@/features/scenario-editor/ScenarioListPage";
 import { ScenarioYamlPage } from "@/features/scenario-editor/ScenarioYamlPage";
 
 // One platform router at the site root (#1369). The Django host serves the
-// shell for the SPA-owned page paths (root and /risk-register/*), so deep links
-// and refresh resolve to this client router. Risk Register is rehomed here as a
-// child of the platform router; its advisory access gate rides the route handle.
-const riskRegisterHandle: RouteHandle = { permissionPolicy: "risk_register_access" };
+// shell for the SPA-owned page paths, so deep links and refresh resolve to this
+// client router.
 // Mission Control (#1370) is gated the same way the "Operate" nav group is:
 // any authenticated principal, same as its legacy Django views.
 const missionControlHandle: RouteHandle = { permissionPolicy: "authenticated" };
 // Scenario Editor (#1371) is gated on CMS-authoring access, the same advisory
 // policy the existing "Author" nav group / legacy threat-research views use.
 const scenarioEditorHandle: RouteHandle = { permissionPolicy: "threat_research" };
-// ACES image registry (#1566) shares the "Author" CMS-authoring gate; the API
-// additionally 404s unless SHIFTER_ACES_NATIVE_PROVISIONING is on.
-const acesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_research" };
+// RAES image registry (#1566) shares the "Author" CMS-authoring gate; the API
+// additionally 404s unless SHIFTER_RAES_NATIVE_PROVISIONING is on.
+const raesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_research" };
 // Administer workspace (#1373) is gated on staff, the same advisory policy the
 // "Administer" nav group and the /api/v1/administer/ endpoints enforce. The Django
 // host additionally serves these pages only when ADMINISTER_SPA_ENABLED is on.
@@ -82,16 +92,6 @@ export const router = createBrowserRouter(
       children: [
         { index: true, element: <HomePage /> },
         {
-          path: "risk-register",
-          handle: riskRegisterHandle,
-          children: [
-            { index: true, element: <RiskListPage /> },
-            { path: "risks/create", element: <RiskFormPage mode="create" /> },
-            { path: "risks/:id", element: <RiskDetailPage /> },
-            { path: "risks/:id/edit", element: <RiskFormPage mode="edit" /> },
-          ],
-        },
-        {
           // The F1 foundation chunk registered only the dashboard; the
           // live-access chunk added the per-instance terminal page; the
           // range-pages chunk added the range-history list, the launch form,
@@ -108,7 +108,11 @@ export const router = createBrowserRouter(
             { path: "ranges", element: <RangeHistoryPage /> },
             { path: "launch", element: <RangeLaunchPage /> },
             { path: "ranges/:requestId", element: <RangeDetailPage /> },
-            { path: "terminal/:instanceUuid", element: <TerminalPage tmuxWheelScrolling /> },
+            // The workspace owns both: `terminal/` is the nav destination and
+            // the legacy multi-device console's path, and `terminal/:instanceUuid`
+            // is a deep link that preselects one of its devices (#1661).
+            { path: "terminal", element: <TerminalWorkspacePage /> },
+            { path: "terminal/:instanceUuid", element: <TerminalWorkspacePage /> },
             { path: "agents", element: <AgentsPage /> },
             { path: "ngfw", element: <NgfwListPage /> },
             { path: "ngfw/setup", element: <NgfwWizardPage /> },
@@ -155,6 +159,7 @@ export const router = createBrowserRouter(
             { path: "team", element: <TeamPage /> },
             { path: "account", element: <AccountPage /> },
             { path: "help", element: <HelpPage /> },
+            { path: "briefing", element: <BriefingPage /> },
           ],
         },
         {
@@ -192,12 +197,12 @@ export const router = createBrowserRouter(
           ],
         },
         {
-          // ACES image registry (#1566): greenfield SPA-only surface. The Django
-          // host serves the shell for /aces-image-registry/* GET paths only when
-          // PLATFORM_SPA_ENABLED and SHIFTER_ACES_NATIVE_PROVISIONING are on.
-          path: "aces-image-registry",
-          handle: acesImageRegistryHandle,
-          children: [{ index: true, element: <AcesImageRegistryPage /> }],
+          // RAES image registry (#1566): greenfield SPA-only surface. The Django
+          // host serves the shell for /raes-image-registry/* GET paths only when
+          // PLATFORM_SPA_ENABLED and SHIFTER_RAES_NATIVE_PROVISIONING are on.
+          path: "raes-image-registry",
+          handle: raesImageRegistryHandle,
+          children: [{ index: true, element: <RaesImageRegistryPage /> }],
         },
         {
           // Administer workspace (#1373): greenfield SPA surface. The Django host
@@ -212,6 +217,45 @@ export const router = createBrowserRouter(
             { path: "users/:id", element: <UserDetailPage /> },
             { path: "cost", element: <CostPage /> },
             { path: "settings", element: <PlatformSettingsPage /> },
+            // Administrator audit / activity history (#1947, PLAT-240): a
+            // deployment-global, staff-only surface. Top-level (not workspace
+            // scoped) because the audit store carries no per-row tenant scope.
+            { path: "audit", element: <AuditPage /> },
+            {
+              // Organization/workspace admin console (#1938, PLAT-231). The shell
+              // owns routing, the switcher, context, and capability-aware nav; the
+              // child surface slots (org settings, workspaces, and the
+              // workspace-scoped membership/invitations/users/range-scoping/policy/
+              // quota/audit routes) are placeholders owned by PLAT-232–240. The
+              // selected workspace is the public-UUID route param; the host
+              // catch-all already serves /administer/* so deep links resolve.
+              path: "organization",
+              element: <OrganizationConsoleLayout />,
+              children: [
+                { index: true, element: <OrganizationOverviewPage /> },
+                { path: "settings", element: <OrganizationSettingsPage /> },
+                { path: "settings/:organizationUuid", element: <OrganizationSettingsDetailPage /> },
+                { path: "workspaces", element: <WorkspaceListPage /> },
+                {
+                  path: "workspaces/:workspaceUuid",
+                  element: <WorkspaceScopeLayout />,
+                  children: [
+                    { index: true, element: <WorkspaceDetailPage /> },
+                    // The membership slot (#1941, PLAT-234) is a real surface; the
+                    // remaining slots stay placeholders until PLAT-235–240 land.
+                    ...WORKSPACE_SURFACES.map((surface) => ({
+                      path: surface.key,
+                      element:
+                        surface.key === "membership" ? (
+                          <WorkspaceMembershipPage />
+                        ) : (
+                          <ConsoleSlotPage title={surface.label} />
+                        ),
+                    })),
+                  ],
+                },
+              ],
+            },
           ],
         },
         { path: "*", element: <NotFoundPage /> },

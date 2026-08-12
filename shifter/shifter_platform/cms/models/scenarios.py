@@ -6,7 +6,7 @@ DB-stored Scenarios and YAML default scenarios shipped under
 ``cms/scenarios/templates/``.
 
 The legacy ``Scenario`` save boundary also calls the shared catalog-namespace
-guard so create, update, and restore paths cannot shadow an ACES package source.
+guard so create, update, and restore paths cannot shadow an RAES package source.
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ class Scenario(SoftDeleteMixin, models.Model):
         """Save with definition and cross-store catalog-namespace validation."""
         if not self.is_deleted:
             # Local import avoids a model-import cycle: the namespace guard reads
-            # AcesPackageSource only when an active legacy row is being saved.
+            # RaesPackageSource only when an active legacy row is being saved.
             from cms.scenarios.legacy_ids import ensure_scenario_id_available
 
             ensure_scenario_id_available(self.scenario_id, registering="legacy")
@@ -182,15 +182,15 @@ class ScenarioMetadata(models.Model):
         return f"{self.scenario_id}: {status}, {access}"
 
 
-class AcesPackageSource(models.Model):
-    """Provenance-only source record for an ACES package-backed catalog entry.
+class RaesPackageSource(models.Model):
+    """Provenance-only source record for an RAES package-backed catalog entry.
 
     Keyed by ``scenario_id`` (a string, like :class:`ScenarioMetadata`) so it can
     join the unified catalog projection beside YAML defaults and DB customs. It
-    stores *references and provenance only* — never raw ACES SDL, imported module
+    stores *references and provenance only* — never raw RAES SDL, imported module
     bodies, generated content, hydrated runtime specs, flags, credentials,
     tokens, or runtime config (enforced by
-    :func:`shared.schemas.aces_package_source.validate_package_source`).
+    :func:`shared.schemas.raes_package_source.validate_package_source`).
 
     Access (enabled / staff_only) remains governed by :class:`ScenarioMetadata`;
     this model adds no duplicate access flags. Launchability is derived from
@@ -214,7 +214,7 @@ class AcesPackageSource(models.Model):
     scenario_id = models.SlugField(
         max_length=100,
         unique=True,
-        help_text="Catalog id for this ACES package-source entry",
+        help_text="Catalog id for this RAES package-source entry",
     )
     source_kind = models.CharField(
         max_length=16,
@@ -224,7 +224,7 @@ class AcesPackageSource(models.Model):
     )
     contract_kind = models.CharField(
         max_length=32,
-        help_text="Package contract discriminator (e.g. 'aces')",
+        help_text="Package contract discriminator (e.g. 'raes')",
     )
     contract_profile = models.CharField(
         max_length=128,
@@ -283,8 +283,8 @@ class AcesPackageSource(models.Model):
         """Model options: ordering and human-readable names."""
 
         ordering = ["scenario_id"]
-        verbose_name = "ACES Package Source"
-        verbose_name_plural = "ACES Package Sources"
+        verbose_name = "RAES Package Source"
+        verbose_name_plural = "RAES Package Sources"
 
     def __str__(self) -> str:
         return f"{self.scenario_id} ({self.contract_kind}/{self.contract_profile})"
@@ -293,10 +293,10 @@ class AcesPackageSource(models.Model):
         """Persist after enforcing the provenance-only contract.
 
         Raises:
-            shared.schemas.aces_package_source.AcesPackageSourceError: if any
+            shared.schemas.raes_package_source.RaesPackageSourceError: if any
                 field or the provenance JSON violates the provenance-only shape.
         """
-        from shared.schemas.aces_package_source import PackageSourceRecord, validate_package_source
+        from shared.schemas.raes_package_source import PackageSourceRecord, validate_package_source
 
         self.provenance = validate_package_source(
             PackageSourceRecord(
@@ -322,7 +322,7 @@ class AcesPackageSource(models.Model):
         This is only ONE input to launchability. The authoritative launchability
         decision (supported source/contract/profile, valid refs/digests,
         no-shadow, and conformance) lives in
-        :func:`cms.scenarios.registry._aces_launchable`; do not treat this
+        :func:`cms.scenarios.registry._raes_launchable`; do not treat this
         conformance signal as launchability on its own.
         """
         return self.conformance_status == self.ConformanceStatus.PASSED

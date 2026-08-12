@@ -16,8 +16,6 @@ from django.utils import timezone
 from ctf.enums import ParticipantStatus
 from ctf.models import CTFChallenge, CTFParticipant
 
-from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
-
 # The team_join error path renders a template that uses {% static %}; force the
 # non-manifest static storage so the render does not require a built manifest.
 _SIMPLE_STORAGES = {
@@ -85,7 +83,6 @@ class TestParticipantChallengeListView:
             category="Start Here",
             points=50,
             difficulty="easy",
-            flag_hash="$2b$12$warmup_hash_placeholder",
         )
         set_active_ctf_event(participant_user, ctf_participant.event_id)
 
@@ -109,15 +106,15 @@ class TestAdminParticipantListView:
             event=ctf_event,
             email="alice@test.com",
             name="Alice",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.REGISTERED.value,
+            login_info_sent_at=timezone.now(),
         )
         CTFParticipant.objects.create(
             event=ctf_event,
             email="bob@test.com",
             name="Bob",
             status=ParticipantStatus.REGISTERED.value,
-            invited_at=timezone.now(),
+            login_info_sent_at=timezone.now(),
             registered_at=timezone.now(),
         )
 
@@ -132,49 +129,49 @@ class TestAdminParticipantListView:
         """View filters participants by status query parameter."""
         CTFParticipant.objects.create(
             event=ctf_event,
-            email="invited@test.com",
-            name="Invited User",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
-        )
-        CTFParticipant.objects.create(
-            event=ctf_event,
             email="registered@test.com",
             name="Registered User",
             status=ParticipantStatus.REGISTERED.value,
             registered_at=timezone.now(),
         )
+        CTFParticipant.objects.create(
+            event=ctf_event,
+            email="disqualified@test.com",
+            name="Disqualified User",
+            status=ParticipantStatus.DISQUALIFIED.value,
+            registered_at=timezone.now(),
+        )
 
         url = reverse("ctf:admin_participant_list", kwargs={"event_id": ctf_event.id})
-        response = authenticated_organizer_client.get(url, {"status": "invited"})
+        response = authenticated_organizer_client.get(url, {"status": "disqualified"})
 
         assert response.status_code == 200
         content = response.content.decode()
-        assert "Invited User" in content
-        # Registered user should not appear when filtering by invited
+        assert "Disqualified User" in content
+        # Registered user should not appear when filtering by disqualified.
         assert "Registered User" not in content
 
     def test_shows_participant_stats(self, authenticated_organizer_client, ctf_event):
-        """View shows participant statistics (total, invited, registered counts)."""
+        """View shows participant statistics: total count and registered-in-good-standing count."""
         CTFParticipant.objects.create(
             event=ctf_event,
             email="p1@test.com",
             name="P1",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.REGISTERED.value,
+            registered_at=timezone.now(),
         )
         CTFParticipant.objects.create(
             event=ctf_event,
             email="p2@test.com",
             name="P2",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.BANNED.value,
+            registered_at=timezone.now(),
         )
         CTFParticipant.objects.create(
             event=ctf_event,
             email="p3@test.com",
             name="P3",
-            status=ParticipantStatus.REGISTERED.value,
+            status=ParticipantStatus.DISQUALIFIED.value,
             registered_at=timezone.now(),
         )
 
@@ -182,9 +179,8 @@ class TestAdminParticipantListView:
         response = authenticated_organizer_client.get(url)
 
         assert response.status_code == 200
-        # Stats should be in context
+        # 3 total; registered_count counts only good standing (not banned/disqualified).
         assert response.context["total_count"] == 3
-        assert response.context["invited_count"] == 2
         assert response.context["registered_count"] == 1
 
     def test_denies_access_to_other_organizer_event(self, client, ctf_event, second_organizer_user):
@@ -308,8 +304,8 @@ class TestAdminParticipantImportView:
             event=ctf_event,
             email="existing@example.com",
             name="Existing",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.REGISTERED.value,
+            login_info_sent_at=timezone.now(),
         )
 
         url = reverse("ctf:admin_participant_import", kwargs={"event_id": ctf_event.id})
@@ -456,8 +452,8 @@ class TestAdminParticipantAddView:
             event=ctf_event,
             email="existing@example.com",
             name="Existing",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.REGISTERED.value,
+            login_info_sent_at=timezone.now(),
         )
 
         url = reverse("ctf:admin_participant_add", kwargs={"event_id": ctf_event.id})
@@ -483,8 +479,8 @@ class TestAPIParticipantList:
             event=ctf_event,
             email="test@example.com",
             name="Test User",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.REGISTERED.value,
+            login_info_sent_at=timezone.now(),
         )
 
         url = reverse("v1:ctf:api_participant_list", kwargs={"event_id": ctf_event.id})
@@ -538,8 +534,8 @@ class TestAPIParticipantDetail:
             event=ctf_event,
             email="delete@example.com",
             name="To Delete",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now(),
+            status=ParticipantStatus.REGISTERED.value,
+            login_info_sent_at=timezone.now(),
         )
 
         url = reverse(
@@ -606,10 +602,10 @@ class TestAPIParticipantImport:
 
 
 class TestAPIParticipantResendInvite:
-    """Tests for resetting and delivering participant credentials."""
+    """Compatibility invitation resend never mutates participant credentials."""
 
-    def test_resend_resets_password(self, authenticated_organizer_client, ctf_event, monkeypatch):
-        """The compatibility endpoint performs an explicit credential reset."""
+    def test_resend_preserves_password(self, authenticated_organizer_client, ctf_event, monkeypatch):
+        """The compatibility endpoint sends login information without a secret."""
         from ctf.services.participant.accounts import create_participant_accounts
 
         monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -630,10 +626,10 @@ class TestAPIParticipantResendInvite:
 
         assert response.status_code == 200
         participant.user.refresh_from_db()
-        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
+        assert participant.user.check_password("ChangedPassword-42")
 
     def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_event, monkeypatch):
-        """Reset works for an already registered isolated account."""
+        """Resend works for an already registered isolated account."""
         from ctf.services.participant.accounts import create_participant_accounts
 
         monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
@@ -651,8 +647,7 @@ class TestAPIParticipantResendInvite:
         data = response.json()
         assert data["success"] is True
         participant.user.refresh_from_db()
-        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
-        assert participant.user.profile.must_change_password is True
+        assert participant.user.check_password("PreviouslyChangedPassword-42")
 
 
 class TestTeamJoinCapacityGuard:

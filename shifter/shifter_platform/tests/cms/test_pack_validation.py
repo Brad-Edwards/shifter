@@ -4,7 +4,7 @@ A pack arriving at the uniform content-ingestion path is foreign input: it is
 source-agnostic and entitlement-blind, but it must never be ingested broken,
 malformed, or non-conformant. These tests pin the static, subprocess-free
 validation that :mod:`cms.scenarios.pack_validation` performs by delegating to
-the ``aces-scenario-packs`` contract schemas and to ACES SDL parsing. Pack
+the ``raes-env-packs`` contract schemas and to RAES SDL parsing. Pack
 fixtures come from the shared ``make_pack`` factory (see ``tests/cms/conftest``).
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from aces_scenario_packs.content_ci import compatibility_example_path
+from raes_env_packs.content_ci import compatibility_example_path
 
 from cms.scenarios.pack_validation import PackValidationError, check_pack, validate_pack
 from tests.cms.conftest import conformant_pack_yaml, conformant_provenance

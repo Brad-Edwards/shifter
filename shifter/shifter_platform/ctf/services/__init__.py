@@ -52,6 +52,12 @@ from ctf.services.challenge import (
     verify_flag,
     verify_single_flag,
 )
+from ctf.services.content_hydration import (
+    assert_event_content_hydration_ready,
+    hydrate_event_ctf_content,
+)
+from ctf.services.content_refresh import ContentRefreshResult, refresh_event_ctf_content
+from ctf.services.content_resolution import resolve_scenario_ctf_content
 from ctf.services.dashboard import active_event_summary
 from ctf.services.event import (
     activate_event,
@@ -84,6 +90,8 @@ from ctf.services.hint import (
     use_hint,
 )
 from ctf.services.participant import (
+    ParticipantPasswordIssuance,
+    add_participant,
     authenticate_ctf_participant,
     ban_participant,
     bulk_import_participants,
@@ -91,10 +99,10 @@ from ctf.services.participant import (
     disqualify_participant,
     get_participant,
     get_participant_by_user,
-    invite_participant,
     list_participants_for_event,
     requalify_participant,
-    resend_invite,
+    resend_login_info,
+    reset_participant_password,
     set_participant_hidden,
     set_participant_role,
     unban_participant,
@@ -125,13 +133,17 @@ from ctf.services.submission import (
 )
 
 __all__ = [
+    "ContentRefreshResult",
+    "ParticipantPasswordIssuance",
     "activate_event",
     "active_event_summary",
     "add_challenge_file",
     "add_flag",
     "add_hint",
+    "add_participant",
     "add_prerequisite",
     "archive_event",
+    "assert_event_content_hydration_ready",
     "assign_participant_bracket",
     "authenticate_ctf_participant",
     "ban_participant",
@@ -183,7 +195,7 @@ __all__ = [
     "get_unlocked_hints",
     "grant_award",
     "hash_flag",
-    "invite_participant",
+    "hydrate_event_ctf_content",
     "list_brackets",
     "list_challenges_for_event",
     "list_events_for_organizer",
@@ -191,6 +203,7 @@ __all__ = [
     "open_registration",
     "pause_event",
     "provision_participant_range",
+    "refresh_event_ctf_content",
     "remove_challenge_file",
     "remove_flag",
     "remove_hint",
@@ -198,7 +211,9 @@ __all__ = [
     "remove_prerequisite",
     "requalify_participant",
     "request_event_provisioning",
-    "resend_invite",
+    "resend_login_info",
+    "reset_participant_password",
+    "resolve_scenario_ctf_content",
     "resume_event",
     "revoke_award",
     "schedule_event",

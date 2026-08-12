@@ -28,7 +28,6 @@ GCP_ENV = {
     "DB_NAME": "shifter",
     "DB_USER": "shifter",
     "DB_PASSWORD": "secret",
-    "RANGE_EVENTS_TOPIC_ID": "projects/shifter-gcp-dev/topics/shifter-gcp-dev-events",
     "RANGE_NETWORK_ID": "projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range",
     "RANGE_NETWORK_CIDR": "10.50.0.0/16",
     "PORTAL_NETWORK_CIDRS": "10.40.0.0/20,10.44.0.0/16",
@@ -185,6 +184,7 @@ class TestGcpProvisionerEnvOverrides:
             "GCP_RANGE_LINUX_IMAGE": "projects/debian-cloud/global/images/family/debian-12",
             "GCP_RANGE_KALI_IMAGE": "projects/kali/global/images/kali",
             "GCP_RANGE_IMAGE_KEY_PROFILES_JSON": '{"kali":{"polaris-vm":{"disk_size_gb":210}}}',
+            "GCP_RANGE_HOST_IDENTITY_POOL_SIZE": "200",
             "GCP_RANGE_WINDOWS_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
             "GCP_RANGE_DC_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
             "GCP_RANGE_EGRESS_ALLOW_CIDRS": "10.60.0.0/16",
@@ -199,6 +199,7 @@ class TestGcpProvisionerEnvOverrides:
         assert overrides["GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL"] == "range-host@shifter-gcp-dev.iam.gserviceaccount.com"
         assert overrides["GCP_RANGE_LINUX_IMAGE"] == "projects/debian-cloud/global/images/family/debian-12"
         assert overrides["GCP_RANGE_IMAGE_KEY_PROFILES_JSON"] == gce_env["GCP_RANGE_IMAGE_KEY_PROFILES_JSON"]
+        assert overrides["GCP_RANGE_HOST_IDENTITY_POOL_SIZE"] == "200"
         assert overrides["GCP_RANGE_EGRESS_ALLOW_CIDRS"] == "10.60.0.0/16"
 
     def test_excludes_shared_guest_passwords(self, settings):
@@ -212,6 +213,9 @@ class TestGcpProvisionerEnvOverrides:
         assert "GDC_WINDOWS_ADMIN_PASSWORD" not in overrides
         assert "GDC_KALI_PASSWORD" not in overrides
         assert "GDC_UBUNTU_PASSWORD" not in overrides
+        # Range-event topic binding was removed from the provisioner (#1839).
+        assert "RANGE_EVENTS_TOPIC_ID" not in overrides
+        assert "SNS_RANGE_EVENTS_ARN" not in overrides
         # The deployment-scoped DC domain password is still forwarded.
         assert overrides["DC_DOMAIN_PASSWORD"] == GCP_ENV["DC_DOMAIN_PASSWORD"]
 

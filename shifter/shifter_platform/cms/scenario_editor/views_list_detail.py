@@ -17,7 +17,8 @@ from cms.scenario_editor.view_support import (
     render_not_found,
     render_unexpected_error,
 )
-from cms.scenarios.catalog_presentation import ACES_SCENARIO_TYPE, get_catalog_presentation
+from cms.scenarios.catalog_presentation import RAES_SCENARIO_TYPE, get_catalog_presentation
+from cms.scenarios.realizability import get_scenario_realizability
 from cms.scenarios.registry import get_scenario_detail, list_all_scenarios
 from shared.auth import threat_research_required
 from shared.log_sanitize import safe_log_value
@@ -25,7 +26,8 @@ from shared.log_sanitize import safe_log_value
 logger = logging.getLogger(__name__)
 IS_DEFAULT_CONTEXT_KEY = "is_default"
 SCENARIOS_CONTEXT_KEY = "scenarios"
-ACES_DETAIL_TEMPLATE = "scenario_editor/aces_detail.html"
+RAES_DETAIL_TEMPLATE = "scenario_editor/raes_detail.html"
+REALIZABILITY_CONTEXT_KEY = "realizability"
 
 
 @threat_research_required
@@ -35,11 +37,33 @@ def scenario_list(request: HttpRequest) -> HttpResponse:
     return render(request, "scenario_editor/list.html", {SCENARIOS_CONTEXT_KEY: list_all_scenarios(user=None)})
 
 
+def _realizability_or_none(scenario_id: str) -> dict | None:
+    """Return the realizability projection, or None if it could not be produced.
+
+    Fail-soft on purpose: an assessment problem must degrade this one panel, not
+    the whole detail page. Returning None is safe because the template renders no
+    verdict without data, and publication is gated server-side anyway -- the page
+    can never turn a missing assessment into permission to enable.
+    """
+    try:
+        return get_scenario_realizability(scenario_id)
+    except Exception:
+        logger.exception("realizability assessment failed for scenario_id=%s", safe_log_value(scenario_id))
+        return None
+
+
 def _render_scenario_detail(request: HttpRequest, scenario_id: str) -> HttpResponse:
-    """Render ACES read-only detail or the legacy authoring detail for a scenario."""
+    """Render RAES read-only detail or the legacy authoring detail for a scenario."""
     presentation = get_catalog_presentation(scenario_id)
-    if presentation is not None and presentation["scenario_type"] == ACES_SCENARIO_TYPE:
-        return render(request, ACES_DETAIL_TEMPLATE, {SCENARIO_CONTEXT_KEY: presentation})
+    if presentation is not None and presentation["scenario_type"] == RAES_SCENARIO_TYPE:
+        return render(
+            request,
+            RAES_DETAIL_TEMPLATE,
+            {
+                SCENARIO_CONTEXT_KEY: presentation,
+                REALIZABILITY_CONTEXT_KEY: _realizability_or_none(scenario_id),
+            },
+        )
 
     try:
         scenario = get_scenario_detail(scenario_id)
@@ -62,7 +86,7 @@ def _render_scenario_detail(request: HttpRequest, scenario_id: str) -> HttpRespo
 def scenario_detail_view(request: HttpRequest, scenario_id: str) -> HttpResponse:
     """View scenario details.
 
-    ACES package-backed entries render read-only catalog metadata; legacy YAML
+    RAES package-backed entries render read-only catalog metadata; legacy YAML
     defaults and DB customs keep the full authoring detail (YAML preview, edit,
     clone, delete, export).
     """

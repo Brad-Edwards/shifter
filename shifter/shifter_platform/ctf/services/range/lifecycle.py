@@ -187,6 +187,13 @@ def _destroy_single_range(participant: CTFParticipant, user: User | None) -> Non
         logger.warning("No user for participant %s, skipping destroy", participant.pk)
         return
     cms_destroy_range(user, participant.range_instance_id)
+    # PLAT-201: the range is gone, so return its share of the event capacity
+    # budget. The reconciler is the backstop for anything that slips, but a draw
+    # released here keeps the ledger honest for the rest of a live event rather
+    # than only after the window closes.
+    from ctf.services.range.capacity import release_range
+
+    release_range(participant.pk)
     participant.range_instance_id = None
     participant.range_status = ""
     participant.save(update_fields=["range_instance_id", "range_status", "updated_at"])

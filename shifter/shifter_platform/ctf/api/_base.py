@@ -7,7 +7,6 @@ from collections.abc import Callable, Iterable
 from importlib import import_module
 from typing import Any, ClassVar, cast
 
-from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from rest_framework import permissions, serializers
 from rest_framework.request import Request
@@ -18,6 +17,7 @@ from ctf.bridges import get_user_role
 from ctf.services.participant import is_viewing_participant
 from shared.api.errors import api_error_response
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.api.principals import active_actor_user
 from shared.api_tokens.models import ApiToken
 from shared.api_tokens.scopes import has_scope
 
@@ -39,11 +39,7 @@ class JSONBodySerializer(serializers.BaseSerializer[dict[str, Any]]):
 
 def ctf_actor_user(request: Request) -> Any | None:
     """Return the active user represented by a session or platform API token."""
-    auth = getattr(request, "auth", None)
-    user = auth.created_by if isinstance(auth, ApiToken) else getattr(request, "user", None)
-    if isinstance(user, AnonymousUser) or not getattr(user, "is_authenticated", False):
-        return None
-    return user if getattr(user, "is_active", False) else None
+    return active_actor_user(request)
 
 
 class _CtfApiError(Exception):

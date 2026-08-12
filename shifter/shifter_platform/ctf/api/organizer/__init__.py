@@ -33,6 +33,7 @@ from ctf.api.organizer.challenges import (
     HintDeleteView,
     RemoveFlagView,
 )
+from ctf.api.organizer.content import EventContentRefreshView
 from ctf.api.organizer.events import (
     EventDetailView,
     EventListView,
@@ -64,14 +65,15 @@ from ctf.api.organizer.notifications import (
     NotificationCancelScheduleView,
     NotificationListView,
     NotificationSendView,
-    SendInvitationsView,
+    SendLoginInfoView,
 )
 from ctf.api.organizer.participants import (
     AssignBracketView,
     ParticipantDetailView,
     ParticipantImportView,
     ParticipantListView,
-    ParticipantResendInviteView,
+    ParticipantPasswordView,
+    ParticipantResendLoginInfoView,
 )
 from ctf.api.organizer.play import (
     RateChallengeView,
@@ -120,6 +122,7 @@ __all__ = [
     "ChallengePrerequisitesView",
     "EventAnalyticsView",
     "EventCleanupControlView",
+    "EventContentRefreshView",
     "EventDetailView",
     "EventEmailTemplateView",
     "EventLifecycleView",
@@ -148,6 +151,7 @@ __all__ = [
     "ParticipantHiddenView",
     "ParticipantImportView",
     "ParticipantListView",
+    "ParticipantPasswordView",
     "ParticipantRangeAccessView",
     "ParticipantRangeDestroyView",
     "ParticipantRangeProvisionView",
@@ -157,7 +161,7 @@ __all__ = [
     "ParticipantRangeStatusView",
     "ParticipantRangeStopView",
     "ParticipantRequalifyView",
-    "ParticipantResendInviteView",
+    "ParticipantResendLoginInfoView",
     "ParticipantRoleView",
     "ParticipantUnbanView",
     "ParticipantUsernameView",
@@ -167,7 +171,7 @@ __all__ = [
     "RemoveFlagView",
     "ScenarioListView",
     "ScoreTimelineView",
-    "SendInvitationsView",
+    "SendLoginInfoView",
     "SubmissionListView",
     "SubmitFlagView",
     "TaskRunNowView",

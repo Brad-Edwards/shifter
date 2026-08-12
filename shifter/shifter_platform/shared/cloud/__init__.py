@@ -35,6 +35,7 @@ PROVISIONER_CONTAINER_NAME = "pulumi-provisioner"
 
 if TYPE_CHECKING:
     from shared.cloud.types import (
+        CapacityInventory,
         EventBus,
         ObjectStorage,
         QueueConsumer,
@@ -73,12 +74,19 @@ def get_object_storage() -> ObjectStorage:
 
 
 def get_task_runner() -> TaskRunner:
-    """Return a TaskRunner implementation for the configured provider."""
+    """Return a TaskRunner implementation for the configured provider.
+
+    Both AWS and GCP dispatch the provisioner as a Kubernetes Job: the Shifter
+    management plane runs on EKS/GKE and launches the provisioner through the
+    provider-neutral ``KubernetesTaskRunner`` (#1826). AWS range/target delivery
+    remains ECS/VM behind the ADR-039 range adapter, which is a separate transport
+    from this provisioner-dispatch runner.
+    """
     provider = _require_capability(BackendCapability.TASK_RUNNER)
     if provider == "aws":
-        from shared.cloud.aws.task_runner import AWSTaskRunner
+        from shared.cloud.aws.task_runner import AWSKubernetesTaskRunner
 
-        return AWSTaskRunner()
+        return AWSKubernetesTaskRunner()
     if provider == "gcp":
         from shared.cloud.gcp.task_runner import GCPTaskRunner
 
@@ -126,6 +134,26 @@ def get_secrets_store() -> SecretsStore:
 
         return GCPSecretsStore()
     raise CloudProviderNotImplementedError(provider, BackendCapability.SECRETS)
+
+
+def get_capacity_inventory() -> CapacityInventory:
+    """Return a read-only CapacityInventory implementation for the configured provider.
+
+    Supplies the observed limit/usage readings that capacity admission (PLAT-201)
+    assesses declared event demand against. Read-only by contract: this seam never
+    mutates provider state, and its credentials are per-partition least-privilege
+    read identities rather than the provisioner's launch role.
+    """
+    provider = _require_capability(BackendCapability.CAPACITY_INVENTORY)
+    if provider == "aws":
+        from shared.cloud.aws.capacity_inventory import AWSCapacityInventory
+
+        return AWSCapacityInventory()
+    if provider == "gcp":
+        from shared.cloud.gcp.capacity_inventory import GCPCapacityInventory
+
+        return GCPCapacityInventory()
+    raise CloudProviderNotImplementedError(provider, BackendCapability.CAPACITY_INVENTORY)
 
 
 def get_event_bus() -> EventBus:

@@ -54,9 +54,6 @@ class _InstanceSetupSpec:
     domain_join: _DomainJoinSpec
     set_local_password: bool = True
     local_password_target_container: str | None = None
-    # TechVault uses os_type "kali" for RDP but its host seat user is "ubuntu"
-    # (uid 1000, for aptl's wazuh certs); override the SSH/password target user.
-    ssh_user_override: str | None = None
 
 
 class _InstanceSetupCtx:
@@ -136,15 +133,18 @@ def _setup_attacker_role(
         failure_prefix="Kali setup failed",
     )
     if set_local_password:
-        _set_local_password_or_raise(
-            orchestrator,
-            execution,
-            ctx,
-            instance_data,
-            platform="linux",
-            failure_prefix="Kali RDP password push failed",
-            target_container=local_password_target_container,
-        )
+        try:
+            _set_local_password_or_raise(
+                orchestrator,
+                execution,
+                ctx,
+                instance_data,
+                platform="linux",
+                failure_prefix="Kali RDP password push failed",
+                target_container=local_password_target_container,
+            )
+        except SetupError as exc:
+            logger.warning("Kali RDP password push non-fatal skip for %s: %s", execution.target, exc)
     else:
         logger.info("Kali local password push deferred for %s", execution.target)
     logger.info("Kali setup complete for %s", execution.target)
@@ -156,6 +156,7 @@ def _set_attacker_container_password_after_bootstrap(
     *,
     container_name: str,
     ssh_user: str = "kali",
+    required: bool = False,
 ) -> None:
     """Set the per-instance password inside a container-backed Kali endpoint."""
     execution = build_guest_execution_context(instance_data, os_type="kali", role="attacker")
@@ -171,15 +172,20 @@ def _set_attacker_container_password_after_bootstrap(
             agent_presigned_url="",
             ssh_user=ssh_user,
         )
-        _set_local_password_or_raise(
-            orchestrator,
-            execution,
-            ctx,
-            instance_data,
-            platform="linux",
-            failure_prefix=f"{container_name} RDP password push failed",
-            target_container=container_name,
-        )
+        try:
+            _set_local_password_or_raise(
+                orchestrator,
+                execution,
+                ctx,
+                instance_data,
+                platform="linux",
+                failure_prefix=f"{container_name} RDP password push failed",
+                target_container=container_name,
+            )
+        except SetupError as exc:
+            if required:
+                raise
+            logger.warning("%s RDP password push non-fatal skip: %s", container_name, exc)
     finally:
         execution.close()
 
@@ -438,7 +444,7 @@ def _run_single_instance_setup(
         hostname=_resolve_setup_hostname(spec.instance_name, instance_id),
         public_key=spec.public_key,
         agent_presigned_url=spec.agent_presigned_url,
-        ssh_user=spec.ssh_user_override or get_ssh_username(spec.os_type, spec.role),
+        ssh_user=get_ssh_username(spec.os_type, spec.role),
     )
 
     try:

@@ -37,7 +37,14 @@ serviceAccounts:
     name: provisioner
     annotations: {}
 
-runtimeEnv: {}
+# Fleet-uniform non-secret runtime env rendered into the platform-runtime
+# ConfigMap that every deployment envFroms. RAES default-cutover selector
+# (#1310, ADR-031-R6): delivery seam prepared at the preserved-legacy posture;
+# the flip (native=true + a polaris=polaris-raes route) is a deferred, reviewed
+# change once the plugin system + Polaris adapter deliver a conformant pack.
+runtimeEnv:
+  SHIFTER_RAES_NATIVE_PROVISIONING: "false"
+  SHIFTER_RAES_CATALOG_CUTOVERS: ""
 
 # The guacamole-runtime Kubernetes Secret is created out of band by the deploy
 # bootstrap (kubectl apply from the provider secret store), not by this chart.
@@ -55,6 +62,14 @@ imagePullPolicy: IfNotPresent
 
 identity:
   serviceAccountRoleArns: {}
+
+# Provisioner Kubernetes-Job dispatch contract. taskRunner is the
+# ``shifter.dev/task-runner`` label value the fail-closed provisioner admission
+# policy binds against, and it selects the per-cloud environment allowlist the
+# policy enforces. Providers set this explicitly; the default preserves the GCP
+# contract that the static base manifest (platform/k8s/gcp/base) encodes.
+provisioner:
+  taskRunner: gcp
 
 runtime:
   secretReferences: {}
@@ -127,7 +142,7 @@ workers:
         cpu: 250m
         memory: 256Mi
         ephemeral-storage: 256Mi
-  acesOperationRecordPrune:
+  raesOperationRecordPrune:
     replicas: 1
     resources:
       requests:

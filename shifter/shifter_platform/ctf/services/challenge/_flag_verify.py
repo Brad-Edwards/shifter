@@ -200,8 +200,10 @@ def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
 def verify_flag(challenge: CTFChallenge, submitted_flag: str) -> bool:
     """Verify a submitted flag against a challenge.
 
-    Checks CTFFlag records first. If none exist, falls back to the legacy
-    flag_hash field on the challenge for backward compatibility.
+    ``CTFFlag`` rows are the sole source of flag truth (any-of semantics, #532).
+    A challenge with no active flag rows is unverifiable: every submission is
+    rejected and the misconfiguration is logged loudly (there is no legacy
+    ``challenge.flag_hash`` fallback).
 
     Args:
         challenge: The challenge to verify against.
@@ -210,26 +212,14 @@ def verify_flag(challenge: CTFChallenge, submitted_flag: str) -> bool:
     Returns:
         True if the flag is correct, False otherwise.
     """
-    # Check CTFFlag records first (single query)
     flags = list(challenge.flags.all())
-    if flags:
-        return any(verify_single_flag(flag_obj, submitted_flag) for flag_obj in flags)
-
-    # Backward compat: fall back to the legacy challenge.flag_hash. A non-hash
-    # sentinel ("multi-flag" and similar) means the challenge relies on CTFFlag
-    # rows that have all been removed; verifying against it would silently reject
-    # every submission with no diagnostic. Log loudly and return False instead of
-    # failing quietly so the misconfiguration is visible (#1146).
-    legacy_hash = challenge.flag_hash
-    if not legacy_hash or not legacy_hash.startswith(("$2", "pbkdf2:", "sha256:")):
+    if not flags:
         logger.error(
-            "Challenge %s has no flag records and no usable legacy flag_hash "
-            "(value=%r); every submission will be rejected. Re-add at least one flag.",
+            "Challenge %s has no flag records; every submission will be rejected. Add at least one flag.",
             challenge.id,
-            legacy_hash,
         )
         return False
-    return _verify_hash(submitted_flag, legacy_hash, challenge.id)
+    return any(verify_single_flag(flag_obj, submitted_flag) for flag_obj in flags)
 
 
 def _validate_programmable_config(validator_config: dict[str, Any] | None) -> None:
@@ -301,3 +291,8 @@ def _validate_http_config(validator_config: dict[str, Any] | None) -> None:
             "validator_config.timeout must be an integer between 1 and 30",
             details={"timeout": timeout},
         )
+
+
+def validate_http_flag_config(validator_config: dict[str, Any] | None) -> None:
+    """Public pure validation boundary shared by interactive and bundle writes."""
+    _validate_http_config(validator_config)

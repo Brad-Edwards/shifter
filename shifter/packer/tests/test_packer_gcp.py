@@ -23,7 +23,7 @@ GCP_DIR = PACKER_DIR / "gcp"
 GCP_SCRIPTS_DIR = GCP_DIR / "scripts"
 
 # Image types that ship a GCE builder in this iteration.
-GCE_IMAGE_TYPES = ["ubuntu", "brokenbk", "kali", "windows", "dc", "polaris-vm", "techvault", "dc-prebaked"]
+GCE_IMAGE_TYPES = ["ubuntu", "brokenbk", "kali", "windows", "dc", "polaris-vm", "dc-prebaked"]
 
 
 class TestGcpTemplateStructure:
@@ -129,7 +129,8 @@ class TestGcpDcPrebaked:
 
     def test_promote_bake_reads_domain_from_env(self):
         content = (GCP_SCRIPTS_DIR / "dc-prebaked" / "promote-bake.ps1").read_text()
-        assert "DC_DOMAIN_NAME" in content and "DC_NETBIOS_NAME" in content
+        assert "DC_DOMAIN_NAME" in content
+        assert "DC_NETBIOS_NAME" in content
         assert "-DomainName $DomainName" in content
 
     def test_variables_declare_dc_prebaked_knobs(self):
@@ -230,210 +231,6 @@ class TestGcpPolarisVerifyStackWiring:
         assert content.index("host-setup.sh") < content.index("verify-stack.sh")
 
 
-class TestGcpTechVaultTemplate:
-    """The native GCE TechVault image preserves the reviewed golden-image contract."""
-
-    @pytest.fixture
-    def template(self):
-        return (GCP_DIR / "techvault.pkr.hcl").read_text()
-
-    def test_uses_gce_native_ubuntu_2404(self, template):
-        assert 'source_image_family     = "ubuntu-2404-lts-amd64"' in template
-        assert 'source_image_project_id = ["ubuntu-os-cloud"]' in template
-        assert 'ssh_username            = "ubuntu"' in template
-
-    def test_publishes_techvault_family_and_manifest(self, template):
-        assert 'image_family      = "${var.image_prefix}-techvault"' in template
-        assert 'image-type = "techvault"' in template
-        assert 'output     = "techvault-manifest.json"' in template
-
-    def test_uses_shared_running_stack_scripts(self, template):
-        for script in ("toolchain.sh", "stack.sh", "seat.sh", "wait-stack.sh"):
-            assert f'"../scripts/techvault/{script}"' in template
-        assert "cleanup.sh" not in template
-
-    def test_binds_pinned_supply_chain_inputs(self, template):
-        assert 'source      = "../scripts/techvault/aptl-requirements.lock"' in template
-        assert "APTL_REQUIREMENTS_LOCK=/tmp/aptl-requirements.lock" in template
-
-    def test_has_adequate_root_disk(self, template):
-        match = re.search(r"disk_size\s*=\s*(\d+)", template)
-        assert match and int(match.group(1)) >= 100
-
-
-class TestGcpTechVaultWorkflowWiring:
-    """Build and validation workflows expose TechVault without implying GDC support."""
-
-    @pytest.fixture
-    def build_workflow(self):
-        return (WORKFLOWS_DIR / "packer-gcp.yml").read_text()
-
-    @pytest.fixture
-    def validate_workflow(self):
-        return (WORKFLOWS_DIR / "packer-gcp-validate.yml").read_text()
-
-    def test_build_and_validate_choices_include_techvault(self, build_workflow, validate_workflow):
-        assert "\n          - techvault\n" in build_workflow
-        assert "\n          - techvault\n" in validate_workflow
-
-    def test_build_uses_repository_locked_techvault_inputs(self, build_workflow):
-        assert "PKR_VAR_aptl_version" not in build_workflow
-        assert "GCP_TECHVAULT_APTL_VERSION" not in build_workflow
-        assert "GCP_TECHVAULT_CLAUDE_CODE_VERSION" not in build_workflow
-        assert "GCP_TECHVAULT_PACKER_MACHINE_TYPE" in build_workflow
-
-    def test_techvault_is_excluded_from_gdc_export(self, build_workflow):
-        assert "inputs.image_type != 'techvault'" in build_workflow
-
-    def test_validate_routes_techvault_profile(self, validate_workflow):
-        gather = (GCP_SCRIPTS_DIR / "validate" / "gather-evidence.sh").read_text()
-        assert '[[ "${IMAGE_TYPE}" == "techvault" ]]' in gather
-        assert 'CHECK_SCRIPT="${SCRIPT_DIR}/techvault.sh"' in gather
-        assert 'IMAGE_TYPE="${IMAGE_TYPE}"' in validate_workflow
-
-
-class TestGcpTechVaultSupplyChain:
-    """The shared TechVault installer uses reviewed, pinned inputs."""
-
-    @pytest.fixture
-    def toolchain(self):
-        return (PACKER_DIR / "scripts" / "techvault" / "toolchain.sh").read_text()
-
-    @pytest.fixture
-    def stack(self):
-        return (PACKER_DIR / "scripts" / "techvault" / "stack.sh").read_text()
-
-    @pytest.fixture
-    def lock(self):
-        return (PACKER_DIR / "scripts" / "techvault" / "aptl-requirements.lock").read_text()
-
-    def test_toolchain_uses_signed_distribution_packages(self, toolchain):
-        assert "get.docker.com" not in toolchain
-        assert "deb.nodesource.com" not in toolchain
-        assert re.search(r"(?<![A-Za-z0-9.+-])docker[.]io(?![A-Za-z0-9.+-])", toolchain)
-        assert "docker-compose-v2" in toolchain
-
-    def test_claude_code_tarball_is_digest_verified_and_installed_offline(self, toolchain):
-        assert 'CLAUDE_CODE_VERSION="2.1.215"' in toolchain
-        assert 'readonly CURL_PROTO_HTTPS_ONLY="=https"' in toolchain
-        assert toolchain.count('"${CURL_PROTO_HTTPS_ONLY}"') == 4
-        assert "CLAUDE_CODE_TARBALL_SHA256" in toolchain
-        assert "CLAUDE_CODE_LINUX_X64_TARBALL_SHA256" in toolchain
-        assert "sha256sum --check" in toolchain
-        assert "npm install -g --offline" in toolchain
-        assert "NOSONAR" not in toolchain
-
-    def test_aptl_complete_dependency_lock_is_hash_enforced(self, stack, lock):
-        assert "APTL_REQUIREMENTS_LOCK:?" in stack
-        assert "--require-hashes" in stack
-        assert "--only-binary=:all:" in stack
-        assert "--no-deps" in stack
-        assert "aptl-labs==4.1.2" in lock
-        assert "--hash=sha256:772eae0370cacc00ee1f844c27e7ec7e1678305410218fd68ee1b8b8eeb84ced" in lock
-
-
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
-class TestGcpTechVaultValidationBehavior:
-    """The live candidate profile fails closed on an incomplete TechVault stack."""
-
-    VALIDATOR = GCP_SCRIPTS_DIR / "validate" / "techvault.sh"
-
-    def test_fail_helper_returns_explicitly_under_errexit(self):
-        validator = self.VALIDATOR.read_text()
-
-        assert "set -euo pipefail" in validator
-        assert re.search(
-            r"fail\(\) \{\n  echo \"shifter-validate: FAIL techvault \$\*\" >&2\n  return 1\n\}",
-            validator,
-        )
-
-    def _run(
-        self,
-        tmp_path,
-        *,
-        running=30,
-        docker_group_members="ubuntu",
-        code_ok=True,
-        claude_ok=True,
-        unexpected_exited=None,
-    ):
-        home = tmp_path / "ubuntu"
-        stack = home / "techvault"
-        stack.mkdir(parents=True)
-        (stack / "aptl.json").write_text("{}\n")
-        (stack / "docker-compose.yml").write_text("services: {}\n")
-        stub = tmp_path / "bin"
-        stub.mkdir()
-        scripts = {
-            "systemctl": "#!/bin/bash\nexit 0\n",
-            "id": '#!/bin/bash\n[ "$1" = "-u" ] && echo 1000\n',
-            "stat": "#!/bin/bash\necho ubuntu\n",
-            "getent": f"#!/bin/bash\necho 'docker:x:999:{docker_group_members}'\n",
-            "ss": "#!/bin/bash\nprintf 'LISTEN 0 128 0.0.0.0:22\\nLISTEN 0 128 0.0.0.0:3389\\n'\n",
-            "code": f"#!/bin/bash\nexit {0 if code_ok else 1}\n",
-            "claude": f"#!/bin/bash\nexit {0 if claude_ok else 1}\n",
-            "docker": (
-                "#!/bin/bash\n"
-                'if [ "$1 $2 $3" = "compose config --images" ]; then printf \'img:a\\nimg:b\\n\'; exit 0; fi\n'
-                'if [ "$1 $2" = "image inspect" ]; then exit 0; fi\n'
-                'if [ "$1 $2" = "compose version" ] || [ "$1 $2" = "compose config" ]; then exit 0; fi\n'
-                'if [ "$1" = "ps" ] && [[ " $* " == *" health=unhealthy "* ]]; then exit 0; fi\n'
-                'if [ "$1" = "ps" ] && [[ " $* " == *" status=exited "* ]]; then\n'
-                "  echo aptl-cortex-index-init\n"
-                f"  [ -n '{unexpected_exited or ''}' ] && echo '{unexpected_exited or ''}'\n"
-                "  exit 0\n"
-                "fi\n"
-                'if [ "$1" = "ps" ] && [[ " $* " == *" --format "* ]]; then\n'
-                f"  [ {running} -ge 1 ] && echo aptl-wazuh-manager\n"
-                f"  [ {running} -ge 2 ] && echo aptl-victim\n"
-                f"  [ {running} -ge 3 ] && echo aptl-kali\n"
-                f"  [ {running} -gt 3 ] && for i in $(seq 4 {running}); do echo aptl-svc-$i; done\n"
-                "  exit 0\n"
-                "fi\n"
-                'if [ "$1" = "inspect" ]; then echo \'0\'; exit 0; fi\n'
-                "exit 0\n"
-            ),
-        }
-        for name, body in scripts.items():
-            path = stub / name
-            path.write_text(body)
-            path.chmod(0o755)
-        env = dict(os.environ)
-        env["PATH"] = f"{stub}:{env['PATH']}"
-        env["TECHVAULT_HOME"] = str(home)
-        env["TECHVAULT_USER"] = "ubuntu"
-        bash_path = shutil.which("bash")
-        assert bash_path is not None
-        return subprocess.run(  # noqa: S603
-            [bash_path, str(self.VALIDATOR)], capture_output=True, text=True, env=env
-        )
-
-    def test_complete_profile_passes(self, tmp_path):
-        result = self._run(tmp_path, running=30)
-        assert result.returncode == 0, result.stderr
-
-    def test_fewer_than_30_running_containers_fails(self, tmp_path):
-        result = self._run(tmp_path, running=29)
-        assert result.returncode != 0
-
-    def test_user_missing_from_docker_group_fails(self, tmp_path):
-        result = self._run(tmp_path, docker_group_members="operator")
-        assert result.returncode != 0
-
-    @pytest.mark.parametrize("missing_cli", ["code", "claude"])
-    def test_required_participant_cli_missing_fails(self, tmp_path, missing_cli):
-        result = self._run(
-            tmp_path,
-            code_ok=missing_cli != "code",
-            claude_ok=missing_cli != "claude",
-        )
-        assert result.returncode != 0
-
-    def test_unexpected_exited_container_fails(self, tmp_path):
-        result = self._run(tmp_path, unexpected_exited="aptl-victim")
-        assert result.returncode != 0
-
-
 class TestGcpPromotionEvidenceBinding:
     """Promotion verifies trusted run evidence instead of trusting a mutable label."""
 
@@ -455,10 +252,10 @@ class TestGcpPromotionEvidenceBinding:
 
     def _run_verifier(self, tmp_path, *, evidence_updates=None, run_updates=None):
         evidence = {
-            "candidate_image": "shifter-techvault-123",
+            "candidate_image": "shifter-polaris-vm-123",
             "project": "dev-project",
-            "image_family": "shifter-techvault",
-            "image_type": "techvault",
+            "image_family": "shifter-polaris-vm",
+            "image_type": "polaris-vm",
             "source_revision": "a" * 40,
             "validation_run": "12345",
             "result": "passed",
@@ -481,10 +278,10 @@ class TestGcpPromotionEvidenceBinding:
         env = dict(os.environ)
         env.update(
             {
-                "SRC_IMAGE": "shifter-techvault-123",
+                "SRC_IMAGE": "shifter-polaris-vm-123",
                 "SRC_PROJECT": "dev-project",
-                "IMAGE_FAMILY": "shifter-techvault",
-                "IMAGE_TYPE": "techvault",
+                "IMAGE_FAMILY": "shifter-polaris-vm",
+                "IMAGE_TYPE": "polaris-vm",
                 "VALIDATED_RUN": "12345",
                 "VALIDATED_REVISION": "a" * 40,
                 "EVIDENCE_FILE": str(evidence_file),
@@ -865,7 +662,8 @@ class TestGcpValidationWorkflow:
         assert "google-guest-agent" in linux
         assert "docker compose config --images" in linux
         # Exits non-zero on failure so the runner gates on the exit code.
-        assert "exit 1" in linux and "exit 0" in linux
+        assert "exit 1" in linux
+        assert "exit 0" in linux
 
     def test_linux_validation_observes_without_creating_the_stack(self):
         linux = (GCP_SCRIPTS_DIR / "validate" / "linux.sh").read_text()

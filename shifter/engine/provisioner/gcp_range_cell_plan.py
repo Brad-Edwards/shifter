@@ -181,6 +181,8 @@ def _openvpn_gateway_plan(
     subnet_plans: list[SubnetPlan],
     config: GCERangeCellConfig,
     remote_access: dict[str, object] | None,
+    *,
+    require_provision_values: bool,
 ) -> OpenVpnGatewayPlan | None:
     """Plan the request-owned OpenVPN gateway adjacent to the authorized Kali.
 
@@ -189,30 +191,33 @@ def _openvpn_gateway_plan(
     """
     if remote_access is None:
         return None
-    if vpn_gateway_pool_slot is None:
+    if vpn_gateway_pool_slot is None and require_provision_values:
         raise RuntimeError(
             f"Range {range_id} requests OpenVPN but has no reserved gateway pool slot; "
             "it was not created with an OpenVPN capability"
         )
-    _require_openvpn_capable_config(config)
+    if require_provision_values:
+        _require_openvpn_capable_config(config)
     targets = [instance for instance in instance_plans if instance["uuid"] == remote_access["target_ref"]]
     if len(targets) != 1:
         raise RuntimeError("OpenVPN capability must identify exactly one GCE range member")
     target = targets[0]
     subnet = next(item for item in subnet_plans if item["name"] == target["subnet_name"])
+    private_ip = _free_guest_address(subnet) if subnet["cidr"] else ""
     return {
         "resource_name": _short_resource_name("shifter-r", range_id, "vpn-gateway"),
         "address_name": _short_resource_name("shifter-r", range_id, "vpn-gateway-ip"),
-        "private_ip": _free_guest_address(subnet),
+        "private_ip": private_ip,
         "subnet_resource_name": subnet["resource_name"],
         "subnetwork_link": subnet["self_link"],
         "target_ref": target["uuid"],
         "target_ip": target["private_ip"],
         "tag": _short_resource_name("shifter-r", range_id, "vpn-gateway"),
         "profile": config.get_profile(role="victim", os_type="ubuntu"),
-        "service_account_email": gcp_vpn_gateway_pool_service_account_email(
-            config.project_id,
-            vpn_gateway_pool_slot,
+        "service_account_email": (
+            gcp_vpn_gateway_pool_service_account_email(config.project_id, vpn_gateway_pool_slot)
+            if vpn_gateway_pool_slot is not None
+            else ""
         ),
     }
 
@@ -224,6 +229,7 @@ def render_range_cell_plan(
     *,
     require_images: bool = True,
     vpn_gateway_pool_slot: int | None = None,
+    range_host_pool_slot: int | None = None,
 ) -> RangeCellPlan:
     """Render the deterministic GCE resources for one range cell.
 
@@ -235,11 +241,13 @@ def render_range_cell_plan(
     operation = validated_request["operation"]
     if operation["request_id"] != request_uuid:
         raise RangeCellContractError("range-cell request_id does not match the invoked operation")
+    resolved_config = config or load_gce_range_cell_config()
     realized_variables = realize_range_spec(
         validated_request,
+        config=resolved_config,
         require_network_bindings=require_images,
+        require_supported_capabilities=require_images,
     )
-    resolved_config = config or load_gce_range_cell_config()
     range_id = int(operation["range_id"])
     if resolved_config.network_mode == "shared-vpc":
         # Range subnets live in the pre-existing, platform-peered range VPC; the
@@ -266,6 +274,7 @@ def render_range_cell_plan(
             subnet_plans=cast(list[ResourceDict], subnet_plans),
             access_declarations=cast(list[ResourceDict], realized_variables["access_declarations"]),
             require_images=require_images,
+            range_host_pool_slot=range_host_pool_slot,
         ),
     )
     remote_access = validated_request["remote_access"]
@@ -276,6 +285,7 @@ def render_range_cell_plan(
         subnet_plans,
         resolved_config,
         remote_access,
+        require_provision_values=require_images,
     )
     plan: RangeCellPlan = {
         "project_id": resolved_config.project_id,
@@ -292,7 +302,14 @@ def render_range_cell_plan(
         "manage_network": manage_network,
         "subnets": subnet_plans,
         "instances": instance_plans,
-        "firewalls": build_firewall_plan(range_id, subnet_plans, resolved_config, vpn_gateway),
+        "firewalls": build_firewall_plan(
+            range_id,
+            subnet_plans,
+            resolved_config,
+            vpn_gateway,
+            instance_plans=instance_plans,
+            include_optional_cleanup=not require_images,
+        ),
     }
     if vpn_gateway is not None:
         plan["vpn_gateway"] = vpn_gateway

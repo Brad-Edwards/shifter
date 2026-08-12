@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import DatabaseError
@@ -12,6 +12,9 @@ from django.shortcuts import render
 
 from cms.scenarios.registry import get_scenario_detail, is_default_scenario
 from shared.log_sanitize import safe_log_value
+
+if TYPE_CHECKING:
+    from shared.schemas.cms_projections import ScenarioProjection
 
 ERROR_TEMPLATE = "scenario_editor/error.html"
 NOT_FOUND_TEMPLATE = "scenario_editor/not_found.html"
@@ -91,7 +94,7 @@ def resolve_editable_scenario(
     default_message: str,
     logger: logging.Logger,
     log_name: str,
-) -> tuple[dict[str, Any] | None, HttpResponse | None]:
+) -> tuple[ScenarioProjection | None, HttpResponse | None]:
     """Return an editable scenario or an already-rendered 403/404 response."""
     if is_default_scenario(scenario_id):
         return None, render_error_message(request, default_message, status=403)

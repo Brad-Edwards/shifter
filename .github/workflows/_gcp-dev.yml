@@ -43,12 +43,16 @@ on:
         required: false
       GCP_MASTER_AUTHORIZED_CIDRS:
         required: false
+      GCP_RANGE_IMAGE_KEY_PROFILES_JSON:
+        required: false
       # Deployment shifter.yaml (full root installation config). The range egress
       # allowlist (range_egress_mode + range_egress_allowed_cidrs) is rendered from
       # its settings.range_egress, so it is the single source for the deployed
       # firewall. required: false for dispatch-time evaluation; the render step
       # fails loud when it is empty.
       SHIFTER_CONFIG_GCP_DEV:
+        required: false
+      SMOKE_TEST_USER_EMAIL:
         required: false
 
 permissions:
@@ -124,6 +128,7 @@ jobs:
       GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
       GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      TF_VAR_range_host_identity_pool_size: ${{ vars.GCP_RANGE_HOST_IDENTITY_POOL_SIZE || '0' }}
       # Explicit, audited opt-out for the first Identity Platform operator bootstrap.
       # Set the repo variable to "true" to deliberately skip operator creation; the
       # preflight downgrades the missing-credential failure to a logged warning and
@@ -177,6 +182,7 @@ jobs:
           GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
           GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
           GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
+          GCP_CTF_CONTENT_BUCKET: ${{ vars.GCP_CTF_CONTENT_BUCKET }}
         # The committed `terraform.tfvars` ships an example.com baseline that
         # fails-loud on apply. Each deployment provides its real values via
         # the GitHub secrets/variables listed above; this step renders them
@@ -223,6 +229,17 @@ jobs:
           fi
           if [ -n "${GCP_BOOTSTRAP_ADMIN_PASSWORD}" ]; then
             printf 'gcp_bootstrap_admin_password = "%s"\n' "${GCP_BOOTSTRAP_ADMIN_PASSWORD}" >> "${TF_DIR}/local.auto.tfvars"
+          fi
+          # Private native-CTF content bucket (#1665 content references). The
+          # bucket name is public location policy, not a credential, so it rides
+          # a repo variable; the digest-pinned reference catalog itself stays in
+          # the app secret bundle. scripts/gcp/render_runtime_env.py emits
+          # SHIFTER_CTF_CONTENT_BUCKET only when this Terraform output is set,
+          # and config/_ctf_content_settings.py refuses to start when references
+          # are configured without it -- so leaving this unset silently wipes the
+          # binding from the runtime ConfigMap and crashloops the portal.
+          if [ -n "${GCP_CTF_CONTENT_BUCKET}" ]; then
+            printf 'ctf_content_bucket_name       = "%s"\n' "${GCP_CTF_CONTENT_BUCKET}" >> "${TF_DIR}/local.auto.tfvars"
           fi
       - name: Render range egress allowlist from shifter.yaml
         env:
@@ -542,7 +559,8 @@ jobs:
           GCP_RANGE_CELL_PROJECT_ID: ${{ vars.GCP_RANGE_CELL_PROJECT_ID }}
           GCP_RANGE_LINUX_IMAGE: ${{ vars.GCP_RANGE_LINUX_IMAGE }}
           GCP_RANGE_KALI_IMAGE: ${{ vars.GCP_RANGE_KALI_IMAGE }}
-          GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ vars.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
+          GCP_RANGE_IMAGE_KEY_PROFILES_JSON: ${{ secrets.GCP_RANGE_IMAGE_KEY_PROFILES_JSON || vars.GCP_RANGE_IMAGE_KEY_PROFILES_JSON }}
+          GCP_RANGE_HOST_IDENTITY_POOL_SIZE: ${{ vars.GCP_RANGE_HOST_IDENTITY_POOL_SIZE }}
           GCP_RANGE_WINDOWS_IMAGE: ${{ vars.GCP_RANGE_WINDOWS_IMAGE }}
           GCP_RANGE_DC_IMAGE: ${{ vars.GCP_RANGE_DC_IMAGE }}
           GCP_RANGE_PRIVATE_GOOGLE_ACCESS: ${{ vars.GCP_RANGE_PRIVATE_GOOGLE_ACCESS }}
@@ -770,4 +788,119 @@ jobs:
             sleep 30
           done
           echo "::error::ManagedCertificate ${EDGE_CERT_NAME} is not Active for ${PUBLIC_HOSTNAME} after 60 minutes; check that DNS for ${PUBLIC_HOSTNAME} points at the ingress IP. Re-run with gcp_require_active_certificate=false only for first-time bootstrap."
+          exit 1
+
+  post-deploy-smoke:
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+    name: Post-deploy smoke (${{ inputs.environment }})
+    runs-on: gcp-dev
+    # Backstop only (see #1220).
+    timeout-minutes: 60
+    environment: ${{ inputs.github_environment }}
+    needs: deploy
+    if: |
+      inputs.deploy_changes &&
+      github.event_name != 'pull_request' &&
+      needs.deploy.result == 'success'
+    continue-on-error: true
+    env:
+      GCP_ENVIRONMENT: ${{ inputs.environment }}
+      USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
+      TF_DIR: platform/terraform/gcp/environments/${{ inputs.environment }}
+      TF_BACKEND_PREFIX: shifter/${{ inputs.environment }}/platform-core
+      SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Ensure GCP deploy auth is configured
+        run: |
+          if [ -z "${{ secrets.GCP_SERVICE_ACCOUNT }}" ] || [ -z "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ]; then
+            echo "::error::GCP_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured for gcp-dev deploys"
+            exit 1
+          fi
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+        with:
+          version: ">= 416.0.0"
+          install_components: gke-gcloud-auth-plugin
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
+        with:
+          version: v1.34.1
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: "1.7.1"
+      - name: Bootstrap Terraform backend metadata
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          if [ -z "${PROJECT_ID}" ]; then
+            echo "::error::Required secret GCP_PROJECT_ID is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          TF_STATE_BUCKET="${PROJECT_ID}-terraform-state"
+          {
+            echo "PROJECT_ID=${PROJECT_ID}"
+            echo "REGION=${REGION}"
+            echo "TF_STATE_BUCKET=${TF_STATE_BUCKET}"
+          } >> "$GITHUB_ENV"
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init \
+            -reconfigure \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="prefix=${TF_BACKEND_PREFIX}"
+      - name: Capture Terraform outputs
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform output -json > /tmp/gcp-terraform-outputs.json
+      - name: Configure kubectl for the GKE cluster
+        run: |
+          CLUSTER=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_name']['value'])")
+          LOCATION=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_location']['value'])")
+          gcloud container fleet memberships get-credentials "${CLUSTER}" \
+            --location "${LOCATION}" --project "${PROJECT_ID}"
+      - name: Run linux post-deploy smoke
+        id: smoke
+        continue-on-error: true
+        run: bash scripts/smoke-test-gcp.sh --variant linux
+
+      - name: Open smoke failure issue
+        if: steps.smoke.outcome == 'failure'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const title = `[smoke-test][${process.env.GCP_ENVIRONMENT}][linux] ${context.sha.slice(0, 12)}`;
+            const body = [
+              '## Post-deploy smoke test failed',
+              '',
+              `- Environment: \`${process.env.GCP_ENVIRONMENT}\``,
+              `- Provider: \`gcp\``,
+              `- Variant: \`linux\``,
+              `- Commit: \`${context.sha}\``,
+              `- Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'See the **Run linux post-deploy smoke** step logs for details.',
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['bug', 'smoke-test'],
+            });
+
+      - name: Fail smoke job after issue creation
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::warning::Post-deploy smoke failed; issue opened and deploy was not blocked (continue-on-error)."
           exit 1

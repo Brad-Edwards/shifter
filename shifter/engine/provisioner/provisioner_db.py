@@ -7,9 +7,10 @@ Range metadata.
 
 The NGFW-specific read/write helpers (``get_user_ngfw_data``,
 ``get_ngfw_data_by_request_id``, and the range-attachment record helpers)
-were split out into ``provisioner_db_ngfw.py``, and the ACES-native readers
-into ``provisioner_db_aces.py``, to keep this module under the Sonar S104
-line budget.
+were split out into ``provisioner_db_ngfw.py`` to keep this module under the
+Sonar S104 line budget. The RAES-native readers that once lived in
+``provisioner_db_raes.py`` are gone entirely: those inputs now arrive through
+the immutable operation-input projection (ADR-043 phase 5, #1837).
 """
 
 from __future__ import annotations
@@ -26,15 +27,10 @@ from shared.remote_access import parse_openvpn_binding
 
 from config import has_ngfw_attachment_state
 from log_redact import safe_log_fingerprint
-
-# enqueue_event_outbox is called by the writers below and imported here so
-# events.py's provisioner_db.enqueue_event_outbox reference and the outbox tests
-# keep resolving after the append helpers moved to provisioner_db_appends.py.
 from provisioner_db_appends import (
     OperationRef,
     append_range_destroy_result,
     append_range_provision_result,
-    enqueue_event_outbox,
 )
 from state_helpers import (
     _build_instance_state,
@@ -130,18 +126,14 @@ def _append_kwarg_assignment(assignments: list[Any], values: list[Any], key: str
 def update_range_status(
     range_id: int,
     status: str,
-    outbox_event: dict | None = None,
     **kwargs: str | int | None,
 ) -> None:
     """Update range status in database.
 
     Args:
-        range_id:     Primary key of the Range.
-        status:       New status string.
-        outbox_event: Optional event dict to insert into the outbox atomically
-                      with the status update.  When provided, the INSERT and
-                      the UPDATE commit in the same transaction.
-        **kwargs:     Additional column=value pairs for the UPDATE SET clause.
+        range_id: Primary key of the Range.
+        status:   New status string.
+        **kwargs: Additional column=value pairs for the UPDATE SET clause.
     """
     logger.debug("update_range_status: range_id=%s status=%s kwargs=%s", range_id, status, list(kwargs.keys()))
     with get_db_connection() as conn:
@@ -160,9 +152,6 @@ def update_range_status(
             values.append(range_id)
             query = sql.SQL("UPDATE mission_control_range SET {} WHERE id = %s").format(sql.SQL(", ").join(assignments))
             cur.execute(query, values)
-
-            if outbox_event is not None:
-                enqueue_event_outbox(outbox_event, cur=cur)
         conn.commit()
 
 
@@ -237,7 +226,6 @@ def write_provisioned_state(
     instances: list[dict[str, Any]],
     ngfw_instance_id: int | None = None,
     vpn_access_binding: dict[str, object] | None = None,
-    outbox_event: dict | None = None,
     *,
     operation: OperationRef | None = None,
 ) -> None:
@@ -249,8 +237,6 @@ def write_provisioned_state(
         instances:       List of instance data dicts.
         ngfw_instance_id: FK to the NGFW Instance, if any.
         vpn_access_binding: Closed non-secret OpenVPN result, if supported.
-        outbox_event:    Optional event dict to insert into the outbox
-                         atomically with the state writes.
         operation:       ADR-043 operation identity for the shadow result append;
                          ``None`` (or a ref without an operation_id) skips it.
     """
@@ -289,9 +275,6 @@ def write_provisioned_state(
                 range_id,
                 len(provisioned_instances),
             )
-
-            if outbox_event is not None:
-                enqueue_event_outbox(outbox_event, cur=cur)
 
             append_range_provision_result(
                 cur,
@@ -386,20 +369,6 @@ def mark_range_instances_destroyed(
         subnet_count,
     )
     return instance_count, subnet_count
-
-
-def _update_range_config(range_id: int, range_spec: dict[str, Any]) -> None:
-    """Write updated range_config back to mission_control_range."""
-    from cyberscript.persisted_envelope import ensure_wrapped_persisted_spec
-
-    wrapped = ensure_wrapped_persisted_spec("range_spec", range_spec)
-    with get_db_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "UPDATE mission_control_range SET range_config = %s WHERE id = %s",
-            (json.dumps(wrapped), range_id),
-        )
-        conn.commit()
-    logger.info("Persisted updated range_config for range %d", range_id)
 
 
 def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:

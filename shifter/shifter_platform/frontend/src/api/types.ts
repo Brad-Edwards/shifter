@@ -1,17 +1,7 @@
-/**
- * Domain types for the Risk Register, re-exported from the generated OpenAPI
- * schema (`schema.d.ts`, produced by `npm run gen:api`). Do not hand-copy Risk,
- * Comment, AuditLog, severity, status, or STRIDE shapes — regenerate instead.
- */
+/** Shared types re-exported from the generated OpenAPI schema. */
 import type { components } from "./schema";
 
-export type Risk = components["schemas"]["Risk"];
-export type RiskCreate = components["schemas"]["RiskCreate"];
-export type RiskUpdate = components["schemas"]["RiskUpdate"];
-export type PatchedRiskUpdate = components["schemas"]["PatchedRiskUpdate"];
-export type Comment = components["schemas"]["Comment"];
 export type AuditLog = components["schemas"]["AuditLog"];
-export type PaginatedRiskList = components["schemas"]["PaginatedRiskList"];
 export type PaginatedAuditLogList = components["schemas"]["PaginatedAuditLogList"];
 export type Bootstrap = components["schemas"]["Bootstrap"];
 export type BootstrapModes = components["schemas"]["BootstrapModes"];
@@ -30,31 +20,49 @@ export type AdminUserDetail = components["schemas"]["AdminUserDetail"];
 export type PaginatedAdminUserListItemList = components["schemas"]["PaginatedAdminUserListItemList"];
 export type OrganizerGrantResult = components["schemas"]["OrganizerGrantResult"];
 
-export type Severity = components["schemas"]["SeverityEnum"];
-export type Status = components["schemas"]["StatusEnum"];
-
-export type StrideCode = "S" | "T" | "R" | "I" | "D" | "E";
+/**
+ * Organization/workspace admin console types (#1938, PLAT-231), re-exported from
+ * the generated OpenAPI schema. The `workspaces.services` projection + DRF
+ * serializer are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. `role`/`capabilities` are advisory display data — the
+ * `/api/v1/workspaces/` endpoints reauthorize every operation.
+ */
+export type PrincipalWorkspaceContext = components["schemas"]["PrincipalWorkspaceContext"];
+export type PaginatedPrincipalWorkspaceContextList =
+  components["schemas"]["PaginatedPrincipalWorkspaceContextList"];
+export type OrganizationRef = components["schemas"]["OrganizationRef"];
+export type WorkspaceRole = components["schemas"]["WorkspaceRoleEnum"];
 
 /**
- * Runtime option lists for filters/forms. Typed against the generated enums so
- * an invalid value fails typecheck; the backend serializers remain the
- * authoritative validator (these are UI affordances only).
+ * Organization profile & settings types (#1939, PLAT-232), re-exported from the
+ * generated OpenAPI schema. The `workspaces.services` seam + DRF serializers are
+ * authoritative (ADR-048); regenerate `schema.d.ts` rather than hand-copying.
  */
-export const SEVERITIES: readonly Severity[] = ["critical", "high", "medium", "low"];
-export const STATUSES: readonly Status[] = ["open", "acknowledged", "mitigating", "resolved", "closed"];
-export const STRIDE_OPTIONS: ReadonlyArray<{ code: StrideCode; label: string }> = [
-  { code: "S", label: "Spoofing" },
-  { code: "T", label: "Tampering" },
-  { code: "R", label: "Repudiation" },
-  { code: "I", label: "Information Disclosure" },
-  { code: "D", label: "Denial of Service" },
-  { code: "E", label: "Elevation of Privilege" },
-];
+export type OrganizationProfile = components["schemas"]["OrganizationProfile"];
+export type OrganizationProfileUpdate = components["schemas"]["PatchedOrganizationProfileUpdate"];
+export type PaginatedOrganizationProfileList = components["schemas"]["PaginatedOrganizationProfileList"];
 
-/** Normalize the JSONField `stride_categories` (typed `unknown`) into a string list. */
-export function strideList(value: unknown): string[] {
-  return Array.isArray(value) ? value.map(String) : [];
-}
+/**
+ * Workspace lifecycle types (#1940, PLAT-233), re-exported from the generated
+ * OpenAPI schema. The `workspaces.services` lifecycle seam + DRF serializers are
+ * authoritative; regenerate `schema.d.ts` via `npm run gen:api` rather than
+ * hand-copying. Workspaces are addressed by their public UUID only.
+ */
+export type Workspace = components["schemas"]["Workspace"];
+export type CreateWorkspaceRequest = components["schemas"]["CreateWorkspace"];
+export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferWorkspaceOwnership"];
+
+/**
+ * Workspace membership & roles types (#1941, PLAT-234), re-exported from the
+ * generated OpenAPI schema. The `workspaces.services` membership seam + DRF
+ * serializers are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. A member is addressed by the server-provided
+ * `user_id` the roster projection exposes; the closed `WorkspaceRole` vocabulary
+ * is rendered as data/request values only and never used to reconstruct policy.
+ */
+export type WorkspaceMembership = components["schemas"]["WorkspaceMembership"];
+export type AddWorkspaceMemberRequest = components["schemas"]["AddWorkspaceMember"];
+export type ChangeWorkspaceMemberRoleRequest = components["schemas"]["ChangeWorkspaceMemberRole"];
 
 /**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
@@ -104,26 +112,28 @@ export type ScenarioMetadataUpdate = components["schemas"]["PatchedScenarioMetad
 export type ScenarioCreated = components["schemas"]["ScenarioCreated"];
 export type ScenarioExport = components["schemas"]["ScenarioExport"];
 export type ScenarioMetadataState = components["schemas"]["ScenarioMetadataState"];
-export type ScenarioAcesFields = components["schemas"]["AcesCatalogFields"];
+export type ScenarioRaesFields = components["schemas"]["RaesCatalogFields"];
+export type ScenarioRealizability = components["schemas"]["ScenarioRealizability"];
+export type ScenarioRealizabilityGap = components["schemas"]["RealizabilityGap"];
 export type ScenarioYamlValidation = components["schemas"]["YAMLValidationResult"];
 export type ScenarioInstanceRole = components["schemas"]["ScenarioInstanceRoleEnum"];
 export type ScenarioInstanceOsType = components["schemas"]["ScenarioInstanceOsTypeEnum"];
 
 /** Scenario source classification the detail endpoint returns in `source`. */
-export type ScenarioSource = "builtin" | "custom" | "aces" | "ctf";
+export type ScenarioSource = "builtin" | "custom" | "raes" | "ctf";
 
 /**
- * ACES image registry types (#1566), re-exported from the generated OpenAPI
+ * RAES image registry types (#1566), re-exported from the generated OpenAPI
  * schema. The `engine.services` write path stays the authoritative validator;
  * regenerate `schema.d.ts` via `npm run gen:api` instead of hand-copying.
  */
-export type AcesImageMapping = components["schemas"]["AcesImageMappingView"];
-export type AcesImageMappingRegister = components["schemas"]["AcesImageMappingRegister"];
-export type AcesImageMappingDisable = components["schemas"]["AcesImageMappingDisable"];
+export type RaesImageMapping = components["schemas"]["RaesImageMappingView"];
+export type RaesImageMappingRegister = components["schemas"]["RaesImageMappingRegister"];
+export type RaesImageMappingDisable = components["schemas"]["RaesImageMappingDisable"];
 
-/** Provider choices mirroring engine.models.AcesImageMapping.Provider (UI affordance only). */
-export type AcesImageProvider = "gce" | "aws";
-export const ACES_IMAGE_PROVIDERS: ReadonlyArray<{ value: AcesImageProvider; label: string }> = [
+/** Provider choices mirroring engine.models.RaesImageMapping.Provider (UI affordance only). */
+export type RaesImageProvider = "gce" | "aws";
+export const RAES_IMAGE_PROVIDERS: ReadonlyArray<{ value: RaesImageProvider; label: string }> = [
   { value: "gce", label: "Google Compute Engine" },
   { value: "aws", label: "AWS EC2" },
 ];
@@ -173,6 +183,8 @@ export type CtfEventWrite = components["schemas"]["EventWrite"];
 export type CtfEventListResponse = components["schemas"]["EventListResponse"];
 export type CtfEventMutationResult = components["schemas"]["EventMutationResult"];
 export type CtfForceDeleteEventResult = components["schemas"]["ForceDeleteEventResult"];
+export type CtfEventContentRefreshRequest = components["schemas"]["EventContentRefreshRequest"];
+export type CtfEventContentRefreshResult = components["schemas"]["EventContentRefreshResult"];
 export type CtfScenarioRef = components["schemas"]["CtfScenarioRef"];
 export type CtfScenarioListResponse = components["schemas"]["CtfScenarioListResponse"];
 export type CtfChallengeSummary = components["schemas"]["ChallengeSummary"];
@@ -196,8 +208,10 @@ export type CtfOrganizerParticipantDetail = components["schemas"]["ParticipantDe
 export type CtfAward = components["schemas"]["Award"];
 export type CtfAwardListResponse = components["schemas"]["AwardListResponse"];
 export type CtfParticipantListResponse = components["schemas"]["ParticipantListResponse"];
-export type CtfParticipantInvite = components["schemas"]["ParticipantInvite"];
+export type CtfParticipantAdd = components["schemas"]["ParticipantAdd"];
 export type CtfParticipantImportResult = components["schemas"]["ParticipantImportResult"];
+export type CtfParticipantPasswordRequest = components["schemas"]["ParticipantPasswordRequest"];
+export type CtfParticipantPasswordResult = components["schemas"]["ParticipantPasswordResult"];
 export type CtfParticipantProfile = components["schemas"]["ParticipantProfile"];
 export type CtfProfileUpdateRequest = components["schemas"]["PatchedProfileUpdateRequest"];
 export type CtfEventStaffMember = components["schemas"]["EventStaffMember"];

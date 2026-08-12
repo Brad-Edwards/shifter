@@ -19,8 +19,10 @@ from shared.audit import (
 )
 from shared.constants import USER_CANNOT_BE_NONE
 from shared.enums import ResourceStatus
+from workspaces.services import WorkspaceOperation
 
 from ._common import _validate_caller_user
+from ._range_workspace import authorize_range_workspace
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -199,6 +201,7 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
             user.id,
         )
         raise CMSError(f"Range {range_instance_pk} not found")
+    authorize_range_workspace(user, instance.workspace_id, WorkspaceOperation.MANAGE_RANGE)
 
     try:
         request_id = instance.request.request_id if instance.request else None
@@ -385,6 +388,7 @@ def destroy_range_by_request_id(user: User, request_id: str) -> None:
             user.id,
         )
         raise CMSError(_RANGE_NOT_FOUND_MSG)
+    authorize_range_workspace(user, instance.workspace_id, WorkspaceOperation.MANAGE_RANGE)
 
     if instance.request is None:
         raise CMSError(_MISSING_REQUEST_MSG)
@@ -465,6 +469,7 @@ def cancel_range_by_request_id(user: User, request_id: str) -> None:
             user.id,
         )
         raise CMSError(_RANGE_NOT_FOUND_MSG)
+    authorize_range_workspace(user, instance.workspace_id, WorkspaceOperation.MANAGE_RANGE)
 
     if instance.request is None:
         raise CMSError(_MISSING_REQUEST_MSG)

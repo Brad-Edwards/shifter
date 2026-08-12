@@ -12,8 +12,24 @@ The current enforcement stack has six parts:
 2. `docs/adr/exceptions.yaml`
    Explicit exceptions. If a rule needs a temporary waiver, record it here with an owner and expiry instead of leaving the exception implicit.
 
-3. `scripts/adr_guard/adr_guard.py`
-   Repo-native policy runner. This is the entrypoint for ADR conformance checks.
+3. `scripts/adr_guard/` (the `adr_guard` tool)
+   Repo-native policy runner and the entrypoint for ADR conformance checks.
+   `adr_guard.py` is the executable CLI entry point and compatibility facade; it
+   bootstraps `sys.path` once and re-exports the internal `_guard` package. The
+   check logic lives in one module per concern family under `_guard/checks/` (for
+   example `_guard/checks/k8s_security.py`, `_guard/checks/secret_hygiene.py`,
+   `_guard/checks/deploy_workflow.py`) on top of the shared kernels
+   `_guard/_common.py` (the `Violation` model, repo/git helpers, exception
+   filtering) and `_guard/_workflow_model.py` (the `_dw_*` workflow-as-data
+   model), with `_guard/_registry.py` holding the deterministic `CHECKS` /
+   `CHECK_LEVELS` registry and `_guard/_cli.py` the argument parsing. The
+   `_guard` package uses package-relative imports internally, so it is importable
+   on its own; the facade re-exports its full public surface, so
+   `python3 scripts/adr_guard/adr_guard.py` and tests that load it by path keep
+   working unchanged. The package is in the SonarCloud analysis scope
+   (`sonar.sources` in `sonar-project.properties`); the `adr-guard-tests` CI job
+   runs the suite under `coverage` and uploads `scripts/adr_guard/coverage.xml`
+   for the SonarCloud new-code coverage gate.
 
 4. `.pre-commit-config.yaml`
    Fast local enforcement. The ADR guard runs before commit so architectural drift is caught locally.
@@ -41,12 +57,42 @@ There is also agent-specific wiring:
 - `.claude/skills/adr-check/SKILL.md` provides a default workflow for ADR conformance work.
 - `.claude/skills/architecture-review/SKILL.md` provides a repo-specific architecture review checklist.
 - `AGENTS.md` gives Codex a repo-local policy file, including Ground Control project context for the `/implement` workflow. The GC project pointer (and matching `.ground-control.yaml` `project:` field) names the `shifter` project (id `df4e718f-1f67-46f8-a375-3ba53fabc9c4`) with `CTF-*`, `PLAT-*`, `GEN-*` UID prefixes by subsystem; an earlier draft incorrectly pointed both at `aphelion` (a separate, unrelated project).
+- `.ground-control.yaml` is validated as a whole by the Ground Control context reader, so an unrecognized key fails the entire file closed rather than being ignored: the reader returns `invalid_ground_control_yaml`, and `/implement` loses the project, SonarCloud, and plan-rules context along with the offending block. The `routing:` block accepts only `enabled`, `default_provider`, and `stages`. Routing is advisory under ADR-036, annotating a stage's capability tier for telemetry without selecting an executor, so a stale routing key is worth deleting rather than reinterpreting.
 
 Review controls:
 
 - `.github/CODEOWNERS` requires review on guardrail files and shared/public architecture seams.
 - `.github/pull_request_template.md` requires an ADR impact section on PRs.
 - `.github/copilot-instructions.md` now points GitHub Copilot toward the same ADR enforcement model.
+- `.ground-control.yaml` binds synchronized `/implement` runs to the root
+  `make test` completion boundary. The companion `make policy` target runs the
+  full ADR guard, import-linter contracts, diff whitespace validation, and Vale
+  against Markdown changed from `origin/dev`; `tools/install-vale.sh` supplies
+  the pinned local Vale binary when it is not already installed.
+- `.ground-control.yaml` `workflow.precommit_command` is set to `pre-commit run`
+  (staged-files scope) rather than the reader's `pre-commit run --all-files`
+  default. Every hook in `.pre-commit-config.yaml` is already `files:`-scoped, so
+  the staged run fires only the hooks whose module a `/implement` change actually
+  touches (a `shifter/shifter_platform/**`-only change skips the
+  packer/provisioner/bootstrap/installation/terraform/mcp test+lint hooks
+  entirely, which dominate a full-repo `--all-files` run). This is not a gate
+  weakening: CI's quality-path-ownership contract
+  (`.github/quality-path-filters.yaml`, enforced by the `quality-path-ownership`
+  adr_guard check) is the authoritative full-matrix gate and guarantees a
+  blocking lint **and** security **and** test job for every production path, so
+  the local publish pre-commit is scoped to the changed files to avoid
+  re-running suites CI already owns. Developers may still run
+  `pre-commit run --all-files` by hand.
+- The `shifter_platform` pytest worker cap (`--maxprocesses` in
+  `shifter/shifter_platform/pyproject.toml` `addopts`) is 8. Because `-n auto`
+  already limits workers to the host core count, this cap only takes effect on
+  hosts with more cores than the cap: CI runners (`ubuntu-latest`, ≤4 cores) are
+  unaffected and keep running at core-count workers, while multi-core dev/CI
+  machines get the added parallelism (which shortens the `pytest (shifter_platform)`
+  pre-commit hook, the slowest step of an `/implement` publish). The cap also
+  bounds peak memory (each worker loads the Django app), so it is raised only
+  with headroom in mind given the suite's documented OOM history at high worker
+  counts.
 - `.github/workflows/_gcp-dev.yml` now pins `platform/k8s/gcp/overlays/gcp-dev/kustomization.yaml` image `newTag` values to `${SHORT_SHA}` before `kubectl apply -k`, preventing mutable `:latest` restarts from drifting to a different image than the commit being deployed.
 
 Deploy-time enforcement (ADR-035):
@@ -98,9 +144,12 @@ The first slice intentionally stays small:
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
-  domain (`engine`, `cms`, `management`, `ctf`, `risk_register`), presentation
+  domain (`engine`, `cms`, `management`, `ctf`, `workspaces`), presentation
   (`mission_control`), support/contracts (`shared`), or support/composition
-  (`config`) layer. Service-package imports may use only the public facade (for
+  (`config`) layer. `workspaces` is the organization/workspace tenancy domain
+  added by ADR-046 (#1325); other layers reach it only through
+  `workspaces.services` and carry a scalar `workspace_id` rather than a
+  cross-layer ForeignKey. Service-package imports may use only the public facade (for
   example `cms.services`); private split-package submodules such as
   `cms.services._range_pause` are not cross-layer seams. This covers both the
   dotted form (`import cms.services._range_pause`) and the
@@ -130,6 +179,9 @@ The first slice intentionally stays small:
   Rejects AI/agent attribution markers in tracked text (agent `Co-authored-by`
   trailers, Cursor marketing footers, Claude Code branding strings, etc.).
   A `commit-msg` pre-commit hook blocks the same markers in commit messages.
+  When a commit is rejected for attribution markers, disable Cursor commit/PR
+  attribution in `~/.cursor/cli-config.json` only; project `.cursor/cli.json`
+  cannot set attribution (permissions-only per Cursor CLI docs).
 
 - `cross-layer-model-imports`
   Fails on direct cross-layer model imports inside service layers. The current tree already satisfies this rule, so it is part of the default guard.
@@ -138,7 +190,7 @@ The first slice intentionally stays small:
   Enforces ADR-012-R1: every canonical Python package `pyproject.toml`
   must enable Ruff's `C901` rule in `[tool.ruff.lint].select`, set
   `[tool.ruff.lint.mccabe].max-complexity` to the repo-wide threshold
-  (`PYTHON_COMPLEXITY_THRESHOLD` in `scripts/adr_guard/adr_guard.py`,
+  (`PYTHON_COMPLEXITY_THRESHOLD` in `scripts/adr_guard/_guard/checks/complexity.py`,
   currently `15`, matching SonarCloud's default cognitive-complexity
   threshold), AND must not silently disable the rule by listing it in
   `ignore`, `extend-ignore`, or `per-file-ignores`. The check also
@@ -213,31 +265,16 @@ The first slice intentionally stays small:
   genuinely absent directory at the base (a real first publication) is distinguished
   from an unreadable tree and still passes.
 
-- `aces-parity-inventory-path-integrity`
-  Enforces ADR-024-R4: every `legacy_source` / `validation_evidence` clause in
-  `docs/architecture/aces-migration-parity-inventory.yaml` that is a
-  repository-relative path or glob must resolve to an existing path (a glob must
-  match at least one path). Each field's `;`-separated clauses are classified
-  syntactically into `path`, `glob`, `command`, or `prose`; command clauses
-  (`python3 … --level ci`, `cd … && uv run …`, `aces conformance … --profile …`)
-  and prose clauses (removal statements, dotted references like
-  `engine.Range.provisioned_instances`, annotated summaries) are skipped, and
-  path-looking substrings are never extracted from prose. Classification is never
-  existence-led, so a deleted path stays a `path` and fails instead of
-  self-exempting as prose. Like `adr-registry` it validates the whole inventory on
-  every run and ignores the changed-file list, because a referenced file can be
-  moved or deleted without the inventory itself being edited. It treats the YAML
-  as untrusted static input: `yaml.safe_load` only; absolute paths, `..`
-  traversal, symlink escape, and shell-expansion characters are rejected
-  fail-closed; referenced content is never read and inventory text never reaches a
-  shell or subprocess. Missing PyYAML or a malformed/wrong-shape inventory is a
-  bounded violation, not a crash. It runs at the `ci` level and via a dedicated
-  `adr-guard-parity-inventory` pre-commit hook (also registered in the
-  always-present `deploy.yml` pre-commit job) so a referenced-file deletion in a
-  docs-only change cannot evade it.
-
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
+
+- `makemigrations --check --dry-run`
+  Fails when a model or field-choices change ships without its migration. Runs
+  as the `missing-migrations-shifter-platform` pre-commit hook as well as in the
+  Quality workflow. Adding a `TextChoices` member alters the field, so enum
+  additions need a migration too. The hook exists because the CI check sits
+  behind the test gate, which is skipped when an earlier job fails -- so a
+  missing migration could reach review unnoticed (#680).
 
 - `actionlint`
   Lints GitHub Actions workflows beyond plain YAML validation.
@@ -257,7 +294,12 @@ The first slice intentionally stays small:
   change filter in `.github/workflows/deploy.yml` must stay scoped to
   Terraform-consumed platform files. Quality routing is separate and runs by
   exclusion: `.github/workflows/deploy.yml` must expose a `quality_relevant`
-  output that runs Quality unless the diff is ordinary docs-only. Guardrail
+  output that runs Quality unless the diff is ordinary docs-only. That output
+  also fails closed on an empty or undetermined changed-file set: an
+  `any_changed` classifier is false when the GitHub PR-files API returns zero
+  files (its eventual consistency can do this for a freshly created PR), and
+  `quality_relevant` ORs in `any_changed != 'true'` so an unclassifiable diff
+  runs Quality instead of silently bypassing it (#2024). Guardrail
   docs, including `.github/pull_request_template.md`,
   `.github/copilot-instructions.md`, `docs/adr/**`, and this ADR enforcement
   page, are explicitly quality-relevant so ADR guard validates them. PR Gate
@@ -505,6 +547,20 @@ The first slice intentionally stays small:
   explicit GCLB, Google API, private service, and in-cluster service
   ranges. Runs in the `ci` level and shares the Helm-rendered
   validation boundary with `k8s-deployment-security-context`.
+
+- `eks-cross-stack-sourcing`
+  Enforces ADR-044-R6 against the AWS EKS Terraform roots under
+  `platform/terraform/environments/*/eks/`. The EKS control plane
+  composes over the existing portal and range data plane and must
+  source cross-stack values (control-plane database, secrets KMS key,
+  agent bucket, range VPC/subnets/AMIs/instance roles) through native
+  AWS data sources and SSM Parameter Store. The check fails closed on
+  any `terraform_remote_state` data source in those roots, which would
+  couple the consumer to another stack's whole state file. Runs in both
+  the `fast` and `ci` levels. The AWS/GCP provisioner-env contract
+  parity that R6 also requires is proven by the platform test suite
+  (`tests/shared/cloud/test_aws_runtime_role_parity.py`), not this
+  structural guard.
 
 - `no-plaintext-secrets-in-tfvars`
   Architecture check that scans `*.tfvars` files committed under
@@ -795,7 +851,13 @@ git diff --name-only origin/dev...HEAD -- '*.md' | xargs -r vale
 ## How To Add A Rule
 
 1. Add or update the ADR entry in `docs/adr/index.yaml`.
-2. Implement the check in `scripts/adr_guard/adr_guard.py`.
+2. Implement the `check_<name>(repo_root, files) -> list[Violation]` function in
+   the appropriate `scripts/adr_guard/_guard/checks/<family>.py` module (add a
+   new family module if none fits), reusing the shared kernels in
+   `_guard/_common.py` / `_guard/_workflow_model.py` rather than duplicating
+   helpers, and register it in `scripts/adr_guard/_guard/_registry.py` (`CHECKS`
+   plus the relevant `CHECK_LEVELS`
+   profiles).
 3. Decide where it belongs:
    - fast local gate
    - CI gate

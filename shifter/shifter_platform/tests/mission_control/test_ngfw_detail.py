@@ -17,6 +17,11 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 from django.urls import reverse
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -56,7 +61,7 @@ def _engine_ngfw_with_range(user, request_id, *, range_status="ready"):
 
     engine_request = Request.objects.create(request_id=request_id, request_type=RequestType.NGFW.value, user=user)
     ngfw_instance = Instance.objects.create(request=engine_request, role=Instance.Role.NGFW)
-    return Range.objects.create(user=user, status=range_status, ngfw_instance=ngfw_instance)
+    return Range.objects.create(workspace_id=_WORKSPACE_ID, user=user, status=range_status, ngfw_instance=ngfw_instance)
 
 
 class TestNGFWDetailView:

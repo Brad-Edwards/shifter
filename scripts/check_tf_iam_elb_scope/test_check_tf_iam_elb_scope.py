@@ -430,7 +430,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
         )
 
     def test_current_engine_provisioner_policy_scopes_mutable_elb_actions(self) -> None:
-        path = Path("platform/terraform/modules/engine-provisioner/iam.tf")
+        path = Path("platform/terraform/modules/provisioner-iam/main.tf")
 
         # Without this assertion, renaming or removing the gwlb policy block
         # would make check_file return [] (resource not found) and this test
@@ -438,13 +438,13 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
         self.assertIn(
             'resource "aws_iam_policy" "gwlb"',
             path.read_text(),
-            "iam.tf must contain aws_iam_policy.gwlb for this check to be meaningful",
+            "provisioner-iam/main.tf must contain aws_iam_policy.gwlb for this check to be meaningful",
         )
         self.assertEqual(check_file(path), [])
 
     def test_current_policy_requires_listener_attributes_readback(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/provisioner-iam/main.tf"
         ).read_text()
         required = '          "elasticloadbalancing:DescribeListenerAttributes",\n'
         self.assertEqual(source.count(required), 1)
@@ -465,7 +465,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_describe_policy_rejects_wildcard_action(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/provisioner-iam/main.tf"
         ).read_text()
         for action in (
             "DescribeLoadBalancers",
@@ -580,7 +580,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_vpn_resource_allowlist_rejects_required_arn_plus_wildcard(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/provisioner-iam/main.tf"
         ).read_text()
         exact = (
             'Action   = "elasticloadbalancing:CreateLoadBalancer"\n'
@@ -606,7 +606,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_vpn_action_allowlist_rejects_required_action_plus_wildcard(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/provisioner-iam/main.tf"
         ).read_text()
         exact = 'Action   = "elasticloadbalancing:CreateLoadBalancer"'
         broadened = (
@@ -628,7 +628,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_vpn_addtags_condition_rejects_required_values_plus_extra(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/provisioner-iam/main.tf"
         ).read_text()
         marker = '"CreateListener"\n            ]'
         marker_at = source.rfind(marker)
@@ -653,7 +653,7 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
 
     def test_vpn_create_listener_requires_parent_nlb_resource_tags(self) -> None:
         source = Path(
-            "platform/terraform/modules/engine-provisioner/iam.tf"
+            "platform/terraform/modules/provisioner-iam/main.tf"
         ).read_text()
         exact = '            "elasticloadbalancing:ResourceTag/ManagedBy"           = "terraform"\n'
         listener_at = source.index('Action   = "elasticloadbalancing:CreateListener"')

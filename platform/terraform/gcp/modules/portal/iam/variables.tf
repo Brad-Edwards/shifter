@@ -23,6 +23,20 @@ variable "vpn_gateway_pool_size" {
   }
 }
 
+variable "range_host_identity_pool_size" {
+  type        = number
+  default     = 0
+  description = "Number of pre-created service accounts available to preconfigured range hosts."
+
+  validation {
+    condition = (
+      var.range_host_identity_pool_size >= 0
+      && floor(var.range_host_identity_pool_size) == var.range_host_identity_pool_size
+    )
+    error_message = "range_host_identity_pool_size must be a non-negative integer."
+  }
+}
+
 # ADR-008-R7: resource IDs handed in from the owning modules (portal/secrets,
 # portal/gcs, platform-core) so Secret Manager and Cloud Storage access can be
 # bound per named resource instead of at project scope. No secret inventory or
@@ -54,8 +68,14 @@ variable "vmseries_bootstrap_bucket_name" {
   description = "Optional GCS bucket the provisioner writes VM-Series bootstrap ISOs to. Empty disables the binding."
 }
 
-variable "aces_package_bucket_name" {
+variable "raes_package_bucket_name" {
   type        = string
   default     = ""
-  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Grants the portal read-only (objectViewer) access. Empty disables the binding."
+  description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Grants the portal read-only (objectViewer) access. Empty disables the binding."
+}
+
+variable "ctf_content_bucket_name" {
+  type        = string
+  default     = ""
+  description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Grants the portal read-only access. Empty disables the binding."
 }

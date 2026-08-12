@@ -1,10 +1,11 @@
-"""Apply pending provisioner operation results from the result inbox (shadow).
+"""Apply pending provisioner operation results from the result inbox.
 
-ADR-043 Phase 2 (#1834). Runs the engine-owned shadow applier: it claims PENDING
-``OperationResultInbox`` rows and records a validation disposition. It never
-mutates domain state, audit, or the range event outbox — direct provisioner SQL
-remains authoritative. Deployed as a portal worker (under the portal runtime
-role, not the provisioner) alongside the other management-command workers.
+Runs the Engine-owned applier: it claims PENDING ``OperationResultInbox`` rows,
+validates their operation contracts, and applies cut-over families to domain
+state, audit, and the range event outbox in one transaction. Compatibility
+families without a declared step contract receive a validation-only shadow
+disposition. Deployed as a portal worker (under the portal runtime role, not the
+provisioner) alongside the other management-command workers.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ HEARTBEAT_FILE = Path(tempfile.gettempdir()) / "worker-operation-result-applier-
 class Command(BaseCommand):
     """Evaluate due operation-result inbox rows while maintaining worker liveness."""
 
-    help = "Record shadow dispositions for pending provisioner operation results."
+    help = "Apply pending provisioner operation results through the Engine-owned applier."
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register batch and polling options for the applier worker."""

@@ -5,10 +5,12 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -236,6 +238,59 @@ class AdrGuardTests(unittest.TestCase):
 
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0].rule_id, "ADR-002-R1")
+
+    def test_filter_excepted_violations_ignores_expired_exception(self) -> None:
+        """An expired exception must stop suppressing, not merely report itself."""
+        violation = ADR_GUARD.Violation(
+            "layer-imports",
+            "ADR-001-R1",
+            "shifter/shifter_platform/cms/example.py",
+            "example",
+        )
+        expired = {
+            "rule_id": "ADR-001-R1",
+            "owner": "platform",
+            "reason": "temporary",
+            "expires_on": "2020-01-01",
+            "paths": ["shifter/shifter_platform/cms/*"],
+            "checks": ["layer-imports"],
+        }
+
+        self.assertEqual(ADR_GUARD.filter_excepted_violations([violation], [expired]), [violation])
+
+    def test_filter_excepted_violations_ignores_undated_or_malformed_exception(self) -> None:
+        """A missing or unparseable expiry must not buy open-ended suppression."""
+        violation = ADR_GUARD.Violation(
+            "layer-imports",
+            "ADR-001-R1",
+            "shifter/shifter_platform/cms/example.py",
+            "example",
+        )
+        base = {
+            "rule_id": "ADR-001-R1",
+            "owner": "platform",
+            "reason": "temporary",
+            "paths": ["shifter/shifter_platform/cms/*"],
+            "checks": ["layer-imports"],
+        }
+
+        for expires_on in (None, "not-a-date", "2020-13-01", 20200101):
+            with self.subTest(expires_on=expires_on):
+                exception = dict(base)
+                if expires_on is not None:
+                    exception["expires_on"] = expires_on
+                self.assertEqual(
+                    ADR_GUARD.filter_excepted_violations([violation], [exception]),
+                    [violation],
+                )
+
+    def test_exception_is_active_boundary_is_inclusive(self) -> None:
+        """An exception is live through its expiry date and dead the day after."""
+        exception = {"expires_on": "2026-06-15"}
+
+        self.assertTrue(ADR_GUARD.exception_is_active(exception, today=date(2026, 6, 14)))
+        self.assertTrue(ADR_GUARD.exception_is_active(exception, today=date(2026, 6, 15)))
+        self.assertFalse(ADR_GUARD.exception_is_active(exception, today=date(2026, 6, 16)))
 
 
 class LayerImportTighteningTests(unittest.TestCase):
@@ -479,7 +534,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
         portal_image_globs: list[str] | None = None,
         quality_only_globs: list[str] | None = None,
         quality_condition: str = "needs.changes.outputs.quality_relevant == 'true'",
-        quality_output: str = "quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' }}",
+        quality_output: str = "quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' || steps.filter.outputs.any_changed != 'true' }}",
         include_quality_non_docs_filter: bool = True,
         include_guardrail_docs_filter: bool = True,
         quality_predicate: str = "predicate-quantifier: every",
@@ -1059,7 +1114,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "jobs:\n"
                 "  changes:\n"
                 "    outputs:\n"
-                "      # quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' }}\n"
+                "      # quality_relevant: ${{ steps.quality_non_docs.outputs.non_docs == 'true' || steps.quality_guardrails.outputs.guardrail_docs == 'true' || steps.filter.outputs.any_changed != 'true' }}\n"
                 "      portal_image: ${{ steps.filter.outputs.portal_image }}\n"
                 "      quality_only: ${{ steps.filter.outputs.quality_only }}\n"
                 "    steps:\n"
@@ -3909,6 +3964,86 @@ class PythonComplexityGateTests(unittest.TestCase):
                 msg=f"Expected check to run on adr_guard.py change: {violations}",
             )
 
+    def test_targeted_files_include_package_module_runs_check(self) -> None:
+        """A change to any adr_guard package module - not just the facade - is relevant (#998).
+
+        After the package split (#998) the gate's constants live in
+        checks/complexity.py, so targeted runs must treat package modules as
+        relevant via is_guard_source_path, not only scripts/adr_guard/adr_guard.py.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            target_pkg = ADR_GUARD.PYTHON_COMPLEXITY_GATE_PYPROJECTS[0]
+            packages = {pkg: self.PYPROJECT_OK for pkg in ADR_GUARD.PYTHON_COMPLEXITY_GATE_PYPROJECTS}
+            packages[target_pkg] = self.PYPROJECT_MISSING_C901
+            self._write_packages(repo_root, packages)
+
+            violations = ADR_GUARD.check_python_complexity_gate(
+                repo_root, ["scripts/adr_guard/checks/complexity.py"]
+            )
+
+            self.assertTrue(
+                any("C901" in v.message for v in violations),
+                msg=f"Expected check to run on a package-module change: {violations}",
+            )
+
+    def test_targeted_package_test_file_is_not_relevant(self) -> None:
+        """Package test files carry no gate config, so they stay irrelevant (#998)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            packages = {pkg: self.PYPROJECT_OK for pkg in ADR_GUARD.PYTHON_COMPLEXITY_GATE_PYPROJECTS}
+            packages[ADR_GUARD.PYTHON_COMPLEXITY_GATE_PYPROJECTS[0]] = self.PYPROJECT_MISSING_C901
+            self._write_packages(repo_root, packages)
+
+            violations = ADR_GUARD.check_python_complexity_gate(
+                repo_root, ["scripts/adr_guard/tests/test_adr_guard.py"]
+            )
+
+            self.assertEqual(violations, [], msg=f"Test-file change must be irrelevant: {violations}")
+
+
+class GuardSourcePathTests(unittest.TestCase):
+    """is_guard_source_path classifies adr_guard package source (#998)."""
+
+    def test_classification(self) -> None:
+        f = ADR_GUARD.is_guard_source_path
+        self.assertTrue(f("scripts/adr_guard/adr_guard.py"))
+        self.assertTrue(f("scripts/adr_guard/_guard/_common.py"))
+        self.assertTrue(f("scripts/adr_guard/_guard/checks/deploy_workflow.py"))
+        self.assertFalse(f("scripts/adr_guard/tests/test_adr_guard.py"))
+        self.assertFalse(f("scripts/adr_guard/boundary_mock_baseline.json"))
+        self.assertFalse(f("shifter/shifter_platform/foo.py"))
+
+
+class PackageBoundaryTests(unittest.TestCase):
+    """The `_guard` package resolves its own imports without the facade (#998).
+
+    The facade only bootstraps sys.path and re-exports; the internal wiring must
+    use package-relative imports, so the package is importable on its own with no
+    prior facade execution. Runs in a fresh interpreter so the facade is proven
+    absent, not merely already-cached from this test module's own load.
+    """
+
+    def test_package_imports_without_facade(self) -> None:
+        script_dir = MODULE_PATH.parent  # scripts/adr_guard
+        code = (
+            "import sys; "
+            f"sys.path.insert(0, {str(script_dir)!r}); "
+            "import importlib; "
+            "reg = importlib.import_module('_guard._registry'); "
+            "importlib.import_module('_guard.checks.k8s_security'); "
+            "importlib.import_module('_guard._cli'); "
+            "assert 'adr_guard' not in sys.modules, 'facade must not be loaded'; "
+            "assert 'adr-registry' in reg.CHECKS and 'quality-path-ownership' in reg.CHECKS, "
+            "sorted(reg.CHECKS); "
+            "print('ok')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("ok", result.stdout)
+
 
 class McpOpsTlsStrictTests(unittest.TestCase):
     """Tests for ADR-014-R7: mcp/ops must keep Postgres TLS verification on.
@@ -4162,8 +4297,10 @@ class BoundaryMockPolicyTests(unittest.TestCase):
             reference_baseline = Counter(
                 {("tests/test_ranges.py", "cms.services.create_range"): 1}
             )
+            # Patch the impl module (checks/boundary_mock.py): the facade re-export
+            # keeps its own module globals, so the check resolves this helper there.
             with patch.object(
-                ADR_GUARD,
+                ADR_GUARD.boundary_mock,
                 "_load_boundary_mock_reference_baseline",
                 return_value=(reference_baseline, None),
             ):
@@ -4189,8 +4326,10 @@ class BoundaryMockPolicyTests(unittest.TestCase):
                 ],
             )
 
+            # Patch the impl module (checks/boundary_mock.py): the facade re-export
+            # keeps its own module globals, so the check resolves this helper there.
             with patch.object(
-                ADR_GUARD,
+                ADR_GUARD.boundary_mock,
                 "_load_boundary_mock_reference_baseline",
                 return_value=(Counter(), None),
             ):
@@ -5830,10 +5969,14 @@ class PublishedContractSnapshotsImmutableTests(unittest.TestCase):
 
     def _run(self, repo_root: Path, *, base_refs, ls_tree, base_content, enforce: bool = False):
         env = {ADR_GUARD._PUBLISHED_CONTRACT_ENFORCE_ENV: "1" if enforce else ""}
+        # adr_guard.py is a compatibility facade; check_published_contract_snapshots_immutable
+        # lives in checks/published_contract.py and resolves these git helpers through that
+        # module's own globals, so patch them there rather than on the facade attribute.
+        pc = ADR_GUARD.published_contract
         with (
             patch.dict(os.environ, env),
-            patch.object(ADR_GUARD, "_boundary_mock_base_reference_candidates", return_value=base_refs),
-            patch.object(ADR_GUARD, "_git_text", side_effect=self._fake_git(ls_tree=ls_tree, base_content=base_content)),
+            patch.object(pc, "_boundary_mock_base_reference_candidates", return_value=base_refs),
+            patch.object(pc, "_git_text", side_effect=self._fake_git(ls_tree=ls_tree, base_content=base_content)),
         ):
             return ADR_GUARD.check_published_contract_snapshots_immutable(repo_root, None)
 
@@ -5919,289 +6062,6 @@ class PublishedContractSnapshotsImmutableTests(unittest.TestCase):
         violations = ADR_GUARD.check_published_contract_snapshots_immutable(ADR_GUARD.REPO_ROOT, None)
         self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
 
-
-class AcesParityInventoryPathIntegrityTests(unittest.TestCase):
-    """Tests for check_aces_parity_inventory_path_integrity (ADR-024-R4)."""
-
-    CHECK = "aces-parity-inventory-path-integrity"
-    RULE = "ADR-024-R4"
-    INV_REL = "docs/architecture/aces-migration-parity-inventory.yaml"
-    # A neutral value for the field a test is not exercising: whitespace-bearing
-    # so it classifies as prose and is never resolved.
-    NEUTRAL = "not applicable"
-
-    def _write_inventory(self, repo: Path, body: str) -> None:
-        inv = repo / "docs" / "architecture" / "aces-migration-parity-inventory.yaml"
-        inv.parent.mkdir(parents=True, exist_ok=True)
-        inv.write_text(body, encoding="utf-8")
-
-    def _row(self, legacy_source: str, validation_evidence: str, row_id: str = "row.one") -> str:
-        return (
-            "rows:\n"
-            f"  - id: {row_id}\n"
-            f"    legacy_source: {legacy_source}\n"
-            f"    validation_evidence: {validation_evidence}\n"
-        )
-
-    def _run(self, repo: Path, files: list[str] | None = None) -> list:
-        return ADR_GUARD.check_aces_parity_inventory_path_integrity(repo, files)
-
-    # --- classification: path existence -------------------------------------
-
-    def test_missing_path_fails(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(repo, self._row("shifter/gone/module.py", self.NEUTRAL))
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 1)
-            self.assertEqual(violations[0].check, self.CHECK)
-            self.assertEqual(violations[0].rule_id, self.RULE)
-            self.assertEqual(violations[0].path, self.INV_REL)
-            self.assertIn("does not resolve to an existing path", violations[0].message)
-            self.assertIn("shifter/gone/module.py", violations[0].message)
-            # Diagnostics must not leak the absolute checkout path.
-            self.assertNotIn(tmp, violations[0].message)
-
-    def test_existing_file_passes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            target = repo / "pkg" / "module.py"
-            target.parent.mkdir(parents=True)
-            target.write_text("x", encoding="utf-8")
-            self._write_inventory(repo, self._row("pkg/module.py", self.NEUTRAL))
-            self.assertEqual(self._run(repo), [])
-
-    def test_existing_directory_passes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / "pkg" / "sub").mkdir(parents=True)
-            self._write_inventory(repo, self._row("pkg/sub/", self.NEUTRAL))
-            self.assertEqual(self._run(repo), [])
-
-    def test_root_dotfile_and_dot_slash_are_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / ".importlinter").write_text("x", encoding="utf-8")
-            (repo / "rootfile.txt").write_text("x", encoding="utf-8")
-            self._write_inventory(repo, self._row(".importlinter", "./rootfile.txt"))
-            self.assertEqual(self._run(repo), [])
-
-    # --- classification: globs ----------------------------------------------
-
-    def test_glob_one_match_passes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / "templates").mkdir()
-            (repo / "templates" / "a.yaml").write_text("x", encoding="utf-8")
-            self._write_inventory(repo, self._row("templates/*.yaml", self.NEUTRAL))
-            self.assertEqual(self._run(repo), [])
-
-    def test_glob_zero_match_fails_once(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / "templates").mkdir()
-            self._write_inventory(repo, self._row("templates/*.yaml", self.NEUTRAL))
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 1)
-            self.assertIn("matches no path under the repository root", violations[0].message)
-
-    # --- classification: commands and prose are skipped ---------------------
-
-    def test_command_forms_are_skipped(self) -> None:
-        commands = (
-            "'python3 scripts/adr_guard/adr_guard.py --all --level ci; "
-            "cd shifter/shifter_platform && uv run lint-imports --config ../../.importlinter; "
-            "aces conformance backend --profile provisioning-only'"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(repo, self._row(self.NEUTRAL, commands))
-            self.assertEqual(self._run(repo), [])
-
-    def test_removed_legacy_prose_is_skipped(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(
-                repo,
-                self._row('"removed legacy cms.experiments schemas (ADR-027 / issue #1195)"', self.NEUTRAL),
-            )
-            self.assertEqual(self._run(repo), [])
-
-    def test_dotted_model_references_are_prose(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(
-                repo,
-                self._row(
-                    "engine.Range.provisioned_instances; cms.RangeInstance.range_spec; risk_register.AuditLog",
-                    self.NEUTRAL,
-                ),
-            )
-            self.assertEqual(self._run(repo), [])
-
-    def test_annotated_path_in_prose_is_not_extracted(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            # A path-looking token annotated with issue context is prose; the
-            # referenced file does not exist yet the clause must not fail.
-            self._write_inventory(repo, self._row(self.NEUTRAL, '"tests/example.py (#1234)"'))
-            self.assertEqual(self._run(repo), [])
-
-    # --- semicolon clauses + determinism ------------------------------------
-
-    def test_semicolon_separated_paths_reported_independently(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / "dir").mkdir()
-            (repo / "dir" / "exists.txt").write_text("x", encoding="utf-8")
-            self._write_inventory(
-                repo,
-                self._row("dir/exists.txt; dir/missing_one.txt; dir/missing_two.txt", self.NEUTRAL),
-            )
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 2)
-            self.assertIn("dir/missing_one.txt", violations[0].message)
-            self.assertIn("dir/missing_two.txt", violations[1].message)
-
-    # --- security / containment ---------------------------------------------
-
-    def test_absolute_path_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(repo, self._row("/etc/passwd", self.NEUTRAL))
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 1)
-            self.assertIn("must be repository-relative", violations[0].message)
-
-    def test_parent_traversal_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(repo, self._row("../outside/secret.txt", self.NEUTRAL))
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 1)
-            self.assertIn("'..' path traversal", violations[0].message)
-
-    def test_symlink_escape_rejected_without_reading_target(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
-            repo = Path(tmp)
-            (Path(outside) / "secret.txt").write_text("TOPSECRET", encoding="utf-8")
-            os.symlink(outside, repo / "linked")
-            self._write_inventory(repo, self._row("linked/secret.txt", self.NEUTRAL))
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 1)
-            self.assertIn("resolves outside the repository root", violations[0].message)
-            self.assertNotIn("TOPSECRET", violations[0].message)
-
-    def test_glob_through_symlink_escape_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
-            repo = Path(tmp)
-            (Path(outside) / "leaked.txt").write_text("x", encoding="utf-8")
-            os.symlink(outside, repo / "linked")
-            self._write_inventory(repo, self._row("linked/*.txt", self.NEUTRAL))
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 1)
-            self.assertTrue(violations[0].message.endswith("matches no path under the repository root"))
-
-    def test_glob_external_and_empty_share_one_diagnostic(self) -> None:
-        # No boolean filename oracle: a glob that only matches outside the repo
-        # (via a symlink) and a glob that matches nothing must produce the same
-        # reason, so the check cannot enumerate host filenames.
-        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
-            repo = Path(tmp)
-            (Path(outside) / "hit.txt").write_text("x", encoding="utf-8")
-            os.symlink(outside, repo / "linked")
-            (repo / "empty").mkdir()
-            self._write_inventory(repo, self._row("linked/*.txt", "empty/*.txt"))
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 2)
-            for violation in violations:
-                self.assertTrue(violation.message.endswith("matches no path under the repository root"))
-
-    def test_unsafe_expansion_characters_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(repo, self._row("$HOME/config", self.NEUTRAL))
-            violations = self._run(repo)
-            self.assertEqual(len(violations), 1)
-            self.assertIn("unsupported shell/expansion character", violations[0].message)
-
-    def test_command_clause_never_executes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(repo, self._row(self.NEUTRAL, "python3 -c pathlib.Path('SENTINEL').touch()"))
-            violations = self._run(repo)
-            self.assertEqual(violations, [])
-            self.assertFalse((repo / "SENTINEL").exists())
-
-    # --- fail-closed shape validation ---------------------------------------
-
-    def test_missing_inventory_is_bounded_violation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            violations = self._run(Path(tmp))
-            self.assertEqual(len(violations), 1)
-            self.assertIn("missing or unreadable", violations[0].message)
-
-    def test_malformed_and_wrong_shape_yaml(self) -> None:
-        cases = {
-            "invalid yaml": ("rows: [unclosed", "is not valid YAML"),
-            "non-mapping root": ("- a\n- b\n", "root must be a mapping"),
-            "rows not a list": ("rows: 5\n", "'rows' must be a list"),
-            "row not a mapping": ("rows:\n  - just a string\n", "must be a mapping"),
-            "missing id": (
-                "rows:\n  - legacy_source: not applicable\n    validation_evidence: not applicable\n",
-                "non-empty string 'id'",
-            ),
-            "non-string field": (
-                "rows:\n  - id: row.one\n    legacy_source:\n      - a\n    validation_evidence: not applicable\n",
-                "must be a string",
-            ),
-            "missing field": (
-                "rows:\n  - id: row.one\n    validation_evidence: not applicable\n",
-                "is missing field",
-            ),
-        }
-        for name, (body, expected) in cases.items():
-            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
-                repo = Path(tmp)
-                self._write_inventory(repo, body)
-                violations = self._run(repo)
-                self.assertTrue(violations, msg=f"{name} produced no violation")
-                self.assertTrue(
-                    any(expected in v.message for v in violations),
-                    msg=f"{name}: {[v.message for v in violations]}",
-                )
-
-    def test_missing_pyyaml_fails_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(repo, self._row(self.NEUTRAL, self.NEUTRAL))
-            with patch.dict(sys.modules, {"yaml": None}):
-                violations = self._run(repo)
-            self.assertEqual(len(violations), 1)
-            self.assertIn("PyYAML", violations[0].message)
-
-    # --- global scope + registration + real inventory -----------------------
-
-    def test_runs_globally_ignoring_files_argument(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self._write_inventory(repo, self._row("dir/missing.py", self.NEUTRAL))
-            none_scope = self._run(repo, files=None)
-            file_scope = self._run(repo, files=["unrelated/other.py"])
-            self.assertEqual(len(none_scope), 1)
-            self.assertEqual(
-                [v.message for v in none_scope],
-                [v.message for v in file_scope],
-            )
-
-    def test_check_registered_in_ci_level(self) -> None:
-        self.assertIn(self.CHECK, ADR_GUARD.CHECKS)
-        self.assertIn(self.CHECK, ADR_GUARD.CHECK_LEVELS["ci"])
-        self.assertIn(self.CHECK, ADR_GUARD.CHECK_LEVELS["all"])
-
-    def test_current_inventory_passes(self) -> None:
-        violations = ADR_GUARD.check_aces_parity_inventory_path_integrity(ADR_GUARD.REPO_ROOT, None)
-        self.assertEqual(violations, [], msg=f"Unexpected violations: {[v.message for v in violations]}")
 
 
 if __name__ == "__main__":

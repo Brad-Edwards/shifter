@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from engine.secrets import SecretsError
 from shared.enums import ResourceStatus
@@ -116,6 +117,45 @@ def _require_declared_participant_channel(instance: dict[str, Any], channel: str
         raise ValueError(f"{channel} access is not a declared participant endpoint for this instance")
 
 
+def get_owned_instance_request_ref(user: User, instance_uuid: str) -> str | None:
+    """Return the provisioning request ref owning ``instance_uuid``, or ``None``.
+
+    The ref is the request's ``request_id`` UUID -- the correlation key shared
+    with other layers' own request rows. It is deliberately not the numeric
+    primary key: ``engine_request`` and ``cms_request`` are separate tables
+    whose ids only happen to run in step, so joining on pk would silently
+    resolve the wrong row once they diverge.
+
+    Realized range instances live in ``engine.models.Instance``; the CMS-side
+    ``cms.models.Instance`` table is written only by NGFW provisioning. Callers
+    outside ``engine`` therefore cannot resolve a range instance from their own
+    models and reach this through ``engine.services`` (ADR-001: layers cross only
+    at the public service facade, never at another layer's models).
+
+    Ownership is enforced here so the caller receives an id only for an instance
+    the user actually owns; the caller remains responsible for any further
+    authorization (for example the workspace binding recorded on its own request
+    row) before granting access.
+    """
+    from engine.models import Instance
+
+    user_id = getattr(user, "id", None)
+    if user_id is None or not instance_uuid:
+        return None
+    try:
+        instance = (
+            Instance.objects.select_related("request").filter(uuid=instance_uuid, request__user_id=user_id).first()
+        )
+    except (DjangoValidationError, ValueError):
+        instance = None
+    # ``request`` is nullable on the model, so an instance whose request row was
+    # detached resolves to no ref rather than raising. A malformed uuid (caught
+    # above) lands here as ``instance = None`` and resolves to no ref too.
+    if instance is None or instance.request is None:
+        return None
+    return str(instance.request.request_id)
+
+
 def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
     """Get connection info for RDP access to a range instance."""
     from engine.models import Range
@@ -167,6 +207,11 @@ def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
         "rdp_username": rdp_username,
         "rdp_password": rdp_password,
         "ssh_key": _fetch_sftp_ssh_key(instance, os_type),
+        "sftp_enabled": instance.get("participant_sftp_enabled") is not False,
+        # Per-image realized SFTP root (#375). ``None`` when the realized instance
+        # declared none; Mission Control then omits the Guacamole SFTP directory
+        # rather than guessing one from ``os_type``.
+        "sftp_root_directory": instance.get("sftp_root_directory") or None,
     }
 
 

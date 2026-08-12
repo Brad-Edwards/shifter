@@ -21,7 +21,10 @@ and cutover gates pass.
 ## Requirement posture
 
 - PLAT-007 tracks scenario expressiveness gaps as ACES migration/profile gaps,
-  not as private provisioner behavior or new CyberScript semantics.
+  not as private provisioner behavior or new CyberScript semantics. The binding
+  recording requirement is the `governance` block in
+  `docs/architecture/aces-migration-parity-inventory.yaml`, so the two
+  documents cannot drift.
 - PLAT-209 tracks the parity-gated convergence path toward ACES as the
   canonical scenario definition surface. CyberScript compatibility is
   transition support, not a co-equal new authoring target.

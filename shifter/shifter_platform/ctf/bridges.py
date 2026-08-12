@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
     from django.contrib.auth.models import User
 
+    from shared.capacity import CapacityAssessmentResult
     from shared.remote_access import OpenVpnProfile
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,54 @@ def cms_declare_event_capacity(
         resource_hints=resource_hints,
     )
     cms_services.engine_record_capacity_declaration(signal)
+
+
+def cms_assess_event_capacity(event_ref: UUID) -> CapacityAssessmentResult | None:
+    """Ask the engine whether an event's declared capacity fits (PLAT-201).
+
+    Best-effort consumer contract mirroring the declaration bridge: capacity
+    admission informs provisioning, and a failure to assess must never be the
+    reason an event cannot spin up. Returns the engine's assessment result, or
+    ``None`` when the layer is disabled or no declaration exists.
+    """
+    import cms.services as cms_services
+
+    return cms_services.engine_assess_declared_event_capacity(event_ref)
+
+
+def cms_project_scenario_images(scenario_id: str) -> dict[str, Any]:
+    """Resolve a scenario's per-range image shape for capacity planning (PLAT-201).
+
+    CMS owns scenario hydration, so the projection is resolved there and reaches
+    CTF through the public service facade rather than a direct module import.
+    """
+    import cms.services as cms_services
+
+    return cms_services.project_scenario_images(scenario_id).as_hint()
+
+
+def cms_admit_range_capacity(event_ref: UUID, draw_key: UUID) -> CapacityAssessmentResult:
+    """Draw one range's share from the event's capacity budget (PLAT-201).
+
+    Pure database work in the engine -- no provider call -- so this is safe to
+    run on the range-creation path. ``draw_key`` is the stable identity of the
+    thing being provisioned (participant or spare), which is known before the
+    range exists and makes a retried creation idempotent.
+    """
+    import cms.services as cms_services
+
+    return cms_services.engine_admit_range_capacity(event_ref, draw_key=draw_key)
+
+
+def cms_release_range_capacity(draw_key: UUID) -> int:
+    """Return a range's capacity draw to its event budget (PLAT-201).
+
+    Must run on every teardown path: a draw that outlives its range leaks
+    capacity and eventually refuses an event that would have fit.
+    """
+    import cms.services as cms_services
+
+    return cms_services.engine_release_range_capacity(draw_key)
 
 
 def cms_create_range(
@@ -177,7 +226,7 @@ def cms_get_range_target_instances(user: User) -> list[dict[str, str]]:
             "private_ip": str(instance.get("private_ip") or ""),
             "os_type": str(instance.get("os_type") or ""),
         }
-        for instance in cms_services.get_range_target_instances(user.pk)
+        for instance in cms_services.get_range_target_instances(user)
     ]
 
 
@@ -228,7 +277,10 @@ def cms_reassign_range_owner(range_instance_id: int, new_user: User) -> None:
     """Reassign an existing range's ownership via CMS (#1018 spare recovery)."""
     import cms.services as cms_services
 
-    cms_services.reassign_range_owner(range_instance_id, new_user)
+    # A spare range is pre-provisioned outside the participant's tenancy, so the
+    # handover legitimately crosses workspaces and carries the range's scope with
+    # it (#1325, ADR-046-R3).
+    cms_services.reassign_range_owner(range_instance_id, new_user, rehome=True)
 
 
 def cms_range_owner_reassignment_available(range_instance_id: int) -> bool:
@@ -243,7 +295,7 @@ def cms_list_scenarios(user: User) -> list[tuple[str, str]]:
 
     CTF event creation is a launch workflow, so this returns only scenarios that
     are launchable for the ``ctf_event`` workflow (legacy YAML/DB scenarios plus
-    any launchable ACES package entries); non-launchable ACES review entries are
+    any launchable RAES package entries); non-launchable RAES review entries are
     excluded. Staff review of non-launchable entries lives in the CMS scenario
     editor, not in CTF event selection.
 

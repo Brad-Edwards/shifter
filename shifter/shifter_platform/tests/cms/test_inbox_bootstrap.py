@@ -17,7 +17,7 @@ import yaml
 from django.contrib.auth import get_user_model
 
 from cms.exceptions import CMSError
-from cms.models import AcesPackageSource
+from cms.models import RaesPackageSource
 from cms.scenarios.inbox import SHIPPED_INBOX_MANIFEST, load_inbox_manifest, register_inbox_packs
 from cms.scenarios.pack_validation import PackDigestError, pack_digest
 from cms.scenarios.registry import get_catalog_entry
@@ -45,7 +45,7 @@ def _inbox_entry(package_ref: str, **overrides) -> dict:
     entry = {
         "scenario_id": "inbox-fixture",
         "source_kind": "repo",
-        "contract_kind": "aces",
+        "contract_kind": "raes",
         "contract_profile": "shifter",
         "package_ref": package_ref,
         "package_version": "0.1.0",
@@ -57,7 +57,7 @@ def _inbox_entry(package_ref: str, **overrides) -> dict:
         from django.conf import settings
 
         with suppress(PackDigestError, OSError):
-            entry["package_digest"] = pack_digest(Path(settings.ACES_PACKAGE_ROOT) / package_ref)
+            entry["package_digest"] = pack_digest(Path(settings.RAES_PACKAGE_ROOT) / package_ref)
     return entry
 
 
@@ -76,20 +76,20 @@ class TestRegisterInboxPacks:
         from django.conf import settings
 
         make_pack(tmp_path / "packs" / "inbox-fixture", name="inbox-fixture")
-        monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path))
         manifest = _write_manifest(tmp_path / "manifest.yaml", [_inbox_entry("packs/inbox-fixture")])
 
         registered = register_inbox_packs(actor=admin_actor, manifest_path=manifest)
 
         assert [r.scenario_id for r in registered] == ["inbox-fixture"]
-        assert AcesPackageSource.objects.filter(scenario_id="inbox-fixture").exists()
+        assert RaesPackageSource.objects.filter(scenario_id="inbox-fixture").exists()
         assert get_catalog_entry("inbox-fixture") is not None
 
     def test_is_idempotent(self, admin_actor, make_pack, tmp_path, monkeypatch):
         from django.conf import settings
 
         make_pack(tmp_path / "packs" / "inbox-fixture", name="inbox-fixture")
-        monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path))
         manifest = _write_manifest(tmp_path / "manifest.yaml", [_inbox_entry("packs/inbox-fixture")])
 
         first = register_inbox_packs(actor=admin_actor, manifest_path=manifest)
@@ -97,13 +97,13 @@ class TestRegisterInboxPacks:
 
         assert len(first) == 1
         assert second == []  # exact service-level retry is a no-op
-        assert AcesPackageSource.objects.filter(scenario_id="inbox-fixture").count() == 1
+        assert RaesPackageSource.objects.filter(scenario_id="inbox-fixture").count() == 1
 
     def test_retry_rejects_manifest_identity_drift(self, admin_actor, make_pack, tmp_path, monkeypatch):
         from django.conf import settings
 
         make_pack(tmp_path / "packs" / "inbox-fixture", name="inbox-fixture")
-        monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path))
         manifest = _write_manifest(tmp_path / "manifest.yaml", [_inbox_entry("packs/inbox-fixture")])
         register_inbox_packs(actor=admin_actor, manifest_path=manifest)
 
@@ -138,7 +138,7 @@ class TestRegisterInboxPacks:
 
         with pytest.raises(CMSError, match="in-box pack manifest"):
             register_inbox_packs(actor=admin_actor, manifest_path=manifest)
-        assert AcesPackageSource.objects.count() == 0
+        assert RaesPackageSource.objects.count() == 0
 
     def test_later_pack_failure_rolls_back_earlier_registration(
         self,
@@ -151,7 +151,7 @@ class TestRegisterInboxPacks:
 
         make_pack(tmp_path / "packs" / "inbox-first", name="inbox-first")
         make_pack(tmp_path / "packs" / "inbox-second", name="inbox-second")
-        monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(tmp_path))
         manifest = _write_manifest(
             tmp_path / "manifest.yaml",
             [
@@ -166,7 +166,7 @@ class TestRegisterInboxPacks:
 
         with pytest.raises(CMSError, match="does not match"):
             register_inbox_packs(actor=admin_actor, manifest_path=manifest)
-        assert not AcesPackageSource.objects.filter(scenario_id__in=["inbox-first", "inbox-second"]).exists()
+        assert not RaesPackageSource.objects.filter(scenario_id__in=["inbox-first", "inbox-second"]).exists()
 
 
 class TestBootstrapCommand:
@@ -175,7 +175,7 @@ class TestBootstrapCommand:
 
         # The shipped manifest is empty today: the command is a clean no-op.
         call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
-        assert AcesPackageSource.objects.count() == 0
+        assert RaesPackageSource.objects.count() == 0
 
     def test_command_errors_on_unknown_actor(self, db):
         from django.core.management import CommandError, call_command

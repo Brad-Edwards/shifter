@@ -1,4 +1,4 @@
-# In-box scenario-pack manifest (#1578, ADR-034).
+# In-box environment-pack manifest (#1578, ADR-034).
 #
 # Declares the scenario packs Shifter ships by default. The bootstrap
 # (`cms.scenarios.inbox.register_inbox_packs`, invoked by the
@@ -15,9 +15,9 @@
 # packs:
 #   - scenario_id: example-inbox
 #     source_kind: repo            # repo | object (object is not launchable until #1567)
-#     contract_kind: aces
+#     contract_kind: raes
 #     contract_profile: shifter
-#     package_ref: scenario-dev/example-inbox   # pack root, resolved under ACES_PACKAGE_ROOT
+#     package_ref: scenario-dev/example-inbox   # pack root, resolved under RAES_PACKAGE_ROOT
 #     package_version: "0.1.0"
 #     package_digest: "sha256:<64 lowercase hex>"  # canonical associated-artifact set digest
 #     provenance: {repo: Brad-Edwards/shifter}

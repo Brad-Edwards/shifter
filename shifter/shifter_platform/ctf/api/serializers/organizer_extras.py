@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from ctf.models.event import MAX_EVENT_PAGE_BODY_CHARS
+
 
 class ParticipantModerationRequestSerializer(serializers.Serializer):
     """Optional reason accompanying a ban or disqualification."""
@@ -123,5 +125,8 @@ class EventPageWriteSerializer(serializers.Serializer):
 
     title = serializers.CharField(max_length=120)
     slug = serializers.SlugField(required=False, allow_blank=True, max_length=140)
-    body = serializers.CharField()
+    # Bound the organizer-authored source: it is untrusted input rendered to
+    # other participants, so a hostile or fat-fingered payload cannot balloon
+    # the request, row, response, or render work (#1854).
+    body = serializers.CharField(max_length=MAX_EVENT_PAGE_BODY_CHARS)
     order = serializers.IntegerField(required=False, min_value=0)

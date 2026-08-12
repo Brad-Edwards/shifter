@@ -60,7 +60,7 @@ missing required secret fails the deploy up front rather than mid-run.
 | `SMOKE_TEST_USER_EMAIL` | manual | no | Post-deploy smoke user. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | manual | no | Comma-separated emails elevated to Django `is_staff` on first sign-in. Shared across all environments including prod. |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | manual | no | Comma-separated emails elevated to `is_superuser`. Shared across all environments including prod. |
-| `SONAR_TOKEN` | manual | no | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. |
+| `SONAR_TOKEN` | manual | no | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. The project key and organization are not secrets and come from repository variables instead: see [SonarCloud project identity](#sonarcloud-project-identity). |
 | `AWS_IMAGE_ROLE_ARN_DEV` | manual (from global-IAM output) | no | OIDC role the `packer.yml` base-image `build` job assumes (issue #1656), separate from the deploy `AWS_ROLE_ARN_*`. Least-privilege: its trust is pinned to the `dev`/`main` subjects and its `iam:PassRole` is scoped to the exact range instance role. Not checked by the deploy preflight, but the base build fails closed without it. Prod is `AWS_IMAGE_ROLE_ARN` (base builds target dev/proof); proof is `AWS_IMAGE_ROLE_ARN_PROOF`. Set from `terraform output -raw github_actions_image_role_arn` in `platform/terraform/global/iam`. See the [AWS AMI seeding runbook](aws-ami-seeding-runbook.md). |
 
 "Populated by bootstrap" secrets are set once per account. "Populated by
@@ -71,6 +71,40 @@ variables → Actions** and are not written by either script.
 Proof range standup needs `TF_VARS_PROOF_RANGE` and `SHIFTER_CONFIG_PROOF_RANGE`
 as well, but `sync-deploy-secrets.sh` has no proof-range record yet, so set those
 two by hand (see [AWS range](#aws-range-dev--prod)).
+
+### SonarCloud project identity
+
+Two repository **variables**, not secrets, identify the SonarCloud project
+(ADR-003-R7). They are repository-wide, set once, and not written by either sync
+script:
+
+| Variable | Value | Notes |
+|---|---|---|
+| `SONAR_PROJECT_KEY` | `Brad-Edwards_shifter` | Carries the project's entire measure history and new-code baseline. The spelling and case must not change. A different key starts an empty project and loses the baseline. |
+| `SONAR_ORGANIZATION` | `brad-edwards` | SonarCloud organization owning the project. |
+
+The `SonarQube Cloud scan` step in `.github/workflows/_quality.yml` passes both to
+the scanner; the values are public, so they are safe on the command line while
+`SONAR_TOKEN` stays in the step's `env:`. Everything else the scan needs (sources,
+exclusions, suppressions, coverage report paths) is shared analysis configuration
+and stays committed in `sonar-project.properties`.
+
+The scan is gated on `github.repository`, deliberately **not** on these variables
+being set. A missing or renamed variable therefore fails the scanner and the job,
+rather than skipping the scan and quietly removing the SonarCloud quality gate
+from `PR Gate`.
+
+Two cases skip the scan on purpose:
+
+- **Runs under any other repository slug.** SonarCloud is this project's tooling
+  choice, not a dependency imposed on anyone who cloned the repository and ran
+  the workflow as-is. Their runs skip it; to analyse their own fork they set
+  these two variables plus a `SONAR_TOKEN` of their own.
+- **Fork-origin pull requests.** They execute in the base repository's context,
+  so the identity test passes, but GitHub withholds secrets from them. Scanning
+  would fail on an empty `SONAR_TOKEN` and give an outside contributor a red
+  check they cannot fix. Their code is analysed on the `dev` run after merge, so
+  nothing reaches a release unanalysed.
 
 ## Populating and syncing the secrets
 
@@ -124,8 +158,15 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | yes | Workload identity provider resource id. |
 | `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | yes | First Identity Platform operator, elevated in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set to deliberately skip operator creation (the skip is logged). |
 | `GCP_BOOTSTRAP_ADMIN_PASSWORD` | secret | yes | Initial password for the bootstrap operator (rotated by TOTP enrollment on first sign-in). Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true`. |
+| `GCP_CTF_CONTENT_BUCKET` | variable | with content refs | GCS bucket holding digest-pinned native CTF content bundles; rendered into the `ctf_content_bucket_name` tfvar and surfaced to the runtime as `SHIFTER_CTF_CONTENT_BUCKET`. **Required whenever the app secret bundle carries `ctf_content_references`:** `config/_ctf_content_settings.py` fails closed when references are configured without a bucket, so leaving this unset renders a ConfigMap with no binding and crashloops the portal. The reference catalog itself stays in the app secret, never here. |
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | secret | no | Comma-separated list of emails elevated to Django `is_staff` on first sign-in. |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | secret | no | Comma-separated list of emails elevated to `is_superuser`. |
+| `SMOKE_TEST_USER_EMAIL` | secret | no | Post-deploy smoke user for the advisory `post-deploy-smoke` job. Same contract as AWS dev smoke; see [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+
+Native CTF scenario-content references live in the existing application secret,
+not in GitHub variables or the generated ConfigMap. Configure the private
+bucket through the GCP Terraform input and follow the
+[native CTF scenario-content runbook](ctf-scenario-content.md).
 
 For local GCP bootstrap, `scripts/bootstrap/deploy.py` validates the bootstrap
 operator email against the Terraform output `identity_allowed_email_domain`.
@@ -189,8 +230,6 @@ above, plus the following:
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
 | `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
-| `GCP_TECHVAULT_PACKER_MACHINE_TYPE` | variable | techvault | High-memory TechVault builder shape. Defaults to `n2-highmem-8`; independent from runtime sizing. |
-| `GCP_TECHVAULT_VALIDATE_MACHINE_TYPE` | variable | techvault | High-memory disposable validation shape. Defaults to `n2-highmem-8`. |
 | `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
 | `GCP_POLARIS_STACK_BUCKET` | variable | polaris-vm | GCS bucket holding the Polaris compose-stack tarball (`<bucket>/polaris/stack/polaris-stack.tar.gz`). The `polaris-vm` build's `host-setup.sh` fetches it and `docker compose build`s the stack into the image. **Required for a promotable `polaris-vm`:** the build fails if the stack is absent. The packer builder SA needs `roles/storage.objectViewer` on the bucket. See "Baking the polaris-vm host image" in `docs/dev/gcp-range-cell-deploy.md`. |
 | `GCP_POLARIS_STACK_SHA256` | variable | polaris-vm | Required sha256 digest of the compose-stack tarball; the `polaris-vm` build verifies the fetched tarball and fails on mismatch, so a mutable GCS key cannot change what is baked. |
@@ -206,8 +245,6 @@ per run and injects it via `PKR_VAR_*`; the pre-promoted `dc-prebaked` build als
 generates a per-run DSRM password (`PKR_VAR_dc_dsrm_password`). Nothing is
 committed.
 
-The `techvault` target publishes family `shifter-techvault` for the native GCE
-range-cell backend and is explicitly excluded from the GDC qcow2 export step.
 Promotion downloads the validation run's evidence artifact and binds it to the
 candidate, protected run, revision, source project, family, and image type
 before copying to prod.
@@ -241,6 +278,12 @@ values the `example.com` baseline deliberately leaves non-operational:
   CTFd SSH ingress closed)
 - `user_storage_bucket` and any other AWS-account-suffixed bucket names
   that vary per environment
+
+For native scenario-provided CTF challenges, the same overlay may also set
+`ctf_content_bucket_arn`, `ctf_content_prefix`, and
+`ctf_content_max_bytes`. The bounded reference catalog belongs in the existing
+application secret, not in the tfvars payload. See the
+[native CTF scenario-content runbook](ctf-scenario-content.md).
 
 For AWS local deploys, write the same HCL to a gitignored
 `local.auto.tfvars` next to the environment's `terraform.tfvars` and run
@@ -550,10 +593,11 @@ fall back to the code defaults in `config.py`. See
 | `GCP_RANGE_LINUX_IMAGE` | yes | Full image or family URL for the default unkeyed Linux/host profile. |
 | `GCP_RANGE_DC_IMAGE` | yes | Default unkeyed Windows domain-controller image, pre-promoted at bake time. Baked per-domain from `dc-prebaked.pkr.hcl` into family `shifter-<purpose>-dc` (see "Baking a new pre-promoted DC image" in `docs/dev/gcp-range-cell-deploy.md`). |
 | `DC_DOMAIN_PASSWORD` | DC scenarios | **Sensitive.** Domain Administrator password the provisioner sets on the pre-promoted DC (`set_admin_password`). Must match the password baked into the DC image by `a2_setup.ps1` at bake time (its `-AdminPassword` default). Provide via the GCP deploy config secret so it is rendered into the runtime env and forwarded to the provisioner job (`_GCP_PROVISIONER_ENV_KEYS`); if unset, DC setup fails setting the admin password. |
-| `GCP_RANGE_KALI_IMAGE` | scenario | Default unkeyed Kali image. Keyed Polaris and TechVault hosts use the structured map below. |
+| `GCP_RANGE_KALI_IMAGE` | scenario | Default unkeyed Kali image. Keyed Polaris hosts use the structured map below. |
 | `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image for non-Polaris scenarios. |
-| `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` | keyed scenarios | Optional non-secret compact JSON map from exact `(linux|kali|windows|dc, ami_key)` to a complete GCE profile (`source_image`, `machine_type`, `disk_size_gb`, `disk_type`). Maximum 32,768 bytes and 64 entries. Unknown keys fail before cloud mutation. See `docs/dev/gcp-range-cell-deploy.md`. |
+| `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` | keyed scenarios | Optional compact JSON map from exact `(linux|kali|windows|dc, ami_key)` to a complete GCE profile. Normal images use `source_image`, sizing, disk policy, and a typed capability. Preconfigured hosts use an exact `source_machine_image`, machine type, host login, and participant container/account. Any profile may opt into public TCP 80/443 with `allow_public_web_egress` (default false). Maximum 32,768 bytes and 64 entries. Unknown keys, unsupported capabilities, and malformed profiles fail before cloud mutation. Use an Actions environment secret when resource names or logical selectors are confidential; the deploy workflow prefers that secret over the repository variable. The value is runtime configuration, not a credential, and is emitted into the private platform ConfigMap. See `docs/dev/gcp-range-cell-deploy.md`. |
 | `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | yes | Service account attached to range guests. Minimal scope: logging and monitoring write. |
+| `GCP_RANGE_HOST_IDENTITY_POOL_SIZE` | machine-image hosts | Number of Terraform-created `sh-range-host-<slot>` identities. Must equal `range_host_identity_pool_size`; zero disables preconfigured machine-image hosts. |
 | `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL` | Polaris | Service account whose per-range key the a14-kali agent uses for Vertex AI. Leave empty to disable per-range Vertex credentials. |
 | `GCP_RANGE_VERTEX_PROJECT_ID` | no | Vertex project. Defaults to `GCP_RANGE_CELL_PROJECT_ID`, then the control-plane project. |
 | `GCP_RANGE_PRIVATE_GOOGLE_ACCESS` | no | Set `true` so no-external-IP guests reach Vertex AI and Cloud Storage over Private Google Access. |

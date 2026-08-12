@@ -111,11 +111,17 @@ locals {
     var.vmseries_bootstrap_bucket_name == "" ? {} : {
       "provisioner:vmseries" = { workload = "provisioner", bucket = var.vmseries_bootstrap_bucket_name, role = "roles/storage.objectAdmin" }
     },
-    # Object-storage-backed ACES packages (#1567, ADR-034-R5): the portal reads
+    # Object-storage-backed RAES packages (#1567, ADR-034-R5): the portal reads
     # (never writes) the single immutable pack archive at launch. Least-privilege
     # objectViewer, bound per named bucket (ADR-008-R7); empty disables it.
-    var.aces_package_bucket_name == "" ? {} : {
-      "portal:aces-packages" = { workload = "portal", bucket = var.aces_package_bucket_name, role = "roles/storage.objectViewer" }
+    var.raes_package_bucket_name == "" ? {} : {
+      "portal:raes-packages" = { workload = "portal", bucket = var.raes_package_bucket_name, role = "roles/storage.objectViewer" }
+    },
+    # Native CTF content bundles are a distinct deployment concern from RAES
+    # packages. The portal needs read-only access to the explicitly configured
+    # bucket; content publication stays outside the runtime identity.
+    var.ctf_content_bucket_name == "" ? {} : {
+      "portal:ctf-content" = { workload = "portal", bucket = var.ctf_content_bucket_name, role = "roles/storage.objectViewer" }
     },
   )
 }
@@ -237,6 +243,20 @@ resource "google_service_account_iam_member" "provisioner_vpn_gateway_pool_act_a
   member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }
 
+resource "google_service_account" "range_host_pool" {
+  count        = var.range_host_identity_pool_size
+  project      = var.project_id
+  account_id   = "sh-range-host-${count.index}"
+  display_name = "Shifter preconfigured range host pool member ${count.index}"
+}
+
+resource "google_service_account_iam_member" "provisioner_range_host_pool_act_as" {
+  count              = var.range_host_identity_pool_size
+  service_account_id = google_service_account.range_host_pool[count.index].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+}
+
 resource "google_service_account_iam_member" "workload_identity" {
   for_each = local.workload_identity_members
 
@@ -287,11 +307,20 @@ resource "google_service_account" "range_vertex" {
   display_name = "Shifter ${var.environment} range Vertex"
 }
 
+# The range host SA is attached to participant-controllable POLARIS GCE guests
+# with cloud-platform scope, so a participant with root on the guest can mint its
+# token from the metadata server. It therefore holds NO project-level Cloud
+# Storage role: a project (or shared-assets-bucket) objectViewer would let a
+# compromised guest read across tenants (#1644). Its only host-side GCS need --
+# the POLARIS smoketest tarball -- is delivered as a short-lived, provisioner-
+# minted V4 signed download URL (agent_assets.get_polaris_tests_presigned_url),
+# so the guest needs no GCS identity at all. logging/monitoring writes stay; the
+# per-range Vertex-secret grant is bound elsewhere. check_tf_gcp_iam_resource_scope
+# fails closed on any project-level roles/storage.* re-added to this SA.
 resource "google_project_iam_member" "range_host_roles" {
   for_each = toset([
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
-    "roles/storage.objectViewer",
   ])
 
   project = var.project_id

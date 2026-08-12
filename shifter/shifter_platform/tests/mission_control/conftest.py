@@ -172,7 +172,37 @@ def range_ssh_instance(db):
         cloud_provider: str = "gcp",
         status=None,
     ):
+        from uuid import UUID, uuid4
+
+        from cms.models import Instance as CMSInstance
+        from cms.models import InstanceType
+        from cms.models import Request as CMSRequest
         from engine.models import Range
+        from shared.enums import RequestType
+        from workspaces.services import resolve_personal_workspace
+
+        workspace_id = resolve_personal_workspace(user).workspace_id
+        instance_type, _ = InstanceType.objects.get_or_create(
+            slug="test-range-instance",
+            defaults={"name": "Test Range Instance", "spec_slug": "instance.panw-ngfw"},
+        )
+        cms_request = CMSRequest.objects.create(
+            workspace_id=workspace_id,
+            request_id=uuid4(),
+            request_type=RequestType.RANGE.value,
+            user=user,
+        )
+        try:
+            cms_instance_id = UUID(uuid)
+        except ValueError:
+            cms_instance_id = None
+        if cms_instance_id is not None:
+            CMSInstance.objects.create(
+                id=cms_instance_id,
+                request=cms_request,
+                name=connection_name,
+                instance_type=instance_type,
+            )
 
         instance = {
             "uuid": uuid,
@@ -189,6 +219,7 @@ def range_ssh_instance(db):
             },
         }
         rng = Range.objects.create(
+            workspace_id=workspace_id,
             user=user,
             status=status or Range.Status.READY,
             provisioned_instances=[instance],
@@ -210,13 +241,39 @@ def range_rdp_instance(db):
     def _make(
         user,
         *,
-        uuid: str = "rdp-instance-uuid",
+        uuid: str = "7d484828-06f1-4df8-a6e2-9d6bbb5e2d7b",
         os_type: str = "kali",
         connection_name: str = "kali-1",
         host: str = "10.0.0.2",
+        sftp_root_directory: str | None = None,
         status=None,
     ):
+        from uuid import UUID, uuid4
+
+        from cms.models import Instance as CMSInstance
+        from cms.models import InstanceType
+        from cms.models import Request as CMSRequest
         from engine.models import Range
+        from shared.enums import RequestType
+        from workspaces.services import resolve_personal_workspace
+
+        workspace_id = resolve_personal_workspace(user).workspace_id
+        instance_type, _ = InstanceType.objects.get_or_create(
+            slug="test-range-instance",
+            defaults={"name": "Test Range Instance", "spec_slug": "instance.panw-ngfw"},
+        )
+        cms_request = CMSRequest.objects.create(
+            workspace_id=workspace_id,
+            request_id=uuid4(),
+            request_type=RequestType.RANGE.value,
+            user=user,
+        )
+        CMSInstance.objects.create(
+            id=UUID(uuid),
+            request=cms_request,
+            name=connection_name,
+            instance_type=instance_type,
+        )
 
         instance = {
             "uuid": uuid,
@@ -227,7 +284,10 @@ def range_rdp_instance(db):
             "private_ip": host,
             "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:1:secret:rdp",
         }
+        if sftp_root_directory is not None:
+            instance["sftp_root_directory"] = sftp_root_directory
         rng = Range.objects.create(
+            workspace_id=workspace_id,
             user=user,
             status=status or Range.Status.READY,
             provisioned_instances=[instance],
@@ -268,10 +328,16 @@ def cms_ngfw_app(db):
 
         from cms.models import App, AppType, Instance, InstanceType, Request
         from shared.enums import RequestType, ResourceStatus
+        from workspaces.services import resolve_personal_workspace
 
         _ensure_ngfw_catalog()
         resolved_status = status or ResourceStatus.READY.value
-        request = Request.objects.create(request_id=uuid4(), request_type=RequestType.NGFW.value, user=user)
+        request = Request.objects.create(
+            workspace_id=resolve_personal_workspace(user).workspace_id,
+            request_id=uuid4(),
+            request_type=RequestType.NGFW.value,
+            user=user,
+        )
         instance = Instance.objects.create(
             request=request,
             name=name,
@@ -350,6 +416,8 @@ def make_ngfw(db):
 
         request = None
         if with_request:
+            # engine.models.Request (imported above) carries no workspace scope;
+            # tenancy lives on the CMS request and the engine Range.
             request = Request.objects.create(
                 request_id=uuid4(),
                 request_type=RequestType.NGFW.value,

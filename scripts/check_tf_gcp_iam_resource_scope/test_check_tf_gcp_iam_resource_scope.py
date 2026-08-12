@@ -27,9 +27,11 @@ from .check_tf_gcp_iam_resource_scope import (
     ALLOWLIST,
     _LITERAL_ROLE_RE,
     _PROJECT_IAM_MEMBER_RE,
+    _RANGE_HOST_MEMBER_RE,
     _WORKLOAD_MEMBER_RE,
     _extract_resource_blocks,
     _parse_role_map,
+    _resource_granted_roles,
     check_file,
     check_paths,
 )
@@ -137,9 +139,10 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             f"expected workers objectAdmin literal violation, got: {reasons}",
         )
 
-    def test_forbidden_role_on_non_workload_principal_is_allowed(self) -> None:
-        # The GCE range-host SA is a different principal, not one of the four
-        # workload identities; a project-level object role on it is out of scope.
+    def test_range_host_literal_storage_grant_is_rejected(self) -> None:
+        # #1644: the GCE range-host SA is attached to participant-controllable
+        # guests, so a project-level storage role on it is now a violation (a
+        # compromised guest could read across tenants).
         module = _CLEAN_MODULE + textwrap.dedent(
             """
             resource "google_project_iam_member" "range_host_admin" {
@@ -151,7 +154,121 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(Path(tmp), module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(
+            any("range-host" in r and "storage.objectAdmin" in r for r in reasons),
+            f"expected range-host objectAdmin violation, got: {reasons}",
+        )
+
+    def test_range_host_inline_toset_objectviewer_is_rejected(self) -> None:
+        # The real shape of the #1644 defect: an inline for_each = toset([...roles])
+        # with role = each.value. objectViewer is read-only but still forbidden on
+        # a participant-reachable range host (unlike the per-bucket workload grant).
+        module = _CLEAN_MODULE + textwrap.dedent(
+            """
+            resource "google_project_iam_member" "range_host_roles" {
+              for_each = toset([
+                "roles/logging.logWriter",
+                "roles/monitoring.metricWriter",
+                "roles/storage.objectViewer",
+              ])
+              project = var.project_id
+              role    = each.value
+              member  = "serviceAccount:${google_service_account.range_host.email}"
+            }
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(
+            any("range-host" in r and "storage.objectViewer" in r for r in reasons),
+            f"expected range-host objectViewer violation, got: {reasons}",
+        )
+
+    def test_range_host_logging_and_monitoring_only_is_allowed(self) -> None:
+        # The fixed shape: logging + monitoring writes, no storage role -> clean.
+        module = _CLEAN_MODULE + textwrap.dedent(
+            """
+            resource "google_project_iam_member" "range_host_roles" {
+              for_each = toset([
+                "roles/logging.logWriter",
+                "roles/monitoring.metricWriter",
+              ])
+              project = var.project_id
+              role    = each.value
+              member  = "serviceAccount:${google_service_account.range_host.email}"
+            }
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), module)
             self.assertEqual(check_file(tf), [])
+
+    def test_range_host_pool_storage_grant_is_rejected(self) -> None:
+        # The attachable range-host-pool identities are covered too (#1644).
+        module = _CLEAN_MODULE + textwrap.dedent(
+            """
+            resource "google_project_iam_member" "range_host_pool_read" {
+              count   = var.range_host_identity_pool_size
+              project = var.project_id
+              role    = "roles/storage.objectViewer"
+              member  = "serviceAccount:${google_service_account.range_host_pool[count.index].email}"
+            }
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(
+            any("range-host" in r and "storage.objectViewer" in r for r in reasons),
+            f"expected range-host-pool objectViewer violation, got: {reasons}",
+        )
+
+    def test_range_host_policy_binding_storage_is_rejected(self) -> None:
+        module = _CLEAN_MODULE + textwrap.dedent(
+            """
+            data "google_iam_policy" "rh" {
+              binding {
+                role    = "roles/storage.objectViewer"
+                members = ["serviceAccount:${google_service_account.range_host.email}"]
+              }
+            }
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(
+            any("range-host" in r and "storage.objectViewer" in r for r in reasons),
+            f"expected range-host policy-binding violation, got: {reasons}",
+        )
+
+    def test_range_host_custom_role_with_object_read_is_rejected(self) -> None:
+        # An object-read custom role (get/list) bound to the range host must fail
+        # even though those read perms are not in the workload FORBIDDEN set.
+        module = _CLEAN_MODULE + textwrap.dedent(
+            """
+            resource "google_project_iam_custom_role" "rh_reader" {
+              role_id     = "shifterRangeHostReader"
+              title       = "range host reader"
+              permissions = ["storage.objects.get", "storage.objects.list"]
+            }
+
+            resource "google_project_iam_member" "rh_custom" {
+              project = var.project_id
+              role    = google_project_iam_custom_role.rh_reader.id
+              member  = "serviceAccount:${google_service_account.range_host.email}"
+            }
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(
+            any("custom role" in r and "range-host" in r for r in reasons),
+            f"expected range-host custom-role violation, got: {reasons}",
+        )
 
     def test_extra_allowlisted_pair_beyond_residuals_is_rejected(self) -> None:
         # workers project-level secretAccessor is NOT allowlisted (only portal is);
@@ -425,8 +542,8 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
             {workload: roles for workload, roles in self.bucket_roles.items()},
             {
                 # portal: objectAdmin on the assets bucket, and read-only
-                # objectViewer on the optional object-backed ACES package bucket
-                # (#1567, gated on aces_package_bucket_name).
+                # objectViewer on the optional object-backed RAES package bucket
+                # (#1567, gated on raes_package_bucket_name).
                 "portal": {"roles/storage.objectAdmin", "roles/storage.objectViewer"},
                 "workers": {"roles/storage.objectViewer"},
                 "provisioner": {"roles/storage.objectViewer", "roles/storage.objectAdmin"},
@@ -466,6 +583,25 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         # Secret/storage literals remain exactly the two ALLOWLIST residuals.
         self.assertEqual(self.literal_project_grants, set(ALLOWLIST.keys()))
         self.assertEqual(check_paths(sorted(LIVE_IAM_DIR.glob("*.tf"))), [])
+
+    def test_range_host_holds_only_logging_and_monitoring_no_storage(self) -> None:
+        # ADR-008-R9 / #1644 effective-permission oracle: the participant-reachable
+        # range-host SA carries exactly logging + monitoring writes and no
+        # project-level Cloud Storage role of any kind (its tarball read moved to a
+        # provisioner-minted signed URL).
+        range_host_roles: set[str] = set()
+        for _name, _line, body in _extract_resource_blocks(self.lines, _PROJECT_IAM_MEMBER_RE):
+            if _RANGE_HOST_MEMBER_RE.search(body):
+                range_host_roles.update(_resource_granted_roles(body))
+        self.assertEqual(
+            range_host_roles,
+            {"roles/logging.logWriter", "roles/monitoring.metricWriter"},
+        )
+        for role in range_host_roles:
+            self.assertFalse(
+                role.startswith("roles/storage."),
+                f"range host must hold no project storage role, found {role}",
+            )
 
 
 if __name__ == "__main__":

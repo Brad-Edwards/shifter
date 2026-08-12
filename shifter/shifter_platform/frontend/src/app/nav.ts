@@ -5,7 +5,7 @@
  * primary side navigation, mode switching, breadcrumbs, and contextual subnav
  * all derive from these entries. Adding a surface adds one entry here rather
  * than editing shell components (the navigation extensibility seam). The
- * per-surface issues (#1370–#1374) register their entries into this contract.
+ * per-surface issues register their entries into this contract.
  *
  * Each entry carries the UX-003 minimum contract (`surface`, `audience`,
  * `routeName`, `permissionPolicy`, `ownerApp`, `purpose`) plus the #1368
@@ -28,7 +28,7 @@ export type UxMode = "participant" | "operator";
 
 export type NavAudience = "participant" | "organizer" | "both" | "system";
 
-export type NavGroupName = "Participate" | "Operate" | "Author" | "Govern" | "Administer";
+export type NavGroupName = "Participate" | "Operate" | "Author" | "Administer";
 
 /**
  * Advisory permission policy keys. The shell maps each to bootstrap flags in
@@ -36,7 +36,6 @@ export type NavGroupName = "Participate" | "Operate" | "Author" | "Govern" | "Ad
  */
 export type PermissionPolicy =
   | "authenticated"
-  | "risk_register_access"
   | "threat_research"
   | "ctf_organizer"
   | "ctf_participant"
@@ -57,8 +56,8 @@ export type NavIconKey =
   | "terminal"
   | "settings"
   | "file-code"
-  | "shield-alert"
   | "user-cog"
+  | "scroll-text"
   | "circle-dollar-sign";
 
 export interface NavEntry {
@@ -230,27 +229,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         external: false,
         featureFlag: "scenario_editor_spa",
       },
-      // In-SPA ACES image registry management (#1566). Greenfield surface gated
-      // by `aces_native_provisioning` (mirrors SHIFTER_ACES_NATIVE_PROVISIONING);
+      // In-SPA RAES image registry management (#1566). Greenfield surface gated
+      // by `raes_native_provisioning` (mirrors SHIFTER_RAES_NATIVE_PROVISIONING);
       // hidden until the native path is enabled. Advisory visibility only — the
-      // /api/v1/cms/aces-image-mappings/ endpoints remain the authority.
+      // /api/v1/cms/raes-image-mappings/ endpoints remain the authority.
       {
-        surface: "ACES Images",
-        routeName: "aces_image_registry",
-        purpose: "Map authored ACES image sources to concrete provider images.",
-        routePath: "/aces-image-registry/",
+        surface: "RAES Images",
+        routeName: "raes_image_registry",
+        purpose: "Map authored RAES image sources to concrete provider images.",
+        routePath: "/raes-image-registry/",
         iconKey: "boxes",
         external: false,
-        featureFlag: "aces_native_provisioning",
+        featureFlag: "raes_native_provisioning",
       },
-    ],
-  ),
-  makeGroup(
-    "Govern",
-    "operator",
-    { audience: "organizer", permissionPolicy: "risk_register_access", ownerApp: "risk_register" },
-    [
-      { surface: "Risk Register", routeName: "risk_register:risk_list", purpose: "List current and historical risks.", routePath: "/risk-register", iconKey: "shield-alert" },
     ],
   ),
   makeGroup(
@@ -267,6 +258,31 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         purpose: "Manage users and access.",
         routePath: "/administer",
         iconKey: "user-cog",
+        external: false,
+        featureFlag: "administer_spa",
+      },
+      // In-SPA Organization/workspace admin console (#1938, PLAT-231), gated by
+      // administer_spa. First-class entry the per-capability org/workspace admin
+      // slices (PLAT-232–240) hang off; staff-gated like the rest of the group.
+      {
+        surface: "Organization",
+        routeName: "administer:organization",
+        purpose: "Administer organizations and workspaces.",
+        routePath: "/administer/organization",
+        iconKey: "boxes",
+        external: false,
+        featureFlag: "administer_spa",
+      },
+      // In-SPA administrator audit / activity history (#1947, PLAT-240), gated by
+      // administer_spa. Deployment-global, staff-only read over shared.audit; a
+      // top-level surface (not workspace-scoped) since the store carries no
+      // per-row tenant scope. The /api/v1/audit/ endpoint remains the authority.
+      {
+        surface: "Audit",
+        routeName: "administer:audit",
+        purpose: "Search and filter administrative activity history.",
+        routePath: "/administer/audit",
+        iconKey: "scroll-text",
         external: false,
         featureFlag: "administer_spa",
       },
@@ -307,8 +323,6 @@ export function permissionAllows(policy: PermissionPolicy, bootstrap: Bootstrap)
   switch (policy) {
     case "authenticated":
       return bootstrap.principal.is_authenticated;
-    case "risk_register_access":
-      return bootstrap.permissions.can_access_risk_register;
     case "threat_research":
       return bootstrap.permissions.can_access_threat_research;
     case "ctf_organizer":

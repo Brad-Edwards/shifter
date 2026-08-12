@@ -29,7 +29,16 @@ def user(db):
 
 
 def _range_instance(user, *, range_id=None, scenario_id="basic", status="provisioning", agent=None, range_source=None):
-    kwargs = {"scenario_id": scenario_id, "user_id": user.id, "range_id": range_id, "status": status, "agent": agent}
+    from workspaces.services import resolve_personal_workspace
+
+    kwargs = {
+        "scenario_id": scenario_id,
+        "user_id": user.id,
+        "range_id": range_id,
+        "status": status,
+        "agent": agent,
+        "workspace_id": resolve_personal_workspace(user).workspace_id,
+    }
     if range_source is not None:
         kwargs["range_source"] = range_source
     return RangeInstance.objects.create(**kwargs)
@@ -60,6 +69,16 @@ class TestListRanges:
     def test_returns_a_list(self, user):
         _range_instance(user, range_id=1)
         assert type(services.list_ranges(user)) is list
+
+    def test_membership_removal_revokes_range_reads(self, user):
+        from workspaces.models import WorkspaceMembership
+
+        _range_instance(user, range_id=1)
+        WorkspaceMembership.objects.filter(user=user).delete()
+
+        assert services.list_ranges(user) == []
+        with pytest.raises(CMSError, match="not found"):
+            services.get_range(user, 1)
 
     def test_requires_user_argument(self):
         with pytest.raises(TypeError):
@@ -124,13 +143,13 @@ class TestCreateRangeValidation:
         with pytest.raises(CMSError, match="already have an active range"):
             services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
 
-    def test_raises_for_non_launchable_aces_scenario(self, user, make_agent):
-        from cms.models import AcesPackageSource
+    def test_raises_for_non_launchable_raes_scenario(self, user, make_agent):
+        from cms.models import RaesPackageSource
 
         agent = make_agent(user)
-        AcesPackageSource.objects.create(
+        RaesPackageSource.objects.create(
             scenario_id="polaris-pending",
-            contract_kind="aces",
+            contract_kind="raes",
             contract_profile="shifter",
             package_ref="scenario-dev/polaris/content-packages/polaris",
             package_version="1.0.0",
@@ -160,7 +179,7 @@ class TestCreateRangeBehavior:
         assert ri.agent_id == agent.id
 
     def test_records_an_audit_row(self, user, make_agent, hydratable_scenario):
-        from risk_register.models import AuditLog
+        from shared.models import AuditLog
 
         before = AuditLog.objects.count()
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": make_agent(user).id})
@@ -269,7 +288,10 @@ class TestHasReadyActiveRange:
         _range_instance(user, range_id=1, status="ready")
         with CaptureQueriesContext(connection) as ctx:
             services.has_ready_active_range(user)
-        assert len(ctx.captured_queries) == 1
+        # One workspace-grant query plus one status-only range query. The
+        # authorization service returns immutable scalar IDs rather than
+        # leaking a lazy cross-domain QuerySet.
+        assert len(ctx.captured_queries) == 2
 
 
 class TestRangeSourceAdmission:
@@ -428,7 +450,7 @@ class TestRangeSourceAdmission:
         """An unsupported topology stays capability-false instead of breaking range launch."""
         from types import SimpleNamespace
 
-        from cms.services._range_create import _build_remote_access_capability
+        from cms.services._range_remote_access import _build_remote_access_capability
 
         range_spec = SimpleNamespace(participant_access=[], all_instances=[])
 
@@ -445,7 +467,7 @@ class TestRangeSourceAdmission:
         """CTF requires the participant VPN capability established by #1695."""
         from types import SimpleNamespace
 
-        from cms.services._range_create import _build_remote_access_capability
+        from cms.services._range_remote_access import _build_remote_access_capability
 
         range_spec = SimpleNamespace(participant_access=[], all_instances=[])
         teardown_at = timezone.now() + timedelta(days=1)
@@ -473,9 +495,13 @@ class TestActiveRangeConstraintBackstop:
         from cms.models import Request
         from cms.services._range_create import _reserve_active_range_slot
         from shared.enums import RangeSource
+        from workspaces.services import resolve_personal_workspace
+
+        workspace_id = resolve_personal_workspace(user).workspace_id
 
         def _persist(cms_request):
             return RangeInstance.objects.create(
+                workspace_id=workspace_id,
                 request=cms_request,
                 scenario_id="basic",
                 user_id=user.id,
@@ -483,14 +509,14 @@ class TestActiveRangeConstraintBackstop:
             )
 
         # First reservation takes the (user, MISSION_CONTROL) slot.
-        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist)
+        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist, workspace_id)
         requests_before = Request.objects.filter(user=user).count()
 
         # A second reservation collides on the active-range constraint; the named
         # violation is translated to the authored CMSError and the whole atomic
         # rolls back, so no orphan Request is left behind.
         with pytest.raises(CMSError, match="already have an active range"):
-            _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist)
+            _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist, workspace_id)
 
         assert Request.objects.filter(user=user).count() == requests_before
         assert RangeInstance.objects.filter(user_id=user.id).count() == 1

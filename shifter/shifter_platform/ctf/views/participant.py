@@ -103,7 +103,7 @@ def participant_range(request: HttpRequest) -> HttpResponse:
     if participant.range_instance_id and participant.range_status == "ready" and participant.user:
         import cms.services as cms_services
 
-        target_instances = cms_services.get_range_target_instances(participant.user.pk)
+        target_instances = cms_services.get_range_target_instances(participant.user)
 
     context = {
         "participant": participant,

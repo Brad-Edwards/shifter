@@ -17,7 +17,7 @@ from uuid import UUID
 from django.db import transaction
 
 from ctf.enums import VALID_TRANSITIONS, EventStatus, validate_transition
-from ctf.exceptions import CTFStateError
+from ctf.exceptions import CTFNotFoundError, CTFStateError
 
 from ._crud import get_event
 
@@ -42,16 +42,25 @@ def start_event(event_id: UUID) -> CTFEvent:
     """
     logger.info("Starting CTF event %s", event_id)
 
-    event = get_event(event_id)
+    from ctf.models import CTFEvent
+    from ctf.services.content_hydration import assert_event_content_hydration_ready
 
-    if event.status != EventStatus.REGISTRATION.value:
-        raise CTFStateError(
-            f"Cannot start event in {event.status} state",
-            details={"event_id": str(event_id), "status": event.status},
-        )
-
-    event.status = EventStatus.ACTIVE.value
-    event.save(update_fields=["status", "updated_at"])
+    with transaction.atomic():
+        try:
+            event = CTFEvent.objects.select_for_update().get(pk=event_id)
+        except CTFEvent.DoesNotExist:
+            raise CTFNotFoundError(
+                f"Event {event_id} not found",
+                details={"event_id": str(event_id)},
+            ) from None
+        if event.status != EventStatus.REGISTRATION.value:
+            raise CTFStateError(
+                f"Cannot start event in {event.status} state",
+                details={"event_id": str(event_id), "status": event.status},
+            )
+        assert_event_content_hydration_ready(event)
+        event.status = EventStatus.ACTIVE.value
+        event.save(update_fields=["status", "updated_at"])
 
     logger.info("Started CTF event %s", event_id)
     return event
@@ -133,18 +142,25 @@ def activate_event(event: CTFEvent) -> bool:
     """
     logger.info("Activating CTF event %s", event.id)
 
-    if event.status != EventStatus.REGISTRATION.value:
-        logger.warning(
-            "Cannot activate event %s: not in registration state (current: %s)",
-            event.id,
-            event.status,
-        )
-        return False
+    from ctf.models import CTFEvent
+    from ctf.services.content_hydration import assert_event_content_hydration_ready
 
-    try:
-        _transition_event(event, EventStatus.ACTIVE)
-    except CTFStateError:
-        return False
+    with transaction.atomic():
+        locked_event = CTFEvent.objects.select_for_update().get(pk=event.pk)
+        if locked_event.status != EventStatus.REGISTRATION.value:
+            logger.warning(
+                "Cannot activate event %s: not in registration state (current: %s)",
+                locked_event.id,
+                locked_event.status,
+            )
+            return False
+
+        try:
+            assert_event_content_hydration_ready(locked_event)
+            _transition_event(locked_event, EventStatus.ACTIVE)
+        except CTFStateError:
+            return False
+        event.status = locked_event.status
 
     logger.info("Activated CTF event %s", event.id)
     return True
@@ -288,6 +304,11 @@ def pause_event(event: CTFEvent) -> bool:
 def resume_event(event: CTFEvent) -> bool:
     """Resume a paused event (transition back to active).
 
+    Every path back to ACTIVE must re-enforce managed-content hydration
+    readiness under the event lock (issue #1971): resuming is an activation and
+    a paused event whose configured content has drifted or been revised must not
+    silently score against stale flags. Restore/refresh the content first.
+
     Args:
         event: The CTFEvent to resume.
 
@@ -296,15 +317,25 @@ def resume_event(event: CTFEvent) -> bool:
     """
     logger.info("Resuming CTF event %s", event.id)
 
-    try:
-        _transition_event(event, EventStatus.ACTIVE)
-    except CTFStateError:
-        logger.warning(
-            "Cannot resume event %s: not in paused state (current: %s)",
-            event.id,
-            event.status,
-        )
-        return False
+    from ctf.models import CTFEvent
+    from ctf.services.content_hydration import assert_event_content_hydration_ready
+
+    with transaction.atomic():
+        locked_event = CTFEvent.objects.select_for_update().get(pk=event.pk)
+        if locked_event.status != EventStatus.PAUSED.value:
+            logger.warning(
+                "Cannot resume event %s: not in paused state (current: %s)",
+                locked_event.id,
+                locked_event.status,
+            )
+            return False
+
+        try:
+            assert_event_content_hydration_ready(locked_event)
+            _transition_event(locked_event, EventStatus.ACTIVE)
+        except CTFStateError:
+            return False
+        event.status = locked_event.status
 
     logger.info("Resumed CTF event %s", event.id)
     return True

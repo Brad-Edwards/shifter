@@ -89,6 +89,12 @@ variable "range_network_cidr" {
   type        = string
 }
 
+variable "range_host_identity_pool_size" {
+  description = "Number of pre-created service accounts available to preconfigured range hosts."
+  type        = number
+  default     = 0
+}
+
 variable "gke_pods_secondary_range_name" {
   description = "Secondary range name for GKE pods."
   type        = string
@@ -318,8 +324,14 @@ variable "vmseries_bootstrap_bucket_name" {
   default     = ""
 }
 
-variable "aces_package_bucket_name" {
-  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Empty grants the portal no binding on it (ADR-008-R7); set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) when a deployment enables object-backed ACES packages."
+variable "raes_package_bucket_name" {
+  description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Empty grants the portal no binding on it (ADR-008-R7); set it (with SHIFTER_RAES_PACKAGE_BUCKET on the app) when a deployment enables object-backed RAES packages."
+  type        = string
+  default     = ""
+}
+
+variable "ctf_content_bucket_name" {
+  description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Empty grants the portal no binding on it."
   type        = string
   default     = ""
 }

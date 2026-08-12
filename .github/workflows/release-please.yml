@@ -1,7 +1,7 @@
 name: Release Please
 
 # release-please owns versioning + CHANGELOG.md (#1776), mirroring the sibling
-# ACES repos. On each push to `main` it maintains a release PR
+# RAES repos. On each push to `main` it maintains a release PR
 # ("chore(main): release X.Y.Z") that bumps `version.txt` (the `simple` release
 # strategy's version anchor) and updates CHANGELOG.md from the Conventional
 # Commit history since the last release. Merging that PR tags `vX.Y.Z` and cuts

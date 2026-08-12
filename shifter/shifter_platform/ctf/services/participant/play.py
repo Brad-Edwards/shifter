@@ -80,7 +80,7 @@ def resolve_target_connection_info(challenge: CTFChallenge, participant: CTFPart
         return None
     import cms.services as cms_services
 
-    return match_target_instance(challenge, cms_services.get_range_target_instances(participant_user.pk))
+    return match_target_instance(challenge, cms_services.get_range_target_instances(participant_user))
 
 
 def compute_attempt_state(

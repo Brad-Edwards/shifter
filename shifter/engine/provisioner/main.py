@@ -57,22 +57,22 @@ if __name__ == "__main__":
         help=_operation_id_help,
     )
 
-    aces_range_parser = subparsers.add_parser(
-        "aces-range", help="ACES-native range lifecycle operations (serialized ACES plan)"
+    raes_range_parser = subparsers.add_parser(
+        "raes-range", help="RAES-native range lifecycle operations (serialized RAES plan)"
     )
-    aces_range_parser.add_argument(
+    raes_range_parser.add_argument(
         "operation",
         choices=["provision", "destroy"],
         help="Operation to perform: provision (create) or destroy (teardown)",
     )
-    aces_range_parser.add_argument(
+    raes_range_parser.add_argument(
         "--request-id",
         type=str,
         required=True,
         dest="request_id",
-        help="UUID of the Request for this ACES range",
+        help="UUID of the Request for this RAES range",
     )
-    aces_range_parser.add_argument(
+    raes_range_parser.add_argument(
         "--operation-id",
         type=str,
         default=None,
@@ -108,16 +108,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.resource == "aces-range":
-        from aces_range_ops import run_aces_range_destroy, run_aces_range_provision
+    if args.resource == "raes-range":
+        from raes_range_ops import run_raes_range_destroy, run_raes_range_provision
 
-        logger.info("Starting ACES range %s for request_id=%s", args.operation, args.request_id)
+        logger.info("Starting RAES range %s for request_id=%s", args.operation, args.request_id)
         logger.info(_ENVIRONMENT_LOG, os.environ.get("ENVIRONMENT", "unknown"))
         if args.operation == "provision":
-            run_aces_range_provision(args.request_id)
+            run_raes_range_provision(args.request_id, operation_id=args.operation_id)
         else:
-            run_aces_range_destroy(args.request_id)
-        logger.info("Completed ACES range %s for request_id=%s", args.operation, args.request_id)
+            run_raes_range_destroy(args.request_id, operation_id=args.operation_id)
+        logger.info("Completed RAES range %s for request_id=%s", args.operation, args.request_id)
 
     elif args.resource == "ngfw":
         logger.info("Starting NGFW %s for request_id=%s", args.operation, args.request_id)
@@ -146,10 +146,10 @@ if __name__ == "__main__":
         elif args.operation == "pause":
             from range_ops import run_range_pause
 
-            run_range_pause(request_id)
+            run_range_pause(request_id, operation_id=args.operation_id)
         elif args.operation == "resume":
             from range_ops import run_range_resume
 
-            run_range_resume(request_id)
+            run_range_resume(request_id, operation_id=args.operation_id)
 
         logger.info("Completed range %s for request_id=%s", args.operation, request_id)

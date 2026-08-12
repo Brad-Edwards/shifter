@@ -56,10 +56,10 @@ from ctf.services.range.recovery import get_recovery_status, recover_participant
 from ctf.services.range.spares import create_managed_spare_user
 from engine.models import Range as EngineRange
 from engine.models import Request as EngineRequest
-from risk_register.models import AuditLog
 from shared.audit import AuditAction
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import RangeSource, RequestType, ResourceStatus
+from shared.models import AuditLog
 
 
 def _make_spare_range(*, owner, scenario_id: str = "basic") -> RangeInstance:
@@ -71,14 +71,18 @@ def _make_spare_range(*, owner, scenario_id: str = "basic") -> RangeInstance:
     instead (see module docstring), so no equivalent helper is needed for new
     ranges.
     """
+    from workspaces.services import resolve_personal_workspace
+
+    workspace_id = resolve_personal_workspace(owner).workspace_id
     request_id = CmsRequest.objects.create(
-        request_id=uuid4(), request_type=RequestType.RANGE.value, user=owner
+        workspace_id=workspace_id, request_id=uuid4(), request_type=RequestType.RANGE.value, user=owner
     ).request_id
     engine_request = EngineRequest.objects.create(
         request_id=request_id, request_type=RequestType.RANGE.value, user=owner
     )
     instance_uuid = str(uuid4())
     engine_range = EngineRange.objects.create(
+        workspace_id=workspace_id,
         uuid=uuid4(),
         user=owner,
         request=engine_request,
@@ -91,6 +95,7 @@ def _make_spare_range(*, owner, scenario_id: str = "basic") -> RangeInstance:
     )
     cms_request = CmsRequest.objects.get(request_id=request_id)
     range_instance = RangeInstance.objects.create(
+        workspace_id=workspace_id,
         request=cms_request,
         scenario_id=scenario_id,
         user_id=owner.id,
@@ -688,7 +693,7 @@ class TestValidationAndFailures:
             user=None,
             email="unregistered@test.com",
             name="Unregistered",
-            status=ParticipantStatus.INVITED.value,
+            status=ParticipantStatus.REGISTERED.value,
         )
         with pytest.raises(CTFValidationError, match="registered"):
             recover_participant_range(

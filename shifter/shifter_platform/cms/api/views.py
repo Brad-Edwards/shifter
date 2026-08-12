@@ -12,6 +12,7 @@ the source-capability projection the editor renders from.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from django.contrib.auth.models import User
@@ -34,6 +35,7 @@ from cms.api.serializers import (
     ScenarioExportSerializer,
     ScenarioMetadataStateSerializer,
     ScenarioMetadataUpdateSerializer,
+    ScenarioRealizabilitySerializer,
     ScenarioUpdateSerializer,
     YAMLContentSerializer,
     YAMLValidationResultSerializer,
@@ -42,6 +44,7 @@ from cms.exceptions import CMSError
 from cms.scenario_editor import services as scenario_services
 from cms.scenario_editor.services import ScenarioEditorError
 from cms.scenarios import catalog_presentation
+from cms.scenarios import realizability as scenario_realizability
 from cms.scenarios.catalog_presentation import scenario_source
 from cms.scenarios.registry import get_catalog_entry, get_scenario_detail
 from cms.services import PackRegistrationRequest, register_pack
@@ -85,7 +88,7 @@ def _classify(scenario_type: str, is_default: bool) -> tuple[str, bool, bool, bo
     """Return (source, editable, deletable, exportable) capability flags.
 
     Custom demo scenarios are fully editable; built-in YAML defaults are
-    code-managed (clone/export/metadata only); ACES and CTF entries are
+    code-managed (clone/export/metadata only); RAES and CTF entries are
     read-only in this editor. ``source`` comes from the single server-owned
     classifier (``catalog_presentation.scenario_source``) so the catalog list,
     the detail projection, and the SPA never derive it independently.
@@ -97,7 +100,7 @@ def _classify(scenario_type: str, is_default: bool) -> tuple[str, bool, bool, bo
     return source, editable, deletable, exportable
 
 
-def _structural_detail_payload(detail: dict[str, Any]) -> dict[str, Any]:
+def _structural_detail_payload(detail: Mapping[str, Any]) -> dict[str, Any]:
     """Build the editor detail payload from a registry structural detail dict."""
     scenario_type = detail.get("scenario_type", "demo")
     is_default = bool(detail.get("is_default", False))
@@ -118,12 +121,13 @@ def _structural_detail_payload(detail: dict[str, Any]) -> dict[str, Any]:
         "ngfw": bool(detail.get("ngfw", False)),
         "instances": detail.get("instances", []),
         "subnets": detail.get("subnets", []),
-        "aces": None,
+        "participant_access": detail.get("participant_access", []),
+        "raes": None,
     }
 
 
-def _aces_detail_payload(scenario_id: str) -> dict[str, Any] | None:
-    """Build a read-only editor detail payload for an ACES catalog entry."""
+def _raes_detail_payload(scenario_id: str) -> dict[str, Any] | None:
+    """Build a read-only editor detail payload for an RAES catalog entry."""
     entry = catalog_presentation.get_catalog_presentation(scenario_id)
     if entry is None:
         return None
@@ -131,8 +135,8 @@ def _aces_detail_payload(scenario_id: str) -> dict[str, Any] | None:
         "id": entry["id"],
         "name": entry["name"],
         "description": "",
-        "scenario_type": entry.get("scenario_type", "aces"),
-        "source": "aces",
+        "scenario_type": entry.get("scenario_type", "raes"),
+        "source": "raes",
         "is_default": bool(entry.get("is_default", False)),
         "enabled": bool(entry.get("enabled", True)),
         "staff_only": bool(entry.get("staff_only", False)),
@@ -143,14 +147,15 @@ def _aces_detail_payload(scenario_id: str) -> dict[str, Any] | None:
         "ngfw": False,
         "instances": [],
         "subnets": [],
-        "aces": entry.get("aces"),
+        "participant_access": [],
+        "raes": entry.get("raes"),
     }
 
 
 class CatalogListView(APIView):
     """List catalog entries as read-only metadata (staff-review projection).
 
-    Returns every catalog entry (YAML defaults, DB customs, and ACES
+    Returns every catalog entry (YAML defaults, DB customs, and RAES
     package-backed entries) with allowlisted read-only fields. This is the
     unfiltered staff-review projection — like the scenario-editor list — so a
     CMS authoring actor can inspect disabled / staff-only entries. User-facing
@@ -321,12 +326,12 @@ class ScenarioResourceView(APIView):
 
     @extend_schema(responses=ScenarioDetailSerializer)
     def get(self, request: Request, scenario_id: str) -> Response:
-        """Return full structural detail (or a read-only ACES projection)."""
+        """Return full structural detail (or a read-only RAES projection)."""
         payload: dict[str, Any] | None
         try:
             payload = _structural_detail_payload(get_scenario_detail(scenario_id))
         except ValueError:
-            payload = _aces_detail_payload(scenario_id)
+            payload = _raes_detail_payload(scenario_id)
         if payload is None:
             return _not_found(request)
         return Response(ScenarioDetailSerializer(payload).data)
@@ -388,6 +393,30 @@ class ScenarioCloneView(APIView):
             {"scenario_id": scenario.scenario_id, "name": scenario.name},
             status=status.HTTP_201_CREATED,
         )
+
+
+class ScenarioRealizabilityView(APIView):
+    """Report whether the selected backend can realize an RAES scenario (ADR-034-R3)."""
+
+    permission_classes = CMS_READ_PERMISSIONS
+
+    @extend_schema(responses=ScenarioRealizabilitySerializer)
+    def get(self, request: Request, scenario_id: str) -> Response:
+        """Return the bounded realizability assessment, or 404 for an unknown scenario.
+
+        A non-realizable or indeterminate result is a successful response with
+        gaps -- the author needs to read them. Only an unknown scenario is an
+        error.
+        """
+        result = scenario_realizability.get_scenario_realizability(scenario_id)
+        if result is None:
+            return api_error_response(
+                code="not_found",
+                message="Scenario not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                request=request,
+            )
+        return Response(ScenarioRealizabilitySerializer(result).data)
 
 
 class ScenarioMetadataView(APIView):

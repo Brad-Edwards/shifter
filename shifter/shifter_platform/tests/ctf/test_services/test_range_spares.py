@@ -37,8 +37,8 @@ from ctf.services.range.spares import (
     get_event_spare_summary,
     provision_event_spares,
 )
-from risk_register.models import AuditLog
 from shared.audit import AuditAction
+from shared.models import AuditLog
 
 _NO_AGENT_SCENARIO_DEFINITION = {
     "instances": [

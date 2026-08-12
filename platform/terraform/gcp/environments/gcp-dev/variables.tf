@@ -56,6 +56,12 @@ variable "range_network_cidr" {
   type        = string
 }
 
+variable "range_host_identity_pool_size" {
+  description = "Number of pre-created service accounts available to preconfigured range hosts."
+  type        = number
+  default     = 0
+}
+
 variable "web_machine_type" {
   description = "Machine type for the web node pool."
   type        = string
@@ -258,8 +264,14 @@ variable "range_egress_allowed_cidrs" {
   default     = []
 }
 
-variable "aces_package_bucket_name" {
-  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Grants the portal read-only access; set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) to enable object-backed ACES packages. Empty disables the binding."
+variable "raes_package_bucket_name" {
+  description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Grants the portal read-only access; set it (with SHIFTER_RAES_PACKAGE_BUCKET on the app) to enable object-backed RAES packages. Empty disables the binding."
+  type        = string
+  default     = ""
+}
+
+variable "ctf_content_bucket_name" {
+  description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Grants the portal read-only access; empty disables the binding."
   type        = string
   default     = ""
 }

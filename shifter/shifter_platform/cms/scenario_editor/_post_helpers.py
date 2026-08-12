@@ -25,6 +25,7 @@ FIELD_NAME = "name"
 FIELD_NEW_NAME = "new_name"
 FIELD_NEW_SCENARIO_ID = "new_scenario_id"
 FIELD_NGFW = "ngfw"
+FIELD_PARTICIPANT_ACCESS = "participant_access"
 FIELD_SCENARIO_ID = "scenario_id"
 FIELD_SUBNETS = "subnets"
 FIELD_SUBNETS_JSON = "subnets_json"
@@ -217,6 +218,7 @@ def _definition_from_yaml_fields(parsed: Mapping[str, object]) -> ScenarioDefini
         FIELD_INSTANCES: parsed.get(FIELD_INSTANCES, []),
         FIELD_SUBNETS: parsed.get(FIELD_SUBNETS, []),
         FIELD_NGFW: parsed.get(FIELD_NGFW, False),
+        FIELD_PARTICIPANT_ACCESS: parsed.get(FIELD_PARTICIPANT_ACCESS, []),
     }
 
 
@@ -316,7 +318,7 @@ def clone_scenario_from_form_post(
 def toggle_scenario_metadata_flag(user: User, scenario_id: str, *, field: str, default: bool) -> bool:
     """Toggle a boolean scenario metadata flag and return the new value.
 
-    Reads the current flag from the unified catalog projection so ACES
+    Reads the current flag from the unified catalog projection so RAES
     package-backed entries can have their access overlay toggled alongside
     legacy YAML defaults and DB customs.
     """

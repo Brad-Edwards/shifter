@@ -70,6 +70,7 @@ _GCE_RANGE_ENV_KEYS = (
     "RANGE_NETWORK_ZONE",
     "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
     "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
+    "GCP_RANGE_HOST_IDENTITY_POOL_SIZE",
     "GCP_RANGE_LINUX_IMAGE",
     "GCP_RANGE_LINUX_MACHINE_TYPE",
     "GCP_RANGE_LINUX_DISK_SIZE_GB",
@@ -185,6 +186,23 @@ def _optional_gce_range_values() -> dict[str, str]:
     if raw_profiles := values.get("GCP_RANGE_IMAGE_KEY_PROFILES_JSON"):
         values["GCP_RANGE_IMAGE_KEY_PROFILES_JSON"] = _canonical_image_key_profiles(raw_profiles)
     return values
+
+
+def _ctf_content_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
+    """Render public CTF content location policy; references stay secret-backed."""
+    raw = outputs.get("ctf_content_bucket_name")
+    bucket = str(raw.get("value", "") if isinstance(raw, dict) else "").strip()
+    if not bucket:
+        return {}
+    return {
+        "SHIFTER_CTF_CONTENT_BUCKET": bucket,
+        "SHIFTER_CTF_CONTENT_PREFIX": (
+            os.environ.get("SHIFTER_CTF_CONTENT_PREFIX", "ctf/content-bundles").strip() or "ctf/content-bundles"
+        ),
+        "SHIFTER_CTF_CONTENT_MAX_BYTES": (
+            os.environ.get("SHIFTER_CTF_CONTENT_MAX_BYTES", "8388608").strip() or "8388608"
+        ),
+    }
 
 
 def _project_from_self_link(self_link: object) -> str:
@@ -434,6 +452,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     # hydrated from Secret Manager by the entrypoint.
     values.update(_email_runtime_values(outputs))
     values.update(_optional_gce_range_values())
+    values.update(_ctf_content_runtime_values(outputs))
 
     return "".join(f"{key}={value}\n" for key, value in values.items())
 

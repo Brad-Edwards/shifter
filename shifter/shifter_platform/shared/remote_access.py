@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 from uuid import UUID
 
 OPENVPN_CAPABILITY_VERSION = "openvpn-capability-v1"
@@ -49,6 +50,39 @@ _ONE_ARGUMENT_DIRECTIVES = {
     "cipher": frozenset({"AES-256-GCM"}),
     "tls-version-min": frozenset({"1.2"}),
 }
+
+
+class TerminalConnection(Protocol):
+    """Behavioral contract for an interactive terminal connection."""
+
+    @property
+    def is_connected(self) -> bool:
+        """Return whether the terminal transport remains connected."""
+        ...
+
+    async def connect(self) -> None:
+        """Establish the terminal connection."""
+        ...
+
+    async def disconnect(self) -> None:
+        """Close the terminal connection."""
+        ...
+
+    async def send(self, data: bytes) -> None:
+        """Send terminal input bytes."""
+        ...
+
+    async def receive(self, timeout: float = 0.1) -> bytes:
+        """Receive terminal output bytes."""
+        ...
+
+    def at_eof(self) -> bool:
+        """Return whether the remote terminal output stream reached EOF."""
+        ...
+
+    async def resize(self, cols: int, rows: int) -> None:
+        """Resize the remote pseudo-terminal."""
+        ...
 
 
 class OpenVpnBindingError(ValueError):

@@ -196,15 +196,17 @@ class PolarisRangeBootstrapPlan:
             ValueError: If a required value is missing or empty.
         """
         context = self._base_context(instance)
-        agent_context = (
-            self._gcp_agent_context(instance) if self.provider == "gcp" else self._aws_agent_context(instance)
-        )
-        context.update(agent_context)
+        if self.provider == "gcp":
+            context.update(self._gcp_fetch_context(instance))
+            context.update(self._gcp_agent_context(instance))
+        else:
+            context.update(self._aws_fetch_context())
+            context.update(self._aws_agent_context(instance))
         return context
 
     @staticmethod
     def _base_context(instance: object) -> dict[str, Any]:
-        """Return the provider-neutral render variables (DC IP, key, tarball)."""
+        """Return the provider-neutral render variables (DC IP, kali key)."""
         dc_ip = getattr(instance, "dc_ip", None)
         if not dc_ip:
             raise ValueError(
@@ -220,6 +222,25 @@ class PolarisRangeBootstrapPlan:
                 "(per-instance kali pubkey from the range's ssh key)"
             )
 
+        return {
+            "dc_ip": dc_ip,
+            "public_key": public_key,
+            # AWS-only POLARIS_RANGE_BOOTSTRAP_SCRIPT fragments (#1377 slice
+            # 5); empty by default so GCP's render is byte-for-byte identical
+            # to before -- _aws_agent_context overrides both with real content.
+            "aws_agent_setup_block": "",
+            "aws_agent_compose_block": "",
+            "gcp_agent_compose_block": "",
+        }
+
+    @staticmethod
+    def _aws_fetch_context() -> dict[str, Any]:
+        """Return the S3 tarball selection for the AWS fetch step.
+
+        The AWS range-instance IAM role reads the tests object with its own
+        instance-profile credentials (FETCH_POLARIS_TESTS_SCRIPT), so the bucket
+        and key are rendered into the script as-is.
+        """
         polaris_tests_bucket = (
             os.environ.get("POLARIS_TESTS_BUCKET")
             or os.environ.get("AGENT_STORAGE_BUCKET")
@@ -232,17 +253,29 @@ class PolarisRangeBootstrapPlan:
                 "AGENT_S3_BUCKET) so the range host can fetch the smoketest tarball"
             )
         return {
-            "dc_ip": dc_ip,
-            "public_key": public_key,
             "polaris_tests_bucket": polaris_tests_bucket,
             "polaris_tests_key": os.environ.get("POLARIS_TESTS_KEY", "polaris/tests/polaris-tests.tar.gz"),
-            # AWS-only POLARIS_RANGE_BOOTSTRAP_SCRIPT fragments (#1377 slice
-            # 5); empty by default so GCP's render is byte-for-byte identical
-            # to before -- _aws_agent_context overrides both with real content.
-            "aws_agent_setup_block": "",
-            "aws_agent_compose_block": "",
-            "gcp_agent_compose_block": "",
         }
+
+    @staticmethod
+    def _gcp_fetch_context(instance: object) -> dict[str, Any]:
+        """Return the signed-URL tarball delivery for the GCP fetch step.
+
+        The GCE range host holds no Cloud Storage identity (#1644); the
+        provisioner mints a short-lived, generation-bound signed download URL
+        (agent_assets.get_polaris_tests_presigned_url) and threads it in via the
+        instance, so the guest fetches the exact object with no cloud credential.
+        Kept out of :meth:`get_context`'s own cloud calls so context building
+        stays side-effect free and testable.
+        """
+        polaris_tests_url = getattr(instance, "polaris_tests_url", None)
+        if not polaris_tests_url:
+            raise ValueError(
+                "Polaris on GCP requires a provisioner-minted signed tarball URL "
+                "(instance.polaris_tests_url); the range host has no GCS identity "
+                "to fetch it directly (#1644)"
+            )
+        return {"polaris_tests_url": polaris_tests_url}
 
     @staticmethod
     def _aws_agent_context(instance: object) -> dict[str, Any]:

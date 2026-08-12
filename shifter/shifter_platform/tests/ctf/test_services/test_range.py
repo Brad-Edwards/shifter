@@ -25,6 +25,11 @@ from engine.models import Instance, Range
 from engine.models import Request as EngineRequest
 from shared.enums import RangeSource, RequestType, ResourceStatus
 
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
+
 
 def _make_unregistered_participant(event, idx):
     """Create an unassigned, unregistered participant on ``event``.
@@ -37,7 +42,7 @@ def _make_unregistered_participant(event, idx):
         user=None,
         email=f"throttle-{idx}@test.com",
         name=f"Throttle Participant {idx}",
-        status=ParticipantStatus.INVITED.value,
+        status=ParticipantStatus.REGISTERED.value,
     )
 
 
@@ -161,10 +166,10 @@ class TestProvisionParticipantRange:
         assert ctf_participant.range_status == "provisioning"
 
     @pytest.mark.django_db
-    def test_provision_requires_registered_user(self, ctf_participant_invited):
+    def test_provision_requires_registered_user(self, ctf_participant_no_account):
         """Raises CTFRangeError if participant has no linked user."""
         with pytest.raises(CTFRangeError, match="must be registered"):
-            range_service.provision_participant_range(ctf_participant_invited.pk)
+            range_service.provision_participant_range(ctf_participant_no_account.pk)
 
     @pytest.mark.django_db
     def test_provision_cms_failure(self, ctf_participant):
@@ -237,14 +242,19 @@ class TestGetRangeStatus:
     @pytest.mark.django_db
     def test_projects_vpn_profile_availability_from_cms(self, ctf_participant):
         """Project readiness through the real CTF -> CMS -> Engine boundary."""
+        from workspaces.services import resolve_personal_workspace
+
         user = ctf_participant.user
+        workspace_id = resolve_personal_workspace(user).workspace_id
         request_id = uuid4()
         cms_request = CMSRequest.objects.create(
+            workspace_id=workspace_id,
             request_id=request_id,
             request_type=RequestType.RANGE.value,
             user=user,
         )
         cms_range = RangeInstance.objects.create(
+            workspace_id=workspace_id,
             request=cms_request,
             scenario_id="basic",
             user_id=user.id,
@@ -265,6 +275,7 @@ class TestGetRangeStatus:
             status=Range.Status.READY,
         )
         Range.objects.create(
+            workspace_id=workspace_id,
             request=engine_request,
             user=user,
             status=Range.Status.READY,

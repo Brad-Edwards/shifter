@@ -30,13 +30,18 @@ from cms.services._ngfws import (
     _validate_ngfw_name,
     _validate_ngfw_user,
 )
-from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
 from shared.enums import RequestType, ResourceStatus
+from shared.models import AuditLog
 from shared.schemas.app import NGFWAppContext, NGFWAppRef
+
+# Opaque #1325 workspace scope binding (ADR-046-R3). These suites do not
+# exercise tenancy; a fixed scalar stands in for the value the CMS launch
+# facade resolves in production.
+_WORKSPACE_ID = 1
 
 pytestmark = pytest.mark.django_db
 
@@ -98,7 +103,9 @@ def _cms_ngfw(user, *, name="NGFW", status=ResourceStatus.READY.value, serial="X
     """Create a real CMS NGFW App (Request + Instance + App with panw-ngfw types)."""
     from cms.models import App, AppType, Instance, InstanceType, Request
 
-    req = Request.objects.create(request_id=request_id or uuid4(), request_type=RequestType.NGFW.value, user=user)
+    req = Request.objects.create(
+        workspace_id=_WORKSPACE_ID, request_id=request_id or uuid4(), request_type=RequestType.NGFW.value, user=user
+    )
     instance = Instance.objects.create(
         request=req, name=name, instance_type=InstanceType.objects.get(slug="panw-ngfw"), status=status
     )
@@ -428,7 +435,9 @@ class TestDestroyNgfw:
             os_type=EngInstance.OSType.PANOS,
             status=ResourceStatus.READY.value,
         )
-        EngRange.objects.create(user=user, status=EngRange.Status.READY, ngfw_instance=eng_ngfw)
+        EngRange.objects.create(
+            workspace_id=_WORKSPACE_ID, user=user, status=EngRange.Status.READY, ngfw_instance=eng_ngfw
+        )
 
         with pytest.raises(CMSError, match="still attached"):
             destroy_ngfw(user, app.id, "Attached")

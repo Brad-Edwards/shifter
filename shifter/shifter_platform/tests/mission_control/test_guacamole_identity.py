@@ -12,6 +12,7 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 
 from mission_control._guacamole_session_builders import _build_rdp_url, guacamole_identity
+from mission_control.guacamole import RDPConnectionParams, create_rdp_connection_params
 
 User = get_user_model()
 
@@ -65,8 +66,15 @@ def test_rdp_url_build_uses_nonblank_identity_for_email_less_account(monkeypatch
     assert url.startswith("https://example/guacamole/#/client/")
 
 
-def test_rdp_url_build_forces_tls_security_for_kali(monkeypatch):
-    """Kali/xrdp targets must use TLS instead of incompatible classic RDP crypto."""
+def test_rdp_url_build_leaves_kali_security_on_negotiate(monkeypatch):
+    """Kali must negotiate, not pin TLS.
+
+    The range's Kali guest answers every X.224 negotiation request — TLS,
+    HYBRID/NLA, RDSTLS — with PROTOCOL_RDP, so pinning ``tls`` (the old #1801
+    behaviour) made guacd demand a protocol the guest never selects and the
+    session failed with "Security negotiation failed" after Guacamole
+    authentication had already succeeded (issue #987).
+    """
     user = User(username="range-abcd1234", email="player@example.com")
     captured: dict[str, str] = {}
 
@@ -83,7 +91,7 @@ def test_rdp_url_build_forces_tls_security_for_kali(monkeypatch):
 
     _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
 
-    assert captured["security"] == "tls"
+    assert captured["security"] == "any"
 
 
 def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):
@@ -105,3 +113,39 @@ def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):
     _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
 
     assert captured["security"] == "any"
+
+
+def test_rdp_url_build_disables_sftp_when_endpoint_declares_it_unavailable(monkeypatch):
+    user = User(username="range-abcd1234", email="")
+    captured: dict[str, bool] = {}
+
+    monkeypatch.setattr(
+        "mission_control._guacamole_session_builders._resolve_rdp_conn",
+        lambda _user, _instance_uuid: {**_CONN_INFO, "os_type": "kali", "sftp_enabled": False},
+    )
+
+    def _fake_create(req):
+        captured["sftp_enabled"] = req.sftp_enabled
+        return "https://example/guacamole/#/client/abc?token=t"
+
+    monkeypatch.setattr("mission_control.guacamole.create_guacamole_rdp_url", _fake_create)
+
+    _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_settings=_GUAC_SETTINGS)
+
+    assert captured["sftp_enabled"] is False
+
+
+def test_rdp_params_keep_desktop_credentials_without_sftp():
+    params = create_rdp_connection_params(
+        RDPConnectionParams(
+            hostname="10.50.2.19",
+            username="desktop-user",
+            password="desktop-password",
+            sftp_enabled=False,
+        )
+    )
+
+    assert params["username"] == "desktop-user"
+    assert params["password"] == "desktop-password"
+    assert "enable-sftp" not in params
+    assert "sftp-password" not in params

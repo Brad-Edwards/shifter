@@ -6,8 +6,8 @@ import { GceImageNameSchema } from "./schemas.js";
 describe("GceImageNameSchema", () => {
   it("accepts exact GCE candidate names", () => {
     assert.equal(
-      GceImageNameSchema.parse("shifter-techvault-20260720014252"),
-      "shifter-techvault-20260720014252",
+      GceImageNameSchema.parse("shifter-polaris-vm-20260720014252"),
+      "shifter-polaris-vm-20260720014252",
     );
   });
 

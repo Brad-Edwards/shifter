@@ -13,12 +13,12 @@ from cms import services
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from engine.models import Range as EngineRange
-from risk_register.models import AuditLog
 from shared.audit import (
     AuditAction,
     AuditEntityType,
 )
 from shared.enums import ResourceStatus
+from shared.models import AuditLog
 from tests.conftest import INVALID_RANGE_IDS, INVALID_USERS
 
 pytestmark = pytest.mark.django_db
@@ -55,6 +55,16 @@ class TestDestroyRange:
         assert AuditLog.objects.filter(
             entity_type=AuditEntityType.RANGE, entity_id=ri.pk, action=AuditAction.DEPROVISION
         ).exists()
+
+    def test_membership_removal_revokes_destroy_before_dispatch(self, user, provision_range):
+        from workspaces.models import WorkspaceMembership
+
+        ri = provision_range(user, range_id=42)
+        WorkspaceMembership.objects.filter(user=user).delete()
+
+        with pytest.raises(CMSError, match="not found"):
+            services.destroy_range(user, ri.pk)
+        assert _reload(42).status == ResourceStatus.PROVISIONING.value
 
     # The old synchronous "provider dispatch failed -> range reverted" path no
     # longer exists: dispatch enqueues a launch intent and the drainer owns

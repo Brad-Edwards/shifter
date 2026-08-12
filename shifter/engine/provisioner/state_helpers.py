@@ -209,7 +209,7 @@ def _build_instance_state(instance_data: dict[str, Any], provider: str | None = 
 def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider: str | None = None) -> dict[str, Any]:
     """Build the legacy Range.provisioned_instances entry with provider metadata."""
     resolved_provider = provider or _get_cloud_provider()
-    return {
+    payload = {
         "uuid": instance_data.get("uuid"),
         "name": instance_data.get("name"),
         "asset_type": instance_data.get("asset_type", "vm_runtime_vm"),
@@ -223,6 +223,8 @@ def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider:
         # providers that expose every instance (AWS), where credential presence
         # remains the gate.
         "participant_access_channels": instance_data.get("participant_access_channels"),
+        # Per-channel participant logins for the RAES-native path (#1710).
+        "participant_access_usernames": instance_data.get("participant_access_usernames"),
         "ssh_key_secret_arn": instance_data.get("ssh_key_secret_arn"),
         # Per-instance RDP password secret reference (#762).
         "rdp_password_secret_arn": instance_data.get("rdp_password_secret_arn"),
@@ -230,3 +232,11 @@ def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider:
         "cloud_provider": resolved_provider,
         "provider_metadata": _build_instance_provider_metadata(instance_data, resolved_provider),
     }
+    if "participant_sftp_enabled" in instance_data:
+        payload["participant_sftp_enabled"] = bool(instance_data["participant_sftp_enabled"])
+    # Per-image Guacamole SFTP root (#375): realized, non-secret metadata carried
+    # into Range.provisioned_instances so the connection layer sources it here
+    # instead of a Mission Control OS map.
+    if instance_data.get("sftp_root_directory"):
+        payload["sftp_root_directory"] = str(instance_data["sftp_root_directory"])
+    return payload

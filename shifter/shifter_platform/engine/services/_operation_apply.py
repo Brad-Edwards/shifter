@@ -1,12 +1,12 @@
-"""Shadow result applier for the operation result inbox (ADR-043 Phase 2, #1834).
+"""Engine-owned result applier for the operation result inbox (ADR-043).
 
 Claims PENDING ``OperationResultInbox`` rows, validates each against the current
-domain operation generation, ownership, contract version, and payload digest, and
-records a disposition. **Shadow mode**: it records the disposition ONLY — it never
-mutates domain state, writes an applied-transition audit, or enqueues a
-``RangeEventOutbox`` row. Direct provisioner SQL remains the sole authoritative
-writer; the authoritative apply (domain state + audit + notification in one
-transaction) is a later #478 phase.
+domain operation generation, ownership, contract version, and payload digest,
+then dispatches declared operation families to the authoritative domain applier.
+Domain state, applied-transition audit, result disposition, and any
+``RangeEventOutbox`` row share one transaction. Compatibility families without a
+declared step contract remain validation-only shadow results until their direct
+provisioner SQL path is removed.
 
 The generation fence is the whole point: a result is tagged with the exact
 ``operation_id`` its provisioner run was launched for, so a result whose operation
@@ -30,6 +30,8 @@ from shared.operation_envelope import (
     validate_operation_envelope,
 )
 
+from ._operation_apply_domain import apply_validated_result
+
 # engine.models is imported lazily inside functions below (app-registry load
 # order); this block is type-check-only.
 if TYPE_CHECKING:
@@ -37,7 +39,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_RANGE_RESOURCES = frozenset({"range", "aces-range"})
+_RANGE_RESOURCES = frozenset({"range", "raes-range"})
 
 
 def _resolve_operation_target(resource: str, operation_id: UUID | str) -> Range | Instance | None:
@@ -107,12 +109,12 @@ def evaluate_operation_result(row: OperationResultInbox) -> tuple[str, str]:
 
 
 def apply_pending_operation_results(*, batch_size: int = 50) -> int:
-    """Claim and evaluate a batch of PENDING inbox results (shadow).
+    """Claim and apply a batch of PENDING inbox results.
 
     Claims with ``select_for_update(skip_locked=True)`` so concurrent appliers do
-    not contend, records each row's disposition, and returns the count evaluated.
-    Records disposition only — never mutates domain state, audit, or the range
-    event outbox.
+    not contend. Declared operation families are applied authoritatively; other
+    families receive a validation-only shadow disposition. Returns the number of
+    rows dispositioned.
     """
     from engine.models import OperationResultDisposition, OperationResultInbox
 
@@ -125,6 +127,16 @@ def apply_pending_operation_results(*, batch_size: int = 50) -> int:
         )
         for row in rows:
             disposition, detail = evaluate_operation_result(row)
+            if disposition == OperationResultDisposition.VALIDATED:
+                # Admissible: hand to the authoritative apply, which locks the
+                # target and commits domain state, audit, and notification inside
+                # this same transaction.
+                disposition, detail = apply_validated_result(row)
+                if not disposition:
+                    # Deliberately deferred: an earlier result of the same
+                    # operation generation is still pending, so this one stays
+                    # PENDING for a later pass rather than jumping ahead of it.
+                    continue
             row.disposition = disposition
             row.disposition_detail = detail
             row.applied_at = timezone.now()

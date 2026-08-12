@@ -48,10 +48,11 @@ variable "runtime_env" {
     condition = alltrue([
       for key in [
         "AWS_REGION",
-        "ENGINE_TASK_CLUSTER",
-        "ENGINE_TASK_DEFINITION",
-        "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID",
-        "ENGINE_TASK_NETWORK_SUBNET_IDS",
+        # ENGINE_TASK_* ECS coordinates are retired (#1826): the provisioner
+        # dispatches as a Kubernetes Job. ENGINE_TASK_NAMESPACE and
+        # ENGINE_TASK_SERVICE_ACCOUNT_NAME come from the chart; ENGINE_TASK_IMAGE
+        # from the renderer; the range/portal provisioner env is assembled by
+        # module.eks_provisioner_env, not supplied here.
         "OIDC_AUTH_DOMAIN",
         "OIDC_ISSUER_URL",
         "OIDC_RP_CLIENT_ID",
@@ -68,6 +69,36 @@ variable "runtime_env" {
     ])
     error_message = "runtime_env must contain every canonical AWS platform runtime binding."
   }
+}
+
+variable "db_name" {
+  description = "Portal control-plane database name the provisioner Job connects to (IAM auth)."
+  type        = string
+  default     = "shifter"
+}
+
+variable "dc_domain_name" {
+  description = "Prebaked Windows DC domain name for the provisioner env (empty when no Windows DC scenario is deployed)."
+  type        = string
+  default     = ""
+}
+
+variable "provisioner_extra_env" {
+  description = "Additional non-secret provisioner env (e.g. AWS_POLARIS_AGENT_* for AWS Polaris deployments)."
+  type        = map(string)
+  default     = {}
+}
+
+variable "ctf_content_bucket_arn" {
+  description = "Optional private S3 bucket ARN holding digest-pinned native CTF content bundles."
+  type        = string
+  default     = ""
+}
+
+variable "ctf_content_prefix" {
+  description = "Contained key prefix holding native CTF content bundles."
+  type        = string
+  default     = "ctf/content-bundles/"
 }
 
 variable "vpc_cidr" {

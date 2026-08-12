@@ -8,6 +8,7 @@ within its size budget.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from cms.exceptions import CMSError
@@ -77,7 +78,7 @@ def _assert_scenario_launchable(scenario: str) -> None:
 
     Unknown ids are left to ``_load_scenario_template_or_raise`` (which raises
     the not-found CMSError), preserving existing behavior. Legacy YAML/DB
-    entries are always launchable; a non-launchable ACES entry (pending
+    entries are always launchable; a non-launchable RAES entry (pending
     conformance, unsupported profile, invalid refs, or a shadowed legacy id)
     is rejected here with a clear error instead of an opaque not-found.
     """
@@ -101,7 +102,7 @@ def _load_scenario_template_or_raise(scenario: str) -> ScenarioTemplate:
 
 
 def _check_scenario_agent_requirements(
-    scenario: str, requirements: dict[str, bool], agents_by_os: dict[str, int]
+    scenario: str, requirements: Mapping[str, object], agents_by_os: dict[str, int]
 ) -> None:
     """Raise CMSError when scenario requirements are not met by agents_by_os."""
     if requirements["requires_windows"] and "windows" not in agents_by_os:

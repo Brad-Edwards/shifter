@@ -212,6 +212,20 @@ class TestInstanceResource:
         assert "windows-startup-script-ps1" not in meta
         assert "ssh_host_ed25519_key" in meta["startup-script"]
 
+        # The composition script is appended to the host-key script, so the
+        # host-key half must never terminate the shell: an `exit` here would
+        # silently skip building the range's content (issue #987).
+        startup = meta["startup-script"]
+        host_key_half = startup.split("shifter_install_host_key || true", 1)[0]
+        assert "\nexit " not in host_key_half, "host-key install must not exit the shared startup script"
+
+        # A divergence between the injected key and the key sshd serves leaves
+        # every terminal session failing with HostKeyNotVerifiable, so the script
+        # verifies convergence and says so on the serial console rather than
+        # swallowing the failure (issue #987).
+        assert "shifter-hostkey:" in startup, "host-key install must log a diagnosable marker"
+        assert "ssh-keyscan" in startup, "host-key install must verify sshd serves the injected key"
+
         # service_account_email set -> service_accounts block present with scopes.
         assert body["service_accounts"][0]["email"] == "range-host@test-project.iam.gserviceaccount.com"
         assert body["service_accounts"][0]["scopes"] == ["https://www.googleapis.com/auth/cloud-platform"]
@@ -254,3 +268,38 @@ class TestInstanceResource:
         )
 
         assert "service_accounts" not in body
+
+    def test_machine_image_instance_replaces_inherited_identity_network_and_metadata(self):
+        instance = _instance(attach_service_account=False)
+        instance["profile"] = GCERangeImageProfile(
+            source_machine_image="projects/test/global/machineImages/nested-host-v1",
+            machine_type="n2-standard-8",
+            bootstrap_capability="preconfigured-machine-host",
+            participant_container_name="participant-desktop",
+            participant_username="operator",
+            host_ssh_username="hostadmin",
+            host_ssh_port=2222,
+        )
+        instance["host_ssh_username"] = "hostadmin"
+        instance["service_account_email"] = "sh-range-host-4@test-project.iam.gserviceaccount.com"
+
+        body = instance_resource(
+            _plan(),
+            instance,
+            _config(service_account_email="deployment-wide@test-project.iam.gserviceaccount.com"),
+            ssh_public_key="ssh-ed25519 AAAAkey",
+            host_private_key_b64="Ym9ndXM=",
+            host_public_key="ssh-ed25519 AAAAhost",
+        )
+
+        assert "disks" not in body
+        assert "shielded_instance_config" not in body
+        assert body["advanced_machine_features"] == {"enable_nested_virtualization": True}
+        assert body["network_interfaces"] == [
+            {
+                "subnetwork": "projects/p/regions/us-central1/subnetworks/sn",
+                "network_i_p": "10.50.2.4",
+            }
+        ]
+        assert body["service_accounts"][0]["email"] == "sh-range-host-4@test-project.iam.gserviceaccount.com"
+        assert _metadata_map(body)["ssh-keys"] == "hostadmin:ssh-ed25519 AAAAkey"

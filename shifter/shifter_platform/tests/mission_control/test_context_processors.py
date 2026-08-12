@@ -78,9 +78,14 @@ def _seed_range(
     """
     from cms.models import RangeInstance
     from cms.models import Request as CMSRequest
+    from workspaces.services import resolve_personal_workspace
 
-    request = CMSRequest.objects.create(request_id=uuid4(), request_type=RequestType.RANGE.value, user=user)
+    workspace_id = resolve_personal_workspace(user).workspace_id
+    request = CMSRequest.objects.create(
+        workspace_id=workspace_id, request_id=uuid4(), request_type=RequestType.RANGE.value, user=user
+    )
     range_instance = RangeInstance.objects.create(
+        workspace_id=workspace_id,
         request=request,
         scenario_id=scenario_id,
         user_id=user.id,
@@ -93,6 +98,7 @@ def _seed_range(
         from engine.models import Range as EngineRange
 
         EngineRange.objects.create(
+            workspace_id=workspace_id,
             id=range_id,
             user=user,
             status="ready",
