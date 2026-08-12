@@ -336,6 +336,22 @@ jobs:
             -reconfigure \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
             -backend-config="prefix=${TF_BACKEND_PREFIX}"
+      - name: Derive range_network_zones tfvar from the canonical pool
+        # #2029: RANGE_NETWORK_ZONES is the single canonical operator input for
+        # multi-region range placement. The runtime env consumes it as CSV (the
+        # renderer step); Terraform's range_network_zones consumes it as a list to
+        # derive per-region range NAT. Both are projected from the SAME
+        # `vars.RANGE_NETWORK_ZONES` here, so NAT coverage cannot drift from where
+        # the provisioner places range cells. Empty -> [] -> single-region NAT.
+        env:
+          RANGE_NETWORK_ZONES: ${{ vars.RANGE_NETWORK_ZONES }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, os
+
+          zones = [z.strip() for z in os.environ.get("RANGE_NETWORK_ZONES", "").split(",") if z.strip()]
+          print("TF_VAR_range_network_zones=" + json.dumps(zones))
+          PY
       - name: Terraform apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
@@ -556,6 +572,10 @@ jobs:
           # variable GCP_RANGE_BACKEND=gdc to roll back to GDC VM Runtime.
           GCP_RANGE_BACKEND: ${{ vars.GCP_RANGE_BACKEND }}
           RANGE_NETWORK_ZONE: ${{ vars.RANGE_NETWORK_ZONE }}
+          # Optional ordered multi-region pool; empty keeps single-zone placement
+          # (RANGE_NETWORK_ZONE). GitHub vars do not reach the renderer unless
+          # projected here explicitly.
+          RANGE_NETWORK_ZONES: ${{ vars.RANGE_NETWORK_ZONES }}
           GCP_RANGE_CELL_PROJECT_ID: ${{ vars.GCP_RANGE_CELL_PROJECT_ID }}
           GCP_RANGE_LINUX_IMAGE: ${{ vars.GCP_RANGE_LINUX_IMAGE }}
           GCP_RANGE_KALI_IMAGE: ${{ vars.GCP_RANGE_KALI_IMAGE }}

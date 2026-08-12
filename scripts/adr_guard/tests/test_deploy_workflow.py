@@ -615,6 +615,37 @@ class TestGcpPrivateControlPlaneAccess(unittest.TestCase):
         )
 
 
+class TestRangePlacementSingleSource(unittest.TestCase):
+    """#2029: multi-region range placement and per-region NAT consume ONE input.
+
+    ``RANGE_NETWORK_ZONES`` is the canonical operator setting. It reaches two
+    consumers with different shapes: the runtime renderer as CSV (the provisioner
+    reads back the per-range zone chosen at creation), and Terraform as a list
+    (``range_network_zones``, which derives per-region range NAT). If those two
+    drifted apart, a range could be placed in a region with no NAT and silently
+    lose its egress path. Both must be projected from the same
+    ``vars.RANGE_NETWORK_ZONES``.
+    """
+
+    def test_runtime_and_terraform_derive_from_the_same_variable(self):
+        workflow = (REPO_ROOT / ".github/workflows/_gcp-dev.yml").read_text(encoding="utf-8")
+        # Runtime CSV consumer (renderer -> ConfigMap -> platform placement).
+        self.assertIn("RANGE_NETWORK_ZONES: ${{ vars.RANGE_NETWORK_ZONES }}", workflow)
+        # Terraform list consumer (range_network_zones -> per-region NAT), derived
+        # from the SAME variable, never a separate independent input.
+        self.assertIn("TF_VAR_range_network_zones=", workflow)
+        self.assertGreaterEqual(
+            workflow.count("vars.RANGE_NETWORK_ZONES"),
+            2,
+            "RANGE_NETWORK_ZONES must feed both the runtime renderer and the "
+            "Terraform range_network_zones tfvar from one canonical operator variable",
+        )
+        # The Terraform tfvar must be independent variables that could diverge; it is
+        # derived from RANGE_NETWORK_ZONES, so a standalone range_nat_regions input
+        # (the divergence hazard) must not reappear.
+        self.assertNotIn("range_nat_regions", workflow)
+
+
 class TestProvisionerDeployTestGate(unittest.TestCase):
     """#555: engine image build/deploy is gated by provisioner tests."""
 
