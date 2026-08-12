@@ -3412,6 +3412,86 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/content/refresh/": {
+      "post": {
+        "operationId": "ctf_events_content_refresh_create",
+        "description": "Validate the fence, reconcile to the configured revision, return the outcome.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventContentRefreshRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventContentRefreshRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventContentRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventContentRefreshResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/email-templates/{notification_type}/": {
       "get": {
         "operationId": "ctf_events_email_templates_retrieve",
@@ -13569,6 +13649,67 @@
           }
         }
       },
+      "EventContentRefreshRequest": {
+        "type": "object",
+        "description": "Refresh managed event content to the configured revision (issue #1971).\n\nThe organizer supplies only the digest they currently see as an optimistic\nconcurrency fence; the server-configured bundle is the target. No object\nkey, URL, bundle body, flag, or target digest is caller-controlled.",
+        "properties": {
+          "expected_current_digest": {
+            "type": "string",
+            "description": "The declared digest the organizer currently sees (optimistic fence).",
+            "maxLength": 71,
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "expected_current_digest"
+        ]
+      },
+      "EventContentRefreshResult": {
+        "type": "object",
+        "description": "Bounded result of an in-place managed content refresh.",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "outcome": {
+            "type": "string",
+            "readOnly": true
+          },
+          "changed_categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "challenge_count": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "flag_count": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "hint_count": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "prerequisite_count": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "challenge_count",
+          "changed_categories",
+          "event_id",
+          "flag_count",
+          "hint_count",
+          "outcome",
+          "prerequisite_count"
+        ]
+      },
       "EventDetail": {
         "type": "object",
         "description": "Full organizer-facing event detail projection.",
@@ -13708,6 +13849,15 @@
           "theme_color": {
             "type": "string",
             "readOnly": true
+          },
+          "managed_content": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ManagedContentSummary"
+              }
+            ],
+            "nullable": true,
+            "readOnly": true
           }
         },
         "required": [
@@ -13722,6 +13872,7 @@
           "event_timezone",
           "id",
           "logo_url",
+          "managed_content",
           "max_participants",
           "name",
           "range_config",
@@ -14441,6 +14592,34 @@
         },
         "required": [
           "error"
+        ]
+      },
+      "ManagedContentSummary": {
+        "type": "object",
+        "description": "Bounded managed-content status for the organizer (issue #1971).\n\nExposes only the current revision fence and drift state so the organizer can\nrefresh; never object keys, flag material, or validator configuration.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "declared_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "state": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_refreshable": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "declared_digest",
+          "is_refreshable",
+          "scenario_id",
+          "state"
         ]
       },
       "NGFWCreate": {

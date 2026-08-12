@@ -664,6 +664,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/content/refresh/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate the fence, reconcile to the configured revision, return the outcome. */
+        post: operations["ctf_events_content_refresh_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/email-templates/{notification_type}/": {
         parameters: {
             query?: never;
@@ -3125,6 +3142,27 @@ export interface components {
             /** @default  */
             text_body: string;
         };
+        /**
+         * @description Refresh managed event content to the configured revision (issue #1971).
+         *
+         *     The organizer supplies only the digest they currently see as an optimistic
+         *     concurrency fence; the server-configured bundle is the target. No object
+         *     key, URL, bundle body, flag, or target digest is caller-controlled.
+         */
+        EventContentRefreshRequest: {
+            /** @description The declared digest the organizer currently sees (optimistic fence). */
+            expected_current_digest: string;
+        };
+        /** @description Bounded result of an in-place managed content refresh. */
+        EventContentRefreshResult: {
+            readonly event_id: string;
+            readonly outcome: string;
+            readonly changed_categories: string[];
+            readonly challenge_count: number;
+            readonly flag_count: number;
+            readonly hint_count: number;
+            readonly prerequisite_count: number;
+        };
         /** @description Full organizer-facing event detail projection. */
         EventDetail: {
             readonly id: string;
@@ -3165,6 +3203,7 @@ export interface components {
             readonly logo_url: string;
             readonly visible_os_types: string[];
             readonly theme_color: string;
+            readonly managed_content: components["schemas"]["ManagedContentSummary"] | null;
         };
         /** @description One lifecycle transition to apply to an owned event (CTF-007). */
         EventLifecycleRequest: {
@@ -3436,6 +3475,18 @@ export interface components {
         LegacyError: {
             /** @description Human-readable error message. */
             error: string;
+        };
+        /**
+         * @description Bounded managed-content status for the organizer (issue #1971).
+         *
+         *     Exposes only the current revision fence and drift state so the organizer can
+         *     refresh; never object keys, flag material, or validator configuration.
+         */
+        ManagedContentSummary: {
+            readonly scenario_id: string;
+            readonly declared_digest: string;
+            readonly state: string;
+            readonly is_refreshable: boolean;
         };
         /** @description Validate NGFW creation requests. */
         NGFWCreate: {
@@ -6894,6 +6945,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledTaskListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_content_refresh_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventContentRefreshRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventContentRefreshRequest"];
+                "multipart/form-data": components["schemas"]["EventContentRefreshRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventContentRefreshResult"];
                 };
             };
             /** @description Authentication failed. */

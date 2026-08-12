@@ -304,6 +304,11 @@ def pause_event(event: CTFEvent) -> bool:
 def resume_event(event: CTFEvent) -> bool:
     """Resume a paused event (transition back to active).
 
+    Every path back to ACTIVE must re-enforce managed-content hydration
+    readiness under the event lock (issue #1971): resuming is an activation and
+    a paused event whose configured content has drifted or been revised must not
+    silently score against stale flags. Restore/refresh the content first.
+
     Args:
         event: The CTFEvent to resume.
 
@@ -312,15 +317,25 @@ def resume_event(event: CTFEvent) -> bool:
     """
     logger.info("Resuming CTF event %s", event.id)
 
-    try:
-        _transition_event(event, EventStatus.ACTIVE)
-    except CTFStateError:
-        logger.warning(
-            "Cannot resume event %s: not in paused state (current: %s)",
-            event.id,
-            event.status,
-        )
-        return False
+    from ctf.models import CTFEvent
+    from ctf.services.content_hydration import assert_event_content_hydration_ready
+
+    with transaction.atomic():
+        locked_event = CTFEvent.objects.select_for_update().get(pk=event.pk)
+        if locked_event.status != EventStatus.PAUSED.value:
+            logger.warning(
+                "Cannot resume event %s: not in paused state (current: %s)",
+                locked_event.id,
+                locked_event.status,
+            )
+            return False
+
+        try:
+            assert_event_content_hydration_ready(locked_event)
+            _transition_event(locked_event, EventStatus.ACTIVE)
+        except CTFStateError:
+            return False
+        event.status = locked_event.status
 
     logger.info("Resumed CTF event %s", event.id)
     return True

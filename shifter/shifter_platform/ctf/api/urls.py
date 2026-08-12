@@ -42,6 +42,11 @@ urlpatterns = [
         organizer.ForceDeleteEventView.as_view(),
         name="api_force_delete_event",
     ),
+    path(
+        "events/<uuid:event_id>/content/refresh/",
+        organizer.EventContentRefreshView.as_view(),
+        name="api_event_content_refresh",
+    ),
     path("scenarios/", organizer.ScenarioListView.as_view(), name="api_scenarios"),
     path(
         "events/<uuid:event_id>/challenges/",
