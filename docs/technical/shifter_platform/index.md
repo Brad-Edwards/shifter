@@ -162,3 +162,6 @@ are visible through Django admin and the staff-session-only `/api/v1/audit/`
 read API.
 
 - [Audit system architecture](../../architecture/audit-system-architecture.md)
+- [Administrator audit and activity history](admin-audit-activity.md): the
+  hardened `/api/v1/audit/` read API, its typed filters, and the staff-facing
+  `/administer/audit` SPA surface.

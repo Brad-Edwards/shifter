@@ -16,7 +16,14 @@ from ctf.models import CTFChallenge, CTFContentHydrationReceipt, CTFEvent, CTFFl
 from ctf.services.challenge import update_challenge
 from ctf.services.content_hydration import assert_event_content_hydration_ready, hydrate_event_ctf_content
 from ctf.services.content_resolution import HydrationSourceEvidence, ResolvedCtfContent
-from ctf.services.event import activate_event, create_event, open_registration, start_event
+from ctf.services.event import (
+    activate_event,
+    create_event,
+    open_registration,
+    pause_event,
+    resume_event,
+    start_event,
+)
 from shared.schemas.ctf_content_reference import load_ctf_content_references_json
 
 
@@ -188,6 +195,34 @@ def test_removed_reference_does_not_authorize_managed_content(organizer_user) ->
         with pytest.raises(CTFStateError):
             start_event(event.pk)
         assert activate_event(event) is False
+
+
+@pytest.mark.django_db
+def test_resume_re_enforces_content_readiness(organizer_user) -> None:
+    event = _event(organizer_user)
+    hydrate_event_ctf_content(event.pk, _resolved(), actor_id=organizer_user.pk)
+    with override_settings(CTF_CONTENT_REFERENCES=_configured_references()):
+        assert open_registration(event) is True
+        event.refresh_from_db()
+        assert activate_event(event) is True
+        event.refresh_from_db()
+        assert pause_event(event) is True
+        event.refresh_from_db()
+        assert event.status == EventStatus.PAUSED.value
+
+        # A paused event whose configured content is no longer ready must not
+        # resume back to ACTIVE (issue #1971 bypass fix).
+        with override_settings(
+            CTF_CONTENT_REFERENCES=load_ctf_content_references_json("", prefix="ctf/content-bundles")
+        ):
+            assert resume_event(event) is False
+            event.refresh_from_db()
+            assert event.status == EventStatus.PAUSED.value
+
+        # With the configured reference restored, resume succeeds.
+        assert resume_event(event) is True
+        event.refresh_from_db()
+        assert event.status == EventStatus.ACTIVE.value
 
 
 @pytest.mark.django_db

@@ -7,11 +7,30 @@ prerequisites).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
+
+if TYPE_CHECKING:
+    from ctf.models import CTFEvent
 
 # ---------------------------------------------------------------------------
 # Organizer serializers (event management)
 # ---------------------------------------------------------------------------
+
+
+class ManagedContentSummarySerializer(serializers.Serializer):
+    """Bounded managed-content status for the organizer (issue #1971).
+
+    Exposes only the current revision fence and drift state so the organizer can
+    refresh; never object keys, flag material, or validator configuration.
+    """
+
+    scenario_id = serializers.CharField(read_only=True)
+    declared_digest = serializers.CharField(read_only=True)
+    state = serializers.CharField(read_only=True)
+    is_refreshable = serializers.BooleanField(read_only=True)
 
 
 class EventSummarySerializer(serializers.Serializer):
@@ -64,6 +83,22 @@ class EventDetailSerializer(serializers.Serializer):
     logo_url = serializers.CharField(read_only=True, allow_blank=True)
     visible_os_types = serializers.ListField(child=serializers.CharField(), read_only=True)
     theme_color = serializers.CharField(read_only=True, allow_blank=True)
+    managed_content = serializers.SerializerMethodField()
+
+    @extend_schema_field(ManagedContentSummarySerializer(allow_null=True))
+    def get_managed_content(self, event: CTFEvent) -> dict[str, object] | None:
+        """Return the event's managed-content summary, or None when unmanaged."""
+        from ctf.models import CTFContentHydrationReceipt
+
+        receipt = CTFContentHydrationReceipt.objects.filter(event=event).first()
+        if receipt is None:
+            return None
+        return {
+            "scenario_id": receipt.scenario_id,
+            "declared_digest": receipt.declared_digest,
+            "state": receipt.state,
+            "is_refreshable": bool(event.is_content_modifiable or event.is_live_flag_repairable),
+        }
 
 
 class EventWriteSerializer(serializers.Serializer):
@@ -142,6 +177,33 @@ class EventMutationResultSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     status = serializers.CharField(read_only=True)
+
+
+class EventContentRefreshRequestSerializer(serializers.Serializer):
+    """Refresh managed event content to the configured revision (issue #1971).
+
+    The organizer supplies only the digest they currently see as an optimistic
+    concurrency fence; the server-configured bundle is the target. No object
+    key, URL, bundle body, flag, or target digest is caller-controlled.
+    """
+
+    expected_current_digest = serializers.RegexField(
+        r"^sha256:[0-9a-f]{64}$",
+        max_length=71,
+        help_text="The declared digest the organizer currently sees (optimistic fence).",
+    )
+
+
+class EventContentRefreshResultSerializer(serializers.Serializer):
+    """Bounded result of an in-place managed content refresh."""
+
+    event_id = serializers.CharField(read_only=True)
+    outcome = serializers.CharField(read_only=True)
+    changed_categories = serializers.ListField(child=serializers.CharField(), read_only=True)
+    challenge_count = serializers.IntegerField(read_only=True)
+    flag_count = serializers.IntegerField(read_only=True)
+    hint_count = serializers.IntegerField(read_only=True)
+    prerequisite_count = serializers.IntegerField(read_only=True)
 
 
 class ForceDeleteEventRequestSerializer(serializers.Serializer):
