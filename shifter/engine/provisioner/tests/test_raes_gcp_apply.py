@@ -263,7 +263,7 @@ class TestApply:
         clients = _clients()
         secret_ops, _ = _secret_ops()
         apply_raes_range_cell(
-            "req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops), egress_mode="none"
+            "req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops, egress_mode="none")
         )
         # A none range carries no NAT path at all: no range-owned router is created.
         assert not clients.routers.insert.called

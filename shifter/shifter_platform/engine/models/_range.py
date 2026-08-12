@@ -6,20 +6,14 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.db import models, transaction
-from installation.range_egress import RangeEgressMode
 
 from shared.schemas.persistence import unwrap_persisted_spec
 
+from ._range_egress import RANGE_EGRESS_DEFAULT, RANGE_EGRESS_MODE_CHOICES
 from ._request import Request
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
-
-#: Django ``choices`` for the pinned effective range egress mode, built from the
-#: canonical ``installation.range_egress.RangeEgressMode`` StrEnum (which is not a
-#: Django ``TextChoices`` and so exposes no ``.choices``). Kept in lockstep with
-#: the enum so a new canonical mode is a one-line update here.
-RANGE_EGRESS_MODE_CHOICES = tuple((mode.value, mode.value) for mode in RangeEgressMode)
 
 
 class Range(models.Model):
@@ -63,17 +57,12 @@ class Range(models.Model):
     # cross-layer FK (ADR-001-R2), supplied by the trusted CMS launch path. Non-null
     # with no default -- unlike the backend binding below, NULL is not a sentinel.
     workspace_id = models.IntegerField(db_index=True, help_text="Workspace scope (soft reference; ADR-046).")
-    # Effective network egress posture pinned at create from the workspace launch
-    # admission (PLAT-238, #1945, ADR-017-R5). Immutable per range: resolved under
-    # the workspace mutex, verified on idempotent replay, and delivered in the
-    # operation-generation input so the provisioner never reads workspace state.
-    # ``none`` is ADR-026 zero egress (no outbound NAT path); ``status-quo`` inherits
-    # the deployment baseline. Stored as the canonical installation.range_egress
-    # vocabulary; the provisioner is the sole realizer.
+    # Effective egress posture pinned at create under the workspace mutex,
+    # replay-verified, delivered in the operation input (PLAT-238, ADR-017-R5/ADR-026).
     egress_mode = models.CharField(
         max_length=16,
         choices=RANGE_EGRESS_MODE_CHOICES,
-        default=RangeEgressMode.STATUS_QUO.value,
+        default=RANGE_EGRESS_DEFAULT,
         help_text="Effective range egress posture pinned at create (PLAT-238; ADR-017-R5/ADR-026).",
     )
     ngfw_instance = models.ForeignKey(
@@ -98,21 +87,13 @@ class Range(models.Model):
     )
     provisioner_operation = models.CharField(max_length=32, blank=True, default="")
     provisioner_operation_id = models.UUIDField(null=True, blank=True, editable=False)
-    # Range-backend ownership binding (#1666). Immutable, write-once platform
-    # admission/ownership metadata set at create time from the CMS
-    # BackendAdmission (shared.range_instantiation_policy). It is NOT scenario
-    # intent and is NEVER re-derived from the deploy-wide GCP_RANGE_BACKEND
-    # selector: destroy, compensation, retries, and reconciliation route from
-    # these persisted facts so a `gdc -> gce` selector flip cannot strand
-    # existing GDC ranges (ADR-030 / ADR-039). NULL is the sentinel for legacy
-    # pre-#1666 rows and non-GCP ranges; the Engine create seam is the sole
-    # writer and validates values via shared.range_instantiation_policy
-    # (normalize_gcp_range_backend / InstantiationPurpose) before persisting.
-    # The null=True on these two fields is intentional (DJ001 / Sonar S6552
-    # suppressed): NULL is the load-bearing sentinel for "no persisted binding"
-    # (legacy pre-#1666 / non-GCP), distinct from any real backend value. The
-    # usual "" default would conflate unbound with a value and break the
-    # destroy-time legacy-resolution path (#1666 preflight).
+    # Range-backend ownership binding (#1666): write-once (backend, purpose) set at
+    # create from the CMS BackendAdmission and validated via
+    # shared.range_instantiation_policy; never re-derived from the GCP_RANGE_BACKEND
+    # selector, so destroy/reconcile route from these facts and a gdc->gce flip
+    # cannot strand ranges (ADR-030 / ADR-039). NULL (null=True intentional; DJ001 /
+    # Sonar S6552 suppressed) is the load-bearing "no persisted binding" sentinel
+    # for legacy pre-#1666 / non-GCP rows, distinct from any real backend value.
     range_backend = models.CharField(  # noqa: DJ001
         max_length=8,
         null=True,  # NOSONAR

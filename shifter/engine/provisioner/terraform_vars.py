@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from shared.range_cells import build_gcp_vm_range_cell_request
@@ -417,16 +418,27 @@ def _build_gce_range_cell_variables(
     )
 
 
+@dataclass(frozen=True)
+class RangeVariableContext:
+    """The per-operation binding a range-variable build needs beyond the range spec.
+
+    Bundled into one argument (keeping the build seam within the parameter budget):
+    the #1666 backend ownership binding, the #1695 OpenVPN remote-access capability,
+    the digest-bound GCE scenario artifact, and the PLAT-238 pinned egress posture.
+    """
+
+    scenario_artifact: dict[str, Any] | None = None
+    backend: str | None = None
+    remote_access_capability: dict[str, object] | None = None
+    egress_mode: str = "status-quo"
+
+
 def build_range_variables(
     request_id: str,
     range_id: int,
     user_id: int,
     range_spec: dict[str, Any],
-    *,
-    scenario_artifact: dict[str, Any] | None = None,
-    backend: str | None = None,
-    remote_access_capability: dict[str, object] | None = None,
-    egress_mode: str = "status-quo",
+    context: RangeVariableContext | None = None,
 ) -> dict[str, Any]:
     """Return backend-appropriate range variables.
 
@@ -435,30 +447,32 @@ def build_range_variables(
     range provision/destroy paths call so the GCE backend never receives
     AWS-translated instance shapes.
 
-    ``backend`` is the per-operation ownership binding (#1666). When supplied it
-    selects the shape from the persisted binding (so a bound destroy builds the
-    right variables even after the deploy selector flips); ``None`` falls back to
-    the deploy-wide env selector for the provision path and non-GCP callers.
-
-    ``egress_mode`` is the effective posture pinned on the range at create
-    (PLAT-238); the AWS branch resolves it to the runtime route-table bridge so a
-    ``none`` range gets no NAT/default route independent of the deployment env.
+    ``context`` carries the per-operation binding (backend, remote access,
+    scenario artifact, pinned egress mode). ``context.backend`` is the #1666
+    ownership binding: when supplied it selects the shape from the persisted
+    binding (so a bound destroy builds the right variables even after the deploy
+    selector flips); ``None`` falls back to the deploy-wide env selector.
+    ``context.egress_mode`` is the effective posture pinned at create (PLAT-238);
+    the AWS branch resolves it to the runtime route-table bridge so a ``none``
+    range gets no NAT/default route independent of the deployment env.
     """
+    ctx = context or RangeVariableContext()
+    backend = ctx.backend
     use_gce = backend == "gce" if backend else is_gce_range_cell_backend()
     if use_gce:
         return _build_gce_range_cell_variables(
             request_id,
             range_id,
             range_spec,
-            scenario_artifact,
-            remote_access_capability,
-            egress_mode,
+            ctx.scenario_artifact,
+            ctx.remote_access_capability,
+            ctx.egress_mode,
         )
     return _build_range_terraform_variables(
         request_id,
         range_id,
         user_id,
         range_spec,
-        remote_access_capability,
-        egress_mode,
+        ctx.remote_access_capability,
+        ctx.egress_mode,
     )

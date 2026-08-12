@@ -23,6 +23,7 @@ from ._context import (
     OrganizationRef,
     list_actor_workspace_contexts,
 )
+from ._egress import set_workspace_egress_policy, workspace_egress_policy
 from ._lifecycle import (
     WorkspaceAuditContext,
     WorkspaceLifecycleError,
@@ -33,9 +34,7 @@ from ._lifecycle import (
     list_workspaces,
     rename_workspace,
     restore_workspace,
-    set_workspace_egress_policy,
     transfer_workspace_ownership,
-    workspace_egress_policy,
 )
 from ._memberships import (
     MembershipAuditContext,

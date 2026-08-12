@@ -126,7 +126,6 @@ def create_range(
         request_spec,
         range_spec,
         user_model,
-        Range,
         backend_admission,
         normalized_remote_access,
         workspace_id,
@@ -151,7 +150,6 @@ def _persist_range_atomically(
     request_spec: RequestSpec,
     range_spec: RangeSpec,
     user_model: type[User],
-    range_model: type[Range],
     backend_admission: BackendAdmission | None = None,
     remote_access_capability: dict[str, object] | None = None,
     workspace_id: int | None = None,
@@ -166,7 +164,9 @@ def _persist_range_atomically(
     the tenancy scope it belongs to (ADR-046-R3).
     """
     from engine.interpreter import interpret
-    from engine.models import Subnet
+    from engine.models import Range, Subnet
+
+    range_model = Range
 
     binding_fields = backend_binding_fields(backend_admission)
     remote_access_fields = (

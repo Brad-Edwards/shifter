@@ -54,7 +54,7 @@ from terraform_ngfw_range import (
     _remove_ngfw_attachments_for_destroy,
     _validate_ngfw_range_attachment,
 )
-from terraform_vars import build_range_variables
+from terraform_vars import RangeVariableContext, build_range_variables
 from vpn_access import (
     cleanup_openvpn_access,
     finalize_openvpn_access,
@@ -108,30 +108,32 @@ class RangeOperation:
     egress_mode: str = "status-quo"
 
 
+def _operation_variable_context(operation: RangeOperation) -> RangeVariableContext:
+    """Bundle the per-operation range-variable binding (PLAT-238 egress included)."""
+    return RangeVariableContext(
+        scenario_artifact=operation.scenario_artifact,
+        backend=operation.backend,
+        remote_access_capability=operation.remote_access_capability,
+        egress_mode=operation.egress_mode,
+    )
+
+
 def _build_operation_variables(
     request_id: str,
     range_id: int,
     user_id: int,
     range_spec: dict[str, Any],
-    scenario_artifact: dict[str, Any] | None,
-    backend: str | None = None,
-    remote_access_capability: dict[str, object] | None = None,
-    egress_mode: str = "status-quo",
+    context: RangeVariableContext,
 ) -> dict[str, Any]:
-    """Build backend variables while preserving legacy call behavior.
+    """Build backend variables from the range spec and the per-operation binding.
 
-    ``backend`` (the #1666 per-operation binding) selects the variable shape from
-    persisted ownership for destroy/compensation; ``None`` keeps the env-selector
-    behavior for provision and non-GCP callers. ``egress_mode`` is the pinned
-    per-range posture (PLAT-238); it flows into the range Terraform variables so a
-    ``none`` range suppresses NAT/default-route regardless of the deployment env.
+    ``context.backend`` (the #1666 per-operation binding) selects the variable
+    shape from persisted ownership for destroy/compensation; ``None`` keeps the
+    env-selector behavior. ``context.egress_mode`` is the pinned per-range posture
+    (PLAT-238); it flows into the range Terraform variables so a ``none`` range
+    suppresses NAT/default-route regardless of the deployment env.
     """
-    kwargs: dict[str, Any] = {"backend": backend, "egress_mode": egress_mode}
-    if remote_access_capability is not None:
-        kwargs["remote_access_capability"] = remote_access_capability
-    if scenario_artifact is not None:
-        kwargs["scenario_artifact"] = scenario_artifact
-    return build_range_variables(request_id, range_id, user_id, range_spec, **kwargs)
+    return build_range_variables(request_id, range_id, user_id, range_spec, context)
 
 
 def _attempt_terraform_auto_cleanup(operation: RangeOperation) -> None:
@@ -147,10 +149,7 @@ def _attempt_terraform_auto_cleanup(operation: RangeOperation) -> None:
             operation.range_id,
             operation.user_id,
             operation.range_spec,
-            operation.scenario_artifact,
-            operation.backend,
-            operation.remote_access_capability,
-            operation.egress_mode,
+            _operation_variable_context(operation),
         )
         range_terraform_runner.destroy_range(
             operation.request_id, variables=cleanup_variables, backend=operation.backend
@@ -286,7 +285,6 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
     range_id = operation.range_id
     user_id = operation.user_id
     range_spec = operation.range_spec
-    scenario_artifact = operation.scenario_artifact
     remote_access_capability = operation.remote_access_capability
     update_range_status(
         range_id=range_id,
@@ -328,10 +326,7 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         range_id,
         user_id,
         realized_spec,
-        scenario_artifact,
-        backend=operation.backend,
-        remote_access_capability=remote_access_capability,
-        egress_mode=operation.egress_mode,
+        _operation_variable_context(operation),
     )
 
     # Run the provider-routed apply, carrying the trusted purpose so the
@@ -433,9 +428,7 @@ def _run_terraform_destroy(operation: RangeOperation) -> None:
     range_id = operation.range_id
     user_id = operation.user_id
     range_spec = operation.range_spec
-    scenario_artifact = operation.scenario_artifact
     backend = operation.backend
-    remote_access_capability = operation.remote_access_capability
     if not _ensure_range_is_active(request_id, range_id):
         return
 
@@ -452,10 +445,7 @@ def _run_terraform_destroy(operation: RangeOperation) -> None:
             range_id,
             user_id,
             realized_spec,
-            scenario_artifact,
-            backend,
-            remote_access_capability,
-            operation.egress_mode,
+            _operation_variable_context(operation),
         )
         range_terraform_runner.destroy_range(request_id, variables=destroy_variables, backend=backend)
         _cleanup_openvpn_if_enabled(range_id, request_id)

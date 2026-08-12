@@ -94,6 +94,7 @@ class TestAutoCleanupPassesVariables:
     def test_cleanup_passes_variables_to_destroy(self, monkeypatch):
         """Auto-cleanup should rebuild variables and pass them to destroy_range."""
         from terraform_ops import run_range_terraform
+        from terraform_vars import RangeVariableContext
 
         monkeypatch.setenv("CLOUD_PROVIDER", "aws")
         monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
@@ -120,7 +121,13 @@ class TestAutoCleanupPassesVariables:
             run_range_terraform("up", "req-1")
 
         mock_build_vars.assert_called_once_with(
-            "req-1", 80, 20, {"ngfw": False, "subnets": []}, backend=None, egress_mode="status-quo"
+            "req-1",
+            80,
+            20,
+            {"ngfw": False, "subnets": []},
+            RangeVariableContext(
+                scenario_artifact=None, backend=None, remote_access_capability=None, egress_mode="status-quo"
+            ),
         )
         mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars, backend=None)
 

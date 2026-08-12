@@ -81,6 +81,10 @@ class RaesGceApplyOptions:
     config: GCERangeCellConfig | None = None
     clients: GCEClients | None = None
     secret_ops: RaesGceSecretOps | None = None
+    # Effective range egress posture pinned at create (PLAT-238), carried here so
+    # the apply seam stays within the parameter budget; a `none` range gets no
+    # public-web/allow-CIDR firewall lane and no range-owned Cloud NAT.
+    egress_mode: str = "status-quo"
     account_secret_ops: RaesAccountCredentialOps | None = None
     credential_installer: Callable[..., dict[str, str]] = install_instance_account_credentials
     directory_secret_ops: RaesDirectorySecretOps | None = None
@@ -384,7 +388,6 @@ def apply_raes_range_cell(
     options: RaesGceApplyOptions | None = None,
     delivery_bindings: list[dict[str, Any]] | None = None,
     access_bindings: list[dict[str, Any]] | None = None,
-    egress_mode: str = "status-quo",
 ) -> ResourceDict:
     """Provision an RAES GCE range cell and return provisioner outputs.
 
@@ -395,8 +398,12 @@ def apply_raes_range_cell(
     ``access_bindings`` are the #1710 participant-access sidecar rows from the
     same projection. They are joined to the parsed plan -- and every unrealizable
     declaration rejected -- before any cloud or secret mutation.
+
+    The effective egress posture (PLAT-238) rides on ``options.egress_mode``.
     """
-    runtime = _apply_runtime(options or RaesGceApplyOptions())
+    resolved_options = options or RaesGceApplyOptions()
+    egress_mode = resolved_options.egress_mode
+    runtime = _apply_runtime(resolved_options)
     realized_access = join_participant_access(access_bindings or (), raes_plan)
     _assert_composition_targets_resolve(raes_plan)
     _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
