@@ -263,6 +263,8 @@ class TestManualDeployDispatch(unittest.TestCase):
         self.assertIn("scripts/bootstrap/deploy.py eks-deploy", rendered)
         self.assertIn("SHIFTER_CONFIG_", rendered)
         self.assertIn("needs.build.outputs.image_digest", rendered)
+        self.assertIn("inputs.engine_image_digest", rendered)
+        self.assertIn("provisioner:$provisioner", rendered)
         self.assertNotIn("github.ref", rendered)
         self.assertIn("__legacy-disabled__", platform["jobs"]["plan"]["if"])
         self.assertIn("__legacy-disabled__", platform["jobs"]["deploy"]["if"])

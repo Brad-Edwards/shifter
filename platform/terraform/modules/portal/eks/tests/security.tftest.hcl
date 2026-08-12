@@ -134,23 +134,36 @@ override_resource {
 }
 
 variables {
-  environment          = "test"
-  aws_region           = "us-east-2"
-  cluster_name         = "shifter-test"
-  deployment_role_arn  = "arn:aws:iam::123456789012:role/shifter-test-deploy"
-  vpc_cidr             = "10.42.0.0/16"
-  availability_zones   = ["us-east-2a", "us-east-2b"]
-  private_subnet_cidrs = ["10.42.0.0/20", "10.42.16.0/20"]
-  public_subnet_cidrs  = ["10.42.128.0/24", "10.42.129.0/24"]
-  kubernetes_version   = "1.31"
-  domain_name          = "shifter.test.example.com"
-  oidc_thumbprints     = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
-  node_instance_types  = ["m7i.large"]
+  environment              = "test"
+  aws_region               = "us-east-2"
+  cluster_name             = "shifter-test"
+  deployment_role_arn      = "arn:aws:iam::123456789012:role/shifter-test-deploy"
+  permissions_boundary_arn = "arn:aws:iam::123456789012:policy/shifter-test-ci-role-boundary"
+  vpc_cidr                 = "10.42.0.0/16"
+  availability_zones       = ["us-east-2a", "us-east-2b"]
+  private_subnet_cidrs     = ["10.42.0.0/20", "10.42.16.0/20"]
+  public_subnet_cidrs      = ["10.42.128.0/24", "10.42.129.0/24"]
+  kubernetes_version       = "1.31"
+  domain_name              = "shifter.test.example.com"
+  oidc_thumbprints         = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  node_instance_types      = ["m7i.large"]
+  addon_versions = {
+    vpc_cni           = "v1.22.4-eksbuild.3"
+    ebs_csi           = "v1.63.1-eksbuild.1"
+    efs_csi           = "v3.4.1-eksbuild.1"
+    coredns           = "v1.11.4-eksbuild.40"
+    kube_proxy        = "v1.31.14-eksbuild.25"
+    secrets_store_csi = "v3.1.2-eksbuild.1"
+  }
   workload_identities = {
     cni = {
       namespace       = "kube-system"
       service_account = "aws-node"
       policy_arns     = ["arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"]
+    }
+    ingress = {
+      namespace       = "kube-system"
+      service_account = "aws-load-balancer-controller"
     }
     portal = {
       namespace       = "shifter-platform"
@@ -199,6 +212,19 @@ run "security_contract" {
   assert {
     condition     = !contains([for attachment in aws_iam_role_policy_attachment.node : attachment.policy_arn], "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy")
     error_message = "The CNI policy must use exact service-account identity, not node-wide credentials."
+  }
+
+  assert {
+    condition = alltrue(concat(
+      [
+        aws_iam_role.cluster.permissions_boundary == var.permissions_boundary_arn,
+        aws_iam_role.node.permissions_boundary == var.permissions_boundary_arn,
+        aws_iam_role.cluster_autoscaler.permissions_boundary == var.permissions_boundary_arn,
+        aws_iam_role.vpc_flow_logs.permissions_boundary == var.permissions_boundary_arn,
+      ],
+      [for role in aws_iam_role.workload : role.permissions_boundary == var.permissions_boundary_arn],
+    ))
+    error_message = "Every EKS-created IAM role must carry the installation CI permissions boundary."
   }
 
   assert {
@@ -291,8 +317,30 @@ run "security_contract" {
   # The VPC CNI network-policy agent must be enabled so the chart's default-deny
   # NetworkPolicies are actually enforced on EKS, not merely rendered.
   assert {
-    condition     = strcontains(aws_eks_addon.vpc_cni.configuration_values, "enableNetworkPolicy")
-    error_message = "The vpc-cni add-on must enable the NetworkPolicy agent for enforcement parity with GKE."
+    condition     = strcontains(aws_eks_addon.vpc_cni.configuration_values, "enableNetworkPolicy") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "NETWORK_POLICY_ENFORCING_MODE") && strcontains(aws_eks_addon.vpc_cni.configuration_values, "strict")
+    error_message = "The vpc-cni add-on must enable the NetworkPolicy agent in strict startup mode."
+  }
+
+  assert {
+    condition = (
+      aws_eks_addon.vpc_cni.addon_version == var.addon_versions.vpc_cni &&
+      aws_eks_addon.ebs_csi.addon_version == var.addon_versions.ebs_csi &&
+      aws_eks_addon.efs_csi.addon_version == var.addon_versions.efs_csi &&
+      aws_eks_addon.core_dns.addon_version == var.addon_versions.coredns &&
+      aws_eks_addon.kube_proxy.addon_version == var.addon_versions.kube_proxy &&
+      aws_eks_addon.secrets_store_csi.addon_version == var.addon_versions.secrets_store_csi
+    )
+    error_message = "Every managed EKS add-on must use an explicit reviewed version."
+  }
+
+  assert {
+    condition     = aws_eks_addon.secrets_store_csi.service_account_role_arn == null
+    error_message = "The Secrets Store CSI provider must not receive a controller-wide secret-reader role."
+  }
+
+  assert {
+    condition     = aws_iam_role_policy.load_balancer_controller.role == aws_iam_role.workload["ingress"].id
+    error_message = "The module-owned Load Balancer Controller policy must attach only to the exact ingress IRSA role."
   }
 
   # EBS/EFS CSI drivers are installed as managed add-ons bound to their own

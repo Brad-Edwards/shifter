@@ -2414,6 +2414,11 @@
         "checks": [
           "eks-cross-stack-sourcing"
         ]
+      },
+      {
+        "id": "ADR-044-R7",
+        "description": "The EKS module owns the AWS Load Balancer Controller permission document and attaches it only to the exact kube-system/aws-load-balancer-controller IRSA role. Protected deployment inputs must not supply an arbitrary controller policy ARN. Controller mutations stay constrained to the EKS VPC, deployment account/region, exact cluster ownership tags, and the deterministic <cluster>-platform ALB ARN namespace used where WAFv2 does not support the ELB ownership-tag condition; IAM actions and elasticloadbalancing:* are forbidden. The incumbent scripts/check_tf_iam_elb_scope guard, its focused negative tests, pre-commit hook, and CI invocation enforce the same policy file.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2440,6 +2445,8 @@
       ".github/workflows/deploy.yml",
       "scripts/adr_guard/adr_guard.py",
       "scripts/adr_guard/_guard/checks/eks_cross_stack_sourcing.py",
+      "scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py",
+      "platform/terraform/modules/portal/eks/load_balancer_controller_iam.tf",
       "platform/terraform/environments/dev/eks/main.tf",
       "platform/terraform/environments/prod/eks/main.tf",
       "platform/terraform/environments/proof/eks/main.tf"

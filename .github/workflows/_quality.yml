@@ -279,6 +279,7 @@ jobs:
         run: |
           python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
             platform/terraform/modules/provisioner-iam/main.tf \
+            platform/terraform/modules/portal/eks/load_balancer_controller_iam.tf \
             shifter/engine/provisioner/terraform/modules/range/vpn.tf
 
       # Issue #1179: SSM Run Command IAM scoping on the engine provisioner

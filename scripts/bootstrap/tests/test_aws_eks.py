@@ -37,6 +37,9 @@ def _terraform_outputs() -> dict[str, object]:
                 "workers": "arn:aws:iam::123456789012:role/shifter-dev-workers",
                 "ctfScheduler": "arn:aws:iam::123456789012:role/shifter-dev-ctf-scheduler",
                 "ingress": "arn:aws:iam::123456789012:role/shifter-dev-ingress",
+                "cni": "arn:aws:iam::123456789012:role/shifter-dev-cni",
+                "ebs-csi": "arn:aws:iam::123456789012:role/shifter-dev-ebs-csi",
+                "efs-csi": "arn:aws:iam::123456789012:role/shifter-dev-efs-csi",
                 "provisionerLauncher": "arn:aws:iam::123456789012:role/shifter-dev-provisioner-launcher",
                 "provisioner": "arn:aws:iam::123456789012:role/shifter-dev-provisioner",
                 "cluster-autoscaler": "arn:aws:iam::123456789012:role/shifter-dev-cluster-autoscaler",
@@ -63,7 +66,8 @@ def _terraform_outputs() -> dict[str, object]:
                 "STORAGE_BUCKET_NAME": "shifter-dev-storage",
             }
         },
-        "ingress_source_cidrs": {"value": ["10.42.0.0/16"]},
+        "edge_client_cidrs": {"value": ["203.0.113.0/24"]},
+        "ingress_source_cidrs": {"value": ["10.42.128.0/24", "10.42.129.0/24"]},
         "provider_api_cidrs": {"value": ["10.42.0.0/16"]},
         "private_service_cidrs": {"value": ["10.42.0.0/16"]},
         "kubernetes_api_cidrs": {"value": ["172.20.0.0/16"]},
@@ -85,10 +89,15 @@ def _terraform_inputs() -> dict[str, object]:
         "aws_region": "us-east-2",
         "deployment_role_arn": "arn:aws:iam::123456789012:role/shifter-dev-deployer",
         "domain_name": "shifter.example.com",
-        "ingress_source_cidrs": ["10.42.0.0/16"],
-        "load_balancer_controller_policy_arn": (
-            "arn:aws:iam::123456789012:policy/shifter-dev-load-balancer-controller"
-        ),
+        "edge_client_cidrs": ["203.0.113.0/24"],
+        "addon_versions": {
+            "vpc_cni": "v1.22.4-eksbuild.3",
+            "ebs_csi": "v1.63.1-eksbuild.1",
+            "efs_csi": "v3.4.1-eksbuild.1",
+            "coredns": "v1.11.4-eksbuild.40",
+            "kube_proxy": "v1.31.14-eksbuild.25",
+            "secrets_store_csi": "v3.1.2-eksbuild.1",
+        },
         "provider_api_cidrs": ["10.42.0.0/16"],
         "runtime_env": _terraform_outputs()["runtime_env"]["value"],
     }
@@ -108,7 +117,12 @@ def test_render_values_is_non_secret_backend_neutral_and_digest_pinned():
     assert values["edge"]["ingress"]["annotations"]["alb.ingress.kubernetes.io/certificate-arn"].endswith(
         "certificate/example"
     )
-    assert values["network"]["ingressSourceCidrs"] == ["10.42.0.0/16"]
+    assert (
+        values["edge"]["ingress"]["annotations"]["alb.ingress.kubernetes.io/load-balancer-name"]
+        == "shifter-dev-eks-platform"
+    )
+    assert values["network"]["ingressSourceCidrs"] == ["10.42.128.0/24", "10.42.129.0/24"]
+    assert values["edge"]["ingress"]["annotations"]["alb.ingress.kubernetes.io/inbound-cidrs"] == "203.0.113.0/24"
     assert values["network"]["kubernetesApiCidrs"] == ["172.20.0.0/16"]
     assert values["identity"]["serviceAccountRoleArns"]["portal"].endswith("shifter-dev-portal")
     assert values["identity"]["serviceAccountRoleArns"]["workers"].endswith("shifter-dev-workers")
@@ -152,6 +166,158 @@ def test_render_values_requires_provisioner_image_for_job_launcher():
         aws_eks.render_aws_values(config, outputs, images)
 
 
+def test_effective_irsa_probe_uses_exact_service_accounts_and_cleans_up(monkeypatch):
+    roles = _terraform_outputs()["workload_role_arns"]["value"]
+    manifests: list[dict[str, object]] = []
+    calls: list[list[str]] = []
+    pod_identities: dict[str, str] = {}
+
+    def runner(cmd, **_kwargs):
+        calls.append(cmd)
+        if cmd[:3] == ["kubectl", "apply", "-f"]:
+            manifest = json.loads(Path(cmd[3]).read_text())
+            manifests.append(manifest)
+            pod_identities[manifest["metadata"]["name"]] = manifest["metadata"]["labels"]["shifter.dev/irsa-check"]
+        if cmd[:2] == ["kubectl", "logs"]:
+            identity = pod_identities[cmd[2]]
+            return SimpleNamespace(stdout=f"IRSA_OK:{identity}\n")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(aws_eks, "run_cmd", runner)
+    aws_eks._verify_effective_irsa(roles, _images()["platform"])
+
+    assert len(manifests) == len(aws_eks._IRSA_PROBE_IDENTITIES)
+    for manifest in manifests:
+        spec = manifest["spec"]
+        identity = manifest["metadata"]["labels"]["shifter.dev/irsa-check"]
+        namespace, service_account = aws_eks._IRSA_PROBE_IDENTITIES[identity]
+        assert manifest["metadata"]["namespace"] == namespace
+        assert spec["serviceAccountName"] == service_account
+        environment = {entry["name"]: entry["value"] for entry in spec["containers"][0]["env"]}
+        assert environment["SHIFTER_EXPECTED_ROLE_ARN"] == roles[identity]
+        assert json.loads(environment["SHIFTER_SIBLING_ROLE_ARNS"]) == [
+            roles[name] for name in sorted(roles) if name != identity
+        ]
+        rendered = json.dumps(manifest)
+        assert "with open(token_path" in rendered
+        assert "WebIdentityToken=token" in rendered
+        assert "AWS_WEB_IDENTITY_TOKEN_FILE" in rendered
+        assert "secretAccessKey" not in rendered
+    assert sum(cmd[:3] == ["kubectl", "delete", "pod"] for cmd in calls) == len(manifests)
+
+
+def test_effective_irsa_probe_fails_closed_on_missing_success_evidence(monkeypatch):
+    calls: list[list[str]] = []
+
+    def runner(cmd, **_kwargs):
+        calls.append(cmd)
+        if cmd[:2] == ["kubectl", "logs"]:
+            return SimpleNamespace(stdout="")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(aws_eks, "run_cmd", runner)
+
+    with pytest.raises(RuntimeError, match="effective IRSA readiness failed"):
+        aws_eks._verify_effective_irsa(
+            _terraform_outputs()["workload_role_arns"]["value"],
+            _images()["platform"],
+        )
+
+    assert any(cmd[:3] == ["kubectl", "delete", "pod"] for cmd in calls)
+
+
+def test_kubernetes_security_probe_requires_admission_denial_and_live_networkpolicy(monkeypatch):
+    manifests: list[dict[str, object]] = []
+    calls: list[list[str]] = []
+    rejected_manifests: list[dict[str, object]] = []
+
+    def runner(cmd, **kwargs):
+        calls.append(cmd)
+        if "-f" in cmd:
+            manifests.append(json.loads(Path(cmd[cmd.index("-f") + 1]).read_text()))
+        if cmd[:3] == ["kubectl", "get", "validatingadmissionpolicy"]:
+            return SimpleNamespace(stdout="Fail")
+        if cmd[:3] == ["kubectl", "get", "validatingadmissionpolicybinding"]:
+            return SimpleNamespace(stdout="Deny")
+        if cmd[:2] == ["kubectl", "logs"]:
+            workload = "deployment" if "deployment/" in cmd[2] else "job"
+            return SimpleNamespace(stdout=f"NETWORK_POLICY_OK:{workload}\n")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(aws_eks, "run_cmd", runner)
+    monkeypatch.setattr(
+        aws_eks,
+        "run_cmd_secret_stdin",
+        lambda cmd, *, secret_stdin: calls.append(cmd) or rejected_manifests.append(json.loads(secret_stdin)) or 1,
+    )
+    aws_eks._verify_kubernetes_security_enforcement(_images()["platform"])
+
+    assert {manifest["kind"] for manifest in manifests} == {"Deployment", "Job"}
+    assert rejected_manifests[0]["spec"]["template"]["spec"]["serviceAccountName"] == "provisioner"
+    assert any(cmd[:2] == ["kubectl", "create"] and "--dry-run=server" in cmd for cmd in calls)
+    assert any(cmd[:3] == ["kubectl", "delete", "deployment"] for cmd in calls)
+    assert any(cmd[:3] == ["kubectl", "delete", "job"] for cmd in calls)
+    rendered = json.dumps(manifests)
+    assert "kubernetes.default.svc" in rendered
+    assert "secret" not in rendered.lower()
+    deployment = next(manifest for manifest in manifests if manifest["kind"] == "Deployment")
+    pod_spec = deployment["spec"]["template"]["spec"]
+    container = pod_spec["containers"][0]
+    assert container["readinessProbe"]["exec"]["command"] == [
+        "test",
+        "-f",
+        "/var/run/shifter-readiness/networkpolicy-ok",
+    ]
+    assert container["volumeMounts"] == [{"name": "readiness", "mountPath": "/var/run/shifter-readiness"}]
+    assert pod_spec["volumes"] == [{"name": "readiness", "emptyDir": {}}]
+    assert "/var/run/shifter-readiness/networkpolicy-ok" in container["command"][2]
+
+
+@pytest.mark.parametrize(
+    ("policy_mode", "dry_run_code", "bad_log", "error"),
+    [
+        ("Ignore", 1, None, "not active in fail-closed deny mode"),
+        ("Fail", 0, None, "admitted a non-launcher Job"),
+        ("Fail", 1, "deployment", "NetworkPolicy readiness failed for deployment"),
+        ("Fail", 1, "job", "NetworkPolicy readiness failed for job"),
+    ],
+)
+def test_kubernetes_security_probe_fails_closed_on_missing_enforcement_evidence(
+    monkeypatch, policy_mode, dry_run_code, bad_log, error
+):
+    calls: list[list[str]] = []
+
+    def runner(cmd, **_kwargs):
+        calls.append(cmd)
+        if cmd[:3] == ["kubectl", "get", "validatingadmissionpolicy"]:
+            return SimpleNamespace(stdout=policy_mode)
+        if cmd[:3] == ["kubectl", "get", "validatingadmissionpolicybinding"]:
+            return SimpleNamespace(stdout="Deny")
+        if cmd[:2] == ["kubectl", "logs"]:
+            workload = "deployment" if "deployment/" in cmd[2] else "job"
+            evidence = "" if workload == bad_log else f"NETWORK_POLICY_OK:{workload}\n"
+            return SimpleNamespace(stdout=evidence)
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(aws_eks, "run_cmd", runner)
+    monkeypatch.setattr(
+        aws_eks,
+        "run_cmd_secret_stdin",
+        lambda _cmd, *, secret_stdin: dry_run_code,
+    )
+
+    with pytest.raises(RuntimeError, match=error):
+        aws_eks._verify_kubernetes_security_enforcement(_images()["platform"])
+
+    applied = [cmd for cmd in calls if cmd[:3] == ["kubectl", "apply", "-f"]]
+    if policy_mode != "Fail" or dry_run_code == 0:
+        assert applied == []
+    else:
+        assert len(applied) == 2
+        assert any(cmd[:3] == ["kubectl", "delete", "deployment"] for cmd in calls)
+        assert any(cmd[:3] == ["kubectl", "delete", "job"] for cmd in calls)
+
+
 @pytest.mark.parametrize(
     "image",
     [
@@ -192,6 +358,10 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         lambda cmd, *, secret_stdin: secret_stdin_calls.append((cmd, secret_stdin)) or 0,
     )
     monkeypatch.setattr(aws_eks, "preflight_gate", Mock())
+    irsa_verify = Mock()
+    monkeypatch.setattr(aws_eks, "_verify_effective_irsa", irsa_verify)
+    security_verify = Mock()
+    monkeypatch.setattr(aws_eks, "_verify_kubernetes_security_enforcement", security_verify)
 
     evidence = aws_eks.deploy_eks(
         config_path,
@@ -221,6 +391,20 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     ] in calls
     assert ["terraform", f"-chdir={terraform_root}", "apply", "shifter-eks.tfplan"] in calls
     assert any(cmd[:3] == ["aws", "eks", "update-kubeconfig"] and "--role-arn" in cmd for cmd in calls)
+    expected_addons = {
+        "vpc-cni",
+        "aws-ebs-csi-driver",
+        "aws-efs-csi-driver",
+        "coredns",
+        "kube-proxy",
+        "aws-secrets-store-csi-driver-provider",
+    }
+    waited_addons = {
+        cmd[cmd.index("--addon-name") + 1]
+        for cmd in calls
+        if cmd[:3] == ["aws", "eks", "wait"] and "--addon-name" in cmd
+    }
+    assert waited_addons == expected_addons
     assert sum(cmd[:3] == ["kubectl", "apply", "-f"] for cmd in calls) == 2
     assert any(
         cmd[:4] == ["helm", "upgrade", "--install", "aws-load-balancer-controller"]
@@ -262,6 +446,8 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
     assert all('"secretReferences"' in values for _cmd, values in secret_stdin_calls)
     assert not any("shifter/dev/app" in token for call in calls for token in call)
     assert not any("destroy" in cmd for cmd in calls)
+    irsa_verify.assert_called_once()
+    security_verify.assert_called_once()
     assert evidence["backend"] == "aws"
     assert evidence["profile"] == "dev"
     assert evidence["health_url"] == "https://shifter.example.com/health/"

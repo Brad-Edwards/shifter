@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Mapping
@@ -40,6 +41,52 @@ _PLATFORM_NAMESPACES = {
     "shifter-platform": "control",
     "shifter-jobs": "jobs",
 }
+_MANAGED_ADDONS = (
+    "vpc-cni",
+    "aws-ebs-csi-driver",
+    "aws-efs-csi-driver",
+    "coredns",
+    "kube-proxy",
+    "aws-secrets-store-csi-driver-provider",
+)
+_IRSA_PROBE_IDENTITIES = {
+    "cni": ("kube-system", "aws-node"),
+    "ingress": ("kube-system", "aws-load-balancer-controller"),
+    "ebs-csi": ("kube-system", "ebs-csi-controller-sa"),
+    "efs-csi": ("kube-system", "efs-csi-controller-sa"),
+    "cluster-autoscaler": ("kube-system", "cluster-autoscaler"),
+    "portal": ("shifter-platform", "portal"),
+    "workers": ("shifter-platform", "workers"),
+    "ctfScheduler": ("shifter-platform", "ctf-scheduler"),
+    "provisionerLauncher": ("shifter-platform", "provisioner-launcher"),
+    "provisioner": ("shifter-jobs", "provisioner"),
+}
+_IRSA_PROBE_SCRIPT = """import json, os
+import boto3
+from botocore.exceptions import ClientError
+
+identity = os.environ["SHIFTER_IRSA_IDENTITY"]
+expected_role = os.environ["SHIFTER_EXPECTED_ROLE_ARN"]
+caller_arn = boto3.client("sts").get_caller_identity()["Arn"]
+role_name = expected_role.rsplit("/", 1)[-1]
+if f"/{role_name}/" not in caller_arn:
+    raise RuntimeError("the diagnostic pod did not receive its expected role")
+
+token_path = os.environ["AWS_WEB_IDENTITY_TOKEN_FILE"]
+with open(token_path, encoding="utf-8") as token_file:
+    token = token_file.read()
+for other_role in json.loads(os.environ["SHIFTER_SIBLING_ROLE_ARNS"]):
+    try:
+        boto3.client("sts").assume_role_with_web_identity(
+            RoleArn=other_role,
+            RoleSessionName="shifter-irsa-negative-check",
+            WebIdentityToken=token,
+        )
+    except ClientError:
+        continue
+    raise RuntimeError("the projected token assumed a sibling workload role")
+print(f"IRSA_OK:{identity}")
+"""
 # Chart service accounts that receive an IRSA role-arn annotation (#1826 adds the
 # provisioner Job launcher + the privileged provisioner). The add-on controller
 # roles (cni, ingress, ebs-csi, efs-csi, cluster-autoscaler) are wired to their
@@ -62,11 +109,11 @@ _RENDERER_OWNED_RUNTIME_ENV = frozenset(
 )
 _REQUIRED_TERRAFORM_INPUTS = frozenset(
     {
+        "addon_versions",
         "aws_region",
         "deployment_role_arn",
         "domain_name",
-        "ingress_source_cidrs",
-        "load_balancer_controller_policy_arn",
+        "edge_client_cidrs",
         "provider_api_cidrs",
         "runtime_env",
     }
@@ -390,6 +437,325 @@ def _bootstrap_cluster(outputs: Mapping[str, object], region: str) -> None:
     _install_cluster_autoscaler(cluster_name, region, str(roles["cluster-autoscaler"]))
 
 
+def _wait_for_managed_addons(cluster_name: str, *, aws_profile: str | None) -> None:
+    """Fail closed unless every Terraform-owned managed add-on is ACTIVE."""
+    for addon_name in _MANAGED_ADDONS:
+        run_cmd(
+            [
+                "aws",
+                "eks",
+                "wait",
+                "addon-active",
+                "--cluster-name",
+                cluster_name,
+                "--addon-name",
+                addon_name,
+            ],
+            profile=aws_profile,
+        )
+
+
+def _verify_effective_irsa(roles: Mapping[str, object], platform_image: str) -> None:
+    """Prove exact effective IRSA and sibling-role denial without exposing tokens."""
+    missing = sorted(set(_IRSA_PROBE_IDENTITIES).difference(roles))
+    if missing:
+        raise ValueError("workload_role_arns is missing IRSA probe identities: " + ", ".join(missing))
+    if not all(isinstance(roles[name], str) for name in _IRSA_PROBE_IDENTITIES):
+        raise ValueError("IRSA probe role ARNs must be strings")
+
+    role_arns = {name: str(roles[name]) for name in _IRSA_PROBE_IDENTITIES}
+    with tempfile.TemporaryDirectory(prefix="shifter-irsa-readiness-") as staging:
+        staging_path = Path(staging)
+        for identity, (namespace, service_account) in _IRSA_PROBE_IDENTITIES.items():
+            pod_name = "shifter-irsa-check-" + re.sub(r"[^a-z0-9-]", "-", identity.lower())
+            sibling_roles = [role_arns[name] for name in sorted(role_arns) if name != identity]
+            manifest = {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "name": pod_name,
+                    "namespace": namespace,
+                    "labels": {
+                        "app.kubernetes.io/name": "shifter-irsa-readiness",
+                        "shifter.dev/irsa-check": identity,
+                    },
+                },
+                "spec": {
+                    "serviceAccountName": service_account,
+                    "automountServiceAccountToken": True,
+                    "restartPolicy": "Never",
+                    "securityContext": {
+                        "runAsNonRoot": True,
+                        "runAsUser": 1000,
+                        "runAsGroup": 1000,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
+                    "containers": [
+                        {
+                            "name": "irsa-check",
+                            "image": platform_image,
+                            "imagePullPolicy": "IfNotPresent",
+                            "command": ["python", "-c", _IRSA_PROBE_SCRIPT],
+                            "env": [
+                                {"name": "SHIFTER_IRSA_IDENTITY", "value": identity},
+                                {"name": "SHIFTER_EXPECTED_ROLE_ARN", "value": role_arns[identity]},
+                                {"name": "SHIFTER_SIBLING_ROLE_ARNS", "value": json.dumps(sibling_roles)},
+                            ],
+                            "resources": {
+                                "requests": {"cpu": "25m", "memory": "64Mi"},
+                                "limits": {"cpu": "250m", "memory": "256Mi"},
+                            },
+                            "securityContext": {
+                                "allowPrivilegeEscalation": False,
+                                "capabilities": {"drop": ["ALL"]},
+                                "readOnlyRootFilesystem": True,
+                            },
+                        }
+                    ],
+                },
+            }
+            manifest_path = staging_path / f"{pod_name}.json"
+            manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+            try:
+                run_cmd(["kubectl", "apply", "-f", str(manifest_path)])
+                run_cmd(
+                    [
+                        "kubectl",
+                        "wait",
+                        f"pod/{pod_name}",
+                        "--namespace",
+                        namespace,
+                        "--for=jsonpath={.status.phase}=Succeeded",
+                        "--timeout=5m",
+                    ]
+                )
+                result = run_cmd(["kubectl", "logs", pod_name, "--namespace", namespace], capture=True)
+                if getattr(result, "stdout", "").strip() != f"IRSA_OK:{identity}":
+                    raise RuntimeError(f"effective IRSA readiness failed for {identity}")
+            finally:
+                run_cmd(
+                    [
+                        "kubectl",
+                        "delete",
+                        "pod",
+                        pod_name,
+                        "--namespace",
+                        namespace,
+                        "--ignore-not-found=true",
+                        "--wait=false",
+                    ]
+                )
+
+
+def _restricted_probe_container(platform_image: str, workload: str) -> dict[str, object]:
+    marker_path = "/var/run/shifter-readiness/networkpolicy-ok"
+    success_action = (
+        f'Path("{marker_path}").touch()\ntime.sleep(300)' if workload == "deployment" else "raise SystemExit(0)"
+    )
+    script = f"""import socket, time
+from pathlib import Path
+try:
+    connection = socket.create_connection(("kubernetes.default.svc", 443), timeout=5)
+except OSError:
+    print("NETWORK_POLICY_OK:{workload}", flush=True)
+    {success_action}
+else:
+    connection.close()
+    raise RuntimeError("default-deny NetworkPolicy allowed Kubernetes API access")
+"""
+    container: dict[str, object] = {
+        "name": "networkpolicy-check",
+        "image": platform_image,
+        "imagePullPolicy": "IfNotPresent",
+        "command": ["python", "-c", script],
+        "resources": {
+            "requests": {"cpu": "25m", "memory": "32Mi"},
+            "limits": {"cpu": "100m", "memory": "128Mi"},
+        },
+        "securityContext": {
+            "allowPrivilegeEscalation": False,
+            "capabilities": {"drop": ["ALL"]},
+            "readOnlyRootFilesystem": True,
+            "runAsNonRoot": True,
+            "runAsUser": 1000,
+        },
+    }
+    if workload == "deployment":
+        container.update(
+            {
+                "readinessProbe": {
+                    "exec": {"command": ["test", "-f", marker_path]},
+                    "periodSeconds": 1,
+                    "timeoutSeconds": 1,
+                    "failureThreshold": 300,
+                },
+                "volumeMounts": [{"name": "readiness", "mountPath": "/var/run/shifter-readiness"}],
+            }
+        )
+    return container
+
+
+def _verify_kubernetes_security_enforcement(platform_image: str) -> None:
+    """Prove admission denial and strict NetworkPolicy on Deployment and Job pods."""
+    policy = run_cmd(
+        [
+            "kubectl",
+            "get",
+            "validatingadmissionpolicy",
+            "restrict-provisioner-jobs",
+            "-o",
+            "jsonpath={.spec.failurePolicy}",
+        ],
+        capture=True,
+    )
+    binding = run_cmd(
+        [
+            "kubectl",
+            "get",
+            "validatingadmissionpolicybinding",
+            "restrict-provisioner-jobs",
+            "-o",
+            "jsonpath={.spec.validationActions[0]}",
+        ],
+        capture=True,
+    )
+    if getattr(policy, "stdout", "").strip() != "Fail" or getattr(binding, "stdout", "").strip() != "Deny":
+        raise RuntimeError("provisioner admission policy is not active in fail-closed deny mode")
+
+    deployment_name = "shifter-networkpolicy-deployment"
+    job_name = "shifter-networkpolicy-job"
+    pod_security_context = {
+        "runAsNonRoot": True,
+        "runAsUser": 1000,
+        "runAsGroup": 1000,
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    labels = {
+        "app.kubernetes.io/name": "shifter-networkpolicy-readiness",
+        "shifter.dev/readiness-check": "networkpolicy",
+    }
+    deployment = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {"name": deployment_name, "namespace": "shifter-platform"},
+        "spec": {
+            "replicas": 1,
+            "selector": {"matchLabels": labels},
+            "template": {
+                "metadata": {"labels": labels},
+                "spec": {
+                    "automountServiceAccountToken": False,
+                    "securityContext": pod_security_context,
+                    "containers": [_restricted_probe_container(platform_image, "deployment")],
+                    "volumes": [{"name": "readiness", "emptyDir": {}}],
+                },
+            },
+        },
+    }
+    job = {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {"name": job_name, "namespace": "shifter-jobs"},
+        "spec": {
+            "backoffLimit": 0,
+            "template": {
+                "metadata": {"labels": labels},
+                "spec": {
+                    "automountServiceAccountToken": False,
+                    "restartPolicy": "Never",
+                    "securityContext": pod_security_context,
+                    "containers": [_restricted_probe_container(platform_image, "job")],
+                },
+            },
+        },
+    }
+    rejected_job = {
+        **job,
+        "metadata": {"name": "shifter-admission-denial-check", "namespace": "shifter-jobs"},
+        "spec": {
+            **job["spec"],
+            "template": {
+                **job["spec"]["template"],
+                "spec": {
+                    **job["spec"]["template"]["spec"],
+                    "serviceAccountName": "provisioner",
+                },
+            },
+        },
+    }
+
+    with tempfile.TemporaryDirectory(prefix="shifter-k8s-readiness-") as staging:
+        staging_path = Path(staging)
+        deployment_path = staging_path / "deployment.json"
+        job_path = staging_path / "job.json"
+        deployment_path.write_text(json.dumps(deployment, sort_keys=True), encoding="utf-8")
+        job_path.write_text(json.dumps(job, sort_keys=True), encoding="utf-8")
+        try:
+            rejection_code = run_cmd_secret_stdin(
+                ["kubectl", "create", "--dry-run=server", "-f", "-"],
+                secret_stdin=json.dumps(rejected_job, sort_keys=True),
+            )
+            if rejection_code == 0:
+                raise RuntimeError("provisioner admission policy admitted a non-launcher Job")
+
+            run_cmd(["kubectl", "apply", "-f", str(deployment_path)])
+            run_cmd(["kubectl", "apply", "-f", str(job_path)])
+            run_cmd(
+                [
+                    "kubectl",
+                    "rollout",
+                    "status",
+                    f"deployment/{deployment_name}",
+                    "--namespace",
+                    "shifter-platform",
+                    "--timeout=5m",
+                ]
+            )
+            run_cmd(
+                [
+                    "kubectl",
+                    "wait",
+                    f"job/{job_name}",
+                    "--namespace",
+                    "shifter-jobs",
+                    "--for=condition=complete",
+                    "--timeout=5m",
+                ]
+            )
+            for resource, namespace, expected in (
+                (f"deployment/{deployment_name}", "shifter-platform", "NETWORK_POLICY_OK:deployment"),
+                (f"job/{job_name}", "shifter-jobs", "NETWORK_POLICY_OK:job"),
+            ):
+                result = run_cmd(["kubectl", "logs", resource, "--namespace", namespace], capture=True)
+                if getattr(result, "stdout", "").strip() != expected:
+                    raise RuntimeError(f"NetworkPolicy readiness failed for {resource.split('/', 1)[0]}")
+        finally:
+            run_cmd(
+                [
+                    "kubectl",
+                    "delete",
+                    "deployment",
+                    deployment_name,
+                    "--namespace",
+                    "shifter-platform",
+                    "--ignore-not-found=true",
+                    "--wait=false",
+                ]
+            )
+            run_cmd(
+                [
+                    "kubectl",
+                    "delete",
+                    "job",
+                    job_name,
+                    "--namespace",
+                    "shifter-jobs",
+                    "--ignore-not-found=true",
+                    "--wait=false",
+                ]
+            )
+
+
 def render_aws_values(
     config: RootConfig,
     terraform_outputs: Mapping[str, object],
@@ -411,6 +777,7 @@ def render_aws_values(
     # mirroring GCP's render_runtime_env.py.
     runtime_env = _runtime_env(config, terraform_outputs)
     runtime_env["ENGINE_TASK_IMAGE"] = validated_images["provisioner"]
+    edge_client_cidrs = _cidr_output(terraform_outputs, "edge_client_cidrs")
     return {
         "provider": {"name": "aws"},
         "deployment": {"name": config.deployment.name, "profile": config.deployment.profile},
@@ -428,8 +795,12 @@ def render_aws_values(
                     "alb.ingress.kubernetes.io/target-type": "ip",
                     "alb.ingress.kubernetes.io/listen-ports": '[{"HTTPS":443}]',
                     "alb.ingress.kubernetes.io/ssl-redirect": "443",
+                    "alb.ingress.kubernetes.io/load-balancer-name": (
+                        f"{_output(terraform_outputs, 'cluster_name')}-platform"
+                    ),
                     "alb.ingress.kubernetes.io/certificate-arn": _output(terraform_outputs, "certificate_arn"),
                     "alb.ingress.kubernetes.io/wafv2-acl-arn": _output(terraform_outputs, "waf_acl_arn"),
+                    "alb.ingress.kubernetes.io/inbound-cidrs": ",".join(edge_client_cidrs),
                 },
                 "host": config.deployment.domain,
                 # TLS terminates at the AWS Load Balancer Controller using ACM,
@@ -589,6 +960,7 @@ def deploy_eks(
         ],
         profile=aws_profile,
     )
+    _wait_for_managed_addons(str(_output(outputs, "cluster_name")), aws_profile=aws_profile)
     _bootstrap_cluster(outputs, str(config.settings["region"]))
     values = render_aws_values(
         config,
@@ -628,6 +1000,11 @@ def deploy_eks(
         ],
         values,
     )
+    roles = _output(outputs, "workload_role_arns")
+    if not isinstance(roles, Mapping):
+        raise RuntimeError("workload_role_arns must be a mapping for effective IRSA readiness")
+    _verify_kubernetes_security_enforcement(str(values["images"]["platform"]))
+    _verify_effective_irsa(roles, str(values["images"]["platform"]))
     run_cmd(["curl", "--fail", "--silent", "--show-error", "--max-time", "30", health_url])
     return {"backend": "aws", "profile": profile, "health_url": health_url}
 
