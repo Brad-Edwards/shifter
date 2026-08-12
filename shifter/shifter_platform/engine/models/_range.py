@@ -468,11 +468,7 @@ class Range(models.Model):
 
     @property
     def victim_instances(self) -> list[dict[str, Any]]:
-        """Get all victim instance details.
-
-        Returns:
-            List of victim instance dictionaries
-        """
+        """Get all victim instance details."""
         from engine._range_state import victim_instances
 
         return victim_instances(self.provisioned_instances)
