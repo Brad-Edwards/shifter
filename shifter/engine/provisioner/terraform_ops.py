@@ -102,6 +102,10 @@ class RangeOperation:
     purpose: InstantiationPurpose = InstantiationPurpose.LIVE_FIRE
     remote_access_capability: dict[str, object] | None = None
     operation_id: str | None = None
+    # Effective egress posture pinned at create (PLAT-238, ADR-017-R5). Threaded
+    # into the range Terraform variables so ``none`` suppresses the participant
+    # default route/NAT per-range; ``status-quo`` inherits the deployment baseline.
+    egress_mode: str = "status-quo"
 
 
 def _build_operation_variables(
@@ -112,14 +116,17 @@ def _build_operation_variables(
     scenario_artifact: dict[str, Any] | None,
     backend: str | None = None,
     remote_access_capability: dict[str, object] | None = None,
+    egress_mode: str = "status-quo",
 ) -> dict[str, Any]:
     """Build backend variables while preserving legacy call behavior.
 
     ``backend`` (the #1666 per-operation binding) selects the variable shape from
     persisted ownership for destroy/compensation; ``None`` keeps the env-selector
-    behavior for provision and non-GCP callers.
+    behavior for provision and non-GCP callers. ``egress_mode`` is the pinned
+    per-range posture (PLAT-238); it flows into the range Terraform variables so a
+    ``none`` range suppresses NAT/default-route regardless of the deployment env.
     """
-    kwargs: dict[str, Any] = {"backend": backend}
+    kwargs: dict[str, Any] = {"backend": backend, "egress_mode": egress_mode}
     if remote_access_capability is not None:
         kwargs["remote_access_capability"] = remote_access_capability
     if scenario_artifact is not None:
@@ -143,6 +150,7 @@ def _attempt_terraform_auto_cleanup(operation: RangeOperation) -> None:
             operation.scenario_artifact,
             operation.backend,
             operation.remote_access_capability,
+            operation.egress_mode,
         )
         range_terraform_runner.destroy_range(
             operation.request_id, variables=cleanup_variables, backend=operation.backend
@@ -256,6 +264,7 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
             purpose=operation_purpose,
             remote_access_capability=remote_access_capability,
             operation_id=operation_id,
+            egress_mode=range_data.get("egress_mode", "status-quo"),
         )
         _dispatch_terraform_operation(operation, range_operation)
     except Exception as e:
@@ -322,6 +331,7 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         scenario_artifact,
         backend=operation.backend,
         remote_access_capability=remote_access_capability,
+        egress_mode=operation.egress_mode,
     )
 
     # Run the provider-routed apply, carrying the trusted purpose so the
@@ -445,6 +455,7 @@ def _run_terraform_destroy(operation: RangeOperation) -> None:
             scenario_artifact,
             backend,
             remote_access_capability,
+            operation.egress_mode,
         )
         range_terraform_runner.destroy_range(request_id, variables=destroy_variables, backend=backend)
         _cleanup_openvpn_if_enabled(range_id, request_id)

@@ -78,11 +78,38 @@ def _resolve_instance_type(role: str, tf_os_type: str, override: str | None) -> 
 
 
 def _range_egress_mode() -> str:
-    """Return the validated AWS runtime egress mode from the task environment."""
+    """Return the validated AWS runtime egress mode from the task environment.
+
+    This is the deployment baseline (the operator-declared ``settings.range_egress``
+    rendered onto the provisioner env). It is authoritative only for a range that
+    pinned ``status-quo`` (inherit the baseline); a range that pinned an explicit
+    egress decision uses that decision, never this env (ADR-017-R5 anti-pattern:
+    the deployment env must not override a pinned decision).
+    """
     mode = os.environ.get("RANGE_EGRESS_MODE", "allowlist").strip().lower()
     if mode not in {"allowlist", "none"}:
         raise ValueError(f"RANGE_EGRESS_MODE must be 'allowlist' or 'none', got {mode!r}")
     return mode
+
+
+def _resolve_range_egress_mode(pinned_mode: str) -> str:
+    """Map the pinned effective range egress mode to the AWS runtime route-table bridge.
+
+    The pinned value is the canonical ``installation.range_egress.RangeEgressMode``
+    posture decided at create (PLAT-238):
+
+    * ``none``       -> ``none``: no participant default route, NAT, or IGW path.
+    * ``status-quo`` -> inherit the deployment baseline from the provisioner env.
+    * ``deny-all`` / ``allowlist`` -> ``allowlist``: both keep a routed, firewall-
+      enforced egress path in the AWS runtime bridge (the deny-all firewall lanes
+      are applied by the stable range VPC, not the runtime route table).
+    """
+    normalized = (pinned_mode or "status-quo").strip().lower()
+    if normalized == "none":
+        return "none"
+    if normalized == "status-quo":
+        return _range_egress_mode()
+    return "allowlist"
 
 
 def _resolve_agent_presigned_url(inst: dict[str, Any]) -> str:
@@ -287,8 +314,16 @@ def _build_range_terraform_variables(
     user_id: int,
     range_spec: dict[str, Any],
     remote_access_capability: dict[str, object] | None = None,
+    pinned_egress_mode: str = "status-quo",
 ) -> dict[str, Any]:
-    """Build Terraform variables dict from range spec and environment."""
+    """Build Terraform variables dict from range spec and the pinned egress decision.
+
+    ``pinned_egress_mode`` is the effective posture pinned on the range at create
+    (PLAT-238); it resolves to the AWS runtime route-table bridge via
+    :func:`_resolve_range_egress_mode`, so a ``none`` range gets no participant
+    default route/NAT/IGW regardless of the deployment env, while ``status-quo``
+    inherits the deployment baseline.
+    """
     tf_subnets = _build_tf_subnets(range_spec.get("subnets", []))
 
     ngfw_data_eni_id = ""
@@ -297,7 +332,7 @@ def _build_range_terraform_variables(
         ngfw_data_eni_id, ngfw_attachment = _resolve_ngfw_for_range(user_id, range_id)
 
     range_network = load_range_network_config()
-    egress_mode = _range_egress_mode()
+    egress_mode = _resolve_range_egress_mode(pinned_egress_mode)
     variables = {
         "range_id": range_id,
         "user_id": user_id,
@@ -370,6 +405,7 @@ def build_range_variables(
     scenario_artifact: dict[str, Any] | None = None,
     backend: str | None = None,
     remote_access_capability: dict[str, object] | None = None,
+    egress_mode: str = "status-quo",
 ) -> dict[str, Any]:
     """Return backend-appropriate range variables.
 
@@ -382,6 +418,10 @@ def build_range_variables(
     selects the shape from the persisted binding (so a bound destroy builds the
     right variables even after the deploy selector flips); ``None`` falls back to
     the deploy-wide env selector for the provision path and non-GCP callers.
+
+    ``egress_mode`` is the effective posture pinned on the range at create
+    (PLAT-238); the AWS branch resolves it to the runtime route-table bridge so a
+    ``none`` range gets no NAT/default route independent of the deployment env.
     """
     use_gce = backend == "gce" if backend else is_gce_range_cell_backend()
     if use_gce:
@@ -398,4 +438,5 @@ def build_range_variables(
         user_id,
         range_spec,
         remote_access_capability,
+        egress_mode,
     )

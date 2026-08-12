@@ -41,6 +41,7 @@ _RANGE_ROW_WITH_NGFW = (
     None,  # instantiation_purpose
     None,  # remote_access_capability
     None,  # vpn_gateway_pool_slot
+    "status-quo",  # egress_mode (PLAT-238)
 )
 
 _RANGE_ROW_NO_NGFW = (
@@ -54,6 +55,7 @@ _RANGE_ROW_NO_NGFW = (
     None,  # instantiation_purpose
     None,  # remote_access_capability
     None,  # vpn_gateway_pool_slot
+    "status-quo",  # egress_mode (PLAT-238)
 )
 
 
@@ -226,8 +228,8 @@ class TestGetRangeDataNGFWLookup:
             "teardown_at": "2026-07-20T12:00:00Z",
         }
         # Override remote_access_capability (index 8), preserving the trailing
-        # vpn_gateway_pool_slot column (index 9).
-        row = (*_RANGE_ROW_NO_NGFW[:8], capability, _RANGE_ROW_NO_NGFW[9])
+        # vpn_gateway_pool_slot (index 9) and egress_mode (index 10) columns.
+        row = (*_RANGE_ROW_NO_NGFW[:8], capability, _RANGE_ROW_NO_NGFW[9], _RANGE_ROW_NO_NGFW[10])
         mock_conn, _mock_cursor = _make_mock_cursor(row)
         monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
 

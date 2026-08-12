@@ -386,7 +386,8 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 rng.range_backend,
                 rng.instantiation_purpose,
                 rng.remote_access_capability,
-                rng.vpn_gateway_pool_slot
+                rng.vpn_gateway_pool_slot,
+                rng.egress_mode
             FROM engine_request r
             JOIN mission_control_range rng ON rng.request_id = r.id
             WHERE r.request_id = %s
@@ -444,4 +445,9 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
             "instantiation_purpose": row[7],
             "remote_access_capability": row[8],
             "vpn_gateway_pool_slot": row[9],
+            # Effective egress posture pinned at create (PLAT-238, ADR-017-R5).
+            # Read from the range's own pinned column (like range_config/backend),
+            # never re-resolved from workspace state or the deployment env once
+            # pinned. NULL-safe default keeps legacy rows on the compatibility path.
+            "egress_mode": row[10] or "status-quo",
         }
