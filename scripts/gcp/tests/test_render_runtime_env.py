@@ -65,6 +65,7 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_PLANE": "compute-engine",
         "GCP_RANGE_CELL_NETWORK_MODE": "vpc-per-range",
         "RANGE_NETWORK_ZONE": "us-central1-b",
+        "RANGE_NETWORK_ZONES": "us-central1-a,us-east4-a,us-east1-b",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@example.iam.gserviceaccount.com",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES": "https://www.googleapis.com/auth/cloud-platform",
         "GCP_RANGE_HOST_IDENTITY_POOL_SIZE": "200",
