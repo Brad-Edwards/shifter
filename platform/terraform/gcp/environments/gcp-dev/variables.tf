@@ -264,6 +264,12 @@ variable "range_egress_allowed_cidrs" {
   default     = []
 }
 
+variable "range_network_zones" {
+  description = "#2029 multi-region range placement: the RANGE_NETWORK_ZONES zone pool the provisioner places range cells with, as a list. Range NAT coverage is derived from these zones' regions so it cannot diverge from the pool. Empty keeps single-region behaviour."
+  type        = list(string)
+  default     = []
+}
+
 variable "raes_package_bucket_name" {
   description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Grants the portal read-only access; set it (with SHIFTER_RAES_PACKAGE_BUCKET on the app) to enable object-backed RAES packages. Empty disables the binding."
   type        = string

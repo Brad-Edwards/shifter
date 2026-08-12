@@ -26,6 +26,7 @@ from ._range_backend_binding import (
     verify_existing_workspace_binding,
 )
 from ._range_by_request import cancel_range_by_request, destroy_range_by_request
+from ._range_placement import select_placement_zone
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager as ContextManager
@@ -182,6 +183,11 @@ def _persist_range_atomically(
 
         user = user_model.objects.get(id=range_spec.user_id)
         subnet_index = range_model.allocate_subnet_index()
+        # #2029 realized multi-region placement: pick this range's zone from the
+        # RANGE_NETWORK_ZONES pool now, in the same transaction as the slot, so it
+        # is a durable property of the range. Empty keeps single-zone (scalar)
+        # placement. The provisioner reads this back and never recomputes.
+        placement_zone = select_placement_zone(subnet_index - 1)
         # ADR-008-R7: reserve a GCP OpenVPN gateway SA pool slot up front (same
         # table-lock transaction as subnet_index) only when this range requests
         # OpenVPN, so the provisioner attaches a pre-authorized pool identity
@@ -203,6 +209,7 @@ def _persist_range_atomically(
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
                 vpn_gateway_pool_slot=vpn_gateway_pool_slot,
+                placement_zone=placement_zone,
                 range_config=range_artifact,
                 **remote_access_fields,
                 **binding_fields,
@@ -217,6 +224,7 @@ def _persist_range_atomically(
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
                 vpn_gateway_pool_slot=vpn_gateway_pool_slot,
+                placement_zone=placement_zone,
                 range_config=range_artifact,
                 **remote_access_fields,
                 **binding_fields,
