@@ -451,6 +451,17 @@ variable "range_egress_allowed_cidrs" {
   }
 }
 
+variable "range_network_zones" {
+  description = "#2029 multi-region range placement: the RANGE_NETWORK_ZONES zone pool the provisioner places range cells with, as a list. Range NAT coverage is derived from these zones' regions so it cannot diverge from the pool. Empty keeps single-region behaviour."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for z in var.range_network_zones : can(regex("^[a-z]+-[a-z]+[0-9]+-[a-z]$", z))])
+    error_message = "range_network_zones must be a list of fully-qualified GCE zones (e.g. 'us-central1-a')."
+  }
+}
+
 # ------------------------------------------------------------------------------
 # Messaging DLQ / Retry / Alerting (parity with AWS portal/messaging module)
 # ------------------------------------------------------------------------------
