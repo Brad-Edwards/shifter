@@ -111,7 +111,11 @@ class TestCreateRange:
         assert isinstance(result, RangeRef)
         assert "create_range" in caplog.text
 
-    def test_allocates_distinct_indices_for_concurrent_ranges(self, user, db, django_user_model):
+    def test_allocates_distinct_indices_for_multiple_ranges(self, user, db, django_user_model):
+        # Sequential distinctness only: two ranges created one after another get
+        # different indices. This does NOT exercise the concurrent-allocation
+        # race (that is skipped under SQLite); the EXCLUSIVE-lock serialization
+        # is proven in tests/engine/test_range_subnet_index_postgres.py (#997).
         other = django_user_model.objects.create_user(username="engine-svc2@example.com", email="e2@example.com")
         create_range(_request_spec(user.id), workspace_id=_WORKSPACE_ID)
         create_range(_request_spec(other.id), workspace_id=_WORKSPACE_ID)
