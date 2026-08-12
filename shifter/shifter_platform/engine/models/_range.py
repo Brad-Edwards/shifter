@@ -124,18 +124,7 @@ class Range(models.Model):
     vpn_gateway_pool_slot = models.PositiveIntegerField(
         null=True, blank=True, help_text="Reserved GCP OpenVPN gateway SA pool slot (single-project pool)"
     )
-    # #2029 realized multi-region placement: the fully-qualified GCE zone this
-    # range was placed in, selected once from the RANGE_NETWORK_ZONES pool at
-    # first apply and read back verbatim on destroy. Persisting the realized zone
-    # (rather than recomputing slot % len(pool)) keeps teardown correct even if the
-    # deployment's pool is later reordered or resized. Empty for single-zone
-    # (RANGE_NETWORK_ZONE) ranges and every pre-#2029 row.
-    placement_zone = models.CharField(
-        max_length=63,
-        blank=True,
-        default="",
-        help_text="Realized GCE zone for multi-region range-cell placement (#2029)",
-    )
+    placement_zone = models.CharField(max_length=63, blank=True, default="", help_text="GCE placement zone (#2029)")
     victim_ip = models.GenericIPAddressField(null=True, blank=True)
     victim_instance_id = models.CharField(
         max_length=50,

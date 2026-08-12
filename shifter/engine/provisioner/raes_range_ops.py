@@ -41,7 +41,7 @@ from shared.range_instantiation_policy import (
 )
 
 from cloud.exceptions import CloudError
-from config import GCERangeImageProfile, load_gce_range_cell_config
+from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
 from provisioner_db_operation_input import RaesOperationRun, get_raes_operation_input
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
@@ -117,7 +117,7 @@ def _require_gce_live_fire_binding(operation_input: RaesOperationInput) -> str:
     return admission.backend
 
 
-def _config_for_range_placement(request_id: str, config):
+def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> GCERangeCellConfig:
     """Bind ``config`` to this range's realized zone before any plan/cloud work.
 
     The RAES lifecycle boundary is the symmetric counterpart of the legacy
