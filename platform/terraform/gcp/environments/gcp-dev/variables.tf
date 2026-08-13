@@ -80,6 +80,12 @@ variable "provisioner_machine_type" {
   default     = "n2-standard-8"
 }
 
+variable "access_machine_type" {
+  description = "Machine type for the exclusive access node pool that hosts portal + guacd (#1711)."
+  type        = string
+  default     = "e2-standard-4"
+}
+
 variable "web_node_count" {
   description = "Desired size for the web node pool."
   type        = number
@@ -94,6 +100,12 @@ variable "worker_node_count" {
 
 variable "provisioner_node_count" {
   description = "Desired size for the provisioner node pool."
+  type        = number
+  default     = 1
+}
+
+variable "access_node_count" {
+  description = "Desired size for the exclusive access node pool that hosts portal + guacd (#1711)."
   type        = number
   default     = 1
 }
