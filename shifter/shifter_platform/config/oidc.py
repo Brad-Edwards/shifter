@@ -118,6 +118,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         # every hook below fails closed when it is absent.
         self._verified_issuer: str | None = None
         self._verified_subject: str | None = None
+        self._last_verified_identity: VerifiedIdentity | None = None
 
     def get_user(self, user_id: int) -> Any:
         """Load the account-origin profile with the session user."""
@@ -186,7 +187,10 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
             return False
 
         verified_subject = self._verified_subject
-        return bool(verified_subject) and subject == verified_subject
+        verified = bool(verified_subject) and subject == verified_subject
+        if verified:
+            self._last_verified_identity = self._verified_identity(claims)
+        return verified
 
     def filter_users_by_claims(self, claims: dict[str, Any]) -> Any:
         """Resolve the account subject-first on the verified ID-token subject.
@@ -260,6 +264,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         # fixed by mozilla-django-oidc and omit the request) can attribute the
         # user-type sync audit row to the request context (issue #937 SEC-5).
         self._request = request
+        self._last_verified_identity = None
 
         # Get request context for audit logging up front, so it is available on
         # both the return-None and the raising failure paths below.
@@ -288,6 +293,10 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
             raise
 
         if user:
+            from config.workspace_invitation_auth import attach_fresh_verified_identity
+
+            if self._last_verified_identity is not None:
+                attach_fresh_verified_identity(request, self._last_verified_identity)
             # Successful authentication
             audit_auth_event(
                 action=AuditAction.LOGIN,

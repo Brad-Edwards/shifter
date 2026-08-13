@@ -83,7 +83,14 @@ def _render_identity_platform_logout(request):
 def platform_login(request):
     """Route authentication to the configured provider."""
     if request.user.is_authenticated:
-        return HttpResponseRedirect(reverse("dashboard_router"))
+        from config.workspace_invitation_auth import preserve_staged_invitation_across_logout
+        from shared.workspace_invitation_handoff import STAGED_INVITATION_SESSION_KEY
+
+        staged = preserve_staged_invitation_across_logout(request)
+        if staged is None:
+            return HttpResponseRedirect(reverse("dashboard_router"))
+        logout(request)
+        request.session[STAGED_INVITATION_SESSION_KEY] = staged
 
     if settings.AUTH_PROVIDER == "oidc":
         return HttpResponseRedirect(reverse("oidc_authentication_init"))
@@ -149,6 +156,11 @@ def dashboard_router(request):
     landing from the bootstrap payload. When off, the legacy per-role routing
     below is unchanged, so rollback is a flag flip.
     """
+    from config.workspace_invitation_auth import pop_post_login_continuation
+
+    continuation = pop_post_login_continuation(request)
+    if continuation is not None:
+        return HttpResponseRedirect(continuation)
     if getattr(settings, "PLATFORM_SPA_ENABLED", False):
         logger.debug("Routing %s to the platform SPA dashboard", request.user.email)
         return HttpResponseRedirect(reverse("home"))

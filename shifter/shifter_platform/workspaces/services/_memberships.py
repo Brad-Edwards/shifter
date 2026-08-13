@@ -177,6 +177,56 @@ def _require_not_personal_owner(workspace: Workspace, target: WorkspaceMembershi
         raise _error("personal_workspace_protected", "Personal workspace ownership cannot be changed")
 
 
+def _insert_workspace_membership(
+    workspace: Workspace,
+    target: User,
+    role_value: str,
+    audit: MembershipAuditContext,
+    *,
+    exact_existing_is_idempotent: bool,
+) -> WorkspaceMembershipProjection:
+    """Insert and strict-audit one membership under the caller-held workspace lock."""
+    existing = (
+        WorkspaceMembership.objects.select_for_update()
+        .select_related("workspace", "user")
+        .filter(workspace=workspace, user=target)
+        .first()
+    )
+    if existing is not None:
+        if exact_existing_is_idempotent and existing.role == role_value:
+            return _projection(existing)
+        raise _error("membership_exists", "The account already has a workspace membership")
+
+    try:
+        with transaction.atomic():
+            membership = WorkspaceMembership.objects.create(
+                workspace=workspace,
+                user=target,
+                role=role_value,
+            )
+    except IntegrityError:
+        concurrent = (
+            WorkspaceMembership.objects.select_related("workspace", "user")
+            .filter(workspace=workspace, user=target)
+            .first()
+        )
+        if concurrent is not None and exact_existing_is_idempotent and concurrent.role == role_value:
+            return _projection(concurrent)
+        if concurrent is not None:
+            raise _error("membership_exists", "The account already has a workspace membership") from None
+        raise
+
+    membership = WorkspaceMembership.objects.select_related("workspace", "user").get(pk=membership.pk)
+    _write_audit(membership, AuditAction.CREATE, audit, new_state=_membership_state(membership))
+    logger.info(
+        "workspace membership created workspace_id=%s user_id=%s role=%s",
+        workspace.pk,
+        target.pk,
+        role_value,
+    )
+    return _projection(membership)
+
+
 def get_self_membership(
     actor: User,
     workspace_uuid: str | uuid.UUID,
@@ -232,45 +282,13 @@ def add_workspace_member(
         if len(targets) != 1:
             raise _error("member_add_failed", "Active workspace member account not found")
         target = targets[0]
-        existing = (
-            WorkspaceMembership.objects.select_for_update()
-            .select_related("workspace", "user")
-            .filter(workspace=workspace, user=target)
-            .first()
-        )
-        if existing is not None:
-            if existing.role == role_value:
-                return _projection(existing)
-            raise _error("membership_exists", "The account already has a different workspace role")
-
-        try:
-            with transaction.atomic():
-                membership = WorkspaceMembership.objects.create(
-                    workspace=workspace,
-                    user=target,
-                    role=role_value,
-                )
-        except IntegrityError:
-            concurrent = (
-                WorkspaceMembership.objects.select_related("workspace", "user")
-                .filter(workspace=workspace, user=target)
-                .first()
-            )
-            if concurrent is not None and concurrent.role == role_value:
-                return _projection(concurrent)
-            if concurrent is not None:
-                raise _error("membership_exists", "The account already has a different workspace role") from None
-            raise
-
-        membership = WorkspaceMembership.objects.select_related("workspace", "user").get(pk=membership.pk)
-        _write_audit(membership, AuditAction.CREATE, audit, new_state=_membership_state(membership))
-        logger.info(
-            "workspace membership created workspace_id=%s user_id=%s role=%s",
-            workspace.pk,
-            target.pk,
+        return _insert_workspace_membership(
+            workspace,
+            target,
             role_value,
+            audit,
+            exact_existing_is_idempotent=True,
         )
-        return _projection(membership)
 
 
 def change_workspace_member_role(

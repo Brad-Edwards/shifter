@@ -31,7 +31,7 @@ export const WORKSPACE_SURFACES: readonly WorkspaceSurface[] = [
   // surface to view its own membership and leave (#1941, PLAT-234). The gate
   // stays a capability predicate, never a role-code shortcut.
   { key: "membership", label: "Membership", requiredAnyOperation: ["read_members", "leave_workspace"] },
-  { key: "invitations", label: "Invitations" },
+  { key: "invitations", label: "Invitations", requiredAnyOperation: ["read_invitations"] },
   { key: "users", label: "Users" },
   { key: "range-scoping", label: "Range scoping" },
   { key: "policy", label: "Policy" },

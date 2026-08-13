@@ -16,6 +16,7 @@ class PortalConfig(AppConfig):
             register_channel_layer_redis_health_check,
         )
         from config.organizer_authority import register_organizer_authority_signals
+        from config.workspace_invitation_auth import register_workspace_invitation_login_signal
         from shared.audit import bind_audit_writer
         from shared.audit_adapter import audit_log_writer
 
@@ -25,3 +26,4 @@ class PortalConfig(AppConfig):
         register_audit_log_degraded_health_check()
         register_channel_layer_redis_health_check()
         register_organizer_authority_signals()
+        register_workspace_invitation_login_signal()

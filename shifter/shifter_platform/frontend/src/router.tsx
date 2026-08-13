@@ -18,6 +18,7 @@ import {
 import { WorkspaceDetailPage } from "@/features/administer/organization/WorkspaceDetailPage";
 import { WorkspaceListPage } from "@/features/administer/organization/WorkspaceListPage";
 import { WorkspaceMembershipPage } from "@/features/administer/organization/WorkspaceMembershipPage";
+import { WorkspaceInvitationsPage } from "@/features/administer/organization/WorkspaceInvitationsPage";
 import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
 import { WORKSPACE_SURFACES } from "@/features/administer/organization/surfaces";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
@@ -224,9 +225,9 @@ export const router = createBrowserRouter(
             {
               // Organization/workspace admin console (#1938, PLAT-231). The shell
               // owns routing, the switcher, context, and capability-aware nav; the
-              // child surface slots (org settings, workspaces, and the
-              // workspace-scoped membership/invitations/users/range-scoping/policy/
-              // quota/audit routes) are placeholders owned by PLAT-232–240. The
+              // child surface slots (org settings, workspaces, membership, and
+              // invitations are implemented; later scoped surfaces remain
+              // placeholders owned by PLAT-236–239). The
               // selected workspace is the public-UUID route param; the host
               // catch-all already serves /administer/* so deep links resolve.
               path: "organization",
@@ -241,13 +242,15 @@ export const router = createBrowserRouter(
                   element: <WorkspaceScopeLayout />,
                   children: [
                     { index: true, element: <WorkspaceDetailPage /> },
-                    // The membership slot (#1941, PLAT-234) is a real surface; the
-                    // remaining slots stay placeholders until PLAT-235–240 land.
+                    // Membership (#1941) and invitations (#1942) are real surfaces;
+                    // later scoped slots stay placeholders until PLAT-236–239 land.
                     ...WORKSPACE_SURFACES.map((surface) => ({
                       path: surface.key,
                       element:
                         surface.key === "membership" ? (
                           <WorkspaceMembershipPage />
+                        ) : surface.key === "invitations" ? (
+                          <WorkspaceInvitationsPage />
                         ) : (
                           <ConsoleSlotPage title={surface.label} />
                         ),

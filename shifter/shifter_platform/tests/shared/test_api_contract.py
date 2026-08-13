@@ -133,6 +133,14 @@ class TestPublishedContract:
             security = openapi_document["paths"][path]["get"]["security"]
             assert security == [{"cookieAuth": []}]
 
+    def test_workspace_invitations_advertise_only_session_auth(self, openapi_document: dict[str, Any]) -> None:
+        collection = openapi_document["paths"]["/api/v1/workspaces/{workspace_uuid}/invitations/"]
+        resend = openapi_document["paths"]["/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/resend/"]
+        revoke = openapi_document["paths"]["/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/revoke/"]
+
+        for operation in (collection["get"], collection["post"], resend["post"], revoke["post"]):
+            assert operation["security"] == [{"cookieAuth": []}]
+
     def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
         # NGFW/credential creates return 201; the contract must not claim 200.
         ngfw = openapi_document["paths"]["/api/v1/mission-control/ngfw/"]["post"]

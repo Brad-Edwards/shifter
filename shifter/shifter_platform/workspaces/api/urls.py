@@ -18,6 +18,9 @@ from workspaces.api.views import (
     OrganizationProfileView,
     PrincipalWorkspaceContextView,
     SelfMembershipView,
+    WorkspaceInvitationListIssueView,
+    WorkspaceInvitationResendView,
+    WorkspaceInvitationRevokeView,
 )
 
 app_name = "workspaces"
@@ -41,6 +44,21 @@ urlpatterns = [
     path("<uuid:workspace_uuid>/membership/", SelfMembershipView.as_view(), name="membership-self"),
     path("<uuid:workspace_uuid>/memberships/", MembershipListAddView.as_view(), name="memberships"),
     path("<uuid:workspace_uuid>/memberships/leave/", MembershipLeaveView.as_view(), name="memberships-leave"),
+    path(
+        "<uuid:workspace_uuid>/invitations/",
+        WorkspaceInvitationListIssueView.as_view(),
+        name="invitations",
+    ),
+    path(
+        "<uuid:workspace_uuid>/invitations/<uuid:invitation_uuid>/resend/",
+        WorkspaceInvitationResendView.as_view(),
+        name="invitations-resend",
+    ),
+    path(
+        "<uuid:workspace_uuid>/invitations/<uuid:invitation_uuid>/revoke/",
+        WorkspaceInvitationRevokeView.as_view(),
+        name="invitations-revoke",
+    ),
     path(
         "<uuid:workspace_uuid>/memberships/<int:user_id>/role/",
         MembershipRoleView.as_view(),
