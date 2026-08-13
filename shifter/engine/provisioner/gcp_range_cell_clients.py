@@ -24,6 +24,13 @@ class ComputeCollectionClient(Protocol):
         """Delete one resource and return a Compute operation."""
 
 
+class FirewallsCollectionClient(ComputeCollectionClient, Protocol):
+    """Firewall operations additionally used to reconcile existing rules (#1711)."""
+
+    def patch(self, **kwargs: object) -> object:
+        """Converge one existing firewall rule to a new body and return an operation."""
+
+
 class ComputeInstancesClient(ComputeCollectionClient, Protocol):
     """Compute instance operations additionally used by range lifecycle."""
 
@@ -50,7 +57,7 @@ class GCEClients:
 
     networks: ComputeCollectionClient
     subnetworks: ComputeCollectionClient
-    firewalls: ComputeCollectionClient
+    firewalls: FirewallsCollectionClient
     addresses: ComputeCollectionClient
     routers: ComputeCollectionClient
     instances: ComputeInstancesClient

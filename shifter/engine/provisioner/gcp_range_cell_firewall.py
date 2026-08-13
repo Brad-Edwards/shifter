@@ -81,6 +81,24 @@ def _validated_boundary_cidrs(field: str, values: tuple[str, ...]) -> list[str]:
     return normalized
 
 
+def _reject_overlapping_boundaries(access_cidrs: list[str], management_cidrs: list[str]) -> None:
+    """Fail closed when access-workload and management sources overlap (#1711).
+
+    Participant ingress (SSH/RDP) and host-management ingress must stay disjoint
+    identities: an overlap would let the broad management source re-enter the
+    participant path (or vice versa), defeating the dedicated access identity.
+    """
+    access_networks = [ipaddress.ip_network(cidr) for cidr in access_cidrs]
+    management_networks = [ipaddress.ip_network(cidr) for cidr in management_cidrs]
+    for access in access_networks:
+        for management in management_networks:
+            if access.overlaps(management):
+                raise RuntimeError(
+                    "access_network_cidrs must not overlap portal_network_cidrs "
+                    f"(management source): {access} overlaps {management}"
+                )
+
+
 def _subnet_ingress_rules(range_id: int, subnet_plans: list[SubnetPlan]) -> list[FirewallPlan]:
     """Allow declared peer-subnet traffic into each range subnet."""
     return [
@@ -118,11 +136,10 @@ def _boundary_ingress_rules(
     """Render participant-access and management ingress from platform networks."""
     rules: list[FirewallPlan] = []
     if access_network_cidrs:
-        # Dedicated access-workload source identity (issue #1349): participant/
+        # Dedicated access-workload source identity (#1349 / #1711): participant/
         # operator access (SSH 22, RDP 3389) is a rule of its own, sourced only
-        # from the access-workload ranges (portal + guacd), so it is never a
-        # provisioner/management wildcard. Provisioner + native/Docker-host
-        # management ingress is the separate rule below on portal_network_cidrs.
+        # from the access-workload ranges (portal + guacd on the exclusive access
+        # pod range), so it is never a provisioner/management wildcard.
         rules.append(
             {
                 "name": _short_resource_name("shifter-r", range_id, "access"),
@@ -133,19 +150,17 @@ def _boundary_ingress_rules(
                 "allowed": [{"IPProtocol": "tcp", "ports": ["22", "3389"]}],
             }
         )
-        if portal_network_cidrs:
-            # Management-only ingress: native-guest host SSH (:22) and the
-            # Docker-host management sshd port (Polaris host, whose Kali container
-            # binds :22). No RDP: participant RDP is the access rule above.
-            mgmt_ports = ["22"]
-            if str(config.host_mgmt_ssh_port) not in mgmt_ports:
-                mgmt_ports.append(str(config.host_mgmt_ssh_port))
-            rules.append(_management_rule(range_id, range_tag, portal_network_cidrs, mgmt_ports))
-    elif portal_network_cidrs:
-        # No dedicated access-workload range configured: keep the legacy combined
-        # rule (SSH participant + native-guest host, RDP, Docker-host sshd) so
-        # deployments without an access node pool are unchanged.
-        mgmt_ports = ["22", "3389"]
+    # When no access-workload range is configured we OMIT participant ingress and
+    # fail closed (ADR-039-R9, #1711): loss of participant connectivity is the
+    # safe failure mode. There is no fallback that opens 22/3389 to the broad
+    # provisioner/management source -- that combined legacy rule is deliberately
+    # gone. Management ingress below is SSH-only and never inherits RDP or
+    # participant SSH.
+    if portal_network_cidrs:
+        # Management-only ingress: native-guest host SSH (:22) and the Docker-host
+        # management sshd port (Polaris host, whose Kali container binds :22),
+        # sourced from the provisioner/management range only.
+        mgmt_ports = ["22"]
         if str(config.host_mgmt_ssh_port) not in mgmt_ports:
             mgmt_ports.append(str(config.host_mgmt_ssh_port))
         rules.append(_management_rule(range_id, range_tag, portal_network_cidrs, mgmt_ports))
@@ -299,6 +314,7 @@ def build_firewall_plan(
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
     portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)
     access_network_cidrs = _validated_boundary_cidrs("access_network_cidrs", config.access_network_cidrs)
+    _reject_overlapping_boundaries(access_network_cidrs, portal_network_cidrs)
     # A no-general-egress range (none/deny-all) opens no public-web lane and no
     # configured allow-CIDR lane, regardless of instance profiles or deployment
     # config.

@@ -24,8 +24,13 @@ output "range_network_region" {
 }
 
 output "portal_network_cidrs" {
-  description = "Portal-side CIDRs that need connectivity into the range VPC."
+  description = "Provisioner/management-source CIDRs (provisioner pod range) for per-range host-management ingress and the OpenVPN health probe (#1711)."
   value       = module.platform_core.portal_network_cidrs
+}
+
+output "access_network_cidrs" {
+  description = "Access-workload source CIDRs (access pod range) for per-range participant SSH/RDP ingress; portal + guacd only (#1711, ADR-039-R9)."
+  value       = module.platform_core.access_network_cidrs
 }
 
 output "gke_services_cidr" {

@@ -92,6 +92,7 @@ def _clients(*, exists: bool = False, instance_insert_error: Exception | None = 
         else:
             svc.insert.return_value = SimpleNamespace(name="op")
         svc.delete.return_value = SimpleNamespace(name="op")
+        svc.patch.return_value = SimpleNamespace(name="op")
         return svc
 
     op_service = MagicMock()

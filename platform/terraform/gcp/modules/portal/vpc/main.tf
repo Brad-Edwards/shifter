@@ -32,6 +32,15 @@ resource "google_compute_subnetwork" "gke" {
     range_name    = var.gke_provisioner_pods_secondary_range_name
     ip_cidr_range = var.gke_provisioner_pods_cidr
   }
+
+  # Dedicated access-workload pod range (#1711): portal + guacd pods receive
+  # alias IPs from this range on the exclusive access node pool, so the per-range
+  # GCE ingress firewall can scope participant SSH/RDP to just these workloads
+  # instead of the broad platform pod range. Disjoint from every other range.
+  secondary_ip_range {
+    range_name    = var.gke_access_pods_secondary_range_name
+    ip_cidr_range = var.gke_access_pods_cidr
+  }
 }
 
 resource "google_compute_router" "nat" {
