@@ -37,6 +37,7 @@ def invitation_accept(request: HttpRequest) -> HttpResponse:
 
 
 def _staging_rate_key(request: HttpRequest) -> str:
+    """Return a PII-free fixed-window key for the request source."""
     source = get_client_ip(request) or "unknown"
     digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:24]
     return f"workspace-invitation-stage:{digest}"

@@ -92,8 +92,8 @@ def consume_staged_workspace_invitation(sender: object, request: HttpRequest, us
             )
         except WorkspaceInvitationAcceptanceError as exc:
             outcome["code"] = exc.code if exc.code == "membership_exists" else "invitation_invalid"
-        except Exception as exc:
-            logger.error("Workspace invitation acceptance failed error_type=%s", type(exc).__name__)
+        except Exception:
+            logger.exception("Workspace invitation acceptance failed")
         else:
             outcome = {"status": "accepted", "workspace_uuid": str(workspace_uuid)}
     request.session[INVITATION_OUTCOME_SESSION_KEY] = outcome

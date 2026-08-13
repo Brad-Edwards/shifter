@@ -96,7 +96,7 @@ def is_ctf_participant_only(user) -> bool:
     return THREAT_RESEARCH_GROUP not in user_groups
 
 
-def is_temporary_ctf_account(user) -> bool:
+def is_temporary_ctf_account(user: User) -> bool:
     """Return whether the immutable account-origin marker denotes a temporary CTF account."""
     return getattr(getattr(user, "profile", None), "is_ctf_account", False) is True
 

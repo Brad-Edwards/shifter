@@ -34,4 +34,5 @@ def _accept(command: WorkspaceInvitationAcceptance) -> uuid.UUID:
 
 
 def register_workspace_invitation_acceptor() -> None:
+    """Bind the workspace acceptance adapter during app initialization."""
     bind_workspace_invitation_acceptor(_accept)

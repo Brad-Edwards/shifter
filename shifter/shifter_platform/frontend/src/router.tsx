@@ -20,7 +20,10 @@ import { WorkspaceListPage } from "@/features/administer/organization/WorkspaceL
 import { WorkspaceMembershipPage } from "@/features/administer/organization/WorkspaceMembershipPage";
 import { WorkspaceInvitationsPage } from "@/features/administer/organization/WorkspaceInvitationsPage";
 import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
-import { WORKSPACE_SURFACES } from "@/features/administer/organization/surfaces";
+import {
+  WORKSPACE_SURFACES,
+  type WorkspaceSurface,
+} from "@/features/administer/organization/surfaces";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
 import { ChallengesPage } from "@/features/ctf/ChallengesPage";
 import { AdminDashboardPage } from "@/features/ctf/admin/AdminDashboardPage";
@@ -48,6 +51,12 @@ import { CredentialsPage } from "@/features/mission-control/CredentialsPage";
 import { NgfwDetailPage } from "@/features/mission-control/NgfwDetailPage";
 import { NgfwListPage } from "@/features/mission-control/NgfwListPage";
 import { NgfwWizardPage } from "@/features/mission-control/NgfwWizardPage";
+
+function workspaceSurfaceElement(surface: WorkspaceSurface) {
+  if (surface.key === "membership") return <WorkspaceMembershipPage />;
+  if (surface.key === "invitations") return <WorkspaceInvitationsPage />;
+  return <ConsoleSlotPage title={surface.label} />;
+}
 import { RangeDashboardPage } from "@/features/mission-control/RangeDashboardPage";
 import { RangeDetailPage } from "@/features/mission-control/RangeDetailPage";
 import { RangeHistoryPage } from "@/features/mission-control/RangeHistoryPage";
@@ -246,14 +255,7 @@ export const router = createBrowserRouter(
                     // later scoped slots stay placeholders until PLAT-236–239 land.
                     ...WORKSPACE_SURFACES.map((surface) => ({
                       path: surface.key,
-                      element:
-                        surface.key === "membership" ? (
-                          <WorkspaceMembershipPage />
-                        ) : surface.key === "invitations" ? (
-                          <WorkspaceInvitationsPage />
-                        ) : (
-                          <ConsoleSlotPage title={surface.label} />
-                        ),
+                      element: workspaceSurfaceElement(surface),
                     })),
                   ],
                 },

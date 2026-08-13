@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING
-from urllib.parse import quote, urlsplit
+from urllib.parse import SplitResult, quote, urlsplit
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -99,13 +99,14 @@ def _normalized_email(value: object) -> str:
 
 def _status(invitation: WorkspaceInvitation, *, now: datetime | None = None) -> str:
     """Derive the public status without mutating the invitation."""
+    status = "pending"
     if invitation.accepted_at is not None:
-        return "accepted"
-    if invitation.revoked_at is not None:
-        return "revoked"
-    if invitation.expires_at <= (now or timezone.now()):
-        return "expired"
-    return "pending"
+        status = "accepted"
+    elif invitation.revoked_at is not None:
+        status = "revoked"
+    elif invitation.expires_at <= (now or timezone.now()):
+        status = "expired"
+    return status
 
 
 def _projection(invitation: WorkspaceInvitation, *, now: datetime | None = None) -> WorkspaceInvitationProjection:
@@ -172,22 +173,27 @@ def _token(invitation: WorkspaceInvitation) -> str:
     )
 
 
+def _site_origin_is_safe(parsed: SplitResult) -> bool:
+    """Return whether a parsed URL is an allowed credential-free origin."""
+    development_http = (
+        settings.DEBUG
+        and parsed.scheme == "http"
+        and parsed.hostname
+        in {
+            "localhost",
+            "127.0.0.1",
+        }
+    )
+    allowed_scheme = parsed.scheme == "https" or development_http
+    no_credentials = parsed.username is None and parsed.password is None
+    origin_only = parsed.path in {"", "/"} and not parsed.query and not parsed.fragment
+    return bool(allowed_scheme and parsed.netloc and no_credentials and origin_only)
+
+
 def _site_url() -> str:
     """Return the validated public origin used in invitation delivery."""
     site_url = str(getattr(settings, "SITE_URL", "") or "").strip().rstrip("/")
-    parsed = urlsplit(site_url)
-    development_http = bool(
-        settings.DEBUG and parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
-    )
-    if (
-        (parsed.scheme != "https" and not development_http)
-        or not parsed.netloc
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.path not in {"", "/"}
-        or parsed.query
-        or parsed.fragment
-    ):
+    if not _site_origin_is_safe(urlsplit(site_url)):
         raise _error("invitation_delivery_unavailable", "Invitation delivery is unavailable")
     return site_url
 
