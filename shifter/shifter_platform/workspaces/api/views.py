@@ -22,11 +22,9 @@ from workspaces.api.permissions import WORKSPACE_MEMBERSHIP_PERMISSIONS
 from workspaces.api.serializers import (
     AddWorkspaceMemberSerializer,
     ChangeWorkspaceMemberRoleSerializer,
-    IssueWorkspaceInvitationSerializer,
     OrganizationProfileSerializer,
     OrganizationProfileUpdateSerializer,
     PrincipalWorkspaceContextSerializer,
-    WorkspaceInvitationSerializer,
     WorkspaceMembershipSerializer,
 )
 
@@ -316,113 +314,6 @@ class MembershipLeaveView(_WorkspaceAPIView):
         except (services.WorkspaceAuthorizationError, services.WorkspaceMembershipError) as exc:
             _raise_as_response(exc, request)
         return Response(WorkspaceMembershipSerializer(membership).data)
-
-
-class _WorkspaceInvitationAdminAPIView(_WorkspaceAPIView):
-    """Staff browser-session admission plus live workspace-role authorization."""
-
-    authentication_classes = [ApiTokenAuthentication, SessionAuthentication]
-    permission_classes = [IsStaffSession]
-
-
-# The runtime authenticates bearer-first so invalid credentials cannot fall
-# through to a browser session, while IsStaffSession rejects every API-token
-# principal.  Publish only the session credential these operations accept.
-_INVITATION_SCHEMA_AUTH: list[dict[str, list[str]]] = [{"cookieAuth": []}]
-
-
-class WorkspaceInvitationListIssueView(_WorkspaceInvitationAdminAPIView):
-    """List invitations or issue one bearer credential by email."""
-
-    @extend_schema(
-        auth=_INVITATION_SCHEMA_AUTH,  # type: ignore[arg-type]
-        responses={200: WorkspaceInvitationSerializer(many=True), 403: ApiErrorSerializer},
-        operation_id="api_v1_workspace_invitations_list",
-    )
-    def get(self, request: Request, workspace_uuid: UUID) -> Response:
-        try:
-            invitations = services.list_workspace_invitations(_actor(request), workspace_uuid)
-        except (services.WorkspaceAuthorizationError, services.WorkspaceInvitationError) as exc:
-            _raise_as_response(exc, request)
-        return Response(WorkspaceInvitationSerializer(invitations, many=True).data)
-
-    @extend_schema(
-        auth=_INVITATION_SCHEMA_AUTH,  # type: ignore[arg-type]
-        request=IssueWorkspaceInvitationSerializer,
-        responses={
-            201: WorkspaceInvitationSerializer,
-            400: ApiErrorSerializer,
-            403: ApiErrorSerializer,
-            409: ApiErrorSerializer,
-            429: ApiErrorSerializer,
-            503: ApiErrorSerializer,
-        },
-        operation_id="api_v1_workspace_invitations_issue",
-    )
-    def post(self, request: Request, workspace_uuid: UUID) -> Response:
-        command = IssueWorkspaceInvitationSerializer(data=request.data)
-        command.is_valid(raise_exception=True)
-        try:
-            invitation = services.issue_workspace_invitation(
-                _actor(request),
-                workspace_uuid,
-                command.validated_data["email"],
-                command.validated_data["role"],
-                audit=_audit(request),
-            )
-        except (
-            services.WorkspaceAuthorizationError,
-            services.WorkspaceMembershipError,
-            services.WorkspaceInvitationError,
-        ) as exc:
-            _raise_as_response(exc, request)
-        return Response(WorkspaceInvitationSerializer(invitation).data, status=201)
-
-
-class WorkspaceInvitationResendView(_WorkspaceInvitationAdminAPIView):
-    """Rotate the credential generation and redeliver a current invitation."""
-
-    @extend_schema(
-        auth=_INVITATION_SCHEMA_AUTH,  # type: ignore[arg-type]
-        request=None,
-        responses={200: WorkspaceInvitationSerializer, 403: ApiErrorSerializer, 409: ApiErrorSerializer},
-        operation_id="api_v1_workspace_invitations_resend",
-    )
-    def post(self, request: Request, workspace_uuid: UUID, invitation_uuid: UUID) -> Response:
-        try:
-            invitation = services.resend_workspace_invitation(
-                _actor(request), workspace_uuid, invitation_uuid, audit=_audit(request)
-            )
-        except (
-            services.WorkspaceAuthorizationError,
-            services.WorkspaceMembershipError,
-            services.WorkspaceInvitationError,
-        ) as exc:
-            _raise_as_response(exc, request)
-        return Response(WorkspaceInvitationSerializer(invitation).data)
-
-
-class WorkspaceInvitationRevokeView(_WorkspaceInvitationAdminAPIView):
-    """Revoke a current invitation and invalidate every issued token."""
-
-    @extend_schema(
-        auth=_INVITATION_SCHEMA_AUTH,  # type: ignore[arg-type]
-        request=None,
-        responses={200: WorkspaceInvitationSerializer, 403: ApiErrorSerializer, 409: ApiErrorSerializer},
-        operation_id="api_v1_workspace_invitations_revoke",
-    )
-    def post(self, request: Request, workspace_uuid: UUID, invitation_uuid: UUID) -> Response:
-        try:
-            invitation = services.revoke_workspace_invitation(
-                _actor(request), workspace_uuid, invitation_uuid, audit=_audit(request)
-            )
-        except (
-            services.WorkspaceAuthorizationError,
-            services.WorkspaceMembershipError,
-            services.WorkspaceInvitationError,
-        ) as exc:
-            _raise_as_response(exc, request)
-        return Response(WorkspaceInvitationSerializer(invitation).data)
 
 
 def _organization_audit(request: Request) -> services.OrganizationAuditContext:

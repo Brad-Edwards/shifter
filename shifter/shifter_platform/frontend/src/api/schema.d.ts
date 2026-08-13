@@ -2452,10 +2452,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description List invitations or issue one bearer credential by email. */
+        /** @description List invitation projections visible to the authorized actor. */
         get: operations["api_v1_workspace_invitations_list"];
         put?: never;
-        /** @description List invitations or issue one bearer credential by email. */
+        /** @description Issue and deliver one current workspace invitation. */
         post: operations["api_v1_workspace_invitations_issue"];
         delete?: never;
         options?: never;
@@ -2472,7 +2472,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Rotate the credential generation and redeliver a current invitation. */
+        /** @description Rotate and resend one authorized current invitation. */
         post: operations["api_v1_workspace_invitations_resend"];
         delete?: never;
         options?: never;
@@ -2489,7 +2489,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Revoke a current invitation and invalidate every issued token. */
+        /** @description Revoke one authorized current invitation. */
         post: operations["api_v1_workspace_invitations_revoke"];
         delete?: never;
         options?: never;

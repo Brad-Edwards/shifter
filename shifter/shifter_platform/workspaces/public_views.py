@@ -21,6 +21,7 @@ _STAGING_WINDOW_SECONDS = 60 * 60
 
 
 def _private_response[ResponseT: HttpResponse](response: ResponseT) -> ResponseT:
+    """Apply credential-safe cache and referrer controls."""
     response["Cache-Control"] = "private, no-store"
     response["Referrer-Policy"] = "no-referrer"
     return response

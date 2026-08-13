@@ -46,6 +46,7 @@ WORKSPACE_INVITATION_SIGNING_SALT = "shifter.workspaces.invitation.v1"
 WORKSPACE_INVITATION_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
 WORKSPACE_INVITATION_TOKEN_MAX_LENGTH = 4096
 _TOKEN_VERSION = 1
+_INVALID_INVITATION_MESSAGE = "Invitation is invalid"
 
 
 class WorkspaceInvitationError(Exception):
@@ -80,21 +81,24 @@ class WorkspaceInvitationProjection:
 
 
 def _error(code: str, message: str) -> WorkspaceInvitationError:
+    """Build a bounded invitation-domain error."""
     return WorkspaceInvitationError(code, message)
 
 
 def _normalized_email(value: object) -> str:
+    """Normalize and validate one invitation email address."""
     email = str(value).strip().casefold()
     if not email or len(email) > 254:
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
     try:
         validate_email(email)
     except ValidationError as exc:
-        raise _error("invitation_invalid", "Invitation is invalid") from exc
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE) from exc
     return email
 
 
-def _status(invitation: WorkspaceInvitation, *, now=None) -> str:
+def _status(invitation: WorkspaceInvitation, *, now: datetime | None = None) -> str:
+    """Derive the public status without mutating the invitation."""
     if invitation.accepted_at is not None:
         return "accepted"
     if invitation.revoked_at is not None:
@@ -104,7 +108,8 @@ def _status(invitation: WorkspaceInvitation, *, now=None) -> str:
     return "pending"
 
 
-def _projection(invitation: WorkspaceInvitation, *, now=None) -> WorkspaceInvitationProjection:
+def _projection(invitation: WorkspaceInvitation, *, now: datetime | None = None) -> WorkspaceInvitationProjection:
+    """Project a persistent invitation into its public domain contract."""
     return WorkspaceInvitationProjection(
         invitation_uuid=invitation.public_id,
         workspace_uuid=invitation.workspace.uuid,
@@ -118,6 +123,7 @@ def _projection(invitation: WorkspaceInvitation, *, now=None) -> WorkspaceInvita
 
 
 def _audit_state(invitation: WorkspaceInvitation) -> dict[str, int | str]:
+    """Return the PII-free state stored in invitation audit events."""
     return {
         "workspace_id": invitation.workspace_id,
         "role": invitation.role,
@@ -134,6 +140,7 @@ def _write_audit(
     previous_state: dict[str, int | str] | None = None,
     new_state: dict[str, int | str] | None = None,
 ) -> None:
+    """Write a strict invitation audit event."""
     audit_log(
         AuditEvent(
             entity_type=AuditEntityType.WORKSPACE_INVITATION,
@@ -153,6 +160,7 @@ def _write_audit(
 
 
 def _token(invitation: WorkspaceInvitation) -> str:
+    """Create a timestamped signed token for the current generation."""
     return signing.dumps(
         {
             "v": _TOKEN_VERSION,
@@ -165,6 +173,7 @@ def _token(invitation: WorkspaceInvitation) -> str:
 
 
 def _site_url() -> str:
+    """Return the validated public origin used in invitation delivery."""
     site_url = str(getattr(settings, "SITE_URL", "") or "").strip().rstrip("/")
     parsed = urlsplit(site_url)
     development_http = bool(
@@ -184,6 +193,7 @@ def _site_url() -> str:
 
 
 def _render_delivery(invitation: WorkspaceInvitation) -> tuple[str, str, str]:
+    """Render the subject and multipart bodies for one invitation."""
     token = quote(_token(invitation), safe="")
     accept_url = f"{_site_url()}{reverse('workspace_invitation_accept')}#token={token}"
     context = {
@@ -198,11 +208,13 @@ def _render_delivery(invitation: WorkspaceInvitation) -> tuple[str, str, str]:
 
 
 def _schedule_delivery(invitation: WorkspaceInvitation) -> None:
+    """Schedule delivery only after the surrounding transaction commits."""
     subject, html, text = _render_delivery(invitation)
     transaction.on_commit(partial(send_email_async, invitation.email, subject, html, text))
 
 
 def _consume_delivery_budget(actor_id: int) -> None:
+    """Consume the shared credential-delivery rate-limit budget."""
     try:
         allowed = credential_delivery_allowed(actor_id, limit=20, window=3600)
     except Exception as exc:
@@ -212,13 +224,15 @@ def _consume_delivery_budget(actor_id: int) -> None:
 
 
 def _require_workspace_eligible(workspace: Workspace) -> None:
+    """Reject invitation mutations for protected workspace states."""
     if workspace.personal_for_user_id is not None:
         raise WorkspaceMembershipError("personal_workspace_protected", "Personal workspaces cannot have collaborators")
     if workspace.archived_at is not None:
         raise _error("workspace_archived", "Archived workspaces cannot manage invitations")
 
 
-def _require_owner_for_owner_invitation(actor_membership, role: str) -> None:
+def _require_owner_for_owner_invitation(actor_membership: WorkspaceMembership, role: str) -> None:
+    """Require owner authority whenever the invitation grants ownership."""
     if role == WorkspaceRole.OWNER.value:
         _require_owner_authority(actor_membership)
 
@@ -286,7 +300,8 @@ def _locked_managed_invitation(
     workspace_uuid: str | uuid.UUID,
     invitation_uuid: str | uuid.UUID,
     operation: WorkspaceOperation,
-) -> tuple[Workspace, object, WorkspaceInvitation]:
+) -> tuple[Workspace, WorkspaceMembership, WorkspaceInvitation]:
+    """Lock and authorize one invitation-management target."""
     workspace, actor_membership = _lock_workspace_and_actor(actor, workspace_uuid, operation)
     _require_workspace_eligible(workspace)
     invitation = (
@@ -354,23 +369,24 @@ def revoke_workspace_invitation(
 
 
 def _payload_claim(payload: object) -> WorkspaceInvitationClaim:
+    """Parse the exact signed-token payload into a staged claim."""
     if not isinstance(payload, dict) or set(payload) != {"v", "invitation", "generation"}:
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
     if payload.get("v") != _TOKEN_VERSION:
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
     try:
         return WorkspaceInvitationClaim(
             invitation_uuid=uuid.UUID(payload["invitation"]),
             generation=uuid.UUID(payload["generation"]),
         )
     except (AttributeError, TypeError, ValueError) as exc:
-        raise _error("invitation_invalid", "Invitation is invalid") from exc
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE) from exc
 
 
 def stage_workspace_invitation_token(raw_token: object) -> WorkspaceInvitationClaim:
     """Verify and reduce a raw bearer token to a non-secret invitation reference."""
     if not isinstance(raw_token, str) or not raw_token or len(raw_token) > WORKSPACE_INVITATION_TOKEN_MAX_LENGTH:
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
     try:
         payload = signing.loads(
             raw_token,
@@ -378,7 +394,7 @@ def stage_workspace_invitation_token(raw_token: object) -> WorkspaceInvitationCl
             max_age=WORKSPACE_INVITATION_TOKEN_MAX_AGE_SECONDS,
         )
     except signing.BadSignature as exc:
-        raise _error("invitation_invalid", "Invitation is invalid") from exc
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE) from exc
     claim = _payload_claim(payload)
     invitation = WorkspaceInvitation.objects.filter(
         public_id=claim.invitation_uuid,
@@ -388,22 +404,23 @@ def stage_workspace_invitation_token(raw_token: object) -> WorkspaceInvitationCl
         expires_at__gt=timezone.now(),
     ).first()
     if invitation is None:
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
     return claim
 
 
 def _eligible_verified_principal(user: User, identity: VerifiedIdentity, invited_email: str) -> None:
+    """Require one unambiguous active account matching fresh provider evidence."""
     if not user.is_active or is_temporary_ctf_account(user):
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
     verified_email = _normalized_email(identity.email)
     if identity.email_verified is not True or verified_email != invited_email:
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
     matches = list(UserModel.objects.filter(is_active=True, email__iexact=verified_email).order_by("pk")[:3])
     conflicting = [
         candidate for candidate in matches if candidate.pk != user.pk and not is_temporary_ctf_account(candidate)
     ]
     if conflicting:
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
 
 
 def accept_workspace_invitation(
@@ -416,7 +433,7 @@ def accept_workspace_invitation(
     """Consume a staged grant for one freshly verified provider identity."""
     invitation_hint = WorkspaceInvitation.objects.filter(public_id=claim.invitation_uuid).only("workspace_id").first()
     if invitation_hint is None:
-        raise _error("invitation_invalid", "Invitation is invalid")
+        raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
     with transaction.atomic():
         workspace = Workspace.objects.select_for_update().filter(pk=invitation_hint.workspace_id).first()
         invitation = (
@@ -433,7 +450,7 @@ def accept_workspace_invitation(
             or invitation.revoked_at is not None
             or invitation.expires_at <= timezone.now()
         ):
-            raise _error("invitation_invalid", "Invitation is invalid")
+            raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
         _require_workspace_eligible(workspace)
         _eligible_verified_principal(user, identity, invitation.email)
         try:

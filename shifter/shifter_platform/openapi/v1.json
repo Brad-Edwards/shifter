@@ -11182,7 +11182,7 @@
     "/api/v1/workspaces/{workspace_uuid}/invitations/": {
       "get": {
         "operationId": "api_v1_workspace_invitations_list",
-        "description": "List invitations or issue one bearer credential by email.",
+        "description": "List invitation projections visible to the authorized actor.",
         "parameters": [
           {
             "in": "path",
@@ -11240,7 +11240,7 @@
       },
       "post": {
         "operationId": "api_v1_workspace_invitations_issue",
-        "description": "List invitations or issue one bearer credential by email.",
+        "description": "Issue and deliver one current workspace invitation.",
         "parameters": [
           {
             "in": "path",
@@ -11357,7 +11357,7 @@
     "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/resend/": {
       "post": {
         "operationId": "api_v1_workspace_invitations_resend",
-        "description": "Rotate the credential generation and redeliver a current invitation.",
+        "description": "Rotate and resend one authorized current invitation.",
         "parameters": [
           {
             "in": "path",
@@ -11433,7 +11433,7 @@
     "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/revoke/": {
       "post": {
         "operationId": "api_v1_workspace_invitations_revoke",
-        "description": "Revoke a current invitation and invalidate every issued token.",
+        "description": "Revoke one authorized current invitation.",
         "parameters": [
           {
             "in": "path",

@@ -35,6 +35,7 @@ def attach_fresh_verified_identity(request: HttpRequest | None, identity: Verifi
 
 
 def preserve_staged_invitation_across_logout(request: HttpRequest) -> dict[str, str] | None:
+    """Copy only the nonsecret staged claim across forced reauthentication."""
     value = request.session.get(STAGED_INVITATION_SESSION_KEY)
     if not isinstance(value, dict):
         return None
@@ -56,6 +57,7 @@ def pop_post_login_continuation(request: HttpRequest) -> str | None:
 
 
 def _claim_from_session(value: object) -> tuple[uuid.UUID, uuid.UUID] | None:
+    """Parse the exact nonsecret staged-claim session shape."""
     if not isinstance(value, dict) or set(value) != {"invitation_uuid", "generation"}:
         return None
     try:
@@ -99,6 +101,7 @@ def consume_staged_workspace_invitation(sender: object, request: HttpRequest, us
 
 
 def register_workspace_invitation_login_signal() -> None:
+    """Register the provider-neutral post-login invitation consumer once."""
     user_logged_in.connect(
         consume_staged_workspace_invitation,
         dispatch_uid="config_workspace_invitation_login",

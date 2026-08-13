@@ -4,6 +4,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="{% static 'images/favicon.svg' %}" />
     <title>{% trans "Accept workspace invitation" %}</title>
   </head>
   <body>
@@ -16,7 +17,9 @@
         {% if outcome.code == "membership_exists" %}
           <p id="invitation-status">{% trans "This account is already a member of the workspace." %}</p>
         {% else %}
-          <p id="invitation-status">{% trans "This invitation could not be accepted. Ask a workspace administrator for a new invitation." %}</p>
+          <p id="invitation-status">
+            {% trans "This invitation could not be accepted. Ask a workspace administrator for a new invitation." %}
+          </p>
         {% endif %}
       {% else %}
         <p id="invitation-status">{% trans "Preparing your invitation…" %}</p>

@@ -3,9 +3,9 @@
 
   var status = document.getElementById("invitation-status");
   var exchange = document.getElementById("invitation-exchange");
-  var params = new URLSearchParams(window.location.hash.slice(1));
+  var params = new URLSearchParams(globalThis.location.hash.slice(1));
   var token = params.get("token") || "";
-  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  globalThis.history.replaceState(null, "", globalThis.location.pathname + globalThis.location.search);
 
   function fail() {
     status.textContent = "This invitation could not be accepted. Ask a workspace administrator for a new invitation.";
@@ -27,7 +27,7 @@
   var csrf = document.cookie
     .split(";")
     .map(function (part) { return part.trim(); })
-    .find(function (part) { return part.indexOf("csrftoken=") === 0; });
+    .find(function (part) { return part.startsWith("csrftoken="); });
   if (!csrf) {
     fail();
     return;

@@ -1,6 +1,7 @@
 """Read-only operational escape hatch for workspace invitation diagnosis."""
 
 from django.contrib import admin
+from django.http import HttpRequest
 from django.utils import timezone
 
 from workspaces.models import WorkspaceInvitation
@@ -32,22 +33,23 @@ class WorkspaceInvitationAdmin(admin.ModelAdmin):
 
     @admin.display(description="Status")
     def status(self, invitation: WorkspaceInvitation) -> str:
+        status = "pending"
         if invitation.accepted_at is not None:
-            return "accepted"
-        if invitation.revoked_at is not None:
-            return "revoked"
-        if invitation.expires_at <= timezone.now():
-            return "expired"
-        return "pending"
+            status = "accepted"
+        elif invitation.revoked_at is not None:
+            status = "revoked"
+        elif invitation.expires_at <= timezone.now():
+            status = "expired"
+        return status
 
-    def has_view_permission(self, request, obj=None) -> bool:
+    def has_view_permission(self, request: HttpRequest, obj: WorkspaceInvitation | None = None) -> bool:
         return bool(request.user.is_active and request.user.is_superuser)
 
-    def has_add_permission(self, request) -> bool:
+    def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
-    def has_change_permission(self, request, obj=None) -> bool:
+    def has_change_permission(self, request: HttpRequest, obj: WorkspaceInvitation | None = None) -> bool:
         return False
 
-    def has_delete_permission(self, request, obj=None) -> bool:
+    def has_delete_permission(self, request: HttpRequest, obj: WorkspaceInvitation | None = None) -> bool:
         return False

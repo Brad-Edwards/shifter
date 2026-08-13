@@ -40,6 +40,8 @@ class WorkspaceInvitationAcceptance:
 
 
 class WorkspaceInvitationAcceptor(Protocol):
+    """Callable domain port bound by the workspace composition adapter."""
+
     def __call__(self, command: WorkspaceInvitationAcceptance) -> uuid.UUID:
         """Accept one staged invitation and return its workspace UUID."""
         ...

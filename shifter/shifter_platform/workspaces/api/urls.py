@@ -2,6 +2,11 @@
 
 from django.urls import path
 
+from workspaces.api.invitation_views import (
+    WorkspaceInvitationListIssueView,
+    WorkspaceInvitationResendView,
+    WorkspaceInvitationRevokeView,
+)
 from workspaces.api.lifecycle_views import (
     WorkspaceArchiveView,
     WorkspaceCollectionView,
@@ -18,9 +23,6 @@ from workspaces.api.views import (
     OrganizationProfileView,
     PrincipalWorkspaceContextView,
     SelfMembershipView,
-    WorkspaceInvitationListIssueView,
-    WorkspaceInvitationResendView,
-    WorkspaceInvitationRevokeView,
 )
 
 app_name = "workspaces"

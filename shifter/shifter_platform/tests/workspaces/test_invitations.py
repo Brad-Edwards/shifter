@@ -72,7 +72,8 @@ def _issue(owner, workspace, email: str, recorded_workspace_email, role: str = W
     text = message.body
     html_token = _TOKEN_RE.search(html)
     text_token = _TOKEN_RE.search(text)
-    assert html_token and text_token
+    assert html_token is not None
+    assert text_token is not None
     assert html_token.group(1) == text_token.group(1)
     return projection, unquote(html_token.group(1))
 
@@ -114,6 +115,7 @@ def test_issue_rejects_unsafe_delivery_origins(settings, site_url):
     settings.DEBUG = False
     settings.SITE_URL = site_url
     owner, workspace = _shared_workspace()
+    audit = _audit(owner)
 
     with pytest.raises(services.WorkspaceInvitationError) as caught:
         services.issue_workspace_invitation(
@@ -121,7 +123,7 @@ def test_issue_rejects_unsafe_delivery_origins(settings, site_url):
             workspace.uuid,
             "safe-origin@example.com",
             WorkspaceRole.MEMBER,
-            audit=_audit(owner),
+            audit=audit,
         )
 
     assert caught.value.code == "invitation_delivery_unavailable"
@@ -192,13 +194,15 @@ def test_accept_requires_fresh_matching_verified_identity_and_creates_exactly_on
     invitee = _user("accept", email="Accept.Me@Example.com")
     projection, token = _issue(owner, workspace, "accept.me@example.COM", recorded_workspace_email, WorkspaceRole.ADMIN)
     claim = services.stage_workspace_invitation_token(token)
+    mismatched_identity = _verified(invitee, email="different@example.com")
+    invitee_audit = _audit(invitee)
 
     with pytest.raises(services.WorkspaceInvitationError) as caught:
         services.accept_workspace_invitation(
             invitee,
-            _verified(invitee, email="different@example.com"),
+            mismatched_identity,
             claim,
-            audit=_audit(invitee),
+            audit=invitee_audit,
         )
     assert caught.value.code == "invitation_invalid"
 
@@ -217,8 +221,9 @@ def test_accept_requires_fresh_matching_verified_identity_and_creates_exactly_on
     assert invitation.accepted_at is not None
     assert invitation.revoked_at is None
 
+    verified_identity = _verified(invitee)
     with pytest.raises(services.WorkspaceInvitationError) as caught:
-        services.accept_workspace_invitation(invitee, _verified(invitee), claim, audit=_audit(invitee))
+        services.accept_workspace_invitation(invitee, verified_identity, claim, audit=invitee_audit)
     assert caught.value.code == "invitation_invalid"
     assert WorkspaceMembership.objects.filter(workspace=workspace, user=invitee).count() == 1
 
@@ -248,13 +253,16 @@ def test_accept_fails_closed_for_ambiguous_active_accounts(settings, recorded_wo
     invitee = _user("ambiguous-1", email="ambiguous@example.com")
     _user("ambiguous-2", email="AMBIGUOUS@example.com")
     _projection, token = _issue(owner, workspace, "ambiguous@example.com", recorded_workspace_email)
+    identity = _verified(invitee)
+    claim = services.stage_workspace_invitation_token(token)
+    audit = _audit(invitee)
 
     with pytest.raises(services.WorkspaceInvitationError) as caught:
         services.accept_workspace_invitation(
             invitee,
-            _verified(invitee),
-            services.stage_workspace_invitation_token(token),
-            audit=_audit(invitee),
+            identity,
+            claim,
+            audit=audit,
         )
 
     assert caught.value.code == "invitation_invalid"
@@ -267,13 +275,16 @@ def test_existing_membership_is_never_silently_changed_by_acceptance(settings, r
     invitee = _user("existing")
     _projection, token = _issue(owner, workspace, invitee.email, recorded_workspace_email, WorkspaceRole.ADMIN)
     WorkspaceMembership.objects.create(workspace=workspace, user=invitee, role=WorkspaceRole.MEMBER)
+    identity = _verified(invitee)
+    claim = services.stage_workspace_invitation_token(token)
+    audit = _audit(invitee)
 
     with pytest.raises(services.WorkspaceInvitationError) as caught:
         services.accept_workspace_invitation(
             invitee,
-            _verified(invitee),
-            services.stage_workspace_invitation_token(token),
-            audit=_audit(invitee),
+            identity,
+            claim,
+            audit=audit,
         )
 
     assert caught.value.code == "membership_exists"
@@ -289,6 +300,8 @@ def test_admin_cannot_manage_owner_invitation_and_member_cannot_manage_any_invit
     member = _user("member")
     WorkspaceMembership.objects.create(workspace=workspace, user=admin, role=WorkspaceRole.ADMIN)
     WorkspaceMembership.objects.create(workspace=workspace, user=member, role=WorkspaceRole.MEMBER)
+    admin_audit = _audit(admin)
+    member_audit = _audit(member)
 
     with pytest.raises(services.WorkspaceMembershipError) as caught:
         services.issue_workspace_invitation(
@@ -296,7 +309,7 @@ def test_admin_cannot_manage_owner_invitation_and_member_cannot_manage_any_invit
             workspace.uuid,
             "future-owner@example.com",
             WorkspaceRole.OWNER,
-            audit=_audit(admin),
+            audit=admin_audit,
         )
     assert caught.value.code == "owner_authority_required"
 
@@ -306,7 +319,7 @@ def test_admin_cannot_manage_owner_invitation_and_member_cannot_manage_any_invit
             workspace.uuid,
             "future-member@example.com",
             WorkspaceRole.MEMBER,
-            audit=_audit(member),
+            audit=member_audit,
         )
 
     projection, _token = _issue(
@@ -317,7 +330,7 @@ def test_admin_cannot_manage_owner_invitation_and_member_cannot_manage_any_invit
             admin,
             workspace.uuid,
             projection.invitation_uuid,
-            audit=_audit(admin),
+            audit=admin_audit,
         )
     assert caught.value.code == "owner_authority_required"
 
@@ -326,6 +339,7 @@ def test_personal_and_archived_workspaces_reject_invitation_mutation(settings):
     settings.SITE_URL = "https://shifter.example.test"
     personal_owner = _user("personal", staff=True)
     personal = services.resolve_personal_workspace(personal_owner)
+    personal_audit = _audit(personal_owner)
 
     with pytest.raises(services.WorkspaceMembershipError) as caught:
         services.issue_workspace_invitation(
@@ -333,20 +347,21 @@ def test_personal_and_archived_workspaces_reject_invitation_mutation(settings):
             personal.workspace_uuid,
             "collaborator@example.com",
             WorkspaceRole.MEMBER,
-            audit=_audit(personal_owner),
+            audit=personal_audit,
         )
     assert caught.value.code == "personal_workspace_protected"
 
     owner, workspace = _shared_workspace()
     workspace.archived_at = timezone.now()
     workspace.save(update_fields=["archived_at"])
+    owner_audit = _audit(owner)
     with pytest.raises(services.WorkspaceInvitationError) as caught:
         services.issue_workspace_invitation(
             owner,
             workspace.uuid,
             "archived@example.com",
             WorkspaceRole.MEMBER,
-            audit=_audit(owner),
+            audit=owner_audit,
         )
     assert caught.value.code == "workspace_archived"
 
@@ -363,7 +378,8 @@ def test_expired_status_is_derived_without_mutating_the_row(settings, recorded_w
 
     assert listed[0].status == "expired"
     invitation.refresh_from_db()
-    assert invitation.accepted_at is None and invitation.revoked_at is None
+    assert invitation.accepted_at is None
+    assert invitation.revoked_at is None
 
 
 def test_acceptance_audits_invitation_and_canonical_membership_create(settings, recorded_workspace_email):
