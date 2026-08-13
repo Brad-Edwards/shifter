@@ -90,6 +90,7 @@ def _install_fake_kubernetes(monkeypatch):
         V1SecretKeySelector=_KubeModel,
         V1SeccompProfile=_KubeModel,
         V1SecurityContext=_KubeModel,
+        V1Toleration=_KubeModel,
         V1Volume=_KubeModel,
         V1VolumeMount=_KubeModel,
     )

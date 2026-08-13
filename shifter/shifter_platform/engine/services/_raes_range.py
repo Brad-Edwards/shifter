@@ -34,6 +34,7 @@ from ._range_backend_binding import (
     verify_existing_binding,
     verify_existing_workspace_binding,
 )
+from ._range_placement import select_placement_zone
 
 if TYPE_CHECKING:
     from engine.models import Range
@@ -148,6 +149,10 @@ def create_raes_range(
         user = user_model.objects.get(id=user_id)
         request = Request.objects.create(request_id=request_uuid, request_type=RequestType.RANGE.value, user=user)
         subnet_index = Range.allocate_subnet_index()
+        # #2029 realized multi-region placement: pick the zone from the
+        # RANGE_NETWORK_ZONES pool in the same transaction as the slot (empty keeps
+        # single-zone). The provisioner reads it back and never recomputes.
+        placement_zone = select_placement_zone(subnet_index - 1)
         range_obj = Range.objects.create(
             uuid=uuid4(),
             user=user,
@@ -155,6 +160,7 @@ def create_raes_range(
             cms_user_id=user_id,
             status=Range.Status.PROVISIONING,
             subnet_index=subnet_index,
+            placement_zone=placement_zone,
             range_config=compiled_plan,
             workspace_id=workspace_id,
             **binding_fields,

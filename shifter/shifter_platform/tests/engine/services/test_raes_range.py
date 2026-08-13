@@ -110,6 +110,24 @@ class TestCreateRaesRange:
         assert range_obj.range_config["kind"] == RAES_PROVISIONING_PLAN_KIND
         assert "provision.node.attacker" in range_obj.range_config["resources"]
 
+    def test_placement_zone_is_selected_from_the_pool_at_creation(self, user, monkeypatch):
+        """#2029: the realized zone is chosen from RANGE_NETWORK_ZONES and stored at
+        creation, so the provisioner reads it back and destroy targets it exactly."""
+        monkeypatch.setenv("RANGE_NETWORK_ZONES", "us-central1-a,us-east4-a,us-east1-b")
+        _create_raes_range(request_id=uuid4(), user_id=user.id, compiled_plan=make_compiled_plan())
+
+        range_obj = Range.objects.get()
+        zones = ("us-central1-a", "us-east4-a", "us-east1-b")
+        assert range_obj.placement_zone == zones[(range_obj.subnet_index - 1) % len(zones)]
+
+    def test_placement_zone_is_empty_without_a_pool(self, user, monkeypatch):
+        """No pool configured -> single-zone placement; the range keeps the scalar
+        RANGE_NETWORK_ZONE and stores no realized zone."""
+        monkeypatch.delenv("RANGE_NETWORK_ZONES", raising=False)
+        _create_raes_range(request_id=uuid4(), user_id=user.id, compiled_plan=make_compiled_plan())
+
+        assert Range.objects.get().placement_zone == ""
+
     def test_writes_operation_receipt_sidecar(self, user):
         request_id = uuid4()
         _create_raes_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())

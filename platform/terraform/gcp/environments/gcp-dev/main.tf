@@ -69,9 +69,11 @@ module "platform_core" {
   web_machine_type                  = var.web_machine_type
   worker_machine_type               = var.worker_machine_type
   provisioner_machine_type          = var.provisioner_machine_type
+  access_machine_type               = var.access_machine_type
   web_node_count                    = var.web_node_count
   worker_node_count                 = var.worker_node_count
   provisioner_node_count            = var.provisioner_node_count
+  access_node_count                 = var.access_node_count
   cloud_sql_database_version        = var.cloud_sql_database_version
   cloud_sql_tier                    = var.cloud_sql_tier
   cloud_sql_availability_type       = var.cloud_sql_availability_type
@@ -94,6 +96,7 @@ module "platform_core" {
   email_sender_domain               = var.email_sender_domain
   range_egress_mode                 = var.range_egress_mode
   range_egress_allowed_cidrs        = var.range_egress_allowed_cidrs
+  range_network_zones               = var.range_network_zones
   raes_package_bucket_name          = var.raes_package_bucket_name
   ctf_content_bucket_name           = var.ctf_content_bucket_name
   labels                            = local.labels

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "ACCESS_NETWORK_CIDRS",
         "APP_SECRET_ID",
         "AGENT_STORAGE_BUCKET",
         "AUTH_PROVIDER",
@@ -122,6 +123,7 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "POLARIS_TESTS_BUCKET",
         "POLARIS_TESTS_KEY",
         "RANGE_NETWORK_ZONE",
+        "RANGE_NETWORK_ZONES",
         "SHIFTER_CTF_CONTENT_BUCKET",
         "SHIFTER_CTF_CONTENT_MAX_BYTES",
         "SHIFTER_CTF_CONTENT_PREFIX",
@@ -142,6 +144,7 @@ GCP_SECRET_RUNTIME_ENV_KEYS: frozenset[str] = frozenset()
 # range-task for the ``GCP_RANGE_*`` guest-configuration keys among them).
 GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
+        "ACCESS_NETWORK_CIDRS",
         "AGENT_STORAGE_BUCKET",
         "CLOUD_PROJECT_ID",
         "CLOUD_PROVIDER",
