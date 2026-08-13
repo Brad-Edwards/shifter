@@ -21,3 +21,17 @@ The current add-member path requires an already-existing user, which does not su
 ## Traceability
 
 - IMPLEMENTS → GITHUB_ISSUE `1942`
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/models/_invitation.py` (Persistent invitation lifecycle, role, generation, expiry, and terminal-state constraints)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/services/_invitations.py` (Signed-token issue, resend, revoke, staging, acceptance, delivery, and exactly-once membership service)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/api/invitation_views.py` (Session-authorized invitation administration API)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/config/workspace_invitation_auth.py` (Fresh verified-identity login handoff for invitation acceptance)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/workspaces/public_views.py` (Credential-safe public invitation staging and acceptance flow)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/frontend/src/api/invitations.ts` (Generated-contract TanStack Query invitation data layer)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/frontend/src/features/administer/organization/WorkspaceInvitationsPage.tsx` (Invitation issue, status, resend, and revoke administration surface)
+- IMPLEMENTS → DOCUMENTATION `docs/technical/shifter_platform/workspace-member-invitations.md` (Invitation lifecycle, trust boundaries, deployment behavior, and operator controls)
+- TESTS → TEST `shifter/shifter_platform/tests/workspaces/test_invitations.py` (Signed token, expiry, rotation, revoke, acceptance, authorization, audit, and membership invariants)
+- TESTS → TEST `shifter/shifter_platform/tests/workspaces/test_invitation_api.py` (Invitation API authentication, authorization, request, projection, and mutation behavior)
+- TESTS → TEST `shifter/shifter_platform/tests/workspaces/test_invitation_public_flow.py` (Fragment staging, fresh-login continuation, verified-identity handoff, and public acceptance behavior)
+- TESTS → TEST `shifter/shifter_platform/tests/workspaces/test_invitation_concurrency_postgres.py` (PostgreSQL race coverage for exactly-once invitation and membership outcomes)
+- TESTS → TEST `shifter/shifter_platform/frontend/src/features/administer/organization/WorkspaceInvitationsPage.test.tsx` (Invitation administration UI behavior and accessibility coverage)
+- TESTS → TEST `shifter/shifter_platform/frontend/src/test/workspace-invitation-accept.test.ts` (Browser-side fragment exchange, history scrubbing, and bounded error coverage)
