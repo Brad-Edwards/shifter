@@ -91,6 +91,26 @@ class ChangeWorkspaceMemberRoleSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=WorkspaceRole.choices)
 
 
+class WorkspaceInvitationSerializer(serializers.Serializer):
+    """Public invitation projection; bearer credentials never cross this API."""
+
+    invitation_uuid = serializers.UUIDField(read_only=True)
+    workspace_uuid = serializers.UUIDField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    role = serializers.ChoiceField(read_only=True, choices=WorkspaceRole.choices)
+    status = serializers.ChoiceField(read_only=True, choices=("pending", "expired", "accepted", "revoked"))
+    expires_at = serializers.DateTimeField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+
+
+class IssueWorkspaceInvitationSerializer(serializers.Serializer):
+    """Closed invitation-issuance command."""
+
+    email = serializers.EmailField(max_length=254)
+    role = serializers.ChoiceField(choices=WorkspaceRole.choices)
+
+
 class WorkspaceSerializer(serializers.Serializer):
     """Read-only workspace lifecycle projection (#1940, PLAT-233).
 

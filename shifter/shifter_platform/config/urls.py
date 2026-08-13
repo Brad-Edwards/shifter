@@ -90,6 +90,7 @@ def _administer_page(request: HttpRequest, *args: object, **kwargs: object) -> H
 urlpatterns = [
     path("", _root_page, name="home"),
     path("privacy/", privacy_notice, name="privacy_notice"),
+    path("", include("workspaces.public_urls")),
     # Same-origin CSP violation report collector (ADR-036-R3). POST-only,
     # anonymous, CSRF-exempt transport plumbing; not a public business API.
     path("security/csp-report/", csp_report, name="csp_report"),

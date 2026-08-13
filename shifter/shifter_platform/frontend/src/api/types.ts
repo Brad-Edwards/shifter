@@ -64,6 +64,10 @@ export type WorkspaceMembership = components["schemas"]["WorkspaceMembership"];
 export type AddWorkspaceMemberRequest = components["schemas"]["AddWorkspaceMember"];
 export type ChangeWorkspaceMemberRoleRequest = components["schemas"]["ChangeWorkspaceMemberRole"];
 
+/** Signed workspace invitation administration contracts (#1942, PLAT-235). */
+export type WorkspaceInvitation = components["schemas"]["WorkspaceInvitation"];
+export type IssueWorkspaceInvitationRequest = components["schemas"]["IssueWorkspaceInvitation"];
+
 /**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
  * schema. Only the shapes this foundation chunk (and the pages/live-access
