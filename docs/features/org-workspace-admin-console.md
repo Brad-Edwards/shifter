@@ -109,6 +109,29 @@ fixed, closed set: **owner**, **admin**, and **member**.
   and is the final authority. Managing owners is restricted to owners, so an
   admin may be shown an action on an owner that the server then declines.
 
+## Invite and onboard members
+
+**Administer → Organization → Workspaces → (a workspace) → Invitations** lets a
+staff user who is also a workspace owner or admin invite a person who does not
+yet have a Shifter account.
+
+- Enter the recipient's email and choose the closed workspace role. Only a
+  workspace owner can issue an owner invitation.
+- The recipient gets a time-limited link. They must authenticate through the
+  configured identity provider with that verified email address; Shifter then
+  creates the membership atomically. An invitation never creates a placeholder
+  account and never changes an existing member's role.
+- Pending invitations can be resent, which invalidates every earlier link, or
+  revoked immediately. Expired links can be resent to issue a fresh expiry.
+- The invitation list shows the recipient, role, derived status, and expiry. It
+  never displays or returns the signed invitation credential.
+- Invitation administration requires a staff browser session and current
+  workspace authority. Platform API tokens are deliberately rejected.
+
+If a link is invalid, expired, revoked, already consumed, or used by a different
+verified identity, the recipient sees a bounded failure message and should ask a
+workspace administrator to send a new invitation.
+
 ## Network egress policy
 
 Each workspace has a network egress policy that controls outbound internet
@@ -135,7 +158,7 @@ can opt its own ranges into zero egress.
 
 This release delivers the console shell, navigation, workspace context,
 switcher, the organization settings surface, the workspace lifecycle surface,
-and the membership and roles surface above. The remaining administration
-surfaces (invitations, user lifecycle, range scoping, policy, quota, and audit
+and the membership, roles, and invitation surfaces above. The remaining administration
+surfaces (user lifecycle, range scoping, policy, quota, and audit
 review) arrive in later releases; their sections are present as placeholders
 until then.

@@ -305,6 +305,10 @@ class IdentityPlatformBackend(BaseBackend):
             context="Identity Platform login" if not created else "User created via Identity Platform first login",
         )
 
+        from config.workspace_invitation_auth import attach_fresh_verified_identity
+
+        attach_fresh_verified_identity(request, identity)
+
         return user
 
     def _bind_and_elevate(self, user: DjangoUser, identity: VerifiedIdentity) -> None:

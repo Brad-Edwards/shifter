@@ -39,6 +39,10 @@ class WorkspaceOperation(models.TextChoices):
     CHANGE_MEMBER_ROLE = "change_member_role", "Change a workspace member role"
     REMOVE_MEMBER = "remove_member", "Remove a workspace member"
     LEAVE_WORKSPACE = "leave_workspace", "Leave the workspace"
+    READ_INVITATIONS = "read_invitations", "Read workspace invitations"
+    ISSUE_INVITATION = "issue_invitation", "Issue a workspace invitation"
+    RESEND_INVITATION = "resend_invitation", "Resend a workspace invitation"
+    REVOKE_INVITATION = "revoke_invitation", "Revoke a workspace invitation"
     READ_WORKSPACE = "read_workspace", "Read a workspace's administrative detail"
     RENAME_WORKSPACE = "rename_workspace", "Rename the workspace"
     ARCHIVE_WORKSPACE = "archive_workspace", "Archive the workspace"
@@ -69,6 +73,14 @@ _MEMBERSHIP_MANAGEMENT_OPERATIONS = frozenset(
         WorkspaceOperation.REMOVE_MEMBER.value,
     }
 )
+_INVITATION_OPERATIONS = frozenset(
+    {
+        WorkspaceOperation.READ_INVITATIONS.value,
+        WorkspaceOperation.ISSUE_INVITATION.value,
+        WorkspaceOperation.RESEND_INVITATION.value,
+        WorkspaceOperation.REVOKE_INVITATION.value,
+    }
+)
 # Workspace lifecycle administration (#1940). Owner and admin may read the
 # administrative detail, rename, archive, restore, and set the network egress
 # policy (#1945, PLAT-238) of a workspace; transferring ownership is owner-only,
@@ -87,9 +99,15 @@ _OWNER_ONLY_OPERATIONS = frozenset({WorkspaceOperation.TRANSFER_OWNERSHIP.value}
 
 ROLE_OPERATIONS: dict[str, frozenset[str]] = {
     WorkspaceRole.OWNER.value: (
-        _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS | _WORKSPACE_ADMIN_OPERATIONS | _OWNER_ONLY_OPERATIONS
+        _RESOURCE_OPERATIONS
+        | _MEMBERSHIP_MANAGEMENT_OPERATIONS
+        | _INVITATION_OPERATIONS
+        | _WORKSPACE_ADMIN_OPERATIONS
+        | _OWNER_ONLY_OPERATIONS
     ),
-    WorkspaceRole.ADMIN.value: _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS | _WORKSPACE_ADMIN_OPERATIONS,
+    WorkspaceRole.ADMIN.value: (
+        _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS | _INVITATION_OPERATIONS | _WORKSPACE_ADMIN_OPERATIONS
+    ),
     WorkspaceRole.MEMBER.value: _RESOURCE_OPERATIONS,
 }
 

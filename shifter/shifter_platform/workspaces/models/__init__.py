@@ -5,6 +5,7 @@ Split into one module per entity, mirroring ``engine/models/``. Only
 ``workspaces.services``.
 """
 
+from ._invitation import WorkspaceInvitation
 from ._membership import WorkspaceMembership
 from ._organization import Organization
 from ._organization_membership import OrganizationMembership
@@ -20,5 +21,6 @@ __all__ = [
     "Organization",
     "OrganizationMembership",
     "Workspace",
+    "WorkspaceInvitation",
     "WorkspaceMembership",
 ]

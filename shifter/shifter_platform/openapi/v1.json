@@ -11251,6 +11251,333 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspace_uuid}/invitations/": {
+      "get": {
+        "operationId": "api_v1_workspace_invitations_list",
+        "description": "List invitation projections visible to the authorized actor.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceInvitation"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      },
+      "post": {
+        "operationId": "api_v1_workspace_invitations_issue",
+        "description": "Issue and deliver one current workspace invitation.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueWorkspaceInvitation"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueWorkspaceInvitation"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueWorkspaceInvitation"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceInvitation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/resend/": {
+      "post": {
+        "operationId": "api_v1_workspace_invitations_resend",
+        "description": "Rotate and resend one authorized current invitation.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceInvitation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/revoke/": {
+      "post": {
+        "operationId": "api_v1_workspace_invitations_revoke",
+        "description": "Revoke one authorized current invitation.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceInvitation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspace_uuid}/membership/": {
       "get": {
         "operationId": "api_v1_workspace_membership_self",
@@ -14604,6 +14931,24 @@
         ],
         "type": "string",
         "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc\n* `ngfw` - ngfw"
+      },
+      "IssueWorkspaceInvitation": {
+        "type": "object",
+        "description": "Closed invitation-issuance command.",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "role": {
+            "$ref": "#/components/schemas/WorkspaceRoleEnum"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ]
       },
       "KindEnum": {
         "enum": [
@@ -18968,6 +19313,78 @@
           "updated_at",
           "uuid"
         ]
+      },
+      "WorkspaceInvitation": {
+        "type": "object",
+        "description": "Public invitation projection; bearer credentials never cross this API.",
+        "properties": {
+          "invitation_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceRoleEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceInvitationStatusEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "email",
+          "expires_at",
+          "invitation_uuid",
+          "role",
+          "status",
+          "updated_at",
+          "workspace_uuid"
+        ]
+      },
+      "WorkspaceInvitationStatusEnum": {
+        "enum": [
+          "pending",
+          "expired",
+          "accepted",
+          "revoked"
+        ],
+        "type": "string",
+        "description": "* `pending` - pending\n* `expired` - expired\n* `accepted` - accepted\n* `revoked` - revoked"
       },
       "WorkspaceMembership": {
         "type": "object",

@@ -66,10 +66,10 @@ is on.
   a role code. The Django admin escape hatch remains an unflagged external entry
   at `/admin/`, outside this subtree. See
   [`workspace-membership-spa-preflight-1941.md`](../../architecture/workspace-membership-spa-preflight-1941.md).
-- **Slots.** The child surfaces are route slots rendering a placeholder
-  (`ConsoleSlotPage`) until their owning issues (PLAT-235–240) land. The
-  organization settings, workspace lifecycle, and membership slots are now real
-  surfaces (see below).
+- **Slots.** Later child surfaces are route slots rendering a placeholder
+  (`ConsoleSlotPage`) until their owning issues (PLAT-236–239) land. The
+  organization settings, workspace lifecycle, membership, and invitation slots
+  are now real surfaces (see below and the invitation design note).
 
 ## Organization profile & settings (issue #1939, PLAT-232)
 
