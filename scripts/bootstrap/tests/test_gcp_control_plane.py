@@ -115,7 +115,8 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
         "range_network_id": {"value": f"projects/{project_id}/global/networks/shifter-gcp-dev-range"},
         "range_network_cidr": {"value": "10.50.0.0/16"},
         "range_network_region": {"value": "us-central1"},
-        "portal_network_cidrs": {"value": ["10.40.0.0/20", "10.44.0.0/16"]},
+        "portal_network_cidrs": {"value": ["10.46.0.0/20"]},
+        "access_network_cidrs": {"value": ["10.47.0.0/20"]},
         "gke_services_cidr": {"value": "10.48.0.0/20"},
         "workload_service_accounts": {
             "value": {

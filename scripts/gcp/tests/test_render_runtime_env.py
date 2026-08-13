@@ -65,6 +65,7 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_PLANE": "compute-engine",
         "GCP_RANGE_CELL_NETWORK_MODE": "vpc-per-range",
         "RANGE_NETWORK_ZONE": "us-central1-b",
+        "RANGE_NETWORK_ZONES": "us-central1-a,us-east4-a,us-east1-b",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@example.iam.gserviceaccount.com",
         "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES": "https://www.googleapis.com/auth/cloud-platform",
         "GCP_RANGE_HOST_IDENTITY_POOL_SIZE": "200",
@@ -180,7 +181,8 @@ def _outputs(
         "range_network_id": {"value": "projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range"},
         "range_network_cidr": {"value": "10.50.0.0/16"},
         "range_network_region": {"value": "us-central1"},
-        "portal_network_cidrs": {"value": ["10.40.0.0/20", "10.44.0.0/16"]},
+        "portal_network_cidrs": {"value": ["10.46.0.0/20"]},
+        "access_network_cidrs": {"value": ["10.47.0.0/20"]},
     }
     if email_config is not None:
         outputs["email_config"] = {"value": email_config}
@@ -227,7 +229,8 @@ def test_render_env_emits_production_security_profile():
     assert "RANGE_NETWORK_ID=projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range\n" in rendered
     assert "RANGE_NETWORK_CIDR=10.50.0.0/16\n" in rendered
     assert "RANGE_NETWORK_REGION=us-central1\n" in rendered
-    assert "PORTAL_NETWORK_CIDRS=10.40.0.0/20,10.44.0.0/16\n" in rendered
+    assert "PORTAL_NETWORK_CIDRS=10.46.0.0/20\n" in rendered
+    assert "ACCESS_NETWORK_CIDRS=10.47.0.0/20\n" in rendered
     assert "GCP_RANGE_BACKEND=gce\n" in rendered
     # Range project derived from the range VPC self-link (real range project),
     # independent of the control-plane GCP_PROJECT_ID placeholder.

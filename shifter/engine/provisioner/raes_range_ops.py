@@ -41,13 +41,14 @@ from shared.range_instantiation_policy import (
 )
 
 from cloud.exceptions import CloudError
-from config import GCERangeImageProfile, load_gce_range_cell_config
+from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
 from provisioner_db_operation_input import RaesOperationRun, get_raes_operation_input
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, apply_raes_range_cell, destroy_raes_range_cell
 from raes_plan import RaesPlanNode, parse_plan
 from raes_snapshot import snapshot_resources
+from range_placement import resolve_range_cell_placement
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,18 @@ def _require_gce_live_fire_binding(operation_input: RaesOperationInput) -> str:
     if not admission.admitted:
         raise _binding_error(admission.reason, admission.code)
     return admission.backend
+
+
+def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> GCERangeCellConfig:
+    """Bind ``config`` to this range's realized zone before any plan/cloud work.
+
+    The RAES lifecycle boundary is the symmetric counterpart of the legacy
+    ``gcp_range_cells`` binding: it reads the zone chosen at range creation and
+    stored on the row, so provision and destroy target the exact same zone and
+    teardown never recomputes against a pool that may have changed. An empty stored
+    zone returns the config unchanged, preserving single-region behaviour.
+    """
+    return resolve_range_cell_placement(request_id, config)
 
 
 def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
@@ -242,6 +255,7 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
     try:
         backend = _require_gce_live_fire_binding(operation_input)
         config = load_gce_range_cell_config(backend=backend)
+        config = _config_for_range_placement(request_id, config)
         raes_plan = parse_plan(operation_input.plan)
         apply_result = apply_raes_range_cell(
             request_id,
@@ -323,6 +337,7 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
     try:
         backend = _require_gce_live_fire_binding(operation_input)
         config = load_gce_range_cell_config(backend=backend)
+        config = _config_for_range_placement(request_id, config)
         raes_plan = parse_plan(operation_input.plan)
         destroy_raes_range_cell(request_id, range_id, raes_plan, config=config)
     except Exception as exc:

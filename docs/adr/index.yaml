@@ -2096,7 +2096,7 @@
       },
       {
         "id": "ADR-039-R9",
-        "description": "GCP scenario-declared participant/operator endpoint access uses the existing platform-to-range VPC peering and existing portal browser-SSH / guacd Guacamole dialers. Range VMs remain private-only. Logical target/channel declarations and closed realized range-cell bindings are the authorization and persistence source; role, OS, scenario id, credential existence, browser input, and arbitrary host/port values are not. Provisioner management ingress and participant access ingress remain separate. Kubernetes default-deny plus access-workload-specific egress and cell-targeted GCE ingress admit only approved channel ports from dedicated access-workload source identities/ranges; peering alone grants no access. Authorization, READY/member/channel checks run before enqueue and again before credential resolution/dial, while participant removal, binding removal, pause, and destroy invalidate pending bootstraps and terminate or boundedly expire established browser SSH and Guacamole sessions. JSON-auth/bootstrap token expiry alone is not established-session revocation. RAES-native interactive access reaches this same closed binding only through the separately validated ADR-032-R10 participant sidecar; participant-local policies are never unioned and the reserved provisioner-management account/key is never exposed. Recorded by the architecture preflights for #1349 and #1710.",
+        "description": "GCP scenario-declared participant/operator endpoint access uses the existing platform-to-range VPC peering and existing portal browser-SSH / guacd Guacamole dialers. Range VMs remain private-only. Logical target/channel declarations and closed realized range-cell bindings are the authorization and persistence source; role, OS, scenario id, credential existence, browser input, and arbitrary host/port values are not. Provisioner management ingress and participant access ingress remain separate. Kubernetes default-deny plus access-workload-specific egress and cell-targeted GCE ingress admit only approved channel ports from dedicated access-workload source identities/ranges; peering alone grants no access. The GCE source identity is a disjoint VPC-native access-pod secondary range on an exclusive, required-placement node pool; missing access CIDR fails closed without falling back to portal, node, default-pod, or management CIDRs, and existing named firewall rules are reconciled rather than trusted merely because they exist. Authorization, READY/member/channel checks run before enqueue and again before credential resolution/dial, while participant removal, binding removal, pause, and destroy invalidate pending bootstraps and terminate or boundedly expire established browser SSH and Guacamole sessions. JSON-auth/bootstrap token expiry alone is not established-session revocation. RAES-native interactive access reaches this same closed binding only through the separately validated ADR-032-R10 participant sidecar; participant-local policies are never unioned and the reserved provisioner-management account/key is never exposed. Recorded by the architecture preflights for #1349, #1710, and #1711.",
         "checks": []
       },
       {
@@ -2128,6 +2128,7 @@
       "docs/architecture/gcp-scenario-endpoint-access-preflight-1349.md",
       "docs/architecture/raes-interactive-access-gcp-preflight-1710.md",
       "docs/architecture/aces-interactive-access-gcp-preflight-1710.md",
+      "docs/architecture/gcp-access-workload-ingress-preflight-1711.md",
       "shifter/installation/contract.py",
       "shifter/installation/registry.py",
       "shifter/shifter_platform/engine/ecs.py",
@@ -2756,6 +2757,34 @@
       "shifter/shifter_platform/openapi/v1.retirements.json",
       "shifter/shifter_platform/ctf/api/serializers/organizer_ops.py",
       "shifter/shifter_platform/ctf/migrations/0048_participant_lifecycle_535.py"
+    ]
+  },
+  {
+    "id": "ADR-050",
+    "title": "GCP range cells select a persisted multi-region placement zone at creation",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "GCP range-cell placement spreads a range fleet across regions because Compute CPU quota is enforced per project per region. RANGE_NETWORK_ZONES is an ordered, deployment-owned zone pool and is the single canonical operator input. A range's zone is selected from the pool once, in the range-create transaction (alongside subnet_index, via engine.services._range_placement), and persisted on the range row (mission_control_range.placement_zone, migration engine 0054). The provisioner is a pure reader: both the legacy gcp_range_cells and the RAES-native raes_range_ops apply/destroy lifecycles bind the range-cell config to the stored zone and never recompute from the pool. Deciding placement at creation makes it a durable property of the range, so teardown reconstructs the exact zone even if the pool is later reordered or resized, there is no apply-time race (creation is single and transactional), and an empty placement_zone unambiguously means a pre-#2029 single-zone range that stays on the scalar RANGE_NETWORK_ZONE. Cross-region cells keep an egress path: platform/terraform/gcp/modules/range/vpc provisions a Cloud Router + external address + Cloud NAT for every non-primary region a pooled zone lives in, and those NAT regions are derived from the same range_network_zones list (projected from the same RANGE_NETWORK_ZONES variable) so NAT coverage cannot diverge from where cells are placed. This reverses two boundaries the issue #2029 architecture preflight had set as non-goals (no new placement column; no regional NAT), which pre-push review showed documentation alone could not safely uphold.",
+    "rules": [
+      {
+        "id": "ADR-050-R1",
+        "description": "Multi-region range placement and per-region range NAT must consume one canonical operator input (RANGE_NETWORK_ZONES). The deploy workflow projects it to both the runtime renderer (CSV, consumed at range creation) and Terraform's range_network_zones list (which derives per-region NAT); a separate, independent NAT-region input must not be introduced. Enforced by the deploy-workflow parity test (scripts/adr_guard/tests/test_deploy_workflow.py::TestRangePlacementSingleSource) and the module deriving NAT regions from the zone list.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2029",
+      "docs/architecture/gcp-range-cell-zone-pool-preflight-2029.md",
+      "shifter/shifter_platform/engine/services/_range_placement.py",
+      "shifter/shifter_platform/engine/migrations/0054_range_placement_zone.py",
+      "shifter/engine/provisioner/range_placement.py",
+      "platform/terraform/gcp/modules/range/vpc/main.tf"
     ]
   }
 ]

@@ -15,6 +15,10 @@ capabilities:
   gcpBackendConfig: false
   gcpManagedTls: false
   kubernetesJobLauncher: false
+  # Pin portal + guacd to the exclusive GCP access node pool (#1711). GCP
+  # profiles enable this; AWS/neutral profiles leave it false so no GCP node
+  # label/taint toleration leaks into their manifests.
+  gcpAccessNodePool: false
 
 namespaces:
   platform: shifter-platform
