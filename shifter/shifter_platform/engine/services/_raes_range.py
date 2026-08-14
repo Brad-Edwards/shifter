@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
+from installation.range_egress import RangeEgressMode
 
 from engine.ecs import start_raes_range_provisioning
 from shared.enums import RequestType
@@ -29,9 +30,12 @@ from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.participant_access import ParticipantAccessBinding
 
 from ._range_backend_binding import (
+    assert_backend_supports_egress_none,
     backend_binding_fields,
+    egress_binding_fields,
     require_workspace_binding,
     verify_existing_binding,
+    verify_existing_egress_binding,
     verify_existing_workspace_binding,
 )
 from ._range_placement import select_placement_zone
@@ -75,6 +79,7 @@ def create_raes_range(
     user_id: int,
     compiled_plan: dict[str, Any],
     workspace_id: int,
+    egress_mode: str = RangeEgressMode.STATUS_QUO.value,
     backend_admission: BackendAdmission | None = None,
     bindings: RangeBindings | None = None,
 ) -> RaesRangeRef:
@@ -138,12 +143,15 @@ def create_raes_range(
     if existing is not None:
         verify_existing_binding(existing, request_uuid, backend_admission)
         verify_existing_workspace_binding(existing, request_uuid, workspace_id)
+        verify_existing_egress_binding(existing, request_uuid, egress_mode)
         _verify_existing_participant_access(existing, bindings.participant_access)
         return RaesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
         )
 
     binding_fields = backend_binding_fields(backend_admission)
+    egress_fields = egress_binding_fields(egress_mode)
+    assert_backend_supports_egress_none(binding_fields.get("range_backend"), egress_fields["egress_mode"])
     user_model = get_user_model()
     with transaction.atomic():
         user = user_model.objects.get(id=user_id)
@@ -164,6 +172,7 @@ def create_raes_range(
             range_config=compiled_plan,
             workspace_id=workspace_id,
             **binding_fields,
+            **egress_fields,
         )
         RaesContentDeliveryBinding.objects.bulk_create(
             RaesContentDeliveryBinding(

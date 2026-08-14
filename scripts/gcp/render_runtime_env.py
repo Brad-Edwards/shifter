@@ -289,6 +289,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     range_network_cidr = _value(outputs, "range_network_cidr")
     range_network_region = _value(outputs, "range_network_region")
     portal_network_cidrs = _value(outputs, "portal_network_cidrs")
+    access_network_cidrs = _value(outputs, "access_network_cidrs")
     # The real deploy GCP project. Google client libraries use GCP_PROJECT_ID /
     # GOOGLE_CLOUD_PROJECT as the default quota/consumer project, so a placeholder
     # here makes every API call bill an invalid project (CONSUMER_INVALID). Derive
@@ -400,6 +401,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "RANGE_NETWORK_CIDR": range_network_cidr,
         "RANGE_NETWORK_REGION": range_network_region,
         "PORTAL_NETWORK_CIDRS": ",".join(_unique(portal_network_cidrs)),
+        "ACCESS_NETWORK_CIDRS": ",".join(_unique(access_network_cidrs)),
         "GCP_RANGE_BACKEND": os.environ.get("GCP_RANGE_BACKEND", "gce").strip() or "gce",
         # Real range project (from the range VPC self-link), so the GCE
         # range-cell backend targets it directly even when the control-plane

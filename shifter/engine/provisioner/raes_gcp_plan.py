@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ipaddress
 from collections.abc import Callable, Sequence
+from typing import cast
 
 from config import (
     GCERangeCellConfig,
@@ -35,12 +36,14 @@ from gcp_range_cell_naming import (
     _short_resource_name,
     _subnet_tag,
     _subnetwork_self_link,
+    range_router_nat_plan,
 )
 from gcp_range_cell_plan import _range_labels
 from gcp_range_cell_types import (
     FirewallPlan,
     InstancePlan,
     RangeCellPlan,
+    RouterNatPlan,
     SubnetPlan,
 )
 from raes_access import RealizedAccessBinding
@@ -70,6 +73,7 @@ def build_raes_range_cell_plan(
     resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
     config: GCERangeCellConfig | None = None,
     access_bindings: Sequence[RealizedAccessBinding] = (),
+    egress_mode: str = "status-quo",
 ) -> RangeCellPlan:
     """Render the deterministic GCE range-cell plan for a parsed RAES plan.
 
@@ -109,7 +113,7 @@ def build_raes_range_cell_plan(
 
     _reject_unplaceable_nodes(raes_plan, networks_by_address)
 
-    return {
+    plan: RangeCellPlan = {
         "project_id": resolved_config.project_id,
         "region": resolved_config.region,
         "zone": resolved_config.zone,
@@ -127,8 +131,17 @@ def build_raes_range_cell_plan(
             instance_plans,
             raes_plan,
             resolved_config,
+            egress_mode,
         ),
     }
+    # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
+    # a `none` (zero-egress) range omits it so its subnets carry no NAT path.
+    if (egress_mode or "status-quo").strip().lower() != "none":
+        plan["router_nat"] = cast(
+            RouterNatPlan,
+            range_router_nat_plan(range_id, [subnet["self_link"] for subnet in subnet_plans]),
+        )
+    return plan
 
 
 def _all_firewalls(
@@ -137,6 +150,7 @@ def _all_firewalls(
     instance_plans: list[InstancePlan],
     raes_plan: RaesPlan,
     config: GCERangeCellConfig,
+    egress_mode: str = "status-quo",
 ) -> list[FirewallPlan]:
     """Base range firewalls (reused, neutral) plus authored node ACL and service firewalls.
 
@@ -149,6 +163,7 @@ def _all_firewalls(
         subnet_plans,
         config,
         instance_plans=instance_plans,
+        egress_mode=egress_mode,
     )
     cidr_lookup = acl_cidr_lookup(raes_plan.networks)
     # Validate the range-scoped service source set once, up front, only when needed --

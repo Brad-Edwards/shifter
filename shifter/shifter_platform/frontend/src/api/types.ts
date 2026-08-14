@@ -51,6 +51,11 @@ export type PaginatedOrganizationProfileList = components["schemas"]["PaginatedO
 export type Workspace = components["schemas"]["Workspace"];
 export type CreateWorkspaceRequest = components["schemas"]["CreateWorkspace"];
 export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferWorkspaceOwnership"];
+// Workspace network egress policy (#1945, PLAT-238). The workspace-selectable
+// subset of the canonical RangeEgressMode vocabulary; the server re-validates and
+// authorizes every change.
+export type WorkspaceEgressPolicy = components["schemas"]["EgressPolicyEnum"];
+export type SetWorkspaceEgressPolicyRequest = components["schemas"]["SetWorkspaceEgressPolicy"];
 
 /**
  * Workspace membership & roles types (#1941, PLAT-234), re-exported from the
@@ -63,6 +68,10 @@ export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferW
 export type WorkspaceMembership = components["schemas"]["WorkspaceMembership"];
 export type AddWorkspaceMemberRequest = components["schemas"]["AddWorkspaceMember"];
 export type ChangeWorkspaceMemberRoleRequest = components["schemas"]["ChangeWorkspaceMemberRole"];
+
+/** Signed workspace invitation administration contracts (#1942, PLAT-235). */
+export type WorkspaceInvitation = components["schemas"]["WorkspaceInvitation"];
+export type IssueWorkspaceInvitationRequest = components["schemas"]["IssueWorkspaceInvitation"];
 
 /**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI

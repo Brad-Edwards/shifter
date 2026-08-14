@@ -2445,6 +2445,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_uuid}/egress-policy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Set the network egress policy of a workspace (owner/admin, PLAT-238, #1945). */
+        put: operations["api_v1_workspace_set_egress_policy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/invitations/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List invitation projections visible to the authorized actor. */
+        get: operations["api_v1_workspace_invitations_list"];
+        put?: never;
+        /** @description Issue and deliver one current workspace invitation. */
+        post: operations["api_v1_workspace_invitations_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/resend/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Rotate and resend one authorized current invitation. */
+        post: operations["api_v1_workspace_invitations_resend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/revoke/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revoke one authorized current invitation. */
+        post: operations["api_v1_workspace_invitations_revoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_uuid}/membership/": {
         parameters: {
             query?: never;
@@ -3117,6 +3186,12 @@ export interface components {
         DeleteSuccess: {
             readonly success: boolean;
         };
+        /**
+         * @description * `status-quo` - Inherit deployment baseline
+         *     * `none` - Zero egress (no outbound NAT path)
+         * @enum {string}
+         */
+        EgressPolicyEnum: "status-quo" | "none";
         /** @description Per-event email-template override projection. */
         EmailTemplateResponse: {
             readonly id: string;
@@ -3441,6 +3516,12 @@ export interface components {
          * @enum {string}
          */
         InstancePresentationRoleEnum: "attacker" | "victim" | "dc" | "ngfw";
+        /** @description Closed invitation-issuance command. */
+        IssueWorkspaceInvitation: {
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["WorkspaceRoleEnum"];
+        };
         /**
          * @description * `generated` - generated
          *     * `set` - set
@@ -4680,6 +4761,17 @@ export interface components {
         SetActiveRequest: {
             is_active: boolean;
         };
+        /**
+         * @description Set-egress-policy command: one closed choice from the workspace subset (PLAT-238).
+         *
+         *     The workspace-selectable vocabulary is the contextual subset of the canonical
+         *     ``installation.range_egress.RangeEgressMode`` (``status-quo`` / ``none``). The
+         *     serializer owns HTTP shape and rejects unknown fields; ``workspaces.services``
+         *     re-validates against the canonical enum and owns authority and persistence.
+         */
+        SetWorkspaceEgressPolicy: {
+            egress_policy: components["schemas"]["EgressPolicyEnum"];
+        };
         /** @description Organizer spare-pool top-up request body (``count`` bounded non-negative). */
         SparePoolRequest: {
             count: number;
@@ -4855,11 +4947,37 @@ export interface components {
             readonly is_archived: boolean;
             /** Format: date-time */
             readonly archived_at: string | null;
+            readonly egress_policy: components["schemas"]["EgressPolicyEnum"];
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /** @description Public invitation projection; bearer credentials never cross this API. */
+        WorkspaceInvitation: {
+            /** Format: uuid */
+            readonly invitation_uuid: string;
+            /** Format: uuid */
+            readonly workspace_uuid: string;
+            /** Format: email */
+            readonly email: string;
+            readonly role: components["schemas"]["WorkspaceRoleEnum"];
+            readonly status: components["schemas"]["WorkspaceInvitationStatusEnum"];
+            /** Format: date-time */
+            readonly expires_at: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `pending` - pending
+         *     * `expired` - expired
+         *     * `accepted` - accepted
+         *     * `revoked` - revoked
+         * @enum {string}
+         */
+        WorkspaceInvitationStatusEnum: "pending" | "expired" | "accepted" | "revoked";
         /** @description Minimum public membership projection. */
         WorkspaceMembership: {
             readonly membership_id: number;
@@ -11930,6 +12048,266 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_set_egress_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceEgressPolicy"];
+                "application/x-www-form-urlencoded": components["schemas"]["SetWorkspaceEgressPolicy"];
+                "multipart/form-data": components["schemas"]["SetWorkspaceEgressPolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_invitations_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInvitation"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_invitations_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueWorkspaceInvitation"];
+                "application/x-www-form-urlencoded": components["schemas"]["IssueWorkspaceInvitation"];
+                "multipart/form-data": components["schemas"]["IssueWorkspaceInvitation"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInvitation"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_invitations_resend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInvitation"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_invitations_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_uuid: string;
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInvitation"];
                 };
             };
             /** @description Authentication failed. */

@@ -77,6 +77,7 @@ class WorkspaceProjection:
     is_personal: bool
     is_archived: bool
     archived_at: datetime | None
+    egress_policy: str
     created_at: datetime
     updated_at: datetime
 
@@ -118,6 +119,7 @@ def _projection(workspace: Workspace) -> WorkspaceProjection:
         is_personal=workspace.personal_for_user_id is not None,
         is_archived=workspace.archived_at is not None,
         archived_at=workspace.archived_at,
+        egress_policy=workspace.egress_policy,
         created_at=workspace.created_at,
         updated_at=workspace.updated_at,
     )

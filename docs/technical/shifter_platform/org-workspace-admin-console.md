@@ -66,10 +66,10 @@ is on.
   a role code. The Django admin escape hatch remains an unflagged external entry
   at `/admin/`, outside this subtree. See
   [`workspace-membership-spa-preflight-1941.md`](../../architecture/workspace-membership-spa-preflight-1941.md).
-- **Slots.** The child surfaces are route slots rendering a placeholder
-  (`ConsoleSlotPage`) until their owning issues (PLAT-235–240) land. The
-  organization settings, workspace lifecycle, and membership slots are now real
-  surfaces (see below).
+- **Slots.** Later child surfaces are route slots rendering a placeholder
+  (`ConsoleSlotPage`) until their owning issues (PLAT-236–239) land. The
+  organization settings, workspace lifecycle, membership, and invitation slots
+  are now real surfaces (see below and the invitation design note).
 
 ## Organization profile & settings (issue #1939, PLAT-232)
 
@@ -307,3 +307,76 @@ Cache invalidation follows the API contract: roster mutations invalidate the
 roster, and a self role change or a leave additionally invalidate the self
 membership and the principal context (`principalContextKeys`), because the
 caller's capabilities and the console's selected-workspace validity can change.
+
+## Workspace network egress policy (issue #1945, PLAT-238)
+
+The zero-egress (no-NAT) range posture (#1171, ADR-026) is delivered as a
+workspace-level policy. It reuses the one canonical vocabulary,
+`installation.range_egress.RangeEgressMode`; a workspace stores only the
+contextual subset `status-quo` (inherit the deployment baseline) or `none`
+(zero egress), never CIDRs or provider configuration (ADR-017-R5).
+
+### Backend spine
+
+- **Persistence.** `Workspace.egress_policy` is a closed scalar with a database
+  `CheckConstraint` and a compatibility default of `status-quo`. A central
+  `WorkspaceOperation.SET_EGRESS_POLICY` (owner or admin) drives the locked,
+  audited `workspaces.services.set_workspace_egress_policy`, which records the
+  old and new mode and is a no-op when unchanged.
+- **Launch resolution.** The effective mode is resolved under the workspace
+  reservation mutex in `cms.services._range_workspace` (ADR-046-R10), so the
+  pinned decision reflects the policy as of the reservation, not a racy
+  pre-reservation read. Both launch families (cyberscript and RAES) consume the
+  one verdict.
+- **Range ownership and replay.** The effective mode is pinned on
+  `engine.Range.egress_mode` in the create transaction before dispatch, and an
+  idempotent replay that names a different mode is rejected (ADR-017-R5).
+- **Transport.** The pinned mode travels in both operation-input families,
+  validated against the closed vocabulary. A newer producer always emits it; an
+  older queued input without it resolves to `status-quo` (never a silent
+  weakening, because `none` is always explicit), and an unknown value fails
+  closed at the wire.
+
+### Provider realization
+
+Enforcement uses each cloud's native primitives behind the existing provider
+seams; the provisioner never reads workspace state.
+
+- **AWS.** `terraform_vars` maps the pinned mode to the runtime route-table
+  bridge: `none` yields no participant default route, NAT, or internet-gateway
+  path and no S3 endpoint association; `status-quo` inherits the deployment
+  baseline. The deployment-owned `RANGE_EGRESS_MODE` never overrides a pinned
+  decision.
+- **GCP.** A `none` range-cell forces the firewall egress-deny (no public-web or
+  allow-CIDR lane) and, decisively, omits the Cloud NAT entirely: egress is
+  range-owned. The provisioner creates a range-scoped Cloud Router and Cloud NAT
+  (`LIST_OF_SUBNETWORKS`) for a non-`none` range and creates none for a `none`
+  range, so a zero-egress subnet carries no NAT path at all. A firewall deny
+  alone is not that guarantee (ADR-026-R6).
+- **Backend capability gate.** A `none` launch fails closed on a backend that
+  cannot prove native no-NAT support. GDC stays excluded under ADR-030.
+
+### Configuration baseline
+
+A `status-quo` workspace inherits the deployment baseline. That inheritance is
+realized at the provider today: the AWS runtime reads the deployment-declared
+`RANGE_EGRESS_MODE`, so a deployment-wide `none` posture still reaches a
+`status-quo` workspace's ranges. GCP has no deployment-wide `none` baseline (its
+operator posture is the allow-CIDR and profile lanes), so a `status-quo` GCP
+range keeps the existing routed posture. Binding the normalized baseline into
+CMS so `status-quo` pins the concrete mode at reservation time is a bounded
+follow-up with no behavioral difference today; the workspace `none` selection is
+the per-workspace zero-egress mechanism and is fully resolved and pinned.
+
+### GCP Cloud NAT migration
+
+The shared range VPC previously enrolled every subnet in one Cloud NAT
+(`ALL_SUBNETWORKS_ALL_IP_RANGES`), which is incompatible with a per-range `none`
+subnet. It now uses `LIST_OF_SUBNETWORKS` driven by the
+`shared_range_nat_subnetwork_self_links` variable (default empty), so in steady
+state it enrolls no range subnets and egress is range-owned. The variable is a
+controlled cutover bridge: during a migration an operator may temporarily list
+existing pre-migration range subnets to preserve their egress until they are
+drained onto per-range NAT. Range jobs never patch this shared object
+concurrently. The regional router, NAT, and address quota supporting per-range
+NAT is a deployment capacity concern to validate for the declared range count.

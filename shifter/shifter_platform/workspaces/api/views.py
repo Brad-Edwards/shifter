@@ -76,6 +76,14 @@ class _WorkspaceAPIError(Exception):
         "name_blank": 400,
         "name_too_long": 400,
         "name_taken": 409,
+        # Workspace invitations (#1942)
+        "invitation_invalid": 400,
+        "invitation_not_found": 404,
+        "invitation_exists": 409,
+        "invitation_not_current": 409,
+        "invitation_throttled": 429,
+        "invitation_delivery_unavailable": 503,
+        "workspace_archived": 409,
     }
 
     def __init__(self, *, code: str, message: str, status_code: int, request: Request) -> None:
@@ -101,7 +109,10 @@ class _WorkspaceAPIError(Exception):
                 status_code=403,
                 request=request,
             )
-        if isinstance(exc, (services.WorkspaceMembershipError, services.WorkspaceLifecycleError)):
+        if isinstance(
+            exc,
+            (services.WorkspaceMembershipError, services.WorkspaceLifecycleError, services.WorkspaceInvitationError),
+        ):
             return cls(
                 code=exc.code,
                 message=exc.message,
@@ -111,12 +122,15 @@ class _WorkspaceAPIError(Exception):
         raise exc
 
     def to_response(self) -> Response:
-        return api_error_response(
+        response = api_error_response(
             code=self.code,
             message=self.message,
             status_code=self.status_code,
             request=self.request,
         )
+        if self.code == "invitation_throttled":
+            response["Retry-After"] = "3600"
+        return response
 
 
 class _WorkspaceAPIView(APIView):

@@ -17,7 +17,10 @@ resource "google_container_cluster" "platform" {
     services_secondary_range_name = var.gke_services_secondary_range_name
 
     additional_pod_ranges_config {
-      pod_range_names = [var.gke_provisioner_pods_secondary_range_name]
+      pod_range_names = [
+        var.gke_provisioner_pods_secondary_range_name,
+        var.gke_access_pods_secondary_range_name,
+      ]
     }
   }
 
@@ -175,8 +178,87 @@ resource "google_container_node_pool" "provisioner" {
     machine_type    = var.provisioner_machine_type
     service_account = var.node_service_account_email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
-    labels          = merge(var.common_labels, { role = "provisioner" })
-    tags            = ["shifter", "gke", "provisioner"]
+    # `role` is retained for observability, but the security-relevant nodeSelector
+    # keys on node-restriction.kubernetes.io/shifter-pool: NodeRestriction forbids
+    # a (compromised) kubelet from setting that prefix on its own Node, so a
+    # rogue worker cannot self-label to attract provisioner Jobs (#1711 codex).
+    labels = merge(var.common_labels, {
+      role                                          = "provisioner"
+      "node-restriction.kubernetes.io/shifter-pool" = "provisioner"
+    })
+    tags = ["shifter", "gke", "provisioner"]
+
+    # Exclusive placement (#1711 / #959): only provisioner Jobs and the
+    # provisioner-launcher tolerate this taint, so no unrelated pod lands here
+    # and takes a provisioner-pod-range alias IP. This is what lets the range
+    # VPC scope management ingress to the provisioner pod range alone.
+    taint {
+      key    = "dedicated"
+      value  = "provisioner"
+      effect = "NO_SCHEDULE"
+    }
+
+    metadata = {
+      disable-legacy-endpoints = "true"
+    }
+
+    shielded_instance_config {
+      enable_secure_boot          = true
+      enable_integrity_monitoring = true
+    }
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+}
+
+resource "google_container_node_pool" "access" {
+  name       = "${var.name_prefix}-access"
+  project    = var.project_id
+  location   = var.region
+  cluster    = google_container_cluster.platform.name
+  node_count = var.access_node_count
+
+  management {
+    auto_repair  = true
+    auto_upgrade = true
+  }
+
+  network_config {
+    # Private nodes (no external IP): egress via Cloud NAT, matching every other
+    # pool. The dedicated access pod range is the GCE firewall source identity
+    # (#1711): portal + guacd pods scheduled here receive alias IPs from it, so
+    # per-range participant ingress (SSH 22 / RDP 3389) is scoped to just these
+    # access workloads instead of the broad platform pod range.
+    enable_private_nodes = true
+    create_pod_range     = false
+    pod_range            = var.gke_access_pods_secondary_range_name
+  }
+
+  node_config {
+    machine_type    = var.access_machine_type
+    service_account = var.node_service_account_email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+    # `role` is retained for observability, but the security-relevant nodeSelector
+    # keys on node-restriction.kubernetes.io/shifter-pool: NodeRestriction forbids
+    # a (compromised) kubelet from setting that prefix on its own Node, so a
+    # rogue worker cannot self-label to attract portal/guacd pods (#1711 codex).
+    labels = merge(var.common_labels, {
+      role                                          = "access"
+      "node-restriction.kubernetes.io/shifter-pool" = "access"
+    })
+    tags = ["shifter", "gke", "access"]
+
+    # Exclusive placement (#1711): only portal + guacd tolerate this taint, so
+    # the access pod range means "only the participant/operator access dialers".
+    # A node label / selector alone is insufficient because any unspecialized
+    # pod could otherwise schedule here and dilute the firewall source identity.
+    taint {
+      key    = "dedicated"
+      value  = "access"
+      effect = "NO_SCHEDULE"
+    }
 
     metadata = {
       disable-legacy-endpoints = "true"

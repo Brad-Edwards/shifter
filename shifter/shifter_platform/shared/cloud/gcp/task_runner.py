@@ -25,6 +25,19 @@ from shared.cloud.kubernetes import KubernetesTaskProfile, KubernetesTaskRunner,
 # GCP task-runner provider tag stamped on Job/Secret metadata.
 _SHIFTER_TASK_RUNNER_GCP = "gcp"
 
+# Exclusive provisioner node-pool placement (#1711). Provisioner Jobs SSH-drive
+# range hosts and probe the OpenVPN gateway; pinning them to the tainted
+# provisioner pool gives their pods alias IPs from the provisioner pod range,
+# which is the only source the range VPC's management ingress admits. The node
+# label matches the pool's ``node-restriction.kubernetes.io/shifter-pool`` label
+# and the toleration matches its ``dedicated=provisioner:NoSchedule`` taint (both
+# in platform/terraform/gcp/modules/portal/gke/main.tf). The selector keys on the
+# NodeRestriction-protected prefix (not the generic ``role`` label) so a
+# compromised kubelet cannot self-label its node to attract provisioner Jobs
+# (#1711 codex security finding).
+_PROVISIONER_NODE_SELECTOR = {"node-restriction.kubernetes.io/shifter-pool": "provisioner"}
+_PROVISIONER_TOLERATIONS = (("dedicated", "Equal", "provisioner", "NoSchedule"),)
+
 
 def _build_gcp_task_profile() -> KubernetesTaskProfile:
     """Resolve the GCP Kubernetes task profile from Django settings at call time.
@@ -42,6 +55,8 @@ def _build_gcp_task_profile() -> KubernetesTaskProfile:
         backoff_limit=getattr(settings, "ENGINE_TASK_BACKOFF_LIMIT", 0),
         ttl_seconds_after_finished=getattr(settings, "ENGINE_TASK_TTL_SECONDS_AFTER_FINISHED", 3600),
         hardening=standard_provisioner_hardening(PROVISIONER_CONTAINER_NAME),
+        node_selector=_PROVISIONER_NODE_SELECTOR,
+        tolerations=_PROVISIONER_TOLERATIONS,
     )
 
 

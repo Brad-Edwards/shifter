@@ -94,6 +94,7 @@ class TestAutoCleanupPassesVariables:
     def test_cleanup_passes_variables_to_destroy(self, monkeypatch):
         """Auto-cleanup should rebuild variables and pass them to destroy_range."""
         from terraform_ops import run_range_terraform
+        from terraform_vars import RangeVariableContext
 
         monkeypatch.setenv("CLOUD_PROVIDER", "aws")
         monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
@@ -119,8 +120,50 @@ class TestAutoCleanupPassesVariables:
         with pytest.raises(RuntimeError, match="NGFW config failed"):
             run_range_terraform("up", "req-1")
 
-        mock_build_vars.assert_called_once_with("req-1", 80, 20, {"ngfw": False, "subnets": []}, backend=None)
+        mock_build_vars.assert_called_once_with(
+            "req-1",
+            80,
+            20,
+            {"ngfw": False, "subnets": []},
+            RangeVariableContext(
+                scenario_artifact=None, backend=None, remote_access_capability=None, egress_mode="status-quo"
+            ),
+        )
         mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars, backend=None)
+
+    def test_cleanup_forwards_the_pinned_none_egress_mode(self, monkeypatch):
+        """The pinned per-range egress posture rides the cleanup path, not a hardcoded default."""
+        from terraform_ops import run_range_terraform
+        from terraform_vars import RangeVariableContext
+
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
+
+        mock_get_data = MagicMock(
+            return_value={
+                "range_id": 80,
+                "user_id": 20,
+                "spec": {"ngfw": False, "subnets": []},
+                "egress_mode": "none",
+            }
+        )
+        mock_tf_runner = MagicMock()
+        fake_vars = {"range_id": 80, "user_id": 20, "request_uuid": "req-1"}
+        mock_build_vars = MagicMock(return_value=fake_vars)
+        monkeypatch.setattr("terraform_ops.get_range_data_by_request_id", mock_get_data)
+        monkeypatch.setattr(
+            "terraform_ops._run_terraform_provision", MagicMock(side_effect=RuntimeError("NGFW config failed"))
+        )
+        monkeypatch.setattr("terraform_ops.range_terraform_runner", mock_tf_runner)
+        monkeypatch.setattr("terraform_ops.build_range_variables", mock_build_vars)
+        monkeypatch.setattr("terraform_ops.update_range_status", MagicMock())
+
+        with pytest.raises(RuntimeError, match="NGFW config failed"):
+            run_range_terraform("up", "req-1")
+
+        assert mock_build_vars.call_args.args[4] == RangeVariableContext(
+            scenario_artifact=None, backend=None, remote_access_capability=None, egress_mode="none"
+        )
 
     def test_cleanup_failure_logged_not_swallowed(self, monkeypatch, caplog):
         """When auto-cleanup fails, error should be logged (not just warned)."""

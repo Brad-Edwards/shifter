@@ -40,6 +40,7 @@ __all__ = [
     "network_resource",
     "openvpn_gateway_address_resource",
     "openvpn_gateway_instance_resource",
+    "router_nat_resource",
     "subnetwork_resource",
 ]
 
@@ -63,6 +64,34 @@ def subnetwork_resource(plan: RangeCellPlan, subnet: SubnetPlan) -> ComputeResou
         "ip_cidr_range": subnet["cidr"],
         "region": plan["region"],
         "private_ip_google_access": plan["private_google_access"],
+    }
+
+
+def router_nat_resource(plan: RangeCellPlan) -> ComputeResource:
+    """Render a range-owned Cloud Router + Cloud NAT insert body (PLAT-238, ADR-026-R6).
+
+    The NAT is scoped to exactly this range's participant subnets
+    (``LIST_OF_SUBNETWORKS``) with automatic NAT-IP allocation, so a range's egress
+    path is range-owned and independent -- a ``none`` range simply has no router/NAT
+    and therefore no NAT path, and range jobs never patch a shared Terraform-owned
+    NAT object concurrently.
+    """
+    router_nat = plan["router_nat"]
+    return {
+        "name": router_nat["router_name"],
+        "network": plan["network"]["self_link"],
+        "region": plan["region"],
+        "nats": [
+            {
+                "name": router_nat["nat_name"],
+                "nat_ip_allocate_option": "AUTO_ONLY",
+                "source_subnetwork_ip_ranges_to_nat": "LIST_OF_SUBNETWORKS",
+                "subnetworks": [
+                    {"name": self_link, "source_ip_ranges_to_nat": ["ALL_IP_RANGES"]}
+                    for self_link in router_nat["subnetwork_self_links"]
+                ],
+            }
+        ],
     }
 
 
