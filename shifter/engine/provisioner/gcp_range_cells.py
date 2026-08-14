@@ -26,6 +26,7 @@ from gcp_range_cell_resources import (
     network_resource,
     openvpn_gateway_address_resource,
     openvpn_gateway_instance_resource,
+    router_nat_resource,
     subnetwork_resource,
 )
 from gcp_range_cell_types import (
@@ -103,6 +104,35 @@ def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: Firewal
     logger.info("GCE range firewall reconcile name_fp=%s", safe_log_fingerprint(name))
     operation = clients.firewalls.patch(project=plan["project_id"], firewall=name, firewall_resource=body)
     _wait_for_operation(plan, clients, operation, "global")
+
+
+def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
+    """Create the range-owned Cloud Router + NAT if the plan carries one (PLAT-238).
+
+    Present only for a non-``none`` range; a zero-egress range has no ``router_nat``
+    element and therefore no NAT path. Idempotent: an existing router of the same
+    name is left in place (the NAT config is deterministic from the plan).
+    """
+    router_nat = plan.get("router_nat")
+    if router_nat is None:
+        return
+    name = router_nat["router_name"]
+    existing = _get_or_none(
+        clients.routers.get,
+        clients.google_exceptions,
+        project=plan["project_id"],
+        region=plan["region"],
+        router=name,
+    )
+    if existing is not None:
+        logger.info("GCE range router/NAT exists name_fp=%s", safe_log_fingerprint(name))
+        return
+    operation = clients.routers.insert(
+        project=plan["project_id"],
+        region=plan["region"],
+        router_resource=router_nat_resource(plan),
+    )
+    _wait_for_operation(plan, clients, operation, "region")
 
 
 def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> None:
@@ -298,6 +328,7 @@ def _provision_range_resources(
         _ensure_network(plan, clients)
     for subnet in plan["subnets"]:
         _ensure_subnetwork(plan, clients, subnet)
+    _ensure_router_nat(plan, clients)
     for firewall in plan["firewalls"]:
         _ensure_firewall(plan, clients, firewall)
     instance_outputs: list[ResourceDict] = []

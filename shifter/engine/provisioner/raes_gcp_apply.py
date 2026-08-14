@@ -40,6 +40,7 @@ from gcp_range_cells import (
     _ensure_address,
     _ensure_firewall,
     _ensure_network,
+    _ensure_router_nat,
     _ensure_subnetwork,
     _host_public_key_from_instance,
 )
@@ -80,6 +81,10 @@ class RaesGceApplyOptions:
     config: GCERangeCellConfig | None = None
     clients: GCEClients | None = None
     secret_ops: RaesGceSecretOps | None = None
+    # Effective range egress posture pinned at create (PLAT-238), carried here so
+    # the apply seam stays within the parameter budget; a `none` range gets no
+    # public-web/allow-CIDR firewall lane and no range-owned Cloud NAT.
+    egress_mode: str = "status-quo"
     account_secret_ops: RaesAccountCredentialOps | None = None
     credential_installer: Callable[..., dict[str, str]] = install_instance_account_credentials
     directory_secret_ops: RaesDirectorySecretOps | None = None
@@ -216,6 +221,7 @@ def _provision_raes_resources(
         _ensure_network(plan, runtime.clients)
     for subnet in plan["subnets"]:
         _ensure_subnetwork(plan, runtime.clients, subnet)
+    _ensure_router_nat(plan, runtime.clients)
     for firewall in plan["firewalls"]:
         _ensure_firewall(plan, runtime.clients, firewall)
     instance_outputs: list[ResourceDict] = []
@@ -392,8 +398,12 @@ def apply_raes_range_cell(
     ``access_bindings`` are the #1710 participant-access sidecar rows from the
     same projection. They are joined to the parsed plan -- and every unrealizable
     declaration rejected -- before any cloud or secret mutation.
+
+    The effective egress posture (PLAT-238) rides on ``options.egress_mode``.
     """
-    runtime = _apply_runtime(options or RaesGceApplyOptions())
+    resolved_options = options or RaesGceApplyOptions()
+    egress_mode = resolved_options.egress_mode
+    runtime = _apply_runtime(resolved_options)
     realized_access = join_participant_access(access_bindings or (), raes_plan)
     _assert_composition_targets_resolve(raes_plan)
     _assert_content_delivery_bindings_complete(raes_plan, delivery_bindings)
@@ -405,7 +415,9 @@ def apply_raes_range_cell(
     }
     # Build and size-check the complete sanitized evidence shape before cloud mutation.
     snapshot_resources(raes_plan, expected_composition)
-    plan = build_raes_range_cell_plan(request_uuid, range_id, raes_plan, resolve_image, runtime.config, realized_access)
+    plan = build_raes_range_cell_plan(
+        request_uuid, range_id, raes_plan, resolve_image, runtime.config, realized_access, egress_mode
+    )
     try:
         instance_outputs = _provision_raes_resources(
             plan,

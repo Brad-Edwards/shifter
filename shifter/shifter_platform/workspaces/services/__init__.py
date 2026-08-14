@@ -23,6 +23,7 @@ from ._context import (
     OrganizationRef,
     list_actor_workspace_contexts,
 )
+from ._egress import set_workspace_egress_policy, workspace_egress_policy
 from ._invitations import (
     WORKSPACE_INVITATION_SIGNING_SALT,
     WORKSPACE_INVITATION_TOKEN_MAX_AGE_SECONDS,
@@ -122,7 +123,9 @@ __all__ = [
     "resolve_personal_workspace",
     "restore_workspace",
     "revoke_workspace_invitation",
+    "set_workspace_egress_policy",
     "stage_workspace_invitation_token",
     "transfer_workspace_ownership",
     "update_organization_profile",
+    "workspace_egress_policy",
 ]

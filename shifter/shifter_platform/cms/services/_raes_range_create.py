@@ -81,6 +81,7 @@ def _dispatch_raes_package(
     source: RaesPackageSource,
     backend_admission: BackendAdmission | None,
     workspace_id: int,
+    egress_mode: str,
 ) -> None:
     """Resolve, verify, load, plan, and dispatch one registered RAES pack.
 
@@ -94,9 +95,9 @@ def _dispatch_raes_package(
     the cyberscript path (ADR-046-R3).
     """
     if source.source_kind == _OBJECT_SOURCE_KIND:
-        _dispatch_object_raes_package(request_id, user, source, backend_admission, workspace_id)
+        _dispatch_object_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
     else:
-        _dispatch_repo_raes_package(request_id, user, source, backend_admission, workspace_id)
+        _dispatch_repo_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
 
 
 def _dispatch_repo_raes_package(
@@ -105,6 +106,7 @@ def _dispatch_repo_raes_package(
     source: RaesPackageSource,
     backend_admission: BackendAdmission | None,
     workspace_id: int,
+    egress_mode: str,
 ) -> None:
     """Resolve a repo pack under ``RAES_PACKAGE_ROOT``, verify its digest, launch."""
     from cms.scenarios.pack_validation import PackDigestError, verify_pack_digest
@@ -120,7 +122,7 @@ def _dispatch_repo_raes_package(
         raise CMSError("RAES pack content identity could not be verified") from exc
     if not digest_matches:
         raise CMSError("RAES pack content digest no longer matches registration")
-    _launch_pack(request_id, user, pack_root, backend_admission, workspace_id)
+    _launch_pack(request_id, user, pack_root, backend_admission, workspace_id, egress_mode)
 
 
 def _dispatch_object_raes_package(
@@ -129,6 +131,7 @@ def _dispatch_object_raes_package(
     source: RaesPackageSource,
     backend_admission: BackendAdmission | None,
     workspace_id: int,
+    egress_mode: str,
 ) -> None:
     """Stage an object-backed pack, bind its identity + digest, then launch.
 
@@ -176,7 +179,7 @@ def _dispatch_object_raes_package(
                 raise CMSError("RAES pack content identity could not be verified") from exc
             if not digest_matches:
                 raise CMSError("RAES pack content digest no longer matches registration")
-            _launch_pack(request_id, user, pack_root, backend_admission, workspace_id)
+            _launch_pack(request_id, user, pack_root, backend_admission, workspace_id, egress_mode)
     except RaesPackageError as exc:
         raise CMSError(f"RAES object package could not be resolved: {exc}") from exc
 
@@ -194,6 +197,7 @@ def _launch_pack(
     pack_root: Path,
     backend_admission: BackendAdmission | None,
     workspace_id: int,
+    egress_mode: str,
 ) -> None:
     """Select the single SDL entry, dispatch through the port, assert acceptance."""
     from cms.raes.dispatch import CmsRaesDispatchPort
@@ -210,6 +214,7 @@ def _launch_pack(
         backend_admission=backend_admission,
         pack_root=pack_root,
         workspace_id=workspace_id,
+        egress_mode=egress_mode,
     )
     try:
         result = launch_raes_package(scenario_path=scenario_path, port=port)
@@ -362,12 +367,12 @@ def _create_raes_native_range_impl(
         instantiation_purpose=instantiation_purpose,
         correlation_key=request_id,
     )
-    _request_id, _cms_request, range_instance = _reserve_active_range_slot(
+    _request_id, _cms_request, range_instance, egress_mode = _reserve_active_range_slot(
         user, range_source, _persist, workspace_id, request_id
     )
 
     try:
-        _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id)
+        _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
     except Exception:
         _set_range_instance_status(range_instance, ResourceStatus.FAILED)
         raise

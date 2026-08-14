@@ -47,6 +47,7 @@ class WorkspaceOperation(models.TextChoices):
     RENAME_WORKSPACE = "rename_workspace", "Rename the workspace"
     ARCHIVE_WORKSPACE = "archive_workspace", "Archive the workspace"
     RESTORE_WORKSPACE = "restore_workspace", "Restore an archived workspace"
+    SET_EGRESS_POLICY = "set_egress_policy", "Set the workspace network egress policy"
     TRANSFER_OWNERSHIP = "transfer_ownership", "Transfer workspace ownership"
 
 
@@ -81,15 +82,17 @@ _INVITATION_OPERATIONS = frozenset(
     }
 )
 # Workspace lifecycle administration (#1940). Owner and admin may read the
-# administrative detail, rename, archive, and restore a workspace; transferring
-# ownership is owner-only, mirroring the owner-authority rule the membership
-# service already enforces for managing owners.
+# administrative detail, rename, archive, restore, and set the network egress
+# policy (#1945, PLAT-238) of a workspace; transferring ownership is owner-only,
+# mirroring the owner-authority rule the membership service already enforces for
+# managing owners.
 _WORKSPACE_ADMIN_OPERATIONS = frozenset(
     {
         WorkspaceOperation.READ_WORKSPACE.value,
         WorkspaceOperation.RENAME_WORKSPACE.value,
         WorkspaceOperation.ARCHIVE_WORKSPACE.value,
         WorkspaceOperation.RESTORE_WORKSPACE.value,
+        WorkspaceOperation.SET_EGRESS_POLICY.value,
     }
 )
 _OWNER_ONLY_OPERATIONS = frozenset({WorkspaceOperation.TRANSFER_OWNERSHIP.value})

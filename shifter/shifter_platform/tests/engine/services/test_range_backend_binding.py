@@ -149,3 +149,60 @@ class TestOperatorBackfill:
         range_id = str(legacy.id)
         with pytest.raises(CommandError):
             call_command("backfill_range_backend_binding", "--range-id", range_id, "--backend", "bogus")
+
+
+class TestBackendEgressNoneCapabilityGate:
+    """A `none` range fails closed on a backend without native no-NAT support (PLAT-238)."""
+
+    def test_gce_supports_none(self):
+        from engine.services._range_backend_binding import assert_backend_supports_egress_none
+
+        # No raise: GCE realizes `none` by omitting the range-owned Cloud NAT.
+        assert_backend_supports_egress_none("gce", "none")
+
+    def test_aws_path_none_backend_supports_none(self):
+        from engine.services._range_backend_binding import assert_backend_supports_egress_none
+
+        # The AWS path carries no GCP range_backend and realizes `none` via Terraform.
+        assert_backend_supports_egress_none(None, "none")
+
+    def test_gdc_rejects_none(self):
+        from engine.services._range_backend_binding import assert_backend_supports_egress_none
+
+        with pytest.raises(EngineError, match="does not support the zero-egress"):
+            assert_backend_supports_egress_none("gdc", "none")
+
+    def test_status_quo_is_never_gated(self):
+        from engine.services._range_backend_binding import assert_backend_supports_egress_none
+
+        # Only a `none` decision is gated; status-quo passes for any backend.
+        assert_backend_supports_egress_none("gdc", "status-quo")
+
+    def test_none_launch_on_gdc_is_refused_at_the_real_create_path(self, user):
+        """The capability gate must fire where it is wired, not only as a unit call."""
+        admission = evaluate_gcp_backend_admission("gdc", None, InstantiationPurpose.NON_USER_DEMO)
+        request_id = uuid4()
+        plan = make_compiled_plan()
+        with pytest.raises(EngineError, match="does not support the zero-egress"):
+            _create_raes_range(
+                request_id=request_id,
+                user_id=user.id,
+                compiled_plan=plan,
+                backend_admission=admission,
+                egress_mode="none",
+            )
+        assert not Range.objects.filter(request__request_id=request_id).exists()
+
+    def test_none_launch_on_gce_is_admitted_and_pinned(self, user):
+        admission = evaluate_gcp_backend_admission("gce", None, InstantiationPurpose.LIVE_FIRE)
+        request_id = uuid4()
+        _create_raes_range(
+            request_id=request_id,
+            user_id=user.id,
+            compiled_plan=make_compiled_plan(),
+            backend_admission=admission,
+            egress_mode="none",
+        )
+        rng = Range.objects.get(request__request_id=request_id)
+        assert rng.range_backend == "gce"
+        assert rng.egress_mode == "none"

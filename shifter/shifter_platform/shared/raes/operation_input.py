@@ -94,6 +94,7 @@ _INPUT_KEYS = frozenset(
         "range_backend",
         "instantiation_purpose",
         "legacy_range_id",
+        "egress_mode",
     }
 )
 
@@ -101,7 +102,20 @@ _INPUT_KEYS = frozenset(
 # emits ``artifact_bindings`` only when a plan actually carries an artifact
 # requirement, and a newer consumer tolerates its absence in an older queued input.
 # The field is never required, so no OperationInput/envelope version bump is needed.
-_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings"})
+# Optional for rolling-deploy compatibility (PLAT-238, ADR-043 window): a newer
+# producer always emits ``egress_mode``, but an older queued input minted before
+# this deploy carries none. Absence resolves to ``status-quo`` (inherit the
+# deployment baseline) -- the exact pre-feature behavior, never a silent
+# *weakening*: a ``none`` zero-egress or an active egress posture is always carried
+# explicitly, so a missing field can never be read as "allow egress".
+_OPTIONAL_INPUT_KEYS = frozenset({"artifact_bindings", "egress_mode"})
+
+# Mirrors ``installation.range_egress.RangeEgressMode`` without importing it (the
+# provisioner image does not load the installation/pydantic machinery, exactly as
+# ``_VALID_RANGE_BACKENDS`` mirrors the backend vocabulary). Closed here so an
+# unknown egress mode fails at the wire.
+_VALID_EGRESS_MODES = frozenset({"status-quo", "deny-all", "allowlist", "none"})
+_DEFAULT_EGRESS_MODE = "status-quo"
 
 # Exactly the registry columns the resolver consumes. Anything else -- row id,
 # enabled flag, notes, timestamps -- is management metadata and stays server-side.
@@ -218,6 +232,7 @@ class RaesOperationInput:
     range_backend: str | None
     instantiation_purpose: str | None
     legacy_range_id: int
+    egress_mode: str
     _image_candidates: dict[str, tuple[dict[str, Any], ...]]
 
     def artifact_binding_for(self, target: str) -> ArtifactBinding | None:
@@ -249,6 +264,22 @@ class RaesOperationInput:
     def access_binding_transport(self) -> list[dict[str, Any]]:
         """Return the non-secret participant-access rows for the realization path."""
         return [binding.to_transport() for binding in self.access_bindings]
+
+
+def _validated_egress_mode(value: object) -> str:
+    """Return the pinned effective egress mode, defaulting an absent field to status-quo.
+
+    A ``None`` (absent key) is an older queued input from before this deploy; it
+    resolves to ``status-quo`` -- inherit the deployment baseline -- which is the
+    exact pre-feature behavior and never a silent weakening (a ``none`` or active
+    posture is always carried explicitly). A *present but unrecognized* value fails
+    closed at the wire rather than being coerced, so a tampered input cannot smuggle
+    an unknown posture past the boundary.
+    """
+    if value is None:
+        return _DEFAULT_EGRESS_MODE
+    _require(isinstance(value, str) and value in _VALID_EGRESS_MODES, "raes operation input egress_mode is invalid")
+    return str(value)
 
 
 def _validated_backend(value: object) -> str | None:
@@ -420,6 +451,7 @@ def parse_raes_operation_input(payload: object) -> RaesOperationInput:
         range_backend=_validated_backend(obj["range_backend"]),
         instantiation_purpose=_optional_str(obj["instantiation_purpose"]),
         legacy_range_id=_validated_legacy_range_id(obj["legacy_range_id"]),
+        egress_mode=_validated_egress_mode(obj.get("egress_mode")),
         _image_candidates=_validated_candidates(obj["image_candidates"]),
     )
 
@@ -432,12 +464,15 @@ def build_raes_operation_input(
     range_backend: str | None,
     instantiation_purpose: str | None,
     legacy_range_id: int,
+    egress_mode: str = _DEFAULT_EGRESS_MODE,
 ) -> dict[str, Any]:
     """Compose and validate the RAES operation-input payload in one step.
 
     Returns the JSON-serialisable payload for ``build_operation_envelope``.
     Candidate sets are emitted in sorted key order so the same generation
-    materializes byte-identical input on a retry.
+    materializes byte-identical input on a retry. ``egress_mode`` is the effective
+    range egress posture pinned at create (PLAT-238); a newer producer always emits
+    it so the provisioner realizes it from the input rather than the deployment env.
     """
     payload = {
         "plan": dict(plan),
@@ -447,6 +482,7 @@ def build_raes_operation_input(
         "range_backend": range_backend,
         "instantiation_purpose": instantiation_purpose,
         "legacy_range_id": legacy_range_id,
+        "egress_mode": egress_mode,
     }
     # Emit artifact_bindings only when a plan actually carries an artifact
     # requirement, so the common no-requirement input is byte-identical to the

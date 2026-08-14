@@ -51,6 +51,11 @@ export type PaginatedOrganizationProfileList = components["schemas"]["PaginatedO
 export type Workspace = components["schemas"]["Workspace"];
 export type CreateWorkspaceRequest = components["schemas"]["CreateWorkspace"];
 export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferWorkspaceOwnership"];
+// Workspace network egress policy (#1945, PLAT-238). The workspace-selectable
+// subset of the canonical RangeEgressMode vocabulary; the server re-validates and
+// authorizes every change.
+export type WorkspaceEgressPolicy = components["schemas"]["EgressPolicyEnum"];
+export type SetWorkspaceEgressPolicyRequest = components["schemas"]["SetWorkspaceEgressPolicy"];
 
 /**
  * Workspace membership & roles types (#1941, PLAT-234), re-exported from the

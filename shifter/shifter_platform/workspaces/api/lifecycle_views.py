@@ -28,6 +28,7 @@ from workspaces import services
 from workspaces.api.serializers import (
     CreateWorkspaceSerializer,
     RenameWorkspaceSerializer,
+    SetWorkspaceEgressPolicySerializer,
     TransferWorkspaceOwnershipSerializer,
     WorkspaceSerializer,
 )
@@ -53,6 +54,17 @@ def _query_flag(request: Request, name: str) -> bool:
     """Interpret a boolean-ish query parameter (absent or falsey -> False)."""
     value = request.query_params.get(name)
     return value is not None and value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+#: Cookie-only OpenAPI auth for the session-only workspace lifecycle surface. The
+#: bearer-first chain admits an ``shf_`` token as an ApiToken principal only so
+#: ``IsAuthenticatedSession`` can refuse it, but drf-spectacular derives the
+#: published auth alternatives from ``authentication_classes`` and would otherwise
+#: advertise token access the runtime rejects. Every operation applies this
+#: override so the generated contract matches the runtime authority model, mirroring
+#: the audit endpoint (``shared.api.audit``). drf-spectacular's ``auth`` argument is
+#: loosely typed, hence the ignore at each call site.
+_SESSION_ONLY_SCHEMA_AUTH: list[dict[str, list[str]]] = [{"cookieAuth": []}]
 
 
 class _WorkspaceLifecycleAPIView(APIView):
@@ -106,6 +118,7 @@ class WorkspaceCollectionView(_WorkspaceLifecycleAPIView):
         ],
         responses={200: WorkspaceSerializer(many=True), 400: ApiErrorSerializer, 403: ApiErrorSerializer},
         operation_id="api_v1_workspaces_list",
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def get(self, request: Request) -> Response:
         organization_uuid = request.query_params.get("organization")
@@ -136,6 +149,7 @@ class WorkspaceCollectionView(_WorkspaceLifecycleAPIView):
             409: ApiErrorSerializer,
         },
         operation_id="api_v1_workspaces_create",
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def post(self, request: Request) -> Response:
         command = CreateWorkspaceSerializer(data=request.data)
@@ -158,6 +172,7 @@ class WorkspaceDetailView(_WorkspaceLifecycleAPIView):
     @extend_schema(
         responses={200: WorkspaceSerializer, 403: ApiErrorSerializer},
         operation_id="api_v1_workspace_detail",
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def get(self, request: Request, workspace_uuid: UUID) -> Response:
         try:
@@ -175,6 +190,7 @@ class WorkspaceDetailView(_WorkspaceLifecycleAPIView):
             409: ApiErrorSerializer,
         },
         operation_id="api_v1_workspace_rename",
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def patch(self, request: Request, workspace_uuid: UUID) -> Response:
         command = RenameWorkspaceSerializer(data=request.data)
@@ -198,6 +214,7 @@ class WorkspaceArchiveView(_WorkspaceLifecycleAPIView):
         request=None,
         responses={200: WorkspaceSerializer, 403: ApiErrorSerializer, 409: ApiErrorSerializer},
         operation_id="api_v1_workspace_archive",
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def post(self, request: Request, workspace_uuid: UUID) -> Response:
         try:
@@ -218,12 +235,45 @@ class WorkspaceRestoreView(_WorkspaceLifecycleAPIView):
         request=None,
         responses={200: WorkspaceSerializer, 403: ApiErrorSerializer, 409: ApiErrorSerializer},
         operation_id="api_v1_workspace_restore",
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def post(self, request: Request, workspace_uuid: UUID) -> Response:
         try:
             workspace = services.restore_workspace(
                 request.user,
                 workspace_uuid,
+                audit=_workspace_lifecycle_audit(request),
+            )
+        except (services.WorkspaceAuthorizationError, services.WorkspaceLifecycleError) as exc:
+            _raise_as_response(exc, request)
+        return Response(WorkspaceSerializer(workspace).data)
+
+
+class WorkspaceEgressPolicyView(_WorkspaceLifecycleAPIView):
+    """Set the network egress policy of a workspace (owner/admin, PLAT-238, #1945)."""
+
+    @extend_schema(
+        request=SetWorkspaceEgressPolicySerializer,
+        responses={
+            200: WorkspaceSerializer,
+            400: ApiErrorSerializer,
+            403: ApiErrorSerializer,
+        },
+        operation_id="api_v1_workspace_set_egress_policy",
+        # Session-only: the bearer-first chain admits a platform token as an
+        # ApiToken principal only for IsAuthenticatedSession to refuse it, so the
+        # published contract must advertise cookie auth alone and not imply token
+        # access (mirrors the audit endpoint's canonical override).
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
+    )
+    def put(self, request: Request, workspace_uuid: UUID) -> Response:
+        command = SetWorkspaceEgressPolicySerializer(data=request.data)
+        command.is_valid(raise_exception=True)
+        try:
+            workspace = services.set_workspace_egress_policy(
+                request.user,
+                workspace_uuid,
+                command.validated_data["egress_policy"],
                 audit=_workspace_lifecycle_audit(request),
             )
         except (services.WorkspaceAuthorizationError, services.WorkspaceLifecycleError) as exc:
@@ -243,6 +293,7 @@ class WorkspaceTransferOwnershipView(_WorkspaceLifecycleAPIView):
             404: ApiErrorSerializer,
         },
         operation_id="api_v1_workspace_transfer_ownership",
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
     )
     def post(self, request: Request, workspace_uuid: UUID) -> Response:
         command = TransferWorkspaceOwnershipSerializer(data=request.data)

@@ -1007,14 +1007,14 @@
   },
   {
     "id": "ADR-017",
-    "title": "Range network egress is a platform-level policy, applied uniformly on AWS and GCP",
+    "title": "Range network egress uses one provider-neutral policy vocabulary on AWS and GCP",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Range egress is configured once at the platform level (`settings.range_egress` in shifter.yaml) and applied uniformly across supported cloud backends. The configuration shape is provider-neutral (`mode` + `allowed_cidrs`), validated by shifter/installation/range_egress.py, and bridged into AWS Network Firewall rule groups (platform/terraform/modules/range/vpc/firewall.tf) and GCP VPC firewall egress rules (platform/terraform/gcp/modules/platform-core/main.tf). The default mode (`status-quo`) preserves each backend's existing posture so the policy is opt-in. CIDRs are operator configuration, not secrets, and per-deployment values must not be committed; follow-up #958 closes the remaining drift by requiring provider-specific Terraform bridge inputs to be rendered from the validated root policy instead of hand-maintained as a second allowlist copy.",
+    "decision": "Range egress uses one provider-neutral vocabulary (`mode` + `allowed_cidrs`) validated by shifter/installation/range_egress.py and translated into each cloud's native controls. `settings.range_egress` in shifter.yaml remains the deployment baseline and its provider Terraform inputs remain internal bridges. A workspace may select only the compatibility posture or the canonical `none` posture; CMS resolves that selector against the normalized deployment baseline at the locked launch-admission seam, pins one effective mode on the Engine range, and delivers it through the exact operation-generation input. The default preserves each backend's existing posture. CIDRs are non-secret operator configuration and remain deployment-global unless a later decision adds a workspace-owned allowlist shape.",
     "rules": [
       {
         "id": "ADR-017-R1",
-        "description": "The public configuration surface for range egress is `settings.range_egress` in shifter.yaml; provider-specific Terraform variables (`victim_allowed_cidrs` on AWS, `range_egress_allowed_cidrs` on GCP) are internal bridges and must validate the same shape (well-formed CIDR, not 0.0.0.0/0 or ::/0) that shifter/installation/range_egress.py enforces.",
+        "description": "The public deployment-configuration surface for range egress is `settings.range_egress` in shifter.yaml; provider-specific Terraform variables (`victim_allowed_cidrs` on AWS, `range_egress_allowed_cidrs` on GCP) are internal bridges and must validate the same shape (well-formed CIDR, not 0.0.0.0/0 or ::/0) that shifter/installation/range_egress.py enforces. A workspace administrative selector may reference the canonical compatibility/`none` vocabulary but must not duplicate the policy or accept provider fields/CIDRs.",
         "checks": []
       },
       {
@@ -1032,6 +1032,11 @@
       {
         "id": "ADR-017-R4",
         "description": "Deploy-time or local renderer paths for range egress must consume the normalized `settings.range_egress` policy from `shifter/installation/range_egress.py` / `load_root_config` and render provider-specific Terraform bridge variables from that policy. Operators must not maintain a separate CIDR allowlist copy in both root config and tfvars; provider variables remain internal and Terraform validation remains a direct-use backstop.",
+        "checks": []
+      },
+      {
+        "id": "ADR-017-R5",
+        "description": "A workspace egress selector is resolved once at CMS launch admission while holding the workspace mutation mutex. The compatibility value inherits the normalized deployment baseline and `none` selects ADR-026 zero egress. The resulting closed mode is persisted on Engine Range, replay-verified, and transported in the exact operation-generation input beside (never inside) scenario/RAES contracts. Workspace identity and mutable policy documents do not cross into Engine provider adapters, task argv/environment, labels, events, or guest metadata.",
         "checks": []
       }
     ],
@@ -1060,6 +1065,7 @@
       "platform/terraform/gcp/environments/gcp-dev/terraform.tfvars",
       "docs/architecture/range-egress-ip-allowlist.md",
       "docs/architecture/range-egress-allowlist-render-preflight-958.md",
+      "docs/architecture/workspace-network-egress-policy-preflight-1945.md",
       "docs/dev/deploy-secrets.md",
       ".gitignore"
     ]
@@ -1356,7 +1362,7 @@
     "title": "Commercial self-serve ranges may use a no-default-route zero-egress posture",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Commercial self-serve training ranges with untrusted users may run in an explicit zero-egress posture where runtime participant subnet route tables have no `0.0.0.0/0` route and no NAT or Internet Gateway target. This extends ADR-020 by adding a second route-table posture alongside the existing AWS Network Firewall allowlist path, and extends ADR-017 by requiring any operator-facing egress-mode configuration to reuse the existing range-egress policy/renderer boundary rather than creating a second public schema. `allowlist` remains the default and preserves the trusted-event behavior: user subnet -> Network Firewall -> NAT -> IGW with STRICT_ORDER default-deny and documented allow lanes. `none` is not ADR-017 `deny-all`; `deny-all` is firewall enforcement with a default route, while `none` removes the default-route internet path. Runtime package/tool/agent/phone-home needs for `none` ranges must move to Packer bake time, in-range services, omitted integrations, or a dedicated proxy outside participant subnets.",
+    "decision": "Commercial self-serve training ranges with untrusted users may run in an explicit zero-egress posture where runtime participant subnets have no outbound NAT/default-route internet path. On AWS, participant route tables have no `0.0.0.0/0` route and no NAT or Internet Gateway target. On GCP/GCE, participant subnets are not named by any Cloud NAT configuration and instances have no external interface; target-tagged firewall denial is defense in depth rather than a substitute for absent NAT. This extends ADR-020 with a route/NAT posture alongside the existing AWS Network Firewall and GCP Cloud NAT paths, and extends ADR-017 by reusing the existing range-egress vocabulary/renderer boundary rather than creating another public schema. `none` is not ADR-017 `deny-all`: `deny-all` retains a native routed egress path with firewall enforcement, while `none` removes that path. Runtime package/tool/agent/phone-home needs for `none` ranges must move to image bake time, in-range services, omitted integrations, or an explicitly classified management path outside participant subnets.",
     "rules": [
       {
         "id": "ADR-026-R1",
@@ -1380,7 +1386,12 @@
       },
       {
         "id": "ADR-026-R5",
-        "description": "Validation must include both infrastructure state and inside-range behavior: no NAT/IGW/default route on `none` subnet route tables, no reachability to external IPs or domains including previously allowlisted lanes, and focused regression coverage that allowlist mode still creates the Network Firewall route.",
+        "description": "Validation must include both infrastructure state and inside-range behavior: no NAT/IGW/default route on AWS `none` subnet route tables; no Cloud NAT configuration naming GCE `none` participant subnets and no guest external interface; no reachability to external IPs or domains including previously allowlisted lanes; and focused regression coverage that compatibility mode still creates the native AWS/GCP egress path.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R6",
+        "description": "GCP zero egress must be realized behind the existing GCE range-cell provider seam with native Cloud NAT and VPC firewall resources. The stable `ALL_SUBNETWORKS_ALL_IP_RANGES` NAT posture is incompatible with a per-range `none` subnet and must be replaced through a coordinated migration that preserves NAT for existing/default ranges before it is removed. A firewall-only implementation, concurrent per-range patching of one Terraform-owned NAT object, or an unvalidated switch to the currently unreachable `vpc-per-range` mode is prohibited.",
         "checks": []
       }
     ],
@@ -1391,6 +1402,7 @@
     ],
     "evidence": [
       "docs/architecture/range-zero-egress-preflight-1171.md",
+      "docs/architecture/workspace-network-egress-policy-preflight-1945.md",
       "docs/architecture/range-isolation-model.md",
       "docs/architecture/range-egress-ip-allowlist.md",
       "shifter/installation/range_egress.py",
@@ -2555,7 +2567,7 @@
       },
       {
         "id": "ADR-046-R10",
-        "description": "Workspace quota and workspace range-policy evaluation compose at one CMS pre-reservation launch-admission seam parameterized by authorized workspace, individual owner, server-derived range source, trusted instantiation purpose, and stable request correlation. The initial decision may add no hard tenant limit, but callers may not duplicate the hook. A future enforcing workspace quota must use durable idempotent reservation rather than a count-then-create race, and must remain distinct from Engine's event/provider-capacity ledger. A future workspace egress override extends the canonical installation RangeEgressPolicy, resolves and pins one closed effective decision on the Engine range, and is replay-verified; workspace identity, membership, role, or policy documents never enter scenario/RAES contracts, provisioner argv/environment, events, provider labels, or guest metadata.",
+        "description": "Workspace quota and workspace range-policy evaluation compose at one CMS pre-reservation launch-admission seam parameterized by authorized workspace, individual owner, server-derived range source, trusted instantiation purpose, and stable request correlation. The initial quota decision may add no hard tenant limit, but callers may not duplicate the hook. A future enforcing workspace quota must use durable idempotent reservation rather than a count-then-create race, and must remain distinct from Engine's event/provider-capacity ledger. The workspace egress selector extends the canonical installation RangeEgressMode vocabulary, resolves under the workspace mutation mutex, pins one closed effective decision on the Engine range, and is replay-verified; workspace identity, membership, role, or policy documents never enter scenario/RAES contracts, provisioner argv/environment, events, provider labels, or guest metadata.",
         "checks": []
       },
       {
@@ -2580,11 +2592,13 @@
       "https://github.com/Brad-Edwards/shifter/issues/1327",
       "https://github.com/Brad-Edwards/shifter/issues/1938",
       "https://github.com/Brad-Edwards/shifter/issues/1939",
+      "https://github.com/Brad-Edwards/shifter/issues/1945",
       "docs/architecture/organization-workspace-preflight-1325.md",
       "docs/architecture/workspace-membership-roles-preflight-1326.md",
       "docs/architecture/range-workspace-scoping-preflight-1327.md",
       "docs/architecture/organization-workspace-admin-console-preflight-1938.md",
       "docs/architecture/organization-profile-settings-preflight-1939.md",
+      "docs/architecture/workspace-network-egress-policy-preflight-1945.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",

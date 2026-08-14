@@ -160,6 +160,7 @@ def _variables(
     payload: dict | None = None,
     bindings: list[dict] | None = None,
     remote_access: bool = False,
+    egress_mode: str = "status-quo",
 ) -> dict:
     scenario_payload = deepcopy(payload if payload is not None else _scenario_payload())
     if bindings is None:
@@ -181,7 +182,22 @@ def _variables(
         remote_access=(
             build_openvpn_capability(_LINUX_UUID, datetime.now(UTC) + timedelta(days=5)) if remote_access else None
         ),
+        egress_mode=egress_mode,
     )
+
+
+def test_cyberscript_status_quo_plan_owns_a_router_nat():
+    """The cyberscript GCE plan builder honors the pinned egress mode (PLAT-238)."""
+    plan = render_range_cell_plan("req-123", _variables(egress_mode="status-quo"), _sample_config())
+    assert plan.get("router_nat") is not None
+    assert plan["router_nat"]["subnetwork_self_links"] == [subnet["self_link"] for subnet in plan["subnets"]]
+
+
+def test_cyberscript_none_plan_has_no_router_nat_and_no_web_egress():
+    plan = render_range_cell_plan("req-123", _variables(egress_mode="none"), _sample_config())
+    assert "router_nat" not in plan
+    firewall_names = {fw["name"] for fw in plan["firewalls"]}
+    assert not any(name.endswith("egress-web") for name in firewall_names)
 
 
 def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
@@ -205,6 +221,7 @@ def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
         subnetworks=service(),
         firewalls=service(),
         addresses=service(),
+        routers=service(),
         instances=service(),
         global_operations=op_service,
         region_operations=op_service,
@@ -1753,10 +1770,12 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     global_operations = object()
     region_operations = object()
     zone_operations = object()
+    router = object()
     compute_module.NetworksClient = mocker.Mock(return_value=network)
     compute_module.SubnetworksClient = mocker.Mock(return_value=subnetwork)
     compute_module.FirewallsClient = mocker.Mock(return_value=firewall)
     compute_module.AddressesClient = mocker.Mock(return_value=address)
+    compute_module.RoutersClient = mocker.Mock(return_value=router)
     compute_module.InstancesClient = mocker.Mock(return_value=instance)
     compute_module.GlobalOperationsClient = mocker.Mock(return_value=global_operations)
     compute_module.RegionOperationsClient = mocker.Mock(return_value=region_operations)
@@ -1775,6 +1794,7 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     assert clients.subnetworks is subnetwork
     assert clients.firewalls is firewall
     assert clients.addresses is address
+    assert clients.routers is router
     assert clients.instances is instance
     assert clients.global_operations is global_operations
     assert clients.region_operations is region_operations

@@ -9,7 +9,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "./client";
-import type { CreateWorkspaceRequest, TransferWorkspaceOwnershipRequest, Workspace } from "./types";
+import type {
+  CreateWorkspaceRequest,
+  TransferWorkspaceOwnershipRequest,
+  Workspace,
+  WorkspaceEgressPolicy,
+} from "./types";
 
 export interface WorkspaceListFilters {
   organizationUuid: string;
@@ -98,6 +103,21 @@ export function useRestoreWorkspace(uuid: string) {
     onSuccess: (data) => {
       queryClient.setQueryData(workspaceKeys.detail(uuid), data);
       invalidateWorkspaces(queryClient);
+    },
+  });
+}
+
+export function useSetWorkspaceEgressPolicy(uuid: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (egressPolicy: WorkspaceEgressPolicy) =>
+      apiFetch<Workspace>(`/workspaces/${uuid}/egress-policy/`, {
+        method: "PUT",
+        body: { egress_policy: egressPolicy },
+      }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(workspaceKeys.detail(uuid), data);
+      invalidateWorkspaces(queryClient, uuid);
     },
   });
 }

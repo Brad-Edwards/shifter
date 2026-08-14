@@ -79,6 +79,7 @@ def _projection(**overrides) -> RaesOperationInput:
         "range_backend": "gce",
         "instantiation_purpose": "live_fire",
         "legacy_range_id": 7,
+        "egress_mode": "status-quo",
         "_image_candidates": {},
     }
     kwargs.update(overrides)
@@ -264,6 +265,13 @@ class TestProvision:
         assert [n.address for n in raes_plan.nodes] == ["node.web"]
         patched.load_config.assert_called_once_with(backend="gce")
         assert patched.apply.call_args.kwargs["options"].config is patched.config
+
+    def test_forwards_the_pinned_egress_mode_from_the_projection(self, patched):
+        # The pinned egress posture rides the operation input and must reach the
+        # realizer; dropping it would silently give the range the default posture.
+        patched.read_input.side_effect = lambda *a, **k: _run(egress_mode="none")
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        assert patched.apply.call_args.kwargs["options"].egress_mode == "none"
 
     def test_forwards_content_delivery_bindings_from_the_projection(self, patched):
         # #1564: the bindings gate + realize source-backed content delivery. They

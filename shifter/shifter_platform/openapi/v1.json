@@ -10812,9 +10812,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -10891,9 +10888,6 @@
           "required": true
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -10972,9 +10966,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -11048,9 +11039,6 @@
           }
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -11129,9 +11117,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -11157,6 +11142,93 @@
             "description": ""
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/egress-policy/": {
+      "put": {
+        "operationId": "api_v1_workspace_set_egress_policy",
+        "description": "Set the network egress policy of a workspace (owner/admin, PLAT-238, #1945).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceEgressPolicy"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceEgressPolicy"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceEgressPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -12051,9 +12123,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -12140,9 +12209,6 @@
           "required": true
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -13924,6 +13990,14 @@
         "required": [
           "success"
         ]
+      },
+      "EgressPolicyEnum": {
+        "enum": [
+          "status-quo",
+          "none"
+        ],
+        "type": "string",
+        "description": "* `status-quo` - Inherit deployment baseline\n* `none` - Zero egress (no outbound NAT path)"
       },
       "EmailTemplateResponse": {
         "type": "object",
@@ -18710,6 +18784,18 @@
           "is_active"
         ]
       },
+      "SetWorkspaceEgressPolicy": {
+        "type": "object",
+        "description": "Set-egress-policy command: one closed choice from the workspace subset (PLAT-238).\n\nThe workspace-selectable vocabulary is the contextual subset of the canonical\n``installation.range_egress.RangeEgressMode`` (``status-quo`` / ``none``). The\nserializer owns HTTP shape and rejects unknown fields; ``workspaces.services``\nre-validates against the canonical enum and owns authority and persistence.",
+        "properties": {
+          "egress_policy": {
+            "$ref": "#/components/schemas/EgressPolicyEnum"
+          }
+        },
+        "required": [
+          "egress_policy"
+        ]
+      },
       "SparePoolRequest": {
         "type": "object",
         "description": "Organizer spare-pool top-up request body (``count`` bounded non-negative).",
@@ -19196,6 +19282,14 @@
             "readOnly": true,
             "nullable": true
           },
+          "egress_policy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EgressPolicyEnum"
+              }
+            ],
+            "readOnly": true
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -19210,6 +19304,7 @@
         "required": [
           "archived_at",
           "created_at",
+          "egress_policy",
           "is_archived",
           "is_personal",
           "name",

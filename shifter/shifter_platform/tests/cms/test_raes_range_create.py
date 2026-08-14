@@ -67,7 +67,7 @@ def test_launch_persists_bookkeeping_and_dispatches(user, native_on, monkeypatch
     seen = {}
     monkeypatch.setattr(
         _DISPATCH,
-        lambda request_id, u, source, backend_admission=None, workspace_id=None: seen.update(
+        lambda request_id, u, source, backend_admission=None, workspace_id=None, egress_mode=None: seen.update(
             ref=source.package_ref,
             digest=source.package_digest,
         ),
@@ -221,7 +221,7 @@ def test_dispatch_loads_distinct_routed_source_not_public_id(user, native_on, mo
     seen = {}
     monkeypatch.setattr(
         _DISPATCH,
-        lambda request_id, u, source, backend_admission=None, workspace_id=None: seen.update(
+        lambda request_id, u, source, backend_admission=None, workspace_id=None, egress_mode=None: seen.update(
             loaded_source_id=source.scenario_id
         ),
     )
@@ -281,6 +281,7 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tm
         backend_admission=None,
         bindings=None,
         workspace_id=None,
+        egress_mode=None,
     ):
         captured["kind"] = compiled_plan.get("kind")
         captured["request_id"] = request_id
@@ -419,6 +420,7 @@ class TestObjectPackageLaunch:
             backend_admission=None,
             bindings=None,
             workspace_id=None,
+            egress_mode=None,
         ):
             captured["kind"] = compiled_plan.get("kind")
             return RaesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
