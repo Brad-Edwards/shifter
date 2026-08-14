@@ -126,6 +126,7 @@ def _active_superuser_count() -> int:
 
 
 def _guard_self_action(user: User, action: AccountLifecycleAction, actor: User | None) -> None:
+    """Forbid an actor from suspending, deactivating, or deleting their own account."""
     if action in _DISABLING_ACTIONS and actor is not None and actor.pk == user.pk:
         raise AccountLifecycleError(
             "self_action_forbidden", "You cannot suspend, deactivate, or delete your own account."
@@ -133,6 +134,7 @@ def _guard_self_action(user: User, action: AccountLifecycleAction, actor: User |
 
 
 def _guard_superuser_target(user: User, actor: User | None) -> None:
+    """Forbid a non-superuser from changing a superuser account's lifecycle state."""
     if user.is_superuser and not (actor is not None and actor.is_superuser):
         raise AccountLifecycleError(
             "superuser_protected", "Only a superuser may change the lifecycle state of a superuser account."
@@ -140,6 +142,7 @@ def _guard_superuser_target(user: User, actor: User | None) -> None:
 
 
 def _guard_last_active_superuser(user: User, action: AccountLifecycleAction) -> None:
+    """Forbid a disabling action that would remove the last active superuser (fast-fail hint)."""
     if action in _DISABLING_ACTIONS and user.is_superuser and user.is_active and _active_superuser_count() <= 1:
         raise AccountLifecycleError("last_superuser_protected", "You cannot disable the last active superuser.")
 

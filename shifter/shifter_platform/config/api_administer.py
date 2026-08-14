@@ -42,6 +42,7 @@ from shared.audit import (
 from shared.auth import is_ctf_organizer
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import User
     from rest_framework.request import Request
 
 # Recorded as the audit ``source`` so a local grant made through the Administer
@@ -132,7 +133,7 @@ class _TransferValidationError(Exception):
         self.status_code = status_code
 
 
-def _resolve_transfer_targets(request: Request, pk: int, replacement_id: int):
+def _resolve_transfer_targets(request: Request, pk: int, replacement_id: int) -> tuple[User, User]:
     """Resolve and authorize the source + replacement, or raise _TransferValidationError.
 
     Offboarding ownership transfer is a root-level action; it requires a superuser

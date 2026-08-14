@@ -57,10 +57,9 @@ def _range(user: User, *, source: str = RangeSource.MISSION_CONTROL.value, delet
 
 def test_unknown_kind_raises():
     source, replacement = _make_user("s"), _make_user("r")
+    audit = OffboardingAuditContext(actor_type="user", actor_id=1)
     with pytest.raises(ValueError):
-        transfer_user_ownership(
-            source, replacement, kinds=["credentials"], audit=OffboardingAuditContext(actor_type="user", actor_id=1)
-        )
+        transfer_user_ownership(source, replacement, kinds=["credentials"], audit=audit)
 
 
 def test_range_blocked_when_replacement_not_a_member():
