@@ -9,7 +9,6 @@ import { renderRoute } from "@/test/utils";
 const bootstrap = {
   principal: { id: 99, username: "root", display_name: "Root", is_authenticated: true, is_staff: true, is_superuser: true },
   permissions: { can_view_users: true, can_change_users: true, can_delete_users: true },
-  feature_flags: { administer_spa: true },
 };
 
 vi.mock("@/app/bootstrap-context", () => ({

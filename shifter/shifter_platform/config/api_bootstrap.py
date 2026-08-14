@@ -1,7 +1,7 @@
 """Session bootstrap endpoint for the SPA (#1300 / #1369).
 
 A client-rendered SPA cannot read Django context processors, so it loads the
-authenticated principal, effective permission flags, feature flags, and UX mode
+authenticated principal, effective permission flags, and UX mode
 eligibility once from this endpoint after authentication (replacing
 ``config.context_processors.user_permissions`` for the browser client).
 
@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django.conf import settings
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
 from rest_framework.authentication import SessionAuthentication
@@ -76,34 +75,12 @@ class BootstrapModesSerializer(serializers.Serializer):
     default = serializers.ChoiceField(choices=["participant", "operator"])
 
 
-class BootstrapFeatureFlagsSerializer(serializers.Serializer):
-    """Server-owned feature flags surfaced to the SPA (no secret values)."""
-
-    platform_spa = serializers.BooleanField()
-    mission_control_spa = serializers.BooleanField()
-    scenario_editor_spa = serializers.BooleanField()
-    # CTF workspace SPA (#1372): gates the in-SPA CTF participant workspace nav
-    # entries. Mirrors CTF_WORKSPACE_SPA_ENABLED (advisory only; the /api/v1/ctf/
-    # endpoints remain the authority).
-    ctf_workspace_spa = serializers.BooleanField()
-    # RAES native provisioning (#1566): gates the in-SPA RAES image registry
-    # management surface. Mirrors SHIFTER_RAES_NATIVE_PROVISIONING, so the nav
-    # entry only shows when the whole native path is enabled (advisory only;
-    # the /api/v1/cms/raes-image-mappings/ endpoints remain the authority).
-    raes_native_provisioning = serializers.BooleanField()
-    # Administer workspace SPA rollout (#1373): gates the in-SPA Administer nav
-    # entries and route visibility. Mirrors ADMINISTER_SPA_ENABLED; advisory
-    # only, the /api/v1/administer/ endpoints remain the authority.
-    administer_spa = serializers.BooleanField()
-
-
 class BootstrapSerializer(serializers.Serializer):
     """Top-level SPA bootstrap payload."""
 
     principal = BootstrapPrincipalSerializer()
     permissions = BootstrapPermissionsSerializer()
     modes = BootstrapModesSerializer()
-    feature_flags = BootstrapFeatureFlagsSerializer()
 
 
 def _principal_from_token(token: ApiToken) -> tuple[dict[str, object], bool]:
@@ -196,13 +173,5 @@ class BootstrapView(APIView):
                 "can_delete_users": bool(session_user is not None and session_user.has_perm("auth.delete_user")),
             },
             "modes": _modes_for_user(session_user),
-            "feature_flags": {
-                "platform_spa": bool(getattr(settings, "PLATFORM_SPA_ENABLED", False)),
-                "mission_control_spa": bool(getattr(settings, "MISSION_CONTROL_SPA_ENABLED", False)),
-                "scenario_editor_spa": bool(getattr(settings, "SCENARIO_EDITOR_SPA_ENABLED", False)),
-                "ctf_workspace_spa": bool(getattr(settings, "CTF_WORKSPACE_SPA_ENABLED", False)),
-                "raes_native_provisioning": bool(getattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False)),
-                "administer_spa": bool(getattr(settings, "ADMINISTER_SPA_ENABLED", False)),
-            },
         }
         return Response(BootstrapSerializer(payload).data)

@@ -1,11 +1,4 @@
-"""Workspace scope binding on the RAES-native launch path (ADR-046-R3, #1325).
-
-The cyberscript launch path is covered by ``test_range_workspace_binding``. The
-RAES path is a second, independent way a range comes into existence, so it gets
-its own coverage: a range created here must be scoped exactly like one created
-through the cyberscript path, or RAES launches would quietly produce unbound
-ranges.
-"""
+"""Workspace scope binding on the canonical RAES launch path (ADR-046-R3, #1325)."""
 
 from __future__ import annotations
 
@@ -25,13 +18,6 @@ def user(django_user_model):
     return django_user_model.objects.create(username="raes-ws-launcher")
 
 
-@pytest.fixture
-def native_on(monkeypatch):
-    from django.conf import settings
-
-    monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", True)
-
-
 def _make_source(user, digest, scenario_id="raes-ws"):
     return RaesPackageSource.objects.create(
         scenario_id=scenario_id,
@@ -47,7 +33,7 @@ def _make_source(user, digest, scenario_id="raes-ws"):
 
 
 @pytest.mark.django_db
-def test_raes_launch_binds_cms_rows_and_carries_the_scope_to_engine(user, native_on, make_pack, tmp_path, monkeypatch):
+def test_raes_launch_binds_cms_rows_and_carries_the_scope_to_engine(user, make_pack, tmp_path, monkeypatch):
     """The scope reaches the engine seam as a trusted argument, like backend_admission."""
     from django.conf import settings
 

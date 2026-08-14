@@ -830,7 +830,7 @@
     "/api/v1/cms/catalog/": {
       "get": {
         "operationId": "cms_catalog_list",
-        "description": "Return all catalog entries as read-only presentation DTOs.",
+        "description": "List the canonical RAES-backed catalog projection.",
         "tags": [
           "cms"
         ],
@@ -885,7 +885,7 @@
     "/api/v1/cms/catalog/{scenario_id}/": {
       "get": {
         "operationId": "cms_catalog_retrieve",
-        "description": "Return one catalog entry's read-only presentation DTO.",
+        "description": "Return one canonical RAES-backed catalog projection.",
         "parameters": [
           {
             "in": "path",
@@ -947,7 +947,7 @@
     "/api/v1/cms/catalog/packs/": {
       "post": {
         "operationId": "cms_catalog_packs_create",
-        "description": "Validate and register a pack, returning a bounded 201 summary.",
+        "description": "Register an untrusted pack through the uniform ingestion service.",
         "tags": [
           "cms"
         ],
@@ -1232,82 +1232,10 @@
         ]
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/": {
-      "post": {
-        "operationId": "cms_scenario_editor_scenarios_create",
-        "description": "Create a custom scenario through the scenario-editor service layer.",
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioCreate"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioCreate"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioCreated"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
+    "/api/v1/cms/scenarios/{scenario_id}/": {
       "get": {
-        "operationId": "cms_scenario_editor_scenarios_retrieve",
-        "description": "Return full structural detail (or a read-only RAES projection).",
+        "operationId": "cms_scenarios_retrieve",
+        "description": "Return a read-only RAES scenario detail projection.",
         "parameters": [
           {
             "in": "path",
@@ -1364,288 +1292,12 @@
         "x-required-scopes": [
           "cms:authoring:read"
         ]
-      },
+      }
+    },
+    "/api/v1/cms/scenarios/{scenario_id}/metadata/": {
       "patch": {
-        "operationId": "cms_scenario_editor_scenarios_partial_update",
-        "description": "Replace a custom scenario's definition through the service layer.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "scenario_id",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedScenarioUpdate"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedScenarioUpdate"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedScenarioUpdate"
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioDetail"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      },
-      "delete": {
-        "operationId": "cms_scenario_editor_scenarios_destroy",
-        "description": "Soft-delete a custom scenario through the service layer.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "scenario_id",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No response body"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/": {
-      "post": {
-        "operationId": "cms_scenario_editor_scenarios_clone_create",
-        "description": "Clone the source scenario through the service layer.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "scenario_id",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioClone"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioClone"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioClone"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioCreated"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/": {
-      "get": {
-        "operationId": "cms_scenario_editor_scenarios_export_retrieve",
-        "description": "Return the scenario's YAML rendering (metadata overlay stripped).",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "scenario_id",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioExport"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:read"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/": {
-      "patch": {
-        "operationId": "cms_scenario_editor_scenarios_metadata_partial_update",
-        "description": "Apply an explicit desired-state metadata update through the service layer.",
+        "operationId": "cms_scenarios_metadata_partial_update",
+        "description": "Update the availability/audience overlay for a RAES package source.",
         "parameters": [
           {
             "in": "path",
@@ -1723,10 +1375,10 @@
         ]
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/": {
+    "/api/v1/cms/scenarios/{scenario_id}/realizability/": {
       "get": {
-        "operationId": "cms_scenario_editor_scenarios_realizability_retrieve",
-        "description": "Return the bounded realizability assessment, or 404 for an unknown scenario.\n\nA non-realizable or indeterminate result is a successful response with\ngaps -- the author needs to read them. Only an unknown scenario is an\nerror.",
+        "operationId": "cms_scenarios_realizability_retrieve",
+        "description": "Return the backend realizability assessment for one RAES source.",
         "parameters": [
           {
             "in": "path",
@@ -1754,150 +1406,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScenarioRealizability"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:read"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
-      "post": {
-        "operationId": "cms_scenario_editor_scenarios_from_yaml_create",
-        "description": "Create a custom scenario through the scenario-editor service layer.",
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioCreated"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/validate-yaml/": {
-      "post": {
-        "operationId": "cms_scenario_editor_validate_yaml_create",
-        "description": "Return a domain validation result for YAML editor callers.",
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/YAMLValidationResult"
                 }
               }
             },
@@ -13270,48 +12778,12 @@
           },
           "modes": {
             "$ref": "#/components/schemas/BootstrapModes"
-          },
-          "feature_flags": {
-            "$ref": "#/components/schemas/BootstrapFeatureFlags"
           }
         },
         "required": [
-          "feature_flags",
           "modes",
           "permissions",
           "principal"
-        ]
-      },
-      "BootstrapFeatureFlags": {
-        "type": "object",
-        "description": "Server-owned feature flags surfaced to the SPA (no secret values).",
-        "properties": {
-          "platform_spa": {
-            "type": "boolean"
-          },
-          "mission_control_spa": {
-            "type": "boolean"
-          },
-          "scenario_editor_spa": {
-            "type": "boolean"
-          },
-          "ctf_workspace_spa": {
-            "type": "boolean"
-          },
-          "raes_native_provisioning": {
-            "type": "boolean"
-          },
-          "administer_spa": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "administer_spa",
-          "ctf_workspace_spa",
-          "mission_control_spa",
-          "platform_spa",
-          "raes_native_provisioning",
-          "scenario_editor_spa"
         ]
       },
       "BootstrapModes": {
@@ -13401,7 +12873,7 @@
       },
       "CatalogEntry": {
         "type": "object",
-        "description": "Read-only catalog entry projection for the CMS catalog API.\n\nSerializes the presentation DTO from ``cms.scenarios.catalog_presentation``.\n``raes`` is present only for RAES package-backed entries; legacy YAML/DB\nentries serialize it as ``null``.",
+        "description": "Read-only catalog entry projection for the CMS catalog API.\n\nSerializes the presentation DTO from ``cms.scenarios.catalog_presentation``.\nEvery emitted entry is backed by a RAES package source.",
         "properties": {
           "id": {
             "type": "string",
@@ -13925,14 +13397,6 @@
           "role"
         ]
       },
-      "ChannelEnum": {
-        "enum": [
-          "ssh",
-          "rdp"
-        ],
-        "type": "string",
-        "description": "* `ssh` - ssh\n* `rdp` - rdp"
-      },
       "CleanupControlRequest": {
         "type": "object",
         "description": "Defer or cancel the pending automated range cleanup (CTF-1003).",
@@ -14132,22 +13596,6 @@
           "raes_projection",
           "range",
           "vpn_profile_available"
-        ]
-      },
-      "DCConfig": {
-        "type": "object",
-        "description": "Domain-controller configuration, mirroring ``schema.DCConfig``.",
-        "properties": {
-          "domain_name": {
-            "type": "string"
-          },
-          "netbios_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "domain_name",
-          "netbios_name"
         ]
       },
       "DashboardEvent": {
@@ -15118,7 +14566,7 @@
             "$ref": "#/components/schemas/InstancePresentationRoleEnum"
           },
           "os_type": {
-            "$ref": "#/components/schemas/InstancePresentationOsTypeEnum"
+            "$ref": "#/components/schemas/OsTypeEnum"
           },
           "join_domain": {
             "type": "boolean"
@@ -15141,16 +14589,6 @@
           "role",
           "uuid"
         ]
-      },
-      "InstancePresentationOsTypeEnum": {
-        "enum": [
-          "kali",
-          "ubuntu",
-          "windows",
-          "panos"
-        ],
-        "type": "string",
-        "description": "* `kali` - kali\n* `ubuntu` - ubuntu\n* `windows` - windows\n* `panos` - panos"
       },
       "InstancePresentationRoleEnum": {
         "enum": [
@@ -15829,6 +15267,16 @@
           "rankings",
           "team_mode"
         ]
+      },
+      "OsTypeEnum": {
+        "enum": [
+          "kali",
+          "ubuntu",
+          "windows",
+          "panos"
+        ],
+        "type": "string",
+        "description": "* `kali` - kali\n* `ubuntu` - ubuntu\n* `windows` - windows\n* `panos` - panos"
       },
       "PackRegistration": {
         "type": "object",
@@ -17226,40 +16674,6 @@
           }
         }
       },
-      "PatchedScenarioUpdate": {
-        "type": "object",
-        "description": "Structured update request: full definition replacement (no identity change).",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "ngfw": {
-            "type": "boolean",
-            "default": false
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioInstance"
-            }
-          },
-          "subnets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioSubnet"
-            }
-          },
-          "participant_access": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioParticipantAccess"
-            }
-          }
-        }
-      },
       "Prerequisite": {
         "type": "object",
         "description": "List projection of one challenge prerequisite.",
@@ -18473,86 +17887,9 @@
         "type": "string",
         "description": "* `pending` - pending\n* `provisioning` - provisioning\n* `ready` - ready\n* `pausing` - pausing\n* `paused` - paused\n* `resuming` - resuming\n* `destroying` - destroying\n* `destroyed` - destroyed\n* `failed` - failed"
       },
-      "ScenarioClone": {
-        "type": "object",
-        "description": "Clone request body.",
-        "properties": {
-          "new_scenario_id": {
-            "type": "string"
-          },
-          "new_name": {
-            "type": "string",
-            "default": ""
-          }
-        },
-        "required": [
-          "new_scenario_id"
-        ]
-      },
-      "ScenarioCreate": {
-        "type": "object",
-        "description": "Structured create request: identity plus definition.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "ngfw": {
-            "type": "boolean",
-            "default": false
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioInstance"
-            }
-          },
-          "subnets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioSubnet"
-            }
-          },
-          "participant_access": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioParticipantAccess"
-            }
-          },
-          "scenario_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "description",
-          "instances",
-          "name",
-          "scenario_id"
-        ]
-      },
-      "ScenarioCreated": {
-        "type": "object",
-        "description": "Response for a create/clone: the new scenario's identity.",
-        "properties": {
-          "scenario_id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "name": {
-            "type": "string",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "name",
-          "scenario_id"
-        ]
-      },
       "ScenarioDetail": {
         "type": "object",
-        "description": "Full scenario detail with source-capability flags for the editor.\n\n``source`` classifies the entry (``builtin`` / ``custom`` / ``raes`` /\n``ctf``) and the capability booleans tell the SPA which actions to offer.\n``instances`` / ``subnets`` are populated for structural (demo) scenarios;\n``raes`` carries the read-only provenance block for RAES entries.",
+        "description": "Read-only RAES package identity and availability for the SPA.",
         "properties": {
           "id": {
             "type": "string",
@@ -18562,20 +17899,12 @@
             "type": "string",
             "readOnly": true
           },
-          "description": {
-            "type": "string",
-            "readOnly": true
-          },
           "scenario_type": {
             "type": "string",
             "readOnly": true
           },
           "source": {
             "type": "string",
-            "readOnly": true
-          },
-          "is_default": {
-            "type": "boolean",
             "readOnly": true
           },
           "enabled": {
@@ -18590,43 +17919,6 @@
             "type": "boolean",
             "readOnly": true
           },
-          "editable": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "deletable": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "exportable": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "ngfw": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioInstance"
-            },
-            "readOnly": true
-          },
-          "subnets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioSubnet"
-            },
-            "readOnly": true
-          },
-          "participant_access": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioParticipantAccess"
-            },
-            "readOnly": true
-          },
           "raes": {
             "allOf": [
               {
@@ -18638,109 +17930,15 @@
           }
         },
         "required": [
-          "deletable",
-          "description",
-          "editable",
           "enabled",
-          "exportable",
           "id",
-          "instances",
-          "is_default",
           "launchable",
           "name",
-          "ngfw",
-          "participant_access",
           "raes",
           "scenario_type",
           "source",
-          "staff_only",
-          "subnets"
+          "staff_only"
         ]
-      },
-      "ScenarioExport": {
-        "type": "object",
-        "description": "Response for an export: the scenario id and its YAML rendering.",
-        "properties": {
-          "scenario_id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "yaml": {
-            "type": "string",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "scenario_id",
-          "yaml"
-        ]
-      },
-      "ScenarioInstance": {
-        "type": "object",
-        "description": "A single scenario instance, mirroring ``schema.InstanceConfig``.\n\nKept field-complete against the Pydantic schema so a round-trip through the\neditor never silently drops instance fields (the legacy form hardcoded a\npartial list). The service layer re-validates the full definition.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "role": {
-            "$ref": "#/components/schemas/ScenarioInstanceRoleEnum"
-          },
-          "os_type": {
-            "$ref": "#/components/schemas/ScenarioInstanceOsTypeEnum"
-          },
-          "xdr_agent": {
-            "type": "boolean",
-            "default": false
-          },
-          "domain_controller": {
-            "type": "boolean",
-            "default": false
-          },
-          "join_domain": {
-            "type": "boolean",
-            "default": false
-          },
-          "dc_config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/DCConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "ami_key": {
-            "type": "string",
-            "nullable": true
-          },
-          "instance_type": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "required": [
-          "name",
-          "os_type",
-          "role"
-        ]
-      },
-      "ScenarioInstanceOsTypeEnum": {
-        "enum": [
-          "kali",
-          "windows",
-          "ubuntu",
-          "from_agent"
-        ],
-        "type": "string",
-        "description": "* `kali` - kali\n* `windows` - windows\n* `ubuntu` - ubuntu\n* `from_agent` - from_agent"
-      },
-      "ScenarioInstanceRoleEnum": {
-        "enum": [
-          "attacker",
-          "victim",
-          "dc"
-        ],
-        "type": "string",
-        "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc"
       },
       "ScenarioListItem": {
         "type": "object",
@@ -18837,22 +18035,6 @@
           "staff_only"
         ]
       },
-      "ScenarioParticipantAccess": {
-        "type": "object",
-        "description": "One participant-facing channel, mirroring ``ParticipantAccessConfig``.",
-        "properties": {
-          "target": {
-            "type": "string"
-          },
-          "channel": {
-            "$ref": "#/components/schemas/ChannelEnum"
-          }
-        },
-        "required": [
-          "channel",
-          "target"
-        ]
-      },
       "ScenarioRealizability": {
         "type": "object",
         "description": "Backend realizability assessment for one catalog entry (ADR-034-R3).\n\nSerializes the projection from ``cms.scenarios.realizability``. A negative\nassessment is a successful response with ``outcome`` set and ``gaps``\npopulated -- non-realizability is a domain answer, not an HTTP error.\n``indeterminate`` means the assessment could not be completed and must never\nbe rendered as realizable.",
@@ -18882,31 +18064,6 @@
           "outcome",
           "scenario_id",
           "target_id"
-        ]
-      },
-      "ScenarioSubnet": {
-        "type": "object",
-        "description": "A single scenario subnet, mirroring ``schema.SubnetConfig``.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "connected_to": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "instances",
-          "name"
         ]
       },
       "ScheduledTask": {
@@ -19753,46 +18910,6 @@
         ],
         "type": "string",
         "description": "* `owner` - Owner\n* `admin` - Admin\n* `member` - Member"
-      },
-      "YAMLContent": {
-        "type": "object",
-        "description": "Validate a YAML-content request body.",
-        "properties": {
-          "yaml_content": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "yaml_content"
-        ]
-      },
-      "YAMLValidationResult": {
-        "type": "object",
-        "description": "Response for the YAML validate endpoint.",
-        "properties": {
-          "valid": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "errors": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "readOnly": true
-          },
-          "definition": {
-            "type": "object",
-            "additionalProperties": {},
-            "readOnly": true,
-            "nullable": true
-          }
-        },
-        "required": [
-          "definition",
-          "errors",
-          "valid"
-        ]
       },
       "_NamedRef": {
         "type": "object",

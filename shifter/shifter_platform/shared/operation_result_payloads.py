@@ -21,9 +21,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from cyberscript.enums import ResourceStatus
-from cyberscript.exceptions import ValidationError as OperationResultError
-
+from shared.enums import ResourceStatus
+from shared.exceptions import ValidationError as OperationResultError
 from shared.operation_result_members import _parse_raes_member
 from shared.raes.status import RAES_OPERATION_STATES, RAES_STATE_SUCCEEDED
 

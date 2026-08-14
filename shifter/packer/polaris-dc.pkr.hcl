@@ -2,7 +2,7 @@
 // Polaris (NORTHSTORM) scenario. Promotion runs at bake time so a range boots an
 // already-promoted BOREAS.LOCAL DC instead of paying ~15-20 min of per-range
 // promotion. This is the amazon-ebs twin of shifter/packer/gcp/dc-prebaked.pkr.hcl
-// and reuses the same cloud-neutral scripts (base.ps1, services.ps1, a2_setup.ps1,
+// and reuses the same cloud-neutral scripts (base.ps1, services.ps1, Polaris content seed,
 // promote-bake.ps1); the only AWS-specific finalize is dc-content-seed.ps1 (no
 // GDC UEFI-fallback staging).
 //

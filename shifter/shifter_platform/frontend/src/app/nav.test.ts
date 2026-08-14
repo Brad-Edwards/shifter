@@ -12,7 +12,6 @@ function bootstrap(overrides: Partial<Bootstrap> = {}): Bootstrap {
     principal: { ...STAFF_BOOTSTRAP.principal, ...(overrides.principal ?? {}) },
     permissions: { ...STAFF_BOOTSTRAP.permissions, ...(overrides.permissions ?? {}) },
     modes: { ...STAFF_BOOTSTRAP.modes, ...(overrides.modes ?? {}) },
-    feature_flags: { ...STAFF_BOOTSTRAP.feature_flags, ...(overrides.feature_flags ?? {}) },
   };
 }
 
@@ -53,22 +52,6 @@ describe("isNavEntryVisible", () => {
       principal: { ...STAFF_BOOTSTRAP.principal, is_staff: false },
     });
     expect(isNavEntryVisible(STAFF_ENTRY, bs)).toBe(false);
-  });
-
-  it("hides an entry when its feature flag is off", () => {
-    const gated: NavEntry = { ...STAFF_ENTRY, featureFlag: "administer_spa" };
-    const bs = bootstrap({
-      feature_flags: {
-        ...STAFF_BOOTSTRAP.feature_flags,
-        platform_spa: true,
-        mission_control_spa: true,
-        scenario_editor_spa: false,
-        ctf_workspace_spa: false,
-        raes_native_provisioning: false,
-        administer_spa: false,
-      },
-    });
-    expect(isNavEntryVisible(gated, bs)).toBe(false);
   });
 });
 
@@ -113,48 +96,28 @@ describe("visibleNavGroups", () => {
     expect(assets?.children?.map((c) => c.surface)).toEqual(["Agents", "NGFW", "Credentials"]);
   });
 
-  it("exposes CTF participant entries as internal, flag-gated SPA routes (#1372)", () => {
+  it("exposes CTF participant entries as internal SPA routes (#1372)", () => {
     const bs = bootstrap({ permissions: { ...STAFF_BOOTSTRAP.permissions, is_ctf_participant: true } });
     const [participate] = visibleNavGroups("participant", bs);
     const eventHome = participate.entries.find((e) => e.surface === "Event Home");
     expect(eventHome?.external).toBeFalsy();
-    expect(eventHome?.featureFlag).toBe("ctf_workspace_spa");
     expect(eventHome?.routePath).toBe("/ctf/");
     expect(participate.entries.map((entry) => entry.surface)).not.toContain("Terminal");
-    expect(participate.entries.every((e) => e.featureFlag === "ctf_workspace_spa" && !e.external)).toBe(true);
+    expect(participate.entries.every((e) => !e.external)).toBe(true);
   });
 
-  it("hides the Participate group until the CTF workspace flag flips on (#1372)", () => {
-    const bs = bootstrap({
-      permissions: { ...STAFF_BOOTSTRAP.permissions, is_ctf_participant: true },
-      feature_flags: { ...STAFF_BOOTSTRAP.feature_flags, ctf_workspace_spa: false },
-    });
-    expect(visibleNavGroups("participant", bs)).toEqual([]);
-  });
-
-  it("shows the Organization console entry for staff with administer_spa on (#1938)", () => {
+  it("shows the Organization console entry for staff (#1938)", () => {
     const administer = visibleNavGroups("operator", bootstrap()).find((g) => g.group === "Administer");
     const org = administer?.entries.find((e) => e.surface === "Organization");
     expect(org?.routePath).toBe("/administer/organization");
     expect(org?.permissionPolicy).toBe("staff");
-    expect(org?.featureFlag).toBe("administer_spa");
     expect(org?.external).toBeFalsy();
   });
 
-  it("hides the Organization console entry when administer_spa is off (#1938)", () => {
-    const bs = bootstrap({ feature_flags: { ...STAFF_BOOTSTRAP.feature_flags, administer_spa: false } });
-    const administer = visibleNavGroups("operator", bs).find((g) => g.group === "Administer");
-    expect(administer?.entries.some((e) => e.surface === "Organization")).toBeFalsy();
-  });
-
-  it("keeps the Django Admin escape hatch present and external in every rollout state (#1938)", () => {
-    // administer_spa OFF: the SPA Administer entries drop, but the Django admin
-    // escape hatch must remain reachable from the sidebar.
-    const bs = bootstrap({ feature_flags: { ...STAFF_BOOTSTRAP.feature_flags, administer_spa: false } });
-    const administer = visibleNavGroups("operator", bs).find((g) => g.group === "Administer");
+  it("keeps the Django Admin escape hatch present and external (#1938)", () => {
+    const administer = visibleNavGroups("operator", bootstrap()).find((g) => g.group === "Administer");
     const djangoAdmin = administer?.entries.find((e) => e.surface === "Django Admin");
     expect(djangoAdmin?.external).toBe(true);
     expect(djangoAdmin?.routePath).toBe("/admin/");
-    expect(djangoAdmin?.featureFlag).toBeUndefined();
   });
 });

@@ -1,14 +1,8 @@
-"""Scenario image projection for capacity pre-bake planning (PLAT-201, #680).
+"""RAES scenario image projection for capacity pre-bake planning (PLAT-201).
 
-CMS owns scenario hydration, so CMS is where a scenario is turned into the
-bounded image identities one range needs. The Engine consumes this projection
-rather than re-parsing scenario content or building a parallel AMI mapping.
-
-Two scenario shapes are supported because the platform has two: legacy
-CyberScript templates carry ``instances``, and CTF templates carry ``assets``.
-The CTF ``scope`` field is load-bearing here -- an asset declared ``shared``
-exists once for the whole event, so scaling it by concurrent ranges would
-overstate pre-bake demand by roughly the size of the cohort.
+CMS resolves the digest-bound package source and projects only RAES VM image
+identities. The Engine consumes this bounded projection rather than parsing SDL
+or maintaining a second image model.
 
 Only identity and counts cross this boundary: never authored services, flags,
 data seeds, domain configuration, or any other scenario payload. A scenario
@@ -20,12 +14,16 @@ than a fabricated one -- consistent with the rest of the capacity layer, where
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from cms.scenarios.registry import load_scenario_template as load_scenario
+from django.conf import settings
+
+from cms.models import RaesPackageSource
+from cms.scenarios.pack_validation import verify_pack_digest
 from shared.capacity import ImageCount
+from shared.raes.package_loader import load_pack_scenario, resolve_pack_root
 
 logger = logging.getLogger(__name__)
 
@@ -70,63 +68,22 @@ def project_scenario_images(scenario_id: str) -> ScenarioImageProjection:
     rather than to a wrong pre-bake number.
     """
     try:
-        template = load_scenario(scenario_id)
+        source = RaesPackageSource.objects.get(scenario_id=scenario_id)
+        pack_root = resolve_pack_root(source.package_ref, package_root=Path(settings.RAES_PACKAGE_ROOT))
+        if not verify_pack_digest(pack_root, source.package_digest):
+            raise ValueError("pack digest mismatch")
+        scenario = load_pack_scenario(pack_root)
     except Exception:
         logger.warning("capacity: could not load scenario for image projection")
         return ScenarioImageProjection()
 
-    assets = getattr(template, "assets", None)
-    instances = getattr(template, "instances", None)
-    if assets:
-        projection = _project_ctf_assets(assets)
-    elif instances:
-        projection = _project_legacy_instances(instances)
-    else:
-        logger.warning("capacity: scenario carried no recognizable node shape for image projection")
-        projection = ScenarioImageProjection()
-    return projection
-
-
-def _project_legacy_instances(instances: Iterable[object]) -> ScenarioImageProjection:
-    """Project legacy CyberScript instances; every instance is per-range.
-
-    A custom ``ami_key`` is a distinct image to pre-bake, so it becomes the
-    image identity in place of the OS default.
-    """
     tally: dict[tuple[str, str, str], int] = {}
-    for instance in instances:
-        os_type = str(getattr(instance, "os_type", "") or "")
-        ami_key = str(getattr(instance, "ami_key", "") or "")
-        source_name = ami_key or os_type
-        if not source_name:
+    for node in scenario.nodes.values():
+        if str(node.type.value) != "vm" or node.source is None:
             continue
-        key = (source_name, "", os_type)
+        key = (node.source.name, node.source.version, str(node.os.value) if node.os is not None else "")
         tally[key] = tally.get(key, 0) + 1
-
     return ScenarioImageProjection(per_range=_to_counts(tally), resolved=bool(tally))
-
-
-def _project_ctf_assets(assets: Iterable[object]) -> ScenarioImageProjection:
-    """Project CTF assets, splitting per-participant from event-shared."""
-    per_range: dict[tuple[str, str, str], int] = {}
-    shared: dict[tuple[str, str, str], int] = {}
-
-    for asset in assets:
-        os_type = str(getattr(asset, "os_type", "") or "")
-        image = str(getattr(asset, "image", "") or "")
-        source_name = image or os_type
-        if not source_name:
-            continue
-        key = (source_name, "", os_type)
-        bucket = shared if str(getattr(asset, "scope", "per_participant")) == "shared" else per_range
-        bucket[key] = bucket.get(key, 0) + 1
-
-    resolved = bool(per_range or shared)
-    return ScenarioImageProjection(
-        per_range=_to_counts(per_range),
-        shared=_to_counts(shared),
-        resolved=resolved,
-    )
 
 
 def _to_counts(tally: dict[tuple[str, str, str], int]) -> tuple[ImageCount, ...]:

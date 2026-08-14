@@ -29,7 +29,7 @@ _GCE = "gce"
 
 
 def _url(scenario_id: str) -> str:
-    return f"/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/"
+    return f"/api/v1/cms/scenarios/{scenario_id}/realizability/"
 
 
 @pytest.fixture

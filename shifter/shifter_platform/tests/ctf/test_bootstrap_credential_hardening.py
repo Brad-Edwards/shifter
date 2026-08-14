@@ -129,7 +129,7 @@ def test_detail_view_never_retrieves_existing_credential(
     assert response.status_code == 200
     assert TEST_CTF_BOOTSTRAP_PASSWORD not in body
     assert "Reveal" not in body
-    assert "Generate new password" in body
+    assert 'id="root"' in body
 
 
 def test_resend_invite_does_not_mutate_password(

@@ -1,9 +1,7 @@
 """Workspace scope resolution for the CMS launch boundary (#1325, ADR-046-R3).
 
-One place decides which workspace a launch belongs to. Both launch paths -- the
-cyberscript ``create_range`` and the RAES-native ``create_raes_native_range`` --
-call this, so scope is never resolved in a view, a serializer, or the
-provisioner.
+One place decides which workspace a launch belongs to. The RAES launch boundary
+calls this so scope is never resolved in a view, serializer, or provisioner.
 """
 
 from __future__ import annotations
@@ -45,8 +43,7 @@ def resolve_launch_workspace(user: User, workspace_uuid: str | uuid.UUID | None 
     ``workspace_id`` is only ever produced by the workspaces service, so an HTTP
     caller cannot select a workspace it may not see (ADR-046-R9).
 
-    Both launch families (cyberscript ``create_range`` and RAES-native
-    ``create_raes_native_range``) call this, so scope is never resolved in a view,
+    The RAES launch boundary calls this, so scope is never resolved in a view,
     serializer, provisioner, or CTF bridge. The returned scalar is reauthorized
     under the workspace mutex at reservation time by
     :func:`reauthorize_launch_workspace_locked`.

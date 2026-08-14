@@ -344,11 +344,11 @@ class TestParticipantManagementApi:
 
 class TestScoreboardApi:
     def test_scoreboard_get(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        resp = _json(authenticated_organizer_client, "get", "ctf:api_scoreboard", kwargs={"event_id": ctf_event.id})
+        resp = _json(authenticated_organizer_client, "get", "api_scoreboard", kwargs={"event_id": ctf_event.id})
         assert resp.status_code == 200
 
     def test_scoreboard_not_found(self, authenticated_organizer_client: Client):
-        resp = _json(authenticated_organizer_client, "get", "ctf:api_scoreboard", kwargs={"event_id": uuid4()})
+        resp = _json(authenticated_organizer_client, "get", "api_scoreboard", kwargs={"event_id": uuid4()})
         assert resp.status_code == 404
 
     def test_timeline_get(self, authenticated_organizer_client: Client, ctf_participant: CTFParticipant):
@@ -562,141 +562,3 @@ class TestRangeApi:
         assert resp.status_code == 200
         assert resp.json()["sent"] == 1
         assert messages[0].to == ["invitee@test.com"]
-
-
-class TestAdminViewFlows:
-    def test_force_delete_get(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        resp = authenticated_organizer_client.get(
-            reverse("ctf:admin_event_force_delete", kwargs={"event_id": ctf_event.id})
-        )
-        assert resp.status_code == 200
-
-    def test_force_delete_post_mismatch(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        resp = authenticated_organizer_client.post(
-            reverse("ctf:admin_event_force_delete", kwargs={"event_id": ctf_event.id}),
-            data={"confirmation_name": "wrong"},
-        )
-        assert resp.status_code == 200
-
-    def test_challenge_create_get(self, authenticated_organizer_client: Client, ctf_event_draft: CTFEvent):
-        resp = authenticated_organizer_client.get(
-            reverse("ctf:admin_challenge_create", kwargs={"event_id": ctf_event_draft.id})
-        )
-        assert resp.status_code == 200
-
-    def test_challenge_create_post_invalid(self, authenticated_organizer_client: Client, ctf_event_draft: CTFEvent):
-        resp = authenticated_organizer_client.post(
-            reverse("ctf:admin_challenge_create", kwargs={"event_id": ctf_event_draft.id}),
-            data={"name": ""},
-        )
-        assert resp.status_code == 200
-
-    def test_challenge_edit_get(self, authenticated_organizer_client: Client, ctf_challenge: CTFChallenge):
-        resp = authenticated_organizer_client.get(
-            reverse("ctf:admin_challenge_edit", kwargs={"challenge_id": ctf_challenge.id})
-        )
-        # The edit page for an existing challenge must render (200), not redirect.
-        assert resp.status_code == 200
-
-    def test_notification_create_get(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        resp = authenticated_organizer_client.get(
-            reverse("ctf:admin_notification_create", kwargs={"event_id": ctf_event.id})
-        )
-        assert resp.status_code == 200
-
-    def test_notification_create_post_missing(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        resp = authenticated_organizer_client.post(
-            reverse("ctf:admin_notification_create", kwargs={"event_id": ctf_event.id}),
-            data={"subject": "", "body": ""},
-        )
-        assert resp.status_code == 200
-
-    def test_file_upload_no_file(self, authenticated_organizer_client: Client, ctf_challenge: CTFChallenge):
-        resp = authenticated_organizer_client.post(
-            reverse("ctf:admin_challenge_file_upload", kwargs={"challenge_id": ctf_challenge.id}),
-            data={},
-        )
-        assert resp.status_code == 302
-
-    def test_notification_create_post_send_now(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        with patch("ctf.services.notification.send_announcement", return_value=MagicMock(id=uuid4())):
-            resp = authenticated_organizer_client.post(
-                reverse("ctf:admin_notification_create", kwargs={"event_id": ctf_event.id}),
-                data={"subject": "Hi", "body": "There", "action": "send_now"},
-            )
-        assert resp.status_code == 302
-
-    def test_notification_create_post_draft(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        resp = authenticated_organizer_client.post(
-            reverse("ctf:admin_notification_create", kwargs={"event_id": ctf_event.id}),
-            data={"subject": "Hi", "body": "There", "action": "draft"},
-        )
-        assert resp.status_code == 302
-
-    def test_notification_create_post_schedule_missing_time(
-        self, authenticated_organizer_client: Client, ctf_event: CTFEvent
-    ):
-        resp = authenticated_organizer_client.post(
-            reverse("ctf:admin_notification_create", kwargs={"event_id": ctf_event.id}),
-            data={"subject": "Hi", "body": "There", "action": "schedule", "scheduled_at": ""},
-        )
-        assert resp.status_code == 200
-
-    def test_admin_file_upload_with_file(self, authenticated_organizer_client: Client, ctf_challenge: CTFChallenge):
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
-        upload = SimpleUploadedFile("c.txt", b"data", content_type="text/plain")
-        with patch("ctf.services.attachment.add_challenge_file", return_value=MagicMock()):
-            resp = authenticated_organizer_client.post(
-                reverse("ctf:admin_challenge_file_upload", kwargs={"challenge_id": ctf_challenge.id}),
-                data={"file": upload, "display_name": "c"},
-            )
-        assert resp.status_code == 302
-
-
-class TestAdminChallengeFormPosts:
-    def _form_data(self, **overrides):
-        from ctf.enums import ChallengeCategory, ChallengeDifficulty
-
-        data = {
-            "name": "Form Challenge",
-            "description": "A challenge created via the admin form",
-            "category": ChallengeCategory.WEB.value,
-            "points": 100,
-            "difficulty": ChallengeDifficulty.EASY.value,
-            "flag": "FLAG{form}",
-            "flag_format": "FLAG{...}",
-            "max_attempts": 0,
-            "order": 0,
-        }
-        data.update(overrides)
-        return data
-
-    def test_create_post_valid(self, authenticated_organizer_client: Client, ctf_event_draft: CTFEvent):
-        resp = authenticated_organizer_client.post(
-            reverse("ctf:admin_challenge_create", kwargs={"event_id": ctf_event_draft.id}),
-            data=self._form_data(),
-        )
-        # _form_data() is complete and valid, so the create must redirect (302);
-        # a 200 here would mean the form re-rendered with errors.
-        assert resp.status_code == 302
-
-    def test_edit_post_valid(self, authenticated_organizer_client: Client, ctf_event_draft: CTFEvent):
-        from ctf.enums import ChallengeCategory, ChallengeDifficulty
-        from ctf.models import CTFChallenge
-
-        challenge = CTFChallenge.objects.create(
-            event=ctf_event_draft,
-            name="Editable",
-            description="d",
-            category=ChallengeCategory.WEB.value,
-            points=100,
-            difficulty=ChallengeDifficulty.EASY.value,
-            flag_format="FLAG{...}",
-        )
-        resp = authenticated_organizer_client.post(
-            reverse("ctf:admin_challenge_edit", kwargs={"challenge_id": challenge.id}),
-            data=self._form_data(name="Edited"),
-        )
-        # _form_data() is complete and valid, so the edit must redirect (302).
-        assert resp.status_code == 302

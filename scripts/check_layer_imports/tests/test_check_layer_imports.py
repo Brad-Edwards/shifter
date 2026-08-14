@@ -294,7 +294,7 @@ class TestCyberscriptImportPattern:
 
 
 class TestCyberscriptViolations:
-    """Tests for the cyberscript-only-via-shared rule."""
+    """Tests for the retired-package import prohibition."""
 
     def test_cms_direct_cyberscript_import_is_violation(self, tmp_path):
         cms_path = tmp_path / "cms" / "experiments"
@@ -302,10 +302,10 @@ class TestCyberscriptViolations:
         (cms_path / "orchestrator.py").write_text("from cyberscript.script_context import ScriptExecutionContext\n")
         imports = get_cyberscript_imports(cms_path.parent)
         assert imports == {"cyberscript.script_context"}
-        violations = compute_cyberscript_violations("cms", imports)
+        violations = compute_cyberscript_violations(imports)
         assert violations == ["cyberscript.script_context"]
 
-    def test_shared_may_import_cyberscript(self, tmp_path):
+    def test_shared_import_is_also_a_violation(self, tmp_path):
         shared_path = tmp_path / "shared"
         shared_path.mkdir()
         (shared_path / "script_context.py").write_text(
@@ -313,8 +313,8 @@ class TestCyberscriptViolations:
         )
         imports = get_cyberscript_imports(shared_path)
         assert "cyberscript.script_context" in imports
-        violations = compute_cyberscript_violations("shared", imports)
-        assert violations == []
+        violations = compute_cyberscript_violations(imports)
+        assert violations == ["cyberscript.script_context"]
 
 
 class TestPrivateFacadeImports:

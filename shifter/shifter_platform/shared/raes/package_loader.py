@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from raes.scenarios import ScenarioError, load_scenario
+from raes.scenarios import Scenario, ScenarioError, load_scenario
 from raes_runtime import RuntimeManager
 
 from shared.log_sanitize import safe_log_value
@@ -93,6 +93,20 @@ def resolve_pack_scenario_path(pack_root: Path) -> Path:
     if scenario_path.parent != sdl_dir.resolve() or root not in scenario_path.parents:
         raise RaesPackageError("pack SDL entry escapes the pack root")
     return scenario_path
+
+
+def load_pack_scenario(pack_root: Path) -> Scenario:
+    """Load the single contained SDL entry through the shared RAES boundary.
+
+    Consumers that need the upstream scenario projection use this seam rather
+    than importing RAES tooling into an application layer. Canonical digest
+    verification remains the caller's prerequisite.
+    """
+    scenario_path = resolve_pack_scenario_path(pack_root)
+    try:
+        return load_scenario(scenario_path)
+    except (ScenarioError, OSError) as exc:
+        raise RaesPackageError(f"failed to load RAES package: {safe_log_value(exc)}") from exc
 
 
 def _render_diagnostic(diagnostic: object) -> str:
