@@ -61,27 +61,13 @@ logic.
   value before checkout or cloud authentication; never construct a secret name
   dynamically from free-form input.
 - Validate the exact `DESTROY` confirmation before cloud authentication. Bind
-  every credentialed/mutating job to the selected `aws-*` GitHub Environment.
-  Branch protection alone gates which ref may deploy, not which actor may
-  initiate a teardown, and the `DESTROY` string proves intent, not authority.
-  The `aws-dev` and `aws-proof` Environments MUST therefore be configured with
-  two controls, both enforced by the environment binding at dispatch time and
-  both mandatory operator prerequisites before first live use (tracked in
-  #2044):
-    - **Deployment branch policy** restricted to the canonical protected branch
-      only. `workflow_dispatch` executes the caller-selected revision, so this
-      is the source-integrity gate: it blocks the credentialed job from running
-      on any non-protected ref, ensuring only trusted-revision code (workflow,
-      orchestrator, and Terraform) ever reaches the deploy role. Reviewer
-      approval authorizes a deployment but does not establish source trust.
-    - **Required reviewers** with **prevent self-review**: the actor-level
-      authorization gate (the `DESTROY` string proves intent, not authority). The teardown reuses the existing
-  `github-actions-shifter-<env>` deploy role (the same principal `deploy.yml`
-  assumes), so it adds no new IAM trust surface. ADR-004-R23 governs the
-  dedicated packer image-pipeline role, not this deploy role; hardening the
-  shared deploy role's `repo:...:*` OIDC subject to the exact protected-branch
-  and Environment subjects is separate work tracked in #1697 and applies equally
-  to `deploy.yml`.
+  every credentialed/mutating job to the selected `aws-*` GitHub Environment;
+  that binding is how the job selects the environment's OIDC deploy role and
+  secrets. The teardown reuses the existing `github-actions-shifter-<env>`
+  deploy role (the same principal `deploy.yml` assumes), so it adds no new IAM
+  trust surface. ADR-004-R23 governs the dedicated packer image-pipeline role,
+  not this deploy role; hardening the shared deploy role's `repo:...:*` OIDC
+  subject is separate work tracked in #1697 and applies equally to `deploy.yml`.
 - Run on GitHub-hosted compute outside the target account. Checkout the event
   commit (`github.sha`) with `persist-credentials: false`; keep job permissions
   to `contents: read` and `id-token: write`; pin every external action to a full

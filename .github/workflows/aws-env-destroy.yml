@@ -47,17 +47,8 @@ jobs:
     name: Destroy (${{ github.event.inputs.environment }})
     runs-on: ubuntu-latest
     # Bind the credentialed job to the selected GitHub Environment (the choice
-    # values are the GitHub Environment names). This binding is the enforcement
-    # point for two MANDATORY operator-configured controls on the aws-dev and
-    # aws-proof Environments (see docs/dev/aws-teardown-runbook.md), because
-    # neither can be expressed in workflow YAML:
-    #   1. Deployment branch policy restricted to the canonical protected branch
-    #      only. workflow_dispatch runs the caller-selected revision, so without
-    #      this a collaborator could dispatch an attacker-modified branch; the
-    #      policy blocks the credentialed job from running on any other ref, so
-    #      only trusted-revision code ever reaches the deploy role.
-    #   2. Required reviewers with "prevent self-review" — the actor-level
-    #      authorization gate (the DESTROY string proves intent, not authority).
+    # values are the GitHub Environment names); this is how the job selects the
+    # environment's OIDC deploy role and secrets, the same as deploy.yml.
     environment: ${{ github.event.inputs.environment }}
     # Backstop only: a full env destroy (RDS + NAT GW + ENIs) can be slow; this
     # is generous versus real teardown times so it never cuts off a live run.
