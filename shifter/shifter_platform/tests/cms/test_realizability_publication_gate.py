@@ -21,7 +21,7 @@ from django.conf import settings
 
 from cms.models import ScenarioMetadata
 from cms.scenario_editor._common import ScenarioEditorError
-from cms.scenario_editor.services import update_metadata
+from cms.scenario_editor._metadata import update_metadata
 from cms.scenarios.pack_validation import pack_digest
 from cms.services import PackRegistrationRequest, register_pack
 from engine.services import RaesImageMappingOptions, upsert_raes_image_mapping
@@ -139,8 +139,3 @@ class TestPublicationAllowed:
     def test_staff_only_toggle_without_enabling_is_allowed(self, staff_user, raes_pack):
         metadata = update_metadata(staff_user, "imageless", staff_only=True)
         assert metadata.staff_only is True
-
-    def test_legacy_scenario_is_unaffected_by_the_gate(self, staff_user, hydratable_scenario):
-        # Legacy entries are not_applicable; the RAES gate must not block them.
-        metadata = update_metadata(staff_user, hydratable_scenario.scenario_id, enabled=True)
-        assert metadata.enabled is True

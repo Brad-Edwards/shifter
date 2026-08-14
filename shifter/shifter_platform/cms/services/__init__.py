@@ -2,7 +2,7 @@
 
 Content and asset management for Shifter platform. The implementation is
 split across private submodules (``_common``, ``_agents``, ``_credentials``,
-``_range_queries``, ``_range_create``, ``_range_destroy``, ``_range_pause``,
+``_range_queries``, ``_raes_range_create``, ``_range_destroy``, ``_range_pause``,
 ``_range_resume``, ``_uploads``, ``_scenarios``, ``_ngfws``, ``_queries``)
 and re-exported here so callers continue to use
 ``from cms.services import X``.
@@ -36,7 +36,6 @@ from engine.services import EventCapacitySignal as EngineEventCapacitySignal
 from engine.services import admit_range_capacity as engine_admit_range_capacity
 from engine.services import assess_declared_event_capacity as engine_assess_declared_event_capacity
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
-from engine.services import create_range as engine_create_range
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
 from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_by_uuid
 from engine.services import get_openvpn_profile as engine_get_openvpn_profile
@@ -92,7 +91,6 @@ from ._range_access import (
     get_range_rdp_connection_info,
     get_range_ssh_connection_info,
 )
-from ._range_create import create_range
 from ._range_destroy import (
     cancel_range,
     cancel_range_by_request_id,
@@ -143,6 +141,9 @@ from ._uploads import (
     initiate_upload,
 )
 
+# The public product launch seam is permanently RAES-owned after #1311.
+create_range = create_range_dispatch
+
 # Cross-layer re-export preserved on cms.services so the layer-imports gate
 # (scripts/check_layer_imports/layer_imports.yaml) can continue to allow only
 # `cms.services` from mission_control / ctf rather than reaching into
@@ -189,7 +190,6 @@ __all__ = (
     "engine_admit_range_capacity",
     "engine_assess_declared_event_capacity",
     "engine_cancel_range_by_request",
-    "engine_create_range",
     "engine_destroy_range_by_request",
     "engine_get_instance_ips_by_uuid",
     "engine_get_openvpn_profile",

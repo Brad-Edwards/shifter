@@ -12,7 +12,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from django.urls import reverse
 from django.utils import timezone
 
 from ctf.enums import ChallengeCategory, ChallengeDifficulty, EventStatus
@@ -353,8 +352,10 @@ class TestChallengeSolutions:
         )
         assert "Updated solution" in updated.solution
 
-    def test_solution_visibility_by_event_status(self, client, ctf_event_draft, participant_user):
-        """Participant challenge detail shows solutions only after the event."""
+    def test_solution_visibility_by_event_status(self, ctf_event_draft, participant_user):
+        """Participant SPA projection shows solutions only after the event."""
+        from ctf.api.projections import participant_challenge_detail
+
         challenge = create_challenge(
             ctf_event_draft.id,
             {
@@ -367,7 +368,7 @@ class TestChallengeSolutions:
             },
             actor_id=ctf_event_draft.created_by_id,
         )
-        CTFParticipant.objects.create(
+        participant = CTFParticipant.objects.create(
             event=ctf_event_draft,
             user=participant_user,
             email=participant_user.email,
@@ -375,12 +376,6 @@ class TestChallengeSolutions:
             status="active",
             registered_at=timezone.now(),
         )
-        from management.services import set_active_ctf_event
-
-        set_active_ctf_event(participant_user, ctf_event_draft.pk)
-        client.force_login(participant_user)
-        url = reverse("ctf:challenge_detail", kwargs={"challenge_id": challenge.pk})
-
         for status, expected in (
             (EventStatus.DRAFT.value, False),
             (EventStatus.ACTIVE.value, False),
@@ -391,10 +386,9 @@ class TestChallengeSolutions:
             ctf_event_draft.status = status
             ctf_event_draft.save(update_fields=["status", "updated_at"])
 
-            response = client.get(url)
-
-            assert response.status_code == 200
-            assert response.context["show_solution"] is expected
+            payload = participant_challenge_detail(participant, challenge)
+            assert payload["show_solution"] is expected
+            assert payload["solution"] == ("The answer is 42." if expected else None)
 
     def test_solution_not_visible_when_empty(self, ctf_event_draft):
         """Empty solution is never shown even after event ends."""

@@ -18,9 +18,8 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from cyberscript.exceptions import ValidationError as RangeCellContractError
-from cyberscript.persisted_envelope import PAYLOAD_KEY, SPEC_SCHEMA_KEY, SPEC_VERSION, SPEC_VERSION_KEY
-
+from shared.exceptions import ValidationError as RangeCellContractError
+from shared.persisted_envelope import PAYLOAD_KEY, SPEC_SCHEMA_KEY, SPEC_VERSION, SPEC_VERSION_KEY
 from shared.remote_access import parse_openvpn_capability
 
 CONTRACT_KEY = "shifter.gcp-vm-range-cell"
@@ -133,7 +132,7 @@ def build_scenario_artifact(envelope: dict[str, object], *, expected_schema: str
         raise RangeCellContractError(f"Unsupported spec_version: {version}")
     _require_dict(source[PAYLOAD_KEY], f"{_PERSISTED_ENVELOPE_FIELD}.{PAYLOAD_KEY}")
     try:
-        from cyberscript.schemas.persistence import validate_persisted_spec
+        from shared.schemas.persistence import validate_persisted_spec
 
         validated = validate_persisted_spec(source, expected_schema)
     except (LookupError, TypeError, ValueError) as exc:

@@ -3,27 +3,24 @@
 These ``TypedDict`` schemas describe the *shape* of the plain dictionaries
 returned by the read-side ``cms.services`` entrypoints — ``list_agents``,
 ``initiate_upload``, ``list_scenarios`` / ``list_launchable_scenarios``, and
-``get_scenario`` — and consumed by Mission Control views/serializers, the CTF
-bridges, and Django templates.
+``get_scenario`` — and consumed by Mission Control and CTF APIs.
 
 They are **static typing only** (issue #317). The returned values have already
 crossed their authoritative runtime boundaries — the ORM and
 ``_assert_agent_projection_shape`` for agents, HMAC upload-token signing and
-S3 object/header inspection for uploads, and ``yaml.safe_load`` + Pydantic +
-RAES source validation for scenarios. A ``TypedDict`` annotation is not a
+S3 object/header inspection for uploads, and RAES package-source validation for
+scenarios. A ``TypedDict`` annotation is not a
 validator, an authorization check, a serializer, or a response allowlist; every
 existing runtime gate remains authoritative. See
 ``docs/architecture/typed-cms-service-projections-preflight-317.md``.
 
-This module is shared-native and stdlib-only: it must not import ``cms`` or
-CyberScript, and it does not re-model the Pydantic authoring schemas in
-``cms.scenarios.schema``. Source-specific scenario authoring content is carried
-as optional, JSON-shaped keys rather than a second hierarchy of TypedDicts.
+This module is shared-native and stdlib-only: it must not import ``cms`` or the
+RAES implementation packages.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -74,19 +71,8 @@ class UploadInitiation(TypedDict):
 
 
 class ScenarioProjection(TypedDict):
-    """One catalog entry from the scenario registry projection.
+    """One RAES package-source entry from the catalog projection."""
 
-    The required keys are the common catalog metadata produced for every source
-    (legacy demo templates, CTF templates, and RAES package sources). The
-    optional keys are source-specific authoring/provenance content and are
-    JSON-shaped rather than re-modelled from ``cms.scenarios.schema``.
-
-    This is deliberately an overlay, not a discriminated union: cutover routing
-    (``cms.scenarios.cutover.apply_cutover_routes``) can re-back a legacy-shaped
-    entry with RAES, so ``scenario_type`` does not select one immutable shape.
-    """
-
-    # Common catalog metadata (every source).
     id: str
     name: str
     description: str
@@ -97,24 +83,6 @@ class ScenarioProjection(TypedDict):
     launchable: bool
     agent_requirements: AgentRequirements
 
-    # Legacy demo authoring content (``ScenarioTemplate``).
-    ngfw: NotRequired[bool]
-    instances: NotRequired[list[dict[str, Any]]]
-    subnets: NotRequired[list[dict[str, Any]]]
-    participant_access: NotRequired[list[dict[str, Any]] | dict[str, Any]]
-
-    # CTF authoring content (``CTFScenarioTemplate``).
-    cyberscript_version: NotRequired[str]
-    zones: NotRequired[list[dict[str, Any]]]
-    networks: NotRequired[list[dict[str, Any]]]
-    forests: NotRequired[list[dict[str, Any]]]
-    services: NotRequired[list[dict[str, Any]]]
-    assets: NotRequired[list[dict[str, Any]]]
-    flags: NotRequired[list[dict[str, Any]]]
-    data_seeds: NotRequired[list[dict[str, Any]]]
-    detection: NotRequired[dict[str, Any] | None]
-
-    # RAES package-source provenance (``_raes_source_to_dict``).
-    source_kind: NotRequired[str]
-    contract_kind: NotRequired[str]
-    contract_profile: NotRequired[str]
+    source_kind: str
+    contract_kind: str
+    contract_profile: str

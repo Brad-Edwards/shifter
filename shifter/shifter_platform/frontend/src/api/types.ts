@@ -104,32 +104,20 @@ export type UploadInitiateResponse = components["schemas"]["UploadInitiateRespon
 export type UploadCompleteResponse = components["schemas"]["UploadCompleteResponse"];
 
 /**
- * Scenario Editor domain types (#1371), re-exported from the generated OpenAPI
- * schema. The backend serializers (mirroring the Pydantic `ScenarioTemplate`)
- * remain the authoritative validator; do not hand-copy these shapes — regenerate
- * `schema.d.ts` via `npm run gen:api` instead.
+ * Read-only RAES catalog types, re-exported from the generated OpenAPI schema.
+ * Do not hand-copy these shapes — regenerate `schema.d.ts` via
+ * `npm run gen:api` instead.
  */
 export type ScenarioCatalogEntry = components["schemas"]["CatalogEntry"];
 export type ScenarioDetail = components["schemas"]["ScenarioDetail"];
-export type ScenarioInstance = components["schemas"]["ScenarioInstance"];
-export type ScenarioSubnet = components["schemas"]["ScenarioSubnet"];
-export type ScenarioDCConfig = components["schemas"]["DCConfig"];
-export type ScenarioCreate = components["schemas"]["ScenarioCreate"];
-export type ScenarioUpdate = components["schemas"]["PatchedScenarioUpdate"];
-export type ScenarioClone = components["schemas"]["ScenarioClone"];
 export type ScenarioMetadataUpdate = components["schemas"]["PatchedScenarioMetadataUpdate"];
-export type ScenarioCreated = components["schemas"]["ScenarioCreated"];
-export type ScenarioExport = components["schemas"]["ScenarioExport"];
 export type ScenarioMetadataState = components["schemas"]["ScenarioMetadataState"];
 export type ScenarioRaesFields = components["schemas"]["RaesCatalogFields"];
 export type ScenarioRealizability = components["schemas"]["ScenarioRealizability"];
 export type ScenarioRealizabilityGap = components["schemas"]["RealizabilityGap"];
-export type ScenarioYamlValidation = components["schemas"]["YAMLValidationResult"];
-export type ScenarioInstanceRole = components["schemas"]["ScenarioInstanceRoleEnum"];
-export type ScenarioInstanceOsType = components["schemas"]["ScenarioInstanceOsTypeEnum"];
 
 /** Scenario source classification the detail endpoint returns in `source`. */
-export type ScenarioSource = "builtin" | "custom" | "raes" | "ctf";
+export type ScenarioSource = "raes";
 
 /**
  * RAES image registry types (#1566), re-exported from the generated OpenAPI
@@ -146,14 +134,6 @@ export const RAES_IMAGE_PROVIDERS: ReadonlyArray<{ value: RaesImageProvider; lab
   { value: "gce", label: "Google Compute Engine" },
   { value: "aws", label: "AWS EC2" },
 ];
-
-/**
- * Runtime option lists for the structured editor. Typed against the generated
- * enums so an invalid value fails typecheck; the backend serializer + Pydantic
- * schema stay authoritative (these are UI affordances only).
- */
-export const INSTANCE_ROLES: readonly ScenarioInstanceRole[] = ["attacker", "victim", "dc"];
-export const INSTANCE_OS_TYPES: readonly ScenarioInstanceOsType[] = ["kali", "windows", "ubuntu", "from_agent"];
 
 /**
  * CTF participant workspace domain types (#1372), re-exported from the generated

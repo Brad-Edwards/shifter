@@ -34,12 +34,11 @@ AWS_DEV_WAF_ACL_ARN = (
 # change either GCP profile's rendered bytes. Frozen with Helm 3.15.4 and release
 # name "contract-test"; regenerate deliberately only when GCP output is meant to
 # change.
-# Regenerated for #1711: portal + guacd now carry the exclusive access node-pool
-# placement (nodeSelector role=access + dedicated=access:NoSchedule toleration)
-# under capabilities.gcpAccessNodePool, which GCP profiles enable.
+# Regenerated for #1311 after removing the retired fleet-wide RAES cutover
+# selector variables from the shared runtime ConfigMap.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "da0f87d88387e3c1cc4ab04d1aff35dc5efc73df258edb0433110c56821ec2f9",
-    "gcp-prod": "0fcaea53563169f4bb3f84a3d87465a8944f690272c563231e771ea4e707326c",
+    "gcp-dev": "51afa72745007c1ff80093e259611fb00804374f10c3d0dd67ec7b702292ea3e",
+    "gcp-prod": "5e70fcaf5380e9b473ad27148a535a176e4a142b82671cebeb07ee19db37abed",
 }
 
 

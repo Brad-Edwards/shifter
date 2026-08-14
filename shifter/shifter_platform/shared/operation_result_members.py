@@ -11,8 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cyberscript.exceptions import ValidationError as OperationResultError
-
+from shared.exceptions import ValidationError as OperationResultError
 from shared.sftp_root import SftpRootError, normalize_sftp_root_directory
 
 # The realized member/access projection an RAES provision returns so the portal

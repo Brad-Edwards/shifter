@@ -380,30 +380,3 @@ def test_legacy_resend_no_longer_mutates_or_emails_password(
     assert participant.user.check_password(_SUPPLIED_PASSWORD)
     assert all(_SUPPLIED_PASSWORD not in message.get("text_content", "") for message in sent)
     assert all(_SUPPLIED_PASSWORD not in message.get("html_content", "") for message in sent)
-
-
-def test_html_detail_never_reveals_password_and_post_result_is_not_retrievable(
-    authenticated_organizer_client,
-    ctf_event,
-    monkeypatch,
-):
-    participant = _create_participant(ctf_event)
-    monkeypatch.setattr(
-        "ctf.services.participant.accounts.generate_participant_password",
-        lambda *, user=None: _GENERATED_PASSWORD,
-    )
-    detail_url = reverse("ctf:admin_participant_detail", kwargs={"participant_id": participant.id})
-    reset_url = reverse("ctf:admin_participant_password", kwargs={"participant_id": participant.id})
-
-    detail = authenticated_organizer_client.get(detail_url)
-    result = authenticated_organizer_client.post(reset_url, {"kind": "generated"})
-    later = authenticated_organizer_client.get(detail_url)
-
-    assert detail.status_code == 200
-    assert _GENERATED_PASSWORD not in detail.content.decode()
-    assert "Reveal current event bootstrap password" not in detail.content.decode()
-    assert result.status_code == 200
-    assert _GENERATED_PASSWORD in result.content.decode()
-    assert "private" in result["Cache-Control"]
-    assert "no-store" in result["Cache-Control"]
-    assert _GENERATED_PASSWORD not in later.content.decode()

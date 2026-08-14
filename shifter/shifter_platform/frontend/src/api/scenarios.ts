@@ -9,16 +9,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type {
   ScenarioCatalogEntry,
-  ScenarioClone,
-  ScenarioCreate,
-  ScenarioCreated,
   ScenarioDetail,
-  ScenarioExport,
   ScenarioMetadataState,
   ScenarioMetadataUpdate,
   ScenarioRealizability,
-  ScenarioUpdate,
-  ScenarioYamlValidation,
 } from "./types";
 
 const BASE = "/cms/scenario-editor/scenarios";
@@ -70,49 +64,6 @@ export function useScenario(scenarioId: string, enabled = true) {
   });
 }
 
-export function useCreateScenario() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: ScenarioCreate) => apiFetch<ScenarioCreated>(`${BASE}/`, { method: "POST", body }),
-    onSuccess: () => invalidateScenarios(queryClient),
-  });
-}
-
-export function useCreateScenarioFromYaml() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (yamlContent: string) =>
-      apiFetch<ScenarioCreated>(`${BASE}/from-yaml/`, { method: "POST", body: { yaml_content: yamlContent } }),
-    onSuccess: () => invalidateScenarios(queryClient),
-  });
-}
-
-export function useUpdateScenario(scenarioId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: ScenarioUpdate) =>
-      apiFetch<ScenarioDetail>(`${BASE}/${scenarioId}/`, { method: "PATCH", body }),
-    onSuccess: () => invalidateScenarios(queryClient, scenarioId),
-  });
-}
-
-export function useDeleteScenario() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (scenarioId: string) => apiFetch<void>(`${BASE}/${scenarioId}/`, { method: "DELETE" }),
-    onSuccess: (_data, scenarioId) => invalidateScenarios(queryClient, scenarioId),
-  });
-}
-
-export function useCloneScenario(sourceScenarioId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: ScenarioClone) =>
-      apiFetch<ScenarioCreated>(`${BASE}/${sourceScenarioId}/clone/`, { method: "POST", body }),
-    onSuccess: () => invalidateScenarios(queryClient),
-  });
-}
-
 export function useUpdateScenarioMetadata(scenarioId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -120,19 +71,4 @@ export function useUpdateScenarioMetadata(scenarioId: string) {
       apiFetch<ScenarioMetadataState>(`${BASE}/${scenarioId}/metadata/`, { method: "PATCH", body }),
     onSuccess: () => invalidateScenarios(queryClient, scenarioId),
   });
-}
-
-export function useValidateYaml() {
-  return useMutation({
-    mutationFn: (yamlContent: string) =>
-      apiFetch<ScenarioYamlValidation>("/cms/scenario-editor/validate-yaml/", {
-        method: "POST",
-        body: { yaml_content: yamlContent },
-      }),
-  });
-}
-
-/** Fetch a scenario's YAML rendering (used for the imperative download action). */
-export function fetchScenarioExport(scenarioId: string): Promise<ScenarioExport> {
-  return apiFetch<ScenarioExport>(`${BASE}/${scenarioId}/export/`);
 }

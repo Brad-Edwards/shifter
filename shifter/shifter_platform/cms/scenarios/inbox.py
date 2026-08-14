@@ -21,12 +21,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_slug
 from django.db import transaction
 
 from cms.exceptions import CMSError
+from cms.models import RaesPackageSource
 from cms.services import PackRegistrationRequest, RegisteredPack, register_pack
+from shared.audit import AuditAction, AuditActorType, AuditEntityType, AuditEvent, audit_log
+from shared.raes.dispatch_port import ShifterDispatchResult
+from shared.raes.package_loader import launch_raes_package, resolve_pack_scenario_path
 from shared.schemas.raes_package_source import (
     PackageSourceRecord,
     RaesPackageSourceError,
@@ -107,7 +112,9 @@ def register_inbox_packs(
     Returns:
         The packs newly registered by this call (already-registered ids skipped).
     """
-    requests = load_inbox_manifest(manifest_path)
+    selected_manifest = Path(manifest_path) if manifest_path is not None else SHIPPED_INBOX_MANIFEST
+    requests = load_inbox_manifest(selected_manifest)
+    trusted_release = selected_manifest.resolve() == SHIPPED_INBOX_MANIFEST.resolve()
     registered: list[RegisteredPack] = []
     # The declaration is one deploy input. A failure in any entry rolls back
     # earlier registrations and their strict audit rows instead of installing a
@@ -122,7 +129,70 @@ def register_inbox_packs(
             )
             if result.created:
                 registered.append(result)
+            if trusted_release:
+                _promote_release_conformance(request=request, actor=actor, request_id=request_id)
     return registered
+
+
+class _ReleaseConformancePort:
+    """Side-effect-free apply port used by the checked-in release gate."""
+
+    def __init__(self, request_id: str) -> None:
+        self.request_id = request_id or "inbox-release-conformance"
+
+    def realize(self, compiled_plan: dict[str, Any], participant_access: object = ()) -> ShifterDispatchResult:
+        """Accept only a non-empty plan that passed the real Shifter backend target."""
+        if not compiled_plan.get("resources"):
+            raise InboxManifestError("in-box pack compiled to an empty provisioning plan")
+        return ShifterDispatchResult(
+            request_id=self.request_id,
+            accepted=True,
+            status="accepted",
+            range_id=None,
+        )
+
+
+def _promote_release_conformance(*, request: PackRegistrationRequest, actor: User, request_id: str) -> None:
+    """Compile and promote one immutable, checked-in release-manifest pack.
+
+    This boundary is intentionally unavailable to API/CLI registration callers:
+    only the exact shipped manifest reaches it. Registration has already run the
+    upstream environment-pack validator and bound the canonical digest; this
+    gate additionally exercises the real RAES load, plan, Shifter target, and
+    apply-contract path before storing the release-owned conformance fact.
+    """
+    if request.source_kind != "repo":
+        raise InboxManifestError("shipped in-box packs must be repository-backed")
+    pack_root = (Path(settings.RAES_PACKAGE_ROOT).resolve() / request.package_ref).resolve()
+    scenario_path = resolve_pack_scenario_path(pack_root)
+    result = launch_raes_package(
+        scenario_path=scenario_path,
+        port=_ReleaseConformancePort(request_id),
+    )
+    if not result.accepted:
+        raise InboxManifestError("shipped in-box pack failed release conformance")
+
+    source = RaesPackageSource.objects.get(scenario_id=request.scenario_id)
+    source.conformance_status = RaesPackageSource.ConformanceStatus.PASSED
+    source.conformance_report_ref = f"release://{request.package_ref}@{request.package_version}"
+    source.save(update_fields=["conformance_status", "conformance_report_ref", "updated_at"])
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.SCENARIO,
+            entity_id=0,
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor.id,
+            new_state={
+                "scenario_id": source.scenario_id,
+                "package_digest": source.package_digest,
+                "conformance_status": source.conformance_status,
+                "conformance_report_ref": source.conformance_report_ref,
+            },
+            request_id=request_id,
+        ),
+        strict=True,
+    )
 
 
 def _entry_to_request(entry: dict[str, Any], *, index: int) -> PackRegistrationRequest:

@@ -6,20 +6,6 @@ from typing import Any
 
 from rest_framework import serializers
 
-# Scenario definition option lists mirror ``cms.scenarios.schema`` exactly.
-# The Pydantic ``ScenarioTemplate`` remains the authoritative validator; these
-# choices give the SPA typed enums and reject obviously-wrong values early
-# without drifting from the schema (the legacy form hardcoded stale lists).
-INSTANCE_ROLES = ("attacker", "victim", "dc")
-INSTANCE_OS_TYPES = ("kali", "windows", "ubuntu", "from_agent")
-PARTICIPANT_ACCESS_CHANNELS = ("ssh", "rdp")
-
-
-class YAMLContentSerializer(serializers.Serializer):
-    """Validate a YAML-content request body."""
-
-    yaml_content = serializers.CharField(allow_blank=True, trim_whitespace=False)
-
 
 class PackRegistrationSerializer(serializers.Serializer):
     """Validate the shape of a uniform pack-registration request body (#1578).
@@ -79,8 +65,7 @@ class CatalogEntrySerializer(serializers.Serializer):
     """Read-only catalog entry projection for the CMS catalog API.
 
     Serializes the presentation DTO from ``cms.scenarios.catalog_presentation``.
-    ``raes`` is present only for RAES package-backed entries; legacy YAML/DB
-    entries serialize it as ``null``.
+    Every emitted entry is backed by a RAES package source.
     """
 
     id = serializers.CharField(read_only=True)
@@ -92,113 +77,19 @@ class CatalogEntrySerializer(serializers.Serializer):
     staff_only = serializers.BooleanField(read_only=True)
     launchable = serializers.BooleanField(read_only=True)
     raes = RaesCatalogFieldsSerializer(read_only=True, allow_null=True)
-
-
-class DCConfigSerializer(serializers.Serializer):
-    """Domain-controller configuration, mirroring ``schema.DCConfig``."""
-
-    domain_name = serializers.CharField()
-    netbios_name = serializers.CharField()
-
-
-class ScenarioInstanceSerializer(serializers.Serializer):
-    """A single scenario instance, mirroring ``schema.InstanceConfig``.
-
-    Kept field-complete against the Pydantic schema so a round-trip through the
-    editor never silently drops instance fields (the legacy form hardcoded a
-    partial list). The service layer re-validates the full definition.
-    """
-
-    name = serializers.CharField()
-    role = serializers.ChoiceField(choices=INSTANCE_ROLES)
-    os_type = serializers.ChoiceField(choices=INSTANCE_OS_TYPES)
-    xdr_agent = serializers.BooleanField(required=False, default=False)
-    domain_controller = serializers.BooleanField(required=False, default=False)
-    join_domain = serializers.BooleanField(required=False, default=False)
-    dc_config = DCConfigSerializer(required=False, allow_null=True)
-    ami_key = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    instance_type = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-
-
-class ScenarioSubnetSerializer(serializers.Serializer):
-    """A single scenario subnet, mirroring ``schema.SubnetConfig``."""
-
-    name = serializers.CharField()
-    instances = serializers.ListField(child=serializers.CharField())
-    connected_to = serializers.ListField(child=serializers.CharField(), required=False, default=list)
-
-
-class ScenarioParticipantAccessSerializer(serializers.Serializer):
-    """One participant-facing channel, mirroring ``ParticipantAccessConfig``."""
-
-    target = serializers.CharField()
-    channel = serializers.ChoiceField(choices=PARTICIPANT_ACCESS_CHANNELS)
 
 
 class ScenarioDetailSerializer(serializers.Serializer):
-    """Full scenario detail with source-capability flags for the editor.
-
-    ``source`` classifies the entry (``builtin`` / ``custom`` / ``raes`` /
-    ``ctf``) and the capability booleans tell the SPA which actions to offer.
-    ``instances`` / ``subnets`` are populated for structural (demo) scenarios;
-    ``raes`` carries the read-only provenance block for RAES entries.
-    """
+    """Read-only RAES package identity and availability for the SPA."""
 
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
-    description = serializers.CharField(read_only=True, allow_blank=True)
     scenario_type = serializers.CharField(read_only=True)
     source = serializers.CharField(read_only=True)
-    is_default = serializers.BooleanField(read_only=True)
     enabled = serializers.BooleanField(read_only=True)
     staff_only = serializers.BooleanField(read_only=True)
     launchable = serializers.BooleanField(read_only=True)
-    editable = serializers.BooleanField(read_only=True)
-    deletable = serializers.BooleanField(read_only=True)
-    exportable = serializers.BooleanField(read_only=True)
-    ngfw = serializers.BooleanField(read_only=True)
-    instances = ScenarioInstanceSerializer(many=True, read_only=True)
-    subnets = ScenarioSubnetSerializer(many=True, read_only=True)
-    participant_access = ScenarioParticipantAccessSerializer(many=True, read_only=True)
     raes = RaesCatalogFieldsSerializer(read_only=True, allow_null=True)
-
-
-class _ScenarioDefinitionSerializer(serializers.Serializer):
-    """Shared structural fields for scenario create/update request bodies."""
-
-    name = serializers.CharField()
-    description = serializers.CharField()
-    ngfw = serializers.BooleanField(required=False, default=False)
-    instances = ScenarioInstanceSerializer(many=True)
-    subnets = ScenarioSubnetSerializer(many=True, required=False, default=list)
-    participant_access = ScenarioParticipantAccessSerializer(many=True, required=False, default=list)
-
-    def definition(self) -> dict[str, Any]:
-        """Return the persisted structural definition."""
-        data = self.validated_data
-        return {
-            "instances": data["instances"],
-            "subnets": data.get("subnets", []),
-            "ngfw": data.get("ngfw", False),
-            "participant_access": data.get("participant_access", []),
-        }
-
-
-class ScenarioCreateSerializer(_ScenarioDefinitionSerializer):
-    """Structured create request: identity plus definition."""
-
-    scenario_id = serializers.CharField()
-
-
-class ScenarioUpdateSerializer(_ScenarioDefinitionSerializer):
-    """Structured update request: full definition replacement (no identity change)."""
-
-
-class ScenarioCloneSerializer(serializers.Serializer):
-    """Clone request body."""
-
-    new_scenario_id = serializers.CharField()
-    new_name = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class ScenarioMetadataUpdateSerializer(serializers.Serializer):
@@ -214,34 +105,12 @@ class ScenarioMetadataUpdateSerializer(serializers.Serializer):
         return attrs
 
 
-class ScenarioCreatedSerializer(serializers.Serializer):
-    """Response for a create/clone: the new scenario's identity."""
-
-    scenario_id = serializers.CharField(read_only=True)
-    name = serializers.CharField(read_only=True)
-
-
 class ScenarioMetadataStateSerializer(serializers.Serializer):
     """Response for a metadata update: the resolved overlay state."""
 
     scenario_id = serializers.CharField(read_only=True)
     enabled = serializers.BooleanField(read_only=True)
     staff_only = serializers.BooleanField(read_only=True)
-
-
-class ScenarioExportSerializer(serializers.Serializer):
-    """Response for an export: the scenario id and its YAML rendering."""
-
-    scenario_id = serializers.CharField(read_only=True)
-    yaml = serializers.CharField(read_only=True)
-
-
-class YAMLValidationResultSerializer(serializers.Serializer):
-    """Response for the YAML validate endpoint."""
-
-    valid = serializers.BooleanField(read_only=True)
-    errors = serializers.ListField(child=serializers.CharField(), read_only=True)
-    definition = serializers.DictField(read_only=True, allow_null=True)
 
 
 class RealizabilityGapSerializer(serializers.Serializer):

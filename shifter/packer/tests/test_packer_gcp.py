@@ -150,7 +150,17 @@ class TestGcpDcPrebaked:
         content = (GCP_DIR / "dc-profiles" / "polaris.pkrvars.hcl").read_text()
         assert '"boreas.local"' in content
         assert '"polaris"' in content
-        assert "a2_setup.ps1" in content
+        assert "polaris-content-seed.ps1" in content
+
+    def test_polaris_profile_content_seed_resolves_from_gcp_build_directory(self):
+        content = (GCP_DIR / "dc-profiles" / "polaris.pkrvars.hcl").read_text()
+        match = re.search(r'^dc_content_script\s*=\s*"([^"]+)"$', content, re.MULTILINE)
+        assert match is not None
+
+        configured_path = (GCP_DIR / match.group(1)).resolve()
+        expected_path = (PACKER_DIR / "scripts" / "windows" / "polaris-content-seed.ps1").resolve()
+        assert configured_path == expected_path
+        assert configured_path.is_file()
 
 
 class TestGcpKaliSourceImage:

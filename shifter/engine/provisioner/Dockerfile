@@ -67,22 +67,17 @@ COPY engine/provisioner/requirements.lock engine/provisioner/requirements-gcp.lo
 RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.lock && \
     pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements-gcp.lock
 
-# First-party shared packages on PYTHONPATH (cyberscript = wire-contract constants,
-# installation = root installation config) — same pattern as shifter_platform/Dockerfile.
+# First-party installation config on PYTHONPATH — the same pattern as
+# shifter_platform/Dockerfile.
 # `config.resolve_cloud_provider` validates CLOUD_PROVIDER against
 # installation.registry (PLAT-2005), which needs pydantic; pydantic is a declared
-# provisioner runtime dependency (requirements.lock), installed above. Range-cell
-# consumers use only cyberscript's dependency-light envelope, exception, and digest
-# paths; canonical Pydantic validation runs producer-side before persistence.
-COPY cyberscript /opt/shifter-libs/cyberscript
+# provisioner runtime dependency (requirements.lock), installed above.
 COPY installation /opt/shifter-libs/installation
 
 # Dependency-light platform contract modules used by the provisioner runtime.
-# Copy the whole `shared` package (same whole-dir pattern as cyberscript and
-# installation above) so imports like `shared.range_instantiation_policy`,
+# Copy the whole `shared` package so imports like `shared.range_instantiation_policy`,
 # `shared.range_escape`, and `shared.log_sanitize` (added by the #1348 refactor)
-# resolve alongside `shared.range_cells`. `shared/__init__.py` re-exports only
-# from cyberscript (already present), and the provisioner never imports the
+# resolve alongside `shared.range_cells`. The provisioner never imports the
 # Django modules (models.py, admin.py, migrations, …), so copying the whole
 # package does not pull Django into the provisioner runtime.
 COPY shifter_platform/shared /opt/shifter-libs/shared

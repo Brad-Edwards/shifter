@@ -54,13 +54,11 @@ IMPORT_PATTERN = re.compile(
     re.MULTILINE,
 )
 
-# Direct cyberscript imports — only the shared layer may import cyberscript.
+# Direct cyberscript imports — the retired package may not be imported.
 CYBERSCRIPT_IMPORT_PATTERN = re.compile(
     r"^\s*(?:from|import)\s+(cyberscript(?:\.\w+)*)",
     re.MULTILINE,
 )
-
-CYBERSCRIPT_ALLOWED_LAYER = "shared"
 
 
 def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
@@ -190,9 +188,7 @@ def get_cyberscript_imports(layer_path: Path) -> set[str]:
 
 
 def compute_cyberscript_violations(from_layer: str, modules: set[str]) -> list[str]:
-    """Return cyberscript imports that violate the shared-only rule."""
-    if from_layer == CYBERSCRIPT_ALLOWED_LAYER or not modules:
-        return []
+    """Return imports of the retired CyberScript package."""
     return sorted(modules)
 
 

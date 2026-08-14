@@ -66,9 +66,9 @@ class TestShippedManifest:
         packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
         assert isinstance(packs, list)
 
-    def test_shipped_manifest_is_empty_no_default_packs_yet(self):
-        # No conformant default scenario packs ship yet (program #1584).
-        assert load_inbox_manifest(SHIPPED_INBOX_MANIFEST) == []
+    def test_shipped_manifest_contains_the_canonical_polaris_pack(self):
+        packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
+        assert [pack.scenario_id for pack in packs] == ["polaris"]
 
 
 class TestRegisterInboxPacks:
@@ -170,12 +170,14 @@ class TestRegisterInboxPacks:
 
 
 class TestBootstrapCommand:
-    def test_command_runs_against_shipped_empty_manifest(self, admin_actor):
+    def test_command_registers_and_promotes_the_shipped_polaris_pack(self, admin_actor):
         from django.core.management import call_command
 
-        # The shipped manifest is empty today: the command is a clean no-op.
         call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
-        assert RaesPackageSource.objects.count() == 0
+        source = RaesPackageSource.objects.get(scenario_id="polaris")
+        assert source.conformance_status == RaesPackageSource.ConformanceStatus.PASSED
+        assert source.conformance_report_ref == "release://scenario-dev/polaris@0.1.0"
+        assert get_catalog_entry("polaris")["launchable"] is True
 
     def test_command_errors_on_unknown_actor(self, db):
         from django.core.management import CommandError, call_command

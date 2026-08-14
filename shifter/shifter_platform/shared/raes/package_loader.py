@@ -95,6 +95,20 @@ def resolve_pack_scenario_path(pack_root: Path) -> Path:
     return scenario_path
 
 
+def load_pack_scenario(pack_root: Path):
+    """Load the single contained SDL entry through the shared RAES boundary.
+
+    Consumers that need the upstream scenario projection use this seam rather
+    than importing RAES tooling into an application layer. Canonical digest
+    verification remains the caller's prerequisite.
+    """
+    scenario_path = resolve_pack_scenario_path(pack_root)
+    try:
+        return load_scenario(scenario_path)
+    except (ScenarioError, OSError) as exc:
+        raise RaesPackageError(f"failed to load RAES package: {safe_log_value(exc)}") from exc
+
+
 def _render_diagnostic(diagnostic: object) -> str:
     """Render one backend diagnostic as a bounded, single-line string."""
     code = getattr(diagnostic, "code", "")

@@ -312,7 +312,6 @@ class TestChangeFilterCoverage(unittest.TestCase):
     def test_app_code_triggers_portal_image(self):
         for path in (
             "shifter/shifter_platform/views.py",
-            "shifter/cyberscript/index.ts",
             "shifter/installation/setup.sh",
             "shifter/.dockerignore",
         ):
@@ -324,7 +323,6 @@ class TestChangeFilterCoverage(unittest.TestCase):
         self.assertPathNotInFilter(
             "shifter/shifter_platform/views.py", "shifter_platform"
         )
-        self.assertPathNotInFilter("shifter/cyberscript/index.ts", "shifter_platform")
 
     def test_terraform_paths_trigger_their_plan_filters(self):
         self.assertPathInFilter(

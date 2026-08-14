@@ -8,8 +8,6 @@ written, if the projections disagree, or if reassignment stops checking the
 target user's membership.
 """
 
-from uuid import uuid4
-
 import pytest
 
 from cms import services
@@ -144,28 +142,6 @@ def test_rehoming_is_never_implicit(user, django_user_model, make_agent, hydrata
     range_instance.refresh_from_db()
     assert range_instance.workspace_id == original
     assert range_instance.user_id == user.id
-
-
-def test_engine_refuses_to_create_a_range_with_no_workspace_binding(user, make_agent, hydratable_scenario):
-    """The trusted Engine boundary requires the scope; it never persists an unscoped range.
-
-    This is the enforcement point for ADR-046-R3: a new or refactored caller that
-    forgets the binding fails loudly here instead of writing a row that is
-    indistinguishable from a legacy pre-#1325 range.
-    """
-    from cms.scenarios.hydrator import hydrate_scenario
-    from engine.services import create_range as engine_create_range
-    from engine.services._common import EngineError
-    from shared.schemas import RequestSpec
-
-    agent = make_agent(user)
-    range_spec = hydrate_scenario(hydratable_scenario.scenario_id, user.id, {"windows": agent})
-    spec = RequestSpec(request_id=uuid4(), user_id=user.id, items=[range_spec])
-
-    with pytest.raises(EngineError):
-        engine_create_range(spec, workspace_id=None)
-
-    assert not EngineRange.objects.filter(request__request_id=spec.request_id).exists()
 
 
 # An unbound range is no longer a reachable state: cms.0040 / engine.0042 make

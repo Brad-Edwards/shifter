@@ -8,7 +8,7 @@
     "rules": [
       {
         "id": "ADR-001-R1",
-        "description": "Cross-layer imports must conform to scripts/check_layer_imports/layer_imports.yaml; service-package imports expose only the public facade (for example, cms.services), not private split-package implementation submodules such as cms.services._range_pause or from cms.services import _range_pause; only shared may import cyberscript directly.",
+        "description": "Cross-layer imports must conform to scripts/check_layer_imports/layer_imports.yaml; service-package imports expose only the public facade (for example, cms.services), not private split-package implementation submodules such as cms.services._range_pause or from cms.services import _range_pause. CyberScript is retired and no layer, including shared, may import it; retained Shifter-owned contracts live natively under shared.",
         "checks": [
           "layer-imports"
         ]
@@ -1626,7 +1626,7 @@
       },
       {
         "id": "ADR-031-R6",
-        "description": "The ADR-024 default cutover of a stable public scenario id to RAES is owned solely by cms.scenarios.registry and expressed as a validated SHIFTER_RAES_CATALOG_CUTOVERS mapping from a public id to a distinct registered RAES package-source id (e.g. polaris=polaris-raes), so a legacy public id can resolve to RAES without a no-shadow collision. The selected public id is emitted exactly once and the internal source id is not a second launch choice; create_range_dispatch consumes that one registry resolution and makes no second _is_raes_scenario decision. Empty routing restores the preserved legacy source; malformed, dangling, unsupported, non-conformant, or duplicate routes fail closed and an active RAES route never falls back to legacy after a RAES error. Provision, status, and teardown for an existing range are selected from its persisted, validated range_config.kind (raes_provisioning_plan), independent of the current selector and capability flag, so an existing RAES range stays destroyable through rollback. The catalog selector plus SHIFTER_RAES_NATIVE_PROVISIONING are the temporary, reversible rollback line converging on the one-direct-path target (R2); #1310 delivers this mechanism and its fleet-uniform AWS/GCP config, while the shipped default stays the preserved-legacy posture and activation is a deferred, reviewed per-environment deploy-config step gated on a conformance-passed pack from the scenario-pack plugin work (ADR-033/034/041).",
+        "description": "The #1310/#1311 hard cut makes the RAES package-source registry the only scenario catalog and launch authority. The public create_range seam always dispatches a conformance-passed, digest-bound RAES package; no catalog selector, native-provisioning flag, legacy YAML/DB authoring path, CyberScript fallback, or same-schema rollback branch exists. Provision, status, and teardown select from persisted validated RAES range state. Polaris ships as one canonical RAES environment pack and real AWS/GCP deployment validation is tracked separately as the final #1319 child because no live or development Shifter deployments existed at cutover time.",
         "checks": []
       }
     ],

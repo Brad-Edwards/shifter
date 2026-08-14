@@ -42,13 +42,8 @@ serviceAccounts:
     annotations: {}
 
 # Fleet-uniform non-secret runtime env rendered into the platform-runtime
-# ConfigMap that every deployment envFroms. RAES default-cutover selector
-# (#1310, ADR-031-R6): delivery seam prepared at the preserved-legacy posture;
-# the flip (native=true + a polaris=polaris-raes route) is a deferred, reviewed
-# change once the plugin system + Polaris adapter deliver a conformant pack.
-runtimeEnv:
-  SHIFTER_RAES_NATIVE_PROVISIONING: "false"
-  SHIFTER_RAES_CATALOG_CUTOVERS: ""
+# ConfigMap that every deployment envFroms.
+runtimeEnv: {}
 
 # The guacamole-runtime Kubernetes Secret is created out of band by the deploy
 # bootstrap (kubectl apply from the provider secret store), not by this chart.

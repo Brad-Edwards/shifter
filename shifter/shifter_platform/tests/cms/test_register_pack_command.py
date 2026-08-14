@@ -75,8 +75,8 @@ def test_command_errors_on_unknown_actor(repo_pack):
 
 
 def test_command_errors_on_domain_failure(admin_actor, repo_pack):
-    # Shadowing a legacy scenario id is a fail-closed CMSError surfaced as a
-    # CommandError, not a traceback. The message pins the shadow guard.
+    # A caller-supplied identity that differs from the validated pack identity
+    # is surfaced as a bounded CommandError, not a traceback.
     args = _args(repo_pack, admin_actor.username, **{"--scenario-id": "basic"})
-    with pytest.raises(CommandError, match="shadow"):
+    with pytest.raises(CommandError, match="validated identity"):
         call_command("register_pack", *args)

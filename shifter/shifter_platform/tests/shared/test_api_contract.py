@@ -156,11 +156,10 @@ class TestPublishedContract:
         # Admin-only audit reads are not token-scoped; they must not advertise a scope.
         assert "x-required-scopes" not in openapi_document["paths"]["/api/v1/audit/"]["get"]
 
-    def test_method_scoped_permissions_are_reported(self, openapi_document: dict[str, Any]) -> None:
-        # ScenarioResourceView resolves scopes per method via get_permissions().
+    def test_scenario_detail_is_read_scoped_and_read_only(self, openapi_document: dict[str, Any]) -> None:
         detail = openapi_document["paths"]["/api/v1/cms/scenario-editor/scenarios/{scenario_id}/"]
         assert detail["get"]["x-required-scopes"] == ["cms:authoring:read"]
-        assert detail["patch"]["x-required-scopes"] == ["cms:authoring:write"]
+        assert "patch" not in detail
 
     def test_both_auth_schemes_present(self, openapi_document: dict[str, Any]) -> None:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])

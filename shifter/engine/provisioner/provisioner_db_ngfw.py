@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cyberscript.enums import ResourceStatus
+from shared.enums import ResourceStatus
 
 from config import resolve_ngfw_attachment_config
 from provisioner_db import get_db_connection
@@ -153,7 +153,7 @@ def get_ngfw_data_by_request_id(request_id: str) -> dict[str, Any]:
         row = cur.fetchone()
         if not row:
             raise ValueError(f"NGFW request not found: {request_id}")
-        from cyberscript.persisted_envelope import unwrap_persisted_spec
+        from shared.persisted_envelope import unwrap_persisted_spec
 
         return {
             "request_id": str(row[0]),

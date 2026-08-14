@@ -82,7 +82,7 @@ variable "dc_netbios_name" {
 variable "dc_content_script" {
   type        = string
   description = "Path (relative to shifter/packer) to the AD-content seed staged into the polaris-dc image and run post-promotion by dc-content-seed.ps1."
-  default     = "../../scripts/polaris-aws-range/a2_setup.ps1"
+  default     = "scripts/windows/polaris-content-seed.ps1"
 }
 
 variable "dc_dsrm_password" {
