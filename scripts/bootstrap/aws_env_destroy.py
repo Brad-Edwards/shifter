@@ -56,7 +56,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -165,6 +167,7 @@ class Layer:
     var_flags: tuple[str, ...] = ()
 
     def stack_dir(self, env: str) -> str:
+        """Return the stack path for a concrete environment."""
         return self.stack_template.format(env=env)
 
 
@@ -213,14 +216,17 @@ class TeardownContext:
 
 
 def _platform_terraform_dir(repo_root: Path) -> Path:
+    """Return the platform/terraform root under the checkout."""
     return repo_root / "platform" / "terraform"
 
 
 def _tf_dir(ctx: TeardownContext, stack_dir: str) -> Path:
+    """Return the absolute directory of a Terraform stack."""
     return _platform_terraform_dir(ctx.repo_root) / stack_dir
 
 
 def _backend_config(ctx: TeardownContext, stack_dir: str) -> Path:
+    """Return the rendered per-instance backend config path for a stack."""
     return tb.backend_config_for_stack(ctx.backend_dir, stack_dir, ctx.env)
 
 
@@ -230,7 +236,8 @@ def _terraform(
     *args: str,
     check: bool = True,
     capture: bool = False,
-):
+) -> subprocess.CompletedProcess | None:
+    """Run a `terraform -chdir=<stack>` command via run_cmd (None in dry-run)."""
     cmd = ["terraform", f"-chdir={_tf_dir(ctx, stack_dir)}", *args]
     return run_cmd(cmd, dry_run=ctx.dry_run, check=check, capture=capture)
 
@@ -315,7 +322,10 @@ def _state_show_arn(ctx: TeardownContext, stack_dir: str, addr: str) -> str:
     return match.group(1) if match else ""
 
 
-def _s3(ctx: TeardownContext, *args: str, check: bool = True, capture: bool = False):
+def _s3(
+    ctx: TeardownContext, *args: str, check: bool = True, capture: bool = False
+) -> subprocess.CompletedProcess | None:
+    """Run an `aws --region <region> ...` command via run_cmd (None in dry-run)."""
     cmd = ["aws", "--region", ctx.region, *args]
     return run_cmd(cmd, dry_run=ctx.dry_run, check=check, capture=capture, profile=ctx.profile or None)
 
@@ -356,7 +366,7 @@ def env_tagged_arns(ctx: TeardownContext, resource_types: tuple[str, ...]) -> li
 
 
 def _bucket_name_from_arn(arn: str) -> str:
-    # arn:aws:s3:::bucket-name
+    """Return the bucket name from an S3 ARN (``arn:aws:s3:::bucket-name``)."""
     return arn.rsplit(":", 1)[-1]
 
 
@@ -444,7 +454,8 @@ def _empty_bucket(ctx: TeardownContext, bucket: str) -> None:
             )
 
 
-def _chunked(items: list, size: int):
+def _chunked(items: list[dict], size: int) -> Iterator[list[dict]]:
+    """Yield successive ``size``-length slices of ``items``."""
     for start in range(0, len(items), size):
         yield items[start : start + size]
 
@@ -510,14 +521,8 @@ def _ecr_repo_is_owned(ctx: TeardownContext, repo: str) -> bool:
     return tags.get("Project") == "shifter" and tags.get("Environment") == ctx.env
 
 
-def _empty_ecr_repo(ctx: TeardownContext, repo: str) -> None:
-    """Delete every image in an ECR repo in bounded batches; fail closed."""
-    if ctx.dry_run:
-        info(f"[DRY-RUN] Would empty ECR repo {repo}")
-        return
-    if not _ecr_repo_is_owned(ctx, repo):
-        warn(f"ECR repo {repo} absent or not ownership-verified (live Project/Environment tags); not emptying.")
-        return
+def _ecr_image_ids(ctx: TeardownContext, repo: str) -> list[dict]:
+    """Return the image ids in an ECR repo; [] if absent, raise on other error."""
     listed = _s3(
         ctx,
         "ecr",
@@ -532,14 +537,24 @@ def _empty_ecr_repo(ctx: TeardownContext, repo: str) -> None:
         capture=True,
     )
     if listed is None:
-        return
+        return []
     if listed.returncode != 0:
         if "RepositoryNotFoundException" in (getattr(listed, "stderr", "") or ""):
             info(f"ECR repo {repo} absent; skipping.")
-            return
+            return []
         raise TeardownError(f"`aws ecr list-images` failed for {repo} (exit {listed.returncode})")
-    image_ids = json.loads(listed.stdout) if listed.stdout.strip() else []
-    for batch in _chunked(image_ids, _ECR_BATCH_SIZE):
+    return json.loads(listed.stdout) if listed.stdout.strip() else []
+
+
+def _empty_ecr_repo(ctx: TeardownContext, repo: str) -> None:
+    """Delete every image in an ECR repo in bounded batches; fail closed."""
+    if ctx.dry_run:
+        info(f"[DRY-RUN] Would empty ECR repo {repo}")
+        return
+    if not _ecr_repo_is_owned(ctx, repo):
+        warn(f"ECR repo {repo} absent or not ownership-verified (live Project/Environment tags); not emptying.")
+        return
+    for batch in _chunked(_ecr_image_ids(ctx, repo), _ECR_BATCH_SIZE):
         result = _s3(
             ctx,
             "ecr",
@@ -572,6 +587,16 @@ def _runner_var_flags(ctx: TeardownContext, stack_dir: str) -> tuple[str, ...]:
     return ("-var=allow_default_vpc=true",)
 
 
+def _run_pre_destroy(ctx: TeardownContext, layer: Layer, stack_dir: str, var_flags: tuple[str, ...]) -> None:
+    """Run a layer's configured pre-destroy handling (protection lift, S3/ECR empty)."""
+    if layer.lift_portal:
+        lift_portal_protection(ctx, stack_dir, var_flags)
+    if layer.empty_s3:
+        empty_stack_s3_buckets(ctx, stack_dir)
+    if layer.empty_ecr:
+        empty_stack_ecr_repos(ctx, stack_dir)
+
+
 def destroy_layer(ctx: TeardownContext, layer: Layer) -> str:
     """Destroy one layer with pre-destroy handling; return an outcome string."""
     stack_dir = layer.stack_dir(ctx.env)
@@ -587,12 +612,7 @@ def destroy_layer(ctx: TeardownContext, layer: Layer) -> str:
         return "skipped"
 
     var_flags = _runner_var_flags(ctx, stack_dir) if layer.topology_from_state else layer.var_flags
-    if layer.lift_portal:
-        lift_portal_protection(ctx, stack_dir, var_flags)
-    if layer.empty_s3:
-        empty_stack_s3_buckets(ctx, stack_dir)
-    if layer.empty_ecr:
-        empty_stack_ecr_repos(ctx, stack_dir)
+    _run_pre_destroy(ctx, layer, stack_dir, var_flags)
 
     destroy_args = ["destroy", "-auto-approve", _LOCK_TIMEOUT, *var_flags]
     result = _terraform(ctx, stack_dir, *destroy_args, check=False)
@@ -677,6 +697,7 @@ _STACKS_LAYERS = ("eks", "portal", "range", "core")
 
 
 def _destroy_named(ctx: TeardownContext, name: str) -> None:
+    """Destroy the single layer with the given name."""
     for layer in _layers(ctx.env, ctx.state_bucket):
         if layer.name == name:
             destroy_layer(ctx, layer)
@@ -702,12 +723,14 @@ def teardown(ctx: TeardownContext, phase: str = "all") -> None:
 
 
 def _validate_env(env: str) -> str:
+    """Return the env if it is a permitted teardown target, else exit."""
     if env not in ALLOWED_ENVS:
         raise SystemExit(f"::error::unsupported teardown environment {env!r}; allowed: {', '.join(ALLOWED_ENVS)}")
     return env
 
 
 def _backend_dir_from_args(args: argparse.Namespace, env: str, bucket: str) -> Path:
+    """Resolve the rendered backend-config directory from CLI args."""
     if args.backend_dir:
         return Path(args.backend_dir)
     instance_dir = Path(args.instance_dir) if args.instance_dir else None
@@ -715,6 +738,7 @@ def _backend_dir_from_args(args: argparse.Namespace, env: str, bucket: str) -> P
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point: parse args, build the context, and run the teardown."""
     parser = argparse.ArgumentParser(description="Tear down an AWS Shifter environment (issue #1287).")
     parser.add_argument("--env", required=True, help="Target environment (dev or proof)")
     parser.add_argument("--state-bucket", required=True, help="Pinned Terraform state bucket for the environment")

@@ -347,7 +347,8 @@ def test_s3_empty_deletes_versions_and_markers_and_aborts_multipart(tmp_path, mo
     deletes = fake.find(lambda c: "delete-objects" in c and _flag_value(c, "--bucket") == "proof-portal-logs")
     assert deletes
     keys = {(o["Key"], o["VersionId"]) for c in deletes for o in json.loads(_flag_value(c, "--delete"))["Objects"]}
-    assert ("k", "v1") in keys and ("k", "v2") in keys
+    assert ("k", "v1") in keys
+    assert ("k", "v2") in keys
     assert fake.find(lambda c: "abort-multipart-upload" in c)
 
 
@@ -384,7 +385,8 @@ def test_ecr_from_state_batches_at_100_and_runs_before_core_destroy(tmp_path, mo
         if "batch-delete-image" in c
         or (c[0] == "terraform" and c[2] == "destroy" and _stack_of(c) == "environments/proof")
     ]
-    assert order and order.index("ecr") < order.index("core-destroy")
+    assert order
+    assert order.index("ecr") < order.index("core-destroy")
 
 
 def test_ecr_delete_failure_fails_closed(tmp_path, monkeypatch, sweep_ok):
@@ -393,8 +395,9 @@ def test_ecr_delete_failure_fails_closed(tmp_path, monkeypatch, sweep_ok):
     )
     _wire(monkeypatch, fake)
 
+    ctx = _ctx(tmp_path)
     with pytest.raises(aed.TeardownError, match="batch-delete-image"):
-        aed.teardown(_ctx(tmp_path))
+        aed.teardown(ctx)
 
 
 def test_ecr_unowned_repo_is_skipped(tmp_path, monkeypatch, sweep_ok):
@@ -441,16 +444,18 @@ def test_postcondition_fails_closed_when_state_remains(tmp_path, monkeypatch, sw
     fake = _fake(keep_state=("environments/proof/range",))
     _wire(monkeypatch, fake)
 
+    ctx = _ctx(tmp_path)
     with pytest.raises(aed.TeardownError, match="range"):
-        aed.teardown(_ctx(tmp_path))
+        aed.teardown(ctx)
 
 
 def test_state_list_failure_fails_closed(tmp_path, monkeypatch, sweep_ok):
     fake = _fake(state_list_fail=("environments/proof/eks",))
     _wire(monkeypatch, fake)
 
+    ctx = _ctx(tmp_path)
     with pytest.raises(aed.TeardownError, match="state list"):
-        aed.teardown(_ctx(tmp_path))
+        aed.teardown(ctx)
 
 
 def test_transient_destroy_failure_recovers_on_retry_without_state_rm(tmp_path, monkeypatch, sweep_ok):
@@ -465,8 +470,9 @@ def test_persistent_destroy_failure_fails_closed(tmp_path, monkeypatch, sweep_ok
     fake = _fake(destroy_failures={"environments/proof/range": 2})  # initial + retry both fail
     _wire(monkeypatch, fake)
 
+    ctx = _ctx(tmp_path)
     with pytest.raises(aed.TeardownError, match="range"):
-        aed.teardown(_ctx(tmp_path))
+        aed.teardown(ctx)
     assert not fake.find(lambda c: c[0] == "terraform" and c[2] == "state" and len(c) > 3 and c[3] == "rm")
 
 
@@ -493,8 +499,9 @@ def test_verify_fails_closed_on_residual_resource(tmp_path, monkeypatch, sweep_o
     fake = _fake(verify_arns=("arn:aws:ec2:us-east-2:1:instance/i-123",))
     _wire(monkeypatch, fake)
 
+    ctx = _ctx(tmp_path)
     with pytest.raises(aed.TeardownError, match="remain"):
-        aed.teardown(_ctx(tmp_path))
+        aed.teardown(ctx)
 
 
 def test_verify_excludes_preserved_state_bucket(tmp_path, monkeypatch, sweep_ok):
@@ -513,8 +520,9 @@ def test_account_recovery_failure_fails_closed(tmp_path, monkeypatch):
         lambda env, profile, *, sweep, dry_run: SimpleNamespace(render=lambda: "boom", failures=["x"]),
     )
 
+    ctx = _ctx(tmp_path)
     with pytest.raises(aed.TeardownError, match="failed check"):
-        aed.teardown(_ctx(tmp_path))
+        aed.teardown(ctx)
 
 
 def test_verify_query_error_fails_closed(tmp_path, monkeypatch, sweep_ok):
@@ -528,8 +536,9 @@ def test_verify_query_error_fails_closed(tmp_path, monkeypatch, sweep_ok):
 
     _wire(monkeypatch, failing)
 
+    ctx = _ctx(tmp_path)
     with pytest.raises(aed.TeardownError):
-        aed.teardown(_ctx(tmp_path))
+        aed.teardown(ctx)
 
 
 def test_phase_stacks_runs_only_env_stacks_and_no_sweep_or_verify(tmp_path, monkeypatch):
@@ -558,7 +567,8 @@ def test_phase_finalize_destroys_iam_last_after_sweep_and_verify(tmp_path, monke
         if (c[0] == "terraform" and c[2] == "destroy" and _stack_of(c) == "global/iam")
         or ("resourcegroupstaggingapi" in c and set(aed._VERIFY_RESOURCE_TYPES).issubset(set(c)))
     ]
-    assert labels and labels.index("verify") < labels.index("iam-destroy")
+    assert labels
+    assert labels.index("verify") < labels.index("iam-destroy")
 
 
 def test_main_rejects_prod():
