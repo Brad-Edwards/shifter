@@ -6,18 +6,16 @@ vi.mock("@/app/bootstrap-context", () => ({
   useBootstrapContext: () => ({
     principal: { id: 1, username: "root", display_name: "Root", is_authenticated: true, is_staff: true, is_superuser: true },
     permissions: {},
-    feature_flags: { administer_spa: true, platform_spa: true },
   }),
 }));
 
 import { PlatformSettingsPage } from "./PlatformSettingsPage";
 
 describe("PlatformSettingsPage", () => {
-  it("presents rollout flags as read-only, deployment-managed state", () => {
+  it("presents the cut-over authorities as deployment-managed state", () => {
     render(<PlatformSettingsPage />);
     expect(screen.getByText("Managed by deployment")).toBeInTheDocument();
-    expect(screen.getByText("Administer spa")).toBeInTheDocument();
-    expect(screen.getAllByText("Enabled")).toHaveLength(2);
+    expect(screen.getByText(/platform SPA and RAES provisioning path are the current product authorities/)).toBeInTheDocument();
   });
 
   it("has no axe violations", async () => {

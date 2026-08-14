@@ -165,12 +165,6 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
-  - id: aws-polaris-range
-    path: scripts/polaris-aws-range
-    owner: "@Brad-Edwards"
-    toolchain: aws-1.13.3
-    providers:
-      - registry.terraform.io/hashicorp/aws
   - id: provisioner-range
     path: shifter/engine/provisioner/terraform/modules/range
     owner: "@Brad-Edwards"

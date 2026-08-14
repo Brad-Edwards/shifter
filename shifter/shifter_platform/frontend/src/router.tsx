@@ -64,9 +64,7 @@ import { RangeLaunchPage } from "@/features/mission-control/RangeLaunchPage";
 import { TerminalPage } from "@/features/mission-control/TerminalPage";
 import { TerminalWorkspacePage } from "@/features/mission-control/TerminalWorkspacePage";
 import { ScenarioDetailPage } from "@/features/scenario-editor/ScenarioDetailPage";
-import { ScenarioFormPage } from "@/features/scenario-editor/ScenarioFormPage";
 import { ScenarioListPage } from "@/features/scenario-editor/ScenarioListPage";
-import { ScenarioYamlPage } from "@/features/scenario-editor/ScenarioYamlPage";
 
 // One platform router at the site root (#1369). The Django host serves the
 // shell for the SPA-owned page paths, so deep links and refresh resolve to this
@@ -77,12 +75,10 @@ const missionControlHandle: RouteHandle = { permissionPolicy: "authenticated" };
 // Scenario Editor (#1371) is gated on CMS-authoring access, the same advisory
 // policy the existing "Author" nav group / legacy threat-research views use.
 const scenarioEditorHandle: RouteHandle = { permissionPolicy: "threat_research" };
-// RAES image registry (#1566) shares the "Author" CMS-authoring gate; the API
-// additionally 404s unless SHIFTER_RAES_NATIVE_PROVISIONING is on.
+// RAES image registry (#1566) shares the "Author" CMS-authoring gate.
 const raesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_research" };
 // Administer workspace (#1373) is gated on staff, the same advisory policy the
-// "Administer" nav group and the /api/v1/administer/ endpoints enforce. The Django
-// host additionally serves these pages only when ADMINISTER_SPA_ENABLED is on.
+// "Administer" nav group and the /api/v1/administer/ endpoints enforce.
 const administerHandle: RouteHandle = { permissionPolicy: "staff" };
 // CTF participant workspace (#1372) is gated on CTF-participant access, the same
 // advisory policy the legacy participant Django views use.
@@ -132,19 +128,13 @@ export const router = createBrowserRouter(
         },
         {
           // Scenario Editor (#1371) rehomed under the unified client router.
-          // Its legacy Django counterpart lives at the same /scenario-editor/
-          // page paths (see features/scenario-editor/routes.ts); static
-          // segments (create, create/yaml) outrank the ":scenarioId" dynamic
-          // route regardless of declaration order.
+          // The workspace is a read-only catalog over registered RAES packs;
+          // pack ingestion remains an authenticated API/operator workflow.
           path: "scenario-editor",
           handle: scenarioEditorHandle,
           children: [
             { index: true, element: <ScenarioListPage /> },
-            { path: "create", element: <ScenarioFormPage mode="create" /> },
-            { path: "create/yaml", element: <ScenarioYamlPage mode="create" /> },
             { path: ":scenarioId", element: <ScenarioDetailPage /> },
-            { path: ":scenarioId/edit", element: <ScenarioFormPage mode="edit" /> },
-            { path: ":scenarioId/editor", element: <ScenarioYamlPage mode="edit" /> },
           ],
         },
         {
@@ -208,17 +198,15 @@ export const router = createBrowserRouter(
         },
         {
           // RAES image registry (#1566): greenfield SPA-only surface. The Django
-          // host serves the shell for /raes-image-registry/* GET paths only when
-          // PLATFORM_SPA_ENABLED and SHIFTER_RAES_NATIVE_PROVISIONING are on.
+          // host serves the shell for /raes-image-registry/* GET paths.
           path: "raes-image-registry",
           handle: raesImageRegistryHandle,
           children: [{ index: true, element: <RaesImageRegistryPage /> }],
         },
         {
           // Administer workspace (#1373): greenfield SPA surface. The Django host
-          // serves the shell for /administer/* GET paths only when
-          // PLATFORM_SPA_ENABLED and ADMINISTER_SPA_ENABLED are on; Django admin
-          // stays at /admin/ and is never captured here. Users is the index;
+          // serves the shell for /administer/* GET paths; Django admin stays at
+          // /admin/ and is never captured here. Users is the index;
           // static segments (cost, settings) outrank the users/:id dynamic route.
           path: "administer",
           handle: administerHandle,

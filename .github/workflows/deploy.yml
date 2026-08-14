@@ -108,6 +108,7 @@ jobs:
               - '.github/workflows/_range.yml'
             shifter_engine:
               - 'shifter/engine/provisioner/**'
+              # Retired in #1311; its removal changes the engine image context.
               - 'shifter/cyberscript/**'
               # NB: module is `engine-provisioner`, not the historical
               # `pulumi-provisioner` name; the latter was a stale typo
@@ -125,7 +126,7 @@ jobs:
             # Portal image build/deploy trigger (#913). Mirrors the
             # portal image's build inputs: the Docker context controls
             # plus every tree the Dockerfile COPYs
-            # (shifter_platform, cyberscript, installation). Kept
+            # (shifter_platform and installation). Kept
             # separate from the Terraform-only `shifter_platform`
             # filter (ADR-003-R2) and from the broad `quality_relevant`
             # classifier so engine/packer-only changes do not redeploy
@@ -134,6 +135,7 @@ jobs:
             # image.
             portal_image:
               - 'shifter/shifter_platform/**'
+              # Retired in #1311; its removal changes the portal image context.
               - 'shifter/cyberscript/**'
               - 'shifter/installation/**'
               - 'shifter/.dockerignore'
@@ -155,6 +157,8 @@ jobs:
             quality_only:
               - '.github/workflows/_quality.yml'
               - '.github/quality-path-filters.yaml'
+              # Retired in #1311; deletion and attempted resurrection run the
+              # remaining Terraform/security ownership gates without deploy.
               - 'scripts/polaris-aws-range/**'
               - 'scenario-dev/polaris/tests/**'
               # Guardrail scripts that the Quality workflow invokes

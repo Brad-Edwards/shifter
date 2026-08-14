@@ -47,7 +47,6 @@ CYBERSCRIPT_IMPORT_PATTERN = re.compile(
     r"^\s*(?:from|import)\s+(cyberscript(?:\.\w+)*)",
     re.MULTILINE,
 )
-CYBERSCRIPT_ALLOWED_LAYER = "shared"
 
 
 def _facade_entry_allows(entry: str, module_path: str) -> bool:
@@ -279,16 +278,15 @@ def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violat
         # ADR-001-R4: symbol-restricted facade seams (e.g. mission_control ->
         # engine.services) permit only the enumerated data-plane symbols.
         violations.extend(_symbol_facade_violations(rel, from_layer, text, allowed_symbols))
-        if from_layer != CYBERSCRIPT_ALLOWED_LAYER:
-            for module in sorted(set(CYBERSCRIPT_IMPORT_PATTERN.findall(text))):
-                violations.append(
-                    Violation(
-                        "layer-imports",
-                        "ADR-001-R1",
-                        rel,
-                        f"{from_layer} may not import {module}; use shared shims",
-                    )
+        for module in sorted(set(CYBERSCRIPT_IMPORT_PATTERN.findall(text))):
+            violations.append(
+                Violation(
+                    "layer-imports",
+                    "ADR-001-R1",
+                    rel,
+                    f"{from_layer} may not import retired package {module}",
                 )
+            )
 
     return violations
 
@@ -372,7 +370,6 @@ def check_cloud_factory_seam(repo_root: Path, files: list[str] | None) -> list[V
 __all__ = [
     "CLOUD_ROOTS",
     "CLOUD_SKIP_FILES",
-    "CYBERSCRIPT_ALLOWED_LAYER",
     "CYBERSCRIPT_IMPORT_PATTERN",
     "IMPORT_PATTERN",
     "_INSTALLED_APPS",

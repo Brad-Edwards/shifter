@@ -1,11 +1,4 @@
-"""Scenario registry - unified access to YAML defaults and DB customs.
-
-Merges scenario templates from two sources:
-1. YAML files in cms/scenarios/templates/ (defaults, code-managed)
-2. Scenario model instances in the database (staff-created customs)
-
-Applies ScenarioMetadata overlays (enabled, staff_only) to all scenarios.
-"""
+"""RAES package-source scenario registry with metadata access overlays."""
 
 from __future__ import annotations
 
@@ -14,14 +7,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
-
-from cms.scenarios._projection import _scenario_to_dict
-from cms.scenarios.cutover import apply_cutover_routes
-from cms.scenarios.loader import get_all_scenarios as get_yaml_scenarios
-from cms.scenarios.loader import list_scenario_ids as list_yaml_ids
-from cms.scenarios.loader import load_scenario as load_yaml_scenario
-from cms.scenarios.schema import AnyScenarioTemplate, CTFScenarioTemplate, ScenarioTemplate
-from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -62,11 +47,9 @@ _OBJECT_SOURCE_KIND = "object"
 
 # (contract_kind, contract_profile) pairs that have a wired runtime launch
 # adapter — i.e. a launchable entry of that kind/profile can actually be turned
-# into a Shifter range by the RAES-native launch path (#1479:
+# into a Shifter range by the RAES launch path (#1479:
 # cms.services.create_raes_native_range -> shared.raes package loader -> engine
-# dispatch). Gated at runtime by SHIFTER_RAES_NATIVE_PROVISIONING (see
-# ``_raes_launchable``): with the flag off, RAES entries are never launchable and
-# behaviour is byte-identical to the pre-flag empty-set state.
+# dispatch).
 _LAUNCH_ADAPTER_CONTRACT_PROFILES: frozenset[tuple[str, str]] = frozenset({("raes", "shifter")})
 
 
@@ -79,27 +62,6 @@ def _get_metadata_map() -> dict[str, dict[str, Any]]:
     from cms.models import ScenarioMetadata
 
     return {m.scenario_id: {"enabled": m.enabled, "staff_only": m.staff_only} for m in ScenarioMetadata.objects.all()}
-
-
-def _get_db_scenarios() -> list[AnyScenarioTemplate]:
-    """Load all active (non-deleted) custom scenarios from the database.
-
-    Returns:
-        List of ScenarioTemplate objects built from Scenario model instances.
-    """
-    from cms.models import Scenario
-
-    scenarios = []
-    for s in Scenario.objects.all():
-        try:
-            scenarios.append(s.to_template())
-        except Exception:
-            logger.warning(
-                "Skipping invalid DB scenario: scenario_id=%s, id=%s",
-                safe_log_value(s.scenario_id),
-                s.id,
-            )
-    return scenarios
 
 
 def _get_raes_sources() -> list[RaesPackageSource]:
@@ -142,36 +104,27 @@ def _raes_source_refs_valid(source: RaesPackageSource) -> bool:
     return True
 
 
-def _raes_launchable(source: RaesPackageSource, *, known_legacy_ids: set[str]) -> bool:
+def _raes_launchable(source: RaesPackageSource) -> bool:
     """Data-driven launchability decision for an RAES package-source row.
 
     Launchability is NOT merely ``conformance_status == "passed"``. An RAES
     entry is launchable only when ALL hold (fail-closed):
 
     - a runtime hydration adapter exists for its contract/profile;
-    - it does not shadow an active legacy ``scenario_id``;
     - its source kind, contract kind, and contract profile are supported;
     - its conformance status is ``passed``;
     - its refs/digests/provenance re-validate against the shared contract.
 
     Args:
         source: RaesPackageSource instance.
-        known_legacy_ids: Active YAML-default + DB-custom ids (no-shadow set).
-
     Returns:
         True only if the entry is launchable.
     """
     from cms.models import RaesPackageSource as _RaesPackageSource
 
-    # Fail-closed on the cutover flag: with SHIFTER_RAES_NATIVE_PROVISIONING off,
-    # no RAES entry is launchable and behaviour matches the pre-adapter state.
-    if not settings.RAES_NATIVE_PROVISIONING_ENABLED:
-        return False
-
     return (
         # Never launchable until a runtime adapter exists for this contract/profile.
         (source.contract_kind, source.contract_profile) in _LAUNCH_ADAPTER_CONTRACT_PROFILES
-        and source.scenario_id not in known_legacy_ids
         and source.contract_kind in LAUNCHABLE_CONTRACT_KINDS
         and source.contract_profile in LAUNCHABLE_CONTRACT_PROFILES
         and _source_kind_launchable(source.source_kind)
@@ -209,7 +162,7 @@ def _raes_source_to_dict(
         launchable: The computed launchability decision for this entry.
 
     Returns:
-        Projection dict shaped like other catalog entries (id/name/enabled/
+        Projection dict containing catalog metadata (id/name/enabled/
         staff_only/is_default/launchable/agent_requirements) plus RAES source fields.
     """
     if metadata is not None:
@@ -239,23 +192,8 @@ def _raes_source_to_dict(
     }
 
 
-def is_default_scenario(scenario_id: str) -> bool:
-    """Check if a scenario_id corresponds to a YAML default.
-
-    Args:
-        scenario_id: The scenario identifier to check.
-
-    Returns:
-        True if the scenario exists as a YAML file in templates/.
-    """
-    return scenario_id in list_yaml_ids()
-
-
 def list_all_scenarios(user: User | None = None) -> list[ScenarioProjection]:
-    """Get all scenarios from both sources with metadata applied.
-
-    Combines YAML defaults and DB customs, applies metadata overlays,
-    and filters based on user role.
+    """Get all RAES package sources with metadata access overlays applied.
 
     Args:
         user: Requesting user. If None, returns all (no access filtering).
@@ -267,11 +205,7 @@ def list_all_scenarios(user: User | None = None) -> list[ScenarioProjection]:
     """
     metadata_map = _get_metadata_map()
 
-    yaml_entries, yaml_ids = _yaml_source_entries(metadata_map)
-    db_entries, db_ids = _db_source_entries(metadata_map, yaml_ids)
-    raes_entries = _raes_source_entries(metadata_map, yaml_ids | db_ids)
-    # Overlay the ADR-031-R6 source routes (see cms.scenarios.cutover); empty route = unchanged.
-    result = apply_cutover_routes(yaml_entries + db_entries + raes_entries)
+    result = _raes_source_entries(metadata_map)
 
     if user is not None and not (user.is_staff or user.is_superuser):
         result = [s for s in result if s["enabled"] and not s["staff_only"]]
@@ -279,40 +213,11 @@ def list_all_scenarios(user: User | None = None) -> list[ScenarioProjection]:
     return result
 
 
-def _yaml_source_entries(metadata_map: dict[str, Any]) -> tuple[list[ScenarioProjection], set[str]]:
-    """Build projection entries for YAML defaults; return (entries, ids)."""
-    entries = []
-    yaml_ids = set()
-    for template in get_yaml_scenarios():
-        yaml_ids.add(template.id)
-        entries.append(_scenario_to_dict(template, is_default=True, metadata=metadata_map.get(template.id)))
-    return entries, yaml_ids
-
-
-def _db_source_entries(metadata_map: dict[str, Any], yaml_ids: set[str]) -> tuple[list[ScenarioProjection], set[str]]:
-    """Build entries for DB customs, skipping ids that collide with YAML defaults."""
-    entries = []
-    db_ids = set()
-    for template in _get_db_scenarios():
-        if template.id in yaml_ids:
-            logger.warning("DB scenario '%s' collides with YAML default, skipping", template.id)
-            continue
-        db_ids.add(template.id)
-        entries.append(_scenario_to_dict(template, is_default=False, metadata=metadata_map.get(template.id)))
-    return entries, db_ids
-
-
-def _raes_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> list[ScenarioProjection]:
-    """Build RAES entries, fail-closed skipping any id that shadows an active legacy scenario."""
+def _raes_source_entries(metadata_map: dict[str, Any]) -> list[ScenarioProjection]:
+    """Build the authoritative RAES catalog entries."""
     entries = []
     for source in _get_raes_sources():
-        if source.scenario_id in known_ids:
-            logger.warning(
-                "RAES package-source '%s' collides with an active legacy scenario_id, skipping",
-                safe_log_value(source.scenario_id),
-            )
-            continue
-        launchable = _raes_launchable(source, known_legacy_ids=known_ids)
+        launchable = _raes_launchable(source)
         entries.append(
             _raes_source_to_dict(source, metadata=metadata_map.get(source.scenario_id), launchable=launchable)
         )
@@ -339,8 +244,7 @@ def list_launchable_scenarios(
 
     ``STAFF_REVIEW`` returns the full access-filtered projection (including
     non-launchable RAES entries for review). Every launch workflow returns only
-    entries whose ``launchable`` flag is set. Legacy YAML/DB entries are always
-    launchable; RAES entries follow :func:`_raes_launchable`.
+    entries whose ``launchable`` flag is set.
     """
     scenarios = list_all_scenarios(user=user)
     if workflow == ScenarioWorkflow.STAFF_REVIEW:
@@ -366,9 +270,7 @@ def is_scenario_launchable(
 
 
 def get_scenario_detail(scenario_id: str) -> ScenarioProjection:
-    """Get a single scenario by ID from either source.
-
-    Checks the database first, then falls back to YAML.
+    """Get a single RAES package-source scenario by ID.
 
     Args:
         scenario_id: Unique scenario identifier.
@@ -379,33 +281,10 @@ def get_scenario_detail(scenario_id: str) -> ScenarioProjection:
     Raises:
         ValueError: If scenario not found in either source.
     """
-    metadata_map = _get_metadata_map()
-    meta = metadata_map.get(scenario_id)
-
-    # Try database first
-    from cms.models import Scenario
-
-    try:
-        db_scenario = Scenario.objects.get(scenario_id=scenario_id)
-        template = db_scenario.to_template()
-        return _scenario_to_dict(template, is_default=False, metadata=meta)
-    except Scenario.DoesNotExist:
-        pass
-
-    # Fall back to YAML
-    try:
-        template = load_yaml_scenario(scenario_id)
-        return _scenario_to_dict(template, is_default=True, metadata=meta)
-    except ValueError as e:
-        raise ValueError(f"Scenario '{scenario_id}' not found") from e
-
-
-def load_demo_scenario_template(scenario_id: str) -> ScenarioTemplate:
-    """Load a demo scenario template for hydration and agent-requirement checks."""
-    template = load_scenario_template(scenario_id)
-    if isinstance(template, CTFScenarioTemplate):
-        raise ValueError(f"Scenario '{scenario_id}' is a CTF scenario")
-    return template
+    detail = get_catalog_entry(scenario_id)
+    if detail is None:
+        raise ValueError(f"Scenario '{scenario_id}' not found")
+    return detail
 
 
 def check_scenario_access(scenario_id: str, user: User) -> ScenarioProjection:
@@ -428,31 +307,3 @@ def check_scenario_access(scenario_id: str, user: User) -> ScenarioProjection:
     if not (user.is_staff or user.is_superuser) and (not detail["enabled"] or detail["staff_only"]):
         raise ValueError(f"Scenario '{scenario_id}' is not available")
     return detail
-
-
-def load_scenario_template(scenario_id: str) -> AnyScenarioTemplate:
-    """Load a ScenarioTemplate from either source for hydration.
-
-    This is the replacement for loader.load_scenario() that checks
-    the database first.
-
-    Args:
-        scenario_id: Unique scenario identifier.
-
-    Returns:
-        Validated scenario template (demo or CTF).
-
-    Raises:
-        ValueError: If scenario not found in either source.
-    """
-    # Try database first
-    from cms.models import Scenario
-
-    try:
-        db_scenario = Scenario.objects.get(scenario_id=scenario_id)
-        return db_scenario.to_template()
-    except Scenario.DoesNotExist:
-        pass
-
-    # Fall back to YAML
-    return load_yaml_scenario(scenario_id)

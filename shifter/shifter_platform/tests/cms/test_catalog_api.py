@@ -102,8 +102,7 @@ class TestCatalogListAPI:
 
         assert response.status_code == 200
         by_id = {entry["id"]: entry for entry in response.json()}
-        assert "basic" in by_id
-        assert by_id["basic"]["raes"] is None
+        assert set(by_id) == {"polaris-raes"}
         raes = by_id["polaris-raes"]["raes"]
         assert raes["contract_kind"] == "raes"
         assert raes["package_digest"] == "sha256:" + "a" * 64

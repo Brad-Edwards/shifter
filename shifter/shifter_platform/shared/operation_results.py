@@ -22,8 +22,8 @@ full state snapshots. Correlation is by UUID only — Engine integer primary key
 are never identity here.
 
 Dependency-light on purpose: the standalone provisioner image imports this
-without Django or the platform schema graph. There is one boundary error type,
-reused from ``cyberscript``; callers do not add a parallel exception hierarchy.
+without Django or the platform schema graph. There is one native shared boundary
+error type; callers do not add a parallel exception hierarchy.
 """
 
 from __future__ import annotations
@@ -33,9 +33,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from cyberscript.enums import ResourceStatus
-from cyberscript.exceptions import ValidationError as OperationResultError
-
+from shared.enums import ResourceStatus
+from shared.exceptions import ValidationError as OperationResultError
 from shared.operation_result_payloads import (
     MAX_DIAGNOSTIC_CHARS,
     MAX_INSTANCE_OUTCOMES,

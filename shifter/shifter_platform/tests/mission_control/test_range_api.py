@@ -121,14 +121,6 @@ class TestGetRange:
         assert response.status_code == 200
         assert _json(response)["has_range"] is False
 
-    def test_raes_projection_null_for_legacy_range(self, authenticated_client, launch_range_via_api):
-        client, user = authenticated_client(email="legacy-raes@example.com")
-        launch_range_via_api(client, user)
-
-        data = _json(client.get(reverse("v1:mission_control:range-current")))
-        assert data["has_range"] is True
-        assert data["raes_projection"] is None
-
     def test_raes_projection_present_when_records_exist(self, authenticated_client, launch_range_via_api):
         client, user = authenticated_client(email="raes-backed@example.com")
         launch_resp, _agent, _scenario_id = launch_range_via_api(client, user)
@@ -148,16 +140,6 @@ class TestGetRange:
         assert data["has_range"] is False
         assert data["raes_participant_runtime"] is None
 
-    def test_raes_participant_runtime_null_for_legacy_range(self, authenticated_client, launch_range_via_api):
-        client, user = authenticated_client(email="legacy-participant-runtime@example.com")
-        launch_range_via_api(client, user)
-
-        data = _json(client.get(reverse("v1:mission_control:range-current")))
-        assert data["has_range"] is True
-        assert data["raes_participant_runtime"] is None
-        # The sibling raes_projection and existing keys are unaffected.
-        assert data["raes_projection"] is None
-
     def test_raes_participant_runtime_present_when_records_exist(self, authenticated_client, launch_range_via_api):
         client, user = authenticated_client(email="participant-runtime-backed@example.com")
         launch_resp, _agent, _scenario_id = launch_range_via_api(client, user)
@@ -170,13 +152,10 @@ class TestGetRange:
         assert participant_runtime is not None
         assert participant_runtime["participants"][0]["participant_ref"] == "ctf-participant-1"
         assert participant_runtime["participants"][0]["runtime"]["status"] == "running"
-        # Access channels are derived from the launched range's instances
-        # (attacker + Windows target from HYDRATABLE_DEFINITION) plus exactly
-        # one range-level backend_command channel.
+        # The fixture plan has no interactive members, so only the range-level
+        # backend command channel is projected.
         channels = {c["channel"] for c in participant_runtime["access_channels"]}
-        assert "browser_terminal" in channels
-        assert "guacamole_rdp" in channels
-        assert "guacamole_range_ssh" in channels
+        assert channels == {"backend_command"}
         backend_commands = [c for c in participant_runtime["access_channels"] if c["channel"] == "backend_command"]
         assert len(backend_commands) == 1
         assert backend_commands[0]["target_ref"] == request_id

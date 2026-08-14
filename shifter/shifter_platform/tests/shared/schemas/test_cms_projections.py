@@ -66,21 +66,6 @@ def test_scenario_projection_keys() -> None:
         "is_default",
         "launchable",
         "agent_requirements",
-        # Legacy demo authoring.
-        "ngfw",
-        "instances",
-        "subnets",
-        "participant_access",
-        # CTF authoring.
-        "cyberscript_version",
-        "zones",
-        "networks",
-        "forests",
-        "services",
-        "assets",
-        "flags",
-        "data_seeds",
-        "detection",
         # RAES provenance.
         "source_kind",
         "contract_kind",

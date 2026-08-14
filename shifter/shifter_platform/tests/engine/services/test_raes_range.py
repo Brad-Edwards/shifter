@@ -92,6 +92,18 @@ class TestCreateRaesRange:
         assert result.status == Range.Status.PROVISIONING
         assert result.range_id
 
+    def test_absent_dispatch_task_reference_is_not_persisted(self, user, monkeypatch):
+        persist_calls = []
+        monkeypatch.setattr("engine.services._raes_range.start_raes_range_provisioning", lambda _request_id: None)
+        monkeypatch.setattr(
+            "engine.services._raes_range._persist_task_arn",
+            lambda *args: persist_calls.append(args),
+        )
+
+        _create_raes_range(request_id=uuid4(), user_id=user.id, compiled_plan=make_compiled_plan())
+
+        assert persist_calls == []
+
     def test_persists_range_with_serialized_plan_and_request(self, user):
         request_id = uuid4()
         plan = make_compiled_plan()

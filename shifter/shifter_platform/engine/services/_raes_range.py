@@ -1,15 +1,9 @@
-"""Engine-side creation + dispatch for the RAES-native provisioning path (ADR-031).
+"""Engine-side creation and dispatch for the canonical RAES path (ADR-031).
 
-Parallel to :func:`engine.services.create_range` (the cyberscript path), but the
-persisted truth is the serialized RAES ``ProvisioningPlan`` stored in
-``mission_control_range.range_config`` (reused, no new table), realized by the
-provisioner's ``raes-range`` command. The cyberscript ``create_range`` /
-``interpret`` bodies are untouched (ADR-031-R2).
-
-This module is reached only through the RAES dispatch port
-(``cms.raes.dispatch``) which is constructed behind the
-``SHIFTER_RAES_NATIVE_PROVISIONING`` flag; nothing here runs on the cyberscript
-path.
+The persisted truth is the serialized RAES ``ProvisioningPlan`` stored in
+``mission_control_range.range_config`` and realized by the provisioner's
+``raes-range`` command. This module is reached through the RAES dispatch port
+(``cms.raes.dispatch``) and is the only range-creation authority.
 """
 
 from __future__ import annotations
@@ -29,6 +23,7 @@ from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.participant_access import ParticipantAccessBinding
 
+from ._common import _persist_task_arn
 from ._range_backend_binding import (
     assert_backend_supports_egress_none,
     backend_binding_fields,
@@ -126,8 +121,8 @@ def create_raes_range(
     re-resolves; on the idempotent reuse path they are not re-created.
     """
     bindings = bindings or RangeBindings()
-    # Imported lazily (like the cyberscript ``create_range`` path) so importing
-    # the ``engine`` app does not define models before the app registry is ready.
+    # Imported lazily so importing the ``engine`` app does not define models
+    # before the app registry is ready.
     from engine.models import (
         RaesArtifactSatisfactionBinding,
         RaesContentDeliveryBinding,
@@ -222,12 +217,14 @@ def create_raes_range(
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
     try:
-        start_raes_range_provisioning(request_uuid)
+        task_ref = start_raes_range_provisioning(request_uuid)
     except Exception:
         range_obj.status = Range.Status.FAILED
         range_obj.error_message = "Provisioning dispatch failed"
         range_obj.save(update_fields=["status", "error_message", "updated_at"])
         raise
+    if task_ref:
+        _persist_task_arn(range_obj, "provision", task_ref)
 
     return RaesRangeRef(
         request_id=str(request_uuid), range_id=str(range_obj.uuid), status=range_obj.status, accepted=True

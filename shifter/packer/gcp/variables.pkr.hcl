@@ -150,7 +150,7 @@ variable "dc_content_script" {
     Path (relative to shifter/packer/gcp) to the AD-content seed script staged
     into the image and run post-promotion by finalize.ps1. It creates the
     scenario's OUs/users/groups/SPNs and sets the CTF Administrator password.
-    Accepts a -DnsForwarder parameter. Defaults to the Polaris a2_setup.ps1.
+    Accepts a -DnsForwarder parameter. Defaults to the Polaris content seed.
   DESC
-  default     = "../../../scripts/polaris-aws-range/a2_setup.ps1"
+  default     = "../scripts/windows/polaris-content-seed.ps1"
 }
