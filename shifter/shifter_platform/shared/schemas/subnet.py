@@ -42,13 +42,14 @@ class SubnetSpec(SpecBase):
         connected_to: List of subnet names this subnet needs to reach.
     """
 
-    name: str  # Required for subnets (overrides optional in SpecBase)
+    # Required for subnets (overrides optional in SpecBase).
+    name: str
     instances: list[InstanceSpec]
     connected_to: list[str] = []
 
     @field_validator("instances")
     @classmethod
-    def instances_not_empty(cls, v: list) -> list:
+    def instances_not_empty(cls, v: list[InstanceSpec]) -> list[InstanceSpec]:
         """Validate instances list is not empty."""
         if not v:
             raise ValueError("subnet must contain at least one instance")

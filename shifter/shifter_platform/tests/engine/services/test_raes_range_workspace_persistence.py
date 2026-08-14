@@ -67,12 +67,13 @@ def test_distinct_workspace_scopes_remain_distinct(user):
 
 def test_refuses_a_missing_workspace_and_persists_nothing(user):
     request_id = uuid4()
+    compiled_plan = make_compiled_plan()
 
     with pytest.raises(EngineError):
         create_raes_range(
             request_id=request_id,
             user_id=user.id,
-            compiled_plan=make_compiled_plan(),
+            compiled_plan=compiled_plan,
             workspace_id=None,
         )
 
@@ -81,10 +82,11 @@ def test_refuses_a_missing_workspace_and_persists_nothing(user):
 
 def test_replay_cannot_change_workspace_scope(user):
     request_id = uuid4()
+    compiled_plan = make_compiled_plan()
     create_raes_range(
         request_id=request_id,
         user_id=user.id,
-        compiled_plan=make_compiled_plan(),
+        compiled_plan=compiled_plan,
         workspace_id=11,
     )
 
@@ -92,7 +94,7 @@ def test_replay_cannot_change_workspace_scope(user):
         create_raes_range(
             request_id=request_id,
             user_id=user.id,
-            compiled_plan=make_compiled_plan(),
+            compiled_plan=compiled_plan,
             workspace_id=22,
         )
 
@@ -101,10 +103,11 @@ def test_replay_cannot_change_workspace_scope(user):
 
 def test_replay_cannot_change_effective_egress_mode(user):
     request_id = uuid4()
+    compiled_plan = make_compiled_plan()
     create_raes_range(
         request_id=request_id,
         user_id=user.id,
-        compiled_plan=make_compiled_plan(),
+        compiled_plan=compiled_plan,
         workspace_id=11,
         egress_mode="none",
     )
@@ -113,7 +116,7 @@ def test_replay_cannot_change_effective_egress_mode(user):
         create_raes_range(
             request_id=request_id,
             user_id=user.id,
-            compiled_plan=make_compiled_plan(),
+            compiled_plan=compiled_plan,
             workspace_id=11,
             egress_mode="status-quo",
         )

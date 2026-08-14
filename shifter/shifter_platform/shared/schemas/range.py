@@ -11,7 +11,7 @@ incoming requests against them.
 from __future__ import annotations
 
 import uuid as uuid_module
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
@@ -22,6 +22,23 @@ from .base import SpecBase
 if TYPE_CHECKING:
     from .app import NGFWAppSpec
     from .subnet import SubnetSpec
+
+_POSITIVE_USER_ID_ERROR = "user_id must be a positive integer"
+
+
+class _AgentOS(Protocol):
+    """Minimum operating-system projection required during template hydration."""
+
+    slug: str
+
+
+class _AgentSource(Protocol):
+    """Minimum agent projection required during template hydration."""
+
+    os: _AgentOS
+    s3_key: str
+    original_filename: str
+    sha256_hash: str | None
 
 
 class AgentDetails(BaseModel):
@@ -80,7 +97,7 @@ class InstanceSpec(SpecBase):
     def from_template(
         cls,
         data: dict[str, Any],
-        agents: dict[str, Any] | None = None,
+        agents: dict[str, _AgentSource] | None = None,
     ) -> InstanceSpec:
         """Create an InstanceSpec from a scenario template dict.
 
@@ -148,8 +165,8 @@ def _resolve_os_and_agent(
     name: str,
     template_os_type: str,
     xdr_agent: bool,
-    agents: dict[str, Any],
-) -> tuple[str, Any]:
+    agents: dict[str, _AgentSource],
+) -> tuple[str, _AgentSource | None]:
     """Resolve OS type and find matching agent.
 
     Returns:
@@ -161,31 +178,29 @@ def _resolve_os_and_agent(
     # `xdr_agent` gate so a `from_agent` instance with `xdr_agent: false` (e.g.
     # the canonical `basic` victim) still resolves instead of leaking the
     # literal "from_agent" into InstanceSpec validation.
+    resolved_os_type = template_os_type
+    agent_obj: _AgentSource | None = None
     if template_os_type == "from_agent":
         agent_obj = next(iter(agents.values()), None)
         if agent_obj is None:
             raise ValueError(f"Instance '{name}' uses from_agent but no agent provided")
-        return _resolve_agent_os(agent_obj), agent_obj
+        resolved_os_type = _resolve_agent_os(agent_obj)
+    elif xdr_agent:
+        if template_os_type == "windows":
+            agent_obj = agents.get("windows")
+        elif template_os_type in ("ubuntu", "kali"):
+            agent_obj = agents.get("linux")
 
-    if not xdr_agent:
-        return template_os_type, None
-
-    if template_os_type == "windows":
-        return template_os_type, agents.get("windows")
-
-    if template_os_type in ("ubuntu", "kali"):
-        return template_os_type, agents.get("linux")
-
-    return template_os_type, None
+    return resolved_os_type, agent_obj
 
 
-def _resolve_agent_os(agent: Any) -> str:
+def _resolve_agent_os(agent: _AgentSource) -> str:
     """Map agent OS to provisioner os_type."""
     os_slug = agent.os.slug.lower()
     return "windows" if os_slug == "windows" else "ubuntu"
 
 
-def _build_agent_details(agent_obj: Any) -> AgentDetails:
+def _build_agent_details(agent_obj: _AgentSource) -> AgentDetails:
     """Build AgentDetails from agent object."""
     return AgentDetails(
         s3_key=agent_obj.s3_key,
@@ -233,7 +248,7 @@ class RangeSpecBase(SpecBase):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
     @property
@@ -330,18 +345,13 @@ class InstanceContextBase(BaseModel):
     @field_validator("private_ip", mode="before")
     @classmethod
     def normalize_private_ip(cls, v: object) -> str | None:
-        if v is None:
-            return None
+        """Normalize a bounded display-only IP string, or discard invalid input."""
         if not isinstance(v, str):
             return None
         stripped = v.strip()
-        if not stripped:
-            return None
-        if len(stripped) > _PRIVATE_IP_MAX_LEN:
-            return None
-        if not all(ch in _PRIVATE_IP_ALLOWED_CHARS for ch in stripped):
-            return None
-        return stripped
+        valid = bool(stripped) and len(stripped) <= _PRIVATE_IP_MAX_LEN
+        valid = valid and all(ch in _PRIVATE_IP_ALLOWED_CHARS for ch in stripped)
+        return stripped if valid else None
 
 
 class InstanceContext(InstanceContextBase):
@@ -414,7 +424,7 @@ class RangeContextBase(BaseModel):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
     @computed_field  # type: ignore[prop-decorator]
@@ -480,7 +490,7 @@ class RangeRef(BaseModel):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
 

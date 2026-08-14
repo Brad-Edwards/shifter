@@ -16,6 +16,8 @@ from pydantic import BaseModel, Discriminator, computed_field, field_validator
 
 from .base import SpecBase
 
+_POSITIVE_USER_ID_ERROR = "user_id must be a positive integer"
+
 # =============================================================================
 # Credential Specs - type-specific creation schemas
 # =============================================================================
@@ -40,7 +42,7 @@ class CredentialSpecBase(SpecBase):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
 
@@ -57,7 +59,8 @@ class SCMCredentialSpec(CredentialSpecBase):
         sls_region: SLS region.
     """
 
-    name: str  # Required for SCM credentials
+    # Required for SCM credentials.
+    name: str
     scm_folder_name: str
     scm_pin_id: str
     scm_pin_value: str
@@ -74,7 +77,8 @@ class DeploymentProfileSpec(CredentialSpecBase):
         authcode: Deployment profile authcode (secret).
     """
 
-    name: str  # Required for deployment profiles
+    # Required for deployment profiles.
+    name: str
     authcode: str
 
 
@@ -122,7 +126,7 @@ class CredentialContextBase(BaseModel):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
     @computed_field  # type: ignore[prop-decorator]
@@ -215,5 +219,5 @@ class CredentialRef(BaseModel):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v

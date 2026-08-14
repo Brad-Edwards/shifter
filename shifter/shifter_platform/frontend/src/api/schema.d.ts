@@ -160,6 +160,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List the canonical RAES-backed catalog projection. */
         get: operations["cms_catalog_list"];
         put?: never;
         post?: never;
@@ -176,6 +177,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Return one canonical RAES-backed catalog projection. */
         get: operations["cms_catalog_retrieve"];
         put?: never;
         post?: never;
@@ -237,7 +239,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
+    "/api/v1/cms/scenarios/{scenario_id}/": {
         parameters: {
             query?: never;
             header?: never;
@@ -245,7 +247,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return a read-only RAES scenario detail projection. */
-        get: operations["cms_scenario_editor_scenarios_retrieve"];
+        get: operations["cms_scenarios_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -254,7 +256,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/": {
+    "/api/v1/cms/scenarios/{scenario_id}/metadata/": {
         parameters: {
             query?: never;
             header?: never;
@@ -268,17 +270,18 @@ export interface paths {
         options?: never;
         head?: never;
         /** @description Update the availability/audience overlay for a RAES package source. */
-        patch: operations["cms_scenario_editor_scenarios_metadata_partial_update"];
+        patch: operations["cms_scenarios_metadata_partial_update"];
         trace?: never;
     };
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/": {
+    "/api/v1/cms/scenarios/{scenario_id}/realizability/": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["cms_scenario_editor_scenarios_realizability_retrieve"];
+        /** @description Return the backend realizability assessment for one RAES source. */
+        get: operations["cms_scenarios_realizability_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5386,7 +5389,7 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_scenarios_retrieve: {
+    cms_scenarios_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -5425,7 +5428,7 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_scenarios_metadata_partial_update: {
+    cms_scenarios_metadata_partial_update: {
         parameters: {
             query?: never;
             header?: never;
@@ -5470,7 +5473,7 @@ export interface operations {
             };
         };
     };
-    cms_scenario_editor_scenarios_realizability_retrieve: {
+    cms_scenarios_realizability_retrieve: {
         parameters: {
             query?: never;
             header?: never;

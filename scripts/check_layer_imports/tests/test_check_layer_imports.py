@@ -302,7 +302,7 @@ class TestCyberscriptViolations:
         (cms_path / "orchestrator.py").write_text("from cyberscript.script_context import ScriptExecutionContext\n")
         imports = get_cyberscript_imports(cms_path.parent)
         assert imports == {"cyberscript.script_context"}
-        violations = compute_cyberscript_violations("cms", imports)
+        violations = compute_cyberscript_violations(imports)
         assert violations == ["cyberscript.script_context"]
 
     def test_shared_import_is_also_a_violation(self, tmp_path):
@@ -313,7 +313,7 @@ class TestCyberscriptViolations:
         )
         imports = get_cyberscript_imports(shared_path)
         assert "cyberscript.script_context" in imports
-        violations = compute_cyberscript_violations("shared", imports)
+        violations = compute_cyberscript_violations(imports)
         assert violations == ["cyberscript.script_context"]
 
 

@@ -72,7 +72,8 @@ class NGFWAppSpec(AppSpecBase):
         otp_folder: OTP folder path (for OTP registration).
     """
 
-    name: str  # Required for NGFW
+    # Required for NGFW.
+    name: str
     app_type: Literal["ngfw"] = "ngfw"
     registration_method: Literal["pin", "otp"]
 

@@ -144,6 +144,8 @@ def validate_scenario_requirements(scenario_id: str, agent: AgentConfig | None) 
     """
     from cms.scenarios.registry import is_scenario_launchable
 
+    del agent
+
     logger.debug(
         "validate_scenario_requirements called for scenario_id=%s",
         scenario_id,

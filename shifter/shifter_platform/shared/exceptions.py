@@ -103,7 +103,7 @@ class ValidationError(Exception):
         self,
         message: str,
         field: str | None = None,
-        value: Any = None,
+        value: object | None = None,
     ) -> None:
         """Initialize ValidationError.
 
@@ -119,7 +119,7 @@ class ValidationError(Exception):
         self.value = self._sanitize_value(value)
 
     @staticmethod
-    def _sanitize_value(value: Any) -> str:
+    def _sanitize_value(value: object | None) -> str:
         """Sanitize value for safe logging."""
         if value is None:
             return "None"

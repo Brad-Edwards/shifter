@@ -142,6 +142,7 @@ class _ReleaseConformancePort:
 
     def realize(self, compiled_plan: dict[str, Any], participant_access: object = ()) -> ShifterDispatchResult:
         """Accept only a non-empty plan that passed the real Shifter backend target."""
+        del participant_access
         if not compiled_plan.get("resources"):
             raise InboxManifestError("in-box pack compiled to an empty provisioning plan")
         return ShifterDispatchResult(

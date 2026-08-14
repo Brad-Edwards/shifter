@@ -26,6 +26,14 @@ package, authoring, route, deployment-selector, and workflow paths. Deployment
 evidence remains deliberately out of scope for this issue because there is no
 tenant against which it can be produced.
 
+The removed `/api/v1/cms/scenario-editor/` namespace and
+`Bootstrap.feature_flags` projection are recorded as the exact #1311
+whole-feature retirement in `openapi/v1.retirements.json` under ADR-024 and the
+ADR-040 process. The SPA now uses the additive canonical
+`/api/v1/cms/scenarios/` detail, metadata, and realizability routes. No legacy
+route, redirect, response alias, or rollout flag remains as a compatibility
+surface.
+
 ADR-031-R6 now records the same hard-cut posture as ADR-024: there is no
 in-process selector or same-schema compatibility rollback. A design note,
 enabled flag, or generic backend validation run is not deployment proof.

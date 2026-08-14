@@ -187,7 +187,7 @@ def get_cyberscript_imports(layer_path: Path) -> set[str]:
     return imports
 
 
-def compute_cyberscript_violations(from_layer: str, modules: set[str]) -> list[str]:
+def compute_cyberscript_violations(modules: set[str]) -> list[str]:
     """Return imports of the retired CyberScript package."""
     return sorted(modules)
 
@@ -198,7 +198,7 @@ def analyze_cyberscript_imports(base_path: Path) -> dict[str, list[str]]:
 
     for from_layer in ALL_LAYERS:
         modules = get_cyberscript_imports(base_path / from_layer)
-        violations = compute_cyberscript_violations(from_layer, modules)
+        violations = compute_cyberscript_violations(modules)
         if violations:
             result[from_layer] = violations
 

@@ -36,8 +36,9 @@ class TestListScenarios:
             services.list_scenarios("not_a_user")
 
     def test_raises_valueerror_for_unsaved_user(self):
+        unsaved_user = User(username="unsaved")
         with pytest.raises(ValueError, match="user must be saved"):
-            services.list_scenarios(User(username="unsaved"))
+            services.list_scenarios(unsaved_user)
 
 
 class TestGetScenario:

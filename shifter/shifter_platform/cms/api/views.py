@@ -41,6 +41,7 @@ def _actor_user(request: Request) -> User:
 
 
 def _not_found(request: Request, message: str = "Scenario not found") -> Response:
+    """Return the shared bounded 404 response for a missing catalog source."""
     return api_error_response(code="not_found", message=message, status_code=status.HTTP_404_NOT_FOUND, request=request)
 
 
@@ -62,6 +63,8 @@ def _raes_detail_payload(scenario_id: str) -> dict[str, Any] | None:
 
 
 class CatalogListView(APIView):
+    """List the canonical RAES-backed catalog projection."""
+
     permission_classes = CMS_READ_PERMISSIONS
 
     @extend_schema(responses=CatalogEntrySerializer(many=True))
@@ -70,6 +73,8 @@ class CatalogListView(APIView):
 
 
 class CatalogDetailView(APIView):
+    """Return one canonical RAES-backed catalog projection."""
+
     permission_classes = CMS_READ_PERMISSIONS
 
     @extend_schema(responses=CatalogEntrySerializer)
@@ -135,6 +140,8 @@ class ScenarioResourceView(APIView):
 
 
 class ScenarioRealizabilityView(APIView):
+    """Return the backend realizability assessment for one RAES source."""
+
     permission_classes = CMS_READ_PERMISSIONS
 
     @extend_schema(responses=ScenarioRealizabilitySerializer)

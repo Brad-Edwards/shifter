@@ -15,6 +15,7 @@ SPEC_VERSION = "1"
 
 
 def is_wrapped_persisted_spec(blob: dict[str, Any] | None) -> bool:
+    """Return whether ``blob`` carries the stable persisted-spec envelope."""
     return bool(blob and SPEC_SCHEMA_KEY in blob and PAYLOAD_KEY in blob)
 
 

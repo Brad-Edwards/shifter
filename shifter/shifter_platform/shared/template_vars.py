@@ -78,6 +78,7 @@ def resolve_template(template: str, instance_data: dict[str, dict[str, Any]]) ->
     """
 
     def replacer(match: re.Match) -> str:
+        """Resolve one validated template-variable match."""
         instance_name = match.group(1)
         prop = match.group(2)
 
@@ -144,24 +145,15 @@ def _pydantic_validate_template(v: str, info: ValidationInfo) -> str:
     Uses Pydantic validation context to find 'instance_names'.
     If context is missing or doesn't have 'instance_names', validation is skipped.
     """
-    if not v:
-        return v
-
     context = info.context
-    if not context:
-        return v
-
-    instance_names = context.get("instance_names")
-    if instance_names is None:
-        return v
-
-    if not isinstance(instance_names, (set, list, tuple)):
-        logger.warning("_pydantic_validate_template: instance_names in context is not a set/list")
-        return v
-
-    errors = validate_template(v, set(instance_names))
-    if errors:
-        raise ValueError("; ".join(errors))
+    instance_names = context.get("instance_names") if context else None
+    if v and instance_names is not None:
+        if not isinstance(instance_names, (set, list, tuple)):
+            logger.warning("_pydantic_validate_template: instance_names in context is not a set/list")
+        else:
+            errors = validate_template(v, set(instance_names))
+            if errors:
+                raise ValueError("; ".join(errors))
 
     return v
 

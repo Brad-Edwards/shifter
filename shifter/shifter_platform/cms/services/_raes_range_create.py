@@ -384,10 +384,10 @@ def create_range_dispatch(
     threaded to whichever create path runs. Server-derived callers (e.g. the CTF
     bridge) omit it, so their ranges bind to the launcher's personal workspace.
     """
+    del agents_by_os
     return dispatch_range_launch(
         user,
         scenario,
-        agents_by_os,
         range_source=range_source,
         instantiation_purpose=InstantiationPurpose.LIVE_FIRE,
         options=LaunchOptions(
@@ -401,7 +401,6 @@ def create_range_dispatch(
 def dispatch_range_launch(
     user: User,
     scenario: str,
-    agents_by_os: dict[str, int],
     *,
     range_source: RangeSource | None,
     instantiation_purpose: InstantiationPurpose,

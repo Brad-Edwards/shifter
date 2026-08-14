@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from raes.scenarios import ScenarioError, load_scenario
+from raes.scenarios import Scenario, ScenarioError, load_scenario
 from raes_runtime import RuntimeManager
 
 from shared.log_sanitize import safe_log_value
@@ -95,7 +95,7 @@ def resolve_pack_scenario_path(pack_root: Path) -> Path:
     return scenario_path
 
 
-def load_pack_scenario(pack_root: Path):
+def load_pack_scenario(pack_root: Path) -> Scenario:
     """Load the single contained SDL entry through the shared RAES boundary.
 
     Consumers that need the upstream scenario projection use this seam rather

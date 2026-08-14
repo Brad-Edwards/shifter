@@ -613,6 +613,7 @@
     "/api/v1/cms/catalog/": {
       "get": {
         "operationId": "cms_catalog_list",
+        "description": "List the canonical RAES-backed catalog projection.",
         "tags": [
           "cms"
         ],
@@ -667,6 +668,7 @@
     "/api/v1/cms/catalog/{scenario_id}/": {
       "get": {
         "operationId": "cms_catalog_retrieve",
+        "description": "Return one canonical RAES-backed catalog projection.",
         "parameters": [
           {
             "in": "path",
@@ -1013,9 +1015,9 @@
         ]
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
+    "/api/v1/cms/scenarios/{scenario_id}/": {
       "get": {
-        "operationId": "cms_scenario_editor_scenarios_retrieve",
+        "operationId": "cms_scenarios_retrieve",
         "description": "Return a read-only RAES scenario detail projection.",
         "parameters": [
           {
@@ -1075,9 +1077,9 @@
         ]
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/": {
+    "/api/v1/cms/scenarios/{scenario_id}/metadata/": {
       "patch": {
-        "operationId": "cms_scenario_editor_scenarios_metadata_partial_update",
+        "operationId": "cms_scenarios_metadata_partial_update",
         "description": "Update the availability/audience overlay for a RAES package source.",
         "parameters": [
           {
@@ -1156,9 +1158,10 @@
         ]
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/": {
+    "/api/v1/cms/scenarios/{scenario_id}/realizability/": {
       "get": {
-        "operationId": "cms_scenario_editor_scenarios_realizability_retrieve",
+        "operationId": "cms_scenarios_realizability_retrieve",
+        "description": "Return the backend realizability assessment for one RAES source.",
         "parameters": [
           {
             "in": "path",

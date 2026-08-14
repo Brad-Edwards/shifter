@@ -120,6 +120,7 @@ def create_non_user_range(
     """
     from shared.enums import RangeSource
 
+    del agents_by_os
     _assert_operator_authority(user)
     declared = _validated_workflow(workflow)
     purpose = _WORKFLOW_PURPOSES[declared]
@@ -132,7 +133,6 @@ def create_non_user_range(
     return dispatch_range_launch(
         user,
         scenario,
-        agents_by_os or {},
         range_source=RangeSource.MISSION_CONTROL,
         instantiation_purpose=purpose,
         options=LaunchOptions(ngfw_enabled=ngfw_enabled),

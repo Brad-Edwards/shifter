@@ -15,22 +15,31 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..enums import ResourceStatus
 from ..wire_constants import (
-    EVENT_TYPE_CANCELLED as EVENT_TYPE_CANCELLED,
-)
-from ..wire_constants import (
-    EVENT_TYPE_DESTROYED as EVENT_TYPE_DESTROYED,
-)
-from ..wire_constants import (
-    EVENT_TYPE_NGFW as EVENT_TYPE_NGFW,
-)
-from ..wire_constants import (
-    EVENT_TYPE_PROVISIONED as EVENT_TYPE_PROVISIONED,
-)
-from ..wire_constants import (
-    EVENT_TYPE_STATUS_UPDATED as EVENT_TYPE_STATUS_UPDATED,
+    EVENT_TYPE_CANCELLED,
+    EVENT_TYPE_DESTROYED,
+    EVENT_TYPE_NGFW,
+    EVENT_TYPE_PROVISIONED,
+    EVENT_TYPE_STATUS_UPDATED,
 )
 
+__all__ = [
+    "EVENT_TYPE_CANCELLED",
+    "EVENT_TYPE_DESTROYED",
+    "EVENT_TYPE_NGFW",
+    "EVENT_TYPE_PROVISIONED",
+    "EVENT_TYPE_STATUS_UPDATED",
+    "BaseEvent",
+    "NGFWEvent",
+    "RangeCancelledEvent",
+    "RangeDestroyedEvent",
+    "RangeProvisionedEvent",
+    "RangeStatusUpdatedEvent",
+]
+
 logger = logging.getLogger(__name__)
+
+_POSITIVE_RANGE_ID_ERROR = "range_id must be a positive integer"
+_POSITIVE_USER_ID_ERROR = "user_id must be a positive integer"
 
 
 class BaseEvent(BaseModel):
@@ -66,8 +75,10 @@ class RangeStatusUpdatedEvent(BaseEvent):
         error_message: Optional error details for failure states.
     """
 
-    request_id: UUID | None = None  # Primary correlation key
-    range_id: int  # Engine uses this for DB lookup
+    # Primary correlation key.
+    request_id: UUID | None = None
+    # Engine uses this for DB lookup.
+    range_id: int
     user_id: int
     new_status: ResourceStatus
     error_message: str | None = None
@@ -77,7 +88,7 @@ class RangeStatusUpdatedEvent(BaseEvent):
     def range_id_positive(cls, v: int) -> int:
         """Validate range_id is a positive integer."""
         if v <= 0:
-            raise ValueError("range_id must be a positive integer")
+            raise ValueError(_POSITIVE_RANGE_ID_ERROR)
         return v
 
     @field_validator("user_id")
@@ -85,7 +96,7 @@ class RangeStatusUpdatedEvent(BaseEvent):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
 
@@ -104,7 +115,8 @@ class RangeProvisionedEvent(BaseEvent):
         pulumi_stack: Name of the Pulumi stack (optional).
     """
 
-    request_id: UUID | None = None  # Primary correlation key
+    # Primary correlation key.
+    request_id: UUID | None = None
     range_id: int
     user_id: int
     instances: list[dict[str, Any]]
@@ -117,7 +129,7 @@ class RangeProvisionedEvent(BaseEvent):
     def range_id_positive(cls, v: int) -> int:
         """Validate range_id is a positive integer."""
         if v <= 0:
-            raise ValueError("range_id must be a positive integer")
+            raise ValueError(_POSITIVE_RANGE_ID_ERROR)
         return v
 
     @field_validator("user_id")
@@ -125,7 +137,7 @@ class RangeProvisionedEvent(BaseEvent):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
 
@@ -138,7 +150,8 @@ class RangeDestroyedEvent(BaseEvent):
         user_id: Owner of the range.
     """
 
-    request_id: UUID | None = None  # Primary correlation key
+    # Primary correlation key.
+    request_id: UUID | None = None
     range_id: int
     user_id: int
 
@@ -147,7 +160,7 @@ class RangeDestroyedEvent(BaseEvent):
     def range_id_positive(cls, v: int) -> int:
         """Validate range_id is a positive integer."""
         if v <= 0:
-            raise ValueError("range_id must be a positive integer")
+            raise ValueError(_POSITIVE_RANGE_ID_ERROR)
         return v
 
     @field_validator("user_id")
@@ -155,7 +168,7 @@ class RangeDestroyedEvent(BaseEvent):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
 
@@ -168,7 +181,8 @@ class RangeCancelledEvent(BaseEvent):
         user_id: Owner of the range.
     """
 
-    request_id: UUID | None = None  # Primary correlation key
+    # Primary correlation key.
+    request_id: UUID | None = None
     range_id: int
     user_id: int
 
@@ -177,7 +191,7 @@ class RangeCancelledEvent(BaseEvent):
     def range_id_positive(cls, v: int) -> int:
         """Validate range_id is a positive integer."""
         if v <= 0:
-            raise ValueError("range_id must be a positive integer")
+            raise ValueError(_POSITIVE_RANGE_ID_ERROR)
         return v
 
     @field_validator("user_id")
@@ -185,7 +199,7 @@ class RangeCancelledEvent(BaseEvent):
     def user_id_positive(cls, v: int) -> int:
         """Validate user_id is a positive integer."""
         if v <= 0:
-            raise ValueError("user_id must be a positive integer")
+            raise ValueError(_POSITIVE_USER_ID_ERROR)
         return v
 
 

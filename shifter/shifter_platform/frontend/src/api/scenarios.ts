@@ -15,7 +15,7 @@ import type {
   ScenarioRealizability,
 } from "./types";
 
-const BASE = "/cms/scenario-editor/scenarios";
+const BASE = "/cms/scenarios";
 
 export const scenarioKeys = {
   all: ["scenarios"] as const,

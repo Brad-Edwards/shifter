@@ -26,18 +26,18 @@ urlpatterns = [
         name="raes-image-mappings-disable",
     ),
     path(
-        "scenario-editor/scenarios/<slug:scenario_id>/metadata/",
+        "scenarios/<slug:scenario_id>/metadata/",
         views.ScenarioMetadataView.as_view(),
-        name="scenario-editor-scenario-metadata",
+        name="scenario-metadata",
     ),
     path(
-        "scenario-editor/scenarios/<slug:scenario_id>/realizability/",
+        "scenarios/<slug:scenario_id>/realizability/",
         views.ScenarioRealizabilityView.as_view(),
-        name="scenario-editor-scenario-realizability",
+        name="scenario-realizability",
     ),
     path(
-        "scenario-editor/scenarios/<slug:scenario_id>/",
+        "scenarios/<slug:scenario_id>/",
         views.ScenarioResourceView.as_view(),
-        name="scenario-editor-scenario-detail",
+        name="scenario-detail",
     ),
 ]

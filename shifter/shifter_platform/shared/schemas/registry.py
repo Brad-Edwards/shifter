@@ -20,6 +20,7 @@ class UnknownSpecSlugError(LookupError):
 
 
 def _build_registry() -> dict[str, type[BaseModel]]:
+    """Build the schema registry after imports can no longer form a cycle."""
     from .app import NGFWAppSpec
     from .credentials import DeploymentProfileSpec, SCMCredentialSpec
     from .range import InstanceSpec, RangeSpec
@@ -41,6 +42,7 @@ _REGISTRY: dict[str, type[BaseModel]] | None = None
 
 
 def _registry() -> dict[str, type[BaseModel]]:
+    """Return the lazily initialized schema registry."""
     global _REGISTRY
     if _REGISTRY is None:
         _REGISTRY = _build_registry()
