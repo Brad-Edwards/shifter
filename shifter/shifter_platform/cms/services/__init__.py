@@ -142,6 +142,7 @@ from ._uploads import (
 )
 from ._user_offboarding import (
     TRANSFERABLE_RESOURCE_KINDS,
+    OffboardingAuditContext,
     OwnershipTransferSummary,
     transfer_user_ownership,
 )
@@ -164,6 +165,7 @@ __all__ = (
     "CtfOpenVpnProfileUnavailable",
     "EngineEventCapacitySignal",
     "NonUserWorkflow",
+    "OffboardingAuditContext",
     "OpenVpnProfileConflict",
     "OpenVpnProfileNotFound",
     "OpenVpnProfileUnavailable",

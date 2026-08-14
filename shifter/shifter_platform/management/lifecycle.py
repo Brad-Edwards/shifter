@@ -111,18 +111,37 @@ def derive_lifecycle_state(user: User) -> AccountLifecycleState:
         return AccountLifecycleState.DELETED
     if profile is not None and profile.suspended_at is not None:
         return AccountLifecycleState.SUSPENDED
-    if not user.is_active:
-        return AccountLifecycleState.DEACTIVATED
-    return AccountLifecycleState.ACTIVE
+    return AccountLifecycleState.ACTIVE if user.is_active else AccountLifecycleState.DEACTIVATED
 
 
 def _is_anonymized(user: User) -> bool:
+    """Return whether the user's profile carries an anonymization marker."""
     profile = safe_user_profile(user)
     return profile is not None and profile.anonymized_at is not None
 
 
 def _active_superuser_count() -> int:
+    """Return the number of currently active superusers."""
     return get_user_model().objects.filter(is_superuser=True, is_active=True).count()
+
+
+def _guard_self_action(user: User, action: AccountLifecycleAction, actor: User | None) -> None:
+    if action in _DISABLING_ACTIONS and actor is not None and actor.pk == user.pk:
+        raise AccountLifecycleError(
+            "self_action_forbidden", "You cannot suspend, deactivate, or delete your own account."
+        )
+
+
+def _guard_superuser_target(user: User, actor: User | None) -> None:
+    if user.is_superuser and not (actor is not None and actor.is_superuser):
+        raise AccountLifecycleError(
+            "superuser_protected", "Only a superuser may change the lifecycle state of a superuser account."
+        )
+
+
+def _guard_last_active_superuser(user: User, action: AccountLifecycleAction) -> None:
+    if action in _DISABLING_ACTIONS and user.is_superuser and user.is_active and _active_superuser_count() <= 1:
+        raise AccountLifecycleError("last_superuser_protected", "You cannot disable the last active superuser.")
 
 
 def _guard_transition(user: User, action: AccountLifecycleAction, actor: User | None) -> None:
@@ -132,16 +151,9 @@ def _guard_transition(user: User, action: AccountLifecycleAction, actor: User | 
     non-superuser may not mutate a superuser; a disabling action must never
     strand the deployment without an active superuser.
     """
-    if action in _DISABLING_ACTIONS and actor is not None and actor.pk == user.pk:
-        raise AccountLifecycleError(
-            "self_action_forbidden", "You cannot suspend, deactivate, or delete your own account."
-        )
-    if user.is_superuser and not (actor is not None and actor.is_superuser):
-        raise AccountLifecycleError(
-            "superuser_protected", "Only a superuser may change the lifecycle state of a superuser account."
-        )
-    if action in _DISABLING_ACTIONS and user.is_superuser and user.is_active and _active_superuser_count() <= 1:
-        raise AccountLifecycleError("last_superuser_protected", "You cannot disable the last active superuser.")
+    _guard_self_action(user, action, actor)
+    _guard_superuser_target(user, actor)
+    _guard_last_active_superuser(user, action)
 
 
 def _validate_state(action: AccountLifecycleAction, current: AccountLifecycleState) -> bool:
@@ -166,6 +178,48 @@ def _validate_state(action: AccountLifecycleAction, current: AccountLifecycleSta
 def _revoke_live_tokens(user: User) -> int:
     """Revoke every live API token owned by ``user``; return the count revoked."""
     return ApiToken.objects.filter(created_by=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+
+
+def _recheck_locked_invariants(locked_user: User, profile: UserProfile, action: AccountLifecycleAction) -> None:
+    """Re-check terminal + last-active-superuser invariants under the row lock.
+
+    An anonymized account is terminal (issue #1943 review F3). Locking the whole
+    active-superuser set serializes concurrent disables of *different* superusers,
+    so two requests cannot both observe two actives and each disable one (review
+    F1); the pre-transaction guard is only a fast-fail hint.
+    """
+    if profile.anonymized_at is not None:
+        raise AccountLifecycleError("account_anonymized", "An anonymized account cannot change lifecycle state.")
+    if action in _DISABLING_ACTIONS and locked_user.is_superuser and locked_user.is_active:
+        active_superuser_ids = list(
+            get_user_model()
+            .objects.select_for_update()
+            .filter(is_superuser=True, is_active=True)
+            .values_list("id", flat=True)
+        )
+        if len(active_superuser_ids) <= 1:
+            raise AccountLifecycleError("last_superuser_protected", "You cannot disable the last active superuser.")
+
+
+def _apply_lifecycle_action(action: AccountLifecycleAction, locked_user: User, profile: UserProfile) -> None:
+    """Apply the durable field changes for one lifecycle action under lock.
+
+    ``User.is_active`` is the sole authentication bit; only ``suspend`` sets the
+    suspension marker and only ``delete`` sets the deletion marker, while
+    ``activate``/``deactivate`` clear the suspension marker so it cannot be
+    misreported.
+    """
+    locked_user.is_active = action == AccountLifecycleAction.ACTIVATE
+    locked_user.save(update_fields=["is_active"])
+    if action == AccountLifecycleAction.SUSPEND:
+        profile.suspended_at = timezone.now()
+        profile.save(update_fields=["suspended_at"])
+    elif action == AccountLifecycleAction.DELETE:
+        profile.deleted_at = timezone.now()
+        profile.save(update_fields=["deleted_at"])
+    else:
+        profile.suspended_at = None
+        profile.save(update_fields=["suspended_at"])
 
 
 def available_actions(user: User, actor: User | None) -> list[str]:
@@ -229,25 +283,7 @@ def transition_account(
         locked_user.profile = profile
         current = derive_lifecycle_state(locked_user)
 
-        # An anonymized account is terminal: no transition (including activate)
-        # may run against it (issue #1943 review F3).
-        if profile.anonymized_at is not None:
-            raise AccountLifecycleError("account_anonymized", "An anonymized account cannot change lifecycle state.")
-
-        # Authoritative last-active-superuser check, under lock. Locking the whole
-        # active-superuser set serializes concurrent disables of *different*
-        # superusers, so two requests cannot both observe two actives and each
-        # disable one (issue #1943 review F1). The pre-transaction guard in
-        # _guard_transition is only a fast-fail hint.
-        if action in _DISABLING_ACTIONS and locked_user.is_superuser and locked_user.is_active:
-            active_superuser_ids = list(
-                get_user_model()
-                .objects.select_for_update()
-                .filter(is_superuser=True, is_active=True)
-                .values_list("id", flat=True)
-            )
-            if len(active_superuser_ids) <= 1:
-                raise AccountLifecycleError("last_superuser_protected", "You cannot disable the last active superuser.")
+        _recheck_locked_invariants(locked_user, profile, action)
 
         if not _validate_state(action, current):
             logger.info("Lifecycle no-op action=%s state=%s user_id=%s", action.value, current.value, locked_user.id)
@@ -256,31 +292,8 @@ def transition_account(
         previous_active = locked_user.is_active
         previous_state = current
 
-        if action == AccountLifecycleAction.ACTIVATE:
-            locked_user.is_active = True
-            locked_user.save(update_fields=["is_active"])
-            profile.suspended_at = None
-            profile.save(update_fields=["suspended_at"])
-        elif action == AccountLifecycleAction.DEACTIVATE:
-            locked_user.is_active = False
-            locked_user.save(update_fields=["is_active"])
-            profile.suspended_at = None
-            profile.save(update_fields=["suspended_at"])
-        elif action == AccountLifecycleAction.SUSPEND:
-            locked_user.is_active = False
-            locked_user.save(update_fields=["is_active"])
-            profile.suspended_at = timezone.now()
-            profile.save(update_fields=["suspended_at"])
-        elif action == AccountLifecycleAction.DELETE:
-            locked_user.is_active = False
-            locked_user.save(update_fields=["is_active"])
-            profile.deleted_at = timezone.now()
-            profile.save(update_fields=["deleted_at"])
-
-        revoked = 0
-        if action in _DISABLING_ACTIONS:
-            revoked = _revoke_live_tokens(locked_user)
-
+        _apply_lifecycle_action(action, locked_user, profile)
+        revoked = _revoke_live_tokens(locked_user) if action in _DISABLING_ACTIONS else 0
         new_state = derive_lifecycle_state(locked_user)
         audit_log(
             AuditEvent(

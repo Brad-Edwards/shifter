@@ -18,7 +18,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from cms.models import RangeInstance, Request
-from cms.services import transfer_user_ownership
+from cms.services import OffboardingAuditContext, transfer_user_ownership
 from shared.enums import RangeSource, RequestType, ResourceStatus
 
 pytestmark = pytest.mark.django_db
@@ -58,7 +58,9 @@ def _range(user: User, *, source: str = RangeSource.MISSION_CONTROL.value, delet
 def test_unknown_kind_raises():
     source, replacement = _make_user("s"), _make_user("r")
     with pytest.raises(ValueError):
-        transfer_user_ownership(source, replacement, kinds=["credentials"], actor_type="user", actor_id=1)
+        transfer_user_ownership(
+            source, replacement, kinds=["credentials"], audit=OffboardingAuditContext(actor_type="user", actor_id=1)
+        )
 
 
 def test_range_blocked_when_replacement_not_a_member():
@@ -68,7 +70,9 @@ def test_range_blocked_when_replacement_not_a_member():
     source, replacement, actor = _make_user("s"), _make_user("r"), _make_user("a")
     _range(source)
 
-    summary = transfer_user_ownership(source, replacement, kinds=["ranges"], actor_type="user", actor_id=actor.id)
+    summary = transfer_user_ownership(
+        source, replacement, kinds=["ranges"], audit=OffboardingAuditContext(actor_type="user", actor_id=actor.id)
+    )
 
     assert summary.ranges_reassigned == 0
     assert summary.ranges_blocked == 1
@@ -80,7 +84,9 @@ def test_deleted_ranges_excluded():
     source, replacement, actor = _make_user("s"), _make_user("r"), _make_user("a")
     _range(source, deleted=True)
 
-    summary = transfer_user_ownership(source, replacement, kinds=["ranges"], actor_type="user", actor_id=actor.id)
+    summary = transfer_user_ownership(
+        source, replacement, kinds=["ranges"], audit=OffboardingAuditContext(actor_type="user", actor_id=actor.id)
+    )
 
     assert summary.ranges_reassigned == 0
     assert summary.ranges_blocked == 0

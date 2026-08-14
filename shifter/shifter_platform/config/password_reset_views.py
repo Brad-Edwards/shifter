@@ -56,7 +56,11 @@ class PlatformPasswordResetConfirmView(PasswordResetConfirmView):
         # new password and its strict audit in one transaction so a completed
         # credential change is never left without its audit row (review F4).
         with transaction.atomic():
-            locked = get_user_model().objects.select_for_update().select_related("profile").get(pk=self.user.pk)
+            # Lock the user row only. Adding select_related("profile") here would
+            # join the nullable reverse one-to-one and raise "FOR UPDATE cannot be
+            # applied to the nullable side of an outer join" on PostgreSQL (#1943);
+            # reset_eligibility loads the profile in a separate query.
+            locked = get_user_model().objects.select_for_update().get(pk=self.user.pk)
             eligible, reason = reset_eligibility(locked)
             if not eligible:
                 logger.warning("Password reset redemption rejected: ineligible (%s) user_id=%s", reason, locked.id)

@@ -104,7 +104,6 @@ def test_replacement_already_owner_still_demotes_source():
 
 def test_same_user_rejected():
     source, actor = _user("s"), _user("a")
+    audit = _audit(actor)
     with pytest.raises(services.WorkspaceLifecycleError):
-        services.admin_transfer_workspace_ownership(
-            source_user_id=source.id, new_owner_user_id=source.id, audit=_audit(actor)
-        )
+        services.admin_transfer_workspace_ownership(source_user_id=source.id, new_owner_user_id=source.id, audit=audit)

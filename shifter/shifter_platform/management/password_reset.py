@@ -35,6 +35,8 @@ from shared.credential_delivery import credential_delivery_allowed
 from shared.site_url import SiteUrlUnavailable, validated_site_url
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from django.contrib.auth.models import User
     from django.http import HttpRequest
 
@@ -72,13 +74,15 @@ class _SingleUserPasswordResetForm(PasswordResetForm):
         self._target_user = target_user
         super().__init__(*args, **kwargs)
 
-    def get_users(self, email: str):
+    def get_users(self, email: str) -> Iterator[User]:
+        """Yield only the pre-resolved target when it can still receive a reset."""
         user = self._target_user
         if user.has_usable_password() and user.is_active:
             yield user
 
 
 def _has_valid_email(user: User) -> bool:
+    """Return whether the user has a present, syntactically valid email."""
     if not user.email:
         return False
     try:
@@ -96,19 +100,18 @@ def reset_eligibility(user: User) -> tuple[bool, str]:
     for an ineligible account and empty when eligible.
     """
     profile = services.safe_user_profile(user)
-    if profile is not None and profile.deleted_at is not None:
-        return False, "account_deleted"
-    if not user.is_active:
-        return False, "account_inactive"
     origin = admin_services.classify_account_origin(profile)
-    if origin == "ctf":
-        return False, "ctf_account_uses_event_credentials"
-    if origin == "provider":
-        return False, "provider_account_resets_at_provider"
-    if not user.has_usable_password():
-        return False, "no_usable_password"
-    if not _has_valid_email(user):
-        return False, "no_valid_email"
+    failures = [
+        (profile is not None and profile.deleted_at is not None, "account_deleted"),
+        (not user.is_active, "account_inactive"),
+        (origin == "ctf", "ctf_account_uses_event_credentials"),
+        (origin == "provider", "provider_account_resets_at_provider"),
+        (not user.has_usable_password(), "no_usable_password"),
+        (not _has_valid_email(user), "no_valid_email"),
+    ]
+    for failed, reason in failures:
+        if failed:
+            return False, reason
     return True, ""
 
 
@@ -146,6 +149,7 @@ def request_password_reset(user: User, *, audit: AuditContext, request: HttpRequ
         raise PasswordResetError("reset_ineligible", "This account is not eligible for a password reset.")
 
     def _deliver() -> None:
+        """Send the Django reset email after the surrounding transaction commits."""
         form.save(
             domain_override=domain,
             use_https=use_https,

@@ -37,6 +37,11 @@ from shared.audit import get_actor_from_request, get_client_ip, get_request_id
 # rejects (management endpoints are session-only).
 _ADMINISTER_AUTHENTICATION = [ApiTokenAuthentication, SessionAuthentication]
 
+# Django model permissions gating the Administer command endpoints.
+_VIEW_USER_PERM = "auth.view_user"
+_CHANGE_USER_PERM = "auth.change_user"
+_DELETE_USER_PERM = "auth.delete_user"
+
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
     from django.db.models import QuerySet
@@ -102,7 +107,7 @@ class AdminUserListView(ListAPIView):
     """Paginated, filterable, read-only user list. Requires ``auth.view_user``."""
 
     authentication_classes = _ADMINISTER_AUTHENTICATION
-    permission_classes = [IsStaffSession, require_model_permission("auth.view_user")]
+    permission_classes = [IsStaffSession, require_model_permission(_VIEW_USER_PERM)]
     serializer_class = AdminUserListItemSerializer
 
     def get_queryset(self) -> QuerySet[User]:
@@ -125,7 +130,7 @@ class AdminUserDetailView(RetrieveAPIView):
     """Read-only user detail. Includes soft-deleted accounts. ``auth.view_user``."""
 
     authentication_classes = _ADMINISTER_AUTHENTICATION
-    permission_classes = [IsStaffSession, require_model_permission("auth.view_user")]
+    permission_classes = [IsStaffSession, require_model_permission(_VIEW_USER_PERM)]
     serializer_class = AdminUserDetailSerializer
 
     def get_queryset(self) -> QuerySet[User]:
@@ -136,7 +141,7 @@ class AdminUserSetActiveView(APIView):
     """Activate or deactivate a user's login. Requires ``auth.change_user``."""
 
     authentication_classes = _ADMINISTER_AUTHENTICATION
-    permission_classes = [IsStaffSession, require_model_permission("auth.change_user")]
+    permission_classes = [IsStaffSession, require_model_permission(_CHANGE_USER_PERM)]
 
     @extend_schema(
         request=SetActiveRequestSerializer,
@@ -177,7 +182,7 @@ class AdminUserDeleteView(APIView):
     """
 
     authentication_classes = _ADMINISTER_AUTHENTICATION
-    permission_classes = [IsStaffSession, require_model_permission("auth.delete_user")]
+    permission_classes = [IsStaffSession, require_model_permission(_DELETE_USER_PERM)]
 
     @extend_schema(
         request=None,
@@ -220,7 +225,7 @@ class AdminUserLifecycleView(APIView):
     """
 
     authentication_classes = _ADMINISTER_AUTHENTICATION
-    permission_classes = [IsStaffSession, require_model_permission("auth.change_user")]
+    permission_classes = [IsStaffSession, require_model_permission(_CHANGE_USER_PERM)]
 
     @extend_schema(
         request=LifecycleTransitionRequestSerializer,
@@ -251,7 +256,7 @@ class AdminUserResetPasswordView(APIView):
     """
 
     authentication_classes = _ADMINISTER_AUTHENTICATION
-    permission_classes = [IsStaffSession, require_model_permission("auth.change_user")]
+    permission_classes = [IsStaffSession, require_model_permission(_CHANGE_USER_PERM)]
 
     @extend_schema(
         request=None,

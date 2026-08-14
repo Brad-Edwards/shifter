@@ -10,6 +10,7 @@ callers never write tenancy models directly.
 
 from workspaces.roles import WorkspaceOperation
 
+from ._admin_transfer import WorkspaceOwnershipTransferResult, admin_transfer_workspace_ownership
 from ._authorization import (
     WorkspaceAuthorization,
     WorkspaceAuthorizationError,
@@ -40,9 +41,7 @@ from ._invitations import (
 from ._lifecycle import (
     WorkspaceAuditContext,
     WorkspaceLifecycleError,
-    WorkspaceOwnershipTransferResult,
     WorkspaceProjection,
-    admin_transfer_workspace_ownership,
     archive_workspace,
     create_workspace,
     get_workspace,

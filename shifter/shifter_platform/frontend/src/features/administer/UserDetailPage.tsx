@@ -44,6 +44,12 @@ function loadErrorTitle(error: unknown): string {
   return "Could not load user";
 }
 
+function transferErrorMessage(error: unknown): string | null {
+  if (error instanceof ApiError) return error.message;
+  if (error) return "The transfer could not be completed.";
+  return null;
+}
+
 export function UserDetailPage() {
   const params = useParams();
   const id = Number(params.id);
@@ -373,8 +379,7 @@ function TransferOwnershipDialog({
     | "workspaces"
   )[];
   const result = transfer.data as TransferOwnershipResult | undefined;
-  const errorMessage =
-    transfer.error instanceof ApiError ? transfer.error.message : transfer.error ? "The transfer could not be completed." : null;
+  const errorMessage = transferErrorMessage(transfer.error);
 
   function submit() {
     if (!validId || kinds.length === 0) return;
@@ -428,7 +433,7 @@ function TransferOwnershipDialog({
               <legend className="text-sm font-medium">Resources to transfer</legend>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={ranges} onChange={(event) => setRanges(event.target.checked)} />
-                Ranges
+                <span>Ranges</span>
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -436,7 +441,7 @@ function TransferOwnershipDialog({
                   checked={workspaces}
                   onChange={(event) => setWorkspaces(event.target.checked)}
                 />
-                Workspaces
+                <span>Workspaces</span>
               </label>
             </fieldset>
             {errorMessage ? (

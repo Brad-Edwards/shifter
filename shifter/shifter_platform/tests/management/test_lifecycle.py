@@ -113,9 +113,10 @@ class TestTransitions:
         ).exists()
 
     def test_activate_deleted_account_rejected(self, actor, target):
-        lifecycle.transition_account(target, action=Action.DELETE, actor=actor, audit=_audit(actor))
+        audit = _audit(actor)
+        lifecycle.transition_account(target, action=Action.DELETE, actor=actor, audit=audit)
         with pytest.raises(lifecycle.AccountLifecycleError) as exc:
-            lifecycle.transition_account(target, action=Action.ACTIVATE, actor=actor, audit=_audit(actor))
+            lifecycle.transition_account(target, action=Action.ACTIVATE, actor=actor, audit=audit)
         assert exc.value.code == "account_deleted"
 
     def test_anonymized_account_cannot_transition(self, actor, target):
@@ -123,8 +124,9 @@ class TestTransitions:
         target.save(update_fields=["is_active"])
         target.profile.anonymized_at = timezone.now()
         target.profile.save(update_fields=["anonymized_at"])
+        audit = _audit(actor)
         with pytest.raises(lifecycle.AccountLifecycleError) as exc:
-            lifecycle.transition_account(target, action=Action.ACTIVATE, actor=actor, audit=_audit(actor))
+            lifecycle.transition_account(target, action=Action.ACTIVATE, actor=actor, audit=audit)
         assert exc.value.code == "account_anonymized"
 
     def test_idempotent_noop_writes_no_audit(self, actor, target):
@@ -138,15 +140,17 @@ class TestTransitions:
 
 class TestGuards:
     def test_self_disable_forbidden(self, actor):
+        audit = _audit(actor)
         with pytest.raises(lifecycle.AccountLifecycleError) as exc:
-            lifecycle.transition_account(actor, action=Action.DEACTIVATE, actor=actor, audit=_audit(actor))
+            lifecycle.transition_account(actor, action=Action.DEACTIVATE, actor=actor, audit=audit)
         assert exc.value.code == "self_action_forbidden"
 
     def test_non_superuser_cannot_disable_superuser(self, target):
         superuser = User.objects.create_superuser(username="su2", email="su2@example.com", password="pw")
         staff = _make_user("staff", is_staff=True)
+        audit = _audit(staff)
         with pytest.raises(lifecycle.AccountLifecycleError) as exc:
-            lifecycle.transition_account(superuser, action=Action.DEACTIVATE, actor=staff, audit=_audit(staff))
+            lifecycle.transition_account(superuser, action=Action.DEACTIVATE, actor=staff, audit=audit)
         assert exc.value.code == "superuser_protected"
 
     def test_last_active_superuser_protected(self, actor):
@@ -154,8 +158,9 @@ class TestGuards:
         other_su = User.objects.create_superuser(username="su3", email="su3@example.com", password="pw")
         other_su.is_active = False  # inactive, so `actor` is the last ACTIVE superuser
         other_su.save(update_fields=["is_active"])
+        audit = _audit(other_su)
         with pytest.raises(lifecycle.AccountLifecycleError) as exc:
-            lifecycle.transition_account(actor, action=Action.DEACTIVATE, actor=other_su, audit=_audit(other_su))
+            lifecycle.transition_account(actor, action=Action.DEACTIVATE, actor=other_su, audit=audit)
         assert exc.value.code == "last_superuser_protected"
 
 

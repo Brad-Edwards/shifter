@@ -48,6 +48,17 @@ TRANSFERABLE_RESOURCE_KINDS = ("ranges", "workspaces")
 
 
 @dataclass(frozen=True, slots=True)
+class OffboardingAuditContext:
+    """Request attribution for an offboarding transfer, supplied by the caller."""
+
+    actor_type: str
+    actor_id: int | None
+    request_id: str = ""
+    source_ip: str | None = None
+    user_agent: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class OwnershipTransferSummary:
     """Bounded, secret-free counts from an offboarding ownership transfer."""
 
@@ -58,16 +69,65 @@ class OwnershipTransferSummary:
     workspaces_blocked_no_membership: int = 0
 
 
+def _transfer_ranges(source_user: User, replacement_user: User, audit: OffboardingAuditContext) -> tuple[int, int]:
+    """Reassign the source user's active ranges; return ``(reassigned, blocked)``."""
+    reassigned = blocked = 0
+    instance_pks = list(
+        RangeInstance.objects.filter(user_id=source_user.id, deleted_at__isnull=True).values_list("pk", flat=True)
+    )
+    for pk in instance_pks:
+        try:
+            with transaction.atomic():
+                reassign_range_owner(pk, replacement_user)
+                audit_log(
+                    AuditEvent(
+                        entity_type=AuditEntityType.RANGE,
+                        entity_id=pk,
+                        action=AuditAction.UPDATE,
+                        actor_type=audit.actor_type,
+                        actor_id=audit.actor_id,
+                        previous_state={"user_id": source_user.id},
+                        new_state={"user_id": replacement_user.id},
+                        context="range ownership offboarding transfer",
+                        request_id=audit.request_id,
+                        source_ip=audit.source_ip,
+                        user_agent=audit.user_agent,
+                    ),
+                    strict=True,
+                )
+            reassigned += 1
+        except CMSError:
+            # Blocked (new owner not a member of the range's workspace, an active
+            # participant VPN credential, or an active-range conflict). Reported,
+            # never forced.
+            blocked += 1
+    return reassigned, blocked
+
+
+def _transfer_workspaces(source_user: User, replacement_user: User, audit: OffboardingAuditContext) -> tuple[int, int]:
+    """Transfer the source user's owned workspaces; return ``(transferred, blocked)``."""
+    results = admin_transfer_workspace_ownership(
+        source_user_id=source_user.id,
+        new_owner_user_id=replacement_user.id,
+        audit=WorkspaceAuditContext(
+            actor_type=audit.actor_type,
+            actor_id=audit.actor_id,
+            source_ip=audit.source_ip,
+            user_agent=audit.user_agent,
+            request_id=audit.request_id,
+        ),
+    )
+    transferred = sum(1 for result in results if result.outcome == "transferred")
+    blocked = sum(1 for result in results if result.outcome == "blocked_no_membership")
+    return transferred, blocked
+
+
 def transfer_user_ownership(
     source_user: User,
     replacement_user: User,
     *,
     kinds: Iterable[str],
-    actor_type: str,
-    actor_id: int | None,
-    request_id: str = "",
-    source_ip: str | None = None,
-    user_agent: str = "",
+    audit: OffboardingAuditContext,
 ) -> OwnershipTransferSummary:
     """Transfer a departing user's owned resources of the requested ``kinds``.
 
@@ -78,70 +138,24 @@ def transfer_user_ownership(
     Raises:
         ValueError: If ``kinds`` contains an unknown resource kind.
     """
-    requested = list(dict.fromkeys(kinds))  # de-dupe, preserve order
+    # de-dupe while preserving order
+    requested = list(dict.fromkeys(kinds))
     unknown = [kind for kind in requested if kind not in TRANSFERABLE_RESOURCE_KINDS]
     if unknown:
         raise ValueError(f"Unknown transfer resource kind(s): {', '.join(sorted(unknown))}")
 
-    ws_transferred = ws_already = ws_blocked = 0
+    ws_transferred = ws_blocked = 0
     ranges_reassigned = ranges_blocked = 0
-
     if "workspaces" in requested:
-        results = admin_transfer_workspace_ownership(
-            source_user_id=source_user.id,
-            new_owner_user_id=replacement_user.id,
-            audit=WorkspaceAuditContext(
-                actor_type=actor_type,
-                actor_id=actor_id,
-                source_ip=source_ip,
-                user_agent=user_agent,
-                request_id=request_id,
-            ),
-        )
-        for result in results:
-            if result.outcome == "transferred":
-                ws_transferred += 1
-            elif result.outcome == "already_owned":
-                ws_already += 1
-            elif result.outcome == "blocked_no_membership":
-                ws_blocked += 1
-
+        ws_transferred, ws_blocked = _transfer_workspaces(source_user, replacement_user, audit)
     if "ranges" in requested:
-        instance_pks = list(
-            RangeInstance.objects.filter(user_id=source_user.id, deleted_at__isnull=True).values_list("pk", flat=True)
-        )
-        for pk in instance_pks:
-            try:
-                with transaction.atomic():
-                    reassign_range_owner(pk, replacement_user)
-                    audit_log(
-                        AuditEvent(
-                            entity_type=AuditEntityType.RANGE,
-                            entity_id=pk,
-                            action=AuditAction.UPDATE,
-                            actor_type=actor_type,
-                            actor_id=actor_id,
-                            previous_state={"user_id": source_user.id},
-                            new_state={"user_id": replacement_user.id},
-                            context="range ownership offboarding transfer",
-                            request_id=request_id,
-                            source_ip=source_ip,
-                            user_agent=user_agent,
-                        ),
-                        strict=True,
-                    )
-                ranges_reassigned += 1
-            except CMSError:
-                # Blocked (new owner not a member of the range's workspace, an
-                # active participant VPN credential, or an active-range conflict).
-                # Reported, never forced.
-                ranges_blocked += 1
+        ranges_reassigned, ranges_blocked = _transfer_ranges(source_user, replacement_user, audit)
 
     summary = OwnershipTransferSummary(
         ranges_reassigned=ranges_reassigned,
         ranges_blocked=ranges_blocked,
         workspaces_transferred=ws_transferred,
-        workspaces_already_owned=ws_already,
+        workspaces_already_owned=0,
         workspaces_blocked_no_membership=ws_blocked,
     )
     logger.info(
