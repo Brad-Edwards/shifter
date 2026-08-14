@@ -160,16 +160,23 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description Transfer a departing user's owned resources to a replacement. ``auth.change_user``.
+         * @description Transfer a departing user's owned resources to a replacement. Superuser-only.
          *
          *     A single bounded composition-root command (never sequential SPA calls): it
          *     resolves and authorizes both accounts, then delegates to
          *     ``cms.services.transfer_user_ownership`` (the only layer permitted to reach
-         *     both the range and workspace domains). Workspace ownership transfer is the
-         *     ADR-046-R13 platform-administrator offboarding override; range reassignment
-         *     reuses the existing CMS/Engine authority and refuses live-VPN ranges. It
-         *     never removes memberships, transfers credentials/agents, or rewrites
-         *     provenance.
+         *     both the range and workspace domains). Both transfer kinds are the
+         *     ADR-046-R13 platform-administrator offboarding override.
+         *
+         *     This command requires a **superuser** session, not merely ``auth.change_user``
+         *     (issue #1943 review F5): a superuser already holds cross-tenant/root authority,
+         *     so transferring ranges and workspaces during offboarding is not an escalation.
+         *     Gating on ``auth.change_user`` alone would let a staff user who is merely a
+         *     member of another tenant's workspace acquire ranges they could not otherwise
+         *     administer. Range reassignment reuses the existing CMS/Engine authority and
+         *     refuses live-VPN ranges; workspace transfer requires the replacement to be an
+         *     existing member. It never removes memberships, transfers credentials/agents,
+         *     or rewrites provenance.
          */
         post: operations["api_v1_administer_users_transfer_ownership"];
         delete?: never;
