@@ -52,8 +52,13 @@ output "runtime_env" {
 }
 
 output "ingress_source_cidrs" {
-  description = "Validated ingress source CIDRs consumed by chart network policy."
-  value       = var.ingress_source_cidrs
+  description = "EKS public-subnet CIDRs from which ALB target traffic reaches pods."
+  value       = var.public_subnet_cidrs
+}
+
+output "edge_client_cidrs" {
+  description = "Validated public client CIDRs consumed by the ALB inbound restriction."
+  value       = var.edge_client_cidrs
 }
 
 output "provider_api_cidrs" {

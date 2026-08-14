@@ -115,11 +115,12 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["platform", "guacd", "guacamoleClient"],
+      "required": ["platform", "guacd", "guacamoleClient", "provisioner"],
       "properties": {
         "platform": { "$ref": "#/$defs/imageIdentity" },
         "guacd": { "$ref": "#/$defs/imageIdentity" },
-        "guacamoleClient": { "$ref": "#/$defs/imageIdentity" }
+        "guacamoleClient": { "$ref": "#/$defs/imageIdentity" },
+        "provisioner": { "$ref": "#/$defs/imageIdentity" }
       }
     },
     "imagePullPolicy": {
@@ -490,7 +491,8 @@
                     "required": [
                       "alb.ingress.kubernetes.io/certificate-arn",
                       "alb.ingress.kubernetes.io/wafv2-acl-arn",
-                      "alb.ingress.kubernetes.io/listen-ports"
+                      "alb.ingress.kubernetes.io/listen-ports",
+                      "alb.ingress.kubernetes.io/inbound-cidrs"
                     ],
                     "properties": {
                       "alb.ingress.kubernetes.io/certificate-arn": {
@@ -501,6 +503,9 @@
                       },
                       "alb.ingress.kubernetes.io/listen-ports": {
                         "pattern": "^\\[\\{\"HTTPS\":[0-9]{1,5}\\}\\]$"
+                      },
+                      "alb.ingress.kubernetes.io/inbound-cidrs": {
+                        "pattern": "^[0-9a-fA-F:./]+(,[0-9a-fA-F:./]+)*$"
                       }
                     }
                   }
@@ -541,7 +546,8 @@
                     "required": [
                       "alb.ingress.kubernetes.io/certificate-arn",
                       "alb.ingress.kubernetes.io/wafv2-acl-arn",
-                      "alb.ingress.kubernetes.io/listen-ports"
+                      "alb.ingress.kubernetes.io/listen-ports",
+                      "alb.ingress.kubernetes.io/inbound-cidrs"
                     ],
                     "properties": {
                       "alb.ingress.kubernetes.io/certificate-arn": {
@@ -552,6 +558,9 @@
                       },
                       "alb.ingress.kubernetes.io/listen-ports": {
                         "pattern": "^\\[\\{\"HTTPS\":[0-9]{1,5}\\}\\]$"
+                      },
+                      "alb.ingress.kubernetes.io/inbound-cidrs": {
+                        "pattern": "^[0-9a-fA-F:./]+(,[0-9a-fA-F:./]+)*$"
                       }
                     }
                   }

@@ -744,5 +744,44 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
             self.assertEqual(check_file(tf), [])
 
 
+class LoadBalancerControllerScopeTest(unittest.TestCase):
+    def test_current_controller_policy_passes(self) -> None:
+        path = Path("platform/terraform/modules/portal/eks/load_balancer_controller_iam.tf")
+        self.assertEqual(check_file(path), [])
+
+    def test_controller_policy_rejects_unscoped_cluster_tag(self) -> None:
+        source = Path("platform/terraform/modules/portal/eks/load_balancer_controller_iam.tf").read_text()
+        mutated = source.replace(
+            '"aws:RequestTag/elbv2.k8s.aws/cluster" = var.cluster_name',
+            '"aws:RequestTag/elbv2.k8s.aws/cluster" = "true"',
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write_named(Path(tmp), "load_balancer_controller_iam.tf", mutated)
+            reasons = [violation.reason for violation in check_file(path)]
+        self.assertTrue(any("Load Balancer Controller" in reason for reason in reasons), reasons)
+
+    def test_controller_policy_rejects_waf_mutation_without_exact_acl(self) -> None:
+        source = Path("platform/terraform/modules/portal/eks/load_balancer_controller_iam.tf").read_text()
+        mutated = source.replace(
+            "Resource = aws_wafv2_web_acl.ingress.arn",
+            'Resource = "*"',
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write_named(Path(tmp), "load_balancer_controller_iam.tf", mutated)
+            reasons = [violation.reason for violation in check_file(path)]
+        self.assertTrue(any("exact module WAF ACL" in reason for reason in reasons), reasons)
+
+    def test_controller_policy_rejects_security_group_mutation_without_ownership_tag(self) -> None:
+        source = Path("platform/terraform/modules/portal/eks/load_balancer_controller_iam.tf").read_text()
+        mutated = source.replace(
+            '"aws:ResourceTag/elbv2.k8s.aws/cluster" = var.cluster_name',
+            '"aws:ResourceTag/elbv2.k8s.aws/cluster" = "unowned"',
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write_named(Path(tmp), "load_balancer_controller_iam.tf", mutated)
+            reasons = [violation.reason for violation in check_file(path)]
+        self.assertTrue(any("security-group mutations" in reason for reason in reasons), reasons)
+
+
 if __name__ == "__main__":
     unittest.main()

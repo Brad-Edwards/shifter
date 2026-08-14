@@ -165,6 +165,7 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                         "alb.ingress.kubernetes.io/wafv2-acl-arn": (
                             "arn:aws:wafv2:us-east-2:123456789012:regional/webacl/example/id"
                         ),
+                        "alb.ingress.kubernetes.io/inbound-cidrs": "203.0.113.0/24",
                     },
                     "host": "shifter.example.com",
                     "tls": {"enabled": False, "secretName": ""},
@@ -201,6 +202,7 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                 "platform": f"example.invalid/shifter/platform@sha256:{digest}",
                 "guacd": f"example.invalid/shifter/guacd@sha256:{digest}",
                 "guacamoleClient": f"example.invalid/shifter/guacamole-client@sha256:{digest}",
+                "provisioner": f"example.invalid/shifter/provisioner@sha256:{digest}",
             },
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -251,6 +253,10 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         self.assertEqual(
             annotations["alb.ingress.kubernetes.io/listen-ports"],
             '[{"HTTPS":443}]',
+        )
+        self.assertEqual(
+            annotations["alb.ingress.kubernetes.io/inbound-cidrs"],
+            "203.0.113.0/24",
         )
 
         # No GCP edge objects or identifiers when the GCP capabilities are off.

@@ -32,6 +32,18 @@ certificate/WAF/DNS prerequisites, KMS, and secret stores. Helm owns namespaced
 platform workloads. ECS/ASG portal state and range task state are outside the
 EKS root and are never imported, adopted, renamed, or destroyed by it.
 
+The protected EKS JSON var-file supplies a closed `addon_versions` object for
+VPC CNI, CoreDNS, kube-proxy, EBS CSI, EFS CSI, and the AWS Secrets Store CSI
+provider. Every value is a reviewed `vX.Y.Z-eksbuild.N` release compatible with
+the root's pinned Kubernetes version. The EKS module owns the Load Balancer
+Controller permission document; deployment inputs must not supply a controller
+policy ARN. Before enabling EKS, apply `platform/terraform/global/iam` so the
+GitHub deploy role has its environment-scoped EKS/OIDC policy.
+The chart renderer gives the sole platform ingress the deterministic
+`<cluster>-platform` ALB name. The controller policy uses that exact ARN
+namespace for WAF association because WAFv2 does not honor ELB ownership-tag
+conditions.
+
 ## Security boundaries
 
 - GitHub OIDC authorizes the protected deployment runner.
@@ -48,6 +60,16 @@ EKS root and are never imported, adopted, renamed, or destroyed by it.
   launcher and provisioner service accounts, the dedicated-launcher RBAC, and
   restricted Pod Security. Range and target delivery remain ECS/VM behind the
   ADR-039 range adapter.
+- Every module-created role carries the installation CI permissions boundary.
+  Controller roles remain separate: VPC CNI, EBS CSI, EFS CSI, the Load
+  Balancer Controller, and cluster-autoscaler each bind their exact
+  `kube-system` ServiceAccount. The Secrets Store CSI provider receives no
+  controller-wide secret-reader role; a future consumer continues to use its
+  own exact-subject workload role.
+- VPC CNI enables NetworkPolicy with strict startup enforcement. Public client
+  CIDRs restrict the ALB through `alb.ingress.kubernetes.io/inbound-cidrs`;
+  pod-side NetworkPolicy separately admits target traffic from the EKS public
+  ALB subnets. These are different network hops and are not interchangeable.
 
 ## Provisioner environment sourcing (ADR-044-R6)
 
@@ -72,8 +94,14 @@ references through the existing hydration boundary.
 ```
 
 Teardown removes the Helm release, destroys only the isolated EKS root, and
-fails if that Terraform state remains non-empty. Deploy succeeds only after the
-atomic rollout and HTTPS `/health/` probe succeed.
+fails if that Terraform state remains non-empty. Deploy succeeds only after all
+managed add-ons are `ACTIVE`, controller and chart rollouts complete, the
+admission policy rejects a non-launcher provisioner Job, live Deployment and
+Job probes observe default-deny NetworkPolicy, every workload/controller
+ServiceAccount receives its expected caller role and cannot assume a sibling
+role, and HTTPS `/health/` succeeds. Diagnostic objects are bounded and removed
+unconditionally; projected tokens remain inside pod files and are never logged
+or passed in process arguments.
 
 For transition guidance, follow
 [Migrate an AWS deployment from ECS to EKS](../../how-to/aws-ecs-to-eks-migration.md).

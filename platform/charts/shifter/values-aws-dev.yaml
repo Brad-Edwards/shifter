@@ -20,6 +20,7 @@ images:
   platform: 000000000000.dkr.ecr.us-east-1.amazonaws.com/shifter/platform@sha256:1111111111111111111111111111111111111111111111111111111111111111
   guacd: 000000000000.dkr.ecr.us-east-1.amazonaws.com/shifter/guacd@sha256:2222222222222222222222222222222222222222222222222222222222222222
   guacamoleClient: 000000000000.dkr.ecr.us-east-1.amazonaws.com/shifter/guacamole-client@sha256:3333333333333333333333333333333333333333333333333333333333333333
+  provisioner: 000000000000.dkr.ecr.us-east-1.amazonaws.com/shifter/provisioner@sha256:4444444444444444444444444444444444444444444444444444444444444444
 
 portal:
   replicas: 2
@@ -63,6 +64,7 @@ edge:
       alb.ingress.kubernetes.io/ssl-redirect: "443"
       alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-2:000000000000:certificate/00000000-0000-0000-0000-000000000000
       alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:us-east-2:000000000000:regional/webacl/shifter-dev/00000000-0000-0000-0000-000000000000
+      alb.ingress.kubernetes.io/inbound-cidrs: 203.0.113.0/24
     tls:
       enabled: false
       secretName: ""

@@ -171,6 +171,7 @@ resource "aws_launch_template" "node" {
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name             = aws_eks_cluster.this.name
   addon_name               = "vpc-cni"
+  addon_version            = var.addon_versions.vpc_cni
   service_account_role_arn = aws_iam_role.workload["cni"].arn
 
   # Enforce Kubernetes NetworkPolicies on EKS (#1826). The chart renders the
@@ -179,6 +180,9 @@ resource "aws_eks_addon" "vpc_cni" {
   # "rendered but not enforced" gap so NetworkPolicy parity with GKE is real.
   configuration_values = jsonencode({
     enableNetworkPolicy = "true"
+    env = {
+      NETWORK_POLICY_ENFORCING_MODE = "strict"
+    }
   })
 
   depends_on = [aws_eks_node_group.this]
@@ -189,6 +193,7 @@ resource "aws_eks_addon" "vpc_cni" {
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name             = aws_eks_cluster.this.name
   addon_name               = "aws-ebs-csi-driver"
+  addon_version            = var.addon_versions.ebs_csi
   service_account_role_arn = aws_iam_role.workload["ebs-csi"].arn
 
   depends_on = [aws_eks_node_group.this]
@@ -199,6 +204,7 @@ resource "aws_eks_addon" "ebs_csi" {
 resource "aws_eks_addon" "efs_csi" {
   cluster_name             = aws_eks_cluster.this.name
   addon_name               = "aws-efs-csi-driver"
+  addon_version            = var.addon_versions.efs_csi
   service_account_role_arn = aws_iam_role.workload["efs-csi"].arn
 
   depends_on = [aws_eks_node_group.this]
@@ -207,8 +213,9 @@ resource "aws_eks_addon" "efs_csi" {
 }
 
 resource "aws_eks_addon" "core_dns" {
-  cluster_name = aws_eks_cluster.this.name
-  addon_name   = "coredns"
+  cluster_name  = aws_eks_cluster.this.name
+  addon_name    = "coredns"
+  addon_version = var.addon_versions.coredns
 
   depends_on = [aws_eks_node_group.this]
 
@@ -216,9 +223,22 @@ resource "aws_eks_addon" "core_dns" {
 }
 
 resource "aws_eks_addon" "kube_proxy" {
-  cluster_name = aws_eks_cluster.this.name
-  addon_name   = "kube-proxy"
+  cluster_name  = aws_eks_cluster.this.name
+  addon_name    = "kube-proxy"
+  addon_version = var.addon_versions.kube_proxy
 
+  depends_on = [aws_eks_node_group.this]
+
+  tags = var.tags
+}
+
+resource "aws_eks_addon" "secrets_store_csi" {
+  cluster_name  = aws_eks_cluster.this.name
+  addon_name    = "aws-secrets-store-csi-driver-provider"
+  addon_version = var.addon_versions.secrets_store_csi
+
+  # The provider itself receives no IAM role. Each future SecretProviderClass
+  # consumer continues to use its own exact-subject workload IRSA role.
   depends_on = [aws_eks_node_group.this]
 
   tags = var.tags
