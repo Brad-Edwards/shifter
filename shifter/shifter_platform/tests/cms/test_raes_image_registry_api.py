@@ -2,17 +2,13 @@
 
 Drives the real ``/api/v1/cms/raes-image-mappings/`` endpoints against a real
 database and the real ``engine.services`` write path: register/upsert, list with
-the allowlisted projection, soft-disable, CMS-authoring authz, and the
-``SHIFTER_RAES_NATIVE_PROVISIONING`` gate (every endpoint 404s with the flag off).
+the allowlisted projection, soft-disable, and CMS-authoring authorization.
 """
 
 from __future__ import annotations
 
-import importlib
-
 import pytest
 from django.contrib.auth.models import Group
-from django.urls import clear_url_caches
 from rest_framework.test import APIClient
 
 from engine.models import RaesImageMapping
@@ -46,24 +42,6 @@ _VIEW_FIELDS = {
     "created_at",
     "updated_at",
 }
-
-
-@pytest.fixture(autouse=True)
-def _restore_urlconf() -> None:
-    yield
-    _reload_urlconfs()
-
-
-def _reload_urlconfs() -> None:
-    import cms.api.urls
-    import config.api_urls
-    import config.urls
-
-    clear_url_caches()
-    importlib.reload(cms.api.urls)
-    importlib.reload(config.api_urls)
-    importlib.reload(config.urls)
-    clear_url_caches()
 
 
 @pytest.fixture
@@ -110,10 +88,6 @@ def _bearer(client: APIClient, raw: str) -> APIClient:
 
 
 class TestRegister:
-    @pytest.fixture(autouse=True)
-    def _native_on(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
-
     def test_register_creates_mapping(self, api_client, threat_research_user):
         api_client.force_authenticate(user=threat_research_user)
         response = api_client.post(
@@ -252,10 +226,6 @@ class TestRegister:
 
 
 class TestList:
-    @pytest.fixture(autouse=True)
-    def _native_on(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
-
     def test_lists_rows_with_allowlisted_fields(self, api_client, threat_research_user):
         upsert_raes_image_mapping(provider="gce", source_name="alpine", image_ref="img-any")
         api_client.force_authenticate(user=threat_research_user)
@@ -297,10 +267,6 @@ class TestList:
 
 
 class TestDisable:
-    @pytest.fixture(autouse=True)
-    def _native_on(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
-
     def test_disable_sets_enabled_false_preserving_image_ref(self, api_client, threat_research_user):
         upsert_raes_image_mapping(provider="gce", source_name="kali", image_ref="img-keep")
         api_client.force_authenticate(user=threat_research_user)
@@ -337,10 +303,6 @@ class TestDisable:
 
 
 class TestAuthentication:
-    @pytest.fixture(autouse=True)
-    def _native_on(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = True
-
     def test_anonymous_cannot_list(self, api_client):
         assert api_client.get(LIST_CREATE_URL).status_code in {401, 403}
 
@@ -361,32 +323,3 @@ class TestAuthentication:
 
         assert response.status_code in {401, 403}
         assert RaesImageMapping.objects.get(source_name="kali").enabled is True
-
-
-class TestNativeProvisioningGate:
-    """With SHIFTER_RAES_NATIVE_PROVISIONING off, the surface is inert (404)."""
-
-    @pytest.fixture(autouse=True)
-    def _native_off(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = False
-
-    def test_list_is_404_when_flag_off(self, api_client, threat_research_user):
-        api_client.force_authenticate(user=threat_research_user)
-        response = api_client.get(LIST_CREATE_URL)
-        assert response.status_code == 404
-        assert response.json()["error"]["code"] == "not_found"
-
-    def test_register_is_404_when_flag_off(self, api_client, threat_research_user):
-        api_client.force_authenticate(user=threat_research_user)
-        response = api_client.post(
-            LIST_CREATE_URL,
-            {"provider": "gce", "source_name": "kali", "image_ref": "img"},
-            format="json",
-        )
-        assert response.status_code == 404
-        assert RaesImageMapping.objects.count() == 0
-
-    def test_disable_is_404_when_flag_off(self, api_client, threat_research_user):
-        api_client.force_authenticate(user=threat_research_user)
-        response = api_client.post(DISABLE_URL, {"provider": "gce", "source_name": "kali"}, format="json")
-        assert response.status_code == 404

@@ -156,11 +156,38 @@ class TestPublishedContract:
         # Admin-only audit reads are not token-scoped; they must not advertise a scope.
         assert "x-required-scopes" not in openapi_document["paths"]["/api/v1/audit/"]["get"]
 
-    def test_method_scoped_permissions_are_reported(self, openapi_document: dict[str, Any]) -> None:
-        # ScenarioResourceView resolves scopes per method via get_permissions().
-        detail = openapi_document["paths"]["/api/v1/cms/scenario-editor/scenarios/{scenario_id}/"]
+    def test_scenario_detail_is_read_scoped_and_read_only(self, openapi_document: dict[str, Any]) -> None:
+        detail = openapi_document["paths"]["/api/v1/cms/scenarios/{scenario_id}/"]
         assert detail["get"]["x-required-scopes"] == ["cms:authoring:read"]
-        assert detail["patch"]["x-required-scopes"] == ["cms:authoring:write"]
+        assert "patch" not in detail
+
+    def test_legacy_scenario_editor_api_is_retired_exactly(self) -> None:
+        metadata = json.loads(contract.retirement_path().read_text(encoding="utf-8"))
+        retirement = next(item for item in metadata["retirements"] if item["issue"] == 1311)
+
+        assert retirement["adr"] == "ADR-024"
+        assert set(retirement["paths"]) == {
+            "/api/v1/cms/scenario-editor/scenarios/",
+            "/api/v1/cms/scenario-editor/scenarios/from-yaml/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/",
+            "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/",
+            "/api/v1/cms/scenario-editor/validate-yaml/",
+        }
+        assert {tuple(item.values()) for item in retirement["response_schema_properties"]} == {
+            ("Bootstrap", "feature_flags"),
+            ("ScenarioDetail", "deletable"),
+            ("ScenarioDetail", "description"),
+            ("ScenarioDetail", "editable"),
+            ("ScenarioDetail", "exportable"),
+            ("ScenarioDetail", "instances"),
+            ("ScenarioDetail", "is_default"),
+            ("ScenarioDetail", "ngfw"),
+            ("ScenarioDetail", "participant_access"),
+            ("ScenarioDetail", "subnets"),
+        }
 
     def test_both_auth_schemes_present(self, openapi_document: dict[str, Any]) -> None:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])

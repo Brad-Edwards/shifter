@@ -32,8 +32,6 @@ class DeployPortalScriptTests(unittest.TestCase):
         invalid_ctf_content_prefix: bool = False,
         zero_workers: bool = False,
         zero_terminal_cap: bool = False,
-        raes_cutover_active: bool = False,
-        raes_cutover_malformed: bool = False,
     ) -> dict[str, str]:
         bin_dir = root / "bin"
         bin_dir.mkdir()
@@ -233,22 +231,6 @@ class DeployPortalScriptTests(unittest.TestCase):
                     printf '30\\n'
                   fi
                   ;;
-                */shifter-raes-native-provisioning)
-                  if [[ "${RAES_CUTOVER_ACTIVE:-}" == "1" ]]; then
-                    printf 'true\\n'
-                  else
-                    printf '\\n'
-                  fi
-                  ;;
-                */shifter-raes-catalog-cutovers)
-                  if [[ "${RAES_CUTOVER_MALFORMED:-}" == "1" ]]; then
-                    printf 'polaris=x;touch pwned\\n'
-                  elif [[ "${RAES_CUTOVER_ACTIVE:-}" == "1" ]]; then
-                    printf 'polaris=polaris-raes\\n'
-                  else
-                    printf '\\n'
-                  fi
-                  ;;
                 *) printf '\\n' ;;
               esac
               exit 0
@@ -306,10 +288,6 @@ class DeployPortalScriptTests(unittest.TestCase):
             env["ZERO_WORKERS"] = "1"
         if zero_terminal_cap:
             env["ZERO_TERMINAL_CAP"] = "1"
-        if raes_cutover_active:
-            env["RAES_CUTOVER_ACTIVE"] = "1"
-        if raes_cutover_malformed:
-            env["RAES_CUTOVER_MALFORMED"] = "1"
         return env
 
     def _script_args(
@@ -561,52 +539,6 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "TERMINAL_READ_POLL_SECONDS=30",
             ):
                 self.assertIn(pair, log)
-
-    def test_raes_cutover_params_emitted_as_docker_env(self) -> None:
-        """The SSM redeploy path delivers the RAES cutover selector + flag when set (#1310)."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            env = self._install_stubs(root, raes_cutover_active=True)
-
-            result = subprocess.run(
-                self._script_args(root),
-                check=False,
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            log = (root / "calls.log").read_text(encoding="utf-8")
-            self.assertIn("SHIFTER_RAES_NATIVE_PROVISIONING=true", log)
-            self.assertIn("SHIFTER_RAES_CATALOG_CUTOVERS=polaris=polaris-raes", log)
-
-    def test_malformed_raes_cutovers_rejected_before_docker(self) -> None:
-        """validate_slug_pairs rejects a malformed SHIFTER_RAES_CATALOG_CUTOVERS
-        (here a shell-injection attempt) before it can reach docker argv (#1310).
-
-        The regex guard is the argv-injection defense for this selector; without
-        negative-path coverage a regression that weakened it would go undetected.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            env = self._install_stubs(root, raes_cutover_malformed=True)
-
-            result = subprocess.run(
-                self._script_args(root),
-                check=False,
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("Invalid SHIFTER_RAES_CATALOG_CUTOVERS", result.stderr)
-            log_path = root / "calls.log"
-            log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
-            self.assertNotIn("docker run", log)
-            # The injection payload never reaches any argv the script logs.
-            self.assertNotIn("touch pwned", log)
 
     def test_non_numeric_terminal_capacity_param_rejected_before_docker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

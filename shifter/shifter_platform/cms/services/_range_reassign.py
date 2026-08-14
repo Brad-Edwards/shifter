@@ -12,7 +12,7 @@ from cms.models import RangeInstance
 from engine.services import RangeOwnershipTransferBlocked
 
 from ._common import _validate_caller_user
-from ._range_create import _is_active_range_conflict
+from ._range_launch_common import _is_active_range_conflict
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User

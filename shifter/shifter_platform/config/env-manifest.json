@@ -3,11 +3,6 @@
   "schema_version": 1,
   "variables": [
     {
-      "default": "False",
-      "name": "ADMINISTER_SPA_ENABLED",
-      "source_file": "config/settings.py"
-    },
-    {
       "default": "300",
       "name": "API_TOKEN_LAST_USED_COALESCE_SECONDS",
       "source_file": "config/_api_token_settings.py"
@@ -151,11 +146,6 @@
       "default": "'500'",
       "name": "CTF_REGEX_FLAG_MAX_SUBMISSION_LENGTH",
       "source_file": "config/_ctf_regex_settings.py"
-    },
-    {
-      "default": "False",
-      "name": "CTF_WORKSPACE_SPA_ENABLED",
-      "source_file": "config/settings.py"
     },
     {
       "default": null,
@@ -533,11 +523,6 @@
       "source_file": "config/settings.py"
     },
     {
-      "default": "False",
-      "name": "SCENARIO_EDITOR_SPA_ENABLED",
-      "source_file": "config/settings.py"
-    },
-    {
       "default": "'31536000'",
       "name": "SECURE_HSTS_SECONDS",
       "source_file": "config/settings.py"
@@ -563,11 +548,6 @@
       "source_file": "config/_ctf_content_settings.py"
     },
     {
-      "default": "''",
-      "name": "SHIFTER_RAES_CATALOG_CUTOVERS",
-      "source_file": "config/_raes_settings.py"
-    },
-    {
       "default": "'268435456'",
       "name": "SHIFTER_RAES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES",
       "source_file": "config/_raes_settings.py"
@@ -575,11 +555,6 @@
     {
       "default": "'raes/content-delivery'",
       "name": "SHIFTER_RAES_CONTENT_DELIVERY_PREFIX",
-      "source_file": "config/_raes_settings.py"
-    },
-    {
-      "default": "'False'",
-      "name": "SHIFTER_RAES_NATIVE_PROVISIONING",
       "source_file": "config/_raes_settings.py"
     },
     {

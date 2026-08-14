@@ -21,8 +21,8 @@ import os
 from typing import Any
 
 import psycopg
-from cyberscript.enums import ResourceStatus
 from psycopg import sql
+from shared.enums import ResourceStatus
 from shared.remote_access import parse_openvpn_binding
 
 from config import has_ngfw_attachment_state
@@ -400,7 +400,7 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
             raise ValueError(f"Range request not found: {request_id}")
 
         range_config_raw = row[3] if row[3] else {}
-        from cyberscript.persisted_envelope import unwrap_persisted_spec
+        from shared.persisted_envelope import unwrap_persisted_spec
 
         range_config = unwrap_persisted_spec(range_config_raw)
         user_id = row[2]

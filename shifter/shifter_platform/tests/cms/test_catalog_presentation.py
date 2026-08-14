@@ -64,7 +64,7 @@ class TestRaesPresentation:
         assert entry["id"] == "polaris-raes"
         assert entry["scenario_type"] == "raes"
         assert entry["is_default"] is False
-        assert entry["launchable"] is False
+        assert entry["launchable"] is True
         raes = entry["raes"]
         assert raes["source_kind"] == "repo"
         assert raes["contract_kind"] == "raes"
@@ -122,27 +122,19 @@ class TestRaesPresentation:
         assert entry["staff_only"] is True
 
 
-class TestLegacyPresentation:
-    def test_yaml_default_has_no_raes_block(self, db):
-        entry = get_catalog_presentation("basic")
-
-        assert entry is not None
-        assert entry["raes"] is None
-        assert entry["is_default"] is True
-
+class TestMissingPresentation:
     def test_unknown_scenario_returns_none(self, db):
         assert get_catalog_presentation("does-not-exist") is None
 
 
 class TestListPresentation:
-    def test_list_includes_raes_and_legacy(self, staff_user):
+    def test_list_contains_only_registered_raes_sources(self, staff_user):
         _make_raes_source(staff_user, "polaris-raes")
 
         entries = list_catalog_presentations()
 
         by_id = {e["id"]: e for e in entries}
-        assert "basic" in by_id
-        assert by_id["basic"]["raes"] is None
+        assert set(by_id) == {"polaris-raes"}
         assert by_id["polaris-raes"]["raes"] is not None
 
     def test_non_staff_listing_preserves_access_filtering(self, staff_user, regular_user):

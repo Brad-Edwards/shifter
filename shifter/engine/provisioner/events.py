@@ -9,9 +9,9 @@ via :func:`provisioner_db.update_range_status`.
 
 from __future__ import annotations
 
-from cyberscript.enums import ResourceStatus
+from shared.enums import ResourceStatus
 
-# Status string aliases for provisioner call sites (sourced from cyberscript.enums).
+# Status string aliases for provisioner call sites (sourced from shared.enums).
 STATUS_PENDING = ResourceStatus.PENDING.value
 STATUS_PROVISIONING = ResourceStatus.PROVISIONING.value
 STATUS_READY = ResourceStatus.READY.value

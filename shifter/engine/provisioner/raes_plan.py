@@ -3,9 +3,8 @@
 The RAES-native provisioning path persists the *serialized RAES ProvisioningPlan*
 in ``mission_control_range.range_config`` (see
 ``shifter_platform/shared/raes/runtime_target.py::serialize_provisioning_plan``).
-The provisioner is a separate deployable whose image ships only ``cyberscript`` on
-``PYTHONPATH`` (no ``shared``, no Pydantic) and must not import the RAES module
-family (ADR-024). So it reads the plan as plain data here.
+The provisioner is a separate deployable and must not import the RAES producer
+module family (ADR-024). It reads the persisted plan as plain data here.
 
 Per ADR-032, Shifter does not re-model the plan into a Shifter-owned spec: this
 module reads the RAES plan payloads via accessors that **mirror the reference
@@ -22,7 +21,7 @@ differential against the reference backend's private accessors.
 Sizing/image are exposed as ``None`` when the author omitted them, so the backend
 applies its own default (e.g. a GCE profile machine type) rather than a forced
 constant. It self-discriminates on the plan ``kind`` so an ``raes-range`` command
-run against a cyberscript ``range_config`` fails loudly. The frozen value objects
+run against any foreign ``range_config`` fails loudly. The frozen value objects
 live in ``raes_plan_types`` and ACL parsing in ``raes_acl`` (Sonar file-size split);
 they are re-exported here so callers keep importing from ``raes_plan``.
 """

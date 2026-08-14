@@ -14,7 +14,7 @@ urlpatterns = [
     # valid slug and the detail route would otherwise shadow this collection.
     path("catalog/packs/", views.PackRegisterView.as_view(), name="catalog-pack-register"),
     path("catalog/<slug:scenario_id>/", views.CatalogDetailView.as_view(), name="catalog-detail"),
-    # RAES image registry management (#1566); gated by SHIFTER_RAES_NATIVE_PROVISIONING.
+    # Canonical RAES image registry management surface (#1566).
     path(
         "raes-image-mappings/",
         raes_image_registry.RaesImageMappingListCreateView.as_view(),
@@ -25,39 +25,19 @@ urlpatterns = [
         raes_image_registry.RaesImageMappingDisableView.as_view(),
         name="raes-image-mappings-disable",
     ),
-    path("scenario-editor/validate-yaml/", views.YAMLValidateView.as_view(), name="scenario-editor-validate-yaml"),
-    # Structured create + YAML create. `from-yaml/` is declared before the
-    # `<slug:scenario_id>/` detail route so it is not captured as a scenario id.
-    path("scenario-editor/scenarios/", views.ScenarioCreateView.as_view(), name="scenario-editor-scenario-create"),
     path(
-        "scenario-editor/scenarios/from-yaml/",
-        views.YAMLScenarioCreateView.as_view(),
-        name="scenario-editor-scenario-create-yaml",
-    ),
-    # Per-scenario sub-actions before the bare detail route (same slug-capture reason).
-    path(
-        "scenario-editor/scenarios/<slug:scenario_id>/clone/",
-        views.ScenarioCloneView.as_view(),
-        name="scenario-editor-scenario-clone",
-    ),
-    path(
-        "scenario-editor/scenarios/<slug:scenario_id>/metadata/",
+        "scenarios/<slug:scenario_id>/metadata/",
         views.ScenarioMetadataView.as_view(),
-        name="scenario-editor-scenario-metadata",
+        name="scenario-metadata",
     ),
     path(
-        "scenario-editor/scenarios/<slug:scenario_id>/export/",
-        views.ScenarioExportView.as_view(),
-        name="scenario-editor-scenario-export",
-    ),
-    path(
-        "scenario-editor/scenarios/<slug:scenario_id>/realizability/",
+        "scenarios/<slug:scenario_id>/realizability/",
         views.ScenarioRealizabilityView.as_view(),
-        name="scenario-editor-scenario-realizability",
+        name="scenario-realizability",
     ),
     path(
-        "scenario-editor/scenarios/<slug:scenario_id>/",
+        "scenarios/<slug:scenario_id>/",
         views.ScenarioResourceView.as_view(),
-        name="scenario-editor-scenario-detail",
+        name="scenario-detail",
     ),
 ]

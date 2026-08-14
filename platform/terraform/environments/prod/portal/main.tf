@@ -582,10 +582,6 @@ module "ssm" {
   terminal_max_sessions          = var.terminal_max_sessions
   terminal_max_sessions_per_user = var.terminal_max_sessions_per_user
 
-  # RAES default cutover (#1310, ADR-031-R6): capability gate + source-route selector.
-  shifter_raes_native_provisioning = var.shifter_raes_native_provisioning
-  shifter_raes_catalog_cutovers    = var.shifter_raes_catalog_cutovers
-
   terminal_idle_timeout_seconds = var.terminal_idle_timeout_seconds
   terminal_max_session_seconds  = var.terminal_max_session_seconds
   terminal_read_poll_seconds    = var.terminal_read_poll_seconds

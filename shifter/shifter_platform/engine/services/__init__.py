@@ -52,7 +52,6 @@ from ._raes_range import RaesRangeRef, RangeBindings, create_raes_range
 from ._raes_status import project_raes_operation_status
 from ._range import (
     cancel_range,
-    create_range,
     destroy_range,
     get_instance_ips_by_uuid,
     get_range_status,
@@ -114,7 +113,6 @@ __all__ = (
     "connect_terminal",
     "create_ngfw",
     "create_raes_range",
-    "create_range",
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request",

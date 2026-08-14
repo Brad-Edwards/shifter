@@ -5,8 +5,8 @@ metadata through the CMS API and the scenario editor, without adding an RAES
 authoring editor.
 
 This is a bounded projection *over* :mod:`cms.scenarios.registry` — it does not
-duplicate the catalog, access model, or launchability rules. Legacy YAML/DB
-entries are presented as-is; RAES entries gain a nested ``raes`` block carrying
+duplicate the catalog, access model, or launchability rules. RAES entries gain a
+nested ``raes`` block carrying
 package-source identity, digests, conformance status/report ref, and a *bounded*
 provenance summary. It never carries raw RAES SDL, imported module bodies,
 generated content, flags, credentials, presigned URLs, provider payloads, or
@@ -47,7 +47,7 @@ PROVENANCE_SUMMARY_KEYS: tuple[str, ...] = (
 
 
 def scenario_source(scenario_type: str, is_default: bool) -> str:
-    """Classify a scenario's source: builtin | custom | raes | ctf.
+    """Classify a scenario's source for the read-only presentation.
 
     Single server-owned source of truth for the source classification. Both the
     catalog projection (this module) and the scenario-editor detail projection
