@@ -21,6 +21,20 @@ export type PaginatedAdminUserListItemList = components["schemas"]["PaginatedAdm
 export type OrganizerGrantResult = components["schemas"]["OrganizerGrantResult"];
 
 /**
+ * User lifecycle administration types (#1943, PLAT-236). The `management`
+ * transition service + composition-root transfer command and their DRF
+ * serializers are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. `lifecycle_state` and `available_actions` on
+ * `AdminUserDetail` are server-derived; the SPA never reconstructs transition or
+ * reset-eligibility policy from them.
+ */
+export type AccountLifecycleAction = components["schemas"]["LifecycleTransitionRequestActionEnum"];
+export type LifecycleTransitionRequest = components["schemas"]["LifecycleTransitionRequest"];
+export type TransferOwnershipRequest = components["schemas"]["TransferOwnershipRequest"];
+export type TransferOwnershipResult = components["schemas"]["TransferOwnershipResult"];
+export type TransferOwnershipResourceKind = components["schemas"]["TransferOwnershipRequest"]["resource_kinds"][number];
+
+/**
  * Organization/workspace admin console types (#1938, PLAT-231), re-exported from
  * the generated OpenAPI schema. The `workspaces.services` projection + DRF
  * serializer are authoritative; regenerate `schema.d.ts` via `npm run gen:api`

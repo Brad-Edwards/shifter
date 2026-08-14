@@ -2586,6 +2586,11 @@
         "id": "ADR-046-R12",
         "description": "Organization profile reads may expose a closed scalar projection only for membership-reachable organizations and address it by public organization UUID. Organization mutation requires a separately accepted, service-owned organization authority rule: staff admission, Django permissions, provider/cloud roles, cached UI capabilities, and owner/admin authority in one, every, or a selected workspace do not imply organization-wide authority. Mutable profile fields must be explicit typed domain fields with one validation/normalization path; generic settings/branding/default JSON and tenant-scoping the deployment-global concerns in R7 are prohibited. Any accepted mutation locks and updates through workspaces.services and writes request-attributed strict shared.audit state in the same transaction; its API uses the shared error/OpenAPI/generated-client boundaries and remains identical across providers.",
         "checks": []
+      },
+      {
+        "id": "ADR-046-R13",
+        "description": "As a narrow, explicit exception to R8's owner-only ownership boundary, a platform administrator may transfer a departing user's owned workspaces and ranges to a replacement during user offboarding (PLAT-236, #1943). This override is authorized only by a superuser session at the composition root (a superuser already holds cross-tenant root authority, so the transfer is not an escalation); it is never reachable through workspace-role authority or the auth.change_user model permission alone, and a visible Administer control does not otherwise become workspace or range authority. It is exposed only through a single bounded composition-root command that delegates per resource kind: workspace ownership goes through the workspaces.services facade command (admin_transfer_workspace_ownership) and range ownership through the existing cms.services reassign authority. Workspace transfer moves ownership of non-personal workspaces the source owns to a replacement who already holds a membership in each workspace (a non-member workspace is reported blocked, never silently rehomed and never given a fabricated membership, preserving ADR-048); it excludes personal compatibility workspaces (immutable), promotes the replacement to owner before demoting the source so the last-owner invariant holds throughout, locks each workspace row, and writes one request-attributed strict shared.audit event per transfer. Range transfer preserves the CMS/Engine ownership projections, the new owner's workspace membership requirement, active-range uniqueness, and the live-VPN refusal, and strict-audits each move. The command never removes memberships, changes CTF roles, transfers credential/agent ownership, unbinds identity, or rewrites provenance/attribution.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2599,6 +2604,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/1327",
       "https://github.com/Brad-Edwards/shifter/issues/1938",
       "https://github.com/Brad-Edwards/shifter/issues/1939",
+      "https://github.com/Brad-Edwards/shifter/issues/1943",
       "https://github.com/Brad-Edwards/shifter/issues/1945",
       "docs/architecture/organization-workspace-preflight-1325.md",
       "docs/architecture/workspace-membership-roles-preflight-1326.md",
@@ -2606,6 +2612,7 @@
       "docs/architecture/organization-workspace-admin-console-preflight-1938.md",
       "docs/architecture/organization-profile-settings-preflight-1939.md",
       "docs/architecture/workspace-network-egress-policy-preflight-1945.md",
+      "docs/architecture/user-lifecycle-administration-preflight-1943.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",

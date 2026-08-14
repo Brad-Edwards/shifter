@@ -67,6 +67,14 @@ class ApiTokenAuthentication(authentication.BaseAuthentication):
             token.revoke()
             raise exceptions.AuthenticationFailed(_invalid_token_message())
 
+        # Reject a token whose owner is missing, inactive, or soft-deleted
+        # (PLAT-236, #1943). A lifecycle transition revokes the target's live
+        # tokens, so this is defense in depth: a token minted around a transition,
+        # or an owner disabled through the CLI, must never authenticate.
+        owner = token.created_by
+        if owner is None or not owner.is_active or getattr(getattr(owner, "profile", None), "deleted_at", None):
+            raise exceptions.AuthenticationFailed(_invalid_token_message())
+
         coalesce_seconds = getattr(settings, "API_TOKEN_LAST_USED_COALESCE_SECONDS", _DEFAULT_COALESCE_SECONDS)
         token.touch_last_used(coalesce_seconds=coalesce_seconds)
 

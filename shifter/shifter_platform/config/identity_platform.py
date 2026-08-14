@@ -284,6 +284,11 @@ class IdentityPlatformBackend(BaseBackend):
         # propagates out of the block and triggers the rollback.
         with transaction.atomic():
             user = _resolve_identity_platform_user(identity)
+            if user is not None and not user.is_active:
+                # A deactivated, suspended, or soft-deleted account (all
+                # is_active=False) must not obtain a session, and bind/elevate
+                # must never reactivate it as a side effect (PLAT-236, #1943).
+                raise IdentityPlatformAuthError("This account is not permitted to sign in")
             created = user is None
             if user is None:
                 user = User.objects.create_user(username=identity.email, email=identity.email, is_active=True)
@@ -340,10 +345,14 @@ class IdentityPlatformBackend(BaseBackend):
             raise IdentityPlatformAuthError("Identity Platform identity binding conflict") from exc
 
     def get_user(self, user_id: int) -> DjangoUser | None:
+        # Return no principal for an inactive account (PLAT-236, #1943) so a
+        # deactivated/suspended/soft-deleted user cannot reload an existing
+        # Identity Platform session.
         try:
-            return User.objects.select_related("profile").get(pk=user_id)
+            user = User.objects.select_related("profile").get(pk=user_id)
         except User.DoesNotExist:
             return None
+        return user if user.is_active else None
 
 
 def login_with_identity_token(request: HttpRequest | None, id_token: str) -> DjangoUser:

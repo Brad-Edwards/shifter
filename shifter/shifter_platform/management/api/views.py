@@ -17,11 +17,12 @@ from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from management import admin_services, services
+from management import admin_services, lifecycle, password_reset, services
 from management.api.serializers import (
     AdminUserDetailSerializer,
     AdminUserListItemSerializer,
     AdminUserListQuerySerializer,
+    LifecycleTransitionRequestSerializer,
     SetActiveRequestSerializer,
 )
 from shared.api.errors import api_error_response
@@ -60,6 +61,34 @@ def _require_user(pk: int) -> User:
     if user is None:
         raise NotFound("User not found.")
     return user
+
+
+# Maps a lifecycle transition error code to its HTTP status: forbidden self/
+# superuser actions are 4xx authority errors; invalid/last-superuser/deleted are
+# 409 conflicts against the account's current state.
+_LIFECYCLE_ERROR_STATUS = {
+    "self_action_forbidden": 400,
+    "superuser_protected": 403,
+    "last_superuser_protected": 409,
+    "invalid_transition": 409,
+    "account_deleted": 409,
+}
+
+
+def _lifecycle_error_response(exc: lifecycle.AccountLifecycleError, request: Request) -> Response:
+    """Map an :class:`AccountLifecycleError` to the shared safe error envelope."""
+    return api_error_response(
+        code=exc.code,
+        message=exc.message,
+        status_code=_LIFECYCLE_ERROR_STATUS.get(exc.code, 400),
+        request=request,
+    )
+
+
+def _detail_response(user: User, request: Request) -> Response:
+    """Serialize the user detail with request context (server-derived actions)."""
+    user.refresh_from_db()
+    return Response(AdminUserDetailSerializer(user, context={"request": request}).data)
 
 
 @extend_schema_view(
@@ -115,6 +144,8 @@ class AdminUserSetActiveView(APIView):
         operation_id="api_v1_administer_users_set_active",
     )
     def post(self, request: Request, pk: int) -> Response:
+        # v1 compatibility adapter: delegates to the one lifecycle transition
+        # service (PLAT-236, #1943) so there is no second account state machine.
         user = _require_user(pk)
 
         serializer = SetActiveRequestSerializer(data=request.data)
@@ -129,9 +160,12 @@ class AdminUserSetActiveView(APIView):
                 request=request,
             )
 
-        admin_services.set_user_active(user, active=active, audit=_audit_context(request))
-        user.refresh_from_db()
-        return Response(AdminUserDetailSerializer(user).data)
+        action = lifecycle.AccountLifecycleAction.ACTIVATE if active else lifecycle.AccountLifecycleAction.DEACTIVATE
+        try:
+            lifecycle.transition_account(user, action=action, actor=request.user, audit=_audit_context(request))
+        except lifecycle.AccountLifecycleError as exc:
+            return _lifecycle_error_response(exc, request)
+        return _detail_response(user, request)
 
 
 class AdminUserDeleteView(APIView):
@@ -161,6 +195,74 @@ class AdminUserDeleteView(APIView):
                 request=request,
             )
 
-        services.mark_user_deleted(user, audit=_audit_context(request), strict=True)
-        user.refresh_from_db()
-        return Response(AdminUserDetailSerializer(user).data)
+        # Route through the one lifecycle transition service (PLAT-236, #1943)
+        # so soft deletion also disables authentication, revokes live tokens, and
+        # honours the superuser / last-active-superuser invariants.
+        try:
+            lifecycle.transition_account(
+                user,
+                action=lifecycle.AccountLifecycleAction.DELETE,
+                actor=request.user,
+                audit=_audit_context(request),
+            )
+        except lifecycle.AccountLifecycleError as exc:
+            return _lifecycle_error_response(exc, request)
+        return _detail_response(user, request)
+
+
+class AdminUserLifecycleView(APIView):
+    """Activate, deactivate, or suspend a user account. Requires ``auth.change_user``.
+
+    The one closed desired-state lifecycle command (PLAT-236, #1943). Suspend and
+    deactivate both block sign-in and retain assignments; they differ only in the
+    suspension discriminator. Soft deletion is the separate ``/delete/`` endpoint
+    (``auth.delete_user``).
+    """
+
+    authentication_classes = _ADMINISTER_AUTHENTICATION
+    permission_classes = [IsStaffSession, require_model_permission("auth.change_user")]
+
+    @extend_schema(
+        request=LifecycleTransitionRequestSerializer,
+        responses=AdminUserDetailSerializer,
+        operation_id="api_v1_administer_users_lifecycle",
+    )
+    def post(self, request: Request, pk: int) -> Response:
+        user = _require_user(pk)
+
+        serializer = LifecycleTransitionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        action = lifecycle.AccountLifecycleAction(serializer.validated_data["action"])
+
+        try:
+            lifecycle.transition_account(user, action=action, actor=request.user, audit=_audit_context(request))
+        except lifecycle.AccountLifecycleError as exc:
+            return _lifecycle_error_response(exc, request)
+        return _detail_response(user, request)
+
+
+class AdminUserResetPasswordView(APIView):
+    """Trigger a Django password-reset email for an eligible account. ``auth.change_user``.
+
+    Uses Django's proven password-reset machinery for an active local, non-CTF
+    account only; a provider-bound account resets at its provider and a temporary
+    CTF account keeps its event-scoped credential flow (PLAT-236, #1943). Returns
+    a safe accepted/error envelope; no secret is ever returned.
+    """
+
+    authentication_classes = _ADMINISTER_AUTHENTICATION
+    permission_classes = [IsStaffSession, require_model_permission("auth.change_user")]
+
+    @extend_schema(
+        request=None,
+        responses=AdminUserDetailSerializer,
+        operation_id="api_v1_administer_users_reset_password",
+    )
+    def post(self, request: Request, pk: int) -> Response:
+        user = _require_user(pk)
+        try:
+            password_reset.request_password_reset(user, audit=_audit_context(request), request=request._request)
+        except password_reset.PasswordResetError as exc:
+            status_code = 409 if exc.code == "reset_throttled" else 400
+            return api_error_response(code=exc.code, message=exc.message, status_code=status_code, request=request)
+        return _detail_response(user, request)

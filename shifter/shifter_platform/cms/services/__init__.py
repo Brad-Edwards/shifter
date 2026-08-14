@@ -142,12 +142,18 @@ from ._uploads import (
     get_storage_used,
     initiate_upload,
 )
+from ._user_offboarding import (
+    TRANSFERABLE_RESOURCE_KINDS,
+    OwnershipTransferSummary,
+    transfer_user_ownership,
+)
 
 # Cross-layer re-export preserved on cms.services so the layer-imports gate
 # (scripts/check_layer_imports/layer_imports.yaml) can continue to allow only
 # `cms.services` from mission_control / ctf rather than reaching into
 # cms.signals directly.
 __all__ = (
+    "TRANSFERABLE_RESOURCE_KINDS",
     "AgentConfig",
     "AgentUploadSpec",
     "AuditEvent",
@@ -160,6 +166,7 @@ __all__ = (
     "OpenVpnProfileConflict",
     "OpenVpnProfileNotFound",
     "OpenVpnProfileUnavailable",
+    "OwnershipTransferSummary",
     "PackRegistrationRequest",
     "RangeInstance",
     "RangeLeaseConflict",
@@ -243,5 +250,6 @@ __all__ = (
     "register_pack",
     "resume_range",
     "resume_range_by_request_id",
+    "transfer_user_ownership",
     "validate_scenario_requirements",
 )
