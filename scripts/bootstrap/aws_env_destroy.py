@@ -56,7 +56,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 - imported only for the run_cmd return type; this module never executes subprocess.
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
