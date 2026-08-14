@@ -454,7 +454,7 @@ def _empty_bucket(ctx: TeardownContext, bucket: str) -> None:
             )
 
 
-def _chunked(items: list[dict], size: int) -> Iterator[list[dict]]:
+def _chunked(items: list[dict[str, str]], size: int) -> Iterator[list[dict[str, str]]]:
     """Yield successive ``size``-length slices of ``items``."""
     for start in range(0, len(items), size):
         yield items[start : start + size]
@@ -521,7 +521,7 @@ def _ecr_repo_is_owned(ctx: TeardownContext, repo: str) -> bool:
     return tags.get("Project") == "shifter" and tags.get("Environment") == ctx.env
 
 
-def _ecr_image_ids(ctx: TeardownContext, repo: str) -> list[dict]:
+def _ecr_image_ids(ctx: TeardownContext, repo: str) -> list[dict[str, str]]:
     """Return the image ids in an ECR repo; [] if absent, raise on other error."""
     listed = _s3(
         ctx,
