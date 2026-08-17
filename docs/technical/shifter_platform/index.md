@@ -154,6 +154,11 @@ new authority model or feature flag.
 - [Organization/workspace admin console](org-workspace-admin-console.md): the
   `/api/v1/workspaces/context/` projection, staff-session boundary, and SPA
   shell/routing/selection.
+- [User lifecycle administration](user-lifecycle-administration.md): the
+  `management.lifecycle` transition service and `UserProfile.suspended_at`
+  discriminator, inactive-account authentication enforcement, the Django
+  password-reset dispatcher, and the bounded ownership-transfer command
+  (ADR-046-R13).
 
 ## Audit logging
 

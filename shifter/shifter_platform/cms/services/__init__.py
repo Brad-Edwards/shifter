@@ -140,6 +140,12 @@ from ._uploads import (
     get_storage_used,
     initiate_upload,
 )
+from ._user_offboarding import (
+    TRANSFERABLE_RESOURCE_KINDS,
+    OffboardingAuditContext,
+    OwnershipTransferSummary,
+    transfer_user_ownership,
+)
 
 # The public product launch seam is permanently RAES-owned after #1311.
 create_range = create_range_dispatch
@@ -149,6 +155,7 @@ create_range = create_range_dispatch
 # `cms.services` from mission_control / ctf rather than reaching into
 # cms.signals directly.
 __all__ = (
+    "TRANSFERABLE_RESOURCE_KINDS",
     "AgentConfig",
     "AgentUploadSpec",
     "AuditEvent",
@@ -158,9 +165,11 @@ __all__ = (
     "CtfOpenVpnProfileUnavailable",
     "EngineEventCapacitySignal",
     "NonUserWorkflow",
+    "OffboardingAuditContext",
     "OpenVpnProfileConflict",
     "OpenVpnProfileNotFound",
     "OpenVpnProfileUnavailable",
+    "OwnershipTransferSummary",
     "PackRegistrationRequest",
     "RangeInstance",
     "RangeLeaseConflict",
@@ -243,5 +252,6 @@ __all__ = (
     "register_pack",
     "resume_range",
     "resume_range_by_request_id",
+    "transfer_user_ownership",
     "validate_scenario_requirements",
 )
