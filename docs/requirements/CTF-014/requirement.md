@@ -1,7 +1,7 @@
 ---
 id: CTF-014
 title: "Customization & Extensibility"
-status: DRAFT
+status: ACTIVE
 type: NON_FUNCTIONAL
 priority: COULD
 wave: 2
@@ -21,8 +21,12 @@ Extensibility enables the platform to serve diverse use cases without core code 
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/apps.py` (CTF app config - would host plugin registry initialization)
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models.py` (CTF models - would need plugin/theme/i18n model fields)
-- CONSTRAINS → CONFIG `shifter/shifter_platform/config/settings.py` (Django settings - USE_I18N=True but no LOCALE_PATHS/LANGUAGES configured)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/extensions.py` (Django-app registration contracts for custom flag validators and scoring strategies)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models/event.py` (Event branding fields and extension-aware scoring-mode choices)
+- IMPLEMENTS → CONFIG `shifter/shifter_platform/config/settings.py` (Django LocaleMiddleware, USE_I18N, and LOCALE_PATHS configuration)
+- IMPLEMENTS → DOCUMENTATION `shifter/shifter_platform/locale/en/LC_MESSAGES/django.po` (Django gettext message catalog)
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_customization_api.py` (Extension registry dispatch and participant event-branding coverage)
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#627` (CTF-014: Customization & Extensibility)
-- DOCUMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/participant.py` (CTF views - would need theme context and i18n rendering)
+- IMPLEMENTS → ADR `ADR-051` (Communications reuse the accepted Django extension, branding, and i18n surfaces without a second plugin system)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/ctf-communications-raes-inject-preflight-2047.md` (CTF-014 extension and customization constraints for communications)
+- IMPLEMENTS → GITHUB_ISSUE `2047` (Issue #2047 - communications customization and extension boundary)

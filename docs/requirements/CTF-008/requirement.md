@@ -21,8 +21,13 @@ Communication keeps participants informed and engaged before, during, and after 
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/notification.py` (CTF Notification service (email: invitations, credentials, reminders, announcements, scheduling))
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models.py (CTFNotification)` (CTFNotification model (type, status, scheduling, recipient filtering, sent tracking))
-- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views.py (notification views)` (Notification views: admin_notification_list, admin_notification_create, api_notification_list, api_notification_send, api_send_invitations)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/notification/` (CTF notification services for organizer authoring, participant delivery, email, scheduling, realtime fan-out, cleanup, and delivery milestones)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models/notification.py` (CTFNotification and notification scheduling state)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/api/organizer/notifications.py` (Canonical organizer notification API)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/admin_notifications.py` (Server-rendered notification administration)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/api/notifications.py` (Legacy notification API compatibility surface)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/templates/ctf/email/` (Email templates: invitation, credentials, reminder, announcement (HTML + text))
-- TESTS → TEST `shifter/shifter_platform/ctf/tests/test_services/test_notification.py` (Notification service tests (invitations, credentials, reminders, announcements, scheduling, rendering))
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_services/test_notification.py` (Notification service tests (invitations, credentials, reminders, announcements, scheduling, rendering))
+- IMPLEMENTS → ADR `ADR-051` (Secure scoped CTF communications and RAES inject realization boundary)
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/ctf-communications-raes-inject-preflight-2047.md` (Communication domain, authorization, delivery, content-safety, and in-range trigger architecture)
+- IMPLEMENTS → GITHUB_ISSUE `2047` (Issue #2047 - secure scoped participant communications and RAES inject realization architecture)

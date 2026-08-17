@@ -24,3 +24,6 @@ An API enables custom scoreboards, automated challenge deployment, integration w
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/urls.py` (CTF URL configuration - API route definitions)
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#626` (CTF-012: API & Integration)
 - DOCUMENTS → CODE_FILE `shifter/shifter_platform/ctf/views/api/__init__.py` (CTF Views - API endpoints for CTF operations)
+- DOCUMENTS → ADR `ADR-051` (Canonical communications API and dedicated range-trigger authentication contract)
+- DOCUMENTS → DOCUMENTATION `docs/architecture/ctf-communications-raes-inject-preflight-2047.md` (Future communications REST, internal RAES adapter, and constrained range-ingress surfaces)
+- DOCUMENTS → GITHUB_ISSUE `2047` (Issue #2047 - communications API and integration architecture)
