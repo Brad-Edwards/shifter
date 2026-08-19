@@ -17,13 +17,13 @@ When the platform enables LLM-backed or agentic execution inside ranges, it shal
 
 ## Rationale
 
-Shifter already records command-execution safety as an architecture NFR and has per-range LLM access requirements. APTL adds the product-level controls needed when agents can act through tools during experiments or live ranges.
+Shifter already records command-execution safety as an architecture NFR and has per-range LLM access requirements. LilRAE (formerly APTL) adds the product-level controls needed when agents can act through tools during experiments or live ranges.
 
 ## Traceability
 
-- DOCUMENTS → SPEC `aptl:SAF-001` (APTL SAF-001: Kill Switch for All Agent and MCP Operations)
-- DOCUMENTS → SPEC `aptl:SAF-003` (APTL SAF-003: Tiered Autonomy Levels)
-- DOCUMENTS → SPEC `aptl:SAF-004` (APTL SAF-004: MCP Command Filtering (Allowlist/Denylist, Rate Limiting))
-- DOCUMENTS → SPEC `aptl:SAF-006` (APTL SAF-006: Dangerous Action Approval Workflow)
+- DOCUMENTS → SPEC `aptl:SAF-001` (LilRAE specification, former APTL identifier SAF-001: Kill Switch for All Agent and MCP Operations)
+- DOCUMENTS → SPEC `aptl:SAF-003` (LilRAE specification, former APTL identifier SAF-003: Tiered Autonomy Levels)
+- DOCUMENTS → SPEC `aptl:SAF-004` (LilRAE specification, former APTL identifier SAF-004: MCP Command Filtering (Allowlist/Denylist, Rate Limiting))
+- DOCUMENTS → SPEC `aptl:SAF-006` (LilRAE specification, former APTL identifier SAF-006: Dangerous Action Approval Workflow)
 - DOCUMENTS → DOCUMENTATION `scenario-dev/polaris/lessons-2.md` (Polaris lessons: Bedrock cost and token metering)
 - DOCUMENTS → DOCUMENTATION `scenario-dev/polaris/lessons-1.md` (Polaris lessons: event Bedrock cost exposure)

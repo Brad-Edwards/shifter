@@ -1318,7 +1318,7 @@
     "title": "RAES is a hard cutover",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter cuts directly to the exact released RAES contract pair. The current application has one package, catalog, transport, configuration, API, event, persistence, and provisioning vocabulary. There is no parallel path, old transport reader, fallback, alias, redirect, dual configuration read, compatibility view/model, or runtime selector. Existing content is republished as a current environment pack. The #1311 whole-feature retirement removes the legacy Scenario Editor API namespace and rollout feature-flags projection under ADR-040; the SPA consumes the additive canonical /api/v1/cms/scenarios/ resource surface. Deployment fails closed until all retired-version provisioning work is terminal; old package and sidecar rows are removed rather than relabeled, while terminal opaque plan and envelope bytes remain factual and inert.",
+    "decision": "Shifter cuts directly to the exact released RAES contract pair. The current application has one package, catalog, transport, configuration, API, event, persistence, and provisioning vocabulary. There is no parallel path, old transport reader, fallback, alias, redirect, dual configuration read, compatibility view/model, or runtime selector. Existing content is republished as a current environment pack. LilRAE (formerly APTL) is one continuous identity across a rename, while TechVault is only a scenario pack and creates no separate product or runtime boundary. The #1311 whole-feature retirement removes the legacy Scenario Editor API namespace and rollout feature-flags projection under ADR-040; the SPA consumes the additive canonical /api/v1/cms/scenarios/ resource surface. Deployment fails closed until all retired-version provisioning work is terminal; old package and sidecar rows are removed rather than relabeled, while terminal opaque plan and envelope bytes remain factual and inert.",
     "rules": [
       {
         "id": "ADR-024-R1",
@@ -1344,6 +1344,13 @@
         "id": "ADR-024-R5",
         "description": "The legacy /api/v1/cms/scenario-editor/ API namespace and Bootstrap.feature_flags projection are whole-feature retirements recorded exactly in openapi/v1.retirements.json. Current SPA reads and metadata writes use /api/v1/cms/scenarios/; compatibility routes or response aliases are prohibited.",
         "checks": []
+      },
+      {
+        "id": "ADR-024-R6",
+        "description": "Current architecture prose treats LilRAE and former-name APTL as one continuous identity and treats TechVault only as a scenario pack. Retired TechVault implementation evidence must be explicitly bounded as historical; exact historical commands, paths, symbols, image keys, workflow names, changelog entries, and external aptl:* locators remain factual.",
+        "checks": [
+          "lilrae-identity-boundary"
+        ]
       }
     ],
     "exceptions": [],
@@ -1354,6 +1361,7 @@
     "evidence": [
       "docs/architecture/raes-migration-adr.md",
       "docs/architecture/raes-hard-cutover-preflight-1862.md",
+      "docs/architecture/aptl-lilrae-techvault-identity-preflight-2062.md",
       "docs/architecture/raes-legacy-surface-archive-preflight-1311.md",
       "shifter/shifter_platform/cms/migrations/0041_raes_hard_cutover.py",
       "shifter/shifter_platform/engine/migrations/0048_raes_hard_cutover.py",
@@ -1361,7 +1369,9 @@
       "shifter/shifter_platform/shared/migrations/0009_raes_hard_cutover_cleanup.py",
       "shifter/shifter_platform/openapi/v1.retirements.json",
       "shifter/shifter_platform/tests/shared/test_api_contract.py",
-      "shifter/shifter_platform/tests/test_raes_cutover_migrations.py"
+      "shifter/shifter_platform/tests/test_raes_cutover_migrations.py",
+      "scripts/adr_guard/_guard/checks/documentation.py",
+      "scripts/adr_guard/tests/test_adr_guard.py"
     ]
   },
   {

@@ -116,6 +116,51 @@ def check_no_agent_attribution(repo_root: Path, files: list[str] | None) -> list
 
 DOCS_COVERAGE_MANIFEST = "docs/adr/documentation-coverage.yaml"
 DOCS_COVERAGE_RULE_ID = "ADR-022-R1"
+LILRAE_IDENTITY_RULE_ID = "ADR-024-R6"
+_LILRAE_IDENTITY_PREFLIGHT = (
+    "docs/architecture/aptl-lilrae-techvault-identity-preflight-2062.md"
+)
+_LILRAE_CURRENT_PROSE_FILES = {
+    "docs/adr/index.yaml",
+    "docs/architecture/aces-polaris-acceptance-parity-gate-preflight-1237.md",
+    "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
+    "docs/architecture/polaris-aws-agent-credentials-preflight-1377.md",
+    "docs/architecture/polaris-support-decomposition-preflight-691.md",
+    "docs/architecture/raes-hard-cutover-preflight-1862.md",
+    "docs/architecture/raes-migration-adr.md",
+    "docs/requirements/PLAT-2010/requirement.md",
+    "docs/requirements/PLAT-211/requirement.md",
+    "docs/requirements/PLAT-212/requirement.md",
+    "docs/requirements/PLAT-213/requirement.md",
+    "docs/requirements/PLAT-214/requirement.md",
+    "docs/requirements/PLAT-215/requirement.md",
+    "docs/requirements/PLAT-216/requirement.md",
+}
+_RETIRED_TECHVAULT_DOCS = {
+    "docs/architecture/gce-per-instance-image-resolution-preflight-1761.md",
+    "docs/architecture/gcp-normal-scenario-range-cell-migration-preflight-1350.md",
+    "docs/architecture/gcp-techvault-gce-image-preflight-1760.md",
+    "docs/architecture/packer-scenario-bake-standardization-preflight-1469.md",
+    "docs/architecture/rev1-build-deployment-provenance-preflight-1519.md",
+    "docs/architecture/techvault-encrypted-ami-preflight-1455.md",
+}
+_HISTORICAL_BOUNDARY_MARKER = "**Historical boundary (issue #2062, 2026-08-19):**"
+_FALSE_TECHVAULT_PAIR = re.compile(r"\bTechVault\s*/\s*(?:APTL|LilRAE)\b", re.IGNORECASE)
+_FALSE_IDENTITY_SPLIT = re.compile(
+    r"\b(?:APTL\s+and\s+LilRAE|LilRAE\s+and\s+APTL)\s+"
+    r"(?:are|remain|represent)\s+(?:two\s+|separate\s+|distinct\s+|different\s+)",
+    re.IGNORECASE,
+)
+_FALSE_TECHVAULT_ROLE = re.compile(
+    r"\bTechVault\s+(?:is|was|remains|acts\s+as|serves\s+as)\s+"
+    r"(?:an?\s+)?(?:APTL|LilRAE|product|experience|plugin|platform|layer)\b",
+    re.IGNORECASE,
+)
+_FALSE_APTL_HOST_RELATION = re.compile(
+    r"(?:\bAPTL\b.{0,80}\b(?:hosted\s+(?:by|on|inside)|plugin|experience)\b"
+    r".{0,80}\bLilRAE\b|\bLilRAE\b.{0,80}\bhosts?\b.{0,80}\bAPTL\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _AGENT_ATTRIBUTION_SCAN_SKIP = {
     "scripts/adr_guard/agent_attribution.py",
     "scripts/adr_guard/block_agent_attribution_commit_msg.py",
@@ -281,4 +326,146 @@ def check_documentation_coverage(repo_root: Path, files: list[str] | None) -> li
     violations: list[Violation] = []
     for feature in manifest["features"]:
         violations.extend(_check_feature_coverage(feature, docs_root_rel, docs_root, linked_slugs))
+    return violations
+
+
+def _lilrae_violation(path: str, message: str) -> Violation:
+    """Build a LilRAE/TechVault identity-boundary violation."""
+    return Violation("lilrae-identity-boundary", LILRAE_IDENTITY_RULE_ID, path, message)
+
+
+def _lilrae_candidates(repo_root: Path, files: list[str] | None) -> list[str]:
+    """Return current prose plus the machine-readable ADR authority."""
+    if files is not None:
+        return sorted(
+            {
+                path
+                for path in files
+                if path.endswith(".md") or path == "docs/adr/index.yaml"
+            }
+        )
+    candidates = {
+        path.relative_to(repo_root).as_posix()
+        for path in repo_root.rglob("*.md")
+        if ".git" not in path.relative_to(repo_root).parts
+    }
+    if (repo_root / "docs/adr/index.yaml").is_file():
+        candidates.add("docs/adr/index.yaml")
+    return sorted(candidates)
+
+
+def _adr024_registry_prose(repo_root: Path) -> str | None:
+    """Return ADR-024's decision and R6 description from the registry."""
+    try:
+        registry = _load_json_yaml(repo_root / "docs/adr/index.yaml")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(registry, list):
+        return None
+    entry = next(
+        (item for item in registry if isinstance(item, dict) and item.get("id") == "ADR-024"),
+        None,
+    )
+    if entry is None:
+        return None
+    values = [entry.get("decision")]
+    rules = entry.get("rules")
+    if isinstance(rules, list):
+        values.extend(
+            rule.get("description")
+            for rule in rules
+            if isinstance(rule, dict) and rule.get("id") == LILRAE_IDENTITY_RULE_ID
+        )
+    return "\n".join(value for value in values if isinstance(value, str))
+
+
+def check_lilrae_identity_boundary(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Keep the LilRAE rename and TechVault scenario-pack boundary unambiguous.
+
+    Release history and literal external identifiers remain factual. Current
+    prose cannot split APTL from LilRAE or promote TechVault into a product or
+    layer, while retired TechVault implementation notes carry an explicit
+    historical boundary before their preserved paths, symbols, and commands.
+    """
+    violations: list[Violation] = []
+    for rel in _lilrae_candidates(repo_root, files):
+        path = repo_root / rel
+        if not path.is_file():
+            continue
+        if rel == "docs/adr/index.yaml":
+            text = _adr024_registry_prose(repo_root)
+            if text is None:
+                continue
+        else:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+
+        is_release_history = rel == "CHANGELOG.md" or rel.startswith("changelog.d/")
+        is_identity_preflight = rel == _LILRAE_IDENTITY_PREFLIGHT
+        if not is_release_history and not is_identity_preflight:
+            if _FALSE_TECHVAULT_PAIR.search(text):
+                violations.append(
+                    _lilrae_violation(
+                        rel,
+                        "TechVault/APTL or TechVault/LilRAE is a false pairing; "
+                        "TechVault is only a scenario pack",
+                    )
+                )
+                continue
+            if _FALSE_IDENTITY_SPLIT.search(text):
+                violations.append(
+                    _lilrae_violation(
+                        rel,
+                        "APTL and LilRAE are one continuous identity across a rename",
+                    )
+                )
+                continue
+            if _FALSE_APTL_HOST_RELATION.search(text):
+                violations.append(
+                    _lilrae_violation(
+                        rel,
+                        "APTL is the former name of LilRAE across a rename, not a "
+                        "LilRAE-hosted product, plugin, or experience",
+                    )
+                )
+                continue
+            if _FALSE_TECHVAULT_ROLE.search(text):
+                violations.append(
+                    _lilrae_violation(
+                        rel,
+                        "TechVault is a scenario pack, not a product, experience, "
+                        "plugin, platform, or layer",
+                    )
+                )
+                continue
+
+        if rel in _LILRAE_CURRENT_PROSE_FILES and "APTL" in text:
+            if "LilRAE (formerly APTL)" not in text:
+                violations.append(
+                    _lilrae_violation(
+                        rel,
+                        "current conceptual APTL references must establish LilRAE rename continuity",
+                    )
+                )
+                continue
+
+        if rel in _RETIRED_TECHVAULT_DOCS:
+            normalized = re.sub(r"\s+", " ", re.sub(r"(?m)^>\s?", "", text))
+            required = (
+                _HISTORICAL_BOUNDARY_MARKER,
+                "TechVault is a scenario pack",
+                "APTL is the former name of LilRAE",
+                "retired by the RAES hard cut",
+            )
+            if any(phrase not in normalized for phrase in required):
+                violations.append(
+                    _lilrae_violation(
+                        rel,
+                        "retired TechVault implementation evidence must carry the "
+                        "canonical historical boundary",
+                    )
+                )
+
     return violations

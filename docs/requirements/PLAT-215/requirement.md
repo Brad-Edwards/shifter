@@ -17,12 +17,12 @@ The platform shall expose a common runtime contract for LLM-backed experiment or
 
 ## Rationale
 
-PLAT-202 covers credential plumbing and shardable LLM access, but Shifter also needs the measurement and cost-governance side identified by APTL: provider abstraction, prompt capture, token usage, latency, and estimated spend.
+PLAT-202 covers credential plumbing and shardable LLM access, but Shifter also needs the measurement and cost-governance side identified by LilRAE (formerly APTL): provider abstraction, prompt capture, token usage, latency, and estimated spend.
 
 ## Traceability
 
-- DOCUMENTS → SPEC `aptl:EXP-003` (APTL EXP-003: Multi-Provider LLM Runtime)
-- DOCUMENTS → SPEC `aptl:EXP-004` (APTL EXP-004: Per-Run LLM Token and Cost Metering)
-- DOCUMENTS → SPEC `aptl:EXP-005` (APTL EXP-005: System Prompt Parameterization for Experiments)
+- DOCUMENTS → SPEC `aptl:EXP-003` (LilRAE specification, former APTL identifier EXP-003: Multi-Provider LLM Runtime)
+- DOCUMENTS → SPEC `aptl:EXP-004` (LilRAE specification, former APTL identifier EXP-004: Per-Run LLM Token and Cost Metering)
+- DOCUMENTS → SPEC `aptl:EXP-005` (LilRAE specification, former APTL identifier EXP-005: System Prompt Parameterization for Experiments)
 - DOCUMENTS → DOCUMENTATION `scenario-dev/polaris/lessons-2.md` (Polaris lessons: Bedrock cost and token metering)
 - DOCUMENTS → DOCUMENTATION `scenario-dev/polaris/lessons-1.md` (Polaris lessons: event Bedrock cost exposure)
