@@ -28,7 +28,7 @@ REQUIRED_INTERFACE_CONTRACTS = {
 }
 RANGE_SUBSTRATE_OPERATIONS = frozenset({"provision", "destroy", "pause", "resume"})
 RANGE_SUBSTRATE_RESOURCES = frozenset({"network", "instance", "ngfw", "remote-access"})
-RANGE_SUBSTRATE_INITIAL_ADAPTERS = frozenset({"aws-terraform", "gcp-gdc"})
+RANGE_SUBSTRATE_INITIAL_ADAPTERS = frozenset({"aws-terraform", "gcp-gce", "gcp-gdc"})
 RANGE_SUBSTRATE_DEFERRED_ADAPTERS = frozenset({"azure"})
 RANGE_SUBSTRATE_ISSUE_REFERENCES = frozenset({"283", "478", "265", "277"})
 CTF_COMMUNICATION_SOURCES = frozenset(

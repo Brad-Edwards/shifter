@@ -464,12 +464,12 @@ def event_pk_if_exists(event_id: UUID) -> UUID | None:
 
 
 def list_events_for_organizer(user: User) -> QuerySet[CTFEvent]:
-    """List CTF events created by an organizer.
+    """List the CTF events ``user`` may administer (authority-aware).
 
-    Args:
-        user: The organizer user.
-
-    Returns:
-        QuerySet of CTFEvent instances.
+    Delegates to :func:`ctf.services.event._queries.resolve_administrable_events`
+    so this export and ``get_organizer_events`` never become two divergent
+    global-access policies (ADR-052-R3).
     """
-    return CTFEvent.objects.filter(created_by=user).order_by("-event_start")
+    from ctf.services.event._queries import resolve_administrable_events
+
+    return resolve_administrable_events(user)

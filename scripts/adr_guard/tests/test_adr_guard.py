@@ -100,7 +100,7 @@ class AdrGuardTests(unittest.TestCase):
                 "real_provider_promotion_evidence": True,
             },
             "adapters": {
-                "initial": ["aws-terraform", "gcp-gdc"],
+                "initial": ["aws-terraform", "gcp-gce", "gcp-gdc"],
                 "deferred": ["azure"],
             },
             "issue_references": {
@@ -120,7 +120,7 @@ class AdrGuardTests(unittest.TestCase):
                 {"real_provider_promotion_evidence": False}
             ),
             "azure not deferred": lambda value: value["adapters"].update(
-                {"initial": ["aws-terraform", "gcp-gdc", "azure"], "deferred": []}
+                {"initial": ["aws-terraform", "gcp-gce", "gcp-gdc", "azure"], "deferred": []}
             ),
             "missing program reference": lambda value: value["issue_references"].pop("478"),
             "unmapped program reference": lambda value: value["issue_references"].update(

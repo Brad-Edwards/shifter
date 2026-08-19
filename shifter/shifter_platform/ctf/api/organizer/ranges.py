@@ -18,6 +18,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, CTF_PARTICIPANT_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    admin_external_audit,
+)
 from ctf.api.organizer._base import (
     _EVENT_NOT_FOUND,
     _EVENT_READ,
@@ -312,7 +315,9 @@ class EventRangeProvisionView(APIView):
             _resolve_owned_event(request, event_id)
         except _CtfApiError as exc:
             return exc.to_response(request)
-        task = range_service.request_event_provisioning(event_id, source="manual")
+        # Non-rollbackable provisioning: override intent before the enqueue, then outcome.
+        with admin_external_audit(request, "range.provision"):
+            task = range_service.request_event_provisioning(event_id, source="manual")
         return Response(
             {
                 "event_id": str(event_id),
@@ -354,7 +359,9 @@ class EventSpareProvisionView(APIView):
         except _BodyParseError:
             _raise_bad_request(_SPARE_POOL_REQUEST_FAILED)
         try:
-            result = provision_event_spares(event_id, count, operator=_actor(request))
+            # Non-rollbackable spare provisioning: override intent then outcome.
+            with admin_external_audit(request, "range.spare_provision"):
+                result = provision_event_spares(event_id, count, operator=_actor(request))
         except CTFNotFoundError:
             _raise_not_found(_EVENT_NOT_FOUND)
         return Response(result)

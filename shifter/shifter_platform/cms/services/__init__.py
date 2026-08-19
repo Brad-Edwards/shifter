@@ -39,6 +39,7 @@ from engine.services import cancel_range_by_request as engine_cancel_range_by_re
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
 from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_by_uuid
 from engine.services import get_openvpn_profile as engine_get_openvpn_profile
+from engine.services import get_range_pause_resume_capability as engine_get_range_pause_resume_capability
 from engine.services import has_openvpn_profile as engine_has_openvpn_profile
 from engine.services import pause_range as engine_pause_range
 from engine.services import (
@@ -202,6 +203,7 @@ __all__ = (
     "engine_destroy_range_by_request",
     "engine_get_instance_ips_by_uuid",
     "engine_get_openvpn_profile",
+    "engine_get_range_pause_resume_capability",
     "engine_has_openvpn_profile",
     "engine_pause_range",
     "engine_range_owner_reassignment_available",

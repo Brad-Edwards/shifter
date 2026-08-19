@@ -37,6 +37,12 @@ class ComputeInstancesClient(ComputeCollectionClient, Protocol):
     def set_disk_auto_delete(self, **kwargs: object) -> object:
         """Set one attached disk's instance-deletion behavior."""
 
+    def stop(self, **kwargs: object) -> object:
+        """Stop one running instance and return a Compute operation (range pause)."""
+
+    def start(self, **kwargs: object) -> object:
+        """Start one stopped instance and return a Compute operation (range resume)."""
+
 
 class OperationWaitClient(Protocol):
     """Subset of Compute operation clients used by this backend."""
