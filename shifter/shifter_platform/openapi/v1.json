@@ -14221,29 +14221,21 @@
       },
       "EventStaffAssignRequest": {
         "type": "object",
-        "description": "Assignment request: organizer-tier user email plus staff role.\n\nThe role is validated against the closed ``EventStaffRole`` vocabulary at the\nHTTP boundary (and again in the service); unknown roles are rejected (#1922).",
+        "description": "Assignment request: organizer-tier user email plus staff role.\n\n``role`` stays an unconstrained ``CharField`` at the HTTP boundary to keep the\nv1 request contract backward-compatible (ADR-040 — a request enum is a\nbreaking change). The closed ``EventStaffRole`` vocabulary is still enforced\nfail-closed in ``assign_event_staff``, which rejects an unknown role with a\n400 (#1922).",
         "properties": {
           "email": {
             "type": "string",
             "format": "email"
           },
           "role": {
-            "$ref": "#/components/schemas/EventStaffAssignRequestRoleEnum"
+            "type": "string",
+            "maxLength": 16
           }
         },
         "required": [
           "email",
           "role"
         ]
-      },
-      "EventStaffAssignRequestRoleEnum": {
-        "enum": [
-          "moderator",
-          "judge",
-          "co_organizer"
-        ],
-        "type": "string",
-        "description": "* `moderator` - Moderator\n* `judge` - Judge\n* `co_organizer` - Co_Organizer"
       },
       "EventStaffListResponse": {
         "type": "object",

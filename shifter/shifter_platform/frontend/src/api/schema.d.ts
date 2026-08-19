@@ -3319,21 +3319,17 @@ export interface components {
         /**
          * @description Assignment request: organizer-tier user email plus staff role.
          *
-         *     The role is validated against the closed ``EventStaffRole`` vocabulary at the
-         *     HTTP boundary (and again in the service); unknown roles are rejected (#1922).
+         *     ``role`` stays an unconstrained ``CharField`` at the HTTP boundary to keep the
+         *     v1 request contract backward-compatible (ADR-040 — a request enum is a
+         *     breaking change). The closed ``EventStaffRole`` vocabulary is still enforced
+         *     fail-closed in ``assign_event_staff``, which rejects an unknown role with a
+         *     400 (#1922).
          */
         EventStaffAssignRequest: {
             /** Format: email */
             email: string;
-            role: components["schemas"]["EventStaffAssignRequestRoleEnum"];
+            role: string;
         };
-        /**
-         * @description * `moderator` - Moderator
-         *     * `judge` - Judge
-         *     * `co_organizer` - Co_Organizer
-         * @enum {string}
-         */
-        EventStaffAssignRequestRoleEnum: "moderator" | "judge" | "co_organizer";
         /** @description Envelope for the event staff listing. */
         EventStaffListResponse: {
             readonly staff: components["schemas"]["EventStaffMember"][];
