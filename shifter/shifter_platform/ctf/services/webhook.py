@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from ctf.models import CTFEvent
+    from ctf.models import CTFEvent, CTFWebhook
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def create_event_webhook(
     secret: str,
     subscribed_events: list[str],
     actor_id: int,
-) -> Any:
+) -> CTFWebhook:
     """Register a webhook on an event, asserting the ``config`` capability (#1922).
 
     The mutation lives behind this service boundary rather than in the view so

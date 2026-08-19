@@ -8362,7 +8362,7 @@
     "/api/v1/ctf/webhooks/{webhook_id}/": {
       "delete": {
         "operationId": "ctf_webhooks_destroy",
-        "description": "Soft-delete the webhook after ownership checks.",
+        "description": "Soft-delete the webhook; the service asserts the config capability on its event.",
         "parameters": [
           {
             "in": "path",
@@ -13873,6 +13873,18 @@
         "type": "object",
         "description": "Full organizer-facing event detail projection.",
         "properties": {
+          "access_role": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "access_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
           "id": {
             "type": "string",
             "readOnly": true
@@ -14016,18 +14028,6 @@
               }
             ],
             "nullable": true,
-            "readOnly": true
-          },
-          "access_role": {
-            "type": "string",
-            "nullable": true,
-            "readOnly": true
-          },
-          "access_capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
             "readOnly": true
           }
         },
@@ -14295,6 +14295,18 @@
         "type": "object",
         "description": "List projection of one of an organizer's events.",
         "properties": {
+          "access_role": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "access_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
           "id": {
             "type": "string",
             "readOnly": true
@@ -14319,18 +14331,6 @@
           },
           "team_mode": {
             "type": "boolean",
-            "readOnly": true
-          },
-          "access_role": {
-            "type": "string",
-            "nullable": true,
-            "readOnly": true
-          },
-          "access_capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
             "readOnly": true
           }
         },

@@ -35,7 +35,8 @@ from django.utils import timezone
 from ._base import CTFBaseModel, SoftDeleteManager
 from .challenge import CTFChallenge
 from .content_hydration import CTFContentHydrationReceipt
-from .event import CTFEvent, CTFEventPage, CTFEventStaff
+from .event import CTFEvent, CTFEventStaff
+from .event_page import CTFEventPage
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
 from .notification import CTFEmailTemplate, CTFNotification, CTFScheduledTask, CTFWebhook

@@ -1882,7 +1882,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Soft-delete the webhook after ownership checks. */
+        /** @description Soft-delete the webhook; the service asserts the config capability on its event. */
         delete: operations["ctf_webhooks_destroy"];
         options?: never;
         head?: never;
@@ -3227,6 +3227,8 @@ export interface components {
         };
         /** @description Full organizer-facing event detail projection. */
         EventDetail: {
+            readonly access_role: string | null;
+            readonly access_capabilities: string[];
             readonly id: string;
             readonly name: string;
             readonly description: string;
@@ -3266,8 +3268,6 @@ export interface components {
             readonly visible_os_types: string[];
             readonly theme_color: string;
             readonly managed_content: components["schemas"]["ManagedContentSummary"] | null;
-            readonly access_role: string | null;
-            readonly access_capabilities: string[];
         };
         /** @description One lifecycle transition to apply to an owned event (CTF-007). */
         EventLifecycleRequest: {
@@ -3348,6 +3348,8 @@ export interface components {
         };
         /** @description List projection of one of an organizer's events. */
         EventSummary: {
+            readonly access_role: string | null;
+            readonly access_capabilities: string[];
             readonly id: string;
             readonly name: string;
             readonly status: string;
@@ -3356,8 +3358,6 @@ export interface components {
             /** Format: date-time */
             readonly event_end: string;
             readonly team_mode: boolean;
-            readonly access_role: string | null;
-            readonly access_capabilities: string[];
         };
         /**
          * @description Create/update request body: the mutable event fields only.

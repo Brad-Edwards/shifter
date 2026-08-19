@@ -116,19 +116,19 @@ def actor_can_exercise(actor_id: int | None, event: CTFEvent, capability: str) -
     newly introduced operation missing from the role map cannot slip through on
     the owner branch (#1922 review).
     """
-    if actor_id is None:
-        return False
-    if str(capability) not in _ALL_CAPABILITIES:
+    if actor_id is None or str(capability) not in _ALL_CAPABILITIES:
         return False
     if event.created_by_id == actor_id:
         return True
     role = _live_staff_role(event, actor_id)
-    if role is None or str(capability) not in _ROLE_CAPABILITIES.get(role, frozenset()):
-        return False
-    # A live staff row grants authority only while the account still holds the
-    # global CTF Organizer role and is active (#1922 review — a demoted account
-    # must not retain event authority through a stale assignment).
-    return actor_is_active_ctf_organizer(actor_id)
+    # A live staff row grants authority only when its role maps the capability AND
+    # the account still holds the global CTF Organizer role and is active (#1922
+    # review — a demoted account must not retain authority through a stale row).
+    return (
+        role is not None
+        and str(capability) in _ROLE_CAPABILITIES.get(role, frozenset())
+        and actor_is_active_ctf_organizer(actor_id)
+    )
 
 
 def actor_has_event_capability(actor: User | AnonymousUser, event: CTFEvent, capability: str) -> bool:
@@ -154,9 +154,7 @@ def event_access_projection(actor_id: int | None, event: CTFEvent) -> tuple[str 
     if event.created_by_id == actor_id:
         return "owner", sorted(cap.value for cap in EventCapability)
     role = _live_staff_role(event, actor_id)
-    if role is None:
-        return None, []
-    return role, sorted(_ROLE_CAPABILITIES.get(role, frozenset()))
+    return role, sorted(_ROLE_CAPABILITIES.get(role, frozenset())) if role else []
 
 
 def _resolve_owned_event_for_staff(event_id: UUID, actor: User | AnonymousUser) -> CTFEvent:

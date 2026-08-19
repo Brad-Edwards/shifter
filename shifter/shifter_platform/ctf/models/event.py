@@ -467,47 +467,6 @@ RESERVED_BRIEFING_SLUG = "briefing"
 MAX_EVENT_PAGE_BODY_CHARS = 20_000
 MAX_EVENT_PAGES_PER_EVENT = 50
 
-
-class CTFEventPage(CTFBaseModel):
-    """One organizer-authored informational page for an event (CTF-1303)."""
-
-    event = models.ForeignKey(
-        CTFEvent,
-        on_delete=models.CASCADE,
-        related_name="pages",
-        help_text="Event this page belongs to",
-    )
-    title = models.CharField(
-        max_length=120,
-        help_text="Page title shown in the participant navigation",
-    )
-    slug = models.SlugField(
-        max_length=140,
-        help_text="URL-safe identifier, unique per event",
-    )
-    body = models.TextField(
-        help_text="Markdown content",
-    )
-    order = models.PositiveIntegerField(
-        default=0,
-        help_text="Display order in the participant navigation",
-    )
-
-    class Meta:
-        """Django model metadata."""
-
-        db_table = "ctf_event_page"
-        ordering = ["order", "title"]
-        verbose_name = "CTF Event Page"
-        verbose_name_plural = "CTF Event Pages"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["event", "slug"],
-                condition=models.Q(deleted_at__isnull=True),
-                name="unique_active_ctf_event_page_slug",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        """Return the page title with its event."""
-        return f"{self.title} ({self.event_id})"
+# ``CTFEventPage`` lives in ``ctf.models.event_page`` (python:S104 file-size
+# budget); the constants above stay here because other layers import them from
+# ``ctf.models.event``. Both are re-exported from ``ctf.models``.
