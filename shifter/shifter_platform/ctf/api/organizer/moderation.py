@@ -16,10 +16,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    _audit_admin_from_request,
+)
 from ctf.api.organizer._base import (
     _EVENT_WRITE,
     _actor,
-    _audit_admin_from_request,
     _participant_detail_payload,
     _raise_bad_request,
     _raise_conflict,

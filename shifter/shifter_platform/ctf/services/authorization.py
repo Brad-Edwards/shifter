@@ -25,12 +25,20 @@ from __future__ import annotations
 
 import enum
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ctf.exceptions import CTFPermissionError
 
 if TYPE_CHECKING:
+    from django.contrib.auth.base_user import AbstractBaseUser
+    from django.contrib.auth.models import AnonymousUser
+
     from ctf.models import CTFEvent
+
+    # Actor accepted by the authority predicate/resolver: a Django user, an
+    # anonymous user, or None. Defensive ``getattr`` handles unauthenticated and
+    # test-double inputs at runtime.
+    Actor = AbstractBaseUser | AnonymousUser | None
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +60,7 @@ class EventAuthoritySource(enum.StrEnum):
     PLATFORM_ADMIN = "platform_admin"
 
 
-def is_ctf_platform_admin(user: Any) -> bool:
+def is_ctf_platform_admin(user: Actor) -> bool:
     """Return whether ``user`` holds global CTF administration authority (ADR-052-R1).
 
     The sole global authority is an active, non-temporary Django superuser.
@@ -82,7 +90,7 @@ def _staff_capability_matches(actor_pk: int, event: CTFEvent, capability: Capabi
 
 
 def resolve_event_authority(
-    actor: Any, event: CTFEvent, *, capability: Capability = None
+    actor: Actor, event: CTFEvent, *, capability: Capability = None
 ) -> EventAuthoritySource | None:
     """Resolve the least-authority source admitting ``actor`` for an operation on ``event``.
 

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
     from rest_framework.response import Response
+    from rest_framework.views import APIView
 
     from ctf.models import CTFEvent
     from ctf.services.authorization import EventAuthoritySource
@@ -110,7 +111,7 @@ def audit_admin_event_mutation(operation: str, *, action: str | None = None) -> 
         """Wrap ``method`` so a successful platform-admin mutation is audited in-transaction."""
 
         @functools.wraps(method)
-        def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
+        def wrapper(self: APIView, request: Request, *args: Any, **kwargs: Any) -> Response:
             """Run the mutation and its override audit inside one transaction."""
             from django.db import transaction
 

@@ -14,6 +14,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    admin_external_audit,
+    audit_admin_event_mutation,
+)
 from ctf.api.organizer._base import (
     _BRACKET_NOT_FOUND,
     _EVENT_READ,
@@ -29,8 +33,6 @@ from ctf.api.organizer._base import (
     _raise_throttled,
     _resolve_owned_event,
     _resolve_owned_participant,
-    admin_external_audit,
-    audit_admin_event_mutation,
 )
 from ctf.api.serializers import (
     AssignBracketRequestSerializer,

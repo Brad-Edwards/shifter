@@ -11,13 +11,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    audit_admin_event_mutation,
+)
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
     _actor_may_manage,
     _raise_not_found,
     _resolve_owned_participant,
-    audit_admin_event_mutation,
 )
 from ctf.api.serializers import (
     AwardListResponseSerializer,

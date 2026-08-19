@@ -18,6 +18,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, CTF_PARTICIPANT_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    admin_external_audit,
+)
 from ctf.api.organizer._base import (
     _EVENT_NOT_FOUND,
     _EVENT_READ,
@@ -34,7 +37,6 @@ from ctf.api.organizer._base import (
     _resolve_active_participant,
     _resolve_owned_event,
     _resolve_owned_participant,
-    admin_external_audit,
 )
 from ctf.api.serializers import (
     ParticipantRangeActionResultSerializer,

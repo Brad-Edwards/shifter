@@ -16,6 +16,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    _audit_admin_from_request,
+    admin_external_audit,
+    audit_admin_event_mutation,
+)
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
@@ -23,7 +28,6 @@ from ctf.api.organizer._base import (
     _NOTIFICATION_NOT_FOUND,
     _actor,
     _actor_may_manage,
-    _audit_admin_from_request,
     _pagination_window,
     _raise_bad_request,
     _raise_conflict,
@@ -31,8 +35,6 @@ from ctf.api.organizer._base import (
     _raise_not_found,
     _raise_throttled,
     _resolve_owned_event,
-    admin_external_audit,
-    audit_admin_event_mutation,
 )
 from ctf.api.serializers import (
     EmailTemplateResponseSerializer,

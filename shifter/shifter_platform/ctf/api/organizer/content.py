@@ -22,13 +22,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    admin_external_audit,
+)
 from ctf.api.organizer._base import (
     _EVENT_WRITE,
     _actor,
     _raise_bad_request,
     _raise_forbidden,
     _resolve_owned_event,
-    admin_external_audit,
 )
 from ctf.api.serializers import (
     EventContentRefreshRequestSerializer,

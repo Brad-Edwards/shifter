@@ -22,15 +22,9 @@ from rest_framework.request import Request
 
 from ctf.api._base import _CtfApiError, ctf_actor_user
 
-# Re-exported so organizer view modules keep importing the override-audit helpers
-# from this module; the implementations live in ``_audit`` to keep both files
-# within the file-size budget (ADR-052).
-from ctf.api.organizer._audit import (  # noqa: F401
-    _audit_admin_from_request,
-    _audit_admin_mutation,
-    admin_external_audit,
-    audit_admin_event_mutation,
-)
+# The override-audit helpers live in ``_audit`` (file-size budget, ADR-052);
+# ``_delete_via_service`` uses this one to audit database-only nested deletes.
+from ctf.api.organizer._audit import _audit_admin_from_request
 from shared.api_tokens import scopes
 
 # Staff-delegable capability selector: one noun, several, or None (owner-only).
@@ -134,7 +128,7 @@ def _resolve_owned_event(request: Request, event_id: UUID, *, capability: Capabi
     return event
 
 
-def _event_authority(request: Request, event: CTFEvent, capability: Capability):
+def _event_authority(request: Request, event: CTFEvent, capability: Capability) -> EventAuthoritySource | None:
     """Resolve the closed authority source admitting the actor, or ``None`` (ADR-052).
 
     Least authority: owner, then a delegated staff capability, then the
