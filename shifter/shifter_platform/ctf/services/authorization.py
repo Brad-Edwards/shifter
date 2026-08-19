@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import enum
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ctf.exceptions import CTFPermissionError
 
@@ -52,7 +52,7 @@ class EventAuthoritySource(enum.StrEnum):
     PLATFORM_ADMIN = "platform_admin"
 
 
-def is_ctf_platform_admin(user) -> bool:
+def is_ctf_platform_admin(user: Any) -> bool:
     """Return whether ``user`` holds global CTF administration authority (ADR-052-R1).
 
     The sole global authority is an active, non-temporary Django superuser.
@@ -71,7 +71,19 @@ def is_ctf_platform_admin(user) -> bool:
     return not is_temporary_ctf_account(user)
 
 
-def resolve_event_authority(actor, event: CTFEvent, *, capability: Capability = None) -> EventAuthoritySource | None:
+def _staff_capability_matches(actor_pk: int, event: CTFEvent, capability: Capability) -> bool:
+    """Return whether a live staff row for ``actor_pk`` grants any requested ``capability``."""
+    from ctf.services.event.staff import staff_row_grants_capability
+
+    if capability is None:
+        return False
+    wanted = (capability,) if isinstance(capability, str) else tuple(capability)
+    return any(staff_row_grants_capability(actor_pk, event, item) for item in wanted)
+
+
+def resolve_event_authority(
+    actor: Any, event: CTFEvent, *, capability: Capability = None
+) -> EventAuthoritySource | None:
     """Resolve the least-authority source admitting ``actor`` for an operation on ``event``.
 
     Order (ADR-052-R2): the event owner, then a live event-staff row whose role
@@ -82,19 +94,16 @@ def resolve_event_authority(actor, event: CTFEvent, *, capability: Capability = 
     admitted; the caller renders one opaque denial.
     """
     actor_pk = getattr(actor, "pk", None)
+    source: EventAuthoritySource | None = None
     if actor_pk is None:
-        return None
-    if event.created_by_id == actor_pk:
-        return EventAuthoritySource.OWNER
-    if capability is not None:
-        from ctf.services.event.staff import staff_row_grants_capability
-
-        wanted = (capability,) if isinstance(capability, str) else tuple(capability)
-        if any(staff_row_grants_capability(actor_pk, event, item) for item in wanted):
-            return EventAuthoritySource.EVENT_STAFF
-    if is_ctf_platform_admin(actor):
-        return EventAuthoritySource.PLATFORM_ADMIN
-    return None
+        source = None
+    elif event.created_by_id == actor_pk:
+        source = EventAuthoritySource.OWNER
+    elif _staff_capability_matches(actor_pk, event, capability):
+        source = EventAuthoritySource.EVENT_STAFF
+    elif is_ctf_platform_admin(actor):
+        source = EventAuthoritySource.PLATFORM_ADMIN
+    return source
 
 
 def _actor_id_is_platform_admin(actor_id: int) -> bool:

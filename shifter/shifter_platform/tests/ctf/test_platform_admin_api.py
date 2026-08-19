@@ -109,6 +109,7 @@ class TestDetailAndMutation:
         assert resp.status_code == 403
 
     def test_superuser_updates_other_event_and_audits(self, superuser_client, other_event):
+        original_owner_id = other_event.created_by_id
         resp = call_json(
             superuser_client,
             "put",
@@ -119,7 +120,7 @@ class TestDetailAndMutation:
         assert resp.status_code == 200
         other_event.refresh_from_db()
         assert other_event.name == "Renamed By Admin"
-        assert other_event.created_by_id == other_event.created_by_id  # ownership unchanged
+        assert other_event.created_by_id == original_owner_id  # ownership unchanged
 
         record = AuditLog.objects.filter(context="ctf_platform_admin_event_action").order_by("-timestamp").first()
         assert record is not None

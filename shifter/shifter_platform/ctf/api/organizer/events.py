@@ -39,7 +39,14 @@ from ctf.api.serializers import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from typing import Any
     from uuid import UUID
+
+    from django.contrib.auth.models import User
+    from django.db.models import QuerySet
+
+    from ctf.models import CTFEvent
 
 # Canonical page-size bound for the authority-aware event list. The platform-admin
 # path (all live events) is always bounded to this even when the caller omits
@@ -48,7 +55,9 @@ if TYPE_CHECKING:
 _EVENT_LIST_PAGE_SIZE = 200
 
 
-def _bounded_event_page(events, *, page, page_size, is_admin):
+def _bounded_event_page(
+    events: QuerySet[CTFEvent], *, page: int | None, page_size: int | None, is_admin: bool
+) -> QuerySet[CTFEvent]:
     """Slice the ordered queryset by explicit pagination, else bound the admin path."""
     if page is not None or page_size is not None:
         size = page_size or _EVENT_LIST_PAGE_SIZE
@@ -59,9 +68,11 @@ def _bounded_event_page(events, *, page, page_size, is_admin):
     return events
 
 
-def _event_projection_context(request, actor, events, *, is_admin):
+def _event_projection_context(
+    request: Request, actor: User, events: Sequence[CTFEvent], *, is_admin: bool
+) -> dict[str, Any]:
     """Build serializer context with a prefetched staff-role map (no per-row query)."""
-    context = {"request": request, "actor": actor, "is_platform_admin": is_admin, "staff_roles": {}}
+    context: dict[str, Any] = {"request": request, "actor": actor, "is_platform_admin": is_admin, "staff_roles": {}}
     if not is_admin:
         event_ids = [event.id for event in events]
         if event_ids:

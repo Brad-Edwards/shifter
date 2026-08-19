@@ -15,14 +15,22 @@ imported lazily inside the helpers so the existing ``patch("ctf.services...")`` 
 
 from __future__ import annotations
 
-import contextlib
-import functools
 from typing import TYPE_CHECKING
 
 from rest_framework import status
 from rest_framework.request import Request
 
 from ctf.api._base import _CtfApiError, ctf_actor_user
+
+# Re-exported so organizer view modules keep importing the override-audit helpers
+# from this module; the implementations live in ``_audit`` to keep both files
+# within the file-size budget (ADR-052).
+from ctf.api.organizer._audit import (  # noqa: F401
+    _audit_admin_from_request,
+    _audit_admin_mutation,
+    admin_external_audit,
+    audit_admin_event_mutation,
+)
 from shared.api_tokens import scopes
 
 # Staff-delegable capability selector: one noun, several, or None (owner-only).
@@ -37,6 +45,7 @@ if TYPE_CHECKING:
     from rest_framework.response import Response
 
     from ctf.models import CTFChallenge, CTFEvent, CTFParticipant
+    from ctf.services.authorization import EventAuthoritySource
 
 _EVENT_READ = (scopes.CTF_EVENT_READ,)
 _EVENT_WRITE = (scopes.CTF_EVENT_WRITE,)
@@ -137,7 +146,7 @@ def _event_authority(request: Request, event: CTFEvent, capability: Capability):
     return resolve_event_authority(_actor(request), event, capability=capability)
 
 
-def _capture_event_authority(request: Request, event: CTFEvent, source) -> None:
+def _capture_event_authority(request: Request, event: CTFEvent, source: EventAuthoritySource | None) -> None:
     """Stash the resolved (event, authority source) on the request for later audit.
 
     Every organizer resolver records the authority it admitted so any subsequent
@@ -159,120 +168,6 @@ def _actor_may_manage(request: Request, event: CTFEvent, capability: Capability)
         return False
     _capture_event_authority(request, event, source)
     return True
-
-
-def _audit_admin_from_request(
-    request: Request,
-    operation: str,
-    *,
-    action=None,
-    changed_fields: list[str] | None = None,
-    outcome: str | None = None,
-) -> None:
-    """Audit a mutation using the authority captured by the request's resolver.
-
-    No-op when nothing was captured or the authority was owner/delegated-staff;
-    writes the strict override audit only for a platform-admin mutation. Callers
-    that mutate the database wrap the service call plus this helper in one
-    transaction so a strict audit failure rolls the mutation back (ADR-052-R4).
-    """
-    captured = getattr(request, "_ctf_admin_authority", None)
-    if captured is None:
-        return
-    event, source = captured
-    _audit_admin_mutation(
-        request, event, source, operation, action=action, changed_fields=changed_fields, outcome=outcome
-    )
-
-
-def _audit_admin_mutation(
-    request: Request,
-    event: CTFEvent,
-    source,
-    operation: str,
-    *,
-    action=None,
-    changed_fields: list[str] | None = None,
-    outcome: str | None = None,
-) -> None:
-    """Strict-audit a mutation only when it used the platform-admin override (ADR-052-R4).
-
-    No-op for owner or delegated-staff authority. ``action`` defaults to the
-    audit ``UPDATE`` verb; pass an explicit verb (e.g. ``DELETE``) where the
-    operation differs. Database-only callers wrap the mutation plus this call in
-    one transaction; a non-rollbackable caller records ``outcome="intent"`` before
-    its first side effect and a correlated outcome afterward.
-    """
-    from ctf.services.audit import audit_platform_admin_event_action
-    from ctf.services.authorization import EventAuthoritySource
-
-    if source is not EventAuthoritySource.PLATFORM_ADMIN:
-        return
-    kwargs = {} if action is None else {"action": action}
-    audit_platform_admin_event_action(
-        request=request,
-        event=event,
-        operation=operation,
-        effective_actor_id=_actor(request).pk,
-        changed_fields=changed_fields,
-        outcome=outcome,
-        **kwargs,
-    )
-
-
-def audit_admin_event_mutation(operation: str, *, action=None):
-    """Decorate a **database-only** organizer mutation to audit a platform-admin override.
-
-    The method resolves its event-derived target through the shared resolvers,
-    which capture the admitting authority on the request; this decorator runs the
-    method and the strict override audit inside one transaction, so a strict audit
-    failure rolls the mutation back on a successful (2xx) response (ADR-052-R4). It
-    is a no-op for owner or delegated-staff authority and for non-success
-    responses.
-
-    Non-rollbackable workflows (uploads, notifications, participant provisioning,
-    content, ranges) must NOT use this decorator: holding a transaction across an
-    external side effect is unsafe, and a completion-only record cannot satisfy
-    the intent-before-side-effect requirement. Those endpoints wrap their side
-    effect in :func:`admin_external_audit` instead.
-    """
-
-    def decorator(method):
-        @functools.wraps(method)
-        def wrapper(self, request: Request, *args, **kwargs):
-            from django.db import transaction
-
-            with transaction.atomic():
-                response = method(self, request, *args, **kwargs)
-                if 200 <= getattr(response, "status_code", 500) < 300:
-                    _audit_admin_from_request(request, operation, action=action)
-                return response
-
-        return wrapper
-
-    return decorator
-
-
-@contextlib.contextmanager
-def admin_external_audit(request: Request, operation: str, *, action=None):
-    """Intent-before / outcome-after audit for a non-rollbackable platform-admin mutation.
-
-    The caller must have already resolved the event authority (captured on the
-    request) before entering this context. On enter it strictly persists a bounded
-    ``intent`` record before the wrapped side effect; on exit it persists a
-    correlated ``completed`` or ``failed`` outcome. Every record is a no-op unless
-    the resolved authority is the platform-admin override, and no database
-    transaction is held across the side effect (ADR-052-R4). ``failed`` carries
-    only the bounded operation identifiers — never raw exception text.
-    """
-    _audit_admin_from_request(request, operation, action=action, outcome="intent")
-    try:
-        yield
-    except BaseException:
-        _audit_admin_from_request(request, operation, action=action, outcome="failed")
-        raise
-    else:
-        _audit_admin_from_request(request, operation, action=action, outcome="completed")
 
 
 def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallenge:
