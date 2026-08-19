@@ -157,6 +157,10 @@ class RangePresentationSerializer(serializers.Serializer):
     is_ready = serializers.BooleanField()
     is_terminal = serializers.BooleanField()
     is_active = serializers.BooleanField()
+    # Server-computed lifecycle capability (#614): the SPA drives Pause/Resume
+    # from these, never from status/provider/asset-type inference.
+    pause_supported = serializers.BooleanField()
+    resume_supported = serializers.BooleanField()
 
 
 class LaunchRangeSerializer(serializers.Serializer):

@@ -402,6 +402,14 @@ class RangeContextBase(BaseModel):
     status: ResourceStatus
     instances: list[InstanceContext]
     agent_name: str | None = None
+    # Server-computed lifecycle capability (ADR-039, issue #614): whether the
+    # range's realized asset mix can be losslessly paused/resumed on its substrate
+    # adapter. The SPA drives its Pause/Resume controls from these booleans rather
+    # than inferring capability from status, provider names, or asset types. The
+    # query layer populates them; they default False so a projection that omits
+    # them fails safe (controls hidden) rather than offering an unsafe action.
+    pause_supported: bool = False
+    resume_supported: bool = False
 
     @field_validator("range_id")
     @classmethod
