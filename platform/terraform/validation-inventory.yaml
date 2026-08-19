@@ -301,9 +301,9 @@ modules:
     tracking: "#1597"
   - path: platform/terraform/modules/range/vpc
     owner: "@Brad-Edwards"
-    contract: deferred
-    reason: "Contract-test rollout tracked in #1597."
-    tracking: "#1597"
+    contract: terraform_test
+    test: tests/firewall.tftest.hcl
+    test_profile: aws-1.13.3
   # GCP shared modules
   - path: platform/terraform/gcp/modules/cicd-github-oidc
     owner: "@Brad-Edwards"
