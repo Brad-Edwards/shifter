@@ -232,8 +232,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: int | 
     Args:
         event_id: UUID of the event to update.
         event_data: Dictionary containing fields to update.
-        actor_id: When an interactive caller supplies it, the service asserts the
-            ``config`` capability before mutating (defense in depth, #1922).
+        actor_id: When supplied, the service asserts the ``config`` capability (#1922).
 
     Returns:
         The updated CTFEvent instance.
@@ -242,7 +241,6 @@ def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: int | 
         CTFNotFoundError: If event doesn't exist.
         CTFStateError: If event is not modifiable.
         CTFValidationError: If event data is invalid.
-        CTFPermissionError: If ``actor_id`` lacks the ``config`` capability.
     """
     logger.info("Updating CTF event %s", safe_log_value(event_id))
 
@@ -310,12 +308,10 @@ def delete_event(event_id: UUID, *, actor_id: int | None = None) -> None:
 
     Args:
         event_id: UUID of the event to delete.
-        actor_id: When supplied by an interactive caller, the service asserts the
-            ``delete`` capability before mutating (defense in depth, #1922).
+        actor_id: When supplied, the service asserts the ``delete`` capability (#1922).
 
     Raises:
         CTFNotFoundError: If event doesn't exist.
-        CTFPermissionError: If ``actor_id`` lacks the ``delete`` capability.
     """
     logger.info("Deleting CTF event %s", safe_log_value(event_id))
 
