@@ -73,10 +73,17 @@
       "technical_docs": ["technical/shifter_platform/admin-audit-activity.md"]
     },
     {
+      "id": "user-lifecycle-administration",
+      "title": "User lifecycle administration",
+      "requirement": "PLAT-236",
+      "user_docs": ["features/user-lifecycle-administration.md"],
+      "technical_docs": ["technical/shifter_platform/user-lifecycle-administration.md"]
+    },
+    {
       "id": "aws-eks-backend-bundle",
       "title": "AWS EKS backend bundle",
       "requirement": "GEN-001",
-      "user_docs": ["how-to/aws-ecs-to-eks-migration.md"],
+      "user_docs": ["how-to/aws-ecs-to-eks-migration.md", "ops/portal-eks-operations.md"],
       "technical_docs": ["technical/platform_infrastructure/aws-eks-bundle.md"]
     }
   ]

@@ -298,7 +298,7 @@ export function permissionAllows(policy: PermissionPolicy, bootstrap: Bootstrap)
     case "ctf_organizer":
       return bootstrap.permissions.is_ctf_organizer;
     case "ctf_admin":
-      // Organizer or platform administrator (ADR-051). Advisory nav gate only;
+      // Organizer or platform administrator (ADR-052). Advisory nav gate only;
       // the CTF API re-authorizes every request per object.
       return bootstrap.permissions.can_administer_ctf;
     case "ctf_participant":

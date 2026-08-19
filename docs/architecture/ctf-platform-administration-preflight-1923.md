@@ -267,7 +267,7 @@ values are the extension point.
 The implementation must evaluate these surfaces together:
 
 - ADR-001, ADR-013, ADR-029, ADR-040, ADR-045, ADR-046-R7, ADR-048,
-  ADR-051, and the CTF SPA/API preflights;
+  ADR-052, and the CTF SPA/API preflights;
 - identity/bootstrap/role/account-boundary configuration under `config/` and
   `shared/auth.py`/`shared/verified_identity.py`;
 - CTF DRF permissions, organizer endpoints/serializers, legacy access helpers,

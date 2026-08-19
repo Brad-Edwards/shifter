@@ -85,6 +85,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/administer/users/{id}/lifecycle/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Activate, deactivate, or suspend a user account. Requires ``auth.change_user``.
+         *
+         *     The one closed desired-state lifecycle command (PLAT-236, #1943). Suspend and
+         *     deactivate both block sign-in and retain assignments; they differ only in the
+         *     suspension discriminator. Soft deletion is the separate ``/delete/`` endpoint
+         *     (``auth.delete_user``).
+         */
+        post: operations["api_v1_administer_users_lifecycle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/users/{id}/reset-password/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Trigger a Django password-reset email for an eligible account. ``auth.change_user``.
+         *
+         *     Uses Django's proven password-reset machinery for an active local, non-CTF
+         *     account only; a provider-bound account resets at its provider and a temporary
+         *     CTF account keeps its event-scoped credential flow (PLAT-236, #1943). Returns
+         *     a safe accepted/error envelope; no secret is ever returned.
+         */
+        post: operations["api_v1_administer_users_reset_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/administer/users/{id}/set-active/": {
         parameters: {
             query?: never;
@@ -96,6 +144,41 @@ export interface paths {
         put?: never;
         /** @description Activate or deactivate a user's login. Requires ``auth.change_user``. */
         post: operations["api_v1_administer_users_set_active"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/users/{id}/transfer-ownership/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Transfer a departing user's owned resources to a replacement. Superuser-only.
+         *
+         *     A single bounded composition-root command (never sequential SPA calls): it
+         *     resolves and authorizes both accounts, then delegates to
+         *     ``cms.services.transfer_user_ownership`` (the only layer permitted to reach
+         *     both the range and workspace domains). Both transfer kinds are the
+         *     ADR-046-R13 platform-administrator offboarding override.
+         *
+         *     This command requires a **superuser** session, not merely ``auth.change_user``
+         *     (issue #1943 review F5): a superuser already holds cross-tenant/root authority,
+         *     so transferring ranges and workspaces during offboarding is not an escalation.
+         *     Gating on ``auth.change_user`` alone would let a staff user who is merely a
+         *     member of another tenant's workspace acquire ranges they could not otherwise
+         *     administer. Range reassignment reuses the existing CMS/Engine authority and
+         *     refuses live-VPN ranges; workspace transfer requires the replacement to be an
+         *     existing member. It never removes memberships, transfers credentials/agents,
+         *     or rewrites provenance.
+         */
+        post: operations["api_v1_administer_users_transfer_ownership"];
         delete?: never;
         options?: never;
         head?: never;
@@ -469,7 +552,7 @@ export interface paths {
          * @description Create an event from the request body.
          *
          *     Creation is organizer authority, never the platform-admin override
-         *     (ADR-051): a new event has no existing event on which to resolve override
+         *     (ADR-052): a new event has no existing event on which to resolve override
          *     authority, and creation makes the actor ``created_by``. The list GET is
          *     admitted for organizers or platform admins, but POST requires a genuine
          *     CTF organizer, so a pure superuser cannot create an event and acquire
@@ -2693,6 +2776,8 @@ export interface components {
             readonly organizer_grant_source: string;
             readonly must_change_password: boolean;
             readonly groups: string[];
+            readonly lifecycle_state: string;
+            readonly available_actions: string[];
         };
         /**
          * @description Read-only summary of a user for the Administer list.
@@ -3460,6 +3545,22 @@ export interface components {
             error: string;
         };
         /**
+         * @description Explicit request body for the account lifecycle transition operation.
+         *
+         *     ``action`` is the closed set of change-permission transitions; soft deletion
+         *     is a distinct endpoint gated on ``auth.delete_user``.
+         */
+        LifecycleTransitionRequest: {
+            action: components["schemas"]["LifecycleTransitionRequestActionEnum"];
+        };
+        /**
+         * @description * `activate` - activate
+         *     * `deactivate` - deactivate
+         *     * `suspend` - suspend
+         * @enum {string}
+         */
+        LifecycleTransitionRequestActionEnum: "activate" | "deactivate" | "suspend";
+        /**
          * @description Bounded managed-content status for the organizer (issue #1971).
          *
          *     Exposes only the current revision fence and drift state so the organizer can
@@ -3648,7 +3749,7 @@ export interface components {
          */
         OsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
         /**
-         * @description Bounded event-owner projection: stable id and display name only (ADR-051).
+         * @description Bounded event-owner projection: stable id and display name only (ADR-052).
          *
          *     Never serializes the Django ``User``, provider subject, email, groups, or role
          *     facts. Consumed by the organizer/platform-admin list and detail so the owner
@@ -4471,6 +4572,12 @@ export interface components {
             readonly id: string;
         };
         /**
+         * @description * `ranges` - ranges
+         *     * `workspaces` - workspaces
+         * @enum {string}
+         */
+        ResourceKindsEnum: "ranges" | "workspaces";
+        /**
          * @description * `pending` - pending
          *     * `provisioning` - provisioning
          *     * `ready` - ready
@@ -4661,6 +4768,26 @@ export interface components {
         TeamMemberRequest: {
             /** Format: uuid */
             participant_id: string;
+        };
+        /**
+         * @description Explicit request body for an offboarding ownership transfer.
+         *
+         *     ``resource_kinds`` is a closed allowlist; there is no wildcard or
+         *     "all resources" interpretation (PLAT-236, #1943).
+         */
+        TransferOwnershipRequest: {
+            replacement_user_id: number;
+            resource_kinds: components["schemas"]["ResourceKindsEnum"][];
+        };
+        /** @description Bounded, secret-free summary of an offboarding ownership transfer. */
+        TransferOwnershipResult: {
+            source_user_id: number;
+            replacement_user_id: number;
+            ranges_reassigned: number;
+            ranges_blocked: number;
+            workspaces_transferred: number;
+            workspaces_already_owned: number;
+            workspaces_blocked_no_membership: number;
         };
         /**
          * @description Transfer-ownership command: the internal id of the new owner account.
@@ -5010,6 +5137,90 @@ export interface operations {
             };
         };
     };
+    api_v1_administer_users_lifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifecycleTransitionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LifecycleTransitionRequest"];
+                "multipart/form-data": components["schemas"]["LifecycleTransitionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_users_reset_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     api_v1_administer_users_set_active: {
         parameters: {
             query?: never;
@@ -5033,6 +5244,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_administer_users_transfer_ownership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferOwnershipRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TransferOwnershipRequest"];
+                "multipart/form-data": components["schemas"]["TransferOwnershipRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferOwnershipResult"];
                 };
             };
             /** @description Authentication failed. */

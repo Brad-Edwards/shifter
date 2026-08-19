@@ -1,4 +1,4 @@
-"""Platform-admin CTF administration through the canonical DRF API (#1923, ADR-051).
+"""Platform-admin CTF administration through the canonical DRF API (#1923, ADR-052).
 
 Exercises the organizer-or-platform-admin admission gate, authority-aware
 discovery, detail/mutation parity, the override audit trail, and the negative
@@ -154,7 +154,7 @@ class TestDetailAndMutation:
 
 
 class TestNestedMutationOverrideAudit:
-    """Nested event-derived mutations via the override capture the source and audit (ADR-051-R4)."""
+    """Nested event-derived mutations via the override capture the source and audit (ADR-052-R4)."""
 
     @pytest.fixture
     def other_challenge(self, other_event):
@@ -226,7 +226,7 @@ class TestBootstrapAdvisoryFlag:
 
 
 class TestStaffManagementViaOverride:
-    """Staff management is owner-or-platform-admin (ADR-051-R2), audited, never delegable to staff."""
+    """Staff management is owner-or-platform-admin (ADR-052-R2), audited, never delegable to staff."""
 
     def test_superuser_assigns_staff_and_audits(self, superuser_client, other_event, organizer_user):
         from ctf.models import CTFEventStaff
@@ -270,7 +270,7 @@ class TestStaffManagementViaOverride:
 
 
 class TestEventCreationAuthority:
-    """Event creation is organizer authority, never the platform-admin override (ADR-051)."""
+    """Event creation is organizer authority, never the platform-admin override (ADR-052)."""
 
     def test_pure_superuser_cannot_create_event(self, superuser_client):
         resp = call_json(

@@ -193,6 +193,184 @@ class AdrGuardTests(unittest.TestCase):
         ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
         self.assertTrue(any("interface_contract" in item.message for item in violations))
 
+    def test_ctf_communications_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "ctf-communications/v1",
+            "scope": {
+                "campaign_workspace_count": 1,
+                "event_authorization": "every-target-event",
+                "recipient_authority": "event-scoped-ctf-participant",
+                "platform_root": "audited-django-superuser-single-workspace",
+            },
+            "intent": {
+                "type": "CommunicationIntent",
+                "immutable": True,
+                "sources": [
+                    "manual",
+                    "static-scenario",
+                    "dynamic-platform",
+                    "timed",
+                    "raes-runtime",
+                    "range-signal",
+                ],
+                "audiences": [
+                    "participant",
+                    "participant-set",
+                    "teams",
+                    "event",
+                    "events",
+                ],
+            },
+            "raes": {
+                "interpreter": "shared.raes",
+                "delivery_kinds": [
+                    "disclosure",
+                    "external-direction",
+                    "intervention",
+                ],
+                "unsupported": "reject-before-persistence-delivery-effect",
+            },
+            "range_ingress": {
+                "trust": "compromised",
+                "authentication": "dedicated-generation-fenced-range-trigger",
+                "credential": "opaque-show-once-revocable",
+                "binding": "issuer-deployment-audience-expiry-current-generation",
+                "request_fields": [
+                    "protocol_version",
+                    "declaration_id",
+                    "occurrence",
+                    "nonce",
+                ],
+                "forbidden_authority": [
+                    "workspace",
+                    "event",
+                    "scenario",
+                    "campaign",
+                    "subject",
+                    "body",
+                    "locale",
+                    "link",
+                    "channel",
+                    "user",
+                    "email",
+                    "team",
+                    "participant",
+                    "schedule",
+                    "policy",
+                    "control",
+                ],
+                "replay_fence": "database-unique-occurrence",
+                "rate_limit": "shared-fail-closed",
+                "audit_order": "before-effect",
+            },
+            "content": {
+                "profile": "ctf-communication-markdown/v1",
+                "subject_codepoints": 200,
+                "source_bytes": 65536,
+                "rendered_bytes": 131072,
+                "link_policy": "relative-or-allowlisted-https",
+                "raw_html": False,
+                "remote_media": False,
+                "executable_behavior": False,
+            },
+            "delivery": {
+                "workflow_truth": "postgresql",
+                "semantics": "at-least-once",
+                "timing": "ctf-scheduler",
+                "states": [
+                    "in-app-available",
+                    "email-backend-accepted",
+                    "websocket-published",
+                    "socket-written",
+                    "read",
+                    "acknowledged",
+                    "control-effect",
+                ],
+                "aggregate_overclaim": False,
+            },
+            "verification": [
+                "authorization-isolation",
+                "content-safety",
+                "raes-conformance",
+                "adversarial-ingress-replay",
+                "credential-lifecycle",
+                "postgresql-concurrency-recovery",
+                "delivery-load",
+                "retention-redaction",
+                "configuration-parity",
+                "migration-api-contract",
+                "browser",
+            ],
+            "documentation": [
+                "participant",
+                "organizer",
+                "scenario-author",
+                "technical",
+                "operator",
+                "api-client",
+            ],
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-051"), [])
+
+        mutations = {
+            "cross-workspace campaign": lambda value: value["scope"].update({"campaign_workspace_count": 2}),
+            "first-event-only authorization": lambda value: value["scope"].update(
+                {"event_authorization": "first-target-event"}
+            ),
+            "email as recipient authority": lambda value: value["scope"].update(
+                {"recipient_authority": "email-address"}
+            ),
+            "missing trigger source": lambda value: value["intent"]["sources"].remove("range-signal"),
+            "missing audience": lambda value: value["intent"]["audiences"].remove("participant-set"),
+            "collapsed RAES delivery kind": lambda value: value["raes"]["delivery_kinds"].remove("intervention"),
+            "approximated unsupported profile": lambda value: value["raes"].update(
+                {"unsupported": "deliver-as-disclosure"}
+            ),
+            "trusted range": lambda value: value["range_ingress"].update({"trust": "trusted"}),
+            "reusable range credential": lambda value: value["range_ingress"].update(
+                {"credential": "reusable-bearer"}
+            ),
+            "range credential lacks generation binding": lambda value: value["range_ingress"].update(
+                {"binding": "event-only"}
+            ),
+            "range-selected participant": lambda value: value["range_ingress"]["request_fields"].append("participant"),
+            "range participant authority omitted": lambda value: value["range_ingress"]["forbidden_authority"].remove(
+                "participant"
+            ),
+            "replay not database fenced": lambda value: value["range_ingress"].update(
+                {"replay_fence": "process-memory"}
+            ),
+            "content limit widened": lambda value: value["content"].update({"source_bytes": 65537}),
+            "raw HTML enabled": lambda value: value["content"].update({"raw_html": True}),
+            "exactly-once overclaim": lambda value: value["delivery"].update({"semantics": "exactly-once"}),
+            "delivery states collapsed": lambda value: value["delivery"]["states"].remove("acknowledged"),
+            "missing recovery verification": lambda value: value["verification"].remove(
+                "postgresql-concurrency-recovery"
+            ),
+            "missing scenario-author docs": lambda value: value["documentation"].remove("scenario-author"),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-051"))
+
+        entry_without_contract = {
+            "id": "ADR-051",
+            "title": "CTF communications",
+            "status": "accepted",
+            "scope": "shifter_platform",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
     def test_validate_adr_exceptions_rejects_expired_entries(self) -> None:
         errors = ADR_GUARD.validate_adr_exceptions(
             [

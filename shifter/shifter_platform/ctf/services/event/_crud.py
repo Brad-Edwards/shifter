@@ -468,7 +468,7 @@ def list_events_for_organizer(user: User) -> QuerySet[CTFEvent]:
 
     Delegates to :func:`ctf.services.event._queries.resolve_administrable_events`
     so this export and ``get_organizer_events`` never become two divergent
-    global-access policies (ADR-051-R3).
+    global-access policies (ADR-052-R3).
     """
     from ctf.services.event._queries import resolve_administrable_events
 

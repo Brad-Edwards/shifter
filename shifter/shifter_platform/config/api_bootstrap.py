@@ -59,7 +59,7 @@ class BootstrapPermissionsSerializer(serializers.Serializer):
     can_access_threat_research = serializers.BooleanField()
     is_ctf_organizer = serializers.BooleanField()
     is_ctf_participant = serializers.BooleanField()
-    # One advisory "can administer the CTF surface" flag (ADR-051): a CTF
+    # One advisory "can administer the CTF surface" flag (ADR-052): a CTF
     # organizer or a platform administrator (active, non-temporary superuser).
     # Rendering hint only — routes, nav, and endpoints repeat the authoritative
     # per-object authority check; hiding a control is never an authorization

@@ -38,7 +38,7 @@ def audit_platform_admin_event_action(
     changed_fields: list[str] | None = None,
     outcome: str | None = None,
 ) -> None:
-    """Strictly audit a successful platform-admin override mutation on an event (ADR-051-R4).
+    """Strictly audit a successful platform-admin override mutation on an event (ADR-052-R4).
 
     Records bounded identifiers and safe outcome metadata only: the closed
     ``authority_source=platform_admin``, the event id, the operation, the

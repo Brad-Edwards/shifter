@@ -9,7 +9,7 @@ future organizer-scoped services) from depending on a sibling service's private
 implementation detail.
 
 Authority is resolved for a named operation and returns a closed, server-derived
-source (ADR-051): the least authority that admits the actor, in the order owner,
+source (ADR-052): the least authority that admits the actor, in the order owner,
 delegated event-staff capability, then the platform-admin override. The override
 is an active, non-temporary Django superuser and is orthogonal to CTF organizer
 membership, `CTFEvent.created_by` ownership, and `CTFEventStaff` delegation; it
@@ -43,7 +43,7 @@ class EventAuthoritySource(enum.StrEnum):
     """Closed, server-derived source that admits an actor for an event operation.
 
     Never accepted from a request, cached as a user/event role, or supplied by a
-    caller (ADR-051-R2). ``StrEnum`` so it serializes as its value in audit
+    caller (ADR-052-R2). ``StrEnum`` so it serializes as its value in audit
     records and comparisons without an explicit ``.value``.
     """
 
@@ -53,7 +53,7 @@ class EventAuthoritySource(enum.StrEnum):
 
 
 def is_ctf_platform_admin(user) -> bool:
-    """Return whether ``user`` holds global CTF administration authority (ADR-051-R1).
+    """Return whether ``user`` holds global CTF administration authority (ADR-052-R1).
 
     The sole global authority is an active, non-temporary Django superuser.
     ``is_staff``, Django model permissions, groups, provider claims, API-token
@@ -74,7 +74,7 @@ def is_ctf_platform_admin(user) -> bool:
 def resolve_event_authority(actor, event: CTFEvent, *, capability: Capability = None) -> EventAuthoritySource | None:
     """Resolve the least-authority source admitting ``actor`` for an operation on ``event``.
 
-    Order (ADR-051-R2): the event owner, then a live event-staff row whose role
+    Order (ADR-052-R2): the event owner, then a live event-staff row whose role
     grants the requested ``capability``, then the platform-admin override.
     ``capability`` is ``None`` for owner-only operations (event configuration,
     lifecycle, staff management, destructive actions); a string or tuple of
@@ -115,10 +115,10 @@ def assert_actor_owns_event(actor_id: int, event: CTFEvent) -> None:
     Defense-in-depth service gate (issue #765): organizer-content service
     mutators call this before mutating, even when the view layer has already
     resolved authority. The event owner passes with no extra query; the
-    platform-admin override (ADR-051) resolves the actor once on the non-owner
+    platform-admin override (ADR-052) resolves the actor once on the non-owner
     path. This gate decides admission only. Callers that must distinguish and
     audit the ``platform_admin`` source resolve it explicitly at the request
-    boundary via :func:`resolve_event_authority` (ADR-051-R4). The error envelope
+    boundary via :func:`resolve_event_authority` (ADR-052-R4). The error envelope
     intentionally omits the owner pk to avoid leaking internal user identifiers;
     details name only the requested event.
     """

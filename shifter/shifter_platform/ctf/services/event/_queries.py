@@ -17,7 +17,7 @@ def resolve_administrable_events(
     *,
     status: str | None = None,
 ) -> QuerySet[CTFEvent]:
-    """Return the events ``user`` may administer, scoped by their authority (ADR-051-R3).
+    """Return the events ``user`` may administer, scoped by their authority (ADR-052-R3).
 
     This is the one authority-aware discovery query; ``get_organizer_events`` and
     ``ctf.services.event._crud.list_events_for_organizer`` both delegate here so a
@@ -58,7 +58,7 @@ def get_organizer_events(
 
     Thin alias over :func:`resolve_administrable_events`; retained as a stable
     import for existing callers. A platform administrator sees all live events; an
-    ordinary organizer sees owned plus live staff-assigned events (ADR-051-R3).
+    ordinary organizer sees owned plus live staff-assigned events (ADR-052-R3).
     """
     return resolve_administrable_events(user, status=status)
 

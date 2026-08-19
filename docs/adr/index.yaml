@@ -2566,7 +2566,7 @@
       },
       {
         "id": "ADR-046-R7",
-        "description": "Tenancy scopes principals and range ownership, not platform configuration or catalog. The following remain deployment-global and MUST NOT acquire an organization or workspace binding as an implicit consequence of this layer: the scenario catalog and RAES package sources; the agent, operating-system, instance-type, and app catalogs; NGFW instances and platform network/infrastructure; cloud provider, range-backend, and deployment settings including the environment manifest; identity-provider configuration (issuer, audience, allowlists) and the API-token scope registry; the durable audit store; feature flags; and CTF events, teams, and participants, which stay a separate membership model. Scoping any of these to a workspace is a separate decision requiring its own ADR, because each carries platform-operator authority rather than tenant authority; a workspace-level policy surface (for example the #1171 zero-egress posture) is added by an explicit decision on that surface, never by inheritance from this rule.",
+        "description": "Tenancy scopes principals and range ownership, not platform configuration or catalog. The following remain deployment-global and MUST NOT acquire an organization or workspace binding as an implicit consequence of this layer: the scenario catalog and RAES package sources; the agent, operating-system, instance-type, and app catalogs; NGFW instances and platform network/infrastructure; cloud provider, range-backend, and deployment settings including the environment manifest; identity-provider configuration (issuer, audience, allowlists) and the API-token scope registry; the durable audit store; and feature flags. CTF teams and participants stay a separate event membership model. ADR-051 is the explicit narrow decision that binds each CTF event to one workspace so cross-event communications have a provable tenant boundary; that binding does not make workspace membership CTF authority or tenant-scope the global scenario/catalog/configuration concerns in this rule. Any other scoping change requires its own ADR; a workspace-level policy surface is never added by implicit inheritance.",
         "checks": []
       },
       {
@@ -2593,6 +2593,11 @@
         "id": "ADR-046-R12",
         "description": "Organization profile reads may expose a closed scalar projection only for membership-reachable organizations and address it by public organization UUID. Organization mutation requires a separately accepted, service-owned organization authority rule: staff admission, Django permissions, provider/cloud roles, cached UI capabilities, and owner/admin authority in one, every, or a selected workspace do not imply organization-wide authority. Mutable profile fields must be explicit typed domain fields with one validation/normalization path; generic settings/branding/default JSON and tenant-scoping the deployment-global concerns in R7 are prohibited. Any accepted mutation locks and updates through workspaces.services and writes request-attributed strict shared.audit state in the same transaction; its API uses the shared error/OpenAPI/generated-client boundaries and remains identical across providers.",
         "checks": []
+      },
+      {
+        "id": "ADR-046-R13",
+        "description": "As a narrow, explicit exception to R8's owner-only ownership boundary, a platform administrator may transfer a departing user's owned workspaces and ranges to a replacement during user offboarding (PLAT-236, #1943). This override is authorized only by a superuser session at the composition root (a superuser already holds cross-tenant root authority, so the transfer is not an escalation); it is never reachable through workspace-role authority or the auth.change_user model permission alone, and a visible Administer control does not otherwise become workspace or range authority. It is exposed only through a single bounded composition-root command that delegates per resource kind: workspace ownership goes through the workspaces.services facade command (admin_transfer_workspace_ownership) and range ownership through the existing cms.services reassign authority. Workspace transfer moves ownership of non-personal workspaces the source owns to a replacement who already holds a membership in each workspace (a non-member workspace is reported blocked, never silently rehomed and never given a fabricated membership, preserving ADR-048); it excludes personal compatibility workspaces (immutable), promotes the replacement to owner before demoting the source so the last-owner invariant holds throughout, locks each workspace row, and writes one request-attributed strict shared.audit event per transfer. Range transfer preserves the CMS/Engine ownership projections, the new owner's workspace membership requirement, active-range uniqueness, and the live-VPN refusal, and strict-audits each move. The command never removes memberships, changes CTF roles, transfers credential/agent ownership, unbinds identity, or rewrites provenance/attribution.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2606,6 +2611,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/1327",
       "https://github.com/Brad-Edwards/shifter/issues/1938",
       "https://github.com/Brad-Edwards/shifter/issues/1939",
+      "https://github.com/Brad-Edwards/shifter/issues/1943",
       "https://github.com/Brad-Edwards/shifter/issues/1945",
       "docs/architecture/organization-workspace-preflight-1325.md",
       "docs/architecture/workspace-membership-roles-preflight-1326.md",
@@ -2613,6 +2619,7 @@
       "docs/architecture/organization-workspace-admin-console-preflight-1938.md",
       "docs/architecture/organization-profile-settings-preflight-1939.md",
       "docs/architecture/workspace-network-egress-policy-preflight-1945.md",
+      "docs/architecture/user-lifecycle-administration-preflight-1943.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",
@@ -2817,43 +2824,253 @@
   },
   {
     "id": "ADR-051",
+    "title": "CTF communications use scoped immutable intents and exact RAES inject realization",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "CTF owns one normalized communications domain for manual, static, timed, dynamic, RAES-runtime, and generation-bound range triggers. A draft campaign selects one immutable workspace scope, explicit event targets, a closed audience and trigger profile, an immutable locale-aware safe-content revision, channel policy, and acknowledgement policy; each occurrence becomes an immutable communication intent with server-resolved recipient snapshots and durable per-channel delivery state. CTF events gain an immutable scalar workspace_id so every event in a cross-event campaign can be proved to share one tenant, while CTF teams and participants remain event-native membership and workspace membership grants no CTF authority. Interactive release requires both workspaces.services authorization and the existing per-event notification capability for every target; the only platform-root override is an explicitly audited Django superuser, and one campaign still cannot span workspaces. Only shared.raes interprets the released RAES Inject/Event/Script/Story/ParticipantInjectDelivery contracts; CTF persists a realization projection and never a competing portable schema. Disclosure, external direction, and intervention remain distinct, and an intervention without an exact generation-fenced participant-control mapping fails before persistence, delivery, or effect. Rich content uses a bounded Markdown profile with raw HTML, executable behavior, remote media, and non-allowlisted links prohibited. PostgreSQL is workflow truth; the CTF scheduler provides timing, a CTF-owned durable command/attempt worker provides at-least-once delivery, shared.email and shared.notifications remain transports, WebSocket writes are not reads, explicit acknowledgement is participant-authenticated state, and shared.audit is evidence rather than queue state. Participant-controlled range assets are treated as compromised and may name only an allowlisted declaration/occurrence under exact workload, deployment, range generation, event, workspace, scenario, and package bindings; they can never choose content, recipients, scope, links, channels, schedules, or control actions. CTF-014 constrains this design to the existing Django-app extension, event-branding, and gettext/i18n incumbents; communication profiles and adapters are closed application policy, not a new plugin, theming, or translation surface.",
+    "interface_contract": {
+      "kind": "ctf-communications/v1",
+      "scope": {
+        "campaign_workspace_count": 1,
+        "event_authorization": "every-target-event",
+        "recipient_authority": "event-scoped-ctf-participant",
+        "platform_root": "audited-django-superuser-single-workspace"
+      },
+      "intent": {
+        "type": "CommunicationIntent",
+        "immutable": true,
+        "sources": [
+          "manual",
+          "static-scenario",
+          "dynamic-platform",
+          "timed",
+          "raes-runtime",
+          "range-signal"
+        ],
+        "audiences": [
+          "participant",
+          "participant-set",
+          "teams",
+          "event",
+          "events"
+        ]
+      },
+      "raes": {
+        "interpreter": "shared.raes",
+        "delivery_kinds": [
+          "disclosure",
+          "external-direction",
+          "intervention"
+        ],
+        "unsupported": "reject-before-persistence-delivery-effect"
+      },
+      "range_ingress": {
+        "trust": "compromised",
+        "authentication": "dedicated-generation-fenced-range-trigger",
+        "credential": "opaque-show-once-revocable",
+        "binding": "issuer-deployment-audience-expiry-current-generation",
+        "request_fields": [
+          "protocol_version",
+          "declaration_id",
+          "occurrence",
+          "nonce"
+        ],
+        "forbidden_authority": [
+          "workspace",
+          "event",
+          "scenario",
+          "campaign",
+          "subject",
+          "body",
+          "locale",
+          "link",
+          "channel",
+          "user",
+          "email",
+          "team",
+          "participant",
+          "schedule",
+          "policy",
+          "control"
+        ],
+        "replay_fence": "database-unique-occurrence",
+        "rate_limit": "shared-fail-closed",
+        "audit_order": "before-effect"
+      },
+      "content": {
+        "profile": "ctf-communication-markdown/v1",
+        "subject_codepoints": 200,
+        "source_bytes": 65536,
+        "rendered_bytes": 131072,
+        "link_policy": "relative-or-allowlisted-https",
+        "raw_html": false,
+        "remote_media": false,
+        "executable_behavior": false
+      },
+      "delivery": {
+        "workflow_truth": "postgresql",
+        "semantics": "at-least-once",
+        "timing": "ctf-scheduler",
+        "states": [
+          "in-app-available",
+          "email-backend-accepted",
+          "websocket-published",
+          "socket-written",
+          "read",
+          "acknowledged",
+          "control-effect"
+        ],
+        "aggregate_overclaim": false
+      },
+      "verification": [
+        "authorization-isolation",
+        "content-safety",
+        "raes-conformance",
+        "adversarial-ingress-replay",
+        "credential-lifecycle",
+        "postgresql-concurrency-recovery",
+        "delivery-load",
+        "retention-redaction",
+        "configuration-parity",
+        "migration-api-contract",
+        "browser"
+      ],
+      "documentation": [
+        "participant",
+        "organizer",
+        "scenario-author",
+        "technical",
+        "operator",
+        "api-client"
+      ]
+    },
+    "rules": [
+      {
+        "id": "ADR-051-R1",
+        "description": "CTF owns communication campaign, immutable message revision, audience/trigger policy, normalized intent, recipient snapshot, delivery attempt, and participant read/acknowledgement state. shared.email, shared.notifications, shared.audit, workspaces.services, shared.raes, and CTFScheduledTask retain their existing transport/cross-cutting/timing ownership and must not become duplicate communication workflow stores. The architecture layer allowlist admits only the documented CTF-to-workspaces.services public-service edge; it never admits CTF imports of workspaces models.",
+        "checks": [
+          "layer-imports",
+          "cross-layer-model-imports"
+        ]
+      },
+      {
+        "id": "ADR-051-R2",
+        "description": "Every CTF event is bound immutably to one internal workspace_id scalar resolved through workspaces.services from a public workspace UUID (personal workspace when omitted for compatibility) using the closed active-workspace USE_CTF_COMMUNICATIONS operation, which proves tenant membership only and is allowed to every defined workspace role. The active-state check is owned by workspaces.services because its incumbent authorize functions do not implicitly reject archived workspaces. Archived workspaces deny new event creation, campaign mutation/release, and scheduled due-time authorization while authorized historical inbox/receipt/audit reads remain available. Every campaign is single-workspace and every target event must match it. Workspace membership never grants event, participant, range, or communication authority; interactive release additionally requires the central CTF notification capability on every target event, and programmatic organizer endpoints require exact ctf:communication:read/write scopes rather than ctf:event:write. Those scopes use the shared machine-readable scope permission so runtime enforcement and OpenAPI x-required-scopes cannot drift. A superuser-capable endpoint must not be blocked first by the organizer-group-only coarse permission; the central CTF communication service owns and strict-audits the root override. Nested audience lookup is always parent-scoped, and email/user identifiers are never authorization identities.",
+        "checks": []
+      },
+      {
+        "id": "ADR-051-R3",
+        "description": "Static, dynamic, manual, timed, RAES-runtime, and range sources converge only after source-specific validation on one immutable CommunicationIntent. Scheduled human work reauthorizes the live actor at due time; API-token-authored work stores only non-secret user/token record identities and requires both the user and that exact token/scope to remain active. CTFScheduledTask metadata carries only bounded intent/occurrence identifiers; it never carries content, recipients, raw credentials, delivery coordinates, RAES payloads, provider settings, or commands.",
+        "checks": []
+      },
+      {
+        "id": "ADR-051-R4",
+        "description": "Only shared.raes imports or interprets released RAES contracts. Its bounded projection preserves contract/version, scenario/package digest, Inject/Event/Script/Story and ParticipantInjectDelivery identity, shared-time/script ordering, participant-delivery occurrence, delivery classification, and policy/evidence references. CTF must not define a portable inject mirror or silently approximate an unknown delivery/content/audience/control profile. Disclosure, external direction, and intervention remain distinct; an unsupported intervention fails before message persistence/delivery and before effect.",
+        "checks": []
+      },
+      {
+        "id": "ADR-051-R5",
+        "description": "Organizer/scenario rich content uses an explicitly versioned, centrally validated bounded profile. The first profile accepts at most a 200-code-point plain-text subject and 65,536-byte UTF-8 Markdown body, emits at most 131,072 rendered bytes, permits only inert text structure/code, permits only same-origin relative links or HTTPS hosts from a dedicated normalized deployment allowlist, and rejects raw HTML, script/style/forms, executable schemes, credentialed/IP/localhost links, images, audio/video, iframe/object/embed, remote embeds, data/blob URLs, and arbitrary attachments. Browser rendering extends the canonical MarkdownContent component through a closed profile parameter and shared adversarial fixtures; it remains under ADR-036 CSP, does not accept raw inner HTML, and does not introduce a second Markdown renderer.",
+        "checks": []
+      },
+      {
+        "id": "ADR-051-R6",
+        "description": "Intent release atomically persists immutable recipient snapshots, transactional in-app availability, initial transport delivery commands, and strict audit evidence. Delivery is at-least-once with one idempotency key per intent/snapshot/transport, bounded retry/backoff/jitter, terminal failure, partial-failure truth, and cancellation of unclaimed work only. Email provider acceptance, optional reference-only WebSocket publication/socket write, participant read, explicit acknowledgement, and intervention effect are separate states; aggregate status must not overclaim any of them. Disabled or failed WebSocket fan-out never removes or fails a persisted inbox item. The canonical CTF-account WebSocket boundary may admit only the exact shared notification route after its existing live-participant and required-password-change checks pass, and must retain normal topic authorization; no broad /ws/ bypass is allowed. The Engine range event outbox and process-local shared.email executor are not reused as the delivery queue.",
+        "checks": []
+      },
+      {
+        "id": "ADR-051-R7",
+        "description": "Participant-controlled range assets are compromised. Range ingress accepts only a bounded closed versioned declaration/occurrence signal authenticated by a dedicated opaque, revocable range-trigger capability: a show-once CSPRNG secret, persisted verifier, constant-time comparison, distinct non-Bearer non-user authentication scheme as the ingress view's only authentication class, and server-side issuer-deployment/audience/expiry/current-generation binding. It reuses the ApiToken verifier pattern but not ApiToken rows, shf_ bearer authentication, user principals, scopes, CMS upload tokens, or webhook signatures. The owning CMS/Engine facade resolves one frozen scalar projection to the CTF participant/event/workspace, scenario, current range generation, and validated RAES package digest. Declaration allowlists, database replay fencing, shared-process rate limits that fail closed on backend outage, and strict audit-before-effect are mandatory. The request cannot choose a campaign, body, subject, link, locale, channel, workspace, event, team, participant, user, email, schedule, policy, or control operation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-051-R8",
+        "description": "Communication content and recipient evidence use bounded retention separate from transport/audit retention: the typed CTF communication retention setting defaults to 90 days after the latest target event and is constrained to 1-365 days; shared WebSocket notifications keep their independent replay TTL; body-free shared.audit evidence keeps its own archive policy. Delivery coordinates use the existing field-encryption boundary and never appear in task metadata, logs, audit free text, metrics labels, argv, environment dumps, manifests, Terraform state, or public errors.",
+        "checks": []
+      },
+      {
+        "id": "ADR-051-R9",
+        "description": "Legacy CTFNotification rows remain historical aggregate evidence and must not be expanded into invented recipient success. Draft/scheduled rows and pending SEND_NOTIFICATION tasks cut over atomically or fail migration; old and new writers do not dual-write. Legacy API projection may temporarily adapt the new service under ADR-040, while CTFEmailTemplate remains its existing placeholder-only email-wrapper contract and WebSocketNotification remains transport replay state.",
+        "checks": []
+      },
+      {
+        "id": "ADR-051-R10",
+        "description": "Shipping the capability requires maintained authorization/isolation, content-safety, RAES conformance, adversarial-ingress/replay, PostgreSQL concurrency/recovery, delivery/load, retention/redaction, configuration-parity, migration/API-contract, and browser tests, plus participant, organizer, scenario-author, technical, operator, and API documentation. The completed feature is recorded as ctf-communications in docs/adr/documentation-coverage.yaml only when the referenced user and technical docs describe the shipping behavior and are index-reachable (ADR-022-R1).",
+        "checks": [
+          "documentation-coverage"
+        ]
+      },
+      {
+        "id": "ADR-051-R11",
+        "description": "CTF communications must not register triggers, audiences, channels, content renderers, RAES handlers, or workload ingress through ctf.extensions or AppConfig.ready. Existing trusted-Django-app flag/scoring extensions, CTFEvent branding projection, and Django LocaleMiddleware/gettext catalogs remain their separate CTF-014 incumbents. Authored message locale variants are immutable campaign data, not UI translation catalogs or a custom translation workflow; event branding never supplies content, link-host, email-template, or authorization policy.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2047",
+      "docs/architecture/ctf-communications-raes-inject-preflight-2047.md",
+      "docs/architecture/email-templating-delivery-preflight-581.md",
+      "docs/architecture/notifications-websocket-fanout-preflight-941.md",
+      "docs/design/ctf-email-template-rendering-preflight-1095.md",
+      "docs/architecture/audit-system-architecture.md",
+      "docs/architecture/raes-migration-adr.md",
+      "docs/architecture/organization-workspace-preflight-1325.md",
+      "shifter/shifter_platform/ctf/services/notification",
+      "shifter/shifter_platform/ctf/extensions.py",
+      "shifter/shifter_platform/ctf/models/event.py",
+      "shifter/shifter_platform/config/settings.py",
+      "shifter/shifter_platform/ctf/management/commands/run_ctf_scheduler.py",
+      "shifter/shifter_platform/shared/email.py",
+      "shifter/shifter_platform/shared/notifications.py",
+      "shifter/shifter_platform/shared/audit",
+      "shifter/shifter_platform/shared/raes",
+      "shifter/shifter_platform/workspaces/services"
+    ]
+  },
+  {
+    "id": "ADR-052",
     "title": "CTF platform administration is an audited superuser override distinct from event ownership and delegation",
     "status": "accepted",
     "scope": "shifter_platform",
     "decision": "An active, non-temporary Django superuser is the sole platform-root override for administering existing CTF events across the deployment. The override is orthogonal to CTF organizer membership, CTFEvent.created_by ownership, and bounded CTFEventStaff moderator/judge capabilities: it never changes CTFEvent.created_by, never auto-synthesizes the administrator as the event owner or as event staff merely by being exercised, never authorizes event creation by a pure platform administrator, and is never derived from email, is_staff, model permissions, provider claims/groups, API-token scopes, organization/workspace roles, or client state. Managing an existing event's staff (assigning or revoking moderators/judges targeting other users) is legitimate, audited platform administration governed by the same resolver (owner or platform_admin, never a delegated staff member). One CTF service-owned, operation-parameterized decision resolves owner, applicable event-staff capability, then platform_admin fallback and returns the closed authority source used by list/detail/nested-resource authorization and audit. Every successful interactive mutation that actually uses the platform_admin fallback is explicitly request-attributed in shared.audit; database-only changes are audit-strict in the mutation transaction, while non-rollbackable external workflows persist bounded intent before their first side effect and a correlated completion/failure outcome. Existing validation, lifecycle, destructive-action, token-scope, CSRF, error-envelope, privacy, and provider safeguards remain mandatory. CTF events stay deployment-global under ADR-046-R7; tenant roles grant no CTF authority and adding an event tenant binding requires a separate ADR.",
     "rules": [
       {
-        "id": "ADR-051-R1",
+        "id": "ADR-052-R1",
         "description": "Global CTF administration of an existing event is admitted only for an authenticated active Django user with is_superuser=True whose immutable temporary-CTF-account marker is false. Email/config allowlists, is_staff, Django permissions/groups, provider claims/groups, API-token scopes, organization/workspace roles, selected UI context, and client capability flags are not platform-admin authority. Existing bearer-first authentication, active-actor, exact CTF scope, and session-CSRF gates still apply.",
         "checks": []
       },
       {
-        "id": "ADR-051-R2",
+        "id": "ADR-052-R2",
         "description": "CTFEvent.created_by remains ownership and CTFEventStaff remains bounded moderator/judge delegation. The service-owned event-administration decision is parameterized by a closed operation/capability and resolves least authority in this order: owner, an applicable live event-staff capability, platform_admin fallback. It returns that server-derived source or an opaque denial; callers may not supply an owner, tenant, authority source, is_admin flag, or arbitrary permission string.",
         "checks": []
       },
       {
-        "id": "ADR-051-R3",
+        "id": "ADR-052-R3",
         "description": "The same service decision governs authority-aware event discovery, event detail, every event-derived nested resource, and every mutation across canonical DRF and any retained legacy callable. A platform administrator sees all non-deleted events; an ordinary organizer sees the union of owned and live assigned events with existing capability limits. Platform override does not authorize event creation, change ownership, auto-synthesize the administrator as owner or staff, or expose soft-deleted tombstones through ordinary reads; explicit staff-management mutations on an existing event are audited administration governed by the same resolver.",
         "checks": []
       },
       {
-        "id": "ADR-051-R4",
+        "id": "ADR-052-R4",
         "description": "Every successful interactive mutation using platform_admin authority is explicitly attributed in shared.audit with the closed authority source, event/operation identifiers, effective actor user, and trusted request/credential context. Database-only mutation plus strict audit is atomic. A non-rollbackable external workflow strictly records bounded intent before its first side effect and a correlated bounded completion/failure outcome without holding a transaction across the call or recording payloads, credentials, flags, participant data, signed URLs, provider responses, or raw errors.",
         "checks": []
       },
       {
-        "id": "ADR-051-R5",
+        "id": "ADR-052-R5",
         "description": "Platform authority changes only admission. Explicit DRF serializers, service mutable-field allowlists, model validation and database constraints, locks/transactions, lifecycle/scoring/content/range/notification policy, rate limits, soft-delete/force-delete separation, confirmation and typed-name checks, shared sanitized errors, and safe logging remain mandatory and cannot be bypassed by a superuser.",
         "checks": []
       },
       {
-        "id": "ADR-051-R6",
+        "id": "ADR-052-R6",
         "description": "CTF events, teams, and participants remain deployment-global under ADR-046-R7 and gain no implicit organization/workspace binding. Organization/workspace roles grant no CTF authority; the platform superuser override applies deployment-wide. A future event-tenant binding is a separate ADR and must compose at the one event-administration decision rather than be inferred in controllers from owners, ranges, or selected workspace.",
         "checks": []
       },
       {
-        "id": "ADR-051-R7",
+        "id": "ADR-052-R7",
         "description": "The SPA exposes server-derived owner, status, authority source, and bounded operation capabilities as advisory presentation and uses the canonical API client plus generated OpenAPI types. It must not redefine is_ctf_organizer, duplicate authorization in navigation/components, filter unauthorized global data client-side, serialize raw User/provider facts, hand-edit generated contracts, or change the published v1 list envelope/pagination semantics without passing ADR-040 compatibility gates.",
         "checks": []
       }

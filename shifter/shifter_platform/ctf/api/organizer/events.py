@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 # Canonical page-size bound for the authority-aware event list. The platform-admin
 # path (all live events) is always bounded to this even when the caller omits
 # pagination; an ordinary organizer keeps the historical full-list response
-# (ADR-051-R3, ADR-040).
+# (ADR-052-R3, ADR-040).
 _EVENT_LIST_PAGE_SIZE = 200
 
 
@@ -130,7 +130,7 @@ class EventListView(APIView):
         """Create an event from the request body.
 
         Creation is organizer authority, never the platform-admin override
-        (ADR-051): a new event has no existing event on which to resolve override
+        (ADR-052): a new event has no existing event on which to resolve override
         authority, and creation makes the actor ``created_by``. The list GET is
         admitted for organizers or platform admins, but POST requires a genuine
         CTF organizer, so a pure superuser cannot create an event and acquire
@@ -201,7 +201,7 @@ class EventDetailView(APIView):
             try:
                 # Database-only mutation: the update and its platform-admin
                 # override audit share one transaction, so a strict audit failure
-                # rolls the update back (ADR-051-R4).
+                # rolls the update back (ADR-052-R4).
                 with transaction.atomic():
                     updated = update_event(event_id, dict(serializer.validated_data))
                     _audit_admin_mutation(request, event, source, "event.update", changed_fields=changed)
@@ -250,7 +250,7 @@ class ForceDeleteEventView(APIView):
                 _raise_not_found(_EVENT_NOT_FOUND)
             # Owner-only operation; the platform-admin override is admitted, but
             # the typed-name confirmation and lifecycle safeguards below still
-            # apply unchanged (ADR-051-R5).
+            # apply unchanged (ADR-052-R5).
             source = _event_authority(request, event, None)
             if source is None:
                 _raise_forbidden()
@@ -263,7 +263,7 @@ class ForceDeleteEventView(APIView):
 
             # Non-rollbackable range teardown: the context manager records bounded
             # override intent before the first side effect and a correlated
-            # completed/failed outcome on EVERY exit path (ADR-051-R4).
+            # completed/failed outcome on EVERY exit path (ADR-052-R4).
             with admin_external_audit(request, "event.force_delete", action=AuditAction.DELETE):
                 try:
                     result = ctf_services.force_delete_event(event_id, _actor(request), confirmation_name)

@@ -89,7 +89,7 @@ class HasActiveCTFActor(permissions.BasePermission):
 class HasCTFEventAdminAccess(permissions.BasePermission):
     """Admit the CTF event-administration surface for an organizer or platform admin.
 
-    Advisory top-level admission only (ADR-051): it does not redefine
+    Advisory top-level admission only (ADR-052): it does not redefine
     ``is_ctf_organizer`` or grant any per-object authority. Every endpoint still
     resolves owner / delegated-staff / platform-admin authority per operation via
     the service resolver, so widening this gate cannot let a platform

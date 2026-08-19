@@ -39,7 +39,7 @@ _ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
 
 # Closed set of delegable capability nouns, sorted for deterministic projections.
 # Owner and platform-admin authority cover all of them; a staff role covers a
-# subset. Advisory only — the server re-checks per operation (ADR-051-R2).
+# subset. Advisory only — the server re-checks per operation (ADR-052-R2).
 ALL_DELEGABLE_CAPABILITIES: tuple[str, ...] = tuple(sorted(set().union(*_ROLE_CAPABILITIES.values())))
 
 
@@ -53,7 +53,7 @@ def staff_row_grants_capability(actor_pk: int, event: CTFEvent, capability: str)
 
     The raw delegation check only: no owner or platform-admin fallback. The
     authority resolver composes this with owner and override authority so the
-    least-authority order lives in one place (ADR-051-R2).
+    least-authority order lives in one place (ADR-052-R2).
     """
     role = (
         CTFEventStaff.objects.filter(event=event, user_id=actor_pk, deleted_at__isnull=True)
@@ -67,7 +67,7 @@ def actor_has_event_capability(actor: User | AnonymousUser, event: CTFEvent, cap
     """Return whether `actor` may exercise `capability` on `event`.
 
     Admits the owning organizer, a live staff row whose role grants the
-    capability, or the platform-admin override (ADR-051). Delegates to the
+    capability, or the platform-admin override (ADR-052). Delegates to the
     service-owned authority resolver so callers share one least-authority policy.
     """
     from ctf.services.authorization import resolve_event_authority
@@ -76,7 +76,7 @@ def actor_has_event_capability(actor: User | AnonymousUser, event: CTFEvent, cap
 
 
 def _resolve_owned_event_for_staff(event_id: UUID, actor: User | AnonymousUser) -> CTFEvent:
-    """Load the event and require owner or platform-admin authority (ADR-051).
+    """Load the event and require owner or platform-admin authority (ADR-052).
 
     Staff management is an owner-only capability that delegated moderators/judges
     cannot exercise (``capability=None``), but administering an existing event's

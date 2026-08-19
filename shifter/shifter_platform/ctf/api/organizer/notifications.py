@@ -192,7 +192,7 @@ class NotificationListView(APIView):
 
             if scheduled_at is not None:
                 # Scheduling is a database-only draft: the mutation and its strict
-                # override audit share one transaction (ADR-051-R4).
+                # override audit share one transaction (ADR-052-R4).
                 with transaction.atomic():
                     notif = self._schedule(event, subject, body, _actor(request), scheduled_at)
                     _audit_admin_from_request(request, "notification.schedule", action=AuditAction.CREATE)

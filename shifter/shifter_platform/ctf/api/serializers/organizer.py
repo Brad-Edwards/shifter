@@ -34,7 +34,7 @@ class ManagedContentSummarySerializer(serializers.Serializer):
 
 
 class OwnerRefSerializer(serializers.Serializer):
-    """Bounded event-owner projection: stable id and display name only (ADR-051).
+    """Bounded event-owner projection: stable id and display name only (ADR-052).
 
     Never serializes the Django ``User``, provider subject, email, groups, or role
     facts. Consumed by the organizer/platform-admin list and detail so the owner
@@ -50,7 +50,7 @@ class _EventAccessProjectionMixin:
 
     Reads ``actor``, ``is_platform_admin``, and a prefetched ``staff_roles`` map
     (event id -> role) from serializer context so a list render adds no per-row
-    query (ADR-051-R3). ``access_source`` and ``access_capabilities`` are advisory
+    query (ADR-052-R3). ``access_source`` and ``access_capabilities`` are advisory
     UI hints; the server re-authorizes every operation and a hidden control is not
     an authorization boundary.
     """
@@ -116,7 +116,7 @@ class EventListResponseSerializer(serializers.Serializer):
 
 
 class EventListQuerySerializer(serializers.Serializer):
-    """Bounded, allowlisted query for the authority-aware event list (ADR-051-R3).
+    """Bounded, allowlisted query for the authority-aware event list (ADR-052-R3).
 
     Search and ordering are allowlisted, status uses ``EventStatus``, owner is an
     exact owner-id filter, and page/page-size are capped. These are data-selection

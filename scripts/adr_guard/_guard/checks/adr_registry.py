@@ -22,12 +22,77 @@ REQUIRED_ADR_KEYS = {
     "enforcement",
     "evidence",
 }
-REQUIRED_INTERFACE_CONTRACTS = {"ADR-039": "range-substrate/v1"}
+REQUIRED_INTERFACE_CONTRACTS = {
+    "ADR-039": "range-substrate/v1",
+    "ADR-051": "ctf-communications/v1",
+}
 RANGE_SUBSTRATE_OPERATIONS = frozenset({"provision", "destroy", "pause", "resume"})
 RANGE_SUBSTRATE_RESOURCES = frozenset({"network", "instance", "ngfw", "remote-access"})
 RANGE_SUBSTRATE_INITIAL_ADAPTERS = frozenset({"aws-terraform", "gcp-gdc"})
 RANGE_SUBSTRATE_DEFERRED_ADAPTERS = frozenset({"azure"})
 RANGE_SUBSTRATE_ISSUE_REFERENCES = frozenset({"283", "478", "265", "277"})
+CTF_COMMUNICATION_SOURCES = frozenset(
+    {
+        "manual",
+        "static-scenario",
+        "dynamic-platform",
+        "timed",
+        "raes-runtime",
+        "range-signal",
+    }
+)
+CTF_COMMUNICATION_AUDIENCES = frozenset({"participant", "participant-set", "teams", "event", "events"})
+CTF_COMMUNICATION_RAES_KINDS = frozenset({"disclosure", "external-direction", "intervention"})
+CTF_COMMUNICATION_RANGE_REQUEST_FIELDS = frozenset({"protocol_version", "declaration_id", "occurrence", "nonce"})
+CTF_COMMUNICATION_RANGE_FORBIDDEN_AUTHORITY = frozenset(
+    {
+        "workspace",
+        "event",
+        "scenario",
+        "campaign",
+        "subject",
+        "body",
+        "locale",
+        "link",
+        "channel",
+        "user",
+        "email",
+        "team",
+        "participant",
+        "schedule",
+        "policy",
+        "control",
+    }
+)
+CTF_COMMUNICATION_DELIVERY_STATES = frozenset(
+    {
+        "in-app-available",
+        "email-backend-accepted",
+        "websocket-published",
+        "socket-written",
+        "read",
+        "acknowledged",
+        "control-effect",
+    }
+)
+CTF_COMMUNICATION_VERIFICATION_CLASSES = frozenset(
+    {
+        "authorization-isolation",
+        "content-safety",
+        "raes-conformance",
+        "adversarial-ingress-replay",
+        "credential-lifecycle",
+        "postgresql-concurrency-recovery",
+        "delivery-load",
+        "retention-redaction",
+        "configuration-parity",
+        "migration-api-contract",
+        "browser",
+    }
+)
+CTF_COMMUNICATION_DOCUMENTATION_CLASSES = frozenset(
+    {"participant", "organizer", "scenario-author", "technical", "operator", "api-client"}
+)
 _ADR_INDEX_PATH = "docs/adr/index.yaml"
 _ADR_EXCEPTIONS_PATH = "docs/adr/exceptions.yaml"
 
@@ -70,7 +135,7 @@ def _interface_contract_kind_error(contract: dict[str, object], adr_id: str) -> 
     kind = contract.get("kind")
     if expected_kind is not None and kind != expected_kind:
         return f"{adr_id} interface_contract kind must be {expected_kind!r}"
-    if kind != "range-substrate/v1":
+    if kind not in frozenset(REQUIRED_INTERFACE_CONTRACTS.values()):
         return f"{adr_id} interface_contract has unsupported kind {kind!r}"
     return None
 
@@ -158,6 +223,157 @@ def _validate_contract_issue_references(contract: dict[str, object], adr_id: str
     return errors
 
 
+def _validate_closed_mapping(
+    value: object,
+    field: str,
+    *,
+    fixed: dict[str, object],
+    string_sets: dict[str, frozenset[str]] | None = None,
+) -> list[str]:
+    """Validate one exact-key mapping with typed fixed values and closed string sets."""
+    if not isinstance(value, dict):
+        return [f"{field} must be an object"]
+
+    set_members = string_sets or {}
+    expected_keys = set(fixed) | set(set_members)
+    actual_keys = set(value)
+    errors: list[str] = []
+    if actual_keys != expected_keys:
+        errors.append(f"{field} must contain exactly {sorted(expected_keys)}; got {sorted(actual_keys)}")
+
+    for key, expected in fixed.items():
+        if key not in value:
+            continue
+        actual = value[key]
+        if type(actual) is not type(expected) or actual != expected:
+            errors.append(f"{field}.{key} must be {expected!r}; got {actual!r}")
+
+    for key, expected in set_members.items():
+        if key in value:
+            errors.extend(_validate_exact_string_members(value[key], expected, f"{field}.{key}"))
+    return errors
+
+
+def _validate_ctf_communications_contract(contract: dict[str, object], adr_id: str) -> list[str]:
+    """Validate ADR-051's closed communications security and realization contract."""
+    expected_keys = {
+        "kind",
+        "scope",
+        "intent",
+        "raes",
+        "range_ingress",
+        "content",
+        "delivery",
+        "verification",
+        "documentation",
+    }
+    errors: list[str] = []
+    actual_keys = set(contract)
+    if actual_keys != expected_keys:
+        errors.append(
+            f"{adr_id} interface_contract must contain exactly {sorted(expected_keys)}; got {sorted(actual_keys)}"
+        )
+
+    prefix = f"{adr_id} interface_contract"
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("scope"),
+            f"{prefix}.scope",
+            fixed={
+                "campaign_workspace_count": 1,
+                "event_authorization": "every-target-event",
+                "recipient_authority": "event-scoped-ctf-participant",
+                "platform_root": "audited-django-superuser-single-workspace",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("intent"),
+            f"{prefix}.intent",
+            fixed={"type": "CommunicationIntent", "immutable": True},
+            string_sets={
+                "sources": CTF_COMMUNICATION_SOURCES,
+                "audiences": CTF_COMMUNICATION_AUDIENCES,
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("raes"),
+            f"{prefix}.raes",
+            fixed={
+                "interpreter": "shared.raes",
+                "unsupported": "reject-before-persistence-delivery-effect",
+            },
+            string_sets={"delivery_kinds": CTF_COMMUNICATION_RAES_KINDS},
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("range_ingress"),
+            f"{prefix}.range_ingress",
+            fixed={
+                "trust": "compromised",
+                "authentication": "dedicated-generation-fenced-range-trigger",
+                "credential": "opaque-show-once-revocable",
+                "binding": "issuer-deployment-audience-expiry-current-generation",
+                "replay_fence": "database-unique-occurrence",
+                "rate_limit": "shared-fail-closed",
+                "audit_order": "before-effect",
+            },
+            string_sets={
+                "request_fields": CTF_COMMUNICATION_RANGE_REQUEST_FIELDS,
+                "forbidden_authority": CTF_COMMUNICATION_RANGE_FORBIDDEN_AUTHORITY,
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("content"),
+            f"{prefix}.content",
+            fixed={
+                "profile": "ctf-communication-markdown/v1",
+                "subject_codepoints": 200,
+                "source_bytes": 65536,
+                "rendered_bytes": 131072,
+                "link_policy": "relative-or-allowlisted-https",
+                "raw_html": False,
+                "remote_media": False,
+                "executable_behavior": False,
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("delivery"),
+            f"{prefix}.delivery",
+            fixed={
+                "workflow_truth": "postgresql",
+                "semantics": "at-least-once",
+                "timing": "ctf-scheduler",
+                "aggregate_overclaim": False,
+            },
+            string_sets={"states": CTF_COMMUNICATION_DELIVERY_STATES},
+        )
+    )
+    errors.extend(
+        _validate_exact_string_members(
+            contract.get("verification"),
+            CTF_COMMUNICATION_VERIFICATION_CLASSES,
+            f"{prefix}.verification",
+        )
+    )
+    errors.extend(
+        _validate_exact_string_members(
+            contract.get("documentation"),
+            CTF_COMMUNICATION_DOCUMENTATION_CLASSES,
+            f"{prefix}.documentation",
+        )
+    )
+    return errors
+
+
 def validate_interface_contract(contract: object, adr_id: str) -> list[str]:
     """Validate executable invariants declared by a typed ADR interface contract."""
     if not isinstance(contract, dict):
@@ -166,6 +382,9 @@ def validate_interface_contract(contract: object, adr_id: str) -> list[str]:
     kind_error = _interface_contract_kind_error(contract, adr_id)
     if kind_error is not None:
         return [kind_error]
+
+    if contract["kind"] == "ctf-communications/v1":
+        return _validate_ctf_communications_contract(contract, adr_id)
 
     errors: list[str] = []
     errors.extend(

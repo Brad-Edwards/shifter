@@ -1,4 +1,4 @@
-"""Platform-admin CTF authority: predicate, resolver, discovery, service gate (#1923, ADR-051).
+"""Platform-admin CTF authority: predicate, resolver, discovery, service gate (#1923, ADR-052).
 
 Proves the superuser-only global override, its least-authority precedence behind
 owner and delegated staff, authority-aware discovery, and the defense-in-depth

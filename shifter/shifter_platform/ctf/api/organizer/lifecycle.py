@@ -81,7 +81,7 @@ class EventLifecycleView(APIView):
             serializer.is_valid(raise_exception=True)
             action = serializer.validated_data["action"]
             # Database-only state-machine transition: transition and override
-            # audit share one transaction (ADR-051-R4).
+            # audit share one transaction (ADR-052-R4).
             with transaction.atomic():
                 self._apply(event, action)
                 _audit_admin_mutation(request, event, source, f"event.lifecycle.{action}")

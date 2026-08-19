@@ -65,7 +65,7 @@ class _ModerationActionView(APIView):
                 serializer.is_valid(raise_exception=True)
                 body = dict(serializer.validated_data)
             # Database-only moderation action; the action and its platform-admin
-            # override audit share one transaction (ADR-051-R4). ``_run`` is the
+            # override audit share one transaction (ADR-052-R4). ``_run`` is the
             # single point of repair for every moderation view.
             with transaction.atomic():
                 try:

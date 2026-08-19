@@ -126,7 +126,7 @@ def _resolve_owned_event(request: Request, event_id: UUID, *, capability: Capabi
 
 
 def _event_authority(request: Request, event: CTFEvent, capability: Capability):
-    """Resolve the closed authority source admitting the actor, or ``None`` (ADR-051).
+    """Resolve the closed authority source admitting the actor, or ``None`` (ADR-052).
 
     Least authority: owner, then a delegated staff capability, then the
     platform-admin override. Owner-only surfaces pass ``capability=None`` and are
@@ -142,7 +142,7 @@ def _capture_event_authority(request: Request, event: CTFEvent, source) -> None:
 
     Every organizer resolver records the authority it admitted so any subsequent
     mutation on this request can write the mandatory platform-admin override
-    audit without re-resolving (ADR-051-R4). The last resolved event wins, which
+    audit without re-resolving (ADR-052-R4). The last resolved event wins, which
     is correct because a request mutates exactly one event-derived resource.
     """
     request._ctf_admin_authority = (event, source)
@@ -174,7 +174,7 @@ def _audit_admin_from_request(
     No-op when nothing was captured or the authority was owner/delegated-staff;
     writes the strict override audit only for a platform-admin mutation. Callers
     that mutate the database wrap the service call plus this helper in one
-    transaction so a strict audit failure rolls the mutation back (ADR-051-R4).
+    transaction so a strict audit failure rolls the mutation back (ADR-052-R4).
     """
     captured = getattr(request, "_ctf_admin_authority", None)
     if captured is None:
@@ -195,7 +195,7 @@ def _audit_admin_mutation(
     changed_fields: list[str] | None = None,
     outcome: str | None = None,
 ) -> None:
-    """Strict-audit a mutation only when it used the platform-admin override (ADR-051-R4).
+    """Strict-audit a mutation only when it used the platform-admin override (ADR-052-R4).
 
     No-op for owner or delegated-staff authority. ``action`` defaults to the
     audit ``UPDATE`` verb; pass an explicit verb (e.g. ``DELETE``) where the
@@ -226,7 +226,7 @@ def audit_admin_event_mutation(operation: str, *, action=None):
     The method resolves its event-derived target through the shared resolvers,
     which capture the admitting authority on the request; this decorator runs the
     method and the strict override audit inside one transaction, so a strict audit
-    failure rolls the mutation back on a successful (2xx) response (ADR-051-R4). It
+    failure rolls the mutation back on a successful (2xx) response (ADR-052-R4). It
     is a no-op for owner or delegated-staff authority and for non-success
     responses.
 
@@ -262,7 +262,7 @@ def admin_external_audit(request: Request, operation: str, *, action=None):
     ``intent`` record before the wrapped side effect; on exit it persists a
     correlated ``completed`` or ``failed`` outcome. Every record is a no-op unless
     the resolved authority is the platform-admin override, and no database
-    transaction is held across the side effect (ADR-051-R4). ``failed`` carries
+    transaction is held across the side effect (ADR-052-R4). ``failed`` carries
     only the bounded operation identifiers — never raw exception text.
     """
     _audit_admin_from_request(request, operation, action=action, outcome="intent")
@@ -366,7 +366,7 @@ def _delete_via_service(
     When ``operation`` is given this is the single point that audits an
     event-derived delete performed with the platform-admin override: the
     database-only delete and its strict override audit share one transaction, so
-    a strict audit failure rolls the delete back (ADR-051-R4). The audit is a
+    a strict audit failure rolls the delete back (ADR-052-R4). The audit is a
     no-op for owner or delegated-staff authority.
     """
     from django.db import transaction
