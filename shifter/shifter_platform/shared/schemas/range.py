@@ -402,7 +402,7 @@ class RangeContextBase(BaseModel):
     status: ResourceStatus
     instances: list[InstanceContext]
     agent_name: str | None = None
-    pause_supported: bool = False  # ADR-039/#614 server-computed capability; default False fails safe
+    pause_supported: bool = False
     resume_supported: bool = False
 
     @field_validator("range_id")
