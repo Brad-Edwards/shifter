@@ -86,14 +86,26 @@ class HasActiveCTFActor(permissions.BasePermission):
         return ctf_actor_user(request) is not None
 
 
-class HasCTFOrganizer(permissions.BasePermission):
-    """Require the resolved actor to be a CTF organizer."""
+class HasCTFEventAdminAccess(permissions.BasePermission):
+    """Admit the CTF event-administration surface for an organizer or platform admin.
+
+    Advisory top-level admission only (ADR-051): it does not redefine
+    ``is_ctf_organizer`` or grant any per-object authority. Every endpoint still
+    resolves owner / delegated-staff / platform-admin authority per operation via
+    the service resolver, so widening this gate cannot let a platform
+    administrator act where the per-object policy would refuse (e.g. staff
+    management stays owner-only).
+    """
 
     message = "Forbidden"
 
     def has_permission(self, request: Request, view: APIView) -> bool:
+        from ctf.services.authorization import is_ctf_platform_admin
+
         user = ctf_actor_user(request)
-        return bool(user and get_user_role(user).is_ctf_organizer)
+        if user is None:
+            return False
+        return get_user_role(user).is_ctf_organizer or is_ctf_platform_admin(user)
 
 
 class HasCTFParticipant(permissions.BasePermission):
@@ -143,7 +155,7 @@ CTF_AUTH_PERMISSIONS: list[PermissionClass] = [
     HasCTFEndpointScope,
 ]
 
-CTF_ORGANIZER_PERMISSIONS: list[PermissionClass] = [*CTF_AUTH_PERMISSIONS, HasCTFOrganizer]
+CTF_ORGANIZER_PERMISSIONS: list[PermissionClass] = [*CTF_AUTH_PERMISSIONS, HasCTFEventAdminAccess]
 CTF_PARTICIPANT_PERMISSIONS: list[PermissionClass] = [*CTF_AUTH_PERMISSIONS, HasCTFParticipant]
 CTF_ROLE_PERMISSIONS: list[PermissionClass] = [*CTF_AUTH_PERMISSIONS, HasCTFRole]
 

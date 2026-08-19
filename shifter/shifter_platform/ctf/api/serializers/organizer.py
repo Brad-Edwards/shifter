@@ -7,7 +7,7 @@ prerequisites).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -33,8 +33,70 @@ class ManagedContentSummarySerializer(serializers.Serializer):
     is_refreshable = serializers.BooleanField(read_only=True)
 
 
-class EventSummarySerializer(serializers.Serializer):
-    """List projection of one of an organizer's events."""
+class OwnerRefSerializer(serializers.Serializer):
+    """Bounded event-owner projection: stable id and display name only (ADR-051).
+
+    Never serializes the Django ``User``, provider subject, email, groups, or role
+    facts. Consumed by the organizer/platform-admin list and detail so the owner
+    is visible without leaking identity payload.
+    """
+
+    id = serializers.CharField(read_only=True)
+    display_name = serializers.CharField(read_only=True)
+
+
+class _EventAccessProjectionMixin:
+    """Owner + server-derived access-source/capabilities projection shared by list/detail.
+
+    Reads ``actor``, ``is_platform_admin``, and a prefetched ``staff_roles`` map
+    (event id -> role) from serializer context so a list render adds no per-row
+    query (ADR-051-R3). ``access_source`` and ``access_capabilities`` are advisory
+    UI hints; the server re-authorizes every operation and a hidden control is not
+    an authorization boundary.
+    """
+
+    if TYPE_CHECKING:
+        # Provided by ``serializers.Serializer`` at runtime; declared here so the
+        # mixin's methods type-check against the serializer context.
+        context: dict[str, Any]
+
+    @extend_schema_field(OwnerRefSerializer)
+    def get_owner(self, event) -> dict[str, str]:
+        """Return the bounded owner reference for ``event``."""
+        owner = event.created_by
+        display = (owner.get_full_name() or owner.get_username()) if owner is not None else ""
+        return {"id": str(event.created_by_id), "display_name": display}
+
+    def _access_source(self, event) -> str:
+        """Compute the discovery access source without a per-row query."""
+        from ctf.services.authorization import EventAuthoritySource
+
+        actor = self.context.get("actor")
+        if actor is not None and event.created_by_id == actor.pk:
+            return EventAuthoritySource.OWNER.value
+        if self.context.get("is_platform_admin"):
+            return EventAuthoritySource.PLATFORM_ADMIN.value
+        return EventAuthoritySource.EVENT_STAFF.value
+
+    def get_access_source(self, event) -> str:
+        """Return the closed authority source by which the actor reaches ``event``."""
+        return self._access_source(event)
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_access_capabilities(self, event) -> list[str]:
+        """Return the advisory capability nouns the actor holds for ``event``."""
+        from ctf.services.authorization import EventAuthoritySource
+        from ctf.services.event.staff import ALL_DELEGABLE_CAPABILITIES, capabilities_for_role
+
+        source = self._access_source(event)
+        if source in (EventAuthoritySource.OWNER.value, EventAuthoritySource.PLATFORM_ADMIN.value):
+            return list(ALL_DELEGABLE_CAPABILITIES)
+        role = (self.context.get("staff_roles") or {}).get(event.id)
+        return list(capabilities_for_role(role))
+
+
+class EventSummarySerializer(_EventAccessProjectionMixin, serializers.Serializer):
+    """List projection of one event with owner and server-derived access context."""
 
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
@@ -42,6 +104,9 @@ class EventSummarySerializer(serializers.Serializer):
     event_start = serializers.DateTimeField(read_only=True)
     event_end = serializers.DateTimeField(read_only=True)
     team_mode = serializers.BooleanField(read_only=True)
+    owner = serializers.SerializerMethodField()
+    access_source = serializers.SerializerMethodField()
+    access_capabilities = serializers.SerializerMethodField()
 
 
 class EventListResponseSerializer(serializers.Serializer):
@@ -50,9 +115,38 @@ class EventListResponseSerializer(serializers.Serializer):
     events = EventSummarySerializer(many=True, read_only=True)
 
 
-class EventDetailSerializer(serializers.Serializer):
-    """Full organizer-facing event detail projection."""
+class EventListQuerySerializer(serializers.Serializer):
+    """Bounded, allowlisted query for the authority-aware event list (ADR-051-R3).
 
+    Search and ordering are allowlisted, status uses ``EventStatus``, owner is an
+    exact owner-id filter, and page/page-size are capped. These are data-selection
+    filters only and are never authority inputs.
+    """
+
+    _ORDERING = ("event_start", "-event_start", "name", "-name", "status", "-status")
+
+    search = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    status = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    owner = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    ordering = serializers.ChoiceField(choices=_ORDERING, required=False, allow_blank=True)
+    page = serializers.IntegerField(required=False, min_value=1)
+    page_size = serializers.IntegerField(required=False, min_value=1, max_value=500)
+
+    def validate_status(self, value: str) -> str:
+        """Reject a status that is not a known ``EventStatus`` value."""
+        from ctf.enums import EventStatus
+
+        if value and value not in {s.value for s in EventStatus}:
+            raise serializers.ValidationError("Unknown event status.")
+        return value
+
+
+class EventDetailSerializer(_EventAccessProjectionMixin, serializers.Serializer):
+    """Full organizer-facing event detail projection with owner and access context."""
+
+    owner = serializers.SerializerMethodField()
+    access_source = serializers.SerializerMethodField()
+    access_capabilities = serializers.SerializerMethodField()
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True, allow_blank=True)

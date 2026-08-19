@@ -27,6 +27,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ctf.services.authorization import is_ctf_platform_admin
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.api_tokens.models import ApiToken
@@ -58,6 +59,13 @@ class BootstrapPermissionsSerializer(serializers.Serializer):
     can_access_threat_research = serializers.BooleanField()
     is_ctf_organizer = serializers.BooleanField()
     is_ctf_participant = serializers.BooleanField()
+    # One advisory "can administer the CTF surface" flag (ADR-051): a CTF
+    # organizer or a platform administrator (active, non-temporary superuser).
+    # Rendering hint only — routes, nav, and endpoints repeat the authoritative
+    # per-object authority check; hiding a control is never an authorization
+    # boundary. Avoids scattering ``is_ctf_organizer || is_superuser`` across the
+    # SPA.
+    can_administer_ctf = serializers.BooleanField()
     # Administer user-administration advisory capabilities (#1373). Mirror the
     # Django model permissions the Administer API enforces; rendering hints only,
     # the endpoints repeat the authoritative check. Always False for token
@@ -168,6 +176,9 @@ class BootstrapView(APIView):
                 "can_access_threat_research": can_threat,
                 "is_ctf_organizer": bool(session_user is not None and is_ctf_organizer(session_user)),
                 "is_ctf_participant": bool(session_user is not None and is_ctf_participant(session_user)),
+                "can_administer_ctf": bool(
+                    session_user is not None and (is_ctf_organizer(session_user) or is_ctf_platform_admin(session_user))
+                ),
                 "can_view_users": bool(session_user is not None and session_user.has_perm("auth.view_user")),
                 "can_change_users": bool(session_user is not None and session_user.has_perm("auth.change_user")),
                 "can_delete_users": bool(session_user is not None and session_user.has_perm("auth.delete_user")),

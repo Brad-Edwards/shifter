@@ -23,6 +23,7 @@ from ctf.api.organizer._base import (
     _raise_bad_request,
     _raise_not_found,
     _resolve_owned_event,
+    audit_admin_event_mutation,
 )
 from ctf.api.serializers import (
     EventStaffAssignRequestSerializer,
@@ -30,6 +31,7 @@ from ctf.api.serializers import (
     EventStaffMemberSerializer,
     ParticipantDeleteResultSerializer,
 )
+from shared.audit import AuditAction
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -68,6 +70,7 @@ class EventStaffView(APIView):
         return Response({"staff": [_staff_payload(s) for s in list_event_staff(event_id)]})
 
     @extend_schema(request=EventStaffAssignRequestSerializer, responses=EventStaffMemberSerializer)
+    @audit_admin_event_mutation("staff.assign", action=AuditAction.CREATE)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Assign (or re-role) a staff member by email."""
         from ctf.exceptions import CTFNotFoundError, CTFValidationError
@@ -100,6 +103,7 @@ class EventStaffMemberView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(responses=ParticipantDeleteResultSerializer)
+    @audit_admin_event_mutation("staff.revoke", action=AuditAction.DELETE)
     def delete(self, request: Request, event_id: UUID, user_id: int) -> Response:
         """Remove the assignment; the user keeps their platform account."""
         from ctf.exceptions import CTFNotFoundError, CTFValidationError

@@ -15,6 +15,8 @@ imported lazily inside the helpers so the existing ``patch("ctf.services...")`` 
 
 from __future__ import annotations
 
+import contextlib
+import functools
 from typing import TYPE_CHECKING
 
 from rest_framework import status
@@ -123,17 +125,154 @@ def _resolve_owned_event(request: Request, event_id: UUID, *, capability: Capabi
     return event
 
 
-def _actor_may_manage(request: Request, event: CTFEvent, capability: Capability) -> bool:
-    """Owner always; delegated staff only for an explicitly named capability."""
-    actor = _actor(request)
-    if event.created_by_id == actor.pk:
-        return True
-    if capability is None:
-        return False
-    from ctf.services.event import actor_has_event_capability
+def _event_authority(request: Request, event: CTFEvent, capability: Capability):
+    """Resolve the closed authority source admitting the actor, or ``None`` (ADR-051).
 
-    wanted = (capability,) if isinstance(capability, str) else capability
-    return any(actor_has_event_capability(actor, event, item) for item in wanted)
+    Least authority: owner, then a delegated staff capability, then the
+    platform-admin override. Owner-only surfaces pass ``capability=None`` and are
+    admitted for the owner or a platform administrator, never delegated staff.
+    """
+    from ctf.services.authorization import resolve_event_authority
+
+    return resolve_event_authority(_actor(request), event, capability=capability)
+
+
+def _capture_event_authority(request: Request, event: CTFEvent, source) -> None:
+    """Stash the resolved (event, authority source) on the request for later audit.
+
+    Every organizer resolver records the authority it admitted so any subsequent
+    mutation on this request can write the mandatory platform-admin override
+    audit without re-resolving (ADR-051-R4). The last resolved event wins, which
+    is correct because a request mutates exactly one event-derived resource.
+    """
+    request._ctf_admin_authority = (event, source)
+
+
+def _actor_may_manage(request: Request, event: CTFEvent, capability: Capability) -> bool:
+    """Owner, a delegated staff capability, or the platform-admin override.
+
+    Captures the resolved authority on the request so a mutation on this request
+    can audit a platform-admin override.
+    """
+    source = _event_authority(request, event, capability)
+    if source is None:
+        return False
+    _capture_event_authority(request, event, source)
+    return True
+
+
+def _audit_admin_from_request(
+    request: Request,
+    operation: str,
+    *,
+    action=None,
+    changed_fields: list[str] | None = None,
+    outcome: str | None = None,
+) -> None:
+    """Audit a mutation using the authority captured by the request's resolver.
+
+    No-op when nothing was captured or the authority was owner/delegated-staff;
+    writes the strict override audit only for a platform-admin mutation. Callers
+    that mutate the database wrap the service call plus this helper in one
+    transaction so a strict audit failure rolls the mutation back (ADR-051-R4).
+    """
+    captured = getattr(request, "_ctf_admin_authority", None)
+    if captured is None:
+        return
+    event, source = captured
+    _audit_admin_mutation(
+        request, event, source, operation, action=action, changed_fields=changed_fields, outcome=outcome
+    )
+
+
+def _audit_admin_mutation(
+    request: Request,
+    event: CTFEvent,
+    source,
+    operation: str,
+    *,
+    action=None,
+    changed_fields: list[str] | None = None,
+    outcome: str | None = None,
+) -> None:
+    """Strict-audit a mutation only when it used the platform-admin override (ADR-051-R4).
+
+    No-op for owner or delegated-staff authority. ``action`` defaults to the
+    audit ``UPDATE`` verb; pass an explicit verb (e.g. ``DELETE``) where the
+    operation differs. Database-only callers wrap the mutation plus this call in
+    one transaction; a non-rollbackable caller records ``outcome="intent"`` before
+    its first side effect and a correlated outcome afterward.
+    """
+    from ctf.services.audit import audit_platform_admin_event_action
+    from ctf.services.authorization import EventAuthoritySource
+
+    if source is not EventAuthoritySource.PLATFORM_ADMIN:
+        return
+    kwargs = {} if action is None else {"action": action}
+    audit_platform_admin_event_action(
+        request=request,
+        event=event,
+        operation=operation,
+        effective_actor_id=_actor(request).pk,
+        changed_fields=changed_fields,
+        outcome=outcome,
+        **kwargs,
+    )
+
+
+def audit_admin_event_mutation(operation: str, *, action=None):
+    """Decorate a **database-only** organizer mutation to audit a platform-admin override.
+
+    The method resolves its event-derived target through the shared resolvers,
+    which capture the admitting authority on the request; this decorator runs the
+    method and the strict override audit inside one transaction, so a strict audit
+    failure rolls the mutation back on a successful (2xx) response (ADR-051-R4). It
+    is a no-op for owner or delegated-staff authority and for non-success
+    responses.
+
+    Non-rollbackable workflows (uploads, notifications, participant provisioning,
+    content, ranges) must NOT use this decorator: holding a transaction across an
+    external side effect is unsafe, and a completion-only record cannot satisfy
+    the intent-before-side-effect requirement. Those endpoints wrap their side
+    effect in :func:`admin_external_audit` instead.
+    """
+
+    def decorator(method):
+        @functools.wraps(method)
+        def wrapper(self, request: Request, *args, **kwargs):
+            from django.db import transaction
+
+            with transaction.atomic():
+                response = method(self, request, *args, **kwargs)
+                if 200 <= getattr(response, "status_code", 500) < 300:
+                    _audit_admin_from_request(request, operation, action=action)
+                return response
+
+        return wrapper
+
+    return decorator
+
+
+@contextlib.contextmanager
+def admin_external_audit(request: Request, operation: str, *, action=None):
+    """Intent-before / outcome-after audit for a non-rollbackable platform-admin mutation.
+
+    The caller must have already resolved the event authority (captured on the
+    request) before entering this context. On enter it strictly persists a bounded
+    ``intent`` record before the wrapped side effect; on exit it persists a
+    correlated ``completed`` or ``failed`` outcome. Every record is a no-op unless
+    the resolved authority is the platform-admin override, and no database
+    transaction is held across the side effect (ADR-051-R4). ``failed`` carries
+    only the bounded operation identifiers — never raw exception text.
+    """
+    _audit_admin_from_request(request, operation, action=action, outcome="intent")
+    try:
+        yield
+    except BaseException:
+        _audit_admin_from_request(request, operation, action=action, outcome="failed")
+        raise
+    else:
+        _audit_admin_from_request(request, operation, action=action, outcome="completed")
 
 
 def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallenge:
@@ -214,20 +353,33 @@ def _resolve_active_participant(request: Request) -> CTFParticipant | None:
     return get_participant_by_user(actor, event_id=role.active_ctf_event.id)
 
 
-def _delete_via_service(request: Request, action_fn: Callable[..., Any], target_id: UUID) -> Response:
+def _delete_via_service(
+    request: Request, action_fn: Callable[..., Any], target_id: UUID, *, operation: str | None = None
+) -> Response:
     """Run a delete-style service action, returning ``{"success": True}`` or raising an error.
 
     Mirrors ``ctf.views.api._common._delete_via_service_response``:
     ``CTFPermissionError`` -> 403, ``CTFNotFoundError`` -> 404,
     ``CTFStateError`` -> 400, each raised as ``_CtfApiError`` for the caller's
     ``except`` to render.
+
+    When ``operation`` is given this is the single point that audits an
+    event-derived delete performed with the platform-admin override: the
+    database-only delete and its strict override audit share one transaction, so
+    a strict audit failure rolls the delete back (ADR-051-R4). The audit is a
+    no-op for owner or delegated-staff authority.
     """
+    from django.db import transaction
     from rest_framework.response import Response
 
     from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError
+    from shared.audit import AuditAction
 
     try:
-        action_fn(target_id, actor_id=_actor(request).pk)
+        with transaction.atomic():
+            action_fn(target_id, actor_id=_actor(request).pk)
+            if operation is not None:
+                _audit_admin_from_request(request, operation, action=AuditAction.DELETE)
     except CTFPermissionError:
         _raise_forbidden()
     except CTFNotFoundError:

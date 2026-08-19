@@ -20,6 +20,7 @@ from ctf.api.organizer._base import (
     _raise_bad_request,
     _raise_not_found,
     _resolve_owned_event,
+    audit_admin_event_mutation,
 )
 from ctf.api.serializers import (
     ChallengeImportRequestSerializer,
@@ -29,6 +30,7 @@ from ctf.api.serializers import (
     WebhookSerializer,
     WebhookWriteSerializer,
 )
+from shared.audit import AuditAction
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -66,6 +68,7 @@ class ChallengeImportView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(request=ChallengeImportRequestSerializer, responses=ChallengeImportResultSerializer)
+    @audit_admin_event_mutation("challenge.import", action=AuditAction.CREATE)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Run a partial-success import of the posted document."""
         from ctf.exceptions import CTFValidationError
@@ -140,6 +143,7 @@ class EventWebhooksView(APIView):
         return Response({"webhooks": [_webhook_payload(h) for h in hooks]})
 
     @extend_schema(request=WebhookWriteSerializer, responses=WebhookSerializer)
+    @audit_admin_event_mutation("webhook.create", action=AuditAction.CREATE)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Register a webhook endpoint."""
         from ctf.models import CTFWebhook
@@ -171,6 +175,7 @@ class WebhookDetailView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(responses=ParticipantDeleteResultSerializer)
+    @audit_admin_event_mutation("webhook.delete", action=AuditAction.DELETE)
     def delete(self, request: Request, webhook_id: UUID) -> Response:
         """Soft-delete the webhook after ownership checks."""
         from ctf.models import CTFWebhook
