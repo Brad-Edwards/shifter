@@ -16,9 +16,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    _audit_admin_mutation,
+)
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
+    _event_authority,
     _raise_bad_request,
     _raise_conflict,
     _raise_not_found,
@@ -70,12 +74,19 @@ class EventLifecycleView(APIView):
     @extend_schema(request=EventLifecycleRequestSerializer, responses=EventMutationResultSerializer)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Validate the action, run the state machine, and return the new status."""
+        from django.db import transaction
+
         try:
             event = _resolve_owned_event(request, event_id)
+            source = _event_authority(request, event, None)
             serializer = EventLifecycleRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             action = serializer.validated_data["action"]
-            self._apply(event, action)
+            # Database-only state-machine transition: transition and override
+            # audit share one transaction (ADR-052-R4).
+            with transaction.atomic():
+                self._apply(event, action)
+                _audit_admin_mutation(request, event, source, f"event.lifecycle.{action}")
             event.refresh_from_db()
             return Response({"id": str(event.id), "name": event.name, "status": event.status})
         except _CtfApiError as exc:

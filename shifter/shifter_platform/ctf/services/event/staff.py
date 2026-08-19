@@ -37,18 +37,24 @@ _ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
     EventStaffRole.JUDGE.value: frozenset({"awards", "submissions"}),
 }
 
+# Closed set of delegable capability nouns, sorted for deterministic projections.
+# Owner and platform-admin authority cover all of them; a staff role covers a
+# subset. Advisory only — the server re-checks per operation (ADR-052-R2).
+ALL_DELEGABLE_CAPABILITIES: tuple[str, ...] = tuple(sorted(set().union(*_ROLE_CAPABILITIES.values())))
 
-def actor_has_event_capability(actor: User | AnonymousUser, event: CTFEvent, capability: str) -> bool:
-    """Return whether `actor` may exercise `capability` on `event`.
 
-    The owning organizer always may; otherwise a live staff row whose role
-    grants the capability is required.
+def capabilities_for_role(role: str | None) -> tuple[str, ...]:
+    """Return the sorted delegable capabilities a staff ``role`` grants (empty if none)."""
+    return tuple(sorted(_ROLE_CAPABILITIES.get(role or "", frozenset())))
+
+
+def staff_row_grants_capability(actor_pk: int, event: CTFEvent, capability: str) -> bool:
+    """Return whether a live staff row for ``actor_pk`` on ``event`` grants ``capability``.
+
+    The raw delegation check only: no owner or platform-admin fallback. The
+    authority resolver composes this with owner and override authority so the
+    least-authority order lives in one place (ADR-052-R2).
     """
-    actor_pk = actor.pk
-    if actor_pk is None:
-        return False
-    if event.created_by_id == actor_pk:
-        return True
     role = (
         CTFEventStaff.objects.filter(event=event, user_id=actor_pk, deleted_at__isnull=True)
         .values_list("role", flat=True)
@@ -57,15 +63,37 @@ def actor_has_event_capability(actor: User | AnonymousUser, event: CTFEvent, cap
     return role is not None and capability in _ROLE_CAPABILITIES.get(role, frozenset())
 
 
+def actor_has_event_capability(actor: User | AnonymousUser, event: CTFEvent, capability: str) -> bool:
+    """Return whether `actor` may exercise `capability` on `event`.
+
+    Admits the owning organizer, a live staff row whose role grants the
+    capability, or the platform-admin override (ADR-052). Delegates to the
+    service-owned authority resolver so callers share one least-authority policy.
+    """
+    from ctf.services.authorization import resolve_event_authority
+
+    return resolve_event_authority(actor, event, capability=capability) is not None
+
+
 def _resolve_owned_event_for_staff(event_id: UUID, actor: User | AnonymousUser) -> CTFEvent:
-    """Load the event and require the owning organizer (staff management is not delegable)."""
+    """Load the event and require owner or platform-admin authority (ADR-052).
+
+    Staff management is an owner-only capability that delegated moderators/judges
+    cannot exercise (``capability=None``), but administering an existing event's
+    delegation graph is legitimate platform administration, so the platform-admin
+    override is admitted alongside the owner. The override never auto-synthesizes
+    the administrator as staff; it only authorizes an explicit, audited staff
+    mutation targeting another user.
+    """
+    from ctf.services.authorization import resolve_event_authority
+
     try:
         event = CTFEvent.objects.get(pk=event_id, deleted_at__isnull=True)
     except CTFEvent.DoesNotExist:
         raise CTFNotFoundError(f"Event {event_id} not found", details={"event_id": str(event_id)}) from None
-    if event.created_by_id != actor.pk:
+    if resolve_event_authority(actor, event, capability=None) is None:
         raise CTFValidationError(
-            "Only the event organizer may manage staff",
+            "Only the event organizer or a platform administrator may manage staff",
             code="CTF_PERMISSION_DENIED",
         )
     return event

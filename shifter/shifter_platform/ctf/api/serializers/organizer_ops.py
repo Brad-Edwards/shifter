@@ -9,7 +9,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from ctf.api.serializers._common import _NamedRefSerializer
-from ctf.api.serializers.organizer import AwardSerializer
+from ctf.api.serializers.organizer_challenges import AwardSerializer
 
 _SET_MODE_REQUIRED = "This field is required for set mode."
 _GENERATED_MODE_REJECTS_VALUE = "Do not supply a password for generated mode."

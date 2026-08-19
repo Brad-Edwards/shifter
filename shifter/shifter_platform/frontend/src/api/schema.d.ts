@@ -538,10 +538,26 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the organizer's events. */
+        /**
+         * @description Return the events the actor may administer (authority-aware, bounded).
+         *
+         *     A platform administrator sees all live events; an ordinary organizer sees
+         *     owned plus live staff-assigned events. Search/status/owner/ordering are
+         *     allowlisted data filters; the admin path is bounded to the canonical page
+         *     size. The v1 ``{"events": [...]}`` envelope is unchanged (ADR-040).
+         */
         get: operations["ctf_events_list"];
         put?: never;
-        /** @description Create an event from the request body. */
+        /**
+         * @description Create an event from the request body.
+         *
+         *     Creation is organizer authority, never the platform-admin override
+         *     (ADR-052): a new event has no existing event on which to resolve override
+         *     authority, and creation makes the actor ``created_by``. The list GET is
+         *     admitted for organizers or platform admins, but POST requires a genuine
+         *     CTF organizer, so a pure superuser cannot create an event and acquire
+         *     ownership.
+         */
         post: operations["ctf_events_create"];
         delete?: never;
         options?: never;
@@ -556,7 +572,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the full event detail projection. */
+        /** @description Return the full event detail projection with owner and access context. */
         get: operations["ctf_events_retrieve"];
         /** @description Update mutable fields of an owned event. */
         put: operations["ctf_events_update"];
@@ -2901,6 +2917,7 @@ export interface components {
             can_access_threat_research: boolean;
             is_ctf_organizer: boolean;
             is_ctf_participant: boolean;
+            can_administer_ctf: boolean;
             can_view_users: boolean;
             can_change_users: boolean;
             can_delete_users: boolean;
@@ -3208,8 +3225,12 @@ export interface components {
             readonly hint_count: number;
             readonly prerequisite_count: number;
         };
-        /** @description Full organizer-facing event detail projection. */
+        /** @description Full organizer-facing event detail projection with owner and access context. */
         EventDetail: {
+            readonly owner: components["schemas"]["OwnerRef"];
+            /** @description Return the closed authority source by which the actor reaches ``event``. */
+            readonly access_source: string;
+            readonly access_capabilities: string[];
             readonly id: string;
             readonly name: string;
             readonly description: string;
@@ -3311,7 +3332,7 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string | null;
         };
-        /** @description List projection of one of an organizer's events. */
+        /** @description List projection of one event with owner and server-derived access context. */
         EventSummary: {
             readonly id: string;
             readonly name: string;
@@ -3321,6 +3342,10 @@ export interface components {
             /** Format: date-time */
             readonly event_end: string;
             readonly team_mode: boolean;
+            readonly owner: components["schemas"]["OwnerRef"];
+            /** @description Return the closed authority source by which the actor reaches ``event``. */
+            readonly access_source: string;
+            readonly access_capabilities: string[];
         };
         /**
          * @description Create/update request body: the mutable event fields only.
@@ -3723,6 +3748,17 @@ export interface components {
          * @enum {string}
          */
         OsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
+        /**
+         * @description Bounded event-owner projection: stable id and display name only (ADR-052).
+         *
+         *     Never serializes the Django ``User``, provider subject, email, groups, or role
+         *     facts. Consumed by the organizer/platform-admin list and detail so the owner
+         *     is visible without leaking identity payload.
+         */
+        OwnerRef: {
+            readonly id: string;
+            readonly display_name: string;
+        };
         /**
          * @description Validate the shape of a uniform pack-registration request body (#1578).
          *
@@ -6364,7 +6400,22 @@ export interface operations {
     };
     ctf_events_list: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description * `event_start` - event_start
+                 *     * `-event_start` - -event_start
+                 *     * `name` - name
+                 *     * `-name` - -name
+                 *     * `status` - status
+                 *     * `-status` - -status
+                 */
+                ordering?: "event_start" | "-event_start" | "name" | "-name" | "status" | "-status" | "";
+                owner?: string;
+                page?: number;
+                page_size?: number;
+                search?: string;
+                status?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

@@ -3032,5 +3032,72 @@
       "shifter/shifter_platform/shared/raes",
       "shifter/shifter_platform/workspaces/services"
     ]
+  },
+  {
+    "id": "ADR-052",
+    "title": "CTF platform administration is an audited superuser override distinct from event ownership and delegation",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "An active, non-temporary Django superuser is the sole platform-root override for administering existing CTF events across the deployment. The override is orthogonal to CTF organizer membership, CTFEvent.created_by ownership, and bounded CTFEventStaff moderator/judge capabilities: it never changes CTFEvent.created_by, never auto-synthesizes the administrator as the event owner or as event staff merely by being exercised, never authorizes event creation by a pure platform administrator, and is never derived from email, is_staff, model permissions, provider claims/groups, API-token scopes, organization/workspace roles, or client state. Managing an existing event's staff (assigning or revoking moderators/judges targeting other users) is legitimate, audited platform administration governed by the same resolver (owner or platform_admin, never a delegated staff member). One CTF service-owned, operation-parameterized decision resolves owner, applicable event-staff capability, then platform_admin fallback and returns the closed authority source used by list/detail/nested-resource authorization and audit. Every successful interactive mutation that actually uses the platform_admin fallback is explicitly request-attributed in shared.audit; database-only changes are audit-strict in the mutation transaction, while non-rollbackable external workflows persist bounded intent before their first side effect and a correlated completion/failure outcome. Existing validation, lifecycle, destructive-action, token-scope, CSRF, error-envelope, privacy, and provider safeguards remain mandatory. CTF events stay deployment-global under ADR-046-R7; tenant roles grant no CTF authority and adding an event tenant binding requires a separate ADR.",
+    "rules": [
+      {
+        "id": "ADR-052-R1",
+        "description": "Global CTF administration of an existing event is admitted only for an authenticated active Django user with is_superuser=True whose immutable temporary-CTF-account marker is false. Email/config allowlists, is_staff, Django permissions/groups, provider claims/groups, API-token scopes, organization/workspace roles, selected UI context, and client capability flags are not platform-admin authority. Existing bearer-first authentication, active-actor, exact CTF scope, and session-CSRF gates still apply.",
+        "checks": []
+      },
+      {
+        "id": "ADR-052-R2",
+        "description": "CTFEvent.created_by remains ownership and CTFEventStaff remains bounded moderator/judge delegation. The service-owned event-administration decision is parameterized by a closed operation/capability and resolves least authority in this order: owner, an applicable live event-staff capability, platform_admin fallback. It returns that server-derived source or an opaque denial; callers may not supply an owner, tenant, authority source, is_admin flag, or arbitrary permission string.",
+        "checks": []
+      },
+      {
+        "id": "ADR-052-R3",
+        "description": "The same service decision governs authority-aware event discovery, event detail, every event-derived nested resource, and every mutation across canonical DRF and any retained legacy callable. A platform administrator sees all non-deleted events; an ordinary organizer sees the union of owned and live assigned events with existing capability limits. Platform override does not authorize event creation, change ownership, auto-synthesize the administrator as owner or staff, or expose soft-deleted tombstones through ordinary reads; explicit staff-management mutations on an existing event are audited administration governed by the same resolver.",
+        "checks": []
+      },
+      {
+        "id": "ADR-052-R4",
+        "description": "Every successful interactive mutation using platform_admin authority is explicitly attributed in shared.audit with the closed authority source, event/operation identifiers, effective actor user, and trusted request/credential context. Database-only mutation plus strict audit is atomic. A non-rollbackable external workflow strictly records bounded intent before its first side effect and a correlated bounded completion/failure outcome without holding a transaction across the call or recording payloads, credentials, flags, participant data, signed URLs, provider responses, or raw errors.",
+        "checks": []
+      },
+      {
+        "id": "ADR-052-R5",
+        "description": "Platform authority changes only admission. Explicit DRF serializers, service mutable-field allowlists, model validation and database constraints, locks/transactions, lifecycle/scoring/content/range/notification policy, rate limits, soft-delete/force-delete separation, confirmation and typed-name checks, shared sanitized errors, and safe logging remain mandatory and cannot be bypassed by a superuser.",
+        "checks": []
+      },
+      {
+        "id": "ADR-052-R6",
+        "description": "CTF events, teams, and participants remain deployment-global under ADR-046-R7 and gain no implicit organization/workspace binding. Organization/workspace roles grant no CTF authority; the platform superuser override applies deployment-wide. A future event-tenant binding is a separate ADR and must compose at the one event-administration decision rather than be inferred in controllers from owners, ranges, or selected workspace.",
+        "checks": []
+      },
+      {
+        "id": "ADR-052-R7",
+        "description": "The SPA exposes server-derived owner, status, authority source, and bounded operation capabilities as advisory presentation and uses the canonical API client plus generated OpenAPI types. It must not redefine is_ctf_organizer, duplicate authorization in navigation/components, filter unauthorized global data client-side, serialize raw User/provider facts, hand-edit generated contracts, or change the published v1 list envelope/pagination semantics without passing ADR-040 compatibility gates.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1923",
+      "docs/architecture/ctf-platform-administration-preflight-1923.md",
+      "shifter/shifter_platform/config/_oidc_settings.py",
+      "shifter/shifter_platform/config/bootstrap_admin.py",
+      "shifter/shifter_platform/shared/verified_identity.py",
+      "shifter/shifter_platform/shared/auth.py",
+      "shifter/shifter_platform/ctf/api/_base.py",
+      "shifter/shifter_platform/ctf/api/organizer/_base.py",
+      "shifter/shifter_platform/ctf/services/authorization.py",
+      "shifter/shifter_platform/ctf/services/event/staff.py",
+      "shifter/shifter_platform/ctf/services/event/_queries.py",
+      "shifter/shifter_platform/ctf/services/audit.py",
+      "shifter/shifter_platform/shared/audit",
+      "shifter/shifter_platform/shared/api/errors.py",
+      "shifter/shifter_platform/frontend/src/app/nav.ts",
+      "shifter/shifter_platform/frontend/src/features/ctf/admin/EventsListPage.tsx"
+    ]
   }
 ]

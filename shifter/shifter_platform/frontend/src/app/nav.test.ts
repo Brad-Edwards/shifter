@@ -44,6 +44,24 @@ describe("permissionAllows", () => {
     expect(permissionAllows("ctf_participant", bs)).toBe(false);
     expect(permissionAllows("staff", bs)).toBe(true);
   });
+
+  it("admits the ctf_admin surface for an organizer or platform administrator", () => {
+    const organizer = bootstrap({
+      permissions: { ...STAFF_BOOTSTRAP.permissions, is_ctf_organizer: true, can_administer_ctf: true },
+    });
+    expect(permissionAllows("ctf_admin", organizer)).toBe(true);
+
+    const superuserOnly = bootstrap({
+      principal: { ...STAFF_BOOTSTRAP.principal, is_superuser: true },
+      permissions: { ...STAFF_BOOTSTRAP.permissions, is_ctf_organizer: false, can_administer_ctf: true },
+    });
+    expect(permissionAllows("ctf_admin", superuserOnly)).toBe(true);
+
+    const neither = bootstrap({
+      permissions: { ...STAFF_BOOTSTRAP.permissions, is_ctf_organizer: false, can_administer_ctf: false },
+    });
+    expect(permissionAllows("ctf_admin", neither)).toBe(false);
+  });
 });
 
 describe("isNavEntryVisible", () => {

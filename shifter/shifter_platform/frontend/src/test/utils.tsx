@@ -20,6 +20,7 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
     can_access_threat_research: false,
     is_ctf_organizer: false,
     is_ctf_participant: false,
+    can_administer_ctf: false,
     can_view_users: true,
     can_change_users: true,
     can_delete_users: true,
