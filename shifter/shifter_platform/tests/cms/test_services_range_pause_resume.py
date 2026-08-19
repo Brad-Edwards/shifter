@@ -136,8 +136,9 @@ class TestPauseRangeByRequestId:
 
     def test_reverts_when_engine_rejects(self, user, provision_range):
         ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.PROVISIONING)
+        request_id = _request_id_of(ri)
         with pytest.raises(CMSError):
-            services.pause_range_by_request_id(user, _request_id_of(ri))
+            services.pause_range_by_request_id(user, request_id)
         assert RangeInstance.objects.get(range_id=42).status == ResourceStatus.READY.value
 
     def test_raises_cms_error_when_not_found(self, user):
@@ -156,8 +157,9 @@ class TestResumeRangeByRequestId:
 
     def test_reverts_when_engine_rejects(self, user, provision_range):
         ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.PROVISIONING)
+        request_id = _request_id_of(ri)
         with pytest.raises(CMSError):
-            services.resume_range_by_request_id(user, _request_id_of(ri))
+            services.resume_range_by_request_id(user, request_id)
         assert RangeInstance.objects.get(range_id=42).status == ResourceStatus.PAUSED.value
 
     def test_raises_cms_error_when_not_found(self, user):
@@ -214,6 +216,7 @@ class TestPauseResumeCapabilityGate:
             backend="gdc",
         )
         before = RangeInstance.objects.get(pk=ri.pk).status
+        request_id = _request_id_of(ri)
         with pytest.raises(CMSError, match="cannot be paused without losing state"):
-            services.resume_range_by_request_id(user, _request_id_of(ri))
+            services.resume_range_by_request_id(user, request_id)
         assert RangeInstance.objects.get(pk=ri.pk).status == before

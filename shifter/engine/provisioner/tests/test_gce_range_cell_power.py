@@ -64,23 +64,27 @@ def test_stop_calls_instances_stop_with_target():
 
 
 def test_stop_raises_when_status_not_terminal():
+    clients = _clients("RUNNING")
     with pytest.raises(RuntimeError, match="did not reach TERMINATED"):
-        run_power_operation("stop", _STATE, clients=_clients("RUNNING"))
+        run_power_operation("stop", _STATE, clients=clients)
 
 
 def test_start_raises_when_status_not_running():
+    clients = _clients("TERMINATED")
     with pytest.raises(RuntimeError, match="did not reach RUNNING"):
-        run_power_operation("start", _STATE, clients=_clients("TERMINATED"))
+        run_power_operation("start", _STATE, clients=clients)
 
 
 def test_unknown_operation_raises():
+    clients = _clients("RUNNING")
     with pytest.raises(ValueError, match="Unknown GCE range-cell operation"):
-        run_power_operation("pause", _STATE, clients=_clients("RUNNING"))
+        run_power_operation("pause", _STATE, clients=clients)
 
 
 def test_incomplete_state_raises():
+    clients = _clients("TERMINATED")
     with pytest.raises(RuntimeError, match="requires project, zone, and instance name"):
-        run_power_operation("stop", {"gcp_zone": "z"}, clients=_clients("TERMINATED"))
+        run_power_operation("stop", {"gcp_zone": "z"}, clients=clients)
 
 
 def test_instance_id_fallback_for_name():
