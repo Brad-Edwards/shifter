@@ -17726,6 +17726,12 @@
           },
           "is_active": {
             "type": "boolean"
+          },
+          "pause_supported": {
+            "type": "boolean"
+          },
+          "resume_supported": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -17734,9 +17740,11 @@
           "is_active",
           "is_ready",
           "is_terminal",
+          "pause_supported",
           "range_id",
           "range_type",
           "request_id",
+          "resume_supported",
           "scenario_id",
           "status",
           "user_id"

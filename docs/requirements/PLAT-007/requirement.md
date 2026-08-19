@@ -22,8 +22,6 @@ Polaris exposed gaps where the declarative scenario surface could not represent 
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#620` (Scenario expressiveness gap: cyberscript can't describe polaris-class events, forcing provisioner end-runs)
-- DOCUMENTS → DOCUMENTATION `scenario-dev/polaris/design/aces-sdl-validation-path.md` (aces-sdl validation path)
-- DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/cyberscript/index.md` (CyberScript Language Reference)
 - IMPLEMENTS → POLICY `docs/architecture/aces-migration-parity-inventory.yaml` (ACES parity inventory: governance block (record-before-production-reliance) and the three PLAT-007 expressiveness-gap rows)
 - IMPLEMENTS → CODE_FILE `scripts/adr_guard/adr_guard.py` (aces-parity-inventory-row-schema check (ADR-024-R2): closed-set category/surface/next_issue_kind, required fields, unique row ids)
 - IMPLEMENTS → ADR `docs/adr/index.yaml` (ADR-024-R2 wired to the aces-parity-inventory-row-schema check)

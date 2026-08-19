@@ -18,6 +18,7 @@ from workspaces.services import WorkspaceOperation
 
 from ._common import (
     _instance_contexts_from_range_spec,
+    _resolve_pause_resume_supported,
     _resolve_runtime_ips,
     _validate_caller_user,
 )
@@ -316,6 +317,7 @@ def get_active_range(user: User, range_source: RangeSource | None = None) -> Ran
 
             request_id = uuid4()
 
+        supported = _resolve_pause_resume_supported(instance.range_id)
         return RangeContext(
             request_id=request_id,
             range_id=instance.range_id,
@@ -324,6 +326,8 @@ def get_active_range(user: User, range_source: RangeSource | None = None) -> Ran
             status=ResourceStatus(instance.status),
             instances=instance_contexts,
             agent_name=agent_name,
+            pause_supported=supported,
+            resume_supported=supported,
         )
     else:
         logger.debug(
@@ -426,6 +430,7 @@ def get_range_by_request_id(user: User, request_id: str) -> RangeContext:
 
     agent_name = instance.agent.name if instance.agent else None
 
+    supported = _resolve_pause_resume_supported(instance.range_id)
     return RangeContext(
         request_id=instance.request.request_id,
         range_id=instance.range_id,
@@ -434,4 +439,6 @@ def get_range_by_request_id(user: User, request_id: str) -> RangeContext:
         status=ResourceStatus(instance.status),
         instances=instance_contexts,
         agent_name=agent_name,
+        pause_supported=supported,
+        resume_supported=supported,
     )

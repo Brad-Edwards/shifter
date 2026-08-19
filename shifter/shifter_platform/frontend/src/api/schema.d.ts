@@ -4485,6 +4485,8 @@ export interface components {
             is_ready: boolean;
             is_terminal: boolean;
             is_active: boolean;
+            pause_supported: boolean;
+            resume_supported: boolean;
         };
         /** @description Acknowledgement returned when bulk range provisioning is enqueued. */
         RangeProvisionQueued: {

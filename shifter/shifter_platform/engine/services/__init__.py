@@ -54,6 +54,7 @@ from ._range import (
     cancel_range,
     destroy_range,
     get_instance_ips_by_uuid,
+    get_range_pause_resume_capability,
     get_range_status,
 )
 from ._range_by_request import (
@@ -123,6 +124,7 @@ __all__ = (
     "get_openvpn_profile",
     "get_owned_instance_request_ref",
     "get_range_membership",
+    "get_range_pause_resume_capability",
     "get_range_status",
     "get_ranges_for_ngfw",
     "get_rdp_connection_info",

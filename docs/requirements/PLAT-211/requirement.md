@@ -25,5 +25,3 @@ APTL separates structural parsing from semantic scenario correctness. Shifter no
 - DOCUMENTS → SPEC `aptl:DSL-001` (APTL DSL-001: Formal Scenario Specification Language)
 - DOCUMENTS → SPEC `aptl:DSL-008` (APTL DSL-008: Infrastructure Topology Declaration in Scenario DSL)
 - DOCUMENTS → SPEC `aptl:SCN-009` (APTL SCN-009: Scenario Prerequisite Validation)
-- DOCUMENTS → DOCUMENTATION `scenario-dev/polaris/design/aces-sdl-validation-path.md` (aces-sdl validation path)
-- DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/cyberscript/index.md` (CyberScript Language Reference)
