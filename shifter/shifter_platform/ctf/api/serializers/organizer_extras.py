@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from ctf.enums import EventStaffRole
 from ctf.models.event import MAX_EVENT_PAGE_BODY_CHARS
 
 
@@ -51,10 +52,20 @@ class EventStaffListResponseSerializer(serializers.Serializer):
 
 
 class EventStaffAssignRequestSerializer(serializers.Serializer):
-    """Assignment request: organizer-tier user email plus staff role."""
+    """Assignment request: organizer-tier user email plus staff role.
+
+    The role is validated against the closed ``EventStaffRole`` vocabulary at the
+    HTTP boundary (and again in the service); unknown roles are rejected (#1922).
+    """
 
     email = serializers.EmailField()
-    role = serializers.CharField(max_length=16)
+    role = serializers.ChoiceField(choices=EventStaffRole.choices())
+
+
+class EventOwnershipTransferRequestSerializer(serializers.Serializer):
+    """Ownership-transfer request: the target user's id (an existing co-organizer)."""
+
+    user_id = serializers.IntegerField(min_value=1)
 
 
 class ChallengeImportRequestSerializer(serializers.Serializer):

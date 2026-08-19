@@ -27,12 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 def assert_actor_owns_event(actor_id: int, event: CTFEvent) -> None:
-    """Raise `CTFPermissionError` when `actor_id` does not own `event`.
+    """Raise `CTFPermissionError` when `actor_id` is not the exact owner of `event`.
 
-    Defense-in-depth (issue #765): organizer-content service mutators call
-    this before mutating, even when the view layer has already checked
-    ownership. The error envelope intentionally omits the owner pk to avoid
-    leaking internal user identifiers; details name only the requested
+    Reserved for owner-only authority-topology operations. Most operational
+    mutators use :func:`assert_event_capability` so full co-organizers are
+    admitted (#1922). The error envelope intentionally omits the owner pk to
+    avoid leaking internal user identifiers; details name only the requested
     event.
     """
     if event.created_by_id != actor_id:
@@ -43,5 +43,31 @@ def assert_actor_owns_event(actor_id: int, event: CTFEvent) -> None:
         )
         raise CTFPermissionError(
             "Actor does not own this event",
+            details={"event_id": str(event.id)},
+        )
+
+
+def assert_event_capability(actor_id: int, event: CTFEvent, capability: str) -> None:
+    """Raise `CTFPermissionError` when `actor_id` cannot exercise `capability`.
+
+    Defense-in-depth (issue #765, #1922): organizer-content service mutators
+    call this before mutating, even when the view layer already authorized the
+    request, so any internal caller that bypasses the view layer is still
+    refused. Admits the owner and any live staff role that the closed
+    ``ctf.services.event.staff`` role map grants the capability (a full
+    co-organizer holds every operational capability). Fail closed: unknown
+    role/capability denies. The error envelope names only the event.
+    """
+    from ctf.services.event.staff import actor_can_exercise
+
+    if not actor_can_exercise(actor_id, event, capability):
+        logger.warning(
+            "CTF service capability denied: actor=%s event=%s capability=%s",
+            actor_id,
+            event.id,
+            capability,
+        )
+        raise CTFPermissionError(
+            "Actor lacks the required event capability",
             details={"event_id": str(event.id)},
         )

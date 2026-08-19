@@ -905,6 +905,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/transfer-ownership/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Promote a current co-organizer to owner; the previous owner stays a co-organizer. */
+        post: operations["ctf_events_transfer_ownership_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/webhooks/": {
         parameters: {
             query?: never;
@@ -3164,6 +3181,8 @@ export interface components {
             readonly visible_os_types: string[];
             readonly theme_color: string;
             readonly managed_content: components["schemas"]["ManagedContentSummary"] | null;
+            readonly access_role: string | null;
+            readonly access_capabilities: string[];
         };
         /** @description One lifecycle transition to apply to an owned event (CTF-007). */
         EventLifecycleRequest: {
@@ -3189,6 +3208,10 @@ export interface components {
             readonly name: string;
             readonly status: string;
         };
+        /** @description Ownership-transfer request: the target user's id (an existing co-organizer). */
+        EventOwnershipTransferRequest: {
+            user_id: number;
+        };
         /** @description One organizer-authored event page (CTF-1303). */
         EventPage: {
             readonly id: string;
@@ -3208,12 +3231,24 @@ export interface components {
         EventPagesResponse: {
             readonly pages: components["schemas"]["EventPage"][];
         };
-        /** @description Assignment request: organizer-tier user email plus staff role. */
+        /**
+         * @description Assignment request: organizer-tier user email plus staff role.
+         *
+         *     The role is validated against the closed ``EventStaffRole`` vocabulary at the
+         *     HTTP boundary (and again in the service); unknown roles are rejected (#1922).
+         */
         EventStaffAssignRequest: {
             /** Format: email */
             email: string;
-            role: string;
+            role: components["schemas"]["EventStaffAssignRequestRoleEnum"];
         };
+        /**
+         * @description * `moderator` - Moderator
+         *     * `judge` - Judge
+         *     * `co_organizer` - Co_Organizer
+         * @enum {string}
+         */
+        EventStaffAssignRequestRoleEnum: "moderator" | "judge" | "co_organizer";
         /** @description Envelope for the event staff listing. */
         EventStaffListResponse: {
             readonly staff: components["schemas"]["EventStaffMember"][];
@@ -3236,6 +3271,8 @@ export interface components {
             /** Format: date-time */
             readonly event_end: string;
             readonly team_mode: boolean;
+            readonly access_role: string | null;
+            readonly access_capabilities: string[];
         };
         /**
          * @description Create/update request body: the mutable event fields only.
@@ -7580,6 +7617,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledTask"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_transfer_ownership_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventOwnershipTransferRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventOwnershipTransferRequest"];
+                "multipart/form-data": components["schemas"]["EventOwnershipTransferRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventMutationResult"];
                 };
             };
             /** @description Authentication failed. */

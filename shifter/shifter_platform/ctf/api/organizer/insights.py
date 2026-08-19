@@ -26,6 +26,7 @@ from ctf.api.serializers import (
     EventPageWriteSerializer,
     ParticipantDeleteResultSerializer,
 )
+from ctf.enums import EventCapability
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -47,7 +48,7 @@ class EventAnalyticsView(APIView):
         from ctf.services.scoring import get_event_analytics
 
         try:
-            _resolve_owned_event(request, event_id, capability="submissions")
+            _resolve_owned_event(request, event_id, capability=EventCapability.SUBMISSIONS)
         except _CtfApiError as exc:
             return exc.to_response(request)
         return Response(get_event_analytics(event_id))
@@ -81,7 +82,7 @@ class EventPagesView(APIView):
         from ctf.services.event.pages import list_active_pages
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.CONTENT)
         except _CtfApiError as exc:
             return exc.to_response(request)
         pages = list_active_pages(event_id, include_reserved=True)
@@ -94,7 +95,7 @@ class EventPagesView(APIView):
         from ctf.services.event.pages import create_event_page
 
         try:
-            event = _resolve_owned_event(request, event_id)
+            event = _resolve_owned_event(request, event_id, capability=EventCapability.CONTENT)
             serializer = EventPageWriteSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
@@ -126,7 +127,7 @@ class EventPageDetailView(APIView):
         page = CTFEventPage.objects.select_related("event").filter(pk=page_id, deleted_at__isnull=True).first()
         if page is None:
             _raise_not_found("Page not found")
-        _resolve_owned_event(request, page.event_id)
+        _resolve_owned_event(request, page.event_id, capability=EventCapability.CONTENT)
         return page
 
     @extend_schema(request=EventPageWriteSerializer, responses=EventPageSerializer)

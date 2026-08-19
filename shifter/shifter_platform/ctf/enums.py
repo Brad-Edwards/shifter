@@ -106,15 +106,20 @@ class ParticipantRole(StrEnum):
 
 
 class EventStaffRole(StrEnum):
-    """Delegated event-staff roles beyond the owning organizer (CTF-607).
+    """Delegated event-staff roles beyond the owning organizer (CTF-607, #1922).
 
     ``moderator`` manages participants and announcements; ``judge`` reviews
     submissions and grants awards. Neither can modify event configuration,
-    challenges, or scoring settings.
+    challenges, or scoring settings. ``co_organizer`` holds every operational
+    event capability the owner has (configuration, challenges, participants,
+    lifecycle, deletion, ...), but never the owner-only authority-topology
+    operations (staff management and ownership transfer); the owning organizer
+    (``CTFEvent.created_by``) always remains the single canonical owner.
     """
 
     MODERATOR = "moderator"
     JUDGE = "judge"
+    CO_ORGANIZER = "co_organizer"
 
     def __str__(self) -> str:
         """Return the string value for database storage."""
@@ -124,6 +129,37 @@ class EventStaffRole(StrEnum):
     def choices(cls) -> list[tuple[str, str]]:
         """Return choices for Django model field."""
         return [(role.value, role.name.title()) for role in cls]
+
+
+class EventCapability(StrEnum):
+    """Closed vocabulary of delegable event-management capabilities (#1922).
+
+    Every event authorization gate names one capability explicitly; the
+    ``ctf.services.event.staff`` role map decides which roles hold it. The
+    string values are the historical capability nouns (``participants``,
+    ``notifications``, ``awards``, ``submissions``) plus the operational
+    surfaces a full co-organizer administers. Owner-only authority-topology
+    operations (staff management, ownership transfer) are NOT capabilities:
+    they use an explicit owner predicate so no role map can ever grant them.
+    Unknown capabilities deny (fail closed); there is no wildcard grant.
+    """
+
+    CONFIG = "config"
+    CHALLENGES = "challenges"
+    PARTICIPANTS = "participants"
+    TEAMS = "teams"
+    RANGES = "ranges"
+    SCORING = "scoring"
+    NOTIFICATIONS = "notifications"
+    AWARDS = "awards"
+    SUBMISSIONS = "submissions"
+    CONTENT = "content"
+    LIFECYCLE = "lifecycle"
+    DELETE = "delete"
+
+    def __str__(self) -> str:
+        """Return the string value used at authorization gates."""
+        return self.value
 
 
 class ChallengeDifficulty(StrEnum):

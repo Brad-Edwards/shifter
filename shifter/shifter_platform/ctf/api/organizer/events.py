@@ -16,6 +16,7 @@ from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
     _actor,
+    _actor_may_manage,
     _raise_bad_request,
     _raise_forbidden,
     _raise_invalid_event,
@@ -32,6 +33,7 @@ from ctf.api.serializers import (
     ForceDeleteEventRequestSerializer,
     ForceDeleteEventResultSerializer,
 )
+from ctf.enums import EventCapability
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -50,7 +52,7 @@ class EventListView(APIView):
         from ctf.services import get_organizer_events
 
         events = get_organizer_events(_actor(request))
-        return Response({"events": EventSummarySerializer(events, many=True).data})
+        return Response({"events": EventSummarySerializer(events, many=True, context={"request": request}).data})
 
     @extend_schema(request=EventWriteSerializer, responses={201: EventMutationResultSerializer})
     def post(self, request: Request) -> Response:
@@ -86,10 +88,10 @@ class EventDetailView(APIView):
     def get(self, request: Request, event_id: UUID) -> Response:
         """Return the full event detail projection."""
         try:
-            event = _resolve_owned_event(request, event_id)
+            event = _resolve_owned_event(request, event_id, capability=EventCapability.CONFIG)
         except _CtfApiError as exc:
             return exc.to_response(request)
-        return Response(EventDetailSerializer(event).data)
+        return Response(EventDetailSerializer(event, context={"request": request}).data)
 
     @extend_schema(request=EventWriteSerializer, responses=EventMutationResultSerializer)
     def put(self, request: Request, event_id: UUID) -> Response:
@@ -100,11 +102,11 @@ class EventDetailView(APIView):
         from ctf.services import update_event
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.CONFIG)
             serializer = EventWriteSerializer(data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
             try:
-                updated = update_event(event_id, dict(serializer.validated_data))
+                updated = update_event(event_id, dict(serializer.validated_data), actor_id=_actor(request).pk)
             except (CTFValidationError, CTFStateError, ValidationError):
                 _raise_invalid_event()
             return Response({"id": str(updated.id), "name": updated.name, "status": updated.status})
@@ -117,10 +119,10 @@ class EventDetailView(APIView):
         from ctf.services import delete_event
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.DELETE)
         except _CtfApiError as exc:
             return exc.to_response(request)
-        delete_event(event_id)
+        delete_event(event_id, actor_id=_actor(request).pk)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -141,7 +143,7 @@ class ForceDeleteEventView(APIView):
                 event = CTFEvent.all_objects.get(pk=event_id)
             except CTFEvent.DoesNotExist:
                 _raise_not_found(_EVENT_NOT_FOUND)
-            if event.created_by_id != _actor(request).pk:
+            if not _actor_may_manage(request, event, EventCapability.DELETE):
                 _raise_forbidden()
             confirmation_name = request.data.get("confirmation_name") if isinstance(request.data, dict) else None
             if not confirmation_name:

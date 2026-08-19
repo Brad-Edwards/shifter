@@ -99,7 +99,7 @@ from ctf.api.organizer.scoreboard import (
     OrganizerScoreboardView,
     ScoreTimelineView,
 )
-from ctf.api.organizer.staff import EventStaffMemberView, EventStaffView
+from ctf.api.organizer.staff import EventOwnershipTransferView, EventStaffMemberView, EventStaffView
 from ctf.api.organizer.transfer import (
     ChallengeExportView,
     ChallengeImportView,
@@ -127,6 +127,7 @@ __all__ = [
     "EventEmailTemplateView",
     "EventLifecycleView",
     "EventListView",
+    "EventOwnershipTransferView",
     "EventPageDetailView",
     "EventPagesView",
     "EventRangeListView",

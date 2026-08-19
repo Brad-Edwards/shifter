@@ -33,6 +33,26 @@ class ManagedContentSummarySerializer(serializers.Serializer):
     is_refreshable = serializers.BooleanField(read_only=True)
 
 
+def _access_role(serializer: serializers.Serializer, event: CTFEvent) -> str | None:
+    """Server-derived access role of the requesting actor on ``event`` (#1922)."""
+    from ctf.services.event import event_access_projection
+
+    request = serializer.context.get("request")
+    actor_id = getattr(getattr(request, "user", None), "pk", None)
+    role, _caps = event_access_projection(actor_id, event)
+    return role
+
+
+def _access_capabilities(serializer: serializers.Serializer, event: CTFEvent) -> list[str]:
+    """Server-derived advisory capabilities of the requesting actor on ``event`` (#1922)."""
+    from ctf.services.event import event_access_projection
+
+    request = serializer.context.get("request")
+    actor_id = getattr(getattr(request, "user", None), "pk", None)
+    _role, caps = event_access_projection(actor_id, event)
+    return caps
+
+
 class EventSummarySerializer(serializers.Serializer):
     """List projection of one of an organizer's events."""
 
@@ -42,6 +62,20 @@ class EventSummarySerializer(serializers.Serializer):
     event_start = serializers.DateTimeField(read_only=True)
     event_end = serializers.DateTimeField(read_only=True)
     team_mode = serializers.BooleanField(read_only=True)
+    # Server-derived access hints for the requesting actor (#1922); presentation
+    # only, never authorization.
+    access_role = serializers.SerializerMethodField()
+    access_capabilities = serializers.SerializerMethodField()
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_access_role(self, event: CTFEvent) -> str | None:
+        """Return the requesting actor's access role on this event."""
+        return _access_role(self, event)
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_access_capabilities(self, event: CTFEvent) -> list[str]:
+        """Return the requesting actor's advisory capabilities on this event."""
+        return _access_capabilities(self, event)
 
 
 class EventListResponseSerializer(serializers.Serializer):
@@ -84,6 +118,20 @@ class EventDetailSerializer(serializers.Serializer):
     visible_os_types = serializers.ListField(child=serializers.CharField(), read_only=True)
     theme_color = serializers.CharField(read_only=True, allow_blank=True)
     managed_content = serializers.SerializerMethodField()
+    # Server-derived access hints for the requesting actor (#1922); presentation
+    # only, never authorization.
+    access_role = serializers.SerializerMethodField()
+    access_capabilities = serializers.SerializerMethodField()
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_access_role(self, event: CTFEvent) -> str | None:
+        """Return the requesting actor's access role on this event."""
+        return _access_role(self, event)
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_access_capabilities(self, event: CTFEvent) -> list[str]:
+        """Return the requesting actor's advisory capabilities on this event."""
+        return _access_capabilities(self, event)
 
     @extend_schema_field(ManagedContentSummarySerializer(allow_null=True))
     def get_managed_content(self, event: CTFEvent) -> dict[str, object] | None:

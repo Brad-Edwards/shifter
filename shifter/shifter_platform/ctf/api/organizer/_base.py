@@ -21,10 +21,20 @@ from rest_framework import status
 from rest_framework.request import Request
 
 from ctf.api._base import _CtfApiError, ctf_actor_user
+from ctf.enums import EventCapability
 from shared.api_tokens import scopes
 
-# Staff-delegable capability selector: one noun, several, or None (owner-only).
+# Event-authorization selector for a resolver: one capability, several, the
+# explicit owner-only sentinel, or None. A full co-organizer is admitted for any
+# capability their role grants; OWNER_ONLY and None admit only the exact owner
+# (#1922). Prefer the explicit OWNER_ONLY sentinel at owner-only call sites so a
+# capability is never silently omitted.
 Capability = str | tuple[str, ...] | None
+
+# Explicit owner-only operation marker. Authority-topology operations (staff
+# management, ownership transfer) pass this instead of a capability so no role
+# map can ever grant them.
+OWNER_ONLY = "__owner_only__"
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -124,16 +134,21 @@ def _resolve_owned_event(request: Request, event_id: UUID, *, capability: Capabi
 
 
 def _actor_may_manage(request: Request, event: CTFEvent, capability: Capability) -> bool:
-    """Owner always; delegated staff only for an explicitly named capability."""
+    """Authorize the actor against the canonical event-capability policy.
+
+    ``OWNER_ONLY`` and ``None`` admit only the exact owner. A named capability
+    (or a tuple of alternatives) is evaluated through :func:`actor_can_exercise`
+    for owners and staff alike, so an unknown/misspelled capability fails closed
+    for everyone — including the owner — and every alternative in a tuple is
+    checked individually rather than stringified (#1922 review).
+    """
     actor = _actor(request)
-    if event.created_by_id == actor.pk:
-        return True
-    if capability is None:
-        return False
-    from ctf.services.event import actor_has_event_capability
+    if capability is None or capability == OWNER_ONLY:
+        return event.created_by_id == actor.pk
+    from ctf.services.event import actor_can_exercise
 
     wanted = (capability,) if isinstance(capability, str) else capability
-    return any(actor_has_event_capability(actor, event, item) for item in wanted)
+    return any(actor_can_exercise(actor.pk, event, item) for item in wanted)
 
 
 def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallenge:
@@ -149,7 +164,7 @@ def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallen
         challenge = get_challenge(challenge_id)
     except CTFNotFoundError:
         _raise_not_found(_CHALLENGE_NOT_FOUND)
-    if not _actor_may_manage(request, challenge.event, None):
+    if not _actor_may_manage(request, challenge.event, EventCapability.CHALLENGES.value):
         _raise_forbidden()
     return challenge
 

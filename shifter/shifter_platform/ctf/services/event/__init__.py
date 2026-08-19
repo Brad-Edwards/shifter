@@ -33,10 +33,14 @@ from django.db import transaction
 
 from ctf.models import CTFEvent
 from ctf.services.event.staff import (
+    actor_can_exercise,
     actor_has_event_capability,
+    actor_is_event_owner,
     assign_event_staff,
+    event_access_projection,
     list_event_staff,
     revoke_event_staff,
+    transfer_event_ownership,
 )
 
 from ._crud import (
@@ -46,11 +50,11 @@ from ._crud import (
     event_pk_if_exists,
     force_delete_event,
     get_event,
-    list_events_for_organizer,
     update_event,
 )
 from ._lifecycle import (
     activate_event,
+    apply_event_lifecycle_transition,
     archive_event,
     cancel_event,
     complete_event,
@@ -70,7 +74,10 @@ __all__ = (
     "_cancel_event_tasks",
     "_schedule_event_tasks",
     "activate_event",
+    "actor_can_exercise",
     "actor_has_event_capability",
+    "actor_is_event_owner",
+    "apply_event_lifecycle_transition",
     "archive_event",
     "assign_event_staff",
     "cancel_event",
@@ -78,13 +85,13 @@ __all__ = (
     "create_event",
     "delete_event",
     "end_event",
+    "event_access_projection",
     "event_pk_if_exists",
     "force_delete_event",
     "get_event",
     "get_event_stats",
     "get_organizer_events",
     "list_event_staff",
-    "list_events_for_organizer",
     "open_registration",
     "pause_event",
     "resume_event",
@@ -92,5 +99,6 @@ __all__ = (
     "schedule_event",
     "start_event",
     "transaction",
+    "transfer_event_ownership",
     "update_event",
 )

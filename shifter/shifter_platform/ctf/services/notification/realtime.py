@@ -45,11 +45,19 @@ def _can_subscribe(user: AbstractBaseUser | AnonymousUser, topic: str) -> bool:
     except ValueError:
         return False
     event = CTFEvent.objects.filter(pk=event_id, deleted_at__isnull=True).only("id", "created_by_id").first()
-    return event is not None and (
-        event.created_by_id == user_id
-        or CTFEventStaff.objects.filter(event=event, user_id=user_id, deleted_at__isnull=True).exists()
-        or CTFParticipant.objects.filter(viewing_participant_q(), event=event, user_id=user_id).exists()
-    )
+    if event is None:
+        return False
+    if event.created_by_id == user_id:
+        return True
+    # A live staff row authorizes a subscription only while the account still
+    # holds the global CTF Organizer role (#1922 review — no stale-row bypass).
+    from ctf.services.event.staff import actor_is_active_ctf_organizer
+
+    if CTFEventStaff.objects.filter(
+        event=event, user_id=user_id, deleted_at__isnull=True
+    ).exists() and actor_is_active_ctf_organizer(user_id):
+        return True
+    return CTFParticipant.objects.filter(viewing_participant_q(), event=event, user_id=user_id).exists()
 
 
 def register_ctf_notifications() -> None:
@@ -87,6 +95,7 @@ def publish_event_notification(
         register_ctf_notifications()
         if recipient_ids is None:
             from ctf.models import CTFParticipant
+            from ctf.services.event.staff import eligible_co_organizer_ids
             from ctf.services.participant import viewing_participant_q
 
             recipient_ids = list(
@@ -94,7 +103,14 @@ def publish_event_notification(
                 .values_list("user_id", flat=True)
                 .distinct()
             )
+            # Organizer-directed recipients are the canonical owner plus live full
+            # co-organizers who are still eligible (active + global CTF Organizer
+            # role), derived from current assignments and de-duplicated (#1922).
+            # Distinct from notification sender/`created_by` attribution;
+            # moderators/judges are unchanged.
             recipient_ids.append(event.created_by_id)
+            recipient_ids.extend(eligible_co_organizer_ids(event))
+            recipient_ids = list(dict.fromkeys(recipient_ids))
         publish_notification(
             NOTIFICATION_TYPE,
             topic=event_topic(event.pk),

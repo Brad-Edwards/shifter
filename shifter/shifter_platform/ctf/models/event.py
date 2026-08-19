@@ -393,13 +393,17 @@ class CTFEvent(CTFBaseModel):
 
 
 class CTFEventStaff(CTFBaseModel):
-    """A delegated staff assignment on one event (CTF-607).
+    """A delegated staff assignment on one event (CTF-607, #1922).
 
-    Grants a second organizer-tier user a bounded slice of event
+    Grants a second organizer-tier user a role-scoped slice of event
     management: moderators handle participants and announcements, judges
-    handle submissions review and awards. The owning organizer
-    (``CTFEvent.created_by``) always retains every capability; staff rows
-    never widen access to event configuration, challenges, or scoring.
+    handle submissions review and awards, and co-organizers hold every
+    operational capability the owner has (configuration, challenges,
+    participants, lifecycle, deletion, ...). The owning organizer
+    (``CTFEvent.created_by``) is the single canonical owner, always retains
+    every capability, and holds no staff row of their own. Authority-topology
+    operations (staff management and ownership transfer) are never delegated —
+    they remain owner-only.
     """
 
     event = models.ForeignKey(
@@ -417,7 +421,10 @@ class CTFEventStaff(CTFBaseModel):
     role = models.CharField(
         max_length=16,
         choices=EventStaffRole.choices(),
-        help_text="Delegated role: moderator (participants, announcements) or judge (submissions, awards)",
+        help_text=(
+            "Delegated role: moderator (participants, announcements), judge "
+            "(submissions, awards), or co_organizer (all operational capabilities)"
+        ),
     )
 
     class Meta:
@@ -432,6 +439,13 @@ class CTFEventStaff(CTFBaseModel):
                 fields=["event", "user"],
                 condition=models.Q(deleted_at__isnull=True),
                 name="unique_active_ctf_event_staff_user",
+            ),
+            # Authorization-data boundary: the persisted role must be one of the
+            # closed EventStaffRole values (#1922). Model choices / serializer /
+            # full_clean are useful layers but not the final gate.
+            models.CheckConstraint(
+                condition=models.Q(role__in=[role.value for role in EventStaffRole]),
+                name="ctf_event_staff_role_valid",
             ),
         ]
 

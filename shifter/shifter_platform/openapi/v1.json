@@ -4634,6 +4634,86 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/transfer-ownership/": {
+      "post": {
+        "operationId": "ctf_events_transfer_ownership_create",
+        "description": "Promote a current co-organizer to owner; the previous owner stays a co-organizer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventMutationResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/webhooks/": {
       "get": {
         "operationId": "ctf_events_webhooks_retrieve",
@@ -13707,9 +13787,23 @@
             ],
             "nullable": true,
             "readOnly": true
+          },
+          "access_role": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "access_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
           }
         },
         "required": [
+          "access_capabilities",
+          "access_role",
           "attempt_limit_cooldown_seconds",
           "attempt_limit_mode",
           "auto_cleanup",
@@ -13806,6 +13900,19 @@
           "status"
         ]
       },
+      "EventOwnershipTransferRequest": {
+        "type": "object",
+        "description": "Ownership-transfer request: the target user's id (an existing co-organizer).",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
       "EventPage": {
         "type": "object",
         "description": "One organizer-authored event page (CTF-1303).",
@@ -13884,21 +13991,29 @@
       },
       "EventStaffAssignRequest": {
         "type": "object",
-        "description": "Assignment request: organizer-tier user email plus staff role.",
+        "description": "Assignment request: organizer-tier user email plus staff role.\n\nThe role is validated against the closed ``EventStaffRole`` vocabulary at the\nHTTP boundary (and again in the service); unknown roles are rejected (#1922).",
         "properties": {
           "email": {
             "type": "string",
             "format": "email"
           },
           "role": {
-            "type": "string",
-            "maxLength": 16
+            "$ref": "#/components/schemas/EventStaffAssignRequestRoleEnum"
           }
         },
         "required": [
           "email",
           "role"
         ]
+      },
+      "EventStaffAssignRequestRoleEnum": {
+        "enum": [
+          "moderator",
+          "judge",
+          "co_organizer"
+        ],
+        "type": "string",
+        "description": "* `moderator` - Moderator\n* `judge` - Judge\n* `co_organizer` - Co_Organizer"
       },
       "EventStaffListResponse": {
         "type": "object",
@@ -13975,9 +14090,23 @@
           "team_mode": {
             "type": "boolean",
             "readOnly": true
+          },
+          "access_role": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "access_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
           }
         },
         "required": [
+          "access_capabilities",
+          "access_role",
           "event_end",
           "event_start",
           "id",

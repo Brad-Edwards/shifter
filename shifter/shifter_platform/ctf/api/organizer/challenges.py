@@ -16,6 +16,7 @@ from ctf.api.organizer._base import (
     _EVENT_WRITE,
     _INVALID_CHALLENGE,
     _actor,
+    _actor_may_manage,
     _challenge_detail_payload,
     _delete_via_service,
     _raise_bad_request,
@@ -36,6 +37,7 @@ from ctf.api.serializers import (
     HintWriteSerializer,
     OrganizerChallengeDetailSerializer,
 )
+from ctf.enums import EventCapability
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -55,7 +57,7 @@ class ChallengeListView(APIView):
         from ctf.services import list_challenges_for_event
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.CHALLENGES)
             try:
                 challenges = list_challenges_for_event(event_id, actor_id=_actor(request).pk).prefetch_related(
                     "tags", "topics"
@@ -86,7 +88,7 @@ class ChallengeListView(APIView):
         from ctf.services import create_challenge
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.CHALLENGES)
             serializer = ChallengeWriteSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             try:
@@ -239,7 +241,7 @@ class RemoveFlagView(APIView):
                 flag_obj = CTFFlag.objects.select_related("challenge__event").get(pk=flag_id)
             except CTFFlag.DoesNotExist:
                 _raise_not_found("Flag not found")
-            if flag_obj.challenge.event.created_by_id != _actor(request).pk:
+            if not _actor_may_manage(request, flag_obj.challenge.event, EventCapability.CHALLENGES):
                 _raise_forbidden()
             return _delete_via_service(request, remove_flag, flag_id)
         except _CtfApiError as exc:

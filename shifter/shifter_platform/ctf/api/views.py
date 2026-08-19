@@ -23,11 +23,11 @@ def _scoreboard_access_allowed(event: CTFEvent, request: Request) -> bool:
     """CTF-404 three-mode scoreboard access policy for the public surface.
 
     ``public`` serves anyone (unauthenticated projector screens included),
-    ``participants`` requires the viewer to be a registered participant or the
-    event organizer, and ``hidden`` serves nobody here — organizers use their
-    own always-on scoreboard surface.
+    ``participants`` requires the viewer to be a registered participant or an
+    event organizer (owner or full co-organizer, #1922), and ``hidden`` serves
+    nobody here — organizers use their own always-on scoreboard surface.
     """
-    from ctf.enums import ScoreboardVisibility
+    from ctf.enums import EventCapability, ScoreboardVisibility
 
     visibility = event.scoreboard_visibility
     if visibility != ScoreboardVisibility.PARTICIPANTS.value:
@@ -36,8 +36,14 @@ def _scoreboard_access_allowed(event: CTFEvent, request: Request) -> bool:
     if not user.is_authenticated:
         return False
     from ctf.models import CTFParticipant
+    from ctf.services.event.staff import actor_can_exercise
 
-    return event.created_by_id == user.pk or CTFParticipant.objects.filter(event=event, user=user).exists()
+    # CONFIG is held only by the owner and full co-organizers, so this admits an
+    # organizer of the event or any registered participant.
+    return (
+        actor_can_exercise(user.pk, event, EventCapability.CONFIG)
+        or CTFParticipant.objects.filter(event=event, user=user).exists()
+    )
 
 
 class PublicScoreboardView(APIView):

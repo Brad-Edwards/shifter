@@ -1,7 +1,8 @@
-"""Event staff management views (CTF-607): moderators and judges.
+"""Event staff and ownership authority-topology views (CTF-607, #1922).
 
-Staff assignment stays with the owning organizer — capability delegation
-never includes delegating further.
+Staff management (moderators, judges, co-organizers) and canonical-ownership
+transfer stay with the owning organizer — capability delegation never includes
+delegating further, which is what keeps a co-organizer from escalating itself.
 """
 
 from __future__ import annotations
@@ -19,12 +20,15 @@ from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
+    OWNER_ONLY,
     _actor,
     _raise_bad_request,
     _raise_not_found,
     _resolve_owned_event,
 )
 from ctf.api.serializers import (
+    EventMutationResultSerializer,
+    EventOwnershipTransferRequestSerializer,
     EventStaffAssignRequestSerializer,
     EventStaffListResponseSerializer,
     EventStaffMemberSerializer,
@@ -62,7 +66,7 @@ class EventStaffView(APIView):
         from ctf.services.event import list_event_staff
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=OWNER_ONLY)
         except _CtfApiError as exc:
             return exc.to_response(request)
         return Response({"staff": [_staff_payload(s) for s in list_event_staff(event_id)]})
@@ -74,7 +78,7 @@ class EventStaffView(APIView):
         from ctf.services.event import assign_event_staff
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=OWNER_ONLY)
             serializer = EventStaffAssignRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             try:
@@ -106,7 +110,7 @@ class EventStaffMemberView(APIView):
         from ctf.services.event import revoke_event_staff
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=OWNER_ONLY)
             try:
                 revoke_event_staff(event_id, _actor(request), user_id)
             except CTFNotFoundError as exc:
@@ -114,5 +118,37 @@ class EventStaffMemberView(APIView):
             except CTFValidationError as exc:
                 _raise_bad_request(str(exc))
             return Response({"deleted": True, "id": str(user_id)})
+        except _CtfApiError as exc:
+            return exc.to_response(request)
+
+
+class EventOwnershipTransferView(APIView):
+    """Transfer canonical ownership to a co-organizer (POST, owner-only, #1922)."""
+
+    permission_classes = CTF_ORGANIZER_PERMISSIONS
+    required_write_scopes = _EVENT_WRITE
+
+    @extend_schema(request=EventOwnershipTransferRequestSerializer, responses=EventMutationResultSerializer)
+    def post(self, request: Request, event_id: UUID) -> Response:
+        """Promote a current co-organizer to owner; the previous owner stays a co-organizer."""
+        from ctf.exceptions import CTFNotFoundError, CTFValidationError
+        from ctf.services.event import transfer_event_ownership
+
+        try:
+            # Owner-only: only the exact owner may hand off ownership.
+            _resolve_owned_event(request, event_id, capability=OWNER_ONLY)
+            serializer = EventOwnershipTransferRequestSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            try:
+                event = transfer_event_ownership(
+                    event_id,
+                    _actor(request),
+                    serializer.validated_data["user_id"],
+                )
+            except CTFNotFoundError as exc:
+                _raise_not_found(str(exc))
+            except CTFValidationError as exc:
+                _raise_bad_request(str(exc))
+            return Response({"id": str(event.id), "name": event.name, "status": event.status})
         except _CtfApiError as exc:
             return exc.to_response(request)

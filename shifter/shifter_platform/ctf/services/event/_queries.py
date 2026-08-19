@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from ctf.models import CTFEvent
 
@@ -17,16 +17,30 @@ def get_organizer_events(
     *,
     status: str | None = None,
 ) -> QuerySet[CTFEvent]:
-    """Get events created by an organizer with optional status filter.
+    """Get events an organizer administers, with an optional status filter.
+
+    An organizer administers an event when they are its canonical owner
+    (``created_by``) OR hold a live full co-organizer assignment on it (#1922).
+    Moderator/judge assignments are bounded delegations, not organizer listings,
+    so they are intentionally excluded here.
 
     Args:
         user: The organizer user.
         status: Optional status filter.
 
     Returns:
-        QuerySet of CTFEvent instances.
+        Distinct QuerySet of CTFEvent instances the user administers.
     """
-    queryset = CTFEvent.objects.filter(created_by=user)
+    from ctf.enums import EventStaffRole
+
+    queryset = CTFEvent.objects.filter(
+        Q(created_by=user)
+        | Q(
+            staff__user=user,
+            staff__role=EventStaffRole.CO_ORGANIZER.value,
+            staff__deleted_at__isnull=True,
+        )
+    ).distinct()
 
     if status:
         queryset = queryset.filter(status=status)

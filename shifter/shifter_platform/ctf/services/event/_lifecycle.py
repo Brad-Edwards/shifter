@@ -397,3 +397,47 @@ def _transition_event(event: CTFEvent, target: EventStatus) -> None:
 
     event.status = target.value
     event.save(update_fields=["status", "updated_at"])
+
+
+# Interactive organizer lifecycle actions -> transition functions. The
+# background scheduler reaches the transition functions directly as a trusted
+# system actor; the organizer endpoint routes through
+# ``apply_event_lifecycle_transition`` so the event policy is asserted at the
+# service boundary too (#1922 review).
+_INTERACTIVE_LIFECYCLE_ACTIONS = {
+    "open_registration": open_registration,
+    "activate": activate_event,
+    "pause": pause_event,
+    "resume": resume_event,
+    "end": complete_event,
+    "cancel": cancel_event,
+}
+
+
+def apply_event_lifecycle_transition(event: CTFEvent, action: str, *, actor_id: int | None = None) -> bool:
+    """Apply one interactive lifecycle transition, asserting the ``lifecycle`` capability.
+
+    Args:
+        event: The event to transition.
+        action: One of the interactive lifecycle action names.
+        actor_id: Interactive caller; when supplied the ``lifecycle`` capability
+            is asserted at the service boundary (defense in depth, #1922).
+
+    Returns:
+        True if the transition succeeded, False if refused by the state machine.
+
+    Raises:
+        CTFValidationError: If ``action`` is not a known interactive action.
+        CTFPermissionError: If ``actor_id`` lacks the ``lifecycle`` capability.
+    """
+    from ctf.exceptions import CTFValidationError
+
+    if actor_id is not None:
+        from ctf.enums import EventCapability
+        from ctf.services.authorization import assert_event_capability
+
+        assert_event_capability(actor_id, event, EventCapability.LIFECYCLE)
+    transition = _INTERACTIVE_LIFECYCLE_ACTIONS.get(action)
+    if transition is None:
+        raise CTFValidationError("Unknown lifecycle action", details={"action": action})
+    return transition(event)
