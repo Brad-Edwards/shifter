@@ -13,6 +13,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    audit_admin_event_mutation,
+)
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
@@ -31,6 +34,7 @@ from ctf.api.serializers import (
     WebhookWriteSerializer,
 )
 from ctf.enums import EventCapability
+from shared.audit import AuditAction
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -68,6 +72,7 @@ class ChallengeImportView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(request=ChallengeImportRequestSerializer, responses=ChallengeImportResultSerializer)
+    @audit_admin_event_mutation("challenge.import", action=AuditAction.CREATE)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Run a partial-success import of the posted document."""
         from ctf.exceptions import CTFValidationError
@@ -142,6 +147,7 @@ class EventWebhooksView(APIView):
         return Response({"webhooks": [_webhook_payload(h) for h in hooks]})
 
     @extend_schema(request=WebhookWriteSerializer, responses=WebhookSerializer)
+    @audit_admin_event_mutation("webhook.create", action=AuditAction.CREATE)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Register a webhook endpoint."""
         from ctf.services.webhook import WEBHOOK_EVENT_TYPES, create_event_webhook
@@ -173,6 +179,7 @@ class WebhookDetailView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(responses=ParticipantDeleteResultSerializer)
+    @audit_admin_event_mutation("webhook.delete", action=AuditAction.DELETE)
     def delete(self, request: Request, webhook_id: UUID) -> Response:
         """Soft-delete the webhook; the service asserts the config capability on its event."""
         from ctf.exceptions import CTFNotFoundError, CTFPermissionError

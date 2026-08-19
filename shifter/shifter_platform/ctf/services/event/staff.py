@@ -1,8 +1,8 @@
-"""Event-staff roles and authority-topology mutations (CTF-607, #1922).
+"""Event-staff roles and authority-topology mutations (CTF-607, #1922, #1923).
 
 The owning organizer (``CTFEvent.created_by``) is the single canonical owner and
 always holds every capability. ``CTFEventStaff`` rows grant other organizer-tier
-users a bounded slice of one event's management surface, keyed by a closed
+users a role-scoped slice of one event's management surface, keyed by a closed
 :class:`ctf.enums.EventCapability` vocabulary and a fail-closed role map:
 
 - ``moderator``: ``participants`` and ``notifications``
@@ -11,11 +11,13 @@ users a bounded slice of one event's management surface, keyed by a closed
   participants, teams, ranges, scoring, notifications, awards, submissions,
   content, lifecycle, deletion)
 
-Authority-topology operations — listing/assigning/re-roling/revoking staff and
-transferring canonical ownership — are NOT capabilities. They use an explicit
-owner predicate so no role map can ever grant them, which is what keeps a
-co-organizer from escalating itself or removing the owner's control. Unknown
-roles and unknown capabilities deny; there is no wildcard grant.
+Authority is resolved centrally by ``ctf.services.authorization`` (ADR-052): the
+least authority that admits the actor, in the order owner, delegated event-staff
+capability, then the platform-admin override. Authority-topology operations —
+listing/assigning/re-roling/revoking staff and transferring canonical ownership —
+are owner-only (``capability=None``): delegated staff can never exercise them, so
+a co-organizer cannot escalate itself or remove the owner's control; the
+platform administrator may, as legitimate global administration.
 """
 
 from __future__ import annotations
@@ -50,11 +52,16 @@ _ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
     EventStaffRole.CO_ORGANIZER.value: frozenset(cap.value for cap in EventCapability),
 }
 
-# The complete closed capability vocabulary. A capability outside this set is
-# unknown (misspelled, or introduced without a role-map update) and denies for
-# everyone — including the owner — so the vocabulary fails closed rather than
-# silently authorizing an owner request against a typo (#1922 review).
-_ALL_CAPABILITIES: frozenset[str] = frozenset(cap.value for cap in EventCapability)
+# Closed set of delegable capability nouns, sorted for deterministic projections.
+# Owner and platform-admin authority cover all of them; a staff role covers a
+# subset (a full co-organizer covers all). Advisory only — the server re-checks
+# per operation (ADR-052-R2).
+ALL_DELEGABLE_CAPABILITIES: tuple[str, ...] = tuple(sorted(set().union(*_ROLE_CAPABILITIES.values())))
+
+
+def capabilities_for_role(role: str | None) -> tuple[str, ...]:
+    """Return the sorted delegable capabilities a staff ``role`` grants (empty if none)."""
+    return tuple(sorted(_ROLE_CAPABILITIES.get(role or "", frozenset())))
 
 
 def _live_staff_role(event: CTFEvent, user_id: int) -> str | None:
@@ -72,8 +79,9 @@ def actor_is_active_ctf_organizer(user_id: int | None) -> bool:
     Staff-derived authority is only valid while the account still holds the
     platform CTF Organizer role: a live ``CTFEventStaff`` row must never be an
     ambient source of authority after the global role is revoked or the account
-    is deactivated (#1922 review — stale-row bypass). The owner branch does not
-    use this; canonical ownership is a separate invariant.
+    is deactivated (#1922 review — stale-row bypass). The owner and platform-admin
+    branches do not use this; canonical ownership and the superuser override are
+    separate invariants.
     """
     if user_id is None:
         return False
@@ -81,6 +89,22 @@ def actor_is_active_ctf_organizer(user_id: int | None) -> bool:
 
     user = User.objects.filter(pk=user_id, is_active=True).first()
     return user is not None and get_user_role(user).is_ctf_organizer
+
+
+def staff_row_grants_capability(actor_pk: int, event: CTFEvent, capability: str) -> bool:
+    """Return whether a live staff row for ``actor_pk`` on ``event`` grants ``capability``.
+
+    The raw delegation check only: no owner or platform-admin fallback. The
+    authority resolver composes this with owner and override authority so the
+    least-authority order lives in one place (ADR-052-R2). A live row grants a
+    capability only while the account still holds the global CTF Organizer role
+    and is active, so a demoted account keeps no authority through a stale row
+    (#1922 review).
+    """
+    role = _live_staff_role(event, actor_pk)
+    if role is None or capability not in _ROLE_CAPABILITIES.get(role, frozenset()):
+        return False
+    return actor_is_active_ctf_organizer(actor_pk)
 
 
 def eligible_co_organizer_ids(event: CTFEvent) -> list[int]:
@@ -103,74 +127,39 @@ def eligible_co_organizer_ids(event: CTFEvent) -> list[int]:
     )
 
 
-def actor_is_event_owner(actor: User | AnonymousUser | int, event: CTFEvent) -> bool:
-    """Return whether ``actor`` is the exact canonical owner of ``event``."""
-    actor_pk = actor if isinstance(actor, int) else actor.pk
-    return actor_pk is not None and event.created_by_id == actor_pk
-
-
-def actor_can_exercise(actor_id: int | None, event: CTFEvent, capability: str) -> bool:
-    """Return whether ``actor_id`` may exercise ``capability`` on ``event`` (fail closed).
-
-    An unknown capability denies for everyone, the owner included, so a typo or a
-    newly introduced operation missing from the role map cannot slip through on
-    the owner branch (#1922 review).
-    """
-    if actor_id is None or str(capability) not in _ALL_CAPABILITIES:
-        return False
-    if event.created_by_id == actor_id:
-        return True
-    role = _live_staff_role(event, actor_id)
-    # A live staff row grants authority only when its role maps the capability AND
-    # the account still holds the global CTF Organizer role and is active (#1922
-    # review — a demoted account must not retain authority through a stale row).
-    return (
-        role is not None
-        and str(capability) in _ROLE_CAPABILITIES.get(role, frozenset())
-        and actor_is_active_ctf_organizer(actor_id)
-    )
-
-
 def actor_has_event_capability(actor: User | AnonymousUser, event: CTFEvent, capability: str) -> bool:
     """Return whether ``actor`` may exercise ``capability`` on ``event``.
 
-    The owning organizer always may; otherwise a live staff row whose role
-    grants the capability is required.
+    Admits the owning organizer, a live staff row whose role grants the
+    capability, or the platform-admin override (ADR-052). Delegates to the
+    service-owned authority resolver so callers share one least-authority policy.
     """
-    return actor_can_exercise(actor.pk, event, capability)
+    from ctf.services.authorization import resolve_event_authority
 
-
-def event_access_projection(actor_id: int | None, event: CTFEvent) -> tuple[str | None, list[str]]:
-    """Return ``(access_role, advisory_capabilities)`` for ``actor_id`` on ``event``.
-
-    Server-derived presentation hint (#1922): ``access_role`` is ``owner``,
-    ``co_organizer``, ``moderator``, ``judge``, or ``None``; the capability list
-    is the sorted set the role grants. A UI hides/disables controls the actor
-    cannot use, but the hint never authorizes — every mutation is still checked
-    server-side.
-    """
-    if actor_id is None:
-        return None, []
-    if event.created_by_id == actor_id:
-        return "owner", sorted(cap.value for cap in EventCapability)
-    role = _live_staff_role(event, actor_id)
-    return role, sorted(_ROLE_CAPABILITIES.get(role, frozenset())) if role else []
+    return resolve_event_authority(actor, event, capability=capability) is not None
 
 
 def _resolve_owned_event_for_staff(event_id: UUID, actor: User | AnonymousUser) -> CTFEvent:
-    """Load and lock the event, requiring exact ownership (authority topology is owner-only).
+    """Load and lock the event, requiring owner or platform-admin authority (ADR-052).
 
     Must run inside a transaction: the ``select_for_update`` row lock makes the
     event the stable per-event mutex so concurrent assign/re-role/revoke/transfer
-    commands authorize against the same owner.
+    commands authorize against the same owner. Staff management is an owner-only
+    capability that delegated moderators/judges/co-organizers cannot exercise
+    (``capability=None``), but administering an existing event's delegation graph
+    is legitimate platform administration, so the platform-admin override is
+    admitted alongside the owner. The override never auto-synthesizes the
+    administrator as staff; it only authorizes an explicit, audited mutation.
     """
+    from ctf.services.authorization import resolve_event_authority
+
     try:
         event = CTFEvent.objects.select_for_update().get(pk=event_id, deleted_at__isnull=True)
     except CTFEvent.DoesNotExist:
         raise CTFNotFoundError(f"Event {event_id} not found", details={"event_id": str(event_id)}) from None
-    if not actor_is_event_owner(actor, event):
+    if resolve_event_authority(actor, event, capability=None) is None:
         raise CTFValidationError(
-            "Only the event organizer may manage staff",
+            "Only the event organizer or a platform administrator may manage staff",
             code="CTF_PERMISSION_DENIED",
         )
     return event
@@ -180,10 +169,11 @@ def _resolve_owned_event_for_staff(event_id: UUID, actor: User | AnonymousUser) 
 def assign_event_staff(event_id: UUID, actor: User, email: str, role: str) -> CTFEventStaff:
     """Assign (or re-role) a staff member on an owned event.
 
-    Owner-only and locked. The target is resolved by email and must be an active
-    organizer-tier platform user — the organizer API surface requires that
-    platform role, so a standard user could never exercise the delegation.
-    Assigning an existing staff member changes their role. Strictly audited.
+    Owner-or-platform-admin and locked. The target is resolved by email and must
+    be an active organizer-tier platform user — the organizer API surface requires
+    that platform role, so a standard user could never exercise the delegation.
+    Assigning an existing staff member changes their role; re-submitting the
+    current role is an idempotent no-op. Strictly audited on a real mutation.
     """
     from ctf.bridges import get_user_role
     from ctf.services.audit import audit_event_staff_change
@@ -242,7 +232,7 @@ def assign_event_staff(event_id: UUID, actor: User, email: str, role: str) -> CT
 
 @transaction.atomic
 def revoke_event_staff(event_id: UUID, actor: User, user_id: int) -> bool:
-    """Remove a staff assignment from an owned event (owner-only, locked, audited).
+    """Remove a staff assignment from an owned event (owner-or-admin, locked, audited).
 
     The staff-revocation command never targets ``created_by`` (the owner holds no
     staff row), so it can never leave an event without an owner.
@@ -268,15 +258,17 @@ def revoke_event_staff(event_id: UUID, actor: User, user_id: int) -> bool:
 
 @transaction.atomic
 def transfer_event_ownership(event_id: UUID, actor: User, new_owner_user_id: int) -> CTFEvent:
-    """Transfer canonical ownership to an existing co-organizer (owner-only, locked, audited).
+    """Transfer canonical ownership to an existing co-organizer (owner-or-admin, locked, audited).
 
-    One atomic command: the target must already be a live co-organizer; in the
-    same transaction the target becomes ``created_by``, its now-redundant staff
-    row is soft-deleted, and the previous owner is retained as a co-organizer.
-    The non-null owner invariant is never transiently broken. Ownership transfer
-    does not move participant accounts, teams, ranges, tokens, or provider
-    credentials — those keep their existing product-specific owners.
+    One atomic command: the target must already be a live co-organizer who is
+    still an active CTF organizer; in the same transaction the target becomes
+    ``created_by``, its now-redundant staff row is soft-deleted, and the previous
+    owner is retained as a co-organizer. The non-null owner invariant is never
+    transiently broken. Ownership transfer does not move participant accounts,
+    teams, ranges, tokens, or provider credentials — those keep their existing
+    product-specific owners.
     """
+    from ctf.bridges import get_user_role
     from ctf.services.audit import audit_event_ownership_transferred
 
     event = _resolve_owned_event_for_staff(event_id, actor)
@@ -302,12 +294,9 @@ def transfer_event_ownership(event_id: UUID, actor: User, new_owner_user_id: int
             code="CTF_TRANSFER_TARGET_INVALID",
         )
     # Revalidate the target's CURRENT platform eligibility under the lock (#1922
-    # review F2): a co-organizer assignment can go stale if the user is later
+    # review): a co-organizer assignment can go stale if the user is later
     # deactivated or loses the CTF organizer role. Transferring to a stale
-    # assignment would make an ineligible account the canonical owner and could
-    # strand the event with no principal able to manage staff or transfer back.
-    from ctf.bridges import get_user_role
-
+    # assignment would make an ineligible account the canonical owner.
     target = User.objects.filter(pk=new_owner_user_id, is_active=True).first()
     if target is None or not get_user_role(target).is_ctf_organizer:
         raise CTFValidationError(

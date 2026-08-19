@@ -157,6 +157,8 @@ class RangePresentationSerializer(serializers.Serializer):
     is_ready = serializers.BooleanField()
     is_terminal = serializers.BooleanField()
     is_active = serializers.BooleanField()
+    pause_supported = serializers.BooleanField()
+    resume_supported = serializers.BooleanField()
 
 
 class LaunchRangeSerializer(serializers.Serializer):

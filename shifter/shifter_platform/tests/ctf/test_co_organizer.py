@@ -178,26 +178,29 @@ class TestCoOrganizerListing:
 
 
 class TestAccessProjection:
-    """Server-derived access_role / access_capabilities hints (#1922)."""
+    """Server-derived access_source / access_capabilities hints (#1922, ADR-052)."""
 
     def test_owner_projection(self, co_organized_event, authenticated_organizer_client):
         detail = call_json(
             authenticated_organizer_client, "get", "api_event_detail", kwargs={"event_id": co_organized_event.id}
         )
         body = detail.json()
-        assert body["access_role"] == "owner"
+        assert body["access_source"] == "owner"
         assert "delete" in body["access_capabilities"]
 
     def test_co_organizer_projection(self, co_organized_event, co_organizer_client):
         detail = call_json(co_organizer_client, "get", "api_event_detail", kwargs={"event_id": co_organized_event.id})
         body = detail.json()
-        assert body["access_role"] == "co_organizer"
+        # A co-organizer reaches the event through a live staff row; the advisory
+        # capability set is the full co-organizer grant.
+        assert body["access_source"] == "event_staff"
         assert "challenges" in body["access_capabilities"]
 
-    def test_listing_carries_access_role(self, co_organized_event, co_organizer_client):
+    def test_listing_carries_access_source(self, co_organized_event, co_organizer_client):
         listing = call_json(co_organizer_client, "get", "api_event_list")
         entry = next(e for e in listing.json()["events"] if e["id"] == str(co_organized_event.id))
-        assert entry["access_role"] == "co_organizer"
+        assert entry["access_source"] == "event_staff"
+        assert "challenges" in entry["access_capabilities"]
 
 
 class TestOwnershipTransfer:
@@ -320,10 +323,10 @@ class TestReviewFindingRegressions:
     def test_unknown_capability_fails_closed_even_for_owner(self, ctf_event, organizer_user):
         """F3: an unknown/misspelled capability denies for everyone, owner included."""
         from ctf.enums import EventCapability
-        from ctf.services.event.staff import actor_can_exercise
+        from ctf.services.authorization import resolve_event_authority
 
-        assert actor_can_exercise(organizer_user.pk, ctf_event, EventCapability.CONFIG.value) is True
-        assert actor_can_exercise(organizer_user.pk, ctf_event, "bogus_capability") is False
+        assert resolve_event_authority(organizer_user, ctf_event, capability=EventCapability.CONFIG.value) is not None
+        assert resolve_event_authority(organizer_user, ctf_event, capability="bogus_capability") is None
 
     def test_transfer_rejects_ineligible_target(
         self, co_organized_event, authenticated_organizer_client, co_organizer_user, organizer_user
@@ -370,22 +373,25 @@ def _demote(user: User) -> None:
 class TestReviewCycle2Regressions:
     """Locks the codex cycle-2 findings (#1922 review): fixes stay fixed."""
 
-    def test_resolver_denies_unknown_capability_for_owner(self, ctf_event, organizer_user, monkeypatch):
-        """C2-F1: the DRF resolver fails closed on an unknown capability, owner included."""
-        from ctf.api.organizer import _base
+    def test_resolver_denies_unknown_capability_for_owner(self, ctf_event, organizer_user):
+        """C2-F1: the authority resolver fails closed on an unknown capability, owner included."""
         from ctf.enums import EventCapability
+        from ctf.services.authorization import resolve_event_authority
 
-        monkeypatch.setattr(_base, "_actor", lambda _request: organizer_user)
-        assert _base._actor_may_manage(None, ctf_event, "bogus_capability") is False
-        assert _base._actor_may_manage(None, ctf_event, EventCapability.CONFIG) is True
+        assert resolve_event_authority(organizer_user, ctf_event, capability="bogus_capability") is None
+        assert resolve_event_authority(organizer_user, ctf_event, capability=EventCapability.CONFIG) is not None
 
-    def test_resolver_tuple_selector_admits_co_organizer(self, co_organized_event, co_organizer_user, monkeypatch):
+    def test_resolver_tuple_selector_admits_co_organizer(self, co_organized_event, co_organizer_user):
         """C2-F1: a tuple selector is evaluated per-alternative, not stringified."""
-        from ctf.api.organizer import _base
         from ctf.enums import EventCapability
+        from ctf.services.authorization import resolve_event_authority
 
-        monkeypatch.setattr(_base, "_actor", lambda _request: co_organizer_user)
-        assert _base._actor_may_manage(None, co_organized_event, (EventCapability.CHALLENGES, EventCapability.CONFIG))
+        source = resolve_event_authority(
+            co_organizer_user,
+            co_organized_event,
+            capability=(EventCapability.CHALLENGES, EventCapability.CONFIG),
+        )
+        assert source is not None
 
     def test_idempotent_reassign_writes_no_new_audit(
         self, ctf_event, authenticated_organizer_client, co_organizer_user
@@ -402,11 +408,12 @@ class TestReviewCycle2Regressions:
     def test_demoted_co_organizer_loses_capability(self, co_organized_event, co_organizer_user):
         """C2-F3: a stale staff row does not grant authority after global-role revocation."""
         from ctf.enums import EventCapability
-        from ctf.services.event.staff import actor_can_exercise
+        from ctf.services.authorization import resolve_event_authority
 
-        assert actor_can_exercise(co_organizer_user.pk, co_organized_event, EventCapability.CHALLENGES.value) is True
+        cap = EventCapability.CHALLENGES.value
+        assert resolve_event_authority(co_organizer_user, co_organized_event, capability=cap) is not None
         _demote(co_organizer_user)
-        assert actor_can_exercise(co_organizer_user.pk, co_organized_event, EventCapability.CHALLENGES.value) is False
+        assert resolve_event_authority(co_organizer_user, co_organized_event, capability=cap) is None
 
     def test_demoted_co_organizer_denied_participants_scoreboard(self, co_organized_event, co_organizer_user, rf):
         """C2-F3: the public participants-only scoreboard rechecks current eligibility."""

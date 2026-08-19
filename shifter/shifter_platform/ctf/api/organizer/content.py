@@ -22,7 +22,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
-from ctf.api.organizer._base import _EVENT_WRITE, _actor, _raise_bad_request, _raise_forbidden, _resolve_owned_event
+from ctf.api.organizer._audit import (
+    admin_external_audit,
+)
+from ctf.api.organizer._base import (
+    _EVENT_WRITE,
+    _actor,
+    _raise_bad_request,
+    _raise_forbidden,
+    _resolve_owned_event,
+)
 from ctf.api.serializers import (
     EventContentRefreshRequestSerializer,
     EventContentRefreshResultSerializer,
@@ -62,7 +71,10 @@ class EventContentRefreshView(APIView):
             serializer = EventContentRefreshRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             expected = serializer.validated_data["expected_current_digest"]
-            result = self._refresh(event, expected, actor_id=_actor(request).pk)
+            # Non-rollbackable content reconciliation: record override intent
+            # before the first side effect, then the correlated outcome.
+            with admin_external_audit(request, "content.refresh"):
+                result = self._refresh(event, expected, actor_id=_actor(request).pk)
             return Response(
                 {
                     "event_id": str(event.id),

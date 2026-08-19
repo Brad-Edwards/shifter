@@ -12,6 +12,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    audit_admin_event_mutation,
+)
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
@@ -27,6 +30,7 @@ from ctf.api.serializers import (
     ParticipantDeleteResultSerializer,
 )
 from ctf.enums import EventCapability
+from shared.audit import AuditAction
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -89,6 +93,7 @@ class EventPagesView(APIView):
         return Response({"pages": [_page_payload(p) for p in pages]})
 
     @extend_schema(request=EventPageWriteSerializer, responses=EventPageSerializer)
+    @audit_admin_event_mutation("event_page.create", action=AuditAction.CREATE)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Create a page through the CTF page service; slugs are unique per event."""
         from ctf.exceptions import CTFValidationError
@@ -131,6 +136,7 @@ class EventPageDetailView(APIView):
         return page
 
     @extend_schema(request=EventPageWriteSerializer, responses=EventPageSerializer)
+    @audit_admin_event_mutation("event_page.update")
     def put(self, request: Request, page_id: UUID) -> Response:
         """Update the page's title, body, or order (the slug is stable)."""
         from ctf.exceptions import CTFValidationError
@@ -149,6 +155,7 @@ class EventPageDetailView(APIView):
             return exc.to_response(request)
 
     @extend_schema(responses=ParticipantDeleteResultSerializer)
+    @audit_admin_event_mutation("event_page.delete", action=AuditAction.DELETE)
     def delete(self, request: Request, page_id: UUID) -> Response:
         """Soft-delete the page."""
         from ctf.services.event.pages import delete_event_page

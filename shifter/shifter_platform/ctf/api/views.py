@@ -24,8 +24,9 @@ def _scoreboard_access_allowed(event: CTFEvent, request: Request) -> bool:
 
     ``public`` serves anyone (unauthenticated projector screens included),
     ``participants`` requires the viewer to be a registered participant or an
-    event organizer (owner or full co-organizer, #1922), and ``hidden`` serves
-    nobody here — organizers use their own always-on scoreboard surface.
+    event administrator (owner, full co-organizer, or platform admin — #1922,
+    ADR-052), and ``hidden`` serves nobody here — organizers use their own
+    always-on scoreboard surface.
     """
     from ctf.enums import EventCapability, ScoreboardVisibility
 
@@ -36,12 +37,13 @@ def _scoreboard_access_allowed(event: CTFEvent, request: Request) -> bool:
     if not user.is_authenticated:
         return False
     from ctf.models import CTFParticipant
-    from ctf.services.event.staff import actor_can_exercise
+    from ctf.services.authorization import resolve_event_authority
 
-    # CONFIG is held only by the owner and full co-organizers, so this admits an
-    # organizer of the event or any registered participant.
+    # CONFIG is held only by the owner and full co-organizers (plus the
+    # platform-admin override), so this admits an event administrator or any
+    # registered participant.
     return (
-        actor_can_exercise(user.pk, event, EventCapability.CONFIG)
+        resolve_event_authority(user, event, capability=EventCapability.CONFIG) is not None
         or CTFParticipant.objects.filter(event=event, user=user).exists()
     )
 

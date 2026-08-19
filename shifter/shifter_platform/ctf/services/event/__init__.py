@@ -33,11 +33,8 @@ from django.db import transaction
 
 from ctf.models import CTFEvent
 from ctf.services.event.staff import (
-    actor_can_exercise,
     actor_has_event_capability,
-    actor_is_event_owner,
     assign_event_staff,
-    event_access_projection,
     list_event_staff,
     revoke_event_staff,
     transfer_event_ownership,
@@ -74,9 +71,7 @@ __all__ = (
     "_cancel_event_tasks",
     "_schedule_event_tasks",
     "activate_event",
-    "actor_can_exercise",
     "actor_has_event_capability",
-    "actor_is_event_owner",
     "apply_event_lifecycle_transition",
     "archive_event",
     "assign_event_staff",
@@ -85,7 +80,6 @@ __all__ = (
     "create_event",
     "delete_event",
     "end_event",
-    "event_access_projection",
     "event_pk_if_exists",
     "force_delete_event",
     "get_event",

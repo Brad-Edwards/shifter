@@ -1,4 +1,4 @@
-"""CTF Event read-model queries: organizer listings and per-event statistics."""
+"""CTF Event read-model queries: authority-aware discovery and per-event statistics."""
 
 from __future__ import annotations
 
@@ -12,40 +12,55 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 
+def resolve_administrable_events(
+    user: User,
+    *,
+    status: str | None = None,
+) -> QuerySet[CTFEvent]:
+    """Return the events ``user`` may administer, scoped by their authority (ADR-052-R3).
+
+    This is the one authority-aware discovery query; ``get_organizer_events`` and
+    ``ctf.services.event._crud.list_events_for_organizer`` both delegate here so a
+    single policy governs the list. Discovery never widens per-object mutation
+    authority, which the service resolver re-checks per operation.
+
+    - Platform administrator (active, non-temporary superuser): every live event
+      through the default manager, so archived events are included but
+      soft-deleted tombstones are excluded (tombstones stay recovery/destruction
+      only).
+    - Ordinary user: the deduplicated union of events they own and events where
+      they hold a live ``CTFEventStaff`` assignment.
+
+    The owner join is eager and ordering is deterministic (``-event_start`` then
+    ``id``) so paginated results are stable and free of an N+1 owner lookup.
+    """
+    from ctf.services.authorization import is_ctf_platform_admin
+
+    if is_ctf_platform_admin(user):
+        queryset = CTFEvent.objects.all()
+    else:
+        queryset = CTFEvent.objects.filter(
+            Q(created_by=user) | Q(staff__user=user, staff__deleted_at__isnull=True)
+        ).distinct()
+
+    if status:
+        queryset = queryset.filter(status=status)
+
+    return queryset.select_related("created_by").order_by("-event_start", "id")
+
+
 def get_organizer_events(
     user: User,
     *,
     status: str | None = None,
 ) -> QuerySet[CTFEvent]:
-    """Get events an organizer administers, with an optional status filter.
+    """Authority-aware event discovery for the organizer surface.
 
-    An organizer administers an event when they are its canonical owner
-    (``created_by``) OR hold a live full co-organizer assignment on it (#1922).
-    Moderator/judge assignments are bounded delegations, not organizer listings,
-    so they are intentionally excluded here.
-
-    Args:
-        user: The organizer user.
-        status: Optional status filter.
-
-    Returns:
-        Distinct QuerySet of CTFEvent instances the user administers.
+    Thin alias over :func:`resolve_administrable_events`; retained as a stable
+    import for existing callers. A platform administrator sees all live events; an
+    ordinary organizer sees owned plus live staff-assigned events (ADR-052-R3).
     """
-    from ctf.enums import EventStaffRole
-
-    queryset = CTFEvent.objects.filter(
-        Q(created_by=user)
-        | Q(
-            staff__user=user,
-            staff__role=EventStaffRole.CO_ORGANIZER.value,
-            staff__deleted_at__isnull=True,
-        )
-    ).distinct()
-
-    if status:
-        queryset = queryset.filter(status=status)
-
-    return queryset.order_by("-event_start")
+    return resolve_administrable_events(user, status=status)
 
 
 def get_event_stats(event: CTFEvent) -> dict[str, int]:

@@ -21,20 +21,15 @@ from rest_framework import status
 from rest_framework.request import Request
 
 from ctf.api._base import _CtfApiError, ctf_actor_user
+
+# The override-audit helpers live in ``_audit`` (file-size budget, ADR-052);
+# ``_delete_via_service`` uses this one to audit database-only nested deletes.
+from ctf.api.organizer._audit import _audit_admin_from_request
 from ctf.enums import EventCapability
 from shared.api_tokens import scopes
 
-# Event-authorization selector for a resolver: one capability, several, the
-# explicit owner-only sentinel, or None. A full co-organizer is admitted for any
-# capability their role grants; OWNER_ONLY and None admit only the exact owner
-# (#1922). Prefer the explicit OWNER_ONLY sentinel at owner-only call sites so a
-# capability is never silently omitted.
+# Staff-delegable capability selector: one noun, several, or None (owner-only).
 Capability = str | tuple[str, ...] | None
-
-# Explicit owner-only operation marker. Authority-topology operations (staff
-# management, ownership transfer) pass this instead of a capability so no role
-# map can ever grant them.
-OWNER_ONLY = "__owner_only__"
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -45,6 +40,7 @@ if TYPE_CHECKING:
     from rest_framework.response import Response
 
     from ctf.models import CTFChallenge, CTFEvent, CTFParticipant
+    from ctf.services.authorization import EventAuthoritySource
 
 _EVENT_READ = (scopes.CTF_EVENT_READ,)
 _EVENT_WRITE = (scopes.CTF_EVENT_WRITE,)
@@ -133,22 +129,40 @@ def _resolve_owned_event(request: Request, event_id: UUID, *, capability: Capabi
     return event
 
 
-def _actor_may_manage(request: Request, event: CTFEvent, capability: Capability) -> bool:
-    """Authorize the actor against the canonical event-capability policy.
+def _event_authority(request: Request, event: CTFEvent, capability: Capability) -> EventAuthoritySource | None:
+    """Resolve the closed authority source admitting the actor, or ``None`` (ADR-052).
 
-    ``OWNER_ONLY`` and ``None`` admit only the exact owner. A named capability
-    (or a tuple of alternatives) is evaluated through :func:`actor_can_exercise`
-    for owners and staff alike, so an unknown/misspelled capability fails closed
-    for everyone — including the owner — and every alternative in a tuple is
-    checked individually rather than stringified (#1922 review).
+    Least authority: owner, then a delegated staff capability, then the
+    platform-admin override. Owner-only surfaces pass ``capability=None`` and are
+    admitted for the owner or a platform administrator, never delegated staff.
     """
-    actor = _actor(request)
-    if capability is None or capability == OWNER_ONLY:
-        return event.created_by_id == actor.pk
-    from ctf.services.event import actor_can_exercise
+    from ctf.services.authorization import resolve_event_authority
 
-    wanted = (capability,) if isinstance(capability, str) else capability
-    return any(actor_can_exercise(actor.pk, event, item) for item in wanted)
+    return resolve_event_authority(_actor(request), event, capability=capability)
+
+
+def _capture_event_authority(request: Request, event: CTFEvent, source: EventAuthoritySource | None) -> None:
+    """Stash the resolved (event, authority source) on the request for later audit.
+
+    Every organizer resolver records the authority it admitted so any subsequent
+    mutation on this request can write the mandatory platform-admin override
+    audit without re-resolving (ADR-052-R4). The last resolved event wins, which
+    is correct because a request mutates exactly one event-derived resource.
+    """
+    request._ctf_admin_authority = (event, source)
+
+
+def _actor_may_manage(request: Request, event: CTFEvent, capability: Capability) -> bool:
+    """Owner, a delegated staff capability, or the platform-admin override.
+
+    Captures the resolved authority on the request so a mutation on this request
+    can audit a platform-admin override.
+    """
+    source = _event_authority(request, event, capability)
+    if source is None:
+        return False
+    _capture_event_authority(request, event, source)
+    return True
 
 
 def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallenge:
@@ -164,7 +178,7 @@ def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallen
         challenge = get_challenge(challenge_id)
     except CTFNotFoundError:
         _raise_not_found(_CHALLENGE_NOT_FOUND)
-    if not _actor_may_manage(request, challenge.event, EventCapability.CHALLENGES.value):
+    if not _actor_may_manage(request, challenge.event, EventCapability.CHALLENGES):
         _raise_forbidden()
     return challenge
 
@@ -229,20 +243,33 @@ def _resolve_active_participant(request: Request) -> CTFParticipant | None:
     return get_participant_by_user(actor, event_id=role.active_ctf_event.id)
 
 
-def _delete_via_service(request: Request, action_fn: Callable[..., Any], target_id: UUID) -> Response:
+def _delete_via_service(
+    request: Request, action_fn: Callable[..., Any], target_id: UUID, *, operation: str | None = None
+) -> Response:
     """Run a delete-style service action, returning ``{"success": True}`` or raising an error.
 
     Mirrors ``ctf.views.api._common._delete_via_service_response``:
     ``CTFPermissionError`` -> 403, ``CTFNotFoundError`` -> 404,
     ``CTFStateError`` -> 400, each raised as ``_CtfApiError`` for the caller's
     ``except`` to render.
+
+    When ``operation`` is given this is the single point that audits an
+    event-derived delete performed with the platform-admin override: the
+    database-only delete and its strict override audit share one transaction, so
+    a strict audit failure rolls the delete back (ADR-052-R4). The audit is a
+    no-op for owner or delegated-staff authority.
     """
+    from django.db import transaction
     from rest_framework.response import Response
 
     from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError
+    from shared.audit import AuditAction
 
     try:
-        action_fn(target_id, actor_id=_actor(request).pk)
+        with transaction.atomic():
+            action_fn(target_id, actor_id=_actor(request).pk)
+            if operation is not None:
+                _audit_admin_from_request(request, operation, action=AuditAction.DELETE)
     except CTFPermissionError:
         _raise_forbidden()
     except CTFNotFoundError:

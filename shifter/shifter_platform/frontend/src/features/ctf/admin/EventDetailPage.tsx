@@ -219,11 +219,24 @@ export function EventDetailPage() {
         }
       />
 
+      {event.access_source === "platform_admin" ? (
+        <Alert className="mb-4">
+          <AlertTitle>Acting as platform administrator</AlertTitle>
+          <AlertDescription>
+            You are not the owner of this event ({event.owner.display_name}). Changes you make here use
+            platform-administration authority and are audited.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="space-y-6">
         <EventLifecycleCard event={event} />
         <EventOverview event={event} />
         <EventContentCard event={event} />
-        <EventStaffCard eventId={event.id} canManage={event.access_role === "owner"} />
+        <EventStaffCard
+          eventId={event.id}
+          canManage={event.access_source === "owner" || event.access_source === "platform_admin"}
+        />
         <EventWebhooksCard eventId={event.id} />
         <EventPagesCard eventId={event.id} />
         <EventLinks eventId={event.id} />

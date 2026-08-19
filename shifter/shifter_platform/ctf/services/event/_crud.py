@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import QuerySet
 
 from ctf.enums import EventStatus
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
@@ -310,8 +311,7 @@ def delete_event(event_id: UUID, *, actor_id: int | None = None) -> None:
     Args:
         event_id: UUID of the event to delete.
         actor_id: When supplied by an interactive caller, the service asserts the
-            ``delete`` capability before mutating (defense in depth, #1922). System
-            callers omit it.
+            ``delete`` capability before mutating (defense in depth, #1922).
 
     Raises:
         CTFNotFoundError: If event doesn't exist.
@@ -385,9 +385,10 @@ def force_delete_event(
             details={"event_id": str(event_id)},
         ) from None
 
-    # Service-layer authorization (defense in depth, #1922): the owner and full
-    # co-organizers may force-delete; moderators/judges cannot. The view layer
-    # checks this too, but internal callers must not bypass it.
+    # Service-layer authorization (defense in depth, #1922): the owner, a full
+    # co-organizer, or the platform-admin override may force-delete; moderators/
+    # judges cannot. The view checks this too, but internal callers must not
+    # bypass it.
     assert_event_capability(actor.pk, event, EventCapability.DELETE)
 
     if confirmation_name != event.name:
@@ -486,3 +487,15 @@ def event_pk_if_exists(event_id: UUID) -> UUID | None:
     """
     pk = CTFEvent.objects.filter(pk=event_id).values_list("pk", flat=True).first()
     return pk
+
+
+def list_events_for_organizer(user: User) -> QuerySet[CTFEvent]:
+    """List the CTF events ``user`` may administer (authority-aware).
+
+    Delegates to :func:`ctf.services.event._queries.resolve_administrable_events`
+    so this export and ``get_organizer_events`` never become two divergent
+    global-access policies (ADR-052-R3).
+    """
+    from ctf.services.event._queries import resolve_administrable_events
+
+    return resolve_administrable_events(user)

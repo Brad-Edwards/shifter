@@ -11,6 +11,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    audit_admin_event_mutation,
+)
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
@@ -38,6 +41,7 @@ from ctf.api.serializers import (
     OrganizerChallengeDetailSerializer,
 )
 from ctf.enums import EventCapability
+from shared.audit import AuditAction
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -82,6 +86,7 @@ class ChallengeListView(APIView):
             return exc.to_response(request)
 
     @extend_schema(request=ChallengeWriteSerializer, responses={201: ChallengeMutationResultSerializer})
+    @audit_admin_event_mutation("challenge.create", action=AuditAction.CREATE)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Create a challenge under an owned event."""
         from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError, CTFValidationError
@@ -129,6 +134,7 @@ class ChallengeDetailView(APIView):
         return Response(_challenge_detail_payload(challenge))
 
     @extend_schema(request=ChallengeWriteSerializer, responses=ChallengeMutationResultSerializer)
+    @audit_admin_event_mutation("challenge.update")
     def put(self, request: Request, challenge_id: UUID) -> Response:
         """Update mutable fields of an owned challenge."""
         from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError, CTFValidationError
@@ -156,6 +162,7 @@ class ChallengeDetailView(APIView):
             return exc.to_response(request)
 
     @extend_schema(responses={204: None})
+    @audit_admin_event_mutation("challenge.delete", action=AuditAction.DELETE)
     def delete(self, request: Request, challenge_id: UUID) -> Response:
         """Delete an owned challenge."""
         from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError
@@ -181,6 +188,7 @@ class AddFlagView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(request=FlagWriteSerializer, responses={201: FlagCreateResultSerializer})
+    @audit_admin_event_mutation("flag.create", action=AuditAction.CREATE)
     def post(self, request: Request, challenge_id: UUID) -> Response:
         """Validate the flag body and create the flag record."""
         from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError, CTFValidationError
@@ -243,7 +251,7 @@ class RemoveFlagView(APIView):
                 _raise_not_found("Flag not found")
             if not _actor_may_manage(request, flag_obj.challenge.event, EventCapability.CHALLENGES):
                 _raise_forbidden()
-            return _delete_via_service(request, remove_flag, flag_id)
+            return _delete_via_service(request, remove_flag, flag_id, operation="flag.delete")
         except _CtfApiError as exc:
             return exc.to_response(request)
 
@@ -270,6 +278,7 @@ class ChallengeHintsView(APIView):
         return Response({"hints": data})
 
     @extend_schema(request=HintWriteSerializer, responses={201: ChallengeHintSerializer})
+    @audit_admin_event_mutation("hint.create", action=AuditAction.CREATE)
     def post(self, request: Request, challenge_id: UUID) -> Response:
         """Add a hint to an owned challenge."""
         from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError, CTFValidationError
@@ -300,12 +309,21 @@ class HintDeleteView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(request=None, responses={204: None})
+    @audit_admin_event_mutation("hint.delete", action=AuditAction.DELETE)
     def post(self, request: Request, hint_id: UUID) -> Response:
         """Delete a hint, mapping service exceptions to the shared envelope."""
         from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError
+        from ctf.models import CTFHint
         from ctf.services.hint import remove_hint
 
         try:
+            # Resolve the hint's event so the platform-admin override is captured
+            # for audit; the service re-checks authority as defense in depth.
+            hint = CTFHint.objects.select_related("challenge__event").filter(pk=hint_id).first()
+            if hint is None:
+                _raise_not_found("Hint or challenge not found.")
+            if not _actor_may_manage(request, hint.challenge.event, None):
+                _raise_forbidden()
             try:
                 remove_hint(hint_id, actor_id=_actor(request).pk)
             except CTFPermissionError:

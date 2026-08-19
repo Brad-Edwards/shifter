@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
+from shared.range_lifecycle_capability import LifecycleCapability, range_pause_resume_capability
 from shared.schemas import RangeRef
 
 from ._common import _persist_task_arn, _resolve_instance_host
@@ -171,6 +172,27 @@ def get_instance_ips_by_uuid(range_id: int) -> dict[str, str]:
     return result
 
 
+def get_range_pause_resume_capability(range_id: int) -> LifecycleCapability:
+    """Return whether the range's realized asset mix is losslessly pause/resume-safe.
+
+    Reads the engine-owned realized instances and classifies them through the
+    shared capability policy (ADR-039, issue #614). This is the single source the
+    Mission Control projection and the CMS lifecycle gate consume so the SPA never
+    infers capability from provider names or asset types. A range with no realized
+    instances (not yet provisioned) is vacuously supported; pause/resume is offered
+    only once the range is READY.
+    """
+    status = get_range_status(range_id)
+    instances = (status or {}).get("instances") or []
+    assets = [
+        (instance.get("cloud_provider"), instance.get("asset_type"))
+        for instance in instances
+        if isinstance(instance, dict)
+    ]
+    backend = (status or {}).get("range_backend")
+    return range_pause_resume_capability(backend, assets)
+
+
 def get_range_status(range_id: int) -> dict[str, Any] | None:
     """Get current state and instance details.
 
@@ -190,6 +212,9 @@ def get_range_status(range_id: int) -> dict[str, Any] | None:
         "status": range_obj.status,
         "error_message": range_obj.error_message,
         "instances": range_obj.provisioned_instances or [],
+        # The persisted adapter-selection binding (ADR-039): pause/resume capability
+        # admits only assets belonging to this backend (issue #614).
+        "range_backend": range_obj.range_backend,
         "created_at": (range_obj.created_at.isoformat() if range_obj.created_at else None),
         "ready_at": range_obj.ready_at.isoformat() if range_obj.ready_at else None,
     }

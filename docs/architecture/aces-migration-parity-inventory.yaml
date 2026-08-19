@@ -1,5 +1,10 @@
 # Shifter ACES migration parity inventory.
 #
+# Status: historical audit evidence. The migration has completed (#1310 cutover,
+# #1311 legacy-surface archival); RAES is the current authority. The ACES names
+# and legacy_source paths below are preserved as the factual migration record and
+# are not a current backlog. Do not rename them or treat them as runtime input.
+#
 # Audit surface for ADR-024. Every legacy Shifter scenario, CyberScript,
 # Polaris, CTF, experiment, Mission Control, provisioner, artifact, status, and
 # validation surface listed here maps to exactly one owner category. This file

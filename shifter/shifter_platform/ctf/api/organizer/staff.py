@@ -17,10 +17,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
+from ctf.api.organizer._audit import (
+    audit_admin_event_mutation,
+)
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
-    OWNER_ONLY,
     _actor,
     _raise_bad_request,
     _raise_not_found,
@@ -34,6 +36,7 @@ from ctf.api.serializers import (
     EventStaffMemberSerializer,
     ParticipantDeleteResultSerializer,
 )
+from shared.audit import AuditAction
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -66,19 +69,20 @@ class EventStaffView(APIView):
         from ctf.services.event import list_event_staff
 
         try:
-            _resolve_owned_event(request, event_id, capability=OWNER_ONLY)
+            _resolve_owned_event(request, event_id)
         except _CtfApiError as exc:
             return exc.to_response(request)
         return Response({"staff": [_staff_payload(s) for s in list_event_staff(event_id)]})
 
     @extend_schema(request=EventStaffAssignRequestSerializer, responses=EventStaffMemberSerializer)
+    @audit_admin_event_mutation("staff.assign", action=AuditAction.CREATE)
     def post(self, request: Request, event_id: UUID) -> Response:
         """Assign (or re-role) a staff member by email."""
         from ctf.exceptions import CTFNotFoundError, CTFValidationError
         from ctf.services.event import assign_event_staff
 
         try:
-            _resolve_owned_event(request, event_id, capability=OWNER_ONLY)
+            _resolve_owned_event(request, event_id)
             serializer = EventStaffAssignRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             try:
@@ -104,13 +108,14 @@ class EventStaffMemberView(APIView):
     required_write_scopes = _EVENT_WRITE
 
     @extend_schema(responses=ParticipantDeleteResultSerializer)
+    @audit_admin_event_mutation("staff.revoke", action=AuditAction.DELETE)
     def delete(self, request: Request, event_id: UUID, user_id: int) -> Response:
         """Remove the assignment; the user keeps their platform account."""
         from ctf.exceptions import CTFNotFoundError, CTFValidationError
         from ctf.services.event import revoke_event_staff
 
         try:
-            _resolve_owned_event(request, event_id, capability=OWNER_ONLY)
+            _resolve_owned_event(request, event_id)
             try:
                 revoke_event_staff(event_id, _actor(request), user_id)
             except CTFNotFoundError as exc:
@@ -135,8 +140,9 @@ class EventOwnershipTransferView(APIView):
         from ctf.services.event import transfer_event_ownership
 
         try:
-            # Owner-only: only the exact owner may hand off ownership.
-            _resolve_owned_event(request, event_id, capability=OWNER_ONLY)
+            # Owner-only topology op: the owner or the platform-admin override,
+            # never delegated staff (ADR-052, #1922).
+            _resolve_owned_event(request, event_id)
             serializer = EventOwnershipTransferRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             try:

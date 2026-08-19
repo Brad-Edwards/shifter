@@ -38,6 +38,7 @@ export type PermissionPolicy =
   | "authenticated"
   | "threat_research"
   | "ctf_organizer"
+  | "ctf_admin"
   | "ctf_participant"
   | "staff";
 
@@ -183,7 +184,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     [
       { surface: "Overview", routeName: "home", ownerApp: "config", purpose: "Role-aware operational dashboard.", routePath: "/", iconKey: "layout-dashboard", external: false },
       { surface: "Ranges", routeName: "mission_control:dashboard", purpose: "Launch and monitor ranges.", routePath: "/mission-control/", iconKey: "server", activeContext: "range", external: false },
-      { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_organizer", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event", external: false },
+      { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_admin", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event", external: false },
       {
         surface: "Assets",
         routeName: "mission_control:agents",
@@ -296,6 +297,10 @@ export function permissionAllows(policy: PermissionPolicy, bootstrap: Bootstrap)
       return bootstrap.permissions.can_access_threat_research;
     case "ctf_organizer":
       return bootstrap.permissions.is_ctf_organizer;
+    case "ctf_admin":
+      // Organizer or platform administrator (ADR-052). Advisory nav gate only;
+      // the CTF API re-authorizes every request per object.
+      return bootstrap.permissions.can_administer_ctf;
     case "ctf_participant":
       return bootstrap.permissions.is_ctf_participant;
     case "staff":
