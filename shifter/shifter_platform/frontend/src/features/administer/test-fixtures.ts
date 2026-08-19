@@ -19,6 +19,8 @@ export function adminUser(overrides: Partial<AdminUserDetail> = {}): AdminUserDe
     organizer_grant_source: "",
     must_change_password: false,
     groups: [],
+    lifecycle_state: "active",
+    available_actions: [],
     ...overrides,
   };
 }

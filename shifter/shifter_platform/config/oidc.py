@@ -121,12 +121,19 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         self._last_verified_identity: VerifiedIdentity | None = None
 
     def get_user(self, user_id: int) -> Any:
-        """Load the account-origin profile with the session user."""
+        """Load the account-origin profile with the session user.
+
+        Returns no principal for an inactive account (PLAT-236, #1943): a
+        deactivated, suspended, or soft-deleted user (all of which hold
+        ``is_active=False``) must not reload an existing provider session, so a
+        new request from that session stops at the authentication boundary.
+        """
         user_model = get_user_model()
         try:
-            return user_model._default_manager.select_related("profile").get(pk=user_id)
+            user = user_model._default_manager.select_related("profile").get(pk=user_id)
         except user_model.DoesNotExist:
             return None
+        return user if user.is_active else None
 
     def verify_token(self, token: str, **kwargs: Any) -> Any:
         """Validate the token signature, then assert issuer/audience/azp match this deployment.
@@ -291,6 +298,18 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
                 context=f"OIDC authentication error: {type(exc).__name__}",
             )
             raise
+
+        if user is not None and not user.is_active:
+            # A deactivated, suspended, or soft-deleted account (all is_active=False)
+            # must not obtain a session via provider re-login, and claims/privilege
+            # sync must never reactivate it as a side effect (PLAT-236, #1943).
+            audit_auth_event(
+                action=AuditAction.LOGIN_FAILED,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                context="OIDC authentication rejected: account inactive",
+            )
+            return None
 
         if user:
             from config.workspace_invitation_auth import attach_fresh_verified_identity

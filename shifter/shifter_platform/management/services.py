@@ -155,6 +155,14 @@ def mark_user_deleted(
             profile.deleted_at = timezone.now()
             profile.save(update_fields=["deleted_at"])
 
+            # Soft deletion must also block authentication (PLAT-236, #1943):
+            # User.is_active is the sole authentication-enforcement bit, so a
+            # soft-deleted account that kept is_active=True could still hold a
+            # session or re-login. Converge them here.
+            if user.is_active:
+                user.is_active = False
+                user.save(update_fields=["is_active"])
+
             # Audit log user deletion inside the atomic boundary.
             audit_log(
                 AuditEvent(
@@ -175,6 +183,20 @@ def mark_user_deleted(
     except Exception:
         logger.exception("Failed to mark user %s as deleted", safe_log_value(user.email))
         raise
+
+
+def reset_eligibility(user: User) -> tuple[bool, str]:
+    """Facade re-export of :func:`management.password_reset.reset_eligibility`.
+
+    Exposed on the management service facade so the composition-root
+    password-reset landing view (``config.password_reset_views``) can re-check
+    eligibility at token redemption without importing a private management
+    submodule (ADR-001 layer contract). Imported lazily to avoid an import cycle
+    (``management.password_reset`` imports this module).
+    """
+    from management.password_reset import reset_eligibility as _reset_eligibility
+
+    return _reset_eligibility(user)
 
 
 def safe_user_profile(user: User) -> UserProfile | None:

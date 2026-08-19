@@ -10,6 +10,7 @@ callers never write tenancy models directly.
 
 from workspaces.roles import WorkspaceOperation
 
+from ._admin_transfer import WorkspaceOwnershipTransferResult, admin_transfer_workspace_ownership
 from ._authorization import (
     WorkspaceAuthorization,
     WorkspaceAuthorizationError,
@@ -96,9 +97,11 @@ __all__ = [
     "WorkspaceMembershipError",
     "WorkspaceMembershipProjection",
     "WorkspaceOperation",
+    "WorkspaceOwnershipTransferResult",
     "WorkspaceProjection",
     "accept_workspace_invitation",
     "add_workspace_member",
+    "admin_transfer_workspace_ownership",
     "archive_workspace",
     "authorize_bound_workspace",
     "authorize_launch_workspace_locked",

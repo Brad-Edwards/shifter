@@ -33,6 +33,7 @@ enforces the prerequisites documented here before any Terraform apply.
 | [Polaris on the GCP range-cell](dev/polaris-gcp-range-cell.md) | You are running the Polaris scenario on the GCP range-cell backend. |
 | [Secrets rotation](dev/secrets-rotation-runbook.md) | You are rotating deployment or runtime secrets. |
 | [Service Discovery ForceNew](dev/service-discovery-forcenew.md) | You hit a Service Discovery replacement and need the operational rule. |
+| [Portal on EKS operations](ops/portal-eks-operations.md) | You are monitoring, scaling, deploying, troubleshooting, or rolling back the Portal on EKS. |
 | [Disaster recovery](ops/disaster-recovery.md) | You are recovering the AWS portal stack after a failure. |
 | [GitHub runner health alerts](ops/github-runner-health-alerts.md) | A runner-health alert fired and you need the response steps. |
 

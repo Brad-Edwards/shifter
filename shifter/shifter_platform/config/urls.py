@@ -10,6 +10,10 @@ from config import api_urls
 from config.csp_report import csp_report
 from config.dev_auth import dev_login, dev_logout
 from config.health import CoarseHealthCheckView
+from config.password_reset_views import (
+    PlatformPasswordResetCompleteView,
+    PlatformPasswordResetConfirmView,
+)
 from config.views import (
     dashboard_router,
     identity_platform_session,
@@ -50,6 +54,20 @@ urlpatterns = [
     path("auth/identity/session/", identity_platform_session, name="identity_platform_session"),
     path("dashboard/", dashboard_router, name="dashboard_router"),
     path("logout/", logout_view, name="logout"),
+    # Administrator-triggered password reset completion (PLAT-236, #1943). Only
+    # the token-gated confirm/complete landing pages are public; there is no
+    # public "enter your email" request page (reset is administrator-triggered
+    # via the Administer API), so no account-enumeration surface is added.
+    path(
+        "account/password/reset/<uidb64>/<token>/",
+        PlatformPasswordResetConfirmView.as_view(),
+        name="password_reset_confirm",
+    ),
+    path(
+        "account/password/reset/done/",
+        PlatformPasswordResetCompleteView.as_view(),
+        name="password_reset_complete",
+    ),
     path("mission-control/", include("mission_control.urls")),
     path("scenario-editor/", include("cms.scenario_editor.urls")),
     # RAES image registry SPA pages (#1566). The base path plus a catch-all under

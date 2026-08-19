@@ -304,6 +304,144 @@
         }
       }
     },
+    "/api/v1/administer/users/{id}/lifecycle/": {
+      "post": {
+        "operationId": "api_v1_administer_users_lifecycle",
+        "description": "Activate, deactivate, or suspend a user account. Requires ``auth.change_user``.\n\nThe one closed desired-state lifecycle command (PLAT-236, #1943). Suspend and\ndeactivate both block sign-in and retain assignments; they differ only in the\nsuspension discriminator. Soft deletion is the separate ``/delete/`` endpoint\n(``auth.delete_user``).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleTransitionRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleTransitionRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/users/{id}/reset-password/": {
+      "post": {
+        "operationId": "api_v1_administer_users_reset_password",
+        "description": "Trigger a Django password-reset email for an eligible account. ``auth.change_user``.\n\nUses Django's proven password-reset machinery for an active local, non-CTF\naccount only; a provider-bound account resets at its provider and a temporary\nCTF account keeps its event-scoped credential flow (PLAT-236, #1943). Returns\na safe accepted/error envelope; no secret is ever returned.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/administer/users/{id}/set-active/": {
       "post": {
         "operationId": "api_v1_administer_users_set_active",
@@ -355,6 +493,85 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/users/{id}/transfer-ownership/": {
+      "post": {
+        "operationId": "api_v1_administer_users_transfer_ownership",
+        "description": "Transfer a departing user's owned resources to a replacement. Superuser-only.\n\nA single bounded composition-root command (never sequential SPA calls): it\nresolves and authorizes both accounts, then delegates to\n``cms.services.transfer_user_ownership`` (the only layer permitted to reach\nboth the range and workspace domains). Both transfer kinds are the\nADR-046-R13 platform-administrator offboarding override.\n\nThis command requires a **superuser** session, not merely ``auth.change_user``\n(issue #1943 review F5): a superuser already holds cross-tenant/root authority,\nso transferring ranges and workspaces during offboarding is not an escalation.\nGating on ``auth.change_user`` alone would let a staff user who is merely a\nmember of another tenant's workspace acquire ranges they could not otherwise\nadminister. Range reassignment reuses the existing CMS/Engine authority and\nrefuses live-VPN ranges; workspace transfer requires the replacement to be an\nexisting member. It never removes memberships, transfers credentials/agents,\nor rewrites provenance.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferOwnershipResult"
                 }
               }
             },
@@ -12227,10 +12444,22 @@
               "type": "string"
             },
             "readOnly": true
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "readOnly": true
+          },
+          "available_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
           }
         },
         "required": [
           "account_origin",
+          "available_actions",
           "date_joined",
           "display_name",
           "email",
@@ -12242,6 +12471,7 @@
           "is_staff",
           "is_superuser",
           "last_login",
+          "lifecycle_state",
           "must_change_password",
           "organizer_grant_source",
           "user_type",
@@ -14579,6 +14809,27 @@
         "required": [
           "error"
         ]
+      },
+      "LifecycleTransitionRequest": {
+        "type": "object",
+        "description": "Explicit request body for the account lifecycle transition operation.\n\n``action`` is the closed set of change-permission transitions; soft deletion\nis a distinct endpoint gated on ``auth.delete_user``.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/LifecycleTransitionRequestActionEnum"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "LifecycleTransitionRequestActionEnum": {
+        "enum": [
+          "activate",
+          "deactivate",
+          "suspend"
+        ],
+        "type": "string",
+        "description": "* `activate` - activate\n* `deactivate` - deactivate\n* `suspend` - suspend"
       },
       "ManagedContentSummary": {
         "type": "object",
@@ -17742,6 +17993,14 @@
           "success"
         ]
       },
+      "ResourceKindsEnum": {
+        "enum": [
+          "ranges",
+          "workspaces"
+        ],
+        "type": "string",
+        "description": "* `ranges` - ranges\n* `workspaces` - workspaces"
+      },
       "ResourceStatusEnum": {
         "enum": [
           "pending",
@@ -18287,6 +18546,62 @@
         },
         "required": [
           "participant_id"
+        ]
+      },
+      "TransferOwnershipRequest": {
+        "type": "object",
+        "description": "Explicit request body for an offboarding ownership transfer.\n\n``resource_kinds`` is a closed allowlist; there is no wildcard or\n\"all resources\" interpretation (PLAT-236, #1943).",
+        "properties": {
+          "replacement_user_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resource_kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceKindsEnum"
+            }
+          }
+        },
+        "required": [
+          "replacement_user_id",
+          "resource_kinds"
+        ]
+      },
+      "TransferOwnershipResult": {
+        "type": "object",
+        "description": "Bounded, secret-free summary of an offboarding ownership transfer.",
+        "properties": {
+          "source_user_id": {
+            "type": "integer"
+          },
+          "replacement_user_id": {
+            "type": "integer"
+          },
+          "ranges_reassigned": {
+            "type": "integer"
+          },
+          "ranges_blocked": {
+            "type": "integer"
+          },
+          "workspaces_transferred": {
+            "type": "integer"
+          },
+          "workspaces_already_owned": {
+            "type": "integer"
+          },
+          "workspaces_blocked_no_membership": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ranges_blocked",
+          "ranges_reassigned",
+          "replacement_user_id",
+          "source_user_id",
+          "workspaces_already_owned",
+          "workspaces_blocked_no_membership",
+          "workspaces_transferred"
         ]
       },
       "TransferWorkspaceOwnership": {
