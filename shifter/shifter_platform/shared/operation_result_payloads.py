@@ -97,6 +97,10 @@ REASON_CODES = frozenset(
         "dependency_unavailable",
         "invalid_state",
         "internal_error",
+        # ADR-039 unsupported-capability (issue #614): the range's realized asset
+        # mix cannot be losslessly paused/resumed on its substrate adapter, so the
+        # operation is refused before any mutation rather than faking success.
+        "unsupported_capability",
     }
 )
 
