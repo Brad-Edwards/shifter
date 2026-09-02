@@ -53,3 +53,5 @@ The repo now has guardrail enforcement in ADR registry, adr_guard, CI, hooks, an
 - TESTS → TEST `scripts/adr_guard/tests/test_quality_path_ownership.py` (Quality-path-ownership gate tests (#1530))
 - IMPLEMENTS → GITHUB_ISSUE `1530` (REV1 Testing: enforce production-path ownership in routed CI)
 - TESTS → TEST `scripts/adr_guard/tests/test_deploy_workflow.py` (TestSonarScannerIdentity / TestExpressionOperandCoverage (ADR-003-R7, #1874): a workflow skip condition cannot bypass the SonarCloud conformance gate)
+- IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/documentation.py` (`lilrae-identity-boundary` check enforcing ADR-024-R6 identity and scenario-pack terminology)
+- TESTS → TEST `scripts/adr_guard/tests/test_adr_guard.py` (LilraeIdentityBoundaryTests for rename continuity, TechVault role, false pairing, and historical evidence boundaries)

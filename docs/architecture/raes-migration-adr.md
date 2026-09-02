@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amended by issue #1862 on 2026-07-28.
+Accepted. Amended by issues #1862 on 2026-07-28 and #1580 on 2026-07-30.
 
 ## Context
 
@@ -12,8 +12,9 @@ configuration surfaces, catalog paths, or provisioning selectors would make
 the boundary ambiguous and leave the retired implementation operational.
 
 The released contract pair is `raes==2.0.0` and
-`raes-env-packs==3.0.0`. The environment-pack distribution itself requires
-exactly `raes==2.0.0`.
+`raes-env-packs==3.1.0`. The environment-pack distribution itself requires
+exactly `raes==2.0.0`; version 3.1.0 adds the public publication profile used
+by artifact-requirement resolution without changing the RAES producer version.
 
 ## Decision
 
@@ -57,8 +58,9 @@ does not read them.
 - Shifter-specific authorization, lifecycle, cloud realization, CTF, Mission
   Control, audit, redaction, and operator behavior remain Shifter-owned service
   responsibilities.
-- TechVault/APTL has no bespoke Shifter surface. Any future version is an
-  ordinary environment pack.
+- LilRAE (formerly APTL) has no bespoke Shifter surface. TechVault is a
+  scenario pack; any future Shifter delivery of it is an ordinary environment
+  pack and does not create a separate product or runtime boundary.
 
 ## Rollback
 
