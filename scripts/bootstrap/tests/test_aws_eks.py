@@ -608,8 +608,9 @@ def test_validate_terraform_inputs_rejects_missing_required_key(tmp_path):
     del payload["domain_name"]
     inputs = tmp_path / "eks.tfvars.json"
     inputs.write_text(json.dumps(payload), encoding="utf-8")
+    config = _config()
     with pytest.raises(ValueError, match="input file is missing"):
-        aws_eks._validate_terraform_inputs(inputs, _config(), allowed_roots=(tmp_path,))
+        aws_eks._validate_terraform_inputs(inputs, config, allowed_roots=(tmp_path,))
 
 
 def test_validate_terraform_inputs_rejects_region_mismatch(tmp_path):
@@ -617,8 +618,9 @@ def test_validate_terraform_inputs_rejects_region_mismatch(tmp_path):
     payload["aws_region"] = "us-west-2"  # shifter.yaml settings.region is us-east-2
     inputs = tmp_path / "eks.tfvars.json"
     inputs.write_text(json.dumps(payload), encoding="utf-8")
+    config = _config()
     with pytest.raises(ValueError, match=r"region does not match shifter\.yaml"):
-        aws_eks._validate_terraform_inputs(inputs, _config(), allowed_roots=(tmp_path,))
+        aws_eks._validate_terraform_inputs(inputs, config, allowed_roots=(tmp_path,))
 
 
 def test_validate_terraform_inputs_rejects_domain_mismatch(tmp_path):
@@ -626,8 +628,9 @@ def test_validate_terraform_inputs_rejects_domain_mismatch(tmp_path):
     payload["domain_name"] = "attacker.example.net"  # shifter.yaml domain is shifter.example.com
     inputs = tmp_path / "eks.tfvars.json"
     inputs.write_text(json.dumps(payload), encoding="utf-8")
+    config = _config()
     with pytest.raises(ValueError, match=r"domain does not match shifter\.yaml"):
-        aws_eks._validate_terraform_inputs(inputs, _config(), allowed_roots=(tmp_path,))
+        aws_eks._validate_terraform_inputs(inputs, config, allowed_roots=(tmp_path,))
 
 
 def test_read_json_mapping_rejects_non_json_suffix(tmp_path):

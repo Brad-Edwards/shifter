@@ -199,7 +199,8 @@ class TestAwsValidationChecks:
         argv = checks["eks-preflight"]
         assert argv[0] == "python3"
         assert "scripts/bootstrap/preflight.py" in argv
-        assert "--config" in argv and "shifter.yaml" in argv
+        assert "--config" in argv
+        assert "shifter.yaml" in argv
         # --component eks selects the isolated EKS root prerequisites, not the legacy defaults.
         assert argv[argv.index("--component") + 1] == "eks"
 
