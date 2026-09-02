@@ -337,6 +337,61 @@ def test_render_values_rejects_non_attested_image_identities(image):
         aws_eks.render_aws_values(config, outputs, images)
 
 
+def test_generated_outputs_cover_the_terraform_provisioner_env():
+    # Independent Terraform-derived oracle (#1828 codex cycle 2): parse the range/portal
+    # topology keys the eks-provisioner-env module actually re-supplies into the merged
+    # runtime env, and assert every one is classified in the generated-output inventory. This
+    # reads the real Terraform, so a new provisioner_env key that the Python inventory forgot
+    # to classify fails here even though a fixture-derived oracle would stay green.
+    import re
+
+    from installation import runtime_inventory_aws as inv
+
+    tf_path = Path(__file__).resolve().parents[3] / "platform/terraform/modules/portal/eks-provisioner-env/main.tf"
+    block = re.search(r"provisioner_env\s*=\s*\{(.*?)\n\s*\}", tf_path.read_text(encoding="utf-8"), re.DOTALL)
+    assert block is not None, "could not locate the provisioner_env block in the eks-provisioner-env module"
+    terraform_keys = set(re.findall(r"^\s*([A-Z][A-Z0-9_]*)\s*=", block.group(1), re.MULTILINE))
+    assert terraform_keys, "parsed no keys from the Terraform provisioner_env block"
+
+    missing = terraform_keys - set(inv.AWS_GENERATED_RUNTIME_ENV_KEYS)
+    assert not missing, f"Terraform provisioner_env keys missing from AWS_GENERATED_RUNTIME_ENV_KEYS: {sorted(missing)}"
+    # The hydrated-secret key is excluded from the Terraform ConfigMap surface by design.
+    assert "DC_DOMAIN_PASSWORD" not in terraform_keys
+
+
+def test_generated_outputs_match_a_representative_render():
+    # Renderer-transformation oracle (#1828): assert render_aws_values emits into the
+    # ConfigMap-bound runtimeEnv exactly the classified bundle projection, and that the keys
+    # it adds on top of its Terraform input are exactly the declared renderer-owned set. The
+    # complementary Terraform-derived coverage (a new pass-through key) is asserted by
+    # test_generated_outputs_cover_the_terraform_provisioner_env above.
+    from installation import runtime_inventory_aws as inv
+    from installation.contract import OutputKind
+    from installation.registry import get_backend_bundle
+
+    # What Terraform supplies into runtime_env: the complete emitted set minus the
+    # renderer-owned keys (render_aws_values adds those itself and rejects them as input).
+    terraform_supplied = sorted(inv.AWS_GENERATED_RUNTIME_ENV_KEYS - inv.AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS)
+    outputs = _terraform_outputs()
+    outputs["runtime_env"] = {"value": {key: f"value-for-{key}" for key in terraform_supplied}}
+
+    values = aws_eks.render_aws_values(_config(), outputs, _images())
+    emitted = set(values["runtimeEnv"])
+
+    bundle = get_backend_bundle("aws")
+    projected = {o.name for o in bundle.generated_outputs if o.kind is OutputKind.RUNTIME_ENV}
+    assert emitted == projected, f"bundle projection drifted from renderer output: {emitted ^ projected}"
+
+    # The keys render_aws_values adds on top of the Terraform input must be exactly the
+    # declared renderer-owned set — a new renderer-owned key that is not inventoried would
+    # otherwise land in the ConfigMap unclassified.
+    added_by_renderer = emitted - set(outputs["runtime_env"]["value"])
+    assert added_by_renderer == set(inv.AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS)
+
+    # The hydrated-secret key never enters the ConfigMap-bound runtimeEnv.
+    assert "DC_DOMAIN_PASSWORD" not in emitted
+
+
 def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path, monkeypatch):
     config_path = tmp_path / "shifter.yaml"
     config_path.write_text("placeholder")
@@ -357,7 +412,8 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         "run_cmd_secret_stdin",
         lambda cmd, *, secret_stdin: secret_stdin_calls.append((cmd, secret_stdin)) or 0,
     )
-    monkeypatch.setattr(aws_eks, "preflight_gate", Mock())
+    preflight = Mock()
+    monkeypatch.setattr(aws_eks, "preflight_gate", preflight)
     irsa_verify = Mock()
     monkeypatch.setattr(aws_eks, "_verify_effective_irsa", irsa_verify)
     security_verify = Mock()
@@ -371,6 +427,11 @@ def test_deploy_sequence_uses_saved_plan_bounded_access_and_atomic_helm(tmp_path
         aws_profile="operator",
         dry_run=False,
     )
+
+    # The EKS deploy lifecycle must preflight the EKS component, not the legacy
+    # core/range/portal defaults (#1828).
+    assert preflight.call_args is not None
+    assert preflight.call_args.kwargs.get("component") == "eks"
 
     terraform_root = str(aws_eks.eks_root("dev"))
     assert [
@@ -519,6 +580,96 @@ def test_protected_input_reader_rejects_symbolic_links(tmp_path):
             label="test input",
             allowed_roots=(tmp_path,),
         )
+
+
+# --- Negative-path coverage for the deploy-safety guards (#1828 test-quality cycle 1) ------
+# These lock the failure branches of the aws_eks validation guards: replacing any raise below
+# with a no-op must fail a test. Without them a refactor could silently drop the region/domain
+# cross-check that stops a mismatched Terraform var-file from applying against the wrong
+# shifter.yaml, the protected-input JSON hardening, or the IRSA precondition checks.
+
+
+def test_validate_config_rejects_non_aws_backend():
+    config = _config()
+    config.backend = "gcp"
+    with pytest.raises(ValueError, match=r"requires shifter\.yaml backend: aws"):
+        aws_eks._validate_config(config)
+
+
+def test_validate_config_rejects_unsupported_profile():
+    config = _config()
+    config.deployment.profile = "staging"
+    with pytest.raises(ValueError, match="supports only dev, proof, and prod"):
+        aws_eks._validate_config(config)
+
+
+def test_validate_terraform_inputs_rejects_missing_required_key(tmp_path):
+    payload = _terraform_inputs()
+    del payload["domain_name"]
+    inputs = tmp_path / "eks.tfvars.json"
+    inputs.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="input file is missing"):
+        aws_eks._validate_terraform_inputs(inputs, _config(), allowed_roots=(tmp_path,))
+
+
+def test_validate_terraform_inputs_rejects_region_mismatch(tmp_path):
+    payload = _terraform_inputs()
+    payload["aws_region"] = "us-west-2"  # shifter.yaml settings.region is us-east-2
+    inputs = tmp_path / "eks.tfvars.json"
+    inputs.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"region does not match shifter\.yaml"):
+        aws_eks._validate_terraform_inputs(inputs, _config(), allowed_roots=(tmp_path,))
+
+
+def test_validate_terraform_inputs_rejects_domain_mismatch(tmp_path):
+    payload = _terraform_inputs()
+    payload["domain_name"] = "attacker.example.net"  # shifter.yaml domain is shifter.example.com
+    inputs = tmp_path / "eks.tfvars.json"
+    inputs.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"domain does not match shifter\.yaml"):
+        aws_eks._validate_terraform_inputs(inputs, _config(), allowed_roots=(tmp_path,))
+
+
+def test_read_json_mapping_rejects_non_json_suffix(tmp_path):
+    bad = tmp_path / "inputs.txt"
+    bad.write_text("{}")
+    with pytest.raises(ValueError, match=r"must use a \.json suffix"):
+        aws_eks._read_json_mapping(bad, label="test input", allowed_roots=(tmp_path,))
+
+
+def test_read_json_mapping_rejects_oversized_file(tmp_path):
+    big = tmp_path / "big.json"
+    big.write_text("x" * (aws_eks._MAX_PROTECTED_JSON_BYTES + 1))
+    with pytest.raises(ValueError, match="exceeds the"):
+        aws_eks._read_json_mapping(big, label="test input", allowed_roots=(tmp_path,))
+
+
+def test_read_json_mapping_rejects_invalid_json(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{ not valid json")
+    with pytest.raises(ValueError, match="must be valid JSON"):
+        aws_eks._read_json_mapping(bad, label="test input", allowed_roots=(tmp_path,))
+
+
+def test_read_json_mapping_rejects_non_object_payload(tmp_path):
+    arr = tmp_path / "arr.json"
+    arr.write_text("[1, 2, 3]")
+    with pytest.raises(ValueError, match="must contain a JSON object"):
+        aws_eks._read_json_mapping(arr, label="test input", allowed_roots=(tmp_path,))
+
+
+def test_verify_effective_irsa_rejects_missing_probe_identity():
+    roles = dict.fromkeys(aws_eks._IRSA_PROBE_IDENTITIES, "arn:aws:iam::123456789012:role/x")
+    del roles["provisioner"]
+    with pytest.raises(ValueError, match="missing IRSA probe identities"):
+        aws_eks._verify_effective_irsa(roles, "repo@sha256:" + "a" * 64)
+
+
+def test_verify_effective_irsa_rejects_non_string_role_arn():
+    roles = dict.fromkeys(aws_eks._IRSA_PROBE_IDENTITIES, "arn:aws:iam::123456789012:role/x")
+    roles["provisioner"] = 12345
+    with pytest.raises(ValueError, match="must be strings"):
+        aws_eks._verify_effective_irsa(roles, "repo@sha256:" + "a" * 64)
 
 
 def test_cli_exposes_explicit_eks_commands_without_branch_inputs(monkeypatch):

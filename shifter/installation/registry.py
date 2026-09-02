@@ -28,9 +28,7 @@ the loader strips it out of ``settings`` and validates it separately for every b
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from . import runtime_inventory_gcp
+from . import runtime_inventory_aws, runtime_inventory_gcp
 from .contract import (
     BackendBundle,
     BackendCapability,
@@ -47,6 +45,7 @@ from .contract import (
     RequiredTool,
     ValidationCheck,
 )
+from .settings_aws import AWS_REFERENCE_GRAMMAR, AWS_REFERENCE_PATTERN, AwsSettings
 from .settings_gcp import GcpBackendSettings
 
 # The contract-shape version every bundle below is written against. Pinned literally so
@@ -57,51 +56,9 @@ _CONTRACT_VERSION = 1
 _ROOT_CONFIG_PATH = "shifter.yaml"
 _SHIFTER_CHART_PATH = "platform/charts/shifter"
 
-# A plausible AWS region token: two letters, one or more lowercase words, then a trailing
-# number — ``us-east-2``, ``us-gov-east-1``, ``ap-southeast-4``. Deliberately permissive:
-# the exact region set is an AWS concern validated at deploy time, so this only catches
-# config-time typos (wrong case, underscores, missing number) rather than pinning a list.
-# It is applied via ``Field(pattern=...)`` (not a ``@field_validator``) so the *same*
-# constraint governs both runtime validation and the published JSON schema — a validator
-# would enforce it at load time while leaving the published contract permitting any string
-# (the boundary-contract gap #728 must not open).
-_AWS_REGION_PATTERN = r"^[a-z]{2}(?:-[a-z]+)+-\d+$"
-
-# The reference grammar shared by both AWS secrets: an AWS Secrets Manager secret name or
-# ARN, a GitHub Actions secret name, or an environment variable name — a single-line token
-# of reference-safe characters, matched full-string by ``RequiredSecret.matches_reference``
-# (which accepts ``prompt`` independently). This is a *positive* grammar layered on top of
-# the root schema's raw-material rejection (multi-line / PEM / over-long), not a duplicate
-# of it; it never sees or echoes the value.
-_AWS_REFERENCE_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._/+=@:-]*"
-
-# The reference_grammar description shared by both AWS secrets (kept in one place so the
-# human text and the machine pattern stay in step).
-_AWS_REFERENCE_GRAMMAR = (
-    "an AWS Secrets Manager secret name or ARN, a GitHub Actions secret name, an environment "
-    "variable, or the literal 'prompt'"
-)
-
-
-class AwsSettings(BaseModel):
-    """Closed operator-intent settings for the AWS backend (PLAT-2006, GH #728).
-
-    Only genuine operator intent lives here. Terraform variables, generated runtime
-    outputs, workflow secret names, and provider SDK payloads are *not* settings — copying
-    them in would turn ``settings`` into a second provider schema (preflight #728).
-    ``extra='forbid'`` fails unknown AWS settings closed, so a typo or a stale key is a
-    config-time error rather than a silently-ignored value.
-
-    The shared cross-backend ``range_egress`` policy is intentionally *absent*: it is owned
-    and validated by :mod:`installation.range_egress` (which surfaces verbatim, non-secret
-    CIDR diagnostics, #775), and the loader validates it separately for every backend. See
-    the module docstring.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    region: str = Field(pattern=_AWS_REGION_PATTERN)
-
+# ``AwsSettings`` and the AWS secret-reference grammar live in ``settings_aws`` (mirroring
+# ``settings_gcp`` for the GCP bundle); they are imported above and re-exported through this
+# module's namespace for existing importers (``installation.registry.AwsSettings``).
 
 # Process roles that share the derived runtime environment.
 _RUNTIME_ROLES: tuple[ProcessRole, ...] = (ProcessRole.PORTAL, ProcessRole.WORKER, ProcessRole.PROVISIONER)
@@ -203,6 +160,151 @@ def _secret_outputs(
     )
 
 
+# The AWS platform runtime env is authored by the AWS backend runtime-env renderer
+# (scripts/bootstrap/aws_eks.py render_aws_values). Its guaranteed key set is owned by
+# ``runtime_inventory_aws``. The bundle's generated outputs are built from that single
+# source so the contract projection and the renderer cannot drift (a conformance test
+# asserts the two agree). Unlike GCP, the *full* AWS runtime env is not enumerated: the
+# balance is assembled from the Terraform ``runtime_env`` output at deploy time.
+_AWS_RENDERER = "aws backend runtime-env renderer (scripts/bootstrap/aws_eks.py render_aws_values)"
+
+# Generated runtime-env keys whose *value* is an AWS Secrets Manager reference (fetched at
+# startup by entrypoint.sh); the reference id rides the ConfigMap-bound env, the value never
+# does. Everything else in the AWS runtime projection is public runtime configuration.
+_AWS_SECRET_REFERENCE_RUNTIME_KEYS: frozenset[str] = frozenset({"OIDC_SECRET_ID"})
+
+
+def _aws_output_roles(name: str) -> tuple[ProcessRole, ...]:
+    """The exact ProcessRole consumers of one AWS generated runtime-env key.
+
+    Every generated key rides the shared runtime env the portal/worker platform image loads,
+    so portal and worker always consume it. The standalone provisioner Job receives the
+    forwarded subset the platform launcher propagates
+    (``runtime_inventory_aws.AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS``), so those keys
+    (including the range/portal topology and range-realization keys) also declare the
+    provisioner consumer. This is derived per key, not a blanket assignment. AWS ranges are
+    delivered on ECS/VM rather than as Kubernetes range-task pods, so no projection key
+    declares the range-task consumer (contrast the GCP bundle's GDC range pods).
+    """
+    roles: list[ProcessRole] = [ProcessRole.PORTAL, ProcessRole.WORKER]
+    if name in runtime_inventory_aws.AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS:
+        roles.append(ProcessRole.PROVISIONER)
+    return tuple(roles)
+
+
+def _aws_runtime_output(name: str) -> GeneratedOutput:
+    """Build one classified AWS generated runtime-env output."""
+    if name == "CLOUD_PROVIDER":
+        return _cloud_provider_output(_AWS_RENDERER)
+    roles = _aws_output_roles(name)
+    if name in _AWS_SECRET_REFERENCE_RUNTIME_KEYS:
+        return GeneratedOutput(
+            name=name,
+            kind=OutputKind.RUNTIME_ENV,
+            owner=_AWS_RENDERER,
+            source="an AWS Secrets Manager reference rendered from validated Terraform outputs",
+            destination=OutputDestination.RUNTIME_ENV,
+            sensitivity=OutputSensitivity.SECRET_REFERENCE,
+            process_roles=roles,
+            description=(
+                f"Reference to the {name} secret in the platform runtime environment; the process fetches the "
+                f"value from AWS Secrets Manager at startup (entrypoint.sh) — a reference only, the secret value "
+                f"stays in Secrets Manager."
+            ),
+        )
+    return GeneratedOutput(
+        name=name,
+        kind=OutputKind.RUNTIME_ENV,
+        owner=_AWS_RENDERER,
+        source="rendered from validated Terraform outputs and the normalized root config",
+        destination=OutputDestination.RUNTIME_ENV,
+        sensitivity=OutputSensitivity.PUBLIC,
+        process_roles=roles,
+        description=f"Public AWS runtime configuration value ({name}) emitted into the platform runtime environment.",
+    )
+
+
+def _aws_generated_outputs() -> tuple[GeneratedOutput, ...]:
+    """The full AWS generated runtime-env projection, plus the ``*_SECRET_ARN`` compat aliases.
+
+    The RUNTIME_ENV projection is built from ``runtime_inventory_aws.AWS_GENERATED_RUNTIME_ENV_KEYS``
+    (the complete set the renderer emits into the ConfigMap: required, renderer-owned, and the
+    range/portal topology the Terraform provisioner_env re-supplies, minus hydrated-secret keys)
+    so the contract's generated outputs are exactly the keys the renderer emits, sorted by name.
+    Hydrated-secret keys are excluded: a value hydrated from a secret reference after startup is
+    not a renderer-emitted ConfigMap value. An oracle test (``test_aws_eks``) asserts a
+    representative ``render_aws_values`` emits exactly this classified set.
+    """
+    projection = sorted(runtime_inventory_aws.AWS_GENERATED_RUNTIME_ENV_KEYS)
+    return (
+        *(_aws_runtime_output(name) for name in projection),
+        *_secret_outputs(
+            _AWS_RENDERER,
+            store="AWS Secrets Manager",
+            app_name="APP_SECRET_ARN",
+            db_name="DB_SECRET_ARN",
+            kind=OutputKind.COMPAT_ALIAS,
+        ),
+    )
+
+
+# Canonical pre-mutation validation front doors for the AWS bundle. Each is a pure,
+# repository-relative argv array whose executable is a declared required tool — the fast,
+# credential-free checks a setup/doctor flow runs before touching infrastructure. AWS has no
+# ``platform/k8s/aws`` overlay; its Kubernetes surface is the shared chart, so helm-template
+# (rendered with the AWS profile values) is the k8s front door rather than a kustomize
+# overlay render or a raw-manifest kube-linter pass. The fuller pre-mutation suite (tflint
+# with init, checkov, kube-linter/kubeconform on the rendered chart, and effective-values
+# schema validation) stays CI-enforced and in the deploy lifecycle.
+_AWS_VALIDATION_CHECKS: tuple[ValidationCheck, ...] = (
+    _ROOT_CONFIG_CHECK,
+    ValidationCheck(
+        name="terraform-fmt",
+        command=CommandSpec(
+            argv=("terraform", "fmt", "-check", "-recursive", "platform/terraform/environments"),
+            description="Check the AWS Terraform deployment roots are canonically formatted.",
+        ),
+        description="Fail on unformatted AWS Terraform before planning or applying.",
+    ),
+    ValidationCheck(
+        name="helm-template",
+        command=CommandSpec(
+            argv=(
+                "helm",
+                "template",
+                _SHIFTER_CHART_PATH,
+                "--values",
+                "platform/charts/shifter/values-aws-dev.yaml",
+            ),
+            description="Render the shared platform chart with the AWS profile values to catch template/value errors.",
+        ),
+        description="Fail closed if the platform chart does not render with the AWS values projection.",
+    ),
+    # Connect doctor to the canonical EKS deploy preflight rather than re-listing its checks
+    # (ADR-011 lifecycle boundary): preflight derives cloud+profile from the same shifter.yaml
+    # and runs the eks component, so doctor and the deploy lifecycle share one prerequisite
+    # contract (tools plus the isolated EKS root/backend inputs) instead of drifting apart.
+    ValidationCheck(
+        name="eks-preflight",
+        command=CommandSpec(
+            argv=(
+                "python3",
+                "scripts/bootstrap/preflight.py",
+                "--config",
+                _ROOT_CONFIG_PATH,
+                "--component",
+                "eks",
+                "--mode",
+                "local",
+                "--headless",
+            ),
+            description="Run the canonical EKS deploy preflight (tools + EKS root/backend inputs) for the profile.",
+        ),
+        description="Detect missing EKS prerequisites and root/backend inputs before deploy via the shared preflight.",
+    ),
+)
+
+
 _AWS_BUNDLE = BackendBundle(
     contract_version=_CONTRACT_VERSION,
     name="aws",
@@ -240,27 +342,18 @@ _AWS_BUNDLE = BackendBundle(
         RequiredSecret(
             logical_name="django_secret_key",
             purpose="seeds the app secret bundle (Django SECRET_KEY) for the portal and workers",
-            reference_grammar=_AWS_REFERENCE_GRAMMAR,
-            reference_pattern=_AWS_REFERENCE_PATTERN,
+            reference_grammar=AWS_REFERENCE_GRAMMAR,
+            reference_pattern=AWS_REFERENCE_PATTERN,
         ),
         RequiredSecret(
             logical_name="db_password",
             purpose="application database password",
-            reference_grammar=_AWS_REFERENCE_GRAMMAR,
-            reference_pattern=_AWS_REFERENCE_PATTERN,
+            reference_grammar=AWS_REFERENCE_GRAMMAR,
+            reference_pattern=AWS_REFERENCE_PATTERN,
         ),
     ),
-    generated_outputs=(
-        _cloud_provider_output("aws backend runtime-env renderer"),
-        *_secret_outputs(
-            "aws backend runtime-env renderer",
-            store="AWS Secrets Manager",
-            app_name="APP_SECRET_ARN",
-            db_name="DB_SECRET_ARN",
-            kind=OutputKind.COMPAT_ALIAS,
-        ),
-    ),
-    validation_checks=(_ROOT_CONFIG_CHECK,),
+    generated_outputs=_aws_generated_outputs(),
+    validation_checks=_AWS_VALIDATION_CHECKS,
     health_checks=(_PORTAL_HEALTH_CHECK,),
     capabilities=_AWS_AND_GCP_CAPABILITIES,
     owned_files=OwnedFiles(

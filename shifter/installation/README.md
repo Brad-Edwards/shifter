@@ -265,8 +265,12 @@ express), so a bundle it accepts is one the internal contract accepts too.
 | `loader.py` | YAML loading, duplicate-key checks, root validation, and backend validation dispatch. |
 | `contract.py` | Backend bundle contract types and invariants. |
 | `registry.py` | Supported backend bundle registry. |
+| `settings_aws.py` | Closed AWS operator settings model and secret-reference grammar. |
+| `settings_gcp.py` | Closed GCP operator settings model. |
 | `publication.py` | Generate and check the published, versioned contract artifact. |
 | `runtime_inventory.py` | Runtime config surface inventory and env-key drift checker. |
+| `runtime_inventory_aws.py` | AWS backend runtime-env key inventories (required, renderer-owned, provisioner-forwarded). |
+| `runtime_inventory_gcp.py` | GCP backend runtime-env key inventories. |
 | `cli.py` | `shifter-config init`, `validate`, `doctor`, `render`, `runtime-inventory`, and `contract`. |
 | `doctor.py` | Backend-aware `doctor` executor: tier-classified checks over the selected bundle. |
 | `scaffold.py` | `init` scaffolding: copy a checked example to a starting `shifter.yaml`. |
