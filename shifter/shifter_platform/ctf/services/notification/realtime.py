@@ -30,24 +30,41 @@ def event_topic(event_id: object) -> str:
     return f"{TOPIC_PREFIX}:{event_id}"
 
 
-def _can_subscribe(user: AbstractBaseUser | AnonymousUser, topic: str) -> bool:
-    """Authorize a subscription: event organizer, staff, or viewing participant."""
+def _topic_event(topic: str) -> CTFEvent | None:
+    """Resolve a ``ctf:event:<uuid>`` topic to a live event, or None."""
     from uuid import UUID
 
-    from ctf.models import CTFEvent, CTFEventStaff, CTFParticipant
+    from ctf.models import CTFEvent
+
+    try:
+        event_id = UUID(topic.rsplit(":", 1)[-1])
+    except ValueError:
+        return None
+    return CTFEvent.objects.filter(pk=event_id, deleted_at__isnull=True).only("id", "created_by_id").first()
+
+
+def _can_subscribe(user: AbstractBaseUser | AnonymousUser, topic: str) -> bool:
+    """Authorize a subscription: event organizer, eligible staff, or viewing participant.
+
+    A live staff row authorizes only while the account still holds the global CTF
+    Organizer role (#1922 review — no stale-row bypass).
+    """
+    from ctf.models import CTFEventStaff, CTFParticipant
+    from ctf.services.event.staff import actor_is_active_ctf_organizer
     from ctf.services.participant import viewing_participant_q
 
     user_id = getattr(user, "pk", None)
     if user_id is None:
         return False
-    try:
-        event_id = UUID(topic.rsplit(":", 1)[-1])
-    except ValueError:
+    event = _topic_event(topic)
+    if event is None:
         return False
-    event = CTFEvent.objects.filter(pk=event_id, deleted_at__isnull=True).only("id", "created_by_id").first()
-    return event is not None and (
+    return (
         event.created_by_id == user_id
-        or CTFEventStaff.objects.filter(event=event, user_id=user_id, deleted_at__isnull=True).exists()
+        or (
+            CTFEventStaff.objects.filter(event=event, user_id=user_id, deleted_at__isnull=True).exists()
+            and actor_is_active_ctf_organizer(user_id)
+        )
         or CTFParticipant.objects.filter(viewing_participant_q(), event=event, user_id=user_id).exists()
     )
 
@@ -87,6 +104,7 @@ def publish_event_notification(
         register_ctf_notifications()
         if recipient_ids is None:
             from ctf.models import CTFParticipant
+            from ctf.services.event.staff import eligible_co_organizer_ids
             from ctf.services.participant import viewing_participant_q
 
             recipient_ids = list(
@@ -94,7 +112,14 @@ def publish_event_notification(
                 .values_list("user_id", flat=True)
                 .distinct()
             )
+            # Organizer-directed recipients are the canonical owner plus live full
+            # co-organizers who are still eligible (active + global CTF Organizer
+            # role), derived from current assignments and de-duplicated (#1922).
+            # Distinct from notification sender/`created_by` attribution;
+            # moderators/judges are unchanged.
             recipient_ids.append(event.created_by_id)
+            recipient_ids.extend(eligible_co_organizer_ids(event))
+            recipient_ids = list(dict.fromkeys(recipient_ids))
         publish_notification(
             NOTIFICATION_TYPE,
             topic=event_topic(event.pk),

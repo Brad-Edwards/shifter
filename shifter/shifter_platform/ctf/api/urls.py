@@ -212,6 +212,11 @@ urlpatterns = [
         organizer.EventStaffMemberView.as_view(),
         name="api_event_staff_member",
     ),
+    path(
+        "events/<uuid:event_id>/transfer-ownership/",
+        organizer.EventOwnershipTransferView.as_view(),
+        name="api_event_transfer_ownership",
+    ),
     path("range/status/", organizer.ParticipantRangeStatusView.as_view(), name="api_range_status"),
     path("range/access/", organizer.ParticipantRangeAccessView.as_view(), name="api_range_access"),
     path(

@@ -26,6 +26,12 @@ python3 scripts/adr_guard/adr_guard.py --checks layer-imports guardrail-docs --a
 Current mechanisms:
 
 - `scripts/adr_guard/adr_guard.py`: repo-native policy runner
+- `lilrae-identity-boundary`: ADR-024-R6 terminology enforcement. Current
+  architecture prose treats LilRAE and APTL as one identity across a rename,
+  treats TechVault only as a scenario pack, and requires retired TechVault
+  implementation notes to carry a historical boundary while preserving exact
+  commands, paths, symbols, image keys, workflow names, release history, and
+  external `aptl:*` locators.
 - `scripts/adr_guard/boundary_mock_baseline.json`: current legacy
   first-party internal mock-patch counts for ADR-019. Counts may shrink
   as tests move to behavioral assertions, but new or increased internal

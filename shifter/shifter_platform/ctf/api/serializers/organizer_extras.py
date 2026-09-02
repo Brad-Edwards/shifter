@@ -51,10 +51,23 @@ class EventStaffListResponseSerializer(serializers.Serializer):
 
 
 class EventStaffAssignRequestSerializer(serializers.Serializer):
-    """Assignment request: organizer-tier user email plus staff role."""
+    """Assignment request: organizer-tier user email plus staff role.
+
+    ``role`` stays an unconstrained ``CharField`` at the HTTP boundary to keep the
+    v1 request contract backward-compatible (ADR-040 — a request enum is a
+    breaking change). The closed ``EventStaffRole`` vocabulary is still enforced
+    fail-closed in ``assign_event_staff``, which rejects an unknown role with a
+    400 (#1922).
+    """
 
     email = serializers.EmailField()
     role = serializers.CharField(max_length=16)
+
+
+class EventOwnershipTransferRequestSerializer(serializers.Serializer):
+    """Ownership-transfer request: the target user's id (an existing co-organizer)."""
+
+    user_id = serializers.IntegerField(min_value=1)
 
 
 class ChallengeImportRequestSerializer(serializers.Serializer):

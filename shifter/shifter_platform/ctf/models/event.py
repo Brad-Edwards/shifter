@@ -393,13 +393,17 @@ class CTFEvent(CTFBaseModel):
 
 
 class CTFEventStaff(CTFBaseModel):
-    """A delegated staff assignment on one event (CTF-607).
+    """A delegated staff assignment on one event (CTF-607, #1922).
 
-    Grants a second organizer-tier user a bounded slice of event
+    Grants a second organizer-tier user a role-scoped slice of event
     management: moderators handle participants and announcements, judges
-    handle submissions review and awards. The owning organizer
-    (``CTFEvent.created_by``) always retains every capability; staff rows
-    never widen access to event configuration, challenges, or scoring.
+    handle submissions review and awards, and co-organizers hold every
+    operational capability the owner has (configuration, challenges,
+    participants, lifecycle, deletion, ...). The owning organizer
+    (``CTFEvent.created_by``) is the single canonical owner, always retains
+    every capability, and holds no staff row of their own. Authority-topology
+    operations (staff management and ownership transfer) are never delegated —
+    they remain owner-only.
     """
 
     event = models.ForeignKey(
@@ -417,7 +421,10 @@ class CTFEventStaff(CTFBaseModel):
     role = models.CharField(
         max_length=16,
         choices=EventStaffRole.choices(),
-        help_text="Delegated role: moderator (participants, announcements) or judge (submissions, awards)",
+        help_text=(
+            "Delegated role: moderator (participants, announcements), judge "
+            "(submissions, awards), or co_organizer (all operational capabilities)"
+        ),
     )
 
     class Meta:
@@ -432,6 +439,13 @@ class CTFEventStaff(CTFBaseModel):
                 fields=["event", "user"],
                 condition=models.Q(deleted_at__isnull=True),
                 name="unique_active_ctf_event_staff_user",
+            ),
+            # Authorization-data boundary: the persisted role must be one of the
+            # closed EventStaffRole values (#1922). Model choices / serializer /
+            # full_clean are useful layers but not the final gate.
+            models.CheckConstraint(
+                condition=models.Q(role__in=[role.value for role in EventStaffRole]),
+                name="ctf_event_staff_role_valid",
             ),
         ]
 
@@ -453,47 +467,6 @@ RESERVED_BRIEFING_SLUG = "briefing"
 MAX_EVENT_PAGE_BODY_CHARS = 20_000
 MAX_EVENT_PAGES_PER_EVENT = 50
 
-
-class CTFEventPage(CTFBaseModel):
-    """One organizer-authored informational page for an event (CTF-1303)."""
-
-    event = models.ForeignKey(
-        CTFEvent,
-        on_delete=models.CASCADE,
-        related_name="pages",
-        help_text="Event this page belongs to",
-    )
-    title = models.CharField(
-        max_length=120,
-        help_text="Page title shown in the participant navigation",
-    )
-    slug = models.SlugField(
-        max_length=140,
-        help_text="URL-safe identifier, unique per event",
-    )
-    body = models.TextField(
-        help_text="Markdown content",
-    )
-    order = models.PositiveIntegerField(
-        default=0,
-        help_text="Display order in the participant navigation",
-    )
-
-    class Meta:
-        """Django model metadata."""
-
-        db_table = "ctf_event_page"
-        ordering = ["order", "title"]
-        verbose_name = "CTF Event Page"
-        verbose_name_plural = "CTF Event Pages"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["event", "slug"],
-                condition=models.Q(deleted_at__isnull=True),
-                name="unique_active_ctf_event_page_slug",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        """Return the page title with its event."""
-        return f"{self.title} ({self.event_id})"
+# ``CTFEventPage`` lives in ``ctf.models.event_page`` (python:S104 file-size
+# budget); the constants above stay here because other layers import them from
+# ``ctf.models.event``. Both are re-exported from ``ctf.models``.

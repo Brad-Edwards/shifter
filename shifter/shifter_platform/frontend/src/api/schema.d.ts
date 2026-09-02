@@ -538,10 +538,26 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the organizer's events. */
+        /**
+         * @description Return the events the actor may administer (authority-aware, bounded).
+         *
+         *     A platform administrator sees all live events; an ordinary organizer sees
+         *     owned plus live staff-assigned events. Search/status/owner/ordering are
+         *     allowlisted data filters; the admin path is bounded to the canonical page
+         *     size. The v1 ``{"events": [...]}`` envelope is unchanged (ADR-040).
+         */
         get: operations["ctf_events_list"];
         put?: never;
-        /** @description Create an event from the request body. */
+        /**
+         * @description Create an event from the request body.
+         *
+         *     Creation is organizer authority, never the platform-admin override
+         *     (ADR-052): a new event has no existing event on which to resolve override
+         *     authority, and creation makes the actor ``created_by``. The list GET is
+         *     admitted for organizers or platform admins, but POST requires a genuine
+         *     CTF organizer, so a pure superuser cannot create an event and acquire
+         *     ownership.
+         */
         post: operations["ctf_events_create"];
         delete?: never;
         options?: never;
@@ -556,7 +572,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the full event detail projection. */
+        /** @description Return the full event detail projection with owner and access context. */
         get: operations["ctf_events_retrieve"];
         /** @description Update mutable fields of an owned event. */
         put: operations["ctf_events_update"];
@@ -982,6 +998,23 @@ export interface paths {
         put?: never;
         /** @description Reschedule the task to now; the scheduler executes it on its next poll. */
         post: operations["ctf_events_tasks_run_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/transfer-ownership/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Promote a current co-organizer to owner; the previous owner stays a co-organizer. */
+        post: operations["ctf_events_transfer_ownership_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1865,7 +1898,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Soft-delete the webhook after ownership checks. */
+        /** @description Soft-delete the webhook; the service asserts the config capability on its event. */
         delete: operations["ctf_webhooks_destroy"];
         options?: never;
         head?: never;
@@ -2901,6 +2934,7 @@ export interface components {
             can_access_threat_research: boolean;
             is_ctf_organizer: boolean;
             is_ctf_participant: boolean;
+            can_administer_ctf: boolean;
             can_view_users: boolean;
             can_change_users: boolean;
             can_delete_users: boolean;
@@ -3208,8 +3242,12 @@ export interface components {
             readonly hint_count: number;
             readonly prerequisite_count: number;
         };
-        /** @description Full organizer-facing event detail projection. */
+        /** @description Full organizer-facing event detail projection with owner and access context. */
         EventDetail: {
+            readonly owner: components["schemas"]["OwnerRef"];
+            /** @description Return the closed authority source by which the actor reaches ``event``. */
+            readonly access_source: string;
+            readonly access_capabilities: string[];
             readonly id: string;
             readonly name: string;
             readonly description: string;
@@ -3274,6 +3312,10 @@ export interface components {
             readonly name: string;
             readonly status: string;
         };
+        /** @description Ownership-transfer request: the target user's id (an existing co-organizer). */
+        EventOwnershipTransferRequest: {
+            user_id: number;
+        };
         /** @description One organizer-authored event page (CTF-1303). */
         EventPage: {
             readonly id: string;
@@ -3293,7 +3335,15 @@ export interface components {
         EventPagesResponse: {
             readonly pages: components["schemas"]["EventPage"][];
         };
-        /** @description Assignment request: organizer-tier user email plus staff role. */
+        /**
+         * @description Assignment request: organizer-tier user email plus staff role.
+         *
+         *     ``role`` stays an unconstrained ``CharField`` at the HTTP boundary to keep the
+         *     v1 request contract backward-compatible (ADR-040 — a request enum is a
+         *     breaking change). The closed ``EventStaffRole`` vocabulary is still enforced
+         *     fail-closed in ``assign_event_staff``, which rejects an unknown role with a
+         *     400 (#1922).
+         */
         EventStaffAssignRequest: {
             /** Format: email */
             email: string;
@@ -3311,7 +3361,7 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string | null;
         };
-        /** @description List projection of one of an organizer's events. */
+        /** @description List projection of one event with owner and server-derived access context. */
         EventSummary: {
             readonly id: string;
             readonly name: string;
@@ -3321,6 +3371,10 @@ export interface components {
             /** Format: date-time */
             readonly event_end: string;
             readonly team_mode: boolean;
+            readonly owner: components["schemas"]["OwnerRef"];
+            /** @description Return the closed authority source by which the actor reaches ``event``. */
+            readonly access_source: string;
+            readonly access_capabilities: string[];
         };
         /**
          * @description Create/update request body: the mutable event fields only.
@@ -3723,6 +3777,17 @@ export interface components {
          * @enum {string}
          */
         OsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
+        /**
+         * @description Bounded event-owner projection: stable id and display name only (ADR-052).
+         *
+         *     Never serializes the Django ``User``, provider subject, email, groups, or role
+         *     facts. Consumed by the organizer/platform-admin list and detail so the owner
+         *     is visible without leaking identity payload.
+         */
+        OwnerRef: {
+            readonly id: string;
+            readonly display_name: string;
+        };
         /**
          * @description Validate the shape of a uniform pack-registration request body (#1578).
          *
@@ -4449,6 +4514,8 @@ export interface components {
             is_ready: boolean;
             is_terminal: boolean;
             is_active: boolean;
+            pause_supported: boolean;
+            resume_supported: boolean;
         };
         /** @description Acknowledgement returned when bulk range provisioning is enqueued. */
         RangeProvisionQueued: {
@@ -6362,7 +6429,22 @@ export interface operations {
     };
     ctf_events_list: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description * `event_start` - event_start
+                 *     * `-event_start` - -event_start
+                 *     * `name` - name
+                 *     * `-name` - -name
+                 *     * `status` - status
+                 *     * `-status` - -status
+                 */
+                ordering?: "event_start" | "-event_start" | "name" | "-name" | "status" | "-status" | "";
+                owner?: string;
+                page?: number;
+                page_size?: number;
+                search?: string;
+                status?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7836,6 +7918,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledTask"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_transfer_ownership_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventOwnershipTransferRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventOwnershipTransferRequest"];
+                "multipart/form-data": components["schemas"]["EventOwnershipTransferRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventMutationResult"];
                 };
             };
             /** @description Authentication failed. */

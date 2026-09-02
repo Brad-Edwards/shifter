@@ -17,12 +17,12 @@ Before launching a participant range, experiment run, or event-specific scenario
 
 ## Rationale
 
-APTL treats system preflight, scenario prerequisite validation, and clean-state guarantees as explicit requirements. Shifter already has capacity-aware provisioning and DSL compatibility work; this requirement ties those checks to the launch boundary.
+LilRAE (formerly APTL) treats system preflight, scenario prerequisite validation, and clean-state guarantees as explicit requirements. Shifter already has capacity-aware provisioning and DSL compatibility work; this requirement ties those checks to the launch boundary.
 
 ## Traceability
 
-- DOCUMENTS → SPEC `aptl:INF-007` (APTL INF-007: Pre-Flight System Requirements Check)
-- DOCUMENTS → SPEC `aptl:SCN-009` (APTL SCN-009: Scenario Prerequisite Validation)
-- DOCUMENTS → SPEC `aptl:RNG-001` (APTL RNG-001: Ephemeral Environments with Clean State Guarantees)
+- DOCUMENTS → SPEC `aptl:INF-007` (LilRAE specification, former APTL identifier INF-007: Pre-Flight System Requirements Check)
+- DOCUMENTS → SPEC `aptl:SCN-009` (LilRAE specification, former APTL identifier SCN-009: Scenario Prerequisite Validation)
+- DOCUMENTS → SPEC `aptl:RNG-001` (LilRAE specification, former APTL identifier RNG-001: Ephemeral Environments with Clean State Guarantees)
 - DOCUMENTS → DOCUMENTATION `scenario-dev/polaris/lessons-3.md` (Polaris lessons: provisioning and egress readiness)
 - DOCUMENTS → DOCUMENTATION `scenario-dev/polaris/lessons-4.md` (Polaris lessons: smoke tests and readiness regressions)

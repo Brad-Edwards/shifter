@@ -19,7 +19,7 @@ from uuid import UUID
 from django.db import transaction
 
 from ctf.content_bundle import BundleChallenge, CtfContentBundle
-from ctf.enums import EventStatus
+from ctf.enums import EventCapability, EventStatus
 from ctf.exceptions import CTFStateError, CTFValidationError
 from ctf.models import (
     CTFChallenge,
@@ -32,7 +32,7 @@ from ctf.models import (
     CTFHintUsage,
     CTFSubmission,
 )
-from ctf.services.authorization import assert_actor_owns_event
+from ctf.services.authorization import assert_event_capability
 from ctf.services.challenge import _flag_hash_for_payload
 from ctf.services.content_hydration import (
     _content_shape_matches,
@@ -311,7 +311,7 @@ def refresh_event_ctf_content(
             event = CTFEvent.objects.select_for_update().get(pk=event_id)
         except CTFEvent.DoesNotExist:
             raise CTFValidationError("Event not found.", code="CTF_EVENT_NOT_FOUND") from None
-        assert_actor_owns_event(actor_id, event)
+        assert_event_capability(actor_id, event, EventCapability.CONTENT)
 
         receipt = _existing_receipt(event)
         if receipt is None:

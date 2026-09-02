@@ -100,7 +100,7 @@ class AdrGuardTests(unittest.TestCase):
                 "real_provider_promotion_evidence": True,
             },
             "adapters": {
-                "initial": ["aws-terraform", "gcp-gdc"],
+                "initial": ["aws-terraform", "gcp-gce", "gcp-gdc"],
                 "deferred": ["azure"],
             },
             "issue_references": {
@@ -120,7 +120,7 @@ class AdrGuardTests(unittest.TestCase):
                 {"real_provider_promotion_evidence": False}
             ),
             "azure not deferred": lambda value: value["adapters"].update(
-                {"initial": ["aws-terraform", "gcp-gdc", "azure"], "deferred": []}
+                {"initial": ["aws-terraform", "gcp-gce", "gcp-gdc", "azure"], "deferred": []}
             ),
             "missing program reference": lambda value: value["issue_references"].pop("478"),
             "unmapped program reference": lambda value: value["issue_references"].update(
@@ -5885,6 +5885,201 @@ class DocumentationCoverageTests(unittest.TestCase):
         self.assertIn("documentation-coverage", ADR_GUARD.CHECKS)
         self.assertIn("documentation-coverage", ADR_GUARD.CHECK_LEVELS["ci"])
         self.assertIn("documentation-coverage", ADR_GUARD.CHECK_LEVELS["fast"])
+
+
+class LilraeIdentityBoundaryTests(unittest.TestCase):
+    """ADR-024-R6: LilRAE identity and the TechVault pack boundary stay explicit."""
+
+    def _write(self, repo_root: Path, rel: str, text: str) -> None:
+        path = repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _write_adr_index(self, repo_root: Path, decision: str) -> str:
+        rel = "docs/adr/index.yaml"
+        self._write(
+            repo_root,
+            rel,
+            json.dumps(
+                [
+                    {
+                        "id": "ADR-024",
+                        "decision": decision,
+                        "rules": [
+                            {
+                                "id": "ADR-024-R6",
+                                "description": "LilRAE identity and TechVault boundary",
+                                "checks": ["lilrae-identity-boundary"],
+                            }
+                        ],
+                    }
+                ]
+            ),
+        )
+        return rel
+
+    def test_rejects_false_product_split(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/example.md"
+            self._write(repo_root, rel, "APTL and LilRAE are separate products.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-024-R6")
+
+    def test_rejects_techvault_as_product(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/example.md"
+            self._write(repo_root, rel, "TechVault is a product hosted by LilRAE.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("scenario pack", violations[0].message)
+
+    def test_rejects_aptl_as_lilrae_hosted_experience(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/example.md"
+            self._write(repo_root, rel, "APTL is an experience hosted by LilRAE.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("rename", violations[0].message)
+
+    def test_rejects_false_slash_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/example.md"
+            self._write(repo_root, rel, "The TechVault/APTL integration owns this path.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("false pairing", violations[0].message)
+
+    def test_targeted_registry_rejects_false_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = self._write_adr_index(
+                repo_root, "The TechVault/APTL integration owns this path."
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].path, rel)
+
+    def test_full_registry_scan_rejects_false_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = self._write_adr_index(
+                repo_root, "The TechVault/APTL integration owns this path."
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].path, rel)
+
+    def test_current_prose_requires_rename_continuity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/requirements/PLAT-211/requirement.md"
+            self._write(repo_root, rel, "APTL defines the reference contract.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("rename continuity", violations[0].message)
+
+    def test_current_prose_accepts_explicit_rename_continuity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/requirements/PLAT-211/requirement.md"
+            self._write(
+                repo_root,
+                rel,
+                "LilRAE (formerly APTL) defines the reference contract.\n",
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(violations, [])
+
+    def test_release_history_is_exempt_from_conceptual_reclassification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "CHANGELOG.md"
+            self._write(repo_root, rel, "Historical TechVault/APTL release entry.\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(violations, [])
+
+    def test_identity_preflight_may_name_prohibited_relationships(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/aptl-lilrae-techvault-identity-preflight-2062.md"
+            self._write(
+                repo_root,
+                rel,
+                "Do not preserve the false TechVault/APTL pairing.\n",
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(violations, [])
+
+    def test_retired_techvault_note_requires_historical_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "docs/architecture/techvault-encrypted-ami-preflight-1455.md"
+            self._write(repo_root, rel, "# TechVault Encrypted AMI Preflight\n")
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("historical boundary", violations[0].message)
+
+    def test_current_boundary_and_retired_notice_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            current_rel = "docs/architecture/example.md"
+            retired_rel = "docs/architecture/techvault-encrypted-ami-preflight-1455.md"
+            self._write(
+                repo_root,
+                current_rel,
+                "LilRAE (formerly APTL) is one continuous identity. "
+                "TechVault is a scenario pack.\n",
+            )
+            self._write(
+                repo_root,
+                retired_rel,
+                "# Historical record\n\n"
+                "> **Historical boundary (issue #2062, 2026-08-19):** "
+                "TechVault is a scenario pack. APTL is the former name of LilRAE. "
+                "The bespoke implementation was retired by the RAES hard cut.\n",
+            )
+
+            violations = ADR_GUARD.check_lilrae_identity_boundary(
+                repo_root, [current_rel, retired_rel]
+            )
+
+            self.assertEqual(violations, [])
+
+    def test_check_is_registered(self) -> None:
+        self.assertIn("lilrae-identity-boundary", ADR_GUARD.CHECKS)
+        self.assertIn("lilrae-identity-boundary", ADR_GUARD.CHECK_LEVELS["ci"])
+        self.assertIn("lilrae-identity-boundary", ADR_GUARD.CHECK_LEVELS["fast"])
+
+    def test_repository_identity_boundary_is_clean(self) -> None:
+        violations = ADR_GUARD.check_lilrae_identity_boundary(ADR_GUARD.REPO_ROOT, None)
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
 
 
 class MissionControlFlagLiteralsTests(unittest.TestCase):

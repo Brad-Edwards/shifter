@@ -2415,7 +2415,67 @@
     "/api/v1/ctf/events/": {
       "get": {
         "operationId": "ctf_events_list",
-        "description": "Return the organizer's events.",
+        "description": "Return the events the actor may administer (authority-aware, bounded).\n\nA platform administrator sees all live events; an ordinary organizer sees\nowned plus live staff-assigned events. Search/status/owner/ordering are\nallowlisted data filters; the admin path is bounded to the canonical page\nsize. The v1 ``{\"events\": [...]}`` envelope is unchanged (ADR-040).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ordering",
+            "schema": {
+              "enum": [
+                "event_start",
+                "-event_start",
+                "name",
+                "-name",
+                "status",
+                "-status",
+                ""
+              ],
+              "type": "string"
+            },
+            "description": "* `event_start` - event_start\n* `-event_start` - -event_start\n* `name` - name\n* `-name` - -name\n* `status` - status\n* `-status` - -status"
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            }
+          }
+        ],
         "tags": [
           "ctf"
         ],
@@ -2462,7 +2522,7 @@
       },
       "post": {
         "operationId": "ctf_events_create",
-        "description": "Create an event from the request body.",
+        "description": "Create an event from the request body.\n\nCreation is organizer authority, never the platform-admin override\n(ADR-052): a new event has no existing event on which to resolve override\nauthority, and creation makes the actor ``created_by``. The list GET is\nadmitted for organizers or platform admins, but POST requires a genuine\nCTF organizer, so a pure superuser cannot create an event and acquire\nownership.",
         "tags": [
           "ctf"
         ],
@@ -2531,7 +2591,7 @@
     "/api/v1/ctf/events/{event_id}/": {
       "get": {
         "operationId": "ctf_events_retrieve",
-        "description": "Return the full event detail projection.",
+        "description": "Return the full event detail projection with owner and access context.",
         "parameters": [
           {
             "in": "path",
@@ -4823,6 +4883,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScheduledTask"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/transfer-ownership/": {
+      "post": {
+        "operationId": "ctf_events_transfer_ownership_create",
+        "description": "Promote a current co-organizer to owner; the previous owner stays a co-organizer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventMutationResult"
                 }
               }
             },
@@ -8282,7 +8422,7 @@
     "/api/v1/ctf/webhooks/{webhook_id}/": {
       "delete": {
         "operationId": "ctf_webhooks_destroy",
-        "description": "Soft-delete the webhook after ownership checks.",
+        "description": "Soft-delete the webhook; the service asserts the config capability on its event.",
         "parameters": [
           {
             "in": "path",
@@ -12819,6 +12959,9 @@
           "is_ctf_participant": {
             "type": "boolean"
           },
+          "can_administer_ctf": {
+            "type": "boolean"
+          },
           "can_view_users": {
             "type": "boolean"
           },
@@ -12831,6 +12974,7 @@
         },
         "required": [
           "can_access_threat_research",
+          "can_administer_ctf",
           "can_change_users",
           "can_delete_users",
           "can_view_users",
@@ -13791,8 +13935,28 @@
       },
       "EventDetail": {
         "type": "object",
-        "description": "Full organizer-facing event detail projection.",
+        "description": "Full organizer-facing event detail projection with owner and access context.",
         "properties": {
+          "owner": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OwnerRef"
+              }
+            ],
+            "readOnly": true
+          },
+          "access_source": {
+            "type": "string",
+            "description": "Return the closed authority source by which the actor reaches ``event``.",
+            "readOnly": true
+          },
+          "access_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
           "id": {
             "type": "string",
             "readOnly": true
@@ -13940,6 +14104,8 @@
           }
         },
         "required": [
+          "access_capabilities",
+          "access_source",
           "attempt_limit_cooldown_seconds",
           "attempt_limit_mode",
           "auto_cleanup",
@@ -13954,6 +14120,7 @@
           "managed_content",
           "max_participants",
           "name",
+          "owner",
           "range_config",
           "range_spinup_minutes",
           "rating_visibility",
@@ -14036,6 +14203,19 @@
           "status"
         ]
       },
+      "EventOwnershipTransferRequest": {
+        "type": "object",
+        "description": "Ownership-transfer request: the target user's id (an existing co-organizer).",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
       "EventPage": {
         "type": "object",
         "description": "One organizer-authored event page (CTF-1303).",
@@ -14114,7 +14294,7 @@
       },
       "EventStaffAssignRequest": {
         "type": "object",
-        "description": "Assignment request: organizer-tier user email plus staff role.",
+        "description": "Assignment request: organizer-tier user email plus staff role.\n\n``role`` stays an unconstrained ``CharField`` at the HTTP boundary to keep the\nv1 request contract backward-compatible (ADR-040 — a request enum is a\nbreaking change). The closed ``EventStaffRole`` vocabulary is still enforced\nfail-closed in ``assign_event_staff``, which rejects an unknown role with a\n400 (#1922).",
         "properties": {
           "email": {
             "type": "string",
@@ -14178,7 +14358,7 @@
       },
       "EventSummary": {
         "type": "object",
-        "description": "List projection of one of an organizer's events.",
+        "description": "List projection of one event with owner and server-derived access context.",
         "properties": {
           "id": {
             "type": "string",
@@ -14205,13 +14385,36 @@
           "team_mode": {
             "type": "boolean",
             "readOnly": true
+          },
+          "owner": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OwnerRef"
+              }
+            ],
+            "readOnly": true
+          },
+          "access_source": {
+            "type": "string",
+            "description": "Return the closed authority source by which the actor reaches ``event``.",
+            "readOnly": true
+          },
+          "access_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
           }
         },
         "required": [
+          "access_capabilities",
+          "access_source",
           "event_end",
           "event_start",
           "id",
           "name",
+          "owner",
           "status",
           "team_mode"
         ]
@@ -15277,6 +15480,24 @@
         ],
         "type": "string",
         "description": "* `kali` - kali\n* `ubuntu` - ubuntu\n* `windows` - windows\n* `panos` - panos"
+      },
+      "OwnerRef": {
+        "type": "object",
+        "description": "Bounded event-owner projection: stable id and display name only (ADR-052).\n\nNever serializes the Django ``User``, provider subject, email, groups, or role\nfacts. Consumed by the organizer/platform-admin list and detail so the owner\nis visible without leaking identity payload.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "display_name": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "display_name",
+          "id"
+        ]
       },
       "PackRegistration": {
         "type": "object",
@@ -17598,6 +17819,12 @@
           },
           "is_active": {
             "type": "boolean"
+          },
+          "pause_supported": {
+            "type": "boolean"
+          },
+          "resume_supported": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -17606,9 +17833,11 @@
           "is_active",
           "is_ready",
           "is_terminal",
+          "pause_supported",
           "range_id",
           "range_type",
           "request_id",
+          "resume_supported",
           "scenario_id",
           "status",
           "user_id"

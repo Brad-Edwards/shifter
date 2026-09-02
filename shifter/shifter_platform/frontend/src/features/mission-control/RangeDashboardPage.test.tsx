@@ -42,6 +42,8 @@ function currentRange(overrides: Partial<RangePresentation> = {}): CurrentRangeR
     is_ready: true,
     is_terminal: false,
     is_active: true,
+    pause_supported: true,
+    resume_supported: true,
     ...overrides,
   };
   return {
@@ -118,6 +120,25 @@ describe("RangeDashboardPage", () => {
     expect(screen.getByText("Expires in 30 days")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Extend by up to 30 days" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download VPN profile" })).toBeInTheDocument();
+  });
+
+  it("hides Pause when the server reports the range is not pause/resume-safe (#614)", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-07-19T12:00:00Z").valueOf());
+    mockApi.mockResolvedValue(currentRange({ status: "ready", pause_supported: false }));
+    renderRoute(<RangeDashboardPage />);
+
+    expect(await screen.findByText("Ready")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
+    // Destroy remains available; only pause/resume is capability-gated.
+    expect(screen.getByRole("button", { name: "Destroy" })).toBeInTheDocument();
+  });
+
+  it("hides Resume when the server reports the range is not pause/resume-safe (#614)", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-07-19T12:00:00Z").valueOf());
+    mockApi.mockResolvedValue(currentRange({ status: "paused", resume_supported: false }));
+    renderRoute(<RangeDashboardPage />);
+
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
   });
 
   it("confirms a server-bounded extension without sending a caller deadline", async () => {
