@@ -418,20 +418,38 @@ class TestApiForceDeleteEvent:
         assert resp.status_code == 400
         assert "confirmation_name" in resp.json()["error"]["message"]
 
-    def test_api_force_delete_non_owner(self, organizer_client, mock_event):
-        """Non-owner should get 403."""
-        mock_event.created_by_id = 999  # Not the authenticated user (pk=1)
-        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+    @pytest.mark.django_db
+    def test_api_force_delete_non_owner(self, ctf_event):
+        """An unrelated organizer (not owner, not co-organizer) gets 403 (#1922).
 
-        with patch("ctf.models.CTFEvent.all_objects") as mock_all:
-            mock_all.get.return_value = mock_event
+        Force-delete authorization now consults the co-organizer role map, so
+        this exercises real DB objects rather than a mock event: only the owner
+        and full co-organizers may force-delete.
+        """
+        from django.contrib.auth.models import Group, User
 
-            resp = organizer_client.post(
-                url,
-                data='{"confirmation_name": "Test CTF Event"}',
-                content_type="application/json",
-            )
+        from management.services import get_user_profile
+        from shared.auth import CTF_ORGANIZER_GROUP
 
+        stranger = User.objects.create_user(
+            username="fd_stranger@test.com",
+            email="fd_stranger@test.com",
+            password="testpass123",  # nosec B106
+        )
+        group, _ = Group.objects.get_or_create(name=CTF_ORGANIZER_GROUP)
+        stranger.groups.add(group)
+        profile = get_user_profile(stranger)
+        profile.user_type = "ctf_organizer"
+        profile.save(update_fields=["user_type"])
+
+        client = Client()
+        client.force_login(stranger)
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": ctf_event.id})
+        resp = client.post(
+            url,
+            data='{"confirmation_name": "Test CTF Event"}',
+            content_type="application/json",
+        )
         assert resp.status_code == 403
 
     def test_api_force_delete_not_found(self, organizer_client):

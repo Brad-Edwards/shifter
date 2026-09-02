@@ -4911,6 +4911,86 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/transfer-ownership/": {
+      "post": {
+        "operationId": "ctf_events_transfer_ownership_create",
+        "description": "Promote a current co-organizer to owner; the previous owner stays a co-organizer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventMutationResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/webhooks/": {
       "get": {
         "operationId": "ctf_events_webhooks_retrieve",
@@ -8342,7 +8422,7 @@
     "/api/v1/ctf/webhooks/{webhook_id}/": {
       "delete": {
         "operationId": "ctf_webhooks_destroy",
-        "description": "Soft-delete the webhook after ownership checks.",
+        "description": "Soft-delete the webhook; the service asserts the config capability on its event.",
         "parameters": [
           {
             "in": "path",
@@ -14123,6 +14203,19 @@
           "status"
         ]
       },
+      "EventOwnershipTransferRequest": {
+        "type": "object",
+        "description": "Ownership-transfer request: the target user's id (an existing co-organizer).",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
       "EventPage": {
         "type": "object",
         "description": "One organizer-authored event page (CTF-1303).",
@@ -14201,7 +14294,7 @@
       },
       "EventStaffAssignRequest": {
         "type": "object",
-        "description": "Assignment request: organizer-tier user email plus staff role.",
+        "description": "Assignment request: organizer-tier user email plus staff role.\n\n``role`` stays an unconstrained ``CharField`` at the HTTP boundary to keep the\nv1 request contract backward-compatible (ADR-040 — a request enum is a\nbreaking change). The closed ``EventStaffRole`` vocabulary is still enforced\nfail-closed in ``assign_event_staff``, which rejects an unknown role with a\n400 (#1922).",
         "properties": {
           "email": {
             "type": "string",

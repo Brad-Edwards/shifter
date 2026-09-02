@@ -36,6 +36,7 @@ from ctf.api.serializers import (
     EventContentRefreshRequestSerializer,
     EventContentRefreshResultSerializer,
 )
+from ctf.enums import EventCapability
 
 if TYPE_CHECKING:
     from typing import NoReturn
@@ -66,7 +67,7 @@ class EventContentRefreshView(APIView):
     def post(self, request: Request, event_id: UUID) -> Response:
         """Validate the fence, reconcile to the configured revision, return the outcome."""
         try:
-            event = _resolve_owned_event(request, event_id)
+            event = _resolve_owned_event(request, event_id, capability=EventCapability.CONTENT)
             serializer = EventContentRefreshRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             expected = serializer.validated_data["expected_current_digest"]

@@ -211,6 +211,13 @@ def provision_event_spares(event_id: UUID, target_count: int, *, operator: User 
     from ctf.services.range.capacity import assess_declared_capacity, declare_event_capacity
 
     event = _get_event(event_id)
+    if operator is not None:
+        # Interactive top-up: assert the ranges capability at the service
+        # boundary as well as the view (defense in depth, #1922).
+        from ctf.enums import EventCapability
+        from ctf.services.authorization import assert_event_capability
+
+        assert_event_capability(operator.pk, event, EventCapability.RANGES)
     event.spare_range_count = target_count
     event.save(update_fields=["spare_range_count", "updated_at"])
     # Declare AFTER persisting the new target: the declaration's

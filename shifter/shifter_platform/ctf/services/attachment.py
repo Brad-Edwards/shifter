@@ -15,6 +15,7 @@ from django.core.files.base import File
 from django.db import transaction
 from django.db.models import QuerySet
 
+from ctf.enums import EventCapability
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.inspection import (
     CTFInspectionError,
@@ -111,7 +112,7 @@ def add_challenge_file(
         CTFStateError: If event is not content-modifiable.
         CTFValidationError: If file fails validation.
     """
-    from ctf.services.authorization import assert_actor_owns_event
+    from ctf.services.authorization import assert_event_capability
 
     try:
         challenge = CTFChallenge.objects.select_related("event").get(pk=challenge_id)
@@ -121,7 +122,7 @@ def add_challenge_file(
             details={"challenge_id": str(challenge_id)},
         ) from None
 
-    assert_actor_owns_event(actor_id, challenge.event)
+    assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     if not challenge.event.is_content_modifiable:
         raise CTFStateError(
@@ -251,7 +252,7 @@ def remove_challenge_file(file_id: UUID, *, actor_id: int) -> None:
         CTFPermissionError: If actor does not own the file's event.
         CTFStateError: If event is not content-modifiable.
     """
-    from ctf.services.authorization import assert_actor_owns_event
+    from ctf.services.authorization import assert_event_capability
 
     try:
         challenge_file = CTFChallengeFile.objects.select_related("challenge__event").get(pk=file_id)
@@ -261,7 +262,7 @@ def remove_challenge_file(file_id: UUID, *, actor_id: int) -> None:
             details={"file_id": str(file_id)},
         ) from None
 
-    assert_actor_owns_event(actor_id, challenge_file.challenge.event)
+    assert_event_capability(actor_id, challenge_file.challenge.event, EventCapability.CHALLENGES)
 
     if not challenge_file.challenge.event.is_content_modifiable:
         raise CTFStateError(

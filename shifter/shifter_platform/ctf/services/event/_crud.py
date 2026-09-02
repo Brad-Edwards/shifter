@@ -226,12 +226,13 @@ def _reject_team_config_changes_after_start(event: CTFEvent, event_data: dict[st
         )
 
 
-def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
+def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: int | None = None) -> CTFEvent:
     """Update an existing CTF event.
 
     Args:
         event_id: UUID of the event to update.
         event_data: Dictionary containing fields to update.
+        actor_id: When supplied, the service asserts the ``config`` capability (#1922).
 
     Returns:
         The updated CTFEvent instance.
@@ -250,6 +251,12 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
             f"Event {event_id} not found",
             details={"event_id": str(event_id)},
         ) from None
+
+    if actor_id is not None:
+        from ctf.enums import EventCapability
+        from ctf.services.authorization import assert_event_capability
+
+        assert_event_capability(actor_id, event, EventCapability.CONFIG)
 
     _reject_team_config_changes_after_start(event, event_data)
 
@@ -296,11 +303,12 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     return event
 
 
-def delete_event(event_id: UUID) -> None:
+def delete_event(event_id: UUID, *, actor_id: int | None = None) -> None:
     """Soft-delete a CTF event.
 
     Args:
         event_id: UUID of the event to delete.
+        actor_id: When supplied, the service asserts the ``delete`` capability (#1922).
 
     Raises:
         CTFNotFoundError: If event doesn't exist.
@@ -316,6 +324,12 @@ def delete_event(event_id: UUID) -> None:
             f"Event {event_id} not found",
             details={"event_id": str(event_id)},
         ) from None
+
+    if actor_id is not None:
+        from ctf.enums import EventCapability
+        from ctf.services.authorization import assert_event_capability
+
+        assert_event_capability(actor_id, event, EventCapability.DELETE)
 
     with transaction.atomic():
         # Cancel any scheduled tasks
@@ -351,9 +365,11 @@ def force_delete_event(
         CTFNotFoundError: If event doesn't exist.
         CTFValidationError: If confirmation_name doesn't match.
     """
+    from ctf.enums import EventCapability
     from ctf.models import CTFChallengeFile, CTFParticipant
     from ctf.s3 import delete_challenge_file
     from ctf.services import event as _e
+    from ctf.services.authorization import assert_event_capability
     from ctf.services.range.lifecycle import _destroy_single_range
 
     # Use all_objects so force delete works on soft-deleted events too
@@ -364,6 +380,12 @@ def force_delete_event(
             f"Event {event_id} not found",
             details={"event_id": str(event_id)},
         ) from None
+
+    # Service-layer authorization (defense in depth, #1922): the owner, a full
+    # co-organizer, or the platform-admin override may force-delete; moderators/
+    # judges cannot. The view checks this too, but internal callers must not
+    # bypass it.
+    assert_event_capability(actor.pk, event, EventCapability.DELETE)
 
     if confirmation_name != event.name:
         raise CTFValidationError(

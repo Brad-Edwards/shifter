@@ -9,9 +9,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from ctf.content_bundle import BundleChallenge, BundleFlag, CtfContentBundle
+from ctf.enums import EventCapability
 from ctf.exceptions import CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFContentHydrationReceipt, CTFEvent
-from ctf.services.authorization import assert_actor_owns_event
+from ctf.services.authorization import assert_event_capability
 from ctf.services.content_resolution import HydrationSourceEvidence, ResolvedCtfContent
 
 
@@ -214,7 +215,7 @@ def hydrate_event_ctf_content(
             event = CTFEvent.objects.select_for_update().get(pk=event_id)
         except CTFEvent.DoesNotExist:
             raise CTFValidationError("Event not found.", code="CTF_EVENT_NOT_FOUND") from None
-        assert_actor_owns_event(actor_id, event)
+        assert_event_capability(actor_id, event, EventCapability.CONTENT)
         if not event.is_content_modifiable:
             raise CTFStateError(
                 "Event content is not modifiable.",

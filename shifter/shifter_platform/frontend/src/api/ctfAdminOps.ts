@@ -101,6 +101,23 @@ export function useRevokeCtfEventStaff(eventId: string) {
   });
 }
 
+/** Transfer canonical ownership to a current co-organizer (owner-only, #1922). */
+export function useTransferCtfEventOwnership(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) =>
+      apiFetch<CtfEventMutationResult>(`${BASE}/events/${eventId}/transfer-ownership/`, {
+        method: "POST",
+        body: { user_id: userId },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.eventStaff(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.events() });
+    },
+  });
+}
+
 // --- Notifications --------------------------------------------------------
 
 export function useCtfNotifications(eventId: string, enabled = true) {

@@ -25,6 +25,7 @@ from ctf.api._base import _CtfApiError, ctf_actor_user
 # The override-audit helpers live in ``_audit`` (file-size budget, ADR-052);
 # ``_delete_via_service`` uses this one to audit database-only nested deletes.
 from ctf.api.organizer._audit import _audit_admin_from_request
+from ctf.enums import EventCapability
 from shared.api_tokens import scopes
 
 # Staff-delegable capability selector: one noun, several, or None (owner-only).
@@ -177,7 +178,7 @@ def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallen
         challenge = get_challenge(challenge_id)
     except CTFNotFoundError:
         _raise_not_found(_CHALLENGE_NOT_FOUND)
-    if not _actor_may_manage(request, challenge.event, None):
+    if not _actor_may_manage(request, challenge.event, EventCapability.CHALLENGES):
         _raise_forbidden()
     return challenge
 

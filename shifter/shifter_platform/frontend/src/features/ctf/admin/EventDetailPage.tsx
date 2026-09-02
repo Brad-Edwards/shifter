@@ -233,7 +233,10 @@ export function EventDetailPage() {
         <EventLifecycleCard event={event} />
         <EventOverview event={event} />
         <EventContentCard event={event} />
-        <EventStaffCard eventId={event.id} />
+        <EventStaffCard
+          eventId={event.id}
+          canManage={event.access_source === "owner" || event.access_source === "platform_admin"}
+        />
         <EventWebhooksCard eventId={event.id} />
         <EventPagesCard eventId={event.id} />
         <EventLinks eventId={event.id} />

@@ -344,3 +344,77 @@ def audit_vpn_profile_download(
         profile_version=profile_version,
         product="ctf",
     )
+
+
+def audit_event_staff_change(
+    *,
+    actor_id: int,
+    event_id: UUID,
+    target_user_id: int,
+    action: str,
+    role: str | None = None,
+    previous_role: str | None = None,
+) -> None:
+    """Strictly record an event-staff authority mutation (#1922).
+
+    ``action`` is one of ``assigned`` / ``reroled`` / ``revoked``. Records only
+    bounded IDs and role names — never email, tokens, or event content. Strict:
+    audit failure rolls back the mutation it accompanies.
+    """
+    action_map = {
+        "assigned": AuditAction.CREATE,
+        "reroled": AuditAction.UPDATE,
+        "revoked": AuditAction.DELETE,
+    }
+    new_state: dict[str, Any] = {
+        "ctf_event_staff": action,
+        "event_id": str(event_id),
+        "target_user_id": target_user_id,
+    }
+    if role is not None:
+        new_state["role"] = role
+    if previous_role is not None:
+        new_state["previous_role"] = previous_role
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            action=action_map.get(action, AuditAction.UPDATE),
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state=new_state,
+            context="ctf_event_staff",
+        ),
+        strict=True,
+    )
+
+
+def audit_event_ownership_transferred(
+    *,
+    actor_id: int,
+    event_id: UUID,
+    previous_owner_id: int,
+    new_owner_id: int,
+) -> None:
+    """Strictly record a canonical-ownership transfer (#1922).
+
+    Records only the event and old/new owner IDs. Strict: audit failure rolls
+    back the transfer transaction.
+    """
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            previous_state={"owner_id": previous_owner_id},
+            new_state={
+                "ctf_event_ownership_transfer": "transferred",
+                "event_id": str(event_id),
+                "owner_id": new_owner_id,
+            },
+            context="ctf_event_ownership_transfer",
+        ),
+        strict=True,
+    )

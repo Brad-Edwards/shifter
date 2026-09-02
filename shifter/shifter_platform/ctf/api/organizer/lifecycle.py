@@ -2,7 +2,8 @@
 
 Lifecycle transitions delegate to the authoritative ``ctf.services.event``
 state machine; these views own only HTTP shape and ownership resolution.
-Lifecycle, task, and cleanup control are owner-only (never staff-delegated).
+Lifecycle, task, and cleanup control require the ``lifecycle`` capability: the
+owner and full co-organizers hold it; moderators and judges do not (#1922).
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from ctf.api.organizer._audit import (
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
+    _actor,
     _event_authority,
     _raise_bad_request,
     _raise_conflict,
@@ -35,6 +37,7 @@ from ctf.api.serializers import (
     ScheduledTaskListResponseSerializer,
     ScheduledTaskSerializer,
 )
+from ctf.enums import EventCapability
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -42,27 +45,6 @@ if TYPE_CHECKING:
     from ctf.models import CTFEvent, CTFScheduledTask
 
 logger = logging.getLogger(__name__)
-
-
-def _lifecycle_actions() -> dict[str, object]:
-    """Map lifecycle action names to their service transitions."""
-    from ctf.services.event import (
-        activate_event,
-        cancel_event,
-        complete_event,
-        open_registration,
-        pause_event,
-        resume_event,
-    )
-
-    return {
-        "open_registration": open_registration,
-        "activate": activate_event,
-        "pause": pause_event,
-        "resume": resume_event,
-        "end": complete_event,
-        "cancel": cancel_event,
-    }
 
 
 class EventLifecycleView(APIView):
@@ -77,15 +59,16 @@ class EventLifecycleView(APIView):
         from django.db import transaction
 
         try:
-            event = _resolve_owned_event(request, event_id)
-            source = _event_authority(request, event, None)
+            event = _resolve_owned_event(request, event_id, capability=EventCapability.LIFECYCLE)
+            source = _event_authority(request, event, EventCapability.LIFECYCLE)
             serializer = EventLifecycleRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             action = serializer.validated_data["action"]
             # Database-only state-machine transition: transition and override
-            # audit share one transaction (ADR-052-R4).
+            # audit share one transaction (ADR-052-R4). The service asserts the
+            # lifecycle capability again (defense in depth, #1922).
             with transaction.atomic():
-                self._apply(event, action)
+                self._apply(event, action, actor_id=_actor(request).pk)
                 _audit_admin_mutation(request, event, source, f"event.lifecycle.{action}")
             event.refresh_from_db()
             return Response({"id": str(event.id), "name": event.name, "status": event.status})
@@ -93,10 +76,11 @@ class EventLifecycleView(APIView):
             return exc.to_response(request)
 
     @staticmethod
-    def _apply(event: CTFEvent, action: str) -> None:
-        """Run the transition; a refused transition is a 409, not a 500."""
-        transition = _lifecycle_actions()[action]
-        if not transition(event):  # type: ignore[operator]
+    def _apply(event: CTFEvent, action: str, *, actor_id: int) -> None:
+        """Run the transition via the service (asserts lifecycle capability); refusal is a 409."""
+        from ctf.services.event import apply_event_lifecycle_transition
+
+        if not apply_event_lifecycle_transition(event, action, actor_id=actor_id):
             _raise_conflict(f"Event cannot {action.replace('_', ' ')} from status {event.status}")
 
 
@@ -125,7 +109,7 @@ class EventTasksView(APIView):
         from ctf.services.event.scheduling import list_event_tasks
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.LIFECYCLE)
         except _CtfApiError as exc:
             return exc.to_response(request)
         return Response({"tasks": [_task_payload(t) for t in list_event_tasks(event_id)]})
@@ -144,9 +128,9 @@ class TaskRunNowView(APIView):
         from ctf.services.event.scheduling import run_task_now
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.LIFECYCLE)
             try:
-                task = run_task_now(event_id, task_id)
+                task = run_task_now(event_id, task_id, actor_id=_actor(request).pk)
             except CTFNotFoundError:
                 _raise_not_found("Scheduled task not found.")
             except CTFStateError:
@@ -173,18 +157,19 @@ class EventCleanupControlView(APIView):
         )
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.LIFECYCLE)
             serializer = CleanupControlRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             action = serializer.validated_data["action"]
+            actor_id = _actor(request).pk
             try:
                 if action == "defer":
                     hours = serializer.validated_data.get("hours")
                     if hours is None:
                         _raise_bad_request("Deferral needs a number of hours")
-                    defer_event_cleanup(event_id, hours)
+                    defer_event_cleanup(event_id, hours, actor_id=actor_id)
                 else:
-                    cancel_event_cleanup(event_id)
+                    cancel_event_cleanup(event_id, actor_id=actor_id)
             except CTFValidationError:
                 _raise_bad_request("Deferral must be between 1 and 168 hours.")
             except CTFStateError:

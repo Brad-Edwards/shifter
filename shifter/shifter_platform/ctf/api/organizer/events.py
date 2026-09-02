@@ -39,6 +39,7 @@ from ctf.api.serializers import (
     ForceDeleteEventRequestSerializer,
     ForceDeleteEventResultSerializer,
 )
+from ctf.enums import EventCapability
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -189,7 +190,7 @@ class EventDetailView(APIView):
         from ctf.services.authorization import is_ctf_platform_admin
 
         try:
-            event = _resolve_owned_event(request, event_id)
+            event = _resolve_owned_event(request, event_id, capability=EventCapability.CONFIG)
         except _CtfApiError as exc:
             return exc.to_response(request)
         actor = _actor(request)
@@ -206,17 +207,18 @@ class EventDetailView(APIView):
         from ctf.services import update_event
 
         try:
-            event = _resolve_owned_event(request, event_id)
-            source = _event_authority(request, event, None)
+            event = _resolve_owned_event(request, event_id, capability=EventCapability.CONFIG)
+            source = _event_authority(request, event, EventCapability.CONFIG)
             serializer = EventWriteSerializer(data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
             changed = sorted(serializer.validated_data.keys())
             try:
                 # Database-only mutation: the update and its platform-admin
                 # override audit share one transaction, so a strict audit failure
-                # rolls the update back (ADR-052-R4).
+                # rolls the update back (ADR-052-R4). The service asserts the
+                # config capability again (defense in depth, #1922).
                 with transaction.atomic():
-                    updated = update_event(event_id, dict(serializer.validated_data))
+                    updated = update_event(event_id, dict(serializer.validated_data), actor_id=_actor(request).pk)
                     _audit_admin_mutation(request, event, source, "event.update", changed_fields=changed)
             except (CTFValidationError, CTFStateError, ValidationError):
                 _raise_invalid_event()
@@ -232,14 +234,14 @@ class EventDetailView(APIView):
         from ctf.services import delete_event
 
         try:
-            event = _resolve_owned_event(request, event_id)
-            source = _event_authority(request, event, None)
+            event = _resolve_owned_event(request, event_id, capability=EventCapability.DELETE)
+            source = _event_authority(request, event, EventCapability.DELETE)
         except _CtfApiError as exc:
             return exc.to_response(request)
         from shared.audit import AuditAction
 
         with transaction.atomic():
-            delete_event(event_id)
+            delete_event(event_id, actor_id=_actor(request).pk)
             _audit_admin_mutation(request, event, source, "event.delete", action=AuditAction.DELETE)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -261,10 +263,10 @@ class ForceDeleteEventView(APIView):
                 event = CTFEvent.all_objects.get(pk=event_id)
             except CTFEvent.DoesNotExist:
                 _raise_not_found(_EVENT_NOT_FOUND)
-            # Owner-only operation; the platform-admin override is admitted, but
-            # the typed-name confirmation and lifecycle safeguards below still
-            # apply unchanged (ADR-052-R5).
-            source = _event_authority(request, event, None)
+            # Owner, full co-organizer (delete capability), or the platform-admin
+            # override may force-delete; the typed-name confirmation and lifecycle
+            # safeguards below still apply unchanged (#1922, ADR-052-R5).
+            source = _event_authority(request, event, EventCapability.DELETE)
             if source is None:
                 _raise_forbidden()
             _capture_event_authority(request, event, source)

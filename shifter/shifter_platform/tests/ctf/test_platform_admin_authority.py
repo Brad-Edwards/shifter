@@ -104,7 +104,18 @@ class TestResolveEventAuthority:
         )
 
     def test_staff_capability_precedes_platform_admin(self, organizer_user, superuser):
-        """A superuser assigned as judge acts as staff for a granted capability (least authority)."""
+        """A superuser assigned as judge acts as staff for a granted capability (least authority).
+
+        A live staff row grants authority only while the account holds the global
+        CTF Organizer role (#1922 review — no stale-row bypass), which every real
+        staff member does (``assign_event_staff`` requires it), so the superuser
+        is made a CTF organizer here to exercise a realistic staff assignment.
+        """
+        from django.contrib.auth.models import Group
+
+        from shared.auth import CTF_ORGANIZER_GROUP
+
+        superuser.groups.add(Group.objects.get_or_create(name=CTF_ORGANIZER_GROUP)[0])
         event = _event(organizer_user)
         CTFEventStaff.objects.create(event=event, user=superuser, role="judge")
         assert resolve_event_authority(superuser, event, capability="awards") is EventAuthoritySource.EVENT_STAFF

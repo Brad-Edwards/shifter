@@ -49,6 +49,7 @@ from ctf.api.serializers import (
     SparePoolRequestSerializer,
     SpareProvisionResultSerializer,
 )
+from ctf.enums import EventCapability
 from shared.api.schema import ApiErrorSerializer
 from shared.api_tokens import scopes
 from shared.remote_access import OPENVPN_PROFILE_MEDIA_TYPE
@@ -113,7 +114,7 @@ def _run_participant_range_action(
     from ctf.exceptions import CTFNotFoundError, CTFRangeError
 
     try:
-        _resolve_owned_participant(request, participant_id)
+        _resolve_owned_participant(request, participant_id, capability=EventCapability.RANGES)
         try:
             result = action_fn(participant_id)
         except (CTFNotFoundError, CTFRangeError):
@@ -282,7 +283,7 @@ class EventRangeListView(APIView):
         from ctf.services import range as range_service
 
         try:
-            event = _resolve_owned_event(request, event_id)
+            event = _resolve_owned_event(request, event_id, capability=EventCapability.RANGES)
         except _CtfApiError as exc:
             return exc.to_response(request)
         participants = CTFParticipant.objects.filter(event=event).order_by("name")
@@ -312,12 +313,12 @@ class EventRangeProvisionView(APIView):
         from ctf.services import range as range_service
 
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.RANGES)
         except _CtfApiError as exc:
             return exc.to_response(request)
         # Non-rollbackable provisioning: override intent before the enqueue, then outcome.
         with admin_external_audit(request, "range.provision"):
-            task = range_service.request_event_provisioning(event_id, source="manual")
+            task = range_service.request_event_provisioning(event_id, source="manual", actor_id=_actor(request).pk)
         return Response(
             {
                 "event_id": str(event_id),
@@ -339,7 +340,7 @@ class EventSpareProvisionView(APIView):
     def post(self, request: Request, event_id: UUID) -> Response:
         """Enforce ownership, then parse ``count`` and top the spare pool up to it."""
         try:
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability=EventCapability.RANGES)
             return self._provision_spares(request, event_id)
         except _CtfApiError as exc:
             return exc.to_response(request)
@@ -452,7 +453,7 @@ class ParticipantRangeRecoverView(APIView):
     def post(self, request: Request, participant_id: UUID) -> Response:
         """Enforce ownership, then parse the recovery body and run the recovery service."""
         try:
-            _resolve_owned_participant(request, participant_id)
+            _resolve_owned_participant(request, participant_id, capability=EventCapability.RANGES)
             return self._recover(request, participant_id)
         except _CtfApiError as exc:
             return exc.to_response(request)
