@@ -37,15 +37,16 @@ state upgrades and reverses correctly.
 | Generated artifacts | Regenerate the lock, environment manifest, OpenAPI, frontend types, locale output, and backend manifest from their canonical producers. |
 | Architecture enforcement | Keep ADR/rule identities stable while updating active decisions, paths, check names, import contracts, pre-commit wiring, and tests to RAES. Historical evidence paths retain their factual filenames. |
 
-## TechVault/APTL excision
+## LilRAE and TechVault scenario-pack excision
 
-The bespoke TechVault/APTL scenario implementation is removed in full:
+The bespoke Shifter implementation that delivered the TechVault scenario pack
+using LilRAE (formerly APTL) is removed in full:
 scenario templates, Packer definitions, bake scripts and locks, validation
 profiles, bootstrap/provisioner modules, workflow branches, configuration,
 tests, runbooks, and current technical or user documentation. Shifter does not
-depend on APTL through the cutover.
+depend on LilRAE through the cutover.
 
-If that scenario returns, it enters through the ordinary
+If the TechVault scenario pack returns, it enters through the ordinary
 `raes-env-packs` ingestion and realization contract. It does not regain
 scenario-specific Packer, bootstrap, parser, or platform branches.
 
@@ -87,7 +88,8 @@ compatibility view, old-contract reader, or runtime selector is introduced.
 
 - Exact package and transitive-pin tests pass from installed metadata.
 - Retired-name scans find only the explicitly historical allowlist.
-- TechVault/APTL scans find no active surface.
+- LilRAE/APTL legacy-name and TechVault scenario-pack scans find no active
+  bespoke surface.
 - Forward and reverse migration proofs pass.
 - The migration refuses undrained old-version work and preserves opaque
   terminal plan/envelope payloads without rewriting them.
