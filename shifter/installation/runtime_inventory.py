@@ -13,13 +13,42 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-# The GCP key inventories were split into a sibling module for file size (S104).
-# This module imports only the sets it uses internally; other consumers (registry,
-# the GCP parity test) import the full GCP set directly from runtime_inventory_gcp.
+# The AWS sets moved to runtime_inventory_aws (backend symmetry with the GCP
+# split). They are re-exported here so the established public import surface
+# stays stable — scripts/bootstrap/aws_eks.py, engine.ecs, and the AWS runtime
+# role parity test import them from installation.runtime_inventory. The names in
+# __all__ mark them as intentional re-exports.
+from .runtime_inventory_aws import (
+    AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS,
+    AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS,
+    AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS,
+)
+
+# The per-backend key inventories were split into sibling modules for file size
+# (S104) and backend symmetry. This module imports only the GCP sets it uses
+# internally; other consumers (registry, the GCP parity test) import the full GCP
+# set directly from runtime_inventory_gcp.
 from .runtime_inventory_gcp import (
     GCP_GENERATED_RUNTIME_ENV_KEYS,
     GCP_SECRET_RUNTIME_ENV_KEYS,
 )
+
+__all__ = [
+    "AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS",
+    "AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS",
+    "AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS",
+    "GCP_BACKEND_OWNER",
+    "GCP_GENERATED_RUNTIME_ENV_KEYS",
+    "GCP_GENERATED_RUNTIME_ENV_PATH",
+    "GCP_SECRET_RUNTIME_ENV_KEYS",
+    "GCP_SECRET_RUNTIME_ENV_PATH",
+    "GCP_STATIC_RUNTIME_ENV_PATH",
+    "RUNTIME_SURFACES",
+    "RuntimeInventoryIssue",
+    "RuntimeSurface",
+    "env_keys_from_file",
+    "validate_runtime_inventory",
+]
 
 _ENV_KEY_RE = re.compile(r"^([A-Za-z_]\w*)=", re.ASCII)
 
@@ -27,101 +56,6 @@ GCP_STATIC_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platform-r
 GCP_GENERATED_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platform-runtime.generated.env")
 GCP_SECRET_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platform-runtime-secrets.env")
 GCP_BACKEND_OWNER = "gcp backend"
-
-# Public settings and secret references that an AWS EKS deployment must project
-# into the shared chart. The EKS lifecycle validates this inventory before Helm
-# can mutate a release, so a new runtime consumer cannot silently disappear from
-# the provider renderer.
-AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
-    {
-        "AWS_REGION",
-        # ENGINE_TASK_* ECS coordinates are retired (#1826). The AWS provisioner
-        # dispatches as a Kubernetes Job: ENGINE_TASK_NAMESPACE and
-        # ENGINE_TASK_SERVICE_ACCOUNT_NAME are set by the chart, ENGINE_TASK_IMAGE
-        # is renderer-generated (aws_eks.render_aws_values), and the range/portal
-        # provisioner env is assembled by the eks-provisioner-env Terraform module
-        # (AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS), not required as a deploy
-        # tooling input here.
-        "OIDC_AUTH_DOMAIN",
-        "OIDC_ISSUER_URL",
-        "OIDC_RP_CLIENT_ID",
-        "OIDC_SECRET_ID",
-        "QUEUE_CMS_CONSUMER_ID",
-        "QUEUE_CMS_PUBLISHER_ID",
-        "QUEUE_ENGINE_CONSUMER_ID",
-        "QUEUE_ENGINE_PUBLISHER_ID",
-        "QUEUE_MC_CONSUMER_ID",
-        "QUEUE_MC_PUBLISHER_ID",
-        "RANGE_EVENTS_TOPIC_ID",
-        "STORAGE_BUCKET_NAME",
-    }
-)
-
-# The runtime-env keys the standalone AWS (EKS) provisioner Job receives (#1826).
-# On EKS the provisioner dispatches as a Kubernetes Job with no ECS task
-# definition, so the platform launcher worker forwards this contract from the
-# platform runtime env. The installation package is standalone (it must not import
-# the Django platform), so the set is declared here as data; a platform-side
-# parity test (``tests/shared/cloud/test_aws_runtime_role_parity.py``) fails if it
-# drifts from the authoritative forwarding list ``engine.ecs._AWS_PROVISIONER_ENV_KEYS``.
-# It mirrors the environment the AWS provisioner previously received from its ECS
-# task definition (``platform/terraform/modules/engine-provisioner/task_definition.tf``).
-AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
-    {
-        "CLOUD_PROVIDER",
-        "ENVIRONMENT",
-        "AWS_REGION",
-        "SECRETS_KMS_KEY_ARN",
-        "DB_HOST",
-        "DB_PORT",
-        "DB_NAME",
-        "DB_USER",
-        "STATE_BUCKET_URL",
-        "RANGE_VPC_ID",
-        "RANGE_VPC_CIDR",
-        "RANGE_ROUTE_TABLE_ID",
-        "RANGE_AVAILABILITY_ZONE",
-        "RANGE_VPN_EDGE_SUBNET_ID",
-        "RANGE_VPN_GATEWAY_PERMISSIONS_BOUNDARY_ARN",
-        "RANGE_VPN_PROVIDER_ENDPOINT_SECURITY_GROUP_ID",
-        "RANGE_INSTANCE_PROFILE_NAME",
-        "RANGE_INSTANCE_ROLE_ARN",
-        "RANGE_EGRESS_MODE",
-        "KALI_AMI_ID",
-        "VICTIM_AMI_ID",
-        "WINDOWS_AMI_ID",
-        "DC_AMI_ID",
-        "DC_DOMAIN_NAME",
-        "KALI_INSTANCE_TYPE",
-        "VICTIM_INSTANCE_TYPE",
-        "AGENT_S3_BUCKET",
-        "S3_ENDPOINT_ID",
-        "FIREWALL_ENDPOINT_ID",
-        "SSM_ENDPOINTS_SUBNET_CIDR",
-        "PORTAL_VPC_CIDR",
-        "PORTAL_VPC_PEERING_ID",
-        "NGFW_AMI_ID",
-        "NGFW_INSTANCE_TYPE",
-        "NGFW_MGMT_SECURITY_GROUP_ID",
-        "NGFW_DATA_SECURITY_GROUP_ID",
-        "NGFW_VPC_ID",
-        "NGFW_SUBNET_ID",
-        "NGFW_SUBNET_CIDR",
-        "NGFW_BOOTSTRAP_BUCKET",
-        "NGFW_INSTANCE_PROFILE_NAME",
-        "AWS_POLARIS_AGENT_REGION",
-        "AWS_POLARIS_AGENT_MAIN_MODEL_ID",
-        "AWS_POLARIS_AGENT_SMALL_MODEL_ID",
-        "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN",
-        "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN",
-        "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS",
-        "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS",
-        "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS",
-        "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS",
-        "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN",
-        "DC_DOMAIN_PASSWORD",
-    }
-)
 
 
 @dataclass(frozen=True)

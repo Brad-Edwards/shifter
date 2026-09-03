@@ -24,7 +24,10 @@ if str(_SHIFTER_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SHIFTER_PACKAGE_ROOT))
 
 from installation.loader import load_root_config  # noqa: E402
-from installation.runtime_inventory import AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS  # noqa: E402
+from installation.runtime_inventory import (  # noqa: E402
+    AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS,
+    AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS,
+)
 from installation.schema import RootConfig  # noqa: E402
 
 _LOWERCASE_HEX = frozenset("0123456789abcdef")
@@ -96,20 +99,9 @@ print(f"IRSA_OK:{identity}")
 # controllers directly (EKS add-on service_account_role_arn / Helm SA annotation),
 # not projected into the chart's identity.serviceAccountRoleArns.
 _WORKLOAD_ROLE_KEYS = frozenset({"portal", "workers", "ctfScheduler", "provisionerLauncher", "provisioner"})
-_RENDERER_OWNED_RUNTIME_ENV = frozenset(
-    {
-        "AUTH_PROVIDER",
-        "CLOUD_PROVIDER",
-        "DJANGO_ALLOWED_HOSTS",
-        "DJANGO_CSRF_TRUSTED_ORIGINS",
-        # ENGINE_TASK_IMAGE is generated here from the attested provisioner image
-        # digest (mirrors GCP's render_runtime_env.py); the Terraform runtime_env
-        # must not supply it.
-        "ENGINE_TASK_IMAGE",
-        "ENVIRONMENT",
-        "SITE_URL",
-    }
-)
+# Single source of truth in the installation package (installation.runtime_inventory_aws),
+# so the renderer and the backend bundle's generated-output projection cannot drift.
+_RENDERER_OWNED_RUNTIME_ENV = AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS
 _REQUIRED_TERRAFORM_INPUTS = frozenset(
     {
         "addon_versions",
@@ -945,7 +937,9 @@ def deploy_eks(
     config = load_root_config(config_path)
     _validate_config(config)
     profile = config.deployment.profile
-    preflight_gate(Cloud.AWS, Mode.LOCAL, profile, headless=True)
+    # Select the EKS component so preflight validates the isolated EKS root's inputs, not the
+    # legacy core/range/portal defaults (#1828).
+    preflight_gate(Cloud.AWS, Mode.LOCAL, profile, component="eks", headless=True)
     root = eks_root(profile)
     allowed_roots = _protected_input_roots()
     backend_config = _required_file(
