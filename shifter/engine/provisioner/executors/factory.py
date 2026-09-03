@@ -12,7 +12,7 @@ from shared.sftp_root import default_sftp_root_directory
 from cloud import get_secrets_store
 from cloud.exceptions import CloudProviderNotImplementedError
 from config import resolve_cloud_provider
-from executors.base import Executor
+from executors.base import CommandExecutor
 from executors.ssm_executor import SSMExecutor
 
 _LINUX_DOCUMENT = "AWS-RunShellScript"
@@ -60,7 +60,7 @@ def get_sftp_root_directory(os_type: str, role: str) -> str:
 class GuestExecutionContext:
     """Resolved remote execution context for guest setup."""
 
-    executor: Executor
+    executor: CommandExecutor
     target: str
     document_name: str
     transport_name: str
