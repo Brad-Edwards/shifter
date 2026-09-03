@@ -54,7 +54,7 @@ from cloud import get_object_storage
 from cloud.exceptions import CloudError
 from cloud.types import ObjectStorage
 from config import RaesContentDeliveryConfig, load_raes_content_delivery_config
-from executors.base import Executor
+from executors.base import CommandExecutor
 from executors.factory import GuestExecutionContext, build_guest_execution_context
 from log_redact import safe_log_value
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
@@ -95,7 +95,7 @@ class RaesContentDeliveryOps:
     config_loader: Callable[[], RaesContentDeliveryConfig] = load_raes_content_delivery_config
     object_storage_factory: Callable[[], ObjectStorage] = get_object_storage
     execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context
-    orchestrator_factory: Callable[[Executor], SetupOrchestrator] = SetupOrchestrator
+    orchestrator_factory: Callable[[CommandExecutor], SetupOrchestrator] = SetupOrchestrator
 
 
 def default_content_delivery_ops() -> RaesContentDeliveryOps:

@@ -4,7 +4,8 @@ Status: pre-implementation architecture guidance
 
 Date: 2026-07-25
 
-Updated: 2026-08-12 for the #1826 EKS add-on and workload-security contract.
+Updated: 2026-08-19 for the #1828 AWS runtime projection and bundle
+lifecycle contract.
 
 Issue: GitHub #1324, "Canonical Kubernetes/Helm packaging:
 backend-neutral chart plus an AWS EKS bundle"
@@ -94,13 +95,12 @@ in templates, Django services, public DTOs, events, or repositories.
 vocabulary. Use `GeneratedOutput` with `HELM_VALUE` or `K8S_ARTIFACT` kind for
 the non-secret projection and keep provider-owned paths in `OwnedFiles`.
 
-There is a current contract gap: `BackendBundle` has no typed deploy or teardown
-entrypoint. Do not encode a mutating command as a `ValidationCheck`, hide it in
-`OwnedFiles`, or turn doctor into a deploy runner. If #1324 exposes lifecycle
-entrypoints in bundle metadata, add the minimum explicit deploy/teardown
-command fields using the existing safe `CommandSpec` rules and retain their
-deployment-mutating classification. The command must delegate to the existing
-bootstrap/deploy owner, not describe a workflow DSL in registry data.
+`BackendBundle.deploy` and `BackendBundle.teardown` are the typed mutating
+entrypoints published additively in contract version 1. Do not encode a
+mutating command as a `ValidationCheck`, hide it in `OwnedFiles`, add a second
+lifecycle-command vocabulary, or turn doctor into a deploy runner. Both
+commands use the existing safe `CommandSpec` rules and delegate to the existing
+bootstrap/deploy owner; registry data must not become a workflow DSL.
 
 Any public contract change goes through
 `installation/published_contract/MIGRATIONS.md`, deterministic regeneration,
@@ -113,6 +113,83 @@ deploy invocation first loads `shifter.yaml` through
 shared preflight, and then invokes the backend-owned bootstrap entrypoint. The
 registry remains data-only and imports no provider SDK, Terraform driver,
 Django code, or callable implementation.
+
+### AWS runtime projection and lifecycle boundary (#1828)
+
+`scripts/bootstrap/aws_eks.py:render_aws_values` is the canonical AWS EKS
+renderer. Extend or expose that function through the existing bootstrap CLI;
+do not add a second renderer under another provider directory. Its inputs are
+the normalized `RootConfig`, the JSON output envelope from the selected
+`platform/terraform/environments/<profile>/eks` root, and exact attested OCI
+image identities. It remains a deterministic, non-mutating projection: provider
+SDK calls, Terraform execution, Helm execution, and secret payload hydration
+stay in their existing lifecycle owners.
+
+The operational `values-aws-<profile>.yaml` is a generated Helm values layer,
+not new operator intent and not a second settings schema. Layer it after the
+neutral chart defaults and the checked-in profile scaffold. If a command writes
+the generated layer for inspection or hand-off, it must take an explicit output
+path beneath a protected staging root, create the file with owner-only
+permissions, and remove it after use; it must never overwrite or commit the
+checked-in scaffold. Streaming the same layer to Helm over stdin remains valid.
+The generated layer may contain public values and validated secret references,
+but never secret payloads.
+
+Treat the complete Terraform JSON output document as sensitive because
+`runtime_env` is a sensitive output even though its intended deploy projection
+contains public values and secret references. Never print, log, attach, or put
+that document in argv. Validate the Terraform output envelope and every field
+the renderer consumes before rendering: exact required workload-role keys,
+non-empty canonical runtime keys, real CIDRs rather than CIDR-shaped strings,
+provider/account/region-appropriate ARNs, matching hostname/edge copies, and
+digest-pinned image identities. Then validate the effective merged values
+(neutral defaults + profile scaffold + generated layer) through
+`values.schema.json` and Helm before any release mutation. Terraform variable
+validation and Helm schema validation are complementary gates; neither is a
+reason to create a third output DTO or duplicate their schemas in Python.
+
+The full emitted AWS runtime key set and its sensitivity/process-role
+classification belong in `installation.runtime_inventory` and
+`BackendBundle.generated_outputs`, following the GCP bundle's derived-metadata
+pattern. Keep renderer parity, the Django env manifest, the AWS provisioner
+forwarding inventory, the chart ConfigMap, and the AWS admission allowlists in
+lockstep. Do not derive the published output list by blindly unioning forwarding
+sets: a value hydrated from a secret reference after process startup is not a
+renderer-emitted value and must never be projected into a ConfigMap.
+
+There is one doctor entrypoint: `shifter-config doctor`. AWS-specific readiness
+is declared through the bundle's existing `required_tools`, `required_secrets`,
+`validation_checks`, and `health_checks`; do not add `doctor` or `health`
+command fields to the public contract. Connect an AWS EKS validation check to
+the existing `scripts/bootstrap/preflight.py` specification (with
+`component="eks"` and the deployment profile derived from the loaded root
+config) rather than copying its tool, protected-input, role, state-backend, or
+secret-wiring list. In particular, the lifecycle call must not omit the `eks`
+component and accidentally validate the legacy core/range/portal defaults.
+Doctor checks references and, where supported, secret metadata only; it never
+fetches payloads or mutates cloud state.
+
+`HealthCheck` remains declarative read-only metadata consumed by doctor's
+SSRF-hardened, no-credential, no-redirect probe. It is not equivalent to deploy
+readiness. The mutating lifecycle owner must retain the EKS rollout, admission,
+NetworkPolicy, effective-IRSA, HTTPS health, and post-deploy smoke gates. A
+pre-deploy health miss is expected and non-blocking; missing local prerequisites
+or secret wiring is blocking.
+
+Renderer/config failures reuse sanitized `ConfigIssue` /
+`InstallationConfigError` diagnostics at the installation boundary. Bootstrap
+execution may retain bounded `ValueError` / `RuntimeError` failures, but its CLI
+must not echo rejected values, Terraform output, Helm values, provider
+responses, kubeconfig data, or secret references. These failures do not create
+a new public HTTP/event error envelope or a new exception hierarchy.
+
+The extension seam is the registry-validated deployment profile plus explicit
+input/output paths. A future AWS profile adds registry support, an isolated EKS
+root/backend config, a checked-in values scaffold, and conformance evidence; it
+must not require another hard-coded profile allowlist inside the renderer or a
+provider branch in the chart. Backend selection, profile, platform compute,
+task transport, range substrate, and identity provider remain separate
+concepts.
 
 ### AWS EKS infrastructure boundary
 
