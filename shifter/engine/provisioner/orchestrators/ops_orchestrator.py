@@ -78,7 +78,7 @@ class OpsOrchestrator:
         executor: The executor used for running operations.
     """
 
-    def __init__(self, executor: ActionExecutor):
+    def __init__(self, executor: ActionExecutor) -> None:
         """Initialize OpsOrchestrator.
 
         Args:
