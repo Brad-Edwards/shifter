@@ -225,6 +225,8 @@ def rebind_range_workspace_by_request(
         logger.error("rebind_range_workspace_by_request: %s", msg)
         raise RangeProjectionIntegrityError(msg)
 
+    # Single outcome variable + one terminal return keeps the branch count within
+    # the cognitive-return limit (Sonar S1142) while preserving each CAS result.
     range_obj = ranges[0]
     if range_obj.workspace_id == new_workspace_id:
         logger.info(
@@ -232,25 +234,26 @@ def rebind_range_workspace_by_request(
             request_id,
             new_workspace_id,
         )
-        return RangeWorkspaceRebindOutcome.UNCHANGED
-    if range_obj.workspace_id != expected_workspace_id:
+        outcome = RangeWorkspaceRebindOutcome.UNCHANGED
+    elif range_obj.workspace_id != expected_workspace_id:
         logger.warning(
             "rebind_range_workspace_by_request: source mismatch request_id=%s expected=%s actual=%s",
             request_id,
             expected_workspace_id,
             range_obj.workspace_id,
         )
-        return RangeWorkspaceRebindOutcome.SOURCE_MISMATCH
-
-    range_obj.workspace_id = new_workspace_id
-    range_obj.save(update_fields=["workspace_id"])
-    logger.info(
-        "rebind_range_workspace_by_request: request_id=%s rebound workspace_id %s -> %s",
-        request_id,
-        expected_workspace_id,
-        new_workspace_id,
-    )
-    return RangeWorkspaceRebindOutcome.UPDATED
+        outcome = RangeWorkspaceRebindOutcome.SOURCE_MISMATCH
+    else:
+        range_obj.workspace_id = new_workspace_id
+        range_obj.save(update_fields=["workspace_id"])
+        logger.info(
+            "rebind_range_workspace_by_request: request_id=%s rebound workspace_id %s -> %s",
+            request_id,
+            expected_workspace_id,
+            new_workspace_id,
+        )
+        outcome = RangeWorkspaceRebindOutcome.UPDATED
+    return outcome
 
 
 def reassign_range_owner_by_request(request_id: UUID, new_user: User) -> bool:

@@ -46,6 +46,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Reused opaque outcome messages (Sonar S1192: no duplicated literals). Both are
+# deliberately non-enumerating.
+_RANGE_NOT_FOUND = "Range not found"
+_PROJECTION_INCONSISTENT = "Range projection is inconsistent"
+
 
 @dataclass(frozen=True, slots=True)
 class RangeScopeAuditContext:
@@ -103,14 +108,14 @@ def _resolve_locked_range(request_id: uuid.UUID) -> tuple[RangeInstance, CmsRequ
     """
     instances = list(RangeInstance.objects.select_for_update().filter(request__request_id=request_id))
     if not instances:
-        raise RangeScopeAdminError(RangeScopeAdminError.Kind.NOT_FOUND, "Range not found")
+        raise RangeScopeAdminError(RangeScopeAdminError.Kind.NOT_FOUND, _RANGE_NOT_FOUND)
     if len(instances) > 1:
-        raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, "Range projection is inconsistent")
+        raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, _PROJECTION_INCONSISTENT)
     instance = instances[0]
 
     request = CmsRequest.objects.select_for_update().filter(request_id=request_id).first()
     if request is None or instance.request_id != request.id:
-        raise RangeScopeAdminError(RangeScopeAdminError.Kind.NOT_FOUND, "Range not found")
+        raise RangeScopeAdminError(RangeScopeAdminError.Kind.NOT_FOUND, _RANGE_NOT_FOUND)
 
     source_workspace_id = instance.workspace_id
     if request.workspace_id != source_workspace_id:
@@ -171,7 +176,7 @@ def rebind_range_workspace(
         try:
             authorize_bound_workspace(actor, source_workspace_id, WorkspaceOperation.REBIND_RANGE_WORKSPACE)
         except WorkspaceAuthorizationError as exc:
-            raise RangeScopeAdminError(RangeScopeAdminError.Kind.NOT_FOUND, "Range not found") from exc
+            raise RangeScopeAdminError(RangeScopeAdminError.Kind.NOT_FOUND, _RANGE_NOT_FOUND) from exc
 
         # Authoritative pair authorization under both workspace mutexes: rechecks
         # source authority, resolves + authorizes the target, rejects an archived
@@ -202,9 +207,9 @@ def rebind_range_workspace(
                 new_workspace_id=target_workspace_id,
             )
         except RangeProjectionIntegrityError as exc:
-            raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, "Range projection is inconsistent") from exc
+            raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, _PROJECTION_INCONSISTENT) from exc
         if outcome is RangeWorkspaceRebindOutcome.NOT_FOUND:
-            raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, "Range projection is inconsistent")
+            raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, _PROJECTION_INCONSISTENT)
         if outcome is RangeWorkspaceRebindOutcome.SOURCE_MISMATCH:
             raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, "Range scope changed concurrently")
 
@@ -216,7 +221,7 @@ def rebind_range_workspace(
         if outcome is RangeWorkspaceRebindOutcome.UNCHANGED:
             # The engine range already carried the target while CMS still carried
             # the source: projection drift. Fail closed rather than repair it.
-            raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, "Range projection is inconsistent")
+            raise RangeScopeAdminError(RangeScopeAdminError.Kind.CONFLICT, _PROJECTION_INCONSISTENT)
 
         # outcome is UPDATED: move the two CMS projections to match and audit.
         instance.workspace_id = target_workspace_id

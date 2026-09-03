@@ -182,7 +182,7 @@ function ReassignAction({
         variant="ghost"
         size="sm"
         disabled
-        title={!row.is_reassignable ? "This range is managed by its event and cannot be reassigned." : undefined}
+        title={row.is_reassignable ? undefined : "This range is managed by its event and cannot be reassigned."}
       >
         Reassign
       </Button>

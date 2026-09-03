@@ -22,6 +22,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from cms.exceptions import RangeScopeAdminError
+from cms.models import RangeInstance
 from cms.services import (
     RangeScopeAuditContext,
     list_range_scope_bindings,
@@ -38,8 +39,6 @@ if TYPE_CHECKING:
 
     from django.db.models import QuerySet
     from rest_framework.request import Request
-
-    from cms.models import RangeInstance
 
 # Bearer-first, fail-closed chain: an invalid ``shf_`` bearer is rejected before
 # the session fallback, and a valid platform token authenticates as an ApiToken
@@ -75,11 +74,11 @@ class RangeScopeBindingSerializer(serializers.Serializer):
     expires_at = serializers.DateTimeField(allow_null=True)
     is_reassignable = serializers.SerializerMethodField()
 
-    def get_request_id(self, obj) -> str | None:
+    def get_request_id(self, obj: RangeInstance) -> str | None:
         """Return the durable request correlation UUID, or null for a legacy request-less row."""
         return str(obj.request.request_id) if obj.request else None
 
-    def get_is_reassignable(self, obj) -> bool:
+    def get_is_reassignable(self, obj: RangeInstance) -> bool:
         """Whether this range's scope may be reassigned here.
 
         Authoritative, never provenance-based: a range is reassignable when it is

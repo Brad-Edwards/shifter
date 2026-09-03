@@ -4617,7 +4617,14 @@ export interface components {
             updated_at: string;
             /** Format: date-time */
             expires_at: string | null;
-            /** @description Only Mission Control ranges may have their scope reassigned here (ADR-046-R14). */
+            /**
+             * @description Whether this range's scope may be reassigned here.
+             *
+             *     Authoritative, never provenance-based: a range is reassignable when it is
+             *     addressable by a request correlation and not owned by a domain aggregate
+             *     (the set of aggregate-bound ids is resolved once per page and passed in
+             *     via ``aggregate_bound_ids``). Advisory only; the server reauthorizes.
+             */
             readonly is_reassignable: boolean;
         };
         /** @description Participant range status projection (or the not-assigned sentinel). */

@@ -15,6 +15,8 @@ from ._common import _validate_caller_user
 from ._range_launch_common import _is_active_range_conflict
 
 if TYPE_CHECKING:
+    import uuid
+
     from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
@@ -41,7 +43,7 @@ def range_owner_reassignment_available(range_instance_pk: int) -> bool:
 
 
 def _engine_rebind_range_workspace_call(
-    request_id: Any, *, expected_workspace_id: int, new_workspace_id: int
+    request_id: uuid.UUID, *, expected_workspace_id: int, new_workspace_id: int
 ) -> RangeWorkspaceRebindOutcome:  # NOSONAR
     """Late-bound call so test patches of cms.services.engine_rebind_range_workspace apply."""
     from cms import services as _cs

@@ -18179,7 +18179,7 @@
           },
           "is_reassignable": {
             "type": "boolean",
-            "description": "Only Mission Control ranges may have their scope reassigned here (ADR-046-R14).",
+            "description": "Whether this range's scope may be reassigned here.\n\nAuthoritative, never provenance-based: a range is reassignable when it is\naddressable by a request correlation and not owned by a domain aggregate\n(the set of aggregate-bound ids is resolved once per page and passed in\nvia ``aggregate_bound_ids``). Advisory only; the server reauthorizes.",
             "readOnly": true
           }
         },

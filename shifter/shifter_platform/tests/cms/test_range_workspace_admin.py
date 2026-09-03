@@ -78,6 +78,17 @@ def _add_member(workspace: Workspace, user, role: WorkspaceRole) -> None:
     WorkspaceMembership.objects.create(workspace=workspace, user=user, role=role.value)
 
 
+def _rebind(actor, request_id, target_uuid):
+    """Single-invocation rebind wrapper.
+
+    Keeps each ``pytest.raises`` block to exactly one possibly-throwing call
+    (Sonar S5778); callers hoist the request id and target uuid out of the block.
+    """
+    return services.rebind_range_workspace(
+        actor, request_id=request_id, target_workspace_uuid=target_uuid, audit=_audit(actor)
+    )
+
+
 def _make_range(
     *,
     owner,
@@ -242,12 +253,7 @@ class TestRebindRangeWorkspaceAuthorization:
         instance = _make_range(owner=range_owner, workspace=source)
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.NOT_FOUND
 
     def test_actor_without_target_authority_is_denied(self, organization, admin_user, range_owner):
@@ -259,12 +265,7 @@ class TestRebindRangeWorkspaceAuthorization:
         instance = _make_range(owner=range_owner, workspace=source)
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.TARGET_DENIED
 
     def test_member_role_cannot_rebind(self, organization, admin_user, range_owner):
@@ -277,12 +278,7 @@ class TestRebindRangeWorkspaceAuthorization:
         instance = _make_range(owner=range_owner, workspace=source)
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.NOT_FOUND
 
     def test_owner_not_member_of_target_is_denied(self, organization, admin_user, range_owner):
@@ -295,12 +291,7 @@ class TestRebindRangeWorkspaceAuthorization:
         instance = _make_range(owner=range_owner, workspace=source)
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.TARGET_DENIED
 
     def test_archived_target_is_denied(self, organization, admin_user, range_owner):
@@ -313,12 +304,7 @@ class TestRebindRangeWorkspaceAuthorization:
         instance = _make_range(owner=range_owner, workspace=source)
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.TARGET_DENIED
 
 
@@ -345,12 +331,7 @@ class TestRebindRangeWorkspaceFailClosed:
         aggregate_guard.register_range_aggregate_guard(lambda pairs: {rid for _req, rid in pairs if rid == bound_pk})
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.NOT_REASSIGNABLE
 
     def test_duplicate_engine_projection_is_conflict(self, organization, admin_user, range_owner):
@@ -371,24 +352,16 @@ class TestRebindRangeWorkspaceFailClosed:
         )
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.CONFLICT
         assert RangeInstance.objects.get(pk=instance.pk).workspace_id == source.id
 
     def test_unknown_range_is_not_found(self, organization, admin_user, range_owner):
         self._authorized_pair(organization, admin_user, range_owner)
+        missing_request_id = uuid4()
+        missing_target_uuid = uuid4()
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=uuid4(),
-                target_workspace_uuid=uuid4(),
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, missing_request_id, missing_target_uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.NOT_FOUND
 
     def test_projection_disagreement_is_conflict(self, organization, admin_user, range_owner):
@@ -400,12 +373,7 @@ class TestRebindRangeWorkspaceFailClosed:
         request.save(update_fields=["workspace_id"])
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.CONFLICT
 
     def test_engine_drift_is_conflict(self, organization, admin_user, range_owner):
@@ -415,12 +383,7 @@ class TestRebindRangeWorkspaceFailClosed:
         instance = _make_range(owner=range_owner, workspace=source, engine_workspace_id=third.id)
 
         with pytest.raises(RangeScopeAdminError) as exc:
-            services.rebind_range_workspace(
-                admin_user,
-                request_id=instance.request.request_id,
-                target_workspace_uuid=target.uuid,
-                audit=_audit(admin_user),
-            )
+            _rebind(admin_user, instance.request.request_id, target.uuid)
         assert exc.value.kind is RangeScopeAdminError.Kind.CONFLICT
         # No partial move: CMS projections stay at source.
         assert RangeInstance.objects.get(pk=instance.pk).workspace_id == source.id
