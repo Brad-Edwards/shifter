@@ -201,12 +201,16 @@ class TestJsonAuthGuacamoleClientSSHURL:
         def _boom(req, timeout=None):
             raise urllib.error.URLError("guacamole down")
 
+        # retry_attempts=1: fail fast, no backoff retries. Client/request are
+        # built outside the raises block so it holds exactly one possibly-
+        # throwing invocation (Sonar python:S5778).
+        client = _client(retry_attempts=1)
+        req = _ssh_req()
         with (
             patch("urllib.request.urlopen", side_effect=_boom),
             pytest.raises(ValueError, match="Failed to connect to Guacamole"),
         ):
-            # retry_attempts=1: fail fast, no backoff retries.
-            _client(retry_attempts=1).create_ssh_url(_ssh_req())
+            client.create_ssh_url(req)
 
     def test_passes_ssh_private_key_to_connection_params(self, fake_private_key, guac_exchange):
         with guac_exchange() as exchange:

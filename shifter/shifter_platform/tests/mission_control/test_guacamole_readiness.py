@@ -98,41 +98,51 @@ class TestGuacamoleClientReadiness:
         assert mock_open.call_count == 2
 
     def test_does_not_retry_on_http_400(self, sleeps):
+        # Build client/request outside the raises block so it holds exactly one
+        # possibly-throwing invocation (Sonar python:S5778).
+        client = _client(retry_attempts=3, retry_base_delay_ms=10)
+        req = _req()
         with (
             patch(URLOPEN, side_effect=_http_error(400, "Bad Request")) as mock_open,
             pytest.raises(ValueError, match="Failed to get Guacamole auth token"),
         ):
-            _client(retry_attempts=3, retry_base_delay_ms=10).create_ssh_url(_req())
+            client.create_ssh_url(req)
 
         assert mock_open.call_count == 1
         assert sleeps == []
 
     def test_raises_after_exhausting_attempts(self, sleeps):
+        client = _client(retry_attempts=3, retry_base_delay_ms=5)
+        req = _req()
         with (
             patch(URLOPEN, side_effect=urllib.error.URLError("Connection refused")) as mock_open,
             pytest.raises(ValueError, match="Failed to connect to Guacamole"),
         ):
-            _client(retry_attempts=3, retry_base_delay_ms=5).create_ssh_url(_req())
+            client.create_ssh_url(req)
 
         assert mock_open.call_count == 3
         assert len(sleeps) == 2
 
     def test_exponential_backoff_between_attempts(self, sleeps):
+        client = _client(retry_attempts=4, retry_base_delay_ms=200)
+        req = _req()
         with (
             patch(URLOPEN, side_effect=urllib.error.URLError("Connection refused")),
             pytest.raises(ValueError),
         ):
-            _client(retry_attempts=4, retry_base_delay_ms=200).create_ssh_url(_req())
+            client.create_ssh_url(req)
 
         assert sleeps == [0.2, 0.4, 0.8]
 
     def test_config_retry_policy_bounds_attempts(self, sleeps):
         """The retry count comes from client config, not Django settings."""
+        client = _client(retry_attempts=2, retry_base_delay_ms=5)
+        req = _req()
         with (
             patch(URLOPEN, side_effect=urllib.error.URLError("Connection refused")) as mock_open,
             pytest.raises(ValueError),
         ):
-            _client(retry_attempts=2, retry_base_delay_ms=5).create_ssh_url(_req())
+            client.create_ssh_url(req)
 
         assert mock_open.call_count == 2
         assert len(sleeps) == 1
