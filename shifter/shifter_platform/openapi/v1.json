@@ -1232,6 +1232,86 @@
         ]
       }
     },
+    "/api/v1/cms/ranges/{request_id}/workspace/": {
+      "post": {
+        "operationId": "api_v1_cms_range_workspace_rebind",
+        "description": "Reassign a range's workspace scope. Staff + rebind op in both scopes.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeWorkspaceRebindRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeWorkspaceRebindRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeWorkspaceRebindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeWorkspaceRebindResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/cms/scenarios/{scenario_id}/": {
       "get": {
         "operationId": "cms_scenarios_retrieve",
@@ -1435,6 +1515,93 @@
         "x-required-scopes": [
           "cms:authoring:read"
         ]
+      }
+    },
+    "/api/v1/cms/workspaces/{workspace_uuid}/range-scoping/": {
+      "get": {
+        "operationId": "api_v1_cms_workspace_range_scope_list",
+        "description": "Paginated ranges scoped to a workspace by its public UUID. Staff + list op.",
+        "parameters": [
+          {
+            "name": "ordering",
+            "required": false,
+            "in": "query",
+            "description": "Which field to use when ordering the results.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "A search term.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedRangeScopeBindingList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
       }
     },
     "/api/v1/ctf/awards/{award_id}/delete/": {
@@ -15704,6 +15871,37 @@
           }
         }
       },
+      "PaginatedRangeScopeBindingList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeScopeBinding"
+            }
+          }
+        }
+      },
       "ParticipantAdd": {
         "type": "object",
         "description": "Request body for inviting a single participant.\n\n``name`` and ``email`` are both required and non-blank (mirroring the legacy\ntruthiness check). ``email`` is a plain ``CharField`` rather than an\n``EmailField`` because the service layer owns email validation.",
@@ -17944,6 +18142,59 @@
           "strategy"
         ]
       },
+      "RangeScopeBinding": {
+        "type": "object",
+        "description": "Bounded, read-only projection of a range scoped to a workspace.\n\nExplicit fields only (never a ``ModelSerializer``): no internal workspace or\nrange id, range spec, instance/IP/access detail, credential, or ORM object is\nexposed.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Return the durable request correlation UUID, or null for a legacy request-less row.",
+            "readOnly": true
+          },
+          "owner_id": {
+            "type": "integer"
+          },
+          "range_source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "scenario_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "is_reassignable": {
+            "type": "boolean",
+            "description": "Only Mission Control ranges may have their scope reassigned here (ADR-046-R14).",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "expires_at",
+          "is_reassignable",
+          "owner_id",
+          "range_source",
+          "request_id",
+          "scenario_id",
+          "status",
+          "updated_at"
+        ]
+      },
       "RangeStatusResponse": {
         "type": "object",
         "description": "Participant range status projection (or the not-assigned sentinel).",
@@ -18016,6 +18267,31 @@
         ],
         "type": "string",
         "description": "* `demo` - demo"
+      },
+      "RangeWorkspaceRebindRequest": {
+        "type": "object",
+        "description": "Closed request body for a scope reassignment: a target workspace UUID only.",
+        "properties": {
+          "target_workspace_uuid": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "target_workspace_uuid"
+        ]
+      },
+      "RangeWorkspaceRebindResult": {
+        "type": "object",
+        "description": "Bounded result: whether the binding changed (``false`` = idempotent no-op).",
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changed"
+        ]
       },
       "RateChallengeRequest": {
         "type": "object",

@@ -28,7 +28,7 @@ from __future__ import annotations
 from cms.assets.services import AgentUploadSpec
 from cms.assets.services import create_agent as assets_create_agent
 from cms.assets.services import delete_agent as assets_delete_agent
-from cms.exceptions import CMSError, WorkspaceLaunchDenied
+from cms.exceptions import CMSError, RangeScopeAdminError, WorkspaceLaunchDenied
 from cms.models import AgentConfig, RangeInstance
 from cms.scenarios.images import project_scenario_images
 from cms.signals import range_status_changed as range_status_changed
@@ -129,6 +129,12 @@ from ._range_vpn import (
     has_ctf_openvpn_profile,
     has_mission_control_openvpn_profile,
 )
+from ._range_workspace_admin import (
+    RangeRebindResult,
+    RangeScopeAuditContext,
+    list_range_scope_bindings,
+    rebind_range_workspace,
+)
 from ._scenarios import (
     get_scenario,
     list_launchable_scenarios,
@@ -175,6 +181,9 @@ __all__ = (
     "RangeInstance",
     "RangeLeaseConflict",
     "RangeLeaseNotFound",
+    "RangeRebindResult",
+    "RangeScopeAdminError",
+    "RangeScopeAuditContext",
     "RegisteredPack",
     "WorkspaceLaunchDenied",
     "assets_create_agent",
@@ -242,6 +251,7 @@ __all__ = (
     "list_launchable_scenarios",
     "list_mission_control_range_history",
     "list_ngfws",
+    "list_range_scope_bindings",
     "list_ranges",
     "list_scenarios",
     "pause_range",
@@ -250,6 +260,7 @@ __all__ = (
     "range_owner_reassignment_available",
     "range_status_changed",
     "reassign_range_owner",
+    "rebind_range_workspace",
     "reconcile_ctf_range_leases",
     "register_pack",
     "resume_range",

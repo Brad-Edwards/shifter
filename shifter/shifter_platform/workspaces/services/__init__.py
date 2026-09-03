@@ -72,6 +72,7 @@ from ._organization import (
     update_organization_profile,
 )
 from ._personal import resolve_personal_workspace
+from ._range_scope_admin import RangeRebindAuthorization, authorize_range_rebind
 
 # ``WorkspaceOperation`` is re-exported here on purpose: callers name the
 # operation they want authorized, and the facade is the only module they may
@@ -87,6 +88,7 @@ __all__ = [
     "OrganizationProfile",
     "OrganizationRef",
     "OrganizationValidationError",
+    "RangeRebindAuthorization",
     "WorkspaceAuditContext",
     "WorkspaceAuthorization",
     "WorkspaceAuthorizationError",
@@ -105,6 +107,7 @@ __all__ = [
     "archive_workspace",
     "authorize_bound_workspace",
     "authorize_launch_workspace_locked",
+    "authorize_range_rebind",
     "authorize_workspace",
     "authorized_workspace_ids",
     "change_workspace_member_role",

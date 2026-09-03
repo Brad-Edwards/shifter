@@ -322,6 +322,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/ranges/{request_id}/workspace/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Reassign a range's workspace scope. Staff + rebind op in both scopes. */
+        post: operations["api_v1_cms_range_workspace_rebind"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/scenarios/{scenario_id}/": {
         parameters: {
             query?: never;
@@ -365,6 +382,23 @@ export interface paths {
         };
         /** @description Return the backend realizability assessment for one RAES source. */
         get: operations["cms_scenarios_realizability_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/workspaces/{workspace_uuid}/range-scoping/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Paginated ranges scoped to a workspace by its public UUID. Staff + list op. */
+        get: operations["api_v1_cms_workspace_range_scope_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3879,6 +3913,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["PrincipalWorkspaceContext"][];
         };
+        PaginatedRangeScopeBindingList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["RangeScopeBinding"][];
+        };
         /**
          * @description Request body for inviting a single participant.
          *
@@ -4548,6 +4597,29 @@ export interface components {
             readonly phase: string;
             readonly failure_category: string | null;
         };
+        /**
+         * @description Bounded, read-only projection of a range scoped to a workspace.
+         *
+         *     Explicit fields only (never a ``ModelSerializer``): no internal workspace or
+         *     range id, range spec, instance/IP/access detail, credential, or ORM object is
+         *     exposed.
+         */
+        RangeScopeBinding: {
+            /** @description Return the durable request correlation UUID, or null for a legacy request-less row. */
+            readonly request_id: string | null;
+            owner_id: number;
+            range_source: string;
+            status: string;
+            scenario_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            expires_at: string | null;
+            /** @description Only Mission Control ranges may have their scope reassigned here (ADR-046-R14). */
+            readonly is_reassignable: boolean;
+        };
         /** @description Participant range status projection (or the not-assigned sentinel). */
         RangeStatusResponse: {
             readonly participant_id: string;
@@ -4575,6 +4647,15 @@ export interface components {
          * @enum {string}
          */
         RangeTypeEnum: "demo";
+        /** @description Closed request body for a scope reassignment: a target workspace UUID only. */
+        RangeWorkspaceRebindRequest: {
+            /** Format: uuid */
+            target_workspace_uuid: string;
+        };
+        /** @description Bounded result: whether the binding changed (``false`` = idempotent no-op). */
+        RangeWorkspaceRebindResult: {
+            changed: boolean;
+        };
         /** @description Participant request body for rating a challenge (1-5). */
         RateChallengeRequest: {
             value: number;
@@ -5712,6 +5793,51 @@ export interface operations {
             };
         };
     };
+    api_v1_cms_range_workspace_rebind: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RangeWorkspaceRebindRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RangeWorkspaceRebindRequest"];
+                "multipart/form-data": components["schemas"]["RangeWorkspaceRebindRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RangeWorkspaceRebindResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     cms_scenarios_retrieve: {
         parameters: {
             query?: never;
@@ -5813,6 +5939,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScenarioRealizability"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_cms_workspace_range_scope_list: {
+        parameters: {
+            query?: {
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description A search term. */
+                search?: string;
+            };
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedRangeScopeBindingList"];
                 };
             };
             /** @description Authentication failed. */

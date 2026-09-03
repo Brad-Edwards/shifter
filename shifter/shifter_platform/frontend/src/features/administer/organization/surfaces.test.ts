@@ -62,4 +62,11 @@ describe("surfaceEnabled", () => {
     expect(surfaceEnabled(invitations, ctx({ capabilities: ["read_invitations"] }))).toBe(true);
     expect(surfaceEnabled(invitations, ctx({ capabilities: ["read_members"] }))).toBe(false);
   });
+
+  it("gates range scoping on the owner/admin scope-admin capability", () => {
+    const rangeScoping = WORKSPACE_SURFACES.find((s) => s.key === "range-scoping")!;
+    expect(surfaceEnabled(rangeScoping, ctx({ capabilities: ["list_range_scope_bindings"] }))).toBe(true);
+    expect(surfaceEnabled(rangeScoping, ctx({ capabilities: ["read_members"] }))).toBe(false);
+    expect(surfaceEnabled(rangeScoping, null)).toBe(false);
+  });
 });
