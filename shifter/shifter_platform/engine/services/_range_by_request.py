@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from shared.enums import ResourceStatus
+from shared.log_sanitize import safe_log_value
 
 from ._common import EngineError, _persist_task_arn
 
@@ -216,14 +217,23 @@ def rebind_range_workspace_by_request(
     """
     from engine.models import Range
 
+    # Sanitize the request-derived correlation id before it reaches any log sink
+    # (CodeQL py/log-injection); the internal workspace ints are not user text.
+    logged_request_id = safe_log_value(request_id)
+
     ranges = list(Range.objects.select_for_update().filter(request__request_id=request_id))
     if not ranges:
-        logger.warning("rebind_range_workspace_by_request: no range for request_id=%s", request_id)
+        logger.warning("rebind_range_workspace_by_request: no range for request_id=%s", logged_request_id)
         return RangeWorkspaceRebindOutcome.NOT_FOUND
     if len(ranges) > 1:
-        msg = f"expected one engine range for request_id={request_id}, found {len(ranges)}"
-        logger.error("rebind_range_workspace_by_request: %s", msg)
-        raise RangeProjectionIntegrityError(msg)
+        logger.error(
+            "rebind_range_workspace_by_request: expected one engine range for request_id=%s, found %s",
+            logged_request_id,
+            len(ranges),
+        )
+        raise RangeProjectionIntegrityError(
+            f"expected one engine range for request_id={request_id}, found {len(ranges)}"
+        )
 
     # Single outcome variable + one terminal return keeps the branch count within
     # the cognitive-return limit (Sonar S1142) while preserving each CAS result.
@@ -231,14 +241,14 @@ def rebind_range_workspace_by_request(
     if range_obj.workspace_id == new_workspace_id:
         logger.info(
             "rebind_range_workspace_by_request: request_id=%s already at workspace_id=%s (no-op)",
-            request_id,
+            logged_request_id,
             new_workspace_id,
         )
         outcome = RangeWorkspaceRebindOutcome.UNCHANGED
     elif range_obj.workspace_id != expected_workspace_id:
         logger.warning(
             "rebind_range_workspace_by_request: source mismatch request_id=%s expected=%s actual=%s",
-            request_id,
+            logged_request_id,
             expected_workspace_id,
             range_obj.workspace_id,
         )
@@ -248,7 +258,7 @@ def rebind_range_workspace_by_request(
         range_obj.save(update_fields=["workspace_id"])
         logger.info(
             "rebind_range_workspace_by_request: request_id=%s rebound workspace_id %s -> %s",
-            request_id,
+            logged_request_id,
             expected_workspace_id,
             new_workspace_id,
         )

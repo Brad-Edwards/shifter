@@ -29,6 +29,7 @@ from engine.services import (
     rebind_range_workspace_by_request,
 )
 from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log
+from shared.log_sanitize import safe_log_value
 from shared.range_workspace_aggregate import range_in_domain_aggregate
 from workspaces.services import (
     WorkspaceAuthorizationError,
@@ -247,7 +248,7 @@ def rebind_range_workspace(
         )
         logger.info(
             "rebind_range_workspace: request_id=%s moved workspace_id %s -> %s by actor_id=%s",
-            request_id,
+            safe_log_value(request_id),
             source_workspace_id,
             target_workspace_id,
             getattr(actor, "id", None),
