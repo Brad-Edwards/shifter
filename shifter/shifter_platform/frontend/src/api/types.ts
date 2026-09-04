@@ -94,6 +94,19 @@ export type WorkspaceInvitation = components["schemas"]["WorkspaceInvitation"];
 export type IssueWorkspaceInvitationRequest = components["schemas"]["IssueWorkspaceInvitation"];
 
 /**
+ * Range-to-workspace scope administration types (#1944, PLAT-237), re-exported
+ * from the generated OpenAPI schema. The `cms.services` scope-admin seam + DRF
+ * serializers are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. Ranges are addressed by their public request UUID and
+ * workspaces by their public UUID; `is_reassignable` is a server-derived
+ * affordance and the endpoints reauthorize every call.
+ */
+export type RangeScopeBinding = components["schemas"]["RangeScopeBinding"];
+export type PaginatedRangeScopeBindingList = components["schemas"]["PaginatedRangeScopeBindingList"];
+export type RangeWorkspaceRebindRequest = components["schemas"]["RangeWorkspaceRebindRequest"];
+export type RangeWorkspaceRebindResult = components["schemas"]["RangeWorkspaceRebindResult"];
+
+/**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
  * schema. Only the shapes this foundation chunk (and the pages/live-access
  * chunks that follow it) need are re-exported here; do not hand-copy field

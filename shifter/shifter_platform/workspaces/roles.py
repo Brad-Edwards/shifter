@@ -49,6 +49,8 @@ class WorkspaceOperation(models.TextChoices):
     RESTORE_WORKSPACE = "restore_workspace", "Restore an archived workspace"
     SET_EGRESS_POLICY = "set_egress_policy", "Set the workspace network egress policy"
     TRANSFER_OWNERSHIP = "transfer_ownership", "Transfer workspace ownership"
+    LIST_RANGE_SCOPE_BINDINGS = "list_range_scope_bindings", "List ranges scoped to the workspace"
+    REBIND_RANGE_WORKSPACE = "rebind_range_workspace", "Reassign a range's workspace scope"
 
 
 #: Role-to-operation policy. Callers must not re-derive permissions from a role
@@ -96,6 +98,18 @@ _WORKSPACE_ADMIN_OPERATIONS = frozenset(
     }
 )
 _OWNER_ONLY_OPERATIONS = frozenset({WorkspaceOperation.TRANSFER_OWNERSHIP.value})
+# Range-to-workspace scope administration (#1944, PLAT-237). Owner and admin may
+# list the ranges scoped to a workspace and reassign a range's workspace scope.
+# These are deliberately distinct from the per-range REASSIGN_RANGE (ownership
+# handover) and READ_RANGE (own-range access) operations: scope administration is
+# cross-owner administrative authority, not additive per-range access, so it is
+# never granted to a plain member (ADR-046-R14).
+_RANGE_SCOPE_ADMIN_OPERATIONS = frozenset(
+    {
+        WorkspaceOperation.LIST_RANGE_SCOPE_BINDINGS.value,
+        WorkspaceOperation.REBIND_RANGE_WORKSPACE.value,
+    }
+)
 
 ROLE_OPERATIONS: dict[str, frozenset[str]] = {
     WorkspaceRole.OWNER.value: (
@@ -103,10 +117,15 @@ ROLE_OPERATIONS: dict[str, frozenset[str]] = {
         | _MEMBERSHIP_MANAGEMENT_OPERATIONS
         | _INVITATION_OPERATIONS
         | _WORKSPACE_ADMIN_OPERATIONS
+        | _RANGE_SCOPE_ADMIN_OPERATIONS
         | _OWNER_ONLY_OPERATIONS
     ),
     WorkspaceRole.ADMIN.value: (
-        _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS | _INVITATION_OPERATIONS | _WORKSPACE_ADMIN_OPERATIONS
+        _RESOURCE_OPERATIONS
+        | _MEMBERSHIP_MANAGEMENT_OPERATIONS
+        | _INVITATION_OPERATIONS
+        | _WORKSPACE_ADMIN_OPERATIONS
+        | _RANGE_SCOPE_ADMIN_OPERATIONS
     ),
     WorkspaceRole.MEMBER.value: _RESOURCE_OPERATIONS,
 }
