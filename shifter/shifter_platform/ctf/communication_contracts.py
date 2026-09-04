@@ -24,7 +24,7 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from ctf.enums import AcknowledgementPolicy, AudienceKind, CommunicationChannel, TriggerKind
+from ctf.enums_communication import AcknowledgementPolicy, AudienceKind, CommunicationChannel, TriggerKind
 from ctf.exceptions import CTFCommunicationError
 
 CONTENT_PROFILE_V1 = "ctf-communication-markdown/v1"
@@ -45,9 +45,9 @@ _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Executable / non-navigational URL schemes rejected anywhere in the body.
 _DANGEROUS_SCHEMES = ("javascript:", "data:", "vbscript:", "file:", "blob:")
 # Markdown inline link/image: [text](url) and ![alt](url). The destination is the
-# first non-space run after "("; any optional title is consumed by [^)]* (linear,
-# no backtracking) up to the closing ")".
-_MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)")
+# first non-space run after "("; an optional title must begin with whitespace, so
+# the two quantifiers never match the same character (no super-linear backtracking).
+_MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)\s]+)(?:\s[^)]*)?\)")
 # Markdown reference-style link/image definition: [label]: url
 _MARKDOWN_REF_DEF_RE = re.compile(r"(?m)^[ \t]{0,3}\[[^\]]+\]:[ \t]*(\S+)")
 # Bare scheme-prefixed URL anywhere (GFM autolinks these when rendered).

@@ -28,7 +28,8 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from ctf.communication_contracts import canonical_digest
-from ctf.enums import CampaignStatus, DeliveryStatus, EventStatus, IntentStatus
+from ctf.enums import EventStatus
+from ctf.enums_communication import CampaignStatus, DeliveryStatus, IntentStatus
 from ctf.exceptions import CTFCommunicationError
 from ctf.models import (
     CommunicationCampaign,

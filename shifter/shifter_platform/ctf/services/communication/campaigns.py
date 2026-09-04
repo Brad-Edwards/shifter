@@ -28,7 +28,8 @@ from ctf.communication_contracts import (
     validate_message_content,
     validate_trigger_spec,
 )
-from ctf.enums import CampaignStatus, EventCapability
+from ctf.enums import EventCapability
+from ctf.enums_communication import CampaignStatus
 from ctf.exceptions import CTFCommunicationError
 from ctf.models import CommunicationCampaign, CommunicationTargetEvent, CTFEvent, MessageRevision
 from ctf.services.event.staff import actor_has_event_capability

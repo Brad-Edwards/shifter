@@ -16,7 +16,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from ctf.enums import CampaignStatus, DeliveryStatus, IntentStatus
+from ctf.enums_communication import CampaignStatus, DeliveryStatus, IntentStatus
 from ctf.models import (
     CommunicationCampaign,
     CommunicationIntent,

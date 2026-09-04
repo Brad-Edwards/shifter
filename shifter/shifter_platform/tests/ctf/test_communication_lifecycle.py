@@ -15,7 +15,8 @@ import pytest
 from django.utils import timezone
 
 import workspaces.services as workspace_services
-from ctf.enums import DeliveryStatus, IntentStatus, ParticipantStatus
+from ctf.enums import ParticipantStatus
+from ctf.enums_communication import DeliveryStatus, IntentStatus
 from ctf.models import (
     CommunicationCampaign,
     CommunicationIntent,

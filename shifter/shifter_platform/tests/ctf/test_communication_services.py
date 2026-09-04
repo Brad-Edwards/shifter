@@ -84,6 +84,7 @@ def test_campaign_cannot_target_an_event_in_a_different_workspace(organizer_user
         event_start=timezone.now() + timedelta(days=1),
         event_end=timezone.now() + timedelta(days=1, hours=2),
     )
+    ws = _workspace_uuid(organizer_user)
     draft = _draft(
         ctf_event,
         target_event_ids=[foreign_event.id],
@@ -91,7 +92,7 @@ def test_campaign_cannot_target_an_event_in_a_different_workspace(organizer_user
     )
 
     with pytest.raises(CTFCommunicationError):
-        create_campaign(organizer_user, _workspace_uuid(organizer_user), draft)
+        create_campaign(organizer_user, ws, draft)
 
 
 def test_campaign_cannot_target_an_event_without_notification_capability(
@@ -106,6 +107,7 @@ def test_campaign_cannot_target_an_event_without_notification_capability(
         event_start=timezone.now() + timedelta(days=1),
         event_end=timezone.now() + timedelta(days=1, hours=2),
     )
+    ws = _workspace_uuid(organizer_user)
     draft = _draft(
         ctf_event,
         target_event_ids=[others_event.id],
@@ -113,15 +115,16 @@ def test_campaign_cannot_target_an_event_without_notification_capability(
     )
 
     with pytest.raises(CTFCommunicationError):
-        create_campaign(organizer_user, _workspace_uuid(organizer_user), draft)
+        create_campaign(organizer_user, ws, draft)
 
 
 def test_campaign_creation_denies_a_workspace_the_author_does_not_belong_to(organizer_user, ctf_event):
     outsider = User.objects.create_user(username="outsider@e.com", email="outsider@e.com")
     outsider_workspace = _workspace_uuid(outsider)
+    draft = _draft(ctf_event)
 
     with pytest.raises(CTFCommunicationError):
-        create_campaign(organizer_user, outsider_workspace, _draft(ctf_event))
+        create_campaign(organizer_user, outsider_workspace, draft)
 
 
 # ---------------------------------------------------------------------------

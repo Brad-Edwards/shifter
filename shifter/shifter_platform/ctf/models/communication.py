@@ -29,7 +29,7 @@ from ctf.communication_contracts import (
     validate_channels,
     validate_trigger_spec,
 )
-from ctf.enums import (
+from ctf.enums_communication import (
     AcknowledgementPolicy,
     CampaignStatus,
     CommunicationChannel,

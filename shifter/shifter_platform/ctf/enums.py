@@ -10,16 +10,6 @@ from enum import StrEnum
 # Recovery-domain enums live in ctf.enums_recovery (python:S104 split); they are
 # re-exported here (see __all__ below) so `from ctf.enums import RecoveryPhase`
 # keeps working.
-from ctf.enums_communication import (
-    AcknowledgementPolicy,
-    AudienceKind,
-    CampaignStatus,
-    CommunicationChannel,
-    CommunicationOrigin,
-    DeliveryStatus,
-    IntentStatus,
-    TriggerKind,
-)
 from ctf.enums_recovery import (
     RecoveryFailureCategory,
     RecoveryPhase,
@@ -482,20 +472,13 @@ __all__ = [
     "EVENT_TERMINAL_STATUSES",
     "PARTICIPANT_MODERATED_STATUSES",
     "VALID_TRANSITIONS",
-    "AcknowledgementPolicy",
     "AttemptLimitMode",
-    "AudienceKind",
-    "CampaignStatus",
     "ChallengeCategory",
     "ChallengeDifficulty",
     "ChallengeVisibility",
-    "CommunicationChannel",
-    "CommunicationOrigin",
     "DecayFunction",
-    "DeliveryStatus",
     "EventStaffRole",
     "EventStatus",
-    "IntentStatus",
     "NotificationStatus",
     "NotificationType",
     "ParticipantRole",
@@ -509,7 +492,6 @@ __all__ = [
     "ScoreboardVisibility",
     "ScoringMode",
     "SpareRangeStatus",
-    "TriggerKind",
     "UserType",
     "validate_transition",
 ]

@@ -14,7 +14,7 @@ from typing import Any
 from uuid import UUID
 
 from ctf.communication_contracts import validate_audience_spec
-from ctf.enums import AudienceKind
+from ctf.enums_communication import AudienceKind
 from ctf.exceptions import CTFCommunicationError
 from ctf.models import CTFParticipant
 from ctf.services.participant.queries import viewing_participant_q
