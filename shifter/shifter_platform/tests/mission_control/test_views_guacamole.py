@@ -560,7 +560,7 @@ class TestGuacamoleSSHURL:
         request = _post(rf, "/mc/guac/ssh/", {"instance_uuid": instance["uuid"]}, user)
 
         # An unexpected (non-HTTP/URL) error from the token POST is not caught by
-        # get_guacamole_auth_token, so the view's catch-all maps it to 500.
+        # the client's token exchange, so the view's catch-all maps it to 500.
         def _boom(req, timeout=None):
             raise RuntimeError("boom")
 

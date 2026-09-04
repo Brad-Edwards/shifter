@@ -16,6 +16,8 @@ from ._range_workspace import authorize_range_workspace
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from shared.remote_access import TerminalConnectionFactory
+
 _INSTANCE_NOT_FOUND = "Instance not found"
 
 
@@ -75,12 +77,23 @@ def _authorize_instance_access(user: User, instance_uuid: str) -> None:
         raise PermissionError(_INSTANCE_NOT_FOUND) from exc
 
 
-def connect_range_terminal(user: User, instance_uuid: str) -> TerminalConnection:
-    """Open an Engine terminal only after workspace authorization succeeds."""
+def connect_range_terminal(
+    user: User,
+    instance_uuid: str,
+    *,
+    connection_factory: TerminalConnectionFactory | None = None,
+) -> TerminalConnection:
+    """Open an Engine terminal only after workspace authorization succeeds.
+
+    ``connection_factory`` is carried through to ``engine.services`` so a
+    consumer test can substitute a fake terminal transport without bypassing
+    this workspace authorization layer or Engine's runtime authorization
+    (issue #993). Production leaves it ``None`` (a real SSH connection).
+    """
     from engine.services import connect_terminal
 
     _authorize_instance_access(user, instance_uuid)
-    return connect_terminal(user, instance_uuid)
+    return connect_terminal(user, instance_uuid, connection_factory=connection_factory)
 
 
 def get_range_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:

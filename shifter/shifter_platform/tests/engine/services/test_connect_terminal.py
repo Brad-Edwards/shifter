@@ -95,6 +95,62 @@ class TestConnectTerminalOutputs:
         assert result.host_public_key == "ssh-ed25519 AAAATESTHOSTKEY shifter"
 
 
+class TestConnectTerminalFactoryInjection:
+    """The injected ``connection_factory`` seam (issue #993).
+
+    A caller may substitute the SSH transport with a fake without patching
+    ``engine.ssh`` or bypassing ownership/READY/channel authorization. The
+    factory receives the already-authorized connection facts and returns a
+    ``TerminalConnection``. Production defaults to a real ``SSHConnection``.
+    """
+
+    def test_uses_injected_factory_with_authorized_facts(self, settings, user):
+        from engine import connect_terminal
+
+        settings.CLOUD_PROVIDER = "aws"
+        _active_range(user, _instance("fact-uuid", os_type="ubuntu", private_ip="10.1.1.77"))
+        captured: dict[str, object] = {}
+        sentinel = object()
+
+        def fake_factory(**kwargs):
+            captured.update(kwargs)
+            return sentinel
+
+        with boto3_secrets(make_secrets_client()):
+            result = connect_terminal(user, "fact-uuid", connection_factory=fake_factory)
+
+        assert result is sentinel
+        assert captured["host"] == "10.1.1.77"
+        assert captured["username"] == "ubuntu"
+        assert captured["private_key"] == SSH_KEY_PEM
+        assert captured["port"] == 22
+        assert captured["session_id"] == "fact-uuid"
+
+    def test_default_factory_builds_real_ssh_connection(self, settings, user):
+        from engine import connect_terminal
+        from engine.ssh import SSHConnection
+
+        settings.CLOUD_PROVIDER = "aws"
+        _active_range(user, _instance("default-uuid", os_type="ubuntu"))
+        with boto3_secrets(make_secrets_client()):
+            result = connect_terminal(user, "default-uuid")
+        assert isinstance(result, SSHConnection)
+
+    def test_factory_not_invoked_when_authorization_fails(self, user):
+        from engine import connect_terminal
+
+        called = False
+
+        def fake_factory(**_kwargs):
+            nonlocal called
+            called = True
+            return object()
+
+        with pytest.raises(ValueError, match="No active range"):
+            connect_terminal(user, "missing-uuid", connection_factory=fake_factory)
+        assert called is False
+
+
 class TestConnectTerminalInputValidation:
     def test_requires_user_argument(self):
         from engine import connect_terminal
