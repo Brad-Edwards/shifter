@@ -20,6 +20,7 @@ import hashlib
 import ipaddress
 import json
 import re
+from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -43,8 +44,10 @@ _HTML_TAG_RE = re.compile(r"<\s*[/!?a-zA-Z]")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Executable / non-navigational URL schemes rejected anywhere in the body.
 _DANGEROUS_SCHEMES = ("javascript:", "data:", "vbscript:", "file:", "blob:")
-# Markdown inline link/image: [text](url) and ![alt](url).
-_MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)\s]+)(?:\s+[\"'(][^)]*)?\s*\)")
+# Markdown inline link/image: [text](url) and ![alt](url). The destination is the
+# first non-space run after "("; any optional title is consumed by [^)]* (linear,
+# no backtracking) up to the closing ")".
+_MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)")
 # Markdown reference-style link/image definition: [label]: url
 _MARKDOWN_REF_DEF_RE = re.compile(r"(?m)^[ \t]{0,3}\[[^\]]+\]:[ \t]*(\S+)")
 # Bare scheme-prefixed URL anywhere (GFM autolinks these when rendered).
@@ -56,7 +59,7 @@ def _reject(message: str, *, code: str = "CTF_COMMUNICATION_CONTENT_INVALID") ->
     return CTFCommunicationError(message, code=code)
 
 
-def canonical_digest(payload: dict) -> str:
+def canonical_digest(payload: dict[str, Any]) -> str:
     """Return a deterministic, key-order-independent content digest."""
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return _DIGEST_PREFIX + hashlib.sha256(encoded).hexdigest()
@@ -68,6 +71,7 @@ def canonical_digest(payload: dict) -> str:
 
 
 def _validate_subject(subject: object) -> str:
+    """Validate and trim a subject: required plain text, bounded, no controls."""
     if not isinstance(subject, str):
         raise _reject("subject must be a string")
     trimmed = subject.strip()
@@ -131,6 +135,7 @@ def _validate_link_target(target: str, allowed_link_hosts: frozenset[str]) -> No
 
 
 def _validate_body(body: object, allowed_link_hosts: frozenset[str]) -> str:
+    """Validate a Markdown body: bounded, no raw HTML/executable schemes, safe links."""
     if not isinstance(body, str):
         raise _reject("body must be a string")
     encoded = body.encode("utf-8")
@@ -153,7 +158,7 @@ def _validate_body(body: object, allowed_link_hosts: frozenset[str]) -> str:
     return body
 
 
-def validate_message_content(content: object, *, allowed_link_hosts: frozenset[str]) -> dict:
+def validate_message_content(content: object, *, allowed_link_hosts: frozenset[str]) -> dict[str, Any]:
     """Validate one message revision's content against ``ctf-communication-markdown/v1``.
 
     Returns a normalized ``{subject, body, profile, digest}`` mapping. The digest
@@ -176,7 +181,8 @@ def validate_message_content(content: object, *, allowed_link_hosts: frozenset[s
 # ---------------------------------------------------------------------------
 
 
-def _require_uuid_list(spec: dict, key: str, *, minimum: int, exact: int | None = None) -> list[str]:
+def _require_uuid_list(spec: dict[str, Any], key: str, *, minimum: int, exact: int | None = None) -> list[str]:
+    """Return the normalized UUID string list at ``key``, enforcing count bounds."""
     raw = spec.get(key)
     if not isinstance(raw, list) or not raw:
         raise _reject(f"audience {key} must be a non-empty list")
@@ -204,7 +210,7 @@ _AUDIENCE_KEYS_BY_KIND: dict[str, str] = {
 }
 
 
-def validate_audience_spec(spec: object) -> dict:
+def validate_audience_spec(spec: object) -> dict[str, Any]:
     """Validate a closed audience selector; return the normalized mapping.
 
     Stores public CTF UUIDs only. Email addresses, arbitrary user ids, ORM
@@ -242,7 +248,7 @@ _TRIGGER_KEYS_BY_KIND: dict[str, frozenset[str]] = {
 }
 
 
-def validate_trigger_spec(spec: object) -> dict:
+def validate_trigger_spec(spec: object) -> dict[str, Any]:
     """Validate a closed trigger declaration; return the normalized mapping.
 
     A trigger is data, never code: no callables, webhooks, or plugin entry points.

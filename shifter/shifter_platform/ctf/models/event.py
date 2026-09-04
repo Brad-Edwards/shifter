@@ -27,16 +27,12 @@ from ctf.enums import (
 )
 from shared.field_encryption import EncryptedStringField
 
-from ._base import CTFBaseModel
+from ._base import CTFBaseModel, ImmutableFieldsMixin
 
 if TYPE_CHECKING:
     from datetime import datetime
 
 logger = logging.getLogger(__name__)
-
-# Sentinel distinguishing "immutability baseline not captured" (deferred load or
-# a still-in-memory created instance) from a genuine ``None`` persisted value.
-_UNSET = object()
 
 
 def _default_visible_os_types() -> list[str]:
@@ -51,7 +47,7 @@ def _scoring_mode_choices() -> list[tuple[str, str]]:
     return ScoringMode.choices() + [(mode, mode.title()) for mode in sorted(registered_scoring_modes())]
 
 
-class CTFEvent(CTFBaseModel):
+class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
     """CTF competition event.
 
     Represents a single CTF competition with its configuration,
@@ -264,17 +260,14 @@ class CTFEvent(CTFBaseModel):
             models.Index(fields=["created_by", "status"]),
         ]
 
+    # The workspace scope is the event's tenancy boundary (ADR-051): rebinding it
+    # would silently move the event, its participants, and every scoped
+    # communication into a different tenant, so it is frozen once set.
+    IMMUTABLE_FIELDS = ("workspace_id",)
+
     def __str__(self) -> str:
         """Return event name."""
         return self.name
-
-    @classmethod
-    def from_db(cls, db, field_names, values):
-        """Capture the persisted workspace scope so ``clean`` can enforce immutability."""
-        instance = super().from_db(db, field_names, values)
-        if "workspace_id" in field_names:
-            instance._loaded_workspace_id = instance.workspace_id
-        return instance
 
     def clean(self) -> None:
         """Validate event data."""
@@ -283,26 +276,9 @@ class CTFEvent(CTFBaseModel):
         self._validate_registration_deadline(errors)
         self._validate_team_settings(errors)
         self._validate_scoreboard_freeze_time(errors)
-        self._validate_workspace_immutable(errors)
+        self.validate_immutable(errors)
         if errors:
             raise ValidationError(errors)
-
-    def _validate_workspace_immutable(self, errors: dict[str, list[str]]) -> None:
-        # The workspace scope is the event's tenancy boundary (ADR-051): rebinding
-        # it would silently move the event, its participants, and every scoped
-        # communication into a different tenant. It is set once at creation and
-        # frozen thereafter. The first save of a new row (``_state.adding``) is
-        # always allowed. For every update path -- a fully loaded row, a row still
-        # held from ``objects.create()``, or a deferred/partial load that omitted
-        # the field -- the persisted value is the authority, fetched when the
-        # ``from_db`` baseline is unavailable so the invariant is not bypassable.
-        if self._state.adding:
-            return
-        loaded = getattr(self, "_loaded_workspace_id", _UNSET)
-        if loaded is _UNSET:
-            loaded = type(self).all_objects.filter(pk=self.pk).values_list("workspace_id", flat=True).first()
-        if loaded is not None and self.workspace_id != loaded:
-            errors.setdefault("workspace_id", []).append("Event workspace scope is immutable once set.")
 
     def _validate_event_times(self, errors: dict[str, list[str]]) -> None:
         if self.event_start and self.event_end and self.event_end <= self.event_start:

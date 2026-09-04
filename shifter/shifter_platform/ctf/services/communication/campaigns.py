@@ -12,6 +12,8 @@ event returns the same opaque denial so identifiers cannot probe tenancy.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from django.conf import settings
@@ -32,6 +34,27 @@ from ctf.models import CommunicationCampaign, CommunicationTargetEvent, CTFEvent
 from ctf.services.event.staff import actor_has_event_capability
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class CampaignDraft:
+    """The organizer-supplied shape of a new campaign (ADR-051, #2048).
+
+    A value object so campaign authoring is one bounded input, not a long
+    positional/keyword list. The service validates every field before persisting.
+    """
+
+    title: str
+    origin: str
+    target_event_ids: list[UUID]
+    audience_spec: dict[str, Any]
+    trigger_spec: dict[str, Any]
+    channels: list[str]
+    subject: str
+    body: str
+    acknowledgement_policy: str = "none"
+    actor_token_id: int | None = None
+
 
 _TARGET_DENIED = CTFCommunicationError(
     "One or more target events are not available for this campaign",
@@ -75,41 +98,27 @@ def _authorized_target_events(user: User, workspace_id: int, target_event_ids: l
     return resolved
 
 
-def create_campaign(
-    user: User,
-    *,
-    workspace_uuid: str | UUID,
-    title: str,
-    origin: str,
-    target_event_ids: list[UUID],
-    audience_spec: dict,
-    trigger_spec: dict,
-    channels: list[str],
-    subject: str,
-    body: str,
-    acknowledgement_policy: str = "none",
-    actor_token_id: int | None = None,
-) -> CommunicationCampaign:
+def create_campaign(user: User, workspace_uuid: str | UUID, draft: CampaignDraft) -> CommunicationCampaign:
     """Create a draft campaign confined to one workspace with an initial revision."""
     workspace_id = _resolve_workspace(user, workspace_uuid)
-    events = _authorized_target_events(user, workspace_id, target_event_ids)
+    events = _authorized_target_events(user, workspace_id, draft.target_event_ids)
 
-    audience = validate_audience_spec(audience_spec)
-    trigger = validate_trigger_spec(trigger_spec)
-    selected_channels = validate_channels(channels)
-    ack_policy = validate_acknowledgement_policy(acknowledgement_policy)
+    audience = validate_audience_spec(draft.audience_spec)
+    trigger = validate_trigger_spec(draft.trigger_spec)
+    selected_channels = validate_channels(draft.channels)
+    ack_policy = validate_acknowledgement_policy(draft.acknowledgement_policy)
     content = validate_message_content(
-        {"subject": subject, "body": body},
+        {"subject": draft.subject, "body": draft.body},
         allowed_link_hosts=settings.CTF_COMMUNICATION_ALLOWED_LINK_HOSTS,
     )
 
     with transaction.atomic():
         campaign = CommunicationCampaign.objects.create(
             workspace_id=workspace_id,
-            title=title,
-            origin=origin,
+            title=draft.title,
+            origin=draft.origin,
             created_by=user,
-            actor_token_id=actor_token_id,
+            actor_token_id=draft.actor_token_id,
             status=CampaignStatus.DRAFT.value,
             audience_spec=audience,
             trigger_spec=trigger,

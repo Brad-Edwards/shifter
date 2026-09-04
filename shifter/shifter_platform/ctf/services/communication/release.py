@@ -12,11 +12,17 @@ recipients INSIDE the transaction, and its idempotency identity is scoped to the
 immutable campaign so a replay can never return another campaign's intent. A
 retry collapses onto the same intent, and per-recipient uniqueness means it can
 never grow the audience (AC2, AC3).
+
+The RAES/range-source reference columns on ``CommunicationIntent`` are populated
+by the later RAES/range-ingress slices; this slice releases manual and
+event-scoped campaigns and carries only the range-generation fence.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime
+from uuid import UUID
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -28,6 +34,7 @@ from ctf.models import (
     CommunicationCampaign,
     CommunicationIntent,
     CTFEvent,
+    CTFParticipant,
     DeliveryAttempt,
     MessageRevision,
     ParticipantReceipt,
@@ -39,7 +46,7 @@ from ctf.services.communication.audience import resolve_recipients
 logger = logging.getLogger(__name__)
 
 
-def _idempotency_key(campaign_id, occurrence_key: str, range_generation_ref: str) -> str:
+def _idempotency_key(campaign_id: UUID, occurrence_key: str, range_generation_ref: str) -> str:
     """Derive a campaign-scoped, unambiguous intent identity.
 
     The digest namespaces the caller-supplied occurrence and bound range
@@ -56,6 +63,65 @@ def _idempotency_key(campaign_id, occurrence_key: str, range_generation_ref: str
     )
 
 
+def _assert_release_allowed(campaign: CommunicationCampaign, target_event_ids: set[UUID]) -> None:
+    """Refuse release for a cancelled campaign or a cancelled target event."""
+    if campaign.status == CampaignStatus.CANCELLED.value:
+        raise CTFCommunicationError("A cancelled campaign cannot be released", code="CTF_COMMUNICATION_CANCELLED")
+    cancelled = (
+        CTFEvent.objects.select_for_update()
+        .filter(id__in=target_event_ids, status=EventStatus.CANCELLED.value)
+        .exists()
+    )
+    if cancelled:
+        raise CTFCommunicationError(
+            "A target event is cancelled; the campaign must be replaced",
+            code="CTF_COMMUNICATION_EVENT_CANCELLED",
+        )
+
+
+def _resolve_revision(campaign: CommunicationCampaign, revision: MessageRevision | None) -> MessageRevision:
+    """Return the revision to release, defaulting to the latest and validating ownership."""
+    revision = revision or MessageRevision.objects.filter(campaign=campaign).order_by("-revision_number").first()
+    if revision is None:
+        raise CTFCommunicationError("Campaign has no message revision to release", code="CTF_COMMUNICATION_NO_CONTENT")
+    if revision.campaign_id != campaign.pk:
+        raise CTFCommunicationError(
+            "Message revision does not belong to this campaign",
+            code="CTF_COMMUNICATION_REVISION_MISMATCH",
+        )
+    return revision
+
+
+def _materialize(
+    intent: CommunicationIntent, recipients: list[CTFParticipant], channels: list[str], now: datetime
+) -> None:
+    """Write the per-recipient snapshots, receipts, and per-channel delivery commands."""
+    for participant in recipients:
+        snapshot = RecipientSnapshot.objects.create(
+            intent=intent,
+            event_id=participant.event_id,
+            participant=participant,
+            participant_public_id=participant.id,
+            team_id=participant.team_id,
+            user_id=participant.user_id,
+            delivery_coordinate=participant.email or "",
+        )
+        ParticipantReceipt.objects.create(snapshot=snapshot)
+        DeliveryAttempt.objects.bulk_create(
+            [
+                DeliveryAttempt(
+                    intent=intent,
+                    snapshot=snapshot,
+                    channel=channel,
+                    status=DeliveryStatus.QUEUED.value,
+                    idempotency_key=f"{intent.idempotency_key}:{participant.id}:{channel}",
+                    due_at=intent.due_at or now,
+                )
+                for channel in channels
+            ]
+        )
+
+
 def release_campaign(
     campaign: CommunicationCampaign,
     *,
@@ -64,12 +130,6 @@ def release_campaign(
     actor_token_id: int | None = None,
     revision: MessageRevision | None = None,
     range_generation_ref: str = "",
-    raes_declaration_ref: str = "",
-    raes_occurrence_ref: str = "",
-    scenario_digest: str = "",
-    range_request_ref: str = "",
-    policy_revision: str = "",
-    audit_correlation_id: str = "",
 ) -> CommunicationIntent:
     """Release ``campaign`` as one immutable intent with materialized recipients.
 
@@ -81,17 +141,12 @@ def release_campaign(
     now = timezone.now()
 
     with transaction.atomic():
-        # Lock the campaign, then the target events, so a concurrent
+        # Lock the campaign, then its target events, so a concurrent
         # cancellation/fencing transaction that also locks them cannot commit
         # between these checks and the inserts below (consistent lock order).
         locked = CommunicationCampaign.objects.select_for_update().get(pk=campaign.pk)
-        if locked.status == CampaignStatus.CANCELLED.value:
-            raise CTFCommunicationError("A cancelled campaign cannot be released", code="CTF_COMMUNICATION_CANCELLED")
-
         existing = CommunicationIntent.objects.filter(idempotency_key=key).first()
         if existing is not None:
-            # Fail closed if a colliding row is not this campaign's (defense in
-            # depth; the campaign-scoped key already makes this impossible).
             if existing.campaign_id != locked.pk:
                 raise CTFCommunicationError(
                     "Idempotency identity does not match this campaign",
@@ -100,33 +155,8 @@ def release_campaign(
             return existing
 
         target_event_ids = set(locked.target_events.values_list("id", flat=True))
-        # Fence: a cancelled target event stops new release/materialization.
-        cancelled = list(
-            CTFEvent.objects.select_for_update()
-            .filter(id__in=target_event_ids, status=EventStatus.CANCELLED.value)
-            .values_list("id", flat=True)
-        )
-        if cancelled:
-            raise CTFCommunicationError(
-                "A target event is cancelled; the campaign must be replaced",
-                code="CTF_COMMUNICATION_EVENT_CANCELLED",
-            )
-
-        revision = revision or MessageRevision.objects.filter(campaign=locked).order_by("-revision_number").first()
-        if revision is None:
-            raise CTFCommunicationError(
-                "Campaign has no message revision to release", code="CTF_COMMUNICATION_NO_CONTENT"
-            )
-        # The content revision must belong to the campaign being released, so an
-        # intent can never pair one campaign's recipients with another's content.
-        if revision.campaign_id != locked.pk:
-            raise CTFCommunicationError(
-                "Message revision does not belong to this campaign",
-                code="CTF_COMMUNICATION_REVISION_MISMATCH",
-            )
-
-        # Resolve recipients inside the transaction so the snapshot reflects the
-        # membership at release, not a value read before the fences were checked.
+        _assert_release_allowed(locked, target_event_ids)
+        revision = _resolve_revision(locked, revision)
         recipients = resolve_recipients(target_event_ids, locked.audience_spec)
         channels = list(locked.channels)
 
@@ -144,46 +174,15 @@ def release_campaign(
                 occurrence_key=occurrence_key,
                 idempotency_key=key,
                 range_generation_ref=range_generation_ref,
-                raes_declaration_ref=raes_declaration_ref,
-                raes_occurrence_ref=raes_occurrence_ref,
-                scenario_digest=scenario_digest,
-                range_request_ref=range_request_ref,
-                policy_revision=policy_revision,
-                audit_correlation_id=audit_correlation_id,
                 released_at=now,
             )
         except IntegrityError:
-            # A concurrent release on a backend without real row locks won the
-            # idempotency race; collapse onto the committed intent.
             committed = CommunicationIntent.objects.filter(idempotency_key=key, campaign=locked).first()
             if committed is not None:
                 return committed
             raise
 
-        for participant in recipients:
-            snapshot = RecipientSnapshot.objects.create(
-                intent=intent,
-                event_id=participant.event_id,
-                participant=participant,
-                participant_public_id=participant.id,
-                team_id=participant.team_id,
-                user_id=participant.user_id,
-                delivery_coordinate=participant.email or "",
-            )
-            ParticipantReceipt.objects.create(snapshot=snapshot)
-            DeliveryAttempt.objects.bulk_create(
-                [
-                    DeliveryAttempt(
-                        intent=intent,
-                        snapshot=snapshot,
-                        channel=channel,
-                        status=DeliveryStatus.QUEUED.value,
-                        idempotency_key=f"{key}:{participant.id}:{channel}",
-                        due_at=intent.due_at or now,
-                    )
-                    for channel in channels
-                ]
-            )
+        _materialize(intent, recipients, channels, now)
         CommunicationCampaign.objects.filter(pk=locked.pk).update(status=CampaignStatus.RELEASED.value, updated_at=now)
         audit_communication_release(
             actor_id=intent.actor_user_id,

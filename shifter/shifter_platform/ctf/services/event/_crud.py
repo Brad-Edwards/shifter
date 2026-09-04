@@ -23,6 +23,7 @@ from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFEvent
 from shared.log_sanitize import safe_log_value
 
+from ._workspace import resolve_event_workspace_id
 from .scheduling import _reschedule_event_tasks, _reschedule_live_event_schedule
 
 if TYPE_CHECKING:
@@ -93,33 +94,6 @@ def _validate_scoring_mode(event_data: dict[str, Any]) -> None:
         ) from None
 
 
-def _resolve_event_workspace_id(user: User, event_data: dict[str, Any]) -> int:
-    """Resolve the immutable workspace scope for a new event (ADR-051, #2048).
-
-    An explicit public ``workspace`` UUID is authorized through the tenancy seam
-    for the ``USE_CTF_COMMUNICATIONS`` membership operation (which proves the
-    creator belongs to the workspace, and refuses an archived one); this never
-    grants CTF event or recipient authority. Omitting it uses the creator's
-    personal compatibility workspace. CTF reaches tenancy only through the public
-    ``workspaces.services`` facade -- never a workspace model or FK.
-    """
-    import workspaces.services as workspace_services
-
-    workspace_uuid = event_data.get("workspace")
-    if workspace_uuid:
-        try:
-            authorization = workspace_services.authorize_workspace(
-                user, workspace_uuid, workspace_services.WorkspaceOperation.USE_CTF_COMMUNICATIONS
-            )
-        except workspace_services.WorkspaceAuthorizationError:
-            raise CTFValidationError(
-                "Workspace is not available for CTF event creation.",
-                code="CTF_WORKSPACE_NOT_AVAILABLE",
-            ) from None
-        return authorization.workspace_id
-    return workspace_services.resolve_personal_workspace(user).workspace_id
-
-
 def _validate_content_scenario_access(user: User, scenario_id: str) -> None:
     """Authorize configured content through the existing CTF launch catalog."""
     from django.conf import settings
@@ -176,7 +150,7 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
     scenario_id = str(safe_data.get("scenario_id", CTFEvent._meta.get_field("scenario_id").default))
     _validate_content_scenario_access(user, scenario_id)
-    workspace_id = _resolve_event_workspace_id(user, event_data)
+    workspace_id = resolve_event_workspace_id(user, event_data)
     from ctf.services.content_resolution import resolve_scenario_ctf_content
 
     resolved_content = resolve_scenario_ctf_content(scenario_id)

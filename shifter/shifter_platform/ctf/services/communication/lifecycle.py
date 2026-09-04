@@ -10,6 +10,7 @@ and is never retargeted; only its encrypted delivery coordinate is erased.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from django.db import transaction
 from django.db.models import Q
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 _UNCLAIMED = (DeliveryStatus.QUEUED.value, DeliveryStatus.RETRY_DUE.value)
 
 
-def _cancel_unclaimed(attempts_q: Q, now) -> int:
+def _cancel_unclaimed(attempts_q: Q, now: datetime) -> int:
     """Cancel the not-yet-claimed delivery commands matching ``attempts_q``."""
     return DeliveryAttempt.objects.filter(attempts_q, status__in=_UNCLAIMED).update(
         status=DeliveryStatus.CANCELLED.value, updated_at=now
@@ -80,7 +81,7 @@ def on_participant_removed(participant: CTFParticipant) -> int:
     return cancelled
 
 
-def on_event_cancelled(event) -> int:
+def on_event_cancelled(event: CTFEvent) -> int:
     """React to an event cancellation (AC3).
 
     Fences scheduled intents targeting the event so they can never materialize new

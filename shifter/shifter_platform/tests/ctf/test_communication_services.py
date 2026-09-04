@@ -25,7 +25,7 @@ from ctf.models import (
     ParticipantReceipt,
     RecipientSnapshot,
 )
-from ctf.services.communication import create_campaign, release_campaign, resolve_recipients
+from ctf.services.communication import CampaignDraft, create_campaign, release_campaign, resolve_recipients
 
 pytestmark = pytest.mark.django_db
 
@@ -47,9 +47,8 @@ def _participant(event, email, *, status=ParticipantStatus.ACTIVE.value, team=No
     )
 
 
-def _campaign_kwargs(ctf_event, **overrides):
+def _draft(ctf_event, **overrides) -> CampaignDraft:
     data = {
-        "workspace_uuid": None,  # filled by caller
         "title": "Kickoff",
         "origin": "organizer_staff",
         "target_event_ids": [ctf_event.id],
@@ -60,7 +59,7 @@ def _campaign_kwargs(ctf_event, **overrides):
         "body": "Read the rules at [rules](/events/rules).",
     }
     data.update(overrides)
-    return data
+    return CampaignDraft(**data)
 
 
 # ---------------------------------------------------------------------------
@@ -69,9 +68,7 @@ def _campaign_kwargs(ctf_event, **overrides):
 
 
 def test_owner_can_create_a_campaign_for_their_event(organizer_user, ctf_event):
-    kwargs = _campaign_kwargs(ctf_event, workspace_uuid=_workspace_uuid(organizer_user))
-
-    campaign = create_campaign(organizer_user, **kwargs)
+    campaign = create_campaign(organizer_user, _workspace_uuid(organizer_user), _draft(ctf_event))
 
     assert campaign.status == "draft"
     assert campaign.workspace_id == ctf_event.workspace_id
@@ -87,15 +84,14 @@ def test_campaign_cannot_target_an_event_in_a_different_workspace(organizer_user
         event_start=timezone.now() + timedelta(days=1),
         event_end=timezone.now() + timedelta(days=1, hours=2),
     )
-    kwargs = _campaign_kwargs(
+    draft = _draft(
         ctf_event,
-        workspace_uuid=_workspace_uuid(organizer_user),
         target_event_ids=[foreign_event.id],
         audience_spec={"kind": "event", "event_ids": [str(foreign_event.id)]},
     )
 
     with pytest.raises(CTFCommunicationError):
-        create_campaign(organizer_user, **kwargs)
+        create_campaign(organizer_user, _workspace_uuid(organizer_user), draft)
 
 
 def test_campaign_cannot_target_an_event_without_notification_capability(
@@ -110,24 +106,22 @@ def test_campaign_cannot_target_an_event_without_notification_capability(
         event_start=timezone.now() + timedelta(days=1),
         event_end=timezone.now() + timedelta(days=1, hours=2),
     )
-    kwargs = _campaign_kwargs(
+    draft = _draft(
         ctf_event,
-        workspace_uuid=_workspace_uuid(organizer_user),
         target_event_ids=[others_event.id],
         audience_spec={"kind": "event", "event_ids": [str(others_event.id)]},
     )
 
     with pytest.raises(CTFCommunicationError):
-        create_campaign(organizer_user, **kwargs)
+        create_campaign(organizer_user, _workspace_uuid(organizer_user), draft)
 
 
 def test_campaign_creation_denies_a_workspace_the_author_does_not_belong_to(organizer_user, ctf_event):
     outsider = User.objects.create_user(username="outsider@e.com", email="outsider@e.com")
     outsider_workspace = _workspace_uuid(outsider)
-    kwargs = _campaign_kwargs(ctf_event, workspace_uuid=outsider_workspace)
 
     with pytest.raises(CTFCommunicationError):
-        create_campaign(organizer_user, **kwargs)
+        create_campaign(organizer_user, outsider_workspace, _draft(ctf_event))
 
 
 # ---------------------------------------------------------------------------
@@ -167,9 +161,7 @@ def test_audience_referencing_a_non_target_event_is_rejected(ctf_event):
 def test_release_materializes_snapshots_receipts_and_delivery_commands(organizer_user, ctf_event):
     _participant(ctf_event, "a@test.com")
     _participant(ctf_event, "b@test.com")
-    campaign = create_campaign(
-        organizer_user, **_campaign_kwargs(ctf_event, workspace_uuid=_workspace_uuid(organizer_user))
-    )
+    campaign = create_campaign(organizer_user, _workspace_uuid(organizer_user), _draft(ctf_event))
 
     intent = release_campaign(campaign, occurrence_key="occ-1", actor_user_id=organizer_user.id)
 
@@ -185,9 +177,7 @@ def test_release_materializes_snapshots_receipts_and_delivery_commands(organizer
 
 def test_release_is_idempotent_and_never_grows_the_audience(organizer_user, ctf_event):
     _participant(ctf_event, "a@test.com")
-    campaign = create_campaign(
-        organizer_user, **_campaign_kwargs(ctf_event, workspace_uuid=_workspace_uuid(organizer_user))
-    )
+    campaign = create_campaign(organizer_user, _workspace_uuid(organizer_user), _draft(ctf_event))
 
     first = release_campaign(campaign, occurrence_key="occ-dup", actor_user_id=organizer_user.id)
     second = release_campaign(campaign, occurrence_key="occ-dup", actor_user_id=organizer_user.id)
@@ -199,9 +189,7 @@ def test_release_is_idempotent_and_never_grows_the_audience(organizer_user, ctf_
 
 def test_release_encrypts_the_delivery_coordinate_at_rest(organizer_user, ctf_event):
     _participant(ctf_event, "secret@test.com")
-    campaign = create_campaign(
-        organizer_user, **_campaign_kwargs(ctf_event, workspace_uuid=_workspace_uuid(organizer_user))
-    )
+    campaign = create_campaign(organizer_user, _workspace_uuid(organizer_user), _draft(ctf_event))
 
     intent = release_campaign(campaign, occurrence_key="occ-enc", actor_user_id=organizer_user.id)
     snapshot = RecipientSnapshot.objects.get(intent=intent)
@@ -224,8 +212,8 @@ def test_release_idempotency_is_scoped_to_the_campaign(organizer_user, ctf_event
     # intent: the idempotency identity is campaign-scoped (codex finding).
     _participant(ctf_event, "a@test.com")
     ws = _workspace_uuid(organizer_user)
-    first_campaign = create_campaign(organizer_user, **_campaign_kwargs(ctf_event, workspace_uuid=ws))
-    second_campaign = create_campaign(organizer_user, **_campaign_kwargs(ctf_event, workspace_uuid=ws, title="Second"))
+    first_campaign = create_campaign(organizer_user, ws, _draft(ctf_event))
+    second_campaign = create_campaign(organizer_user, ws, _draft(ctf_event, title="Second"))
 
     first = release_campaign(first_campaign, occurrence_key="shared-occ", actor_user_id=organizer_user.id)
     second = release_campaign(second_campaign, occurrence_key="shared-occ", actor_user_id=organizer_user.id)
@@ -238,8 +226,8 @@ def test_release_idempotency_is_scoped_to_the_campaign(organizer_user, ctf_event
 def test_release_rejects_a_revision_from_another_campaign(organizer_user, ctf_event):
     _participant(ctf_event, "a@test.com")
     ws = _workspace_uuid(organizer_user)
-    campaign = create_campaign(organizer_user, **_campaign_kwargs(ctf_event, workspace_uuid=ws))
-    other = create_campaign(organizer_user, **_campaign_kwargs(ctf_event, workspace_uuid=ws, title="Other"))
+    campaign = create_campaign(organizer_user, ws, _draft(ctf_event))
+    other = create_campaign(organizer_user, ws, _draft(ctf_event, title="Other"))
     foreign_revision = other.message_revisions.first()
 
     with pytest.raises(CTFCommunicationError):
@@ -250,9 +238,7 @@ def test_release_refuses_when_a_target_event_is_cancelled(organizer_user, ctf_ev
     from ctf.enums import EventStatus
 
     _participant(ctf_event, "a@test.com")
-    campaign = create_campaign(
-        organizer_user, **_campaign_kwargs(ctf_event, workspace_uuid=_workspace_uuid(organizer_user))
-    )
+    campaign = create_campaign(organizer_user, _workspace_uuid(organizer_user), _draft(ctf_event))
     CTFEvent.objects.filter(pk=ctf_event.pk).update(status=EventStatus.CANCELLED.value)
 
     with pytest.raises(CTFCommunicationError):

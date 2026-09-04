@@ -26,6 +26,7 @@ from ctf.models import (
     RecipientSnapshot,
 )
 from ctf.services.communication import (
+    CampaignDraft,
     cancel_campaign,
     create_campaign,
     on_event_cancelled,
@@ -56,15 +57,17 @@ def _released_campaign(organizer_user, ctf_event, *, occurrence="occ", range_gen
     _participant(ctf_event, "a@test.com")
     campaign = create_campaign(
         organizer_user,
-        workspace_uuid=_workspace_uuid(organizer_user),
-        title="Kickoff",
-        origin="organizer_staff",
-        target_event_ids=[ctf_event.id],
-        audience_spec={"kind": "event", "event_ids": [str(ctf_event.id)]},
-        trigger_spec={"kind": "manual"},
-        channels=["in_app", "email"],
-        subject="Welcome",
-        body="Hello",
+        _workspace_uuid(organizer_user),
+        CampaignDraft(
+            title="Kickoff",
+            origin="organizer_staff",
+            target_event_ids=[ctf_event.id],
+            audience_spec={"kind": "event", "event_ids": [str(ctf_event.id)]},
+            trigger_spec={"kind": "manual"},
+            channels=["in_app", "email"],
+            subject="Welcome",
+            body="Hello",
+        ),
     )
     intent = release_campaign(
         campaign, occurrence_key=occurrence, actor_user_id=organizer_user.id, range_generation_ref=range_generation_ref

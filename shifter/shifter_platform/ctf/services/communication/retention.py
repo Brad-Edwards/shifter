@@ -10,7 +10,7 @@ evidence is untouched and follows the audit system's own archive policy.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.db import transaction
@@ -22,7 +22,7 @@ from ctf.models import CommunicationCampaign, CommunicationIntent, MessageRevisi
 logger = logging.getLogger(__name__)
 
 
-def purge_expired_communications(*, now=None, retention_days: int | None = None) -> dict[str, int]:
+def purge_expired_communications(*, now: datetime | None = None, retention_days: int | None = None) -> dict[str, int]:
     """Hard-purge communications whose retention window has elapsed.
 
     A campaign is expired when the latest of its target events ended more than

@@ -18,7 +18,7 @@ from ctf.api.serializers.communication import (
 )
 from ctf.enums import ParticipantStatus
 from ctf.models import CTFParticipant, RecipientSnapshot
-from ctf.services.communication import create_campaign, release_campaign
+from ctf.services.communication import CampaignDraft, create_campaign, release_campaign
 
 pytestmark = pytest.mark.django_db
 
@@ -33,15 +33,17 @@ def _released(organizer_user, ctf_event):
     )
     campaign = create_campaign(
         organizer_user,
-        workspace_uuid=str(workspace_services.resolve_personal_workspace(organizer_user).workspace_uuid),
-        title="Kickoff",
-        origin="organizer_staff",
-        target_event_ids=[ctf_event.id],
-        audience_spec={"kind": "event", "event_ids": [str(ctf_event.id)]},
-        trigger_spec={"kind": "manual"},
-        channels=["in_app"],
-        subject="Welcome",
-        body="Hello",
+        str(workspace_services.resolve_personal_workspace(organizer_user).workspace_uuid),
+        CampaignDraft(
+            title="Kickoff",
+            origin="organizer_staff",
+            target_event_ids=[ctf_event.id],
+            audience_spec={"kind": "event", "event_ids": [str(ctf_event.id)]},
+            trigger_spec={"kind": "manual"},
+            channels=["in_app"],
+            subject="Welcome",
+            body="Hello",
+        ),
     )
     intent = release_campaign(campaign, occurrence_key="occ-ser", actor_user_id=organizer_user.id)
     return campaign, intent

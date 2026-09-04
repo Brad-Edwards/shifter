@@ -190,11 +190,10 @@ def test_recipient_snapshot_dedup_is_enforced_in_the_database(ctf_event, organiz
     intent = _intent(campaign, _revision(campaign), key="occ-dedup-db")
     participant_id = uuid4()
     RecipientSnapshot.objects.create(intent=intent, event=ctf_event, participant_public_id=participant_id)
+    duplicate = RecipientSnapshot(intent=intent, event=ctf_event, participant_public_id=participant_id)
 
     with pytest.raises(IntegrityError), transaction.atomic():
-        RecipientSnapshot.objects.bulk_create(
-            [RecipientSnapshot(intent=intent, event=ctf_event, participant_public_id=participant_id)]
-        )
+        RecipientSnapshot.objects.bulk_create([duplicate])
 
 
 # ---------------------------------------------------------------------------

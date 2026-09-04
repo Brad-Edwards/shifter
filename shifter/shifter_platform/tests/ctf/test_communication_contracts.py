@@ -40,6 +40,13 @@ def _content(**overrides):
     return data
 
 
+def _assert_content_rejected(**overrides):
+    """Build content outside the raises-block so the validator is the only throwing call."""
+    content = _content(**overrides)
+    with pytest.raises(CTFCommunicationError):
+        validate_message_content(content, allowed_link_hosts=ALLOWED_HOSTS)
+
+
 def test_valid_markdown_content_is_accepted_and_digested():
     result = validate_message_content(_content(), allowed_link_hosts=ALLOWED_HOSTS)
 
@@ -49,23 +56,19 @@ def test_valid_markdown_content_is_accepted_and_digested():
 
 
 def test_empty_subject_is_rejected():
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(subject="   "), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(subject="   ")
 
 
 def test_oversized_subject_is_rejected():
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(subject="x" * (MAX_SUBJECT_CODEPOINTS + 1)), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(subject="x" * (MAX_SUBJECT_CODEPOINTS + 1))
 
 
 def test_control_characters_in_subject_are_rejected():
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(subject="bad\x07subject"), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(subject="bad\x07subject")
 
 
 def test_oversized_body_is_rejected():
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(body="a" * (MAX_BODY_BYTES + 1)), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(body="a" * (MAX_BODY_BYTES + 1))
 
 
 @pytest.mark.parametrize(
@@ -78,8 +81,7 @@ def test_oversized_body_is_rejected():
     ],
 )
 def test_raw_html_is_rejected(body):
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(body=body), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(body=body)
 
 
 @pytest.mark.parametrize(
@@ -92,15 +94,11 @@ def test_raw_html_is_rejected(body):
     ],
 )
 def test_dangerous_url_schemes_are_rejected(body):
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(body=body), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(body=body)
 
 
 def test_external_link_to_disallowed_host_is_rejected():
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(
-            _content(body="See [here](https://evil.example.com/x)"), allowed_link_hosts=ALLOWED_HOSTS
-        )
+    _assert_content_rejected(body="See [here](https://evil.example.com/x)")
 
 
 def test_external_link_to_allowed_host_is_accepted():
@@ -125,8 +123,7 @@ def test_relative_link_is_accepted():
     ],
 )
 def test_unsafe_link_hosts_are_rejected(url):
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(body=f"[x]({url})"), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(body=f"[x]({url})")
 
 
 def test_identical_content_produces_a_stable_digest():
@@ -138,19 +135,15 @@ def test_identical_content_produces_a_stable_digest():
 def test_protocol_relative_link_is_rejected():
     # `//host` is resolved by browsers as an external origin, so it must not slip
     # through as a "relative" path (codex security finding).
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(body="[login](//attacker.example/login)"), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(body="[login](//attacker.example/login)")
 
 
 def test_backslash_in_link_is_rejected():
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(body="[x](/\\attacker.example)"), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(body="[x](/\\attacker.example)")
 
 
 def test_reference_style_link_to_disallowed_host_is_rejected():
-    body = "See [the rules][r] for details.\n\n[r]: https://attacker.example/phish"
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(body=body), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(body="See [the rules][r] for details.\n\n[r]: https://attacker.example/phish")
 
 
 def test_reference_style_link_to_allowed_host_is_accepted():
@@ -160,15 +153,11 @@ def test_reference_style_link_to_allowed_host_is_accepted():
 
 
 def test_bare_url_to_disallowed_host_is_rejected():
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(_content(body="Visit https://attacker.example now"), allowed_link_hosts=ALLOWED_HOSTS)
+    _assert_content_rejected(body="Visit https://attacker.example now")
 
 
 def test_image_destination_to_disallowed_host_is_rejected():
-    with pytest.raises(CTFCommunicationError):
-        validate_message_content(
-            _content(body="![logo](https://attacker.example/x.png)"), allowed_link_hosts=ALLOWED_HOSTS
-        )
+    _assert_content_rejected(body="![logo](https://attacker.example/x.png)")
 
 
 # ---------------------------------------------------------------------------

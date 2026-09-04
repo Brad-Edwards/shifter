@@ -11,12 +11,13 @@ umbrella capability (issue #2047); this package is the durable domain contract.
 from __future__ import annotations
 
 from .audience import resolve_recipients
-from .campaigns import create_campaign, revise_message
+from .campaigns import CampaignDraft, create_campaign, revise_message
 from .lifecycle import cancel_campaign, on_event_cancelled, on_participant_removed, on_range_replaced
 from .release import release_campaign
 from .retention import purge_expired_communications
 
 __all__ = [
+    "CampaignDraft",
     "cancel_campaign",
     "create_campaign",
     "on_event_cancelled",

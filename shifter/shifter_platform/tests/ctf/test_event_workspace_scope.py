@@ -56,17 +56,19 @@ def test_create_event_uses_an_explicit_authorized_workspace(organizer_user):
 def test_create_event_rejects_a_workspace_the_creator_cannot_use(organizer_user):
     other = User.objects.create_user(username="ws-other@e.com", email="ws-other@e.com")
     other_ws = workspace_services.resolve_personal_workspace(other)
+    data = _event_data(workspace=str(other_ws.workspace_uuid))
 
     with pytest.raises(CTFValidationError):
-        create_event(organizer_user, _event_data(workspace=str(other_ws.workspace_uuid)))
+        create_event(organizer_user, data)
 
 
 def test_create_event_rejects_an_archived_workspace(organizer_user):
     personal = workspace_services.resolve_personal_workspace(organizer_user)
     Workspace.objects.filter(pk=personal.workspace_id).update(archived_at=timezone.now())
+    data = _event_data(workspace=str(personal.workspace_uuid))
 
     with pytest.raises(CTFValidationError):
-        create_event(organizer_user, _event_data(workspace=str(personal.workspace_uuid)))
+        create_event(organizer_user, data)
 
 
 def test_event_workspace_scope_is_immutable_once_set(ctf_event):

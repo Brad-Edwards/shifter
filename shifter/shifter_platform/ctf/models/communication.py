@@ -40,7 +40,7 @@ from ctf.enums import (
 )
 from shared.field_encryption import EncryptedStringField
 
-from ._base import CTFBaseModel
+from ._base import CTFBaseModel, ImmutableFieldsMixin
 from .event import CTFEvent
 from .team import CTFParticipant
 
@@ -173,7 +173,7 @@ class CommunicationTargetEvent(CTFBaseModel):
         return f"{self.campaign_id}->{self.event_id}"
 
 
-class MessageRevision(CTFBaseModel):
+class MessageRevision(ImmutableFieldsMixin, CTFBaseModel):
     """Immutable, versioned content for a campaign (ADR-051).
 
     Editing content never mutates a revision; the service creates a new one. The
@@ -213,7 +213,8 @@ class MessageRevision(CTFBaseModel):
         """Return the campaign/revision identity."""
         return f"{self.campaign_id} r{self.revision_number}"
 
-    _IMMUTABLE_FIELDS = (
+    # Editing content never mutates a revision; the service appends a new one.
+    IMMUTABLE_FIELDS = (
         "subject",
         "body",
         "content_digest",
@@ -222,37 +223,12 @@ class MessageRevision(CTFBaseModel):
         "revision_number",
     )
 
-    @classmethod
-    def from_db(cls, db, field_names, values):
-        """Capture the persisted content so ``clean`` can enforce immutability."""
-        instance = super().from_db(db, field_names, values)
-        instance._loaded_immutable = {
-            name: getattr(instance, name) for name in cls._IMMUTABLE_FIELDS if name in field_names
-        }
-        return instance
-
     def clean(self) -> None:
-        """Reject any change to a persisted revision's content (immutability).
-
-        The first save of a new row is allowed. For every update path -- a fully
-        loaded row, a row still held from ``objects.create()``, or a deferred load
-        that omitted a field -- the persisted content is the authority, fetched
-        when the ``from_db`` baseline is missing so the invariant is not
-        bypassable.
-        """
-        if self._state.adding:
-            return
-        loaded = getattr(self, "_loaded_immutable", None)
-        if not loaded or len(loaded) < len(self._IMMUTABLE_FIELDS):
-            persisted = type(self).all_objects.filter(pk=self.pk).values(*self._IMMUTABLE_FIELDS).first()
-            if persisted is None:
-                return
-            loaded = persisted
-        changed = [name for name in self._IMMUTABLE_FIELDS if getattr(self, name) != loaded.get(name)]
-        if changed:
-            raise ValidationError(
-                {name: ["Message revisions are immutable; create a new revision instead."] for name in changed}
-            )
+        """Reject any change to a persisted revision's content (immutability)."""
+        errors: dict[str, list[str]] = {}
+        self.validate_immutable(errors)
+        if errors:
+            raise ValidationError(errors)
 
 
 class CommunicationIntent(CTFBaseModel):

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from ctf.models import CommunicationCampaign
+
 
 class CommunicationInboxItemSerializer(serializers.Serializer):
     """One inbox item for the requesting participant (never another's).
@@ -45,6 +47,6 @@ class CommunicationCampaignSummarySerializer(serializers.Serializer):
     target_event_count = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(read_only=True)
 
-    def get_target_event_count(self, campaign) -> int:
+    def get_target_event_count(self, campaign: CommunicationCampaign) -> int:
         """Return the number of events the campaign targets (no identities exposed)."""
         return campaign.target_events.count()
