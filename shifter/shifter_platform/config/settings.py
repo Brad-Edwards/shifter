@@ -31,6 +31,7 @@ from config._cache_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
+from config._ctf_communication_settings import *  # NOSONAR  # noqa: E402
 from config._ctf_content_settings import *  # NOSONAR  # noqa: E402
 from config._drf_settings import *  # NOSONAR  # noqa: E402
 from config._email import *  # NOSONAR  # noqa: E402

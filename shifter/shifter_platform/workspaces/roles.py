@@ -49,6 +49,7 @@ class WorkspaceOperation(models.TextChoices):
     RESTORE_WORKSPACE = "restore_workspace", "Restore an archived workspace"
     SET_EGRESS_POLICY = "set_egress_policy", "Set the workspace network egress policy"
     TRANSFER_OWNERSHIP = "transfer_ownership", "Transfer workspace ownership"
+    USE_CTF_COMMUNICATIONS = "use_ctf_communications", "Use CTF communications scoped to the workspace"
 
 
 #: Role-to-operation policy. Callers must not re-derive permissions from a role
@@ -96,6 +97,12 @@ _WORKSPACE_ADMIN_OPERATIONS = frozenset(
     }
 )
 _OWNER_ONLY_OPERATIONS = frozenset({WorkspaceOperation.TRANSFER_OWNERSHIP.value})
+# Tenancy-membership proofs (ADR-051, #2048). These prove only that the actor is
+# a member of the workspace; they carry no resource, membership, or product
+# authority of their own. USE_CTF_COMMUNICATIONS lets CTF confine a communication
+# campaign to a workspace the actor belongs to; per-event and recipient authority
+# is decided separately in CTF, never granted by this proof.
+_TENANCY_MEMBERSHIP_OPERATIONS = frozenset({WorkspaceOperation.USE_CTF_COMMUNICATIONS.value})
 
 ROLE_OPERATIONS: dict[str, frozenset[str]] = {
     WorkspaceRole.OWNER.value: (
@@ -104,12 +111,24 @@ ROLE_OPERATIONS: dict[str, frozenset[str]] = {
         | _INVITATION_OPERATIONS
         | _WORKSPACE_ADMIN_OPERATIONS
         | _OWNER_ONLY_OPERATIONS
+        | _TENANCY_MEMBERSHIP_OPERATIONS
     ),
     WorkspaceRole.ADMIN.value: (
-        _RESOURCE_OPERATIONS | _MEMBERSHIP_MANAGEMENT_OPERATIONS | _INVITATION_OPERATIONS | _WORKSPACE_ADMIN_OPERATIONS
+        _RESOURCE_OPERATIONS
+        | _MEMBERSHIP_MANAGEMENT_OPERATIONS
+        | _INVITATION_OPERATIONS
+        | _WORKSPACE_ADMIN_OPERATIONS
+        | _TENANCY_MEMBERSHIP_OPERATIONS
     ),
-    WorkspaceRole.MEMBER.value: _RESOURCE_OPERATIONS,
+    WorkspaceRole.MEMBER.value: _RESOURCE_OPERATIONS | _TENANCY_MEMBERSHIP_OPERATIONS,
 }
+
+# Operations that additionally require the workspace to be active (not archived).
+# The generic role-to-operation policy above proves membership; an archived
+# workspace still lets a member read its history but must not accept new
+# authoring/release work. This set is enforced once inside the authorization
+# service (workspaces.services), never by a consumer reading ``archived_at``.
+_ACTIVE_WORKSPACE_OPERATIONS = frozenset({WorkspaceOperation.USE_CTF_COMMUNICATIONS.value})
 
 
 def role_permits(role: str, operation: str) -> bool:
@@ -120,3 +139,8 @@ def role_permits(role: str, operation: str) -> bool:
     authority.
     """
     return operation in ROLE_OPERATIONS.get(role, frozenset())
+
+
+def operation_requires_active_workspace(operation: str) -> bool:
+    """Return True when ``operation`` must be denied on an archived workspace."""
+    return operation in _ACTIVE_WORKSPACE_OPERATIONS

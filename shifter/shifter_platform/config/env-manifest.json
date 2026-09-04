@@ -529,6 +529,16 @@
     },
     {
       "default": "''",
+      "name": "SHIFTER_CTF_COMMUNICATION_ALLOWED_LINK_HOSTS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "str(_DEFAULT_RETENTION_DAYS)",
+      "name": "SHIFTER_CTF_COMMUNICATION_RETENTION_DAYS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "''",
       "name": "SHIFTER_CTF_CONTENT_BUCKET",
       "source_file": "config/_ctf_content_settings.py"
     },

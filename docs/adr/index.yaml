@@ -2986,7 +2986,7 @@
       },
       {
         "id": "ADR-051-R6",
-        "description": "Intent release atomically persists immutable recipient snapshots, transactional in-app availability, initial transport delivery commands, and strict audit evidence. Delivery is at-least-once with one idempotency key per intent/snapshot/transport, bounded retry/backoff/jitter, terminal failure, partial-failure truth, and cancellation of unclaimed work only. Email provider acceptance, optional reference-only WebSocket publication/socket write, participant read, explicit acknowledgement, and intervention effect are separate states; aggregate status must not overclaim any of them. Disabled or failed WebSocket fan-out never removes or fails a persisted inbox item. The canonical CTF-account WebSocket boundary may admit only the exact shared notification route after its existing live-participant and required-password-change checks pass, and must retain normal topic authorization; no broad /ws/ bypass is allowed. The Engine range event outbox and process-local shared.email executor are not reused as the delivery queue.",
+        "description": "Intent release atomically persists immutable recipient snapshots, transactional in-app availability, initial transport delivery commands, and strict audit evidence. Delivery is at-least-once with one idempotency key per intent/snapshot/transport, bounded retry/backoff/jitter, terminal failure, partial-failure truth, and cancellation of unclaimed work only. Participant removal revokes future targeting and inbox/read/acknowledgement authority, cancels unclaimed work, and erases delivery coordinates without retargeting or inventing history. Event cancellation prevents new release/due materialization and cancels only event-qualified unclaimed work. Range replacement fences the old generation's unclaimed work and requires a new generation-qualified occurrence; old intents remain truthful retained evidence. Email provider acceptance, optional reference-only WebSocket publication/socket write, participant read, explicit acknowledgement, and intervention effect are separate states; aggregate status must not overclaim any of them. Disabled or failed WebSocket fan-out never removes or fails a persisted inbox item. The canonical CTF-account WebSocket boundary may admit only the exact shared notification route after its existing live-participant and required-password-change checks pass, and must retain normal topic authorization; no broad /ws/ bypass is allowed. The Engine range event outbox and process-local shared.email executor are not reused as the delivery queue.",
         "checks": []
       },
       {
@@ -3024,6 +3024,7 @@
     ],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/2047",
+      "https://github.com/Brad-Edwards/shifter/issues/2048",
       "docs/architecture/ctf-communications-raes-inject-preflight-2047.md",
       "docs/architecture/email-templating-delivery-preflight-581.md",
       "docs/architecture/notifications-websocket-fanout-preflight-941.md",

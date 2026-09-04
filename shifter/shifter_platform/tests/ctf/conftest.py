@@ -64,6 +64,9 @@ def make_ctf_event(**overrides) -> CTFEvent:
         "id": uuid4(),
         "name": "Test CTF Event",
         "created_by_id": 1,
+        # Synthetic tenancy scope for in-memory (unsaved) events (ADR-051, #2048).
+        # DB-backed fixtures resolve a real personal workspace instead.
+        "workspace_id": 1,
         "status": EventStatus.REGISTRATION.value,
         "event_start": now + timedelta(days=1),
         "event_end": now + timedelta(days=1, hours=8),
@@ -75,6 +78,18 @@ def make_ctf_event(**overrides) -> CTFEvent:
     }
     defaults.update(overrides)
     return CTFEvent(**defaults)
+
+
+def personal_workspace_id(user) -> int:
+    """Resolve (creating if needed) a user's personal workspace id (ADR-051, #2048).
+
+    CTF events carry an immutable scalar ``workspace_id``; DB-backed event
+    fixtures use their organizer's personal workspace so campaign/confinement
+    tests see a real tenant the organizer belongs to.
+    """
+    import workspaces.services as workspace_services
+
+    return workspace_services.resolve_personal_workspace(user).workspace_id
 
 
 def make_challenge(event=None, **overrides) -> CTFChallenge:
@@ -266,6 +281,7 @@ def ctf_event(db, organizer_user) -> CTFEvent:
         name="Test CTF Event",
         description="A test CTF event for unit testing",
         created_by=organizer_user,
+        workspace_id=personal_workspace_id(organizer_user),
         status=EventStatus.REGISTRATION.value,
         event_start=timezone.now() + timedelta(days=1),
         event_end=timezone.now() + timedelta(days=1, hours=8),
@@ -284,6 +300,7 @@ def ctf_event_draft(db, organizer_user) -> CTFEvent:
         name="Draft CTF Event",
         description="A draft event",
         created_by=organizer_user,
+        workspace_id=personal_workspace_id(organizer_user),
         status=EventStatus.DRAFT.value,
         event_start=timezone.now() + timedelta(days=7),
         event_end=timezone.now() + timedelta(days=7, hours=8),
@@ -299,6 +316,7 @@ def ctf_event_active(db, organizer_user) -> CTFEvent:
         name="Active CTF Event",
         description="An active event",
         created_by=organizer_user,
+        workspace_id=personal_workspace_id(organizer_user),
         status=EventStatus.ACTIVE.value,
         event_start=timezone.now() - timedelta(hours=1),
         event_end=timezone.now() + timedelta(hours=7),
@@ -314,6 +332,7 @@ def ctf_event_team(db, organizer_user) -> CTFEvent:
         name="Team CTF Event",
         description="A team-based event",
         created_by=organizer_user,
+        workspace_id=personal_workspace_id(organizer_user),
         status=EventStatus.REGISTRATION.value,
         event_start=timezone.now() + timedelta(days=1),
         event_end=timezone.now() + timedelta(days=1, hours=8),
