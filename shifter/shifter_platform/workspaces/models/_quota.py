@@ -24,6 +24,11 @@ from django.db import models
 
 from shared.capacity.contract import EnforcementMode
 
+#: Intra-domain workspace FK target and its shared help text, reused by every
+#: quota model so the tenancy boundary is declared in exactly one place.
+_WORKSPACE_FK = "workspaces.Workspace"
+_WORKSPACE_FK_HELP = "Owning workspace (intra-domain FK)."
+
 #: Closed resource vocabulary. ``concurrent_ranges`` counts open workspace launch
 #: reservations; ``member_seats`` counts canonical ``WorkspaceMembership`` rows.
 QUOTA_RESOURCE_CONCURRENT_RANGES = "concurrent_ranges"
@@ -68,10 +73,10 @@ class WorkspaceQuotaPolicy(models.Model):
     """
 
     workspace = models.ForeignKey(
-        "workspaces.Workspace",
+        _WORKSPACE_FK,
         on_delete=models.CASCADE,
         related_name="quota_policies",
-        help_text="Owning workspace (intra-domain FK).",
+        help_text=_WORKSPACE_FK_HELP,
     )
     resource = models.CharField(
         max_length=32,
@@ -130,10 +135,10 @@ class WorkspaceQuotaDecision(models.Model):
     """
 
     workspace = models.ForeignKey(
-        "workspaces.Workspace",
+        _WORKSPACE_FK,
         on_delete=models.CASCADE,
         related_name="quota_decisions",
-        help_text="Owning workspace (intra-domain FK).",
+        help_text=_WORKSPACE_FK_HELP,
     )
     resource = models.CharField(max_length=32, choices=QUOTA_RESOURCE_CHOICES)
     limit_at_decision = models.PositiveIntegerField(help_text="Policy limit evaluated against.")
@@ -190,10 +195,10 @@ class WorkspaceQuotaReservation(models.Model):
     """
 
     workspace = models.ForeignKey(
-        "workspaces.Workspace",
+        _WORKSPACE_FK,
         on_delete=models.CASCADE,
         related_name="quota_reservations",
-        help_text="Owning workspace (intra-domain FK).",
+        help_text=_WORKSPACE_FK_HELP,
     )
     resource = models.CharField(max_length=32, choices=QUOTA_RESOURCE_CHOICES)
     correlation_key = models.CharField(

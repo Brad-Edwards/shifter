@@ -115,9 +115,10 @@ def test_setting_unchanged_policy_is_a_noop_without_audit():
 def test_non_superuser_owner_cannot_set_quota_policy():
     owner = _user("owner")
     workspace = _workspace(owner)
+    audit = _audit(owner)
     with pytest.raises(services.WorkspaceQuotaError) as excinfo:
         services.set_workspace_quota_policy(
-            owner, workspace.uuid, QUOTA_RESOURCE_MEMBER_SEATS, 5, QUOTA_MODE_ENFORCING, audit=_audit(owner)
+            owner, workspace.uuid, QUOTA_RESOURCE_MEMBER_SEATS, 5, QUOTA_MODE_ENFORCING, audit=audit
         )
     assert excinfo.value.code == "quota_policy_forbidden"
     assert not WorkspaceQuotaPolicy.objects.exists()
@@ -128,9 +129,10 @@ def test_org_admin_without_superuser_cannot_set_quota_policy():
     admin = _org_admin(organization)
     workspace = Workspace.objects.create(organization=organization, name="Team")
     WorkspaceMembership.objects.create(workspace=workspace, user=admin, role=WorkspaceRole.OWNER.value)
+    audit = _audit(admin)
     with pytest.raises(services.WorkspaceQuotaError) as excinfo:
         services.set_workspace_quota_policy(
-            admin, workspace.uuid, QUOTA_RESOURCE_MEMBER_SEATS, 5, QUOTA_MODE_ENFORCING, audit=_audit(admin)
+            admin, workspace.uuid, QUOTA_RESOURCE_MEMBER_SEATS, 5, QUOTA_MODE_ENFORCING, audit=audit
         )
     assert excinfo.value.code == "quota_policy_forbidden"
 
@@ -147,8 +149,9 @@ def test_org_admin_without_superuser_cannot_set_quota_policy():
 def test_set_quota_policy_rejects_invalid_input(resource, limit, mode, code):
     superuser = _user("root", is_superuser=True)
     workspace = _workspace(_user("owner"))
+    audit = _audit(superuser)
     with pytest.raises(services.WorkspaceQuotaError) as excinfo:
-        services.set_workspace_quota_policy(superuser, workspace.uuid, resource, limit, mode, audit=_audit(superuser))
+        services.set_workspace_quota_policy(superuser, workspace.uuid, resource, limit, mode, audit=audit)
     assert excinfo.value.code == code
 
 
@@ -205,11 +208,10 @@ def test_enforcing_seat_cap_blocks_add_and_records_rejection():
         superuser, workspace.uuid, QUOTA_RESOURCE_MEMBER_SEATS, 1, QUOTA_MODE_ENFORCING, audit=_audit(superuser)
     )
     target = _user("newbie")
+    audit = _member_audit(owner)
 
     with pytest.raises(services.WorkspaceMembershipError) as excinfo:
-        services.add_workspace_member(
-            owner, workspace.uuid, target.email, WorkspaceRole.MEMBER.value, audit=_member_audit(owner)
-        )
+        services.add_workspace_member(owner, workspace.uuid, target.email, WorkspaceRole.MEMBER.value, audit=audit)
 
     assert excinfo.value.code == "workspace_member_seats_exhausted"
     assert not WorkspaceMembership.objects.filter(workspace=workspace, user=target).exists()
@@ -323,10 +325,11 @@ def test_enforcing_concurrent_range_cap_rejects_over_limit():
     services.set_workspace_quota_policy(
         superuser, workspace.uuid, QUOTA_RESOURCE_CONCURRENT_RANGES, 1, QUOTA_MODE_ENFORCING, audit=_audit(superuser)
     )
-    services.reserve_workspace_concurrent_range(workspace.pk, "corr-1", _audit(superuser))
+    audit = _audit(superuser)
+    services.reserve_workspace_concurrent_range(workspace.pk, "corr-1", audit)
 
     with pytest.raises(services.WorkspaceQuotaRejected) as excinfo:
-        services.reserve_workspace_concurrent_range(workspace.pk, "corr-2", _audit(superuser))
+        services.reserve_workspace_concurrent_range(workspace.pk, "corr-2", audit)
     assert excinfo.value.verdict.outcome == QUOTA_OUTCOME_REJECTED
     assert excinfo.value.workspace_id == workspace.pk
     # The rejected reservation was not created.

@@ -85,9 +85,10 @@ def test_enforcing_cap_blocks_launch_and_leaves_no_orphan(user):
     # so the launch is blocked purely by the quota, not the active-range rule.
     services.reserve_workspace_concurrent_range(workspace_id, "seed-corr", _audit(user))
     requests_before = Request.objects.filter(user=user).count()
+    persist = _make_persist(user, workspace_id)
 
     with pytest.raises(WorkspaceLaunchQuotaExceeded):
-        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _make_persist(user, workspace_id), workspace_id)
+        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, persist, workspace_id)
 
     # No range/request persisted; the rejection is recorded as durable evidence.
     assert Request.objects.filter(user=user).count() == requests_before

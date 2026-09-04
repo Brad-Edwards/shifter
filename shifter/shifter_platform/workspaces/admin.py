@@ -10,6 +10,7 @@ bypassed (PLAT-239).
 from typing import TYPE_CHECKING, cast
 
 from django.contrib import admin
+from django.forms import ModelForm
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -105,7 +106,7 @@ class WorkspaceQuotaPolicyAdmin(admin.ModelAdmin):
             request_id=request.META.get("HTTP_X_REQUEST_ID", "")[:64],
         )
 
-    def save_model(self, request: HttpRequest, obj: WorkspaceQuotaPolicy, form, change) -> None:
+    def save_model(self, request: HttpRequest, obj: WorkspaceQuotaPolicy, form: ModelForm, change: bool) -> None:
         # Route through the superuser-only service (validation + strict audit +
         # revision bump) instead of a raw save, then reflect the persisted row back
         # onto the admin's object so its change log resolves.

@@ -224,33 +224,8 @@ class LaunchRangeView(MissionControlAPIView):
         """Create a range and record the launch audit event."""
         try:
             range_ctx = cms_create_range(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
-        except WorkspaceLaunchDenied:
-            # Authorized-shape UUID but an unavailable scope (unknown, non-member,
-            # or role-denied) is one opaque 403 (ADR-046-R9). The malformed-shape
-            # case is a 400 caught earlier by the serializer's UUIDField.
-            logger.info("Range launch workspace denied: user=%s scenario=%s", user.pk, safe_log_value(scenario))
-            return self.error_response(
-                code="workspace_not_available",
-                message="Selected workspace is not available.",
-                status_code=403,
-            )
-        except WorkspaceLaunchQuotaExceeded:
-            # An enforcing per-workspace concurrent-range quota is a 409 Conflict,
-            # distinct from an authorization 403 and a request-rate 429 (ADR-046-R10).
-            logger.info("Range launch quota exhausted: user=%s scenario=%s", user.pk, safe_log_value(scenario))
-            return self.error_response(
-                code="workspace_range_quota_exceeded",
-                message="This workspace has reached its concurrent range limit.",
-                status_code=409,
-            )
         except CMSError as exc:
-            logger.exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
-            text = str(exc).lower()
-            if "already have" in text or "active range" in text:
-                response_msg = "You already have an active range"
-            else:
-                response_msg = classify_user_message(str(exc), default="Range could not be launched")
-            return self.bad_request(response_msg)
+            return self._launch_failure_response(exc, user, scenario)
 
         logger.info(
             "Range launched: user=%s request_id=%s agent=%s scenario=%s",
@@ -266,6 +241,35 @@ class LaunchRangeView(MissionControlAPIView):
             extra_state={"scenario": scenario, "agents": agents_by_os},
         )
         return Response({"success": True, "range": range_ctx.model_dump(mode="json")})
+
+    def _launch_failure_response(self, exc: CMSError, user: User, scenario: str) -> Response:
+        """Map a launch-time CMS failure to its bounded HTTP response.
+
+        Kept distinct from the generic 400: an unavailable workspace scope is an
+        opaque 403 (ADR-046-R9) and an enforcing concurrent-range quota is a 409
+        Conflict (ADR-046-R10), never a 403 or a request-rate 429.
+        """
+        if isinstance(exc, WorkspaceLaunchDenied):
+            logger.info("Range launch workspace denied: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+            return self.error_response(
+                code="workspace_not_available",
+                message="Selected workspace is not available.",
+                status_code=403,
+            )
+        if isinstance(exc, WorkspaceLaunchQuotaExceeded):
+            logger.info("Range launch quota exhausted: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+            return self.error_response(
+                code="workspace_range_quota_exceeded",
+                message="This workspace has reached its concurrent range limit.",
+                status_code=409,
+            )
+        logger.exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+        text = str(exc).lower()
+        if "already have" in text or "active range" in text:
+            response_msg = "You already have an active range"
+        else:
+            response_msg = classify_user_message(str(exc), default="Range could not be launched")
+        return self.bad_request(response_msg)
 
 
 class RangeLifecycleView(MissionControlAPIView):

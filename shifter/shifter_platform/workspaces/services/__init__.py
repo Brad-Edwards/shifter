@@ -75,15 +75,17 @@ from ._personal import resolve_personal_workspace
 from ._quota import (
     QuotaVerdict,
     WorkspaceQuotaAuditContext,
-    WorkspaceQuotaDecisionView,
     WorkspaceQuotaError,
-    WorkspaceQuotaProjection,
     WorkspaceQuotaRejected,
-    WorkspaceResourceUsage,
     admit_workspace_member_seat,
     record_workspace_quota_rejection,
     release_workspace_concurrent_range,
     reserve_workspace_concurrent_range,
+)
+from ._quota_admin import (
+    WorkspaceQuotaDecisionView,
+    WorkspaceQuotaProjection,
+    WorkspaceResourceUsage,
     set_workspace_quota_policy,
     workspace_quota_usage,
 )
