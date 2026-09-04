@@ -26,3 +26,7 @@ Communication keeps participants informed and engaged before, during, and after 
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/views.py (notification views)` (Notification views: admin_notification_list, admin_notification_create, api_notification_list, api_notification_send, api_send_invitations)
 - IMPLEMENTS → CODE_FILE `shifter/shifter_platform/templates/ctf/email/` (Email templates: invitation, credentials, reminder, announcement (HTML + text))
 - TESTS → TEST `shifter/shifter_platform/ctf/tests/test_services/test_notification.py` (Notification service tests (invitations, credentials, reminders, announcements, scheduling, rendering))
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/models/communication.py` (Scoped communication domain models (ADR-051, #2048): campaigns, immutable message revisions, normalized intents, recipient snapshots, delivery attempts, participant receipts)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/ctf/services/communication/` (Communication service contracts: audience resolution, campaign authoring, atomic intent release, lifecycle, retention)
+- TESTS → TEST `shifter/shifter_platform/tests/ctf/test_communication_services.py` (Cross-event confinement, audience resolution, and atomic-release idempotency tests)
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2048` (Model scoped communication campaigns, audiences, content, and deliveries)
