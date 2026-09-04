@@ -70,6 +70,29 @@ def _workspace(owner):
     return workspace
 
 
+def test_model_repr_strings_are_diagnostic():
+    workspace = _workspace(_user("owner"))
+    policy = WorkspaceQuotaPolicy.objects.create(
+        workspace=workspace, resource=QUOTA_RESOURCE_MEMBER_SEATS, limit=3, mode=QUOTA_MODE_ENFORCING
+    )
+    decision = WorkspaceQuotaDecision.objects.create(
+        workspace=workspace,
+        resource=QUOTA_RESOURCE_MEMBER_SEATS,
+        limit_at_decision=3,
+        mode_at_decision=QUOTA_MODE_ENFORCING,
+        policy_revision=1,
+        usage_before=3,
+        outcome=QUOTA_OUTCOME_REJECTED,
+        reason_code="hard_cap_exhausted",
+    )
+    reservation = WorkspaceQuotaReservation.objects.create(
+        workspace=workspace, resource=QUOTA_RESOURCE_CONCURRENT_RANGES, correlation_key="corr-1"
+    )
+    assert "member_seats" in str(policy)
+    assert "member_seats" in str(decision)
+    assert "open" in str(reservation)
+
+
 # ---------------------------------------------------------------------------
 # Policy authoring authority (superuser-only composition-root)
 # ---------------------------------------------------------------------------

@@ -1,20 +1,17 @@
-"""Workspace resource-quota authoring, usage projection, and enforcement primitives.
+"""Workspace resource-quota enforcement primitives (PLAT-239, #1946).
 
-Implements PLAT-239 (#1946) behind the ``workspaces.services`` facade, within the
-boundaries fixed by ADR-046-R10 and
-``docs/architecture/workspace-resource-quotas-preflight-1946.md``:
+Enforcement core behind the ``workspaces.services`` facade, within the boundaries
+fixed by ADR-046-R10 and
+``docs/architecture/workspace-resource-quotas-preflight-1946.md``. The
+superuser-only policy authoring and the owner/admin read surface live in
+``_quota_admin`` (split for the Sonar S104 file-length budget).
 
-* **Policy authoring** (:func:`set_workspace_quota_policy`) is a superuser-only
-  composition-root authority, never reachable through a workspace role — a quota is
-  a platform guardrail owners/admins must not be able to raise or remove.
-* **Usage read** (:func:`workspace_quota_usage`) is authorized by the existing
-  ``READ_WORKSPACE`` role operation (owner/admin) and is strictly read-only.
-* **Enforcement primitives** evaluate a resource under the *caller-held* workspace
-  mutex, record every configured-policy decision as append-only evidence, and
-  return a bounded :class:`QuotaVerdict`. A hard-cap rejection is signalled with
-  :class:`WorkspaceQuotaRejected` *without* writing the rejection row, so the
-  caller records the evidence after its transaction unwinds — a hard rejection
-  must commit its decision without committing the denied action.
+The **enforcement primitives** evaluate a resource under the *caller-held*
+workspace mutex, record every configured-policy decision as append-only evidence,
+and return a bounded :class:`QuotaVerdict`. A hard-cap rejection is signalled with
+:class:`WorkspaceQuotaRejected` *without* writing the rejection row, so the caller
+records the evidence after its transaction unwinds — a hard rejection must commit
+its decision without committing the denied action.
 
 Missing policy means unlimited (compatibility); no decision is recorded for an
 unlimited resource. Enforcement mode reuses ``shared.capacity.EnforcementMode``
@@ -25,7 +22,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.db import transaction
@@ -45,9 +41,6 @@ from workspaces.models import (
     WorkspaceQuotaPolicy,
     WorkspaceQuotaReservation,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -100,16 +93,6 @@ class QuotaVerdict:
     def rejected(self) -> bool:
         """Whether a hard cap rejected the action."""
         return self.outcome == QUOTA_OUTCOME_REJECTED
-
-    @property
-    def warned(self) -> bool:
-        """Whether a soft cap warned (and admitted) the action."""
-        return self.outcome == QUOTA_OUTCOME_WARNED
-
-    @property
-    def is_configured(self) -> bool:
-        """Whether a policy was configured (an unlimited resource has none)."""
-        return self.limit is not None
 
 
 class WorkspaceQuotaRejected(Exception):
