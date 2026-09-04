@@ -70,8 +70,7 @@ def _range_summary(user: User | None) -> dict[str, object]:
             range_context = None
     if range_context is None:
         return {"present": False, "status": None}
-    status = getattr(range_context, "status", None)
-    return {"present": True, "status": str(status) if status is not None else None}
+    return {"present": True, "status": str(range_context.status)}
 
 
 def _event_summary(user: User | None) -> dict[str, object]:

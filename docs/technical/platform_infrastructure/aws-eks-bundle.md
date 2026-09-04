@@ -85,6 +85,60 @@ management-plane runtime env. `terraform_remote_state` is never used
 (enforced by the `eks-cross-stack-sourcing` guard); secret payloads flow only as
 references through the existing hydration boundary.
 
+## Bundle metadata and doctor
+
+The AWS entry in the backend bundle registry
+(`shifter/installation/registry.py`) is the machine-readable contract that
+`shifter-config doctor` reads to detect missing prerequisites and secret wiring
+before a deploy. There is one generic doctor entrypoint; AWS-specific readiness
+is declared through the bundle's `required_tools`, `required_secrets`,
+`validation_checks`, and `health_checks`, not through provider-specific doctor
+code.
+
+The AWS bundle declares the pre-mutation validation front doors, the fast
+credential-free checks doctor runs before touching infrastructure:
+
+- `root-config`: validate the `shifter.yaml` shape with `shifter-config validate`.
+- `terraform-fmt`: `terraform fmt -check -recursive platform/terraform/environments`.
+- `helm-template`: render `platform/charts/shifter` with
+  `values-aws-dev.yaml` so an AWS value-shape error fails before deploy, not
+  just a default-values template error.
+- `eks-preflight`: run the canonical EKS deploy preflight
+  (`scripts/bootstrap/preflight.py --config shifter.yaml --component eks`),
+  which derives the cloud and profile from the same root config the deploy uses
+  and checks the tools plus the isolated EKS root and backend inputs. doctor and
+  the deploy lifecycle therefore share one prerequisite contract instead of
+  drifting apart; the check invokes the shared spec rather than re-listing it.
+
+AWS has no `platform/k8s/aws` overlay; its Kubernetes surface is the shared
+chart, so `helm-template` is the Kubernetes front door rather than a kustomize
+overlay render or a raw-manifest kube-linter pass. The fuller pre-mutation suite
+(tflint with init, Checkov, kube-linter and kubeconform on the rendered chart,
+and effective-values schema validation) stays enforced in CI and the deploy
+lifecycle.
+
+The bundle's `generated_outputs` enumerate the complete runtime-env key set the
+renderer emits into the ConfigMap, derived from
+`installation.runtime_inventory_aws.AWS_GENERATED_RUNTIME_ENV_KEYS`. That set
+mirrors the Terraform `merged_runtime_env` (the renderer-validated required
+bindings, the `eks-provisioner-env` range and portal topology the
+`provisioner_env` block re-supplies, and deployment extras such as
+`AWS_POLARIS_AGENT_*`) plus the renderer-owned keys, so the published contract
+and `render_aws_values` cannot drift. An oracle test drives a representative
+`render_aws_values` and asserts the emitted keys equal the classified set.
+`OIDC_SECRET_ID` is classified as a Secrets Manager reference; `APP_SECRET_ARN`
+and `DB_SECRET_ARN` are the compatibility aliases `entrypoint.sh` normalizes;
+every other projected key is public runtime configuration. Process roles are
+derived per key (portal and worker always, provisioner for the keys the launcher
+forwards to the Job). AWS ranges are delivered on ECS/VM rather than Kubernetes
+range-task pods, so no AWS output declares the range-task consumer. Keys whose
+value is hydrated from a secret reference after startup (`DC_DOMAIN_PASSWORD`)
+are excluded from the projection, because a hydrated secret is not a
+renderer-emitted value and must never enter a ConfigMap.
+
+The AWS operator settings model (`AwsSettings`) and secret-reference grammar
+live in `installation.settings_aws`, mirroring `installation.settings_gcp`.
+
 ## Teardown and evidence
 
 ```console

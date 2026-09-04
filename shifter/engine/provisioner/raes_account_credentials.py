@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from executors.base import Executor
+from executors.base import CommandExecutor
 from executors.factory import GuestExecutionContext, build_guest_execution_context
 from gcp_guest_secrets import (
     delete_raes_account_secret,
@@ -31,7 +31,7 @@ class RaesAccountCredentialOps:
     ensure_public_key: Callable[[int, str, str], tuple[str, str]]
     delete: Callable[[int, str, str, str], None]
     execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context
-    orchestrator_factory: Callable[[Executor], SetupOrchestrator] = SetupOrchestrator
+    orchestrator_factory: Callable[[CommandExecutor], SetupOrchestrator] = SetupOrchestrator
 
 
 def default_account_credential_ops() -> RaesAccountCredentialOps:
