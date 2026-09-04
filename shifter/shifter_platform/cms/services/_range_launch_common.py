@@ -10,7 +10,7 @@ from uuid import UUID
 
 from django.db import IntegrityError, transaction
 
-from cms.exceptions import CMSError
+from cms.exceptions import CMSError, WorkspaceLaunchQuotaExceeded
 from cms.models import ACTIVE_RANGE_UNIQUE_CONSTRAINT, RangeInstance
 from cms.services._range_workspace import (
     reauthorize_launch_workspace_locked,
@@ -30,6 +30,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ACTIVE_RANGE_MESSAGE = "You already have an active range. Please destroy it before creating a new one."
+# One non-enumerating message for an enforcing per-workspace concurrent-range cap.
+_LAUNCH_QUOTA_MESSAGE = "This workspace has reached its concurrent range limit."
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,17 +143,42 @@ def _reserve_active_range_slot(
     workspace_id: int,
     request_id: UUID | None = None,
 ) -> tuple[UUID, Request, RangeInstance, str]:
-    """Atomically reauthorize scope and reserve the user's active-range slot."""
+    """Atomically reauthorize scope, admit the workspace quota, and reserve the slot."""
     from uuid import uuid4
 
+    from workspaces.services import (
+        WorkspaceQuotaAuditContext,
+        WorkspaceQuotaRejected,
+        record_workspace_quota_rejection,
+        reserve_workspace_concurrent_range,
+    )
+
     correlation_id = request_id or uuid4()
+    quota_audit = WorkspaceQuotaAuditContext(actor_type="user", actor_id=getattr(user, "id", None))
     try:
         with transaction.atomic():
             reauthorize_launch_workspace_locked(user, workspace_id)
+            # Concurrent-range quota is evaluated under the same workspace mutex and
+            # the open reservation is committed with the CMS reservation, so an
+            # active-range collision or any persistence failure rolls both back
+            # together (ADR-046-R10). The pre-minted request UUID is the key.
+            reserve_workspace_concurrent_range(workspace_id, correlation_id, quota_audit)
             egress_mode = resolve_effective_egress_mode_locked(workspace_id)
             cms_request = _create_cms_request(user, workspace_id, correlation_id)
             range_instance = persist_instance(cms_request)
             _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
+    except WorkspaceQuotaRejected as rejected:
+        # Hard cap: the transaction rolled back with no range persisted. Record the
+        # rejection evidence on the committed path, then map to a launch conflict.
+        record_workspace_quota_rejection(
+            rejected.workspace_id, rejected.verdict, quota_audit, correlation_key=str(correlation_id)
+        )
+        logger.info(
+            "create_range: workspace concurrent-range quota exhausted user_id=%s workspace_id=%s",
+            user.id,
+            workspace_id,
+        )
+        raise WorkspaceLaunchQuotaExceeded(_LAUNCH_QUOTA_MESSAGE) from None
     except IntegrityError as exc:
         if _is_active_range_conflict(exc):
             logger.warning(

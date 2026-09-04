@@ -20,6 +20,7 @@ import { WorkspaceListPage } from "@/features/administer/organization/WorkspaceL
 import { WorkspaceMembershipPage } from "@/features/administer/organization/WorkspaceMembershipPage";
 import { WorkspaceInvitationsPage } from "@/features/administer/organization/WorkspaceInvitationsPage";
 import { WorkspaceRangeScopingPage } from "@/features/administer/organization/WorkspaceRangeScopingPage";
+import { WorkspaceQuotaPage } from "@/features/administer/organization/WorkspaceQuotaPage";
 import { WorkspaceScopeLayout } from "@/features/administer/organization/WorkspaceScopeLayout";
 import {
   WORKSPACE_SURFACES,
@@ -57,6 +58,7 @@ function workspaceSurfaceElement(surface: WorkspaceSurface) {
   if (surface.key === "membership") return <WorkspaceMembershipPage />;
   if (surface.key === "invitations") return <WorkspaceInvitationsPage />;
   if (surface.key === "range-scoping") return <WorkspaceRangeScopingPage />;
+  if (surface.key === "quota") return <WorkspaceQuotaPage />;
   return <ConsoleSlotPage title={surface.label} />;
 }
 import { RangeDashboardPage } from "@/features/mission-control/RangeDashboardPage";

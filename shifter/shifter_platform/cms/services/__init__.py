@@ -28,7 +28,7 @@ from __future__ import annotations
 from cms.assets.services import AgentUploadSpec
 from cms.assets.services import create_agent as assets_create_agent
 from cms.assets.services import delete_agent as assets_delete_agent
-from cms.exceptions import CMSError, RangeScopeAdminError, WorkspaceLaunchDenied
+from cms.exceptions import CMSError, RangeScopeAdminError, WorkspaceLaunchDenied, WorkspaceLaunchQuotaExceeded
 from cms.models import AgentConfig, RangeInstance
 from cms.scenarios.images import project_scenario_images
 from cms.signals import range_status_changed as range_status_changed
@@ -186,6 +186,7 @@ __all__ = (
     "RangeScopeAuditContext",
     "RegisteredPack",
     "WorkspaceLaunchDenied",
+    "WorkspaceLaunchQuotaExceeded",
     "assets_create_agent",
     "assets_delete_agent",
     "audit_log",

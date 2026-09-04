@@ -2592,7 +2592,7 @@
       },
       {
         "id": "ADR-046-R10",
-        "description": "Workspace quota and workspace range-policy evaluation compose at one CMS pre-reservation launch-admission seam parameterized by authorized workspace, individual owner, server-derived range source, trusted instantiation purpose, and stable request correlation. The initial quota decision may add no hard tenant limit, but callers may not duplicate the hook. A future enforcing workspace quota must use durable idempotent reservation rather than a count-then-create race, and must remain distinct from Engine's event/provider-capacity ledger. The workspace egress selector extends the canonical installation RangeEgressMode vocabulary, resolves under the workspace mutation mutex, pins one closed effective decision on the Engine range, and is replay-verified; workspace identity, membership, role, or policy documents never enter scenario/RAES contracts, provisioner argv/environment, events, provider labels, or guest metadata.",
+        "description": "Workspace quota and workspace range-policy evaluation compose at one CMS pre-reservation launch-admission seam parameterized by authorized workspace, individual owner, server-derived range source, trusted instantiation purpose, and stable server-minted request correlation. Enforcing concurrent-range quota uses a workspaces-owned durable idempotent reservation identified by workspace, resource, and correlation under the workspace mutation mutex rather than a count-then-create race, remains distinct from the per-user/source active-range constraint and Engine's event/provider-capacity ledger, and releases only on terminal FAILED/DESTROYED convergence (not DESTROYING or CMS soft delete). Member-seat quota composes once in the common locked membership insert used by direct add and invitation acceptance; membership rows remain canonical usage and pending invitations are not seats. Missing policy preserves unlimited compatibility; soft/advisory overage warns and records while hard/enforcing overage records then blocks without rolling its decision evidence back. Quota reads reuse READ_WORKSPACE authority; policy authoring is a service-backed, strict-audited superuser operation reached through the Django-admin escape hatch, never workspace-role authority or a raw model save. Quota decisions pin bounded policy/usage/reason facts as append-only workspaces-domain evidence, with applied-limit audit events emitted transactionally through shared.audit. The workspace egress selector extends the canonical installation RangeEgressMode vocabulary, resolves under the workspace mutation mutex, pins one closed effective decision on the Engine range, and is replay-verified; workspace identity, membership, role, quota/policy documents, and decisions never enter scenario/RAES contracts, provisioner argv/environment, events, provider labels, or guest metadata.",
         "checks": []
       },
       {
@@ -2630,12 +2630,14 @@
       "https://github.com/Brad-Edwards/shifter/issues/1943",
       "https://github.com/Brad-Edwards/shifter/issues/1944",
       "https://github.com/Brad-Edwards/shifter/issues/1945",
+      "https://github.com/Brad-Edwards/shifter/issues/1946",
       "docs/architecture/organization-workspace-preflight-1325.md",
       "docs/architecture/workspace-membership-roles-preflight-1326.md",
       "docs/architecture/range-workspace-scoping-preflight-1327.md",
       "docs/architecture/organization-workspace-admin-console-preflight-1938.md",
       "docs/architecture/organization-profile-settings-preflight-1939.md",
       "docs/architecture/workspace-network-egress-policy-preflight-1945.md",
+      "docs/architecture/workspace-resource-quotas-preflight-1946.md",
       "docs/architecture/user-lifecycle-administration-preflight-1943.md",
       "docs/architecture/range-workspace-scoping-administration-preflight-1944.md",
       "scripts/check_layer_imports/layer_imports.yaml",

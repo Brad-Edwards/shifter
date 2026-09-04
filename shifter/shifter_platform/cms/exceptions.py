@@ -59,4 +59,16 @@ class WorkspaceLaunchDenied(CMSError):
     """
 
 
-__all__ = ["CMSError", "RangeScopeAdminError", "WorkspaceLaunchDenied"]
+class WorkspaceLaunchQuotaExceeded(CMSError):
+    """A launch is blocked by an enforcing per-workspace concurrent-range quota (PLAT-239).
+
+    A subclass of ``CMSError`` so existing ``except CMSError`` sites keep treating
+    it as a launch failure, while the launch command boundary catches it
+    specifically and maps hard exhaustion to a ``409 Conflict`` -- distinct from an
+    authorization ``403`` (``WorkspaceLaunchDenied``) and a request-rate ``429``
+    (ADR-046-R10). The message carries no tenant policy detail. Never string-match
+    this error; catch the type.
+    """
+
+
+__all__ = ["CMSError", "RangeScopeAdminError", "WorkspaceLaunchDenied", "WorkspaceLaunchQuotaExceeded"]

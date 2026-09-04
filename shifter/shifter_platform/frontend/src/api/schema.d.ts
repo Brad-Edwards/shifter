@@ -2657,6 +2657,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_uuid}/quota/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Read a workspace's resource quota usage and recent decisions (owner/admin, PLAT-239).
+         *
+         *     Read-only. Usage against configured limits and the recent quota decisions let
+         *     an administrator see when and why a cap applied. Quota *policy* is authored
+         *     only through the superuser-only Django-admin escape hatch, never here.
+         */
+        get: operations["api_v1_workspace_quota"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_uuid}/restore/": {
         parameters: {
             query?: never;
@@ -3635,6 +3658,12 @@ export interface components {
             readonly state: string;
             readonly is_refreshable: boolean;
         };
+        /**
+         * @description * `advisory` - Advisory (soft cap)
+         *     * `enforcing` - Enforcing (hard cap)
+         * @enum {string}
+         */
+        ModeEnum: "advisory" | "enforcing";
         /** @description Validate NGFW creation requests. */
         NGFWCreate: {
             /** @default  */
@@ -3719,6 +3748,8 @@ export interface components {
             readonly notification_id: string;
             readonly status: string;
         };
+        /** @enum {unknown} */
+        NullEnum: null;
         /**
          * @description Read-only organization profile projection (ADR-048, PLAT-232).
          *
@@ -3811,6 +3842,13 @@ export interface components {
          * @enum {string}
          */
         OsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
+        /**
+         * @description * `admitted` - Admitted
+         *     * `warned` - Warned (soft cap applied)
+         *     * `rejected` - Rejected (hard cap applied)
+         * @enum {string}
+         */
+        OutcomeEnum: "admitted" | "warned" | "rejected";
         /**
          * @description Bounded event-owner projection: stable id and display name only (ADR-052).
          *
@@ -4691,6 +4729,12 @@ export interface components {
             readonly id: string;
         };
         /**
+         * @description * `concurrent_ranges` - Concurrent ranges
+         *     * `member_seats` - Member seats
+         * @enum {string}
+         */
+        ResourceEnum: "concurrent_ranges" | "member_seats";
+        /**
          * @description * `ranges` - ranges
          *     * `workspaces` - workspaces
          * @enum {string}
@@ -5055,6 +5099,36 @@ export interface components {
             readonly role: components["schemas"]["WorkspaceRoleEnum"];
             /** Format: date-time */
             readonly created_at: string;
+        };
+        /** @description Read-only workspace quota surface: usage per resource + recent decisions (PLAT-239). */
+        WorkspaceQuota: {
+            /** Format: uuid */
+            readonly workspace_uuid: string;
+            readonly resources: components["schemas"]["WorkspaceQuotaResource"][];
+            readonly recent_decisions: components["schemas"]["WorkspaceQuotaDecision"][];
+        };
+        /** @description One recorded quota decision (append-only evidence) projection. */
+        WorkspaceQuotaDecision: {
+            readonly resource: components["schemas"]["ResourceEnum"];
+            readonly outcome: components["schemas"]["OutcomeEnum"];
+            readonly limit: number;
+            readonly mode: components["schemas"]["ModeEnum"];
+            readonly usage_before: number;
+            readonly requested_delta: number;
+            readonly reason_code: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /**
+         * @description Per-resource usage-against-limit projection (PLAT-239).
+         *
+         *     ``limit``/``mode`` are ``null`` for an unconfigured resource (unlimited).
+         */
+        WorkspaceQuotaResource: {
+            readonly resource: components["schemas"]["ResourceEnum"];
+            readonly usage: number;
+            readonly limit: number | null;
+            readonly mode: (components["schemas"]["ModeEnum"] | components["schemas"]["NullEnum"]) | null;
         };
         /**
          * @description * `owner` - Owner
@@ -12681,6 +12755,44 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    api_v1_workspace_quota: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceQuota"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

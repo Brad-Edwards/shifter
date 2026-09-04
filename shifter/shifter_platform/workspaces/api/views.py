@@ -84,6 +84,13 @@ class _WorkspaceAPIError(Exception):
         "invitation_throttled": 429,
         "invitation_delivery_unavailable": 503,
         "workspace_archived": 409,
+        # Workspace resource quotas (#1946, PLAT-239)
+        "workspace_member_seats_exhausted": 409,
+        "quota_policy_forbidden": 403,
+        "quota_workspace_not_found": 404,
+        "quota_resource_invalid": 400,
+        "quota_mode_invalid": 400,
+        "quota_limit_invalid": 400,
     }
 
     def __init__(self, *, code: str, message: str, status_code: int, request: Request) -> None:
@@ -111,7 +118,12 @@ class _WorkspaceAPIError(Exception):
             )
         if isinstance(
             exc,
-            (services.WorkspaceMembershipError, services.WorkspaceLifecycleError, services.WorkspaceInvitationError),
+            (
+                services.WorkspaceMembershipError,
+                services.WorkspaceLifecycleError,
+                services.WorkspaceInvitationError,
+                services.WorkspaceQuotaError,
+            ),
         ):
             return cls(
                 code=exc.code,

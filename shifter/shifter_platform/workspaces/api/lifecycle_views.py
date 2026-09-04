@@ -30,6 +30,7 @@ from workspaces.api.serializers import (
     RenameWorkspaceSerializer,
     SetWorkspaceEgressPolicySerializer,
     TransferWorkspaceOwnershipSerializer,
+    WorkspaceQuotaSerializer,
     WorkspaceSerializer,
 )
 from workspaces.api.views import _raise_as_response, _WorkspaceAPIError
@@ -279,6 +280,27 @@ class WorkspaceEgressPolicyView(_WorkspaceLifecycleAPIView):
         except (services.WorkspaceAuthorizationError, services.WorkspaceLifecycleError) as exc:
             _raise_as_response(exc, request)
         return Response(WorkspaceSerializer(workspace).data)
+
+
+class WorkspaceQuotaView(_WorkspaceLifecycleAPIView):
+    """Read a workspace's resource quota usage and recent decisions (owner/admin, PLAT-239).
+
+    Read-only. Usage against configured limits and the recent quota decisions let
+    an administrator see when and why a cap applied. Quota *policy* is authored
+    only through the superuser-only Django-admin escape hatch, never here.
+    """
+
+    @extend_schema(
+        responses={200: WorkspaceQuotaSerializer, 403: ApiErrorSerializer},
+        operation_id="api_v1_workspace_quota",
+        auth=_SESSION_ONLY_SCHEMA_AUTH,  # type: ignore[arg-type]
+    )
+    def get(self, request: Request, workspace_uuid: UUID) -> Response:
+        try:
+            quota = services.workspace_quota_usage(request.user, workspace_uuid)
+        except services.WorkspaceAuthorizationError as exc:
+            _raise_as_response(exc, request)
+        return Response(WorkspaceQuotaSerializer(quota).data)
 
 
 class WorkspaceTransferOwnershipView(_WorkspaceLifecycleAPIView):
