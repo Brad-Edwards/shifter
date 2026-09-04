@@ -55,6 +55,16 @@ _SCOPE_ERROR_STATUS = {
     RangeScopeAdminError.Kind.NOT_REASSIGNABLE: 409,
 }
 
+# Authored per-kind user-facing messages, selected by the classified kind. The
+# response message is one of this fixed set of literals rather than ``str(exc)``,
+# so exception text never flows into the response body (CodeQL py/stack-trace-exposure).
+_SCOPE_ERROR_MESSAGES = {
+    RangeScopeAdminError.Kind.NOT_FOUND: "Range not found",
+    RangeScopeAdminError.Kind.TARGET_DENIED: "Target workspace is not eligible for this move",
+    RangeScopeAdminError.Kind.CONFLICT: "The range's workspace scope changed; refresh and try again",
+    RangeScopeAdminError.Kind.NOT_REASSIGNABLE: "This range's workspace scope cannot be reassigned",
+}
+
 
 class RangeScopeBindingSerializer(serializers.Serializer):
     """Bounded, read-only projection of a range scoped to a workspace.
@@ -178,7 +188,7 @@ class RangeWorkspaceRebindView(APIView):
         except RangeScopeAdminError as exc:
             return api_error_response(
                 code=exc.kind.value,
-                message=str(exc),
+                message=_SCOPE_ERROR_MESSAGES[exc.kind],
                 status_code=_SCOPE_ERROR_STATUS[exc.kind],
                 request=request,
             )
