@@ -49,6 +49,8 @@ class AuditAction(models.TextChoices):
     RECOVER = "recover", "Recover"
     SPARE_PROVISION = "spare_provision", "Spare Provision"
     CAPACITY_ASSESS = "capacity_assess", "Capacity Assess"
+    # Tenant quota enforcement (PLAT-239)
+    QUOTA_APPLIED = "quota_applied", "Quota Applied"
 
 
 class AuditEntityType(models.TextChoices):

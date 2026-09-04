@@ -380,3 +380,75 @@ existing pre-migration range subnets to preserve their egress until they are
 drained onto per-range NAT. Range jobs never patch this shared object
 concurrently. The regional router, NAT, and address quota supporting per-range
 NAT is a deployment capacity concern to validate for the declared range count.
+
+## Workspace resource quotas (issue #1946, PLAT-239)
+
+Per-workspace resource quotas are tenant-entitlement policy owned by the
+`workspaces` domain, distinct from Engine provider-capacity accounting, API
+throttling, billing, and the per-`(user, range_source)` active-range constraint
+(ADR-046-R10, `docs/architecture/workspace-resource-quotas-preflight-1946.md`).
+The initial closed resources are `concurrent_ranges` and `member_seats`. A
+missing policy means unlimited, which preserves prior behavior. Enforcement mode
+reuses the `shared.capacity.EnforcementMode` terms only: `advisory` is a soft cap
+(warn, record, admit) and `enforcing` is a hard cap (record, block).
+
+### Data model
+
+Three `workspaces` models (migration `0009`):
+
+- `WorkspaceQuotaPolicy` is the configured limit and mode for a
+  `(workspace, resource)`, with a `revision` bumped on each change and closed
+  vocabulary check constraints.
+- `WorkspaceQuotaDecision` is append-only evidence of every configured-policy
+  evaluation, pinning the policy limit, mode, revision, usage before the delta,
+  outcome, reason code, actor, and correlation key.
+- `WorkspaceQuotaReservation` is a durable, idempotent open reservation for
+  count-based resources. An open reservation (`released_at` is null) is the
+  authoritative concurrent-range usage; the unique
+  `(workspace, resource, correlation_key)` constraint makes reserve and release
+  idempotent under event redelivery.
+
+### Authoring and read authority
+
+Policy authoring is a superuser-only composition-root authority through
+`workspaces.services.set_workspace_quota_policy` (never inferred from a workspace
+or organization role, `is_staff`, a model permission, or a token scope), exposed
+only through the superuser-only Django administration escape hatch (PLAT-241).
+The read surface `workspace_quota_usage` is authorized by the existing
+`WorkspaceOperation.READ_WORKSPACE` (owner or admin) and is served read-only at
+`GET /api/v1/workspaces/{uuid}/quota/`.
+
+### Enforcement
+
+- **Member seats.** `WorkspaceMembership` rows are the canonical usage. The seat
+  delta is evaluated once in the locked `_insert_workspace_membership`, the single
+  insert path shared by direct add and invitation acceptance. Pending invitations
+  do not consume a seat; role changes and idempotent re-adds do not re-decide.
+- **Concurrent ranges.** The evaluation and open reservation are committed under
+  the workspace reservation mutex in `cms.services._range_launch_common`
+  (`_reserve_active_range_slot`), keyed on the pre-minted request UUID, so an
+  active-range collision or any persistence failure rolls the reservation back
+  with the range. The reservation is released only on terminal `FAILED`/`DESTROYED`
+  convergence in `cms.handlers.range_events.apply_range_status` (and on immediate
+  dispatch failure), never at `DESTROYING` or CMS soft delete. The
+  `reconcile_range_events` backstop reuses the same convergent release.
+
+Every enforcement primitive re-acquires the workspace row mutex so its usage count
+is race-safe regardless of caller, proven under real PostgreSQL contention in
+`tests/workspaces/test_quota_concurrency_postgres.py`. A hard rejection commits its
+decision evidence without committing the denied action: the primitive raises a
+bounded control-flow signal without writing, and the caller records the rejection
+after its transaction unwinds, then maps it to a stable error. A hard
+concurrent-range exhaustion is a `409 Conflict` (`WorkspaceLaunchQuotaExceeded`),
+distinct from an authorization `403` and a request-rate `429`; a hard seat exhaustion is a
+`409` (`workspace_member_seats_exhausted`). A soft-cap overage and every hard-cap
+block also emit a strict `shared.audit` `quota_applied` event so the deployment
+audit history shows when a cap applied.
+
+### Upgrade backfill
+
+A CMS data migration (`cms/0043`, dependent on `workspaces/0009` to keep the
+migration graph acyclic) backfills one open reservation per pre-existing
+non-terminal range projection, including hidden `DESTROYING` rows, so enabling a
+hard cap immediately after upgrade cannot undercount live infrastructure. It fails
+loudly on inconsistent workspace/request evidence and is idempotent on re-run.
