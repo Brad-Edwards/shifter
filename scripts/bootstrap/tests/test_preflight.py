@@ -183,6 +183,41 @@ class TestRunPreflightLocal:
         )
         assert any(r.name == "portal overlay" and r.status is Status.OK for r in report.results)
 
+    def _eks_root(self, tmp_path, environment="dev"):
+        eks = tmp_path / "platform" / "terraform" / "environments" / environment / "eks"
+        eks.mkdir(parents=True)
+        return eks
+
+    def test_eks_component_checks_only_the_eks_root_not_legacy_overlays(self, tmp_path):
+        # Regression (#1828): component="eks" must validate the isolated EKS root, never the
+        # legacy core/range/portal local.auto.tfvars overlays.
+        eks = self._eks_root(tmp_path)
+        (eks / "dev.s3.tfbackend").write_text('bucket = "x"\n')
+        report = preflight.run_preflight(
+            Cloud.AWS, Mode.LOCAL, "dev", component="eks", env={}, repo_root=tmp_path, tool_exists=lambda n: "/bin/x"
+        )
+        names = {r.name for r in report.results}
+        assert "core overlay" not in names
+        assert "range overlay" not in names
+        assert "portal overlay" not in names
+        assert any(r.name == "eks backend config" and r.status is Status.OK for r in report.results)
+        assert report.ok
+
+    def test_eks_missing_backend_config_fails(self, tmp_path):
+        self._eks_root(tmp_path)  # root present, backend config absent
+        report = preflight.run_preflight(
+            Cloud.AWS, Mode.LOCAL, "dev", component="eks", env={}, repo_root=tmp_path, tool_exists=lambda n: "/bin/x"
+        )
+        assert any(r.name == "eks backend config" and r.status is Status.FAIL for r in report.results)
+        assert not report.ok
+
+    def test_eks_missing_root_fails(self, tmp_path):
+        report = preflight.run_preflight(
+            Cloud.AWS, Mode.LOCAL, "dev", component="eks", env={}, repo_root=tmp_path, tool_exists=lambda n: "/bin/x"
+        )
+        assert any(r.name == "eks root" and r.status is Status.FAIL for r in report.results)
+        assert not report.ok
+
     def test_gcp_local_reads_security_inputs(self, tmp_path):
         tf_dir = tmp_path / "platform" / "terraform" / "gcp" / "environments" / "gcp-dev"
         tf_dir.mkdir(parents=True)
@@ -267,6 +302,28 @@ class TestPreflightGate:
 
 
 # --- Facade wiring ------------------------------------------------------------
+
+
+class TestConfigEntrypoint:
+    # #1828 codex cycle 2: the AWS bundle's eks-preflight doctor check derives the cloud and
+    # profile from the same root config a deploy uses. That derivation is unit-tested here
+    # through cloud_env_from_root_config. preflight.main is exercised in production as a
+    # subprocess (the doctor check runs `python3 scripts/bootstrap/preflight.py --config ...`);
+    # it is not called positionally in-process because deploy.py's compatibility facade exports
+    # a single `main` (cli's) and _sync_modules propagates it onto every owner module with a
+    # `main`, replacing preflight.main after any deploy facade call in the shared test process.
+    AWS_EXAMPLE = REPO_ROOT / "shifter" / "installation" / "examples" / "aws.yaml"
+    GCP_EXAMPLE = REPO_ROOT / "shifter" / "installation" / "examples" / "gcp.yaml"
+
+    def test_cloud_env_derived_from_aws_root_config(self):
+        cloud, environment = preflight.cloud_env_from_root_config(str(self.AWS_EXAMPLE))
+        assert cloud is Cloud.AWS
+        assert environment == "prod"  # examples/aws.yaml deployment.profile
+
+    def test_cloud_env_derived_from_gcp_root_config(self):
+        cloud, environment = preflight.cloud_env_from_root_config(str(self.GCP_EXAMPLE))
+        assert cloud is Cloud.GCP
+        assert environment == "prod"
 
 
 class TestFacade:
