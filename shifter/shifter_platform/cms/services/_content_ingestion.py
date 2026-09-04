@@ -22,7 +22,7 @@ The boundary:
 
 Every caller — the in-box bootstrap, the operator management command, and the
 DRF authoring endpoint — uses :func:`register_pack`; there is no privileged code
-path for the in-box catalog.
+path for the in-box seed.
 """
 
 from __future__ import annotations

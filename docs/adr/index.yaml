@@ -1763,7 +1763,8 @@
   {
     "id": "ADR-033",
     "title": "Product, distribution, and development surfaces",
-    "status": "accepted",
+    "status": "superseded",
+    "superseded_by": "ADR-053",
     "scope": "repository",
     "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane when a bare operator tenant needs it to run or extend Shifter; content ingestion and supported artifact-preparation capabilities therefore cannot exist only in maintainer CI. Maintainers reuse a product capability when the same contract and policy apply, while genuinely distribution-only publication, promotion, replication, and credentialed preparation remain distribution-plane. Published artifacts may be exact requirements, allowed candidates, or optimizations and are not assumed to be caches or reproducible outputs. The CI/build/deploy runner fleet is development-plane and must not live in a product/operator deploy-target account (see ADR-033-R2, amended by #1546 for maintainer-owned dev tenants). Operator content acquisition and entitlement are resolved outside the platform.",
     "rules": [
@@ -1798,11 +1799,11 @@
     "title": "Uniform content-ingestion contract",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Repo pack identity is bound to the canonical RAES associated-artifact digest at registration and verified again before native launch. Artifact satisfaction preserves the RAES exact, constrained, open, and absent author postures; Shifter chooses a realization only where the authored requirement permits it and the selected backend declares support. Exact artifacts, existing backend artifacts, pack-published candidates, dynamic composition, and explicitly permitted materialization specifications are possible mechanisms rather than an exhaustive pull-or-bake choice. Acquisition transport, satisfaction mechanism, and realization timing remain separate. Packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. A published artifact may be authoritative, an allowed candidate, or an optimization; it is not inherently a cache or rebuildable substitute.",
+    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and no ingestion origin is a privileged path. Repo pack identity is bound to the canonical RAES associated-artifact digest at registration and verified again before native launch. Artifact satisfaction preserves the RAES exact, constrained, open, and absent author postures; the backend chooses a realization only where the authored requirement permits it and the selected backend declares support. Exact artifacts, existing backend artifacts, upstream-published pack candidates, dynamic composition, and explicitly permitted materialization specifications are possible mechanisms rather than an exhaustive pull-or-bake choice. Acquisition transport, satisfaction mechanism, and realization timing remain separate. Packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. An upstream-published artifact may be authoritative, an allowed candidate, or an optimization; it is not inherently a cache or rebuildable substitute.",
     "rules": [
       {
         "id": "ADR-034-R1",
-        "description": "Registering a pack is a single source-agnostic, entitlement-blind operation; shipped, public, private, and self-authored packs use the identical import path and the in-box catalog is not a privileged path.",
+        "description": "Registering a pack is a single source-agnostic, entitlement-blind operation; packs from any origin (upstream-published, private, or self-authored) use the identical import path and no ingestion origin is a privileged path.",
         "checks": []
       },
       {
@@ -1817,7 +1818,7 @@
       },
       {
         "id": "ADR-034-R4",
-        "description": "The portable RAES artifact requirement is semantic authority. A published artifact may be the exact required artifact, an allowed candidate, or an optimization over a reproducible path; it is not inherently a cache, substitute, or rebuildable output. Private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
+        "description": "The portable RAES artifact requirement is semantic authority. An upstream-published artifact may be the exact required artifact, an allowed candidate, or an optimization over a reproducible path; it is not inherently a cache, substitute, or rebuildable output. Entitlement for restricted or privately distributed content is resolved at acquisition, outside the platform; the platform contains no entitlement system.",
         "checks": []
       },
       {
@@ -3108,6 +3109,46 @@
       "shifter/shifter_platform/shared/api/errors.py",
       "shifter/shifter_platform/frontend/src/app/nav.ts",
       "shifter/shifter_platform/frontend/src/features/ctf/admin/EventsListPage.tsx"
+    ]
+  },
+  {
+    "id": "ADR-053",
+    "title": "BigRAE surfaces: tenant/product and development (supersedes ADR-033)",
+    "status": "accepted",
+    "supersedes": "ADR-033",
+    "scope": "repository",
+    "decision": "BigRAE (currently named Shifter in this repository) is the organizational and SaaS backend that consumes RAES environment packs. It recognizes exactly two surfaces and assigns every capability to one by the test 'does a bare operator tenant need this to run or extend BigRAE?': a tenant/product surface (install and bootstrap, run the platform, provision and destroy ranges, ingest content, extend the tenant's local registered-pack registry, use supported artifact-preparation capabilities, upgrade, and observe) and a development surface (CI build and test, PR gating, maintainer environments, and the self-hosted runner fleet). BigRAE has no distribution surface: it does not curate, bless, publish, promote, or replicate environment packs, artifacts, or a discovery catalog. The distinction is definitional: ecosystem pack discovery and publication belong to the upstream Catalog and Environment Packs, while a tenant's local registered-pack registry (the content an operator has registered and can launch, optionally seeded by an in-box bootstrap seed consumed through the same uniform ingestion path) is a tenant/product-surface concept and is not a distribution or discovery catalog. The OpenRAE ownership split is binding (OpenRAE/hub#3): RAES owns semantics, contracts, and conformance; Catalog owns pack and reusable-asset discovery; Environment Packs owns the packs and their publication profile; and Hub owns journey definition and cross-repository sequencing. Consuming an upstream-published pack, recording its immutable identity, checking backend realizability, or staging its content for one tenant does not transfer publication, promotion, replication, channel, or discovery-catalog ownership to BigRAE. Content ingestion is entitlement-blind and source-agnostic (ADR-034); operator content acquisition and entitlement are resolved outside the platform. The CI/build/deploy runner fleet is development-surface and must not live in a product/operator deploy-target account (ADR-053-R3, carrying the #1546 dev-tenant amendment). BigRAE still owns releases and provenance for its own software under ADR-037 and ADR-042; publishing BigRAE's own software is distinct from distributing RAES environment packs. This ADR supersedes ADR-033, which framed a third distribution plane owned by the platform.",
+    "rules": [
+      {
+        "id": "ADR-053-R1",
+        "description": "Every capability is assigned to the tenant/product surface or the development surface by whether a bare operator tenant needs it to run or extend BigRAE. Capabilities an operator needs, including content ingestion and each supported artifact-preparation mechanism, are tenant/product-surface rather than maintainer-only CI; maintainers reuse a product capability when the same inputs, policy, timing, and output contract apply. This does not imply that every requirement is buildable or that every consumed artifact is reproducible.",
+        "checks": []
+      },
+      {
+        "id": "ADR-053-R2",
+        "description": "BigRAE has no distribution surface and does not curate, bless, publish, promote, replicate, or operate distribution channels or a discovery catalog for environment packs or artifacts. Pack semantics and conformance, discovery, packaging and publication, and cross-repository journeys are owned upstream by RAES, Catalog, Environment Packs, and Hub respectively (OpenRAE/hub#3). BigRAE MAY maintain a tenant-local registered-pack registry and consume an in-box bootstrap seed through the uniform ingestion path (ADR-034); that tenant-local registry is not a distribution or discovery catalog and does not make BigRAE a distributor. Consuming an upstream-published pack, recording its identity, evaluating its realizability, or staging it for a tenant transfers no publication, promotion, replication, channel, or discovery-catalog ownership to BigRAE. Publishing BigRAE's own software, provenance attestations, backend capability manifests, or cloud runtime state (ADR-037, ADR-042) is distinct from distributing RAES environment packs and is not a pack distribution surface.",
+        "checks": []
+      },
+      {
+        "id": "ADR-053-R3",
+        "description": "The CI/build/deploy runner fleet is development-surface and must not reside in a product/operator deploy-target account; environment deploy/bake uses ephemeral compute in the target tenant or maintainer-isolated infrastructure, so environment teardown never removes the deploy mechanism. Amended by #1546 for maintainer-owned dev tenants (the only deployments that exist today; there is no product deployment model yet): a self-contained per-tenant runner MAY live in that tenant's own project when (a) it is a dedicated, re-creatable Terraform execution root with a state prefix separate from the platform root, so a platform destroy never removes it, and (b) the deploy mechanism itself remains the repo's bootstrap CLI (scripts/bootstrap, deploy.py runners), not tenant-resident state. Dev tenants must not depend on another tenant's runner fleet (cross-tenant containment): a GCP dev tenant runs its own CI/deploy rather than borrowing the AWS fleet.",
+        "checks": []
+      },
+      {
+        "id": "ADR-053-R4",
+        "description": "Operator content acquisition and entitlement are resolved outside the platform; the platform contains no entitlement system (see ADR-034).",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2075",
+      "docs/architecture/product-development-surfaces.md",
+      "docs/architecture/bigrae-consume-development-boundary-preflight-2075.md",
+      "docs/adr/index.yaml"
     ]
   }
 ]

@@ -17,8 +17,8 @@ published image is a rebuildable cache.
 An operator running a packaged Shifter tenant must be able to add new images to
 the runtime catalog, import environment packs (see `raes-env-packs` for the
 pack format), and author their own scenarios. Today these read as three
-different mechanisms, and the shipped catalog is loaded through a privileged
-in-box path distinct from how an operator would add anything.
+different mechanisms, and the in-box default content is loaded through a
+privileged path distinct from how an operator would add anything.
 
 Several facts constrain the design:
 
@@ -47,24 +47,25 @@ Several facts constrain the design:
 ## Decision
 
 Content ingestion is one uniform contract, governed by the surface separation in
-ADR-033.
+ADR-053.
 
 - **The pack is the universal unit.** "Add an image to the catalog," "import a
   scenario pack," and "author a scenario" are the same operation: register a
-  pack. The in-box catalog is simply the packs that ship by default; it is not a
-  privileged path.
+  pack. The in-box packs are simply the tenant's default registered content,
+  seeded through the same path; they are not a privileged path and are not a
+  BigRAE-shipped distribution catalog.
 
 - **Import is source-agnostic and entitlement-blind.** The ingestion path is
-  identical for shipped, public, private, and self-authored packs. The platform
-  never asks how the operator obtained a pack. Adding content is *just a content
-  update*; how the operator got it is out of scope.
+  identical for packs from any origin, whether upstream-published, private, or
+  self-authored. The platform never asks how the operator obtained a pack. Adding
+  content is *just a content update*; how the operator got it is out of scope.
 
 - **Repo pack identity is byte-bound at ingestion and use.** A repository
   `package_ref` identifies a containment-checked pack root. Registration uses
   the canonical RAES associated-artifact manifest to bind the advertised digest
   to the exact inventory and payload bytes; native launch verifies that digest
   again before resolving or executing SDL. This trust control is identical for
-  shipped, public, private, and self-authored content and is not entitlement.
+  packs from any origin and is not entitlement.
 
 - **Artifact satisfaction preserves RAES author intent.** Artifact requirements
   follow the RAES exact, constrained, open, and absent realization classes. An
@@ -76,9 +77,9 @@ ADR-033.
 
 - **Satisfaction mechanism, acquisition transport, and timing are independent.**
   Depending on the requirement and backend, a feasible realization may use an
-  exact immutable artifact, an already-available backend artifact, a
-  pack-published candidate, dynamic composition, or an explicitly permitted
-  materialization specification. This is not a closed list. Pulling, copying,
+  exact immutable artifact, an already-available backend artifact, an
+  upstream-published pack candidate, dynamic composition, or an explicitly
+  permitted materialization specification. This is not a closed list. Pulling, copying,
   importing, or locally finding an artifact describes acquisition, not author
   intent. Preparation may happen at publication, ingestion, explicit backend
   staging, or realization as the governing contract permits. Shifter never
@@ -98,13 +99,13 @@ ADR-033.
   reproducible materialization path. It is not inherently a cache or substitute,
   and Shifter does not assume that licensed, opaque, externally governed, or
   exact-required artifacts can be rebuilt from source. Public and private
-  distribution tiers differ in acquisition policy; trust and provenance remain
+  acquisition origins differ in acquisition policy; trust and provenance remain
   orthogonal.
 
 ## Consequences
 
-- One ingestion path serves operators and maintainers; the shipped catalog loads
-  through it (dogfooding, per ADR-033).
+- One ingestion path serves operators and maintainers; the in-box packs load
+  through it (dogfooding, per ADR-053).
 - Repo content must be staged immutably with a conformant associated-artifact
   manifest; changed or ambiguously rooted content fails closed at registration
   or launch.
@@ -127,7 +128,7 @@ ADR-033.
 ## Alternatives considered
 
 - **Distinct paths for shipped vs. imported vs. authored content.** Rejected:
-  privileges the in-box catalog, blocks turnkey operator extension, and
+  privileges the in-box default content, blocks turnkey operator extension, and
   duplicates logic.
 - **A platform-owned entitlement system for private content.** Rejected:
   entitlement is an acquisition/business concern; embedding it couples the

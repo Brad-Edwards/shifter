@@ -1,15 +1,14 @@
-"""In-box scenario-catalog bootstrap (#1578, ADR-034).
+"""In-box scenario bootstrap seed (#1578, ADR-034).
 
-The packs Shifter ships by default are *not* loaded through a privileged code
-path. They are declared in a manifest and registered through the SAME
-:func:`cms.services.register_pack` service an operator uses. This is the
-dogfooding requirement of ADR-033/ADR-034: the shipped catalog and operator
+The packs registered into the tenant by default are *not* loaded through a
+privileged code path. They are declared in a manifest and registered through the
+SAME :func:`cms.services.register_pack` service an operator uses. This is the
+dogfooding requirement of ADR-053/ADR-034: the in-box seed and operator
 content share one ingestion path.
 
-There are no conformant default scenario packs yet (program #1584), so the
-shipped manifest (:data:`SHIPPED_INBOX_MANIFEST`) declares an empty pack list.
-The mechanism is in place and exercised by tests; entries are added as first-party
-packs are authored.
+The shipped manifest (:data:`SHIPPED_INBOX_MANIFEST`) currently declares the
+Polaris pack. The mechanism is exercised by tests; entries are added as
+first-party packs are authored.
 
 Bootstrap asks the service for an idempotent retry: an exact immutable identity
 is a no-op, while manifest or byte drift is a visible conflict.
@@ -72,7 +71,7 @@ _TEXT_FIELD_LIMITS = {
 
 
 class InboxManifestError(CMSError):
-    """Raised when the shipped catalog declaration is absent or malformed."""
+    """Raised when the in-box seed declaration is absent or malformed."""
 
 
 def load_inbox_manifest(manifest_path: Path | None = None) -> list[PackRegistrationRequest]:
@@ -118,7 +117,7 @@ def register_inbox_packs(
     registered: list[RegisteredPack] = []
     # The declaration is one deploy input. A failure in any entry rolls back
     # earlier registrations and their strict audit rows instead of installing a
-    # silently partial in-box catalog.
+    # silently partial in-box registration.
     with transaction.atomic():
         for request in requests:
             result = register_pack(

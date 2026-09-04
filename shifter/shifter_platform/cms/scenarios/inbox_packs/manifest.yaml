@@ -1,11 +1,12 @@
 # In-box environment-pack manifest (#1578, ADR-034).
 #
-# Declares the scenario packs Shifter ships by default. The bootstrap
+# Declares the in-box bootstrap seed: the scenario packs registered into the
+# tenant by default. The bootstrap
 # (`cms.scenarios.inbox.register_inbox_packs`, invoked by the
 # `bootstrap_inbox_catalog` management command) registers each entry through the
-# SAME `cms.services.register_pack` service an operator uses. The in-box catalog
+# SAME `cms.services.register_pack` service an operator uses. The in-box seed
 # therefore has NO privileged load path — it is dogfooded through the uniform
-# ingestion boundary (ADR-033/ADR-034).
+# ingestion boundary (ADR-053/ADR-034).
 #
 packs:
   - scenario_id: polaris
