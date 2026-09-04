@@ -56,7 +56,7 @@ _RANGE_RESOURCES = frozenset({"range", "raes-range"})
 
 # RAES-native lifecycle operations (ADR-043 phase 5, #1837). Pause/resume are
 # deliberately absent: they share the generic range step tables and dispatch.
-_RAES_OPERATIONS = frozenset({("raes-range", "provision"), ("raes-range", "destroy")})
+_RAES_OPERATIONS = frozenset({("raes-range", "provision"), ("raes-range", "destroy"), ("raes-range", "activate")})
 
 # Range steps that settle the generation, whether it failed or reached a
 # paused/ready outcome.

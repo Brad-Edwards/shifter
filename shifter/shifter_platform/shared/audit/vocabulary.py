@@ -49,6 +49,13 @@ class AuditAction(models.TextChoices):
     RECOVER = "recover", "Recover"
     SPARE_PROVISION = "spare_provision", "Spare Provision"
     CAPACITY_ASSESS = "capacity_assess", "Capacity Assess"
+    # Warm pool (#28): closed vocabulary for pool lifecycle and claim events so
+    # pool operations, claims, fallbacks, and cleanup are audited and observable.
+    WARM_PREPARE = "warm_prepare", "Warm Prepare"
+    WARM_CLAIM = "warm_claim", "Warm Claim"
+    WARM_FALLBACK = "warm_fallback", "Warm Fallback"
+    WARM_ACTIVATE = "warm_activate", "Warm Activate"
+    WARM_RETIRE = "warm_retire", "Warm Retire"
 
 
 class AuditEntityType(models.TextChoices):

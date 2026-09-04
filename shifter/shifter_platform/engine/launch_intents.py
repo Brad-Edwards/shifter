@@ -27,7 +27,10 @@ from shared.operation_envelope import build_operation_envelope
 
 _OPERATIONS = {
     "range": {"provision", "destroy", "pause", "resume"},
-    "raes-range": {"provision", "destroy", "pause", "resume"},
+    # ``activate`` (#28) hands an atomically claimed warm generation to its
+    # claimant. Only the ownership-neutral raes-range path carries it; the legacy
+    # user_id-bearing ``range`` path is warm-ineligible (preflight #28).
+    "raes-range": {"provision", "destroy", "pause", "resume", "activate"},
     "ngfw": {"provision", "deprovision", "start", "stop"},
 }
 PROVISIONER_DISPATCH_FAILED = "Provisioner dispatch failed"
@@ -179,13 +182,30 @@ def _authorize_request_range(
     if row is None:
         raise ValueError("launch intent request has no range")
     _require_current_generation(row, expected_operation_id)
+    operation = str(payload.get("operation"))
+    if operation == "activate":
+        # Warm activation (#28) is authorized only for a *claimed* warm generation
+        # on a realized, system-prepared range -- never for an arbitrary range that
+        # merely happens to be READY. The claimed ledger row is the authority.
+        from engine.models import WarmRangeGeneration
+
+        claimed = WarmRangeGeneration.objects.filter(
+            request_id=request.request_id, state=WarmRangeGeneration.State.CLAIMED
+        ).exists()
+        if not claimed:
+            raise ValueError("no claimed warm generation authorizes activation for this request")
+        # A claimed warm generation is quarantined in PROVISIONING (never public
+        # READY) until activation completes; activation is the transition to READY.
+        if row.status != Range.Status.PROVISIONING:
+            raise ValueError("range state does not authorize activation")
+        return
     allowed_states = {
         "provision": {Range.Status.PENDING, Range.Status.PROVISIONING},
         "destroy": {Range.Status.DESTROYING},
         "pause": {Range.Status.PAUSING},
         "resume": {Range.Status.RESUMING},
     }
-    if row.status not in allowed_states[str(payload.get("operation"))]:
+    if row.status not in allowed_states[operation]:
         raise ValueError("range state does not authorize the requested operation")
 
 
@@ -448,7 +468,7 @@ def _materialize_operation_input(payload: dict[str, object], operation_id: UUID)
         request_id=request_id,
         resource=resource,
         operation=operation,
-        payload=operation_input_payload(target, resource, request),
+        payload=operation_input_payload(target, resource, request, operation=operation),
     )
     OperationInput.objects.create(
         operation_id=operation_id,

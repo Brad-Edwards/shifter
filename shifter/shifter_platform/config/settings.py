@@ -271,6 +271,10 @@ from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
 from config._database_settings import *  # noqa: E402  # NOSONAR
 from config._raes_settings import *  # noqa: E402  # NOSONAR
 
+# #28: deployment-owned warm-pool policy (parsed/validated by shared.warm_pool.policy),
+# plus the warm-pool metrics namespace and deployment scope identity.
+from config._warm_pool_settings import *  # noqa: E402  # NOSONAR
+
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

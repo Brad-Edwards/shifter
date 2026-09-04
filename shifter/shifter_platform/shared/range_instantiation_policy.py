@@ -96,6 +96,13 @@ class RangeBackendRegistration:
     slug: str
     provider: str
     permitted_purposes: frozenset[InstantiationPurpose]
+    #: Whether this backend implements the optional ``range-warm-activation/v1``
+    #: capability (ADR-039-R11, #28): warm-prepare a system-owned quarantined
+    #: generation and later ``activate`` it for a claimant with fresh, fully
+    #: sanitized access. Enumerated per backend, never inferred from the provider
+    #: name. A backend with ``False`` safely never yields a warm claim -- the
+    #: launch path falls back to cold provisioning before any warm mutation.
+    warm_activation: bool = False
 
 
 # The single registration surface (ADR-030-R6). GCE range cells are the approved
@@ -118,6 +125,11 @@ RANGE_BACKENDS: Mapping[str, RangeBackendRegistration] = MappingProxyType(
                     InstantiationPurpose.NON_USER_VALIDATION,
                 }
             ),
+            # GCE range cells are the only backend with a warm-activation adapter
+            # today (#28). AWS (legacy user_id-bearing intent) and GDC advertise it
+            # unsupported and cold-fall-back until their ownership-neutral
+            # realization exists (AWS: #2069).
+            warm_activation=True,
         ),
         "gdc": RangeBackendRegistration(
             "gdc",
@@ -236,3 +248,16 @@ def evaluate_gcp_backend_admission(
     if purpose in registration.permitted_purposes:
         return BackendAdmission(True, backend, purpose, "", "")
     return BackendAdmission(False, backend, purpose, POLICY_DENIAL_CODE, _denial_reason(registration, purpose))
+
+
+def backend_supports_warm_activation(backend: str | None) -> bool:
+    """Return whether ``backend`` advertises the ``range-warm-activation/v1`` capability.
+
+    The single capability lookup (#28, ADR-039-R11). An unknown or unregistered
+    backend is ``False``: warm activation is capability evidence from the registry,
+    never inferred, so an unrecognized value fails closed to the cold path.
+    """
+    if not backend:
+        return False
+    registration = RANGE_BACKENDS.get(backend.strip().lower())
+    return bool(registration and registration.warm_activation)

@@ -51,7 +51,7 @@ from .publication import (
     serialize_artifact,
     version_snapshot_path,
 )
-from .render import render_cloud_provider_tfvars, render_tfvars
+from .render import render_cloud_provider_tfvars, render_tfvars, render_warm_pool_env
 from .runtime_inventory import RUNTIME_SURFACES, validate_runtime_inventory
 from .scaffold import ScaffoldError, available_backends, scaffold_config
 
@@ -124,6 +124,29 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         default=None,
         help="Write the rendered tfvar to FILE (default: stdout).",
+    )
+    render_warm_pool = subcommands.add_parser(
+        "render-warm-pool-env",
+        help="Render settings.warm_pool into the WARM_POOL_POLICY_JSON runtime env line (#28).",
+        description=(
+            "Render the validated settings.warm_pool policy from shifter.yaml into the "
+            "WARM_POOL_POLICY_JSON runtime env line the deploy pipeline injects into the "
+            "platform-runtime ConfigMap, so a configured warm pool reaches the portal and "
+            "reconciler rather than booting disabled."
+        ),
+    )
+    render_warm_pool.add_argument(
+        "path",
+        nargs="?",
+        default=DEFAULT_CONFIG_FILENAME,
+        help=f"Path to the config file (default: ./{DEFAULT_CONFIG_FILENAME}).",
+    )
+    render_warm_pool.add_argument(
+        "--output",
+        "-o",
+        metavar="FILE",
+        default=None,
+        help="Write the rendered env line to FILE (default: stdout).",
     )
     inventory = subcommands.add_parser(
         "runtime-inventory",
@@ -320,6 +343,19 @@ def _cmd_render_runtime(path_str: str, output: str | None) -> int:
     return _emit_rendered(render_cloud_provider_tfvars(config), output, config.backend, what="cloud_provider tfvar")
 
 
+def _cmd_render_warm_pool_env(path_str: str, output: str | None) -> int:
+    """Render the ``WARM_POOL_POLICY_JSON`` runtime env line for the config at ``path_str``."""
+    config_path = Path(path_str)
+    try:
+        config = load_root_config(config_path)
+    except InstallationConfigError as exc:
+        print(f"{config_path}: invalid", file=sys.stderr)
+        for issue in exc.issues:
+            print(f"  - {issue.render()}", file=sys.stderr)
+        return 1
+    return _emit_rendered(render_warm_pool_env(config), output, config.backend, what="warm-pool runtime env")
+
+
 def _cmd_runtime_inventory(repo_root_str: str, *, check: bool) -> int:
     """List or validate checked-in runtime configuration surfaces."""
 
@@ -458,6 +494,8 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = _cmd_render(args.path, args.output)
     elif args.command == "render-runtime":
         exit_code = _cmd_render_runtime(args.path, args.output)
+    elif args.command == "render-warm-pool-env":
+        exit_code = _cmd_render_warm_pool_env(args.path, args.output)
     elif args.command == "runtime-inventory":
         exit_code = _cmd_runtime_inventory(args.repo_root, check=args.check)
     elif args.command == "init":

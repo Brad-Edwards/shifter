@@ -119,6 +119,12 @@ class ResultStep(StrEnum):
     RAES_TERMINAL_READY = "raes_terminal_ready"
     RAES_TERMINAL_DESTROYED = "raes_terminal_destroyed"
     RAES_TERMINAL_FAILED = "raes_terminal_failed"
+    # raes-range activate (#28): hand a claimed warm generation to its claimant.
+    # Distinct running/snapshot steps keep an activate observation orderable and
+    # distinguishable from the warm-prepare provision that preceded it; the
+    # terminal ready/failed steps are the shared RAES terminals above.
+    RAES_ACTIVATE_RUNNING = "raes_activate_running"
+    RAES_ACTIVATE_SNAPSHOT = "raes_activate_snapshot"
 
 
 _RANGE_PAUSE_STEPS: dict[ResultStep, StepSpec] = {
@@ -184,6 +190,18 @@ _RAES_DESTROY_STEPS: dict[ResultStep, StepSpec] = {
     ResultStep.RAES_TERMINAL_FAILED: failure(20),
 }
 
+# raes-range activate (#28). The claimed generation's range is already realized
+# (public READY), so the running observation projects no status change; the
+# terminal-ready step re-applies the range READY with the claimant's fresh,
+# sanitized realized access (the applier keys the warm-vs-provision behavior on
+# ``row.operation``).
+_RAES_ACTIVATE_STEPS: dict[ResultStep, StepSpec] = {
+    ResultStep.RAES_ACTIVATE_RUNNING: raes_progress(10, RAES_STATE_RUNNING, None),
+    ResultStep.RAES_ACTIVATE_SNAPSHOT: raes_snapshot(20),
+    ResultStep.RAES_TERMINAL_READY: raes_ready(30, ResourceStatus.READY),
+    ResultStep.RAES_TERMINAL_FAILED: failure(30),
+}
+
 # ``raes-range`` pause/resume share the range lifecycle contract; the applier
 # resolves the target differently, the result shape is the same. Provision and
 # destroy do not: they report RAES operation observations, not instance sets.
@@ -195,6 +213,7 @@ _CONTRACT: dict[tuple[str, str], dict[ResultStep, StepSpec]] = {
     ("raes-range", "resume"): _RANGE_RESUME_STEPS,
     ("raes-range", "provision"): _RAES_PROVISION_STEPS,
     ("raes-range", "destroy"): _RAES_DESTROY_STEPS,
+    ("raes-range", "activate"): _RAES_ACTIVATE_STEPS,
     ("ngfw", "provision"): _NGFW_PROVISION_STEPS,
     ("ngfw", "deprovision"): _NGFW_DEPROVISION_STEPS,
     ("ngfw", "start"): _NGFW_START_STEPS,

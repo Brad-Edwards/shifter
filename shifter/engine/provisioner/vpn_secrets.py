@@ -290,6 +290,23 @@ class GCPVpnSecretOps(VpnSecretOps):
             with suppress(self._exceptions.NotFound):
                 self._client.delete_secret(request={"name": self._name(secret_id)})
 
+    def issuer_present(self, range_id: int, generation: UUID) -> bool:
+        """Return True iff this exact generation's VPN issuer secret still resolves.
+
+        Read-only, generation-fenced existence probe used by warm-pool activation's
+        negative verification (#28): the issuer secret is keyed by the *generation*
+        UUID, so unlike a reused deterministic guest-secret name, its presence for
+        the pre-claim generation is authoritative evidence that pre-claim VPN
+        material was not revoked. The freshly activated generation uses a different
+        UUID, so this never conflates old with new.
+        """
+        name = self._name(_gcp_secret_ids(range_id, generation)["issuer"])
+        try:
+            self._read(name)
+        except self._exceptions.NotFound:
+            return False
+        return True
+
 
 def get_vpn_secret_ops() -> VpnSecretOps:
     """Return the selected provider's OpenVPN secret adapter."""
