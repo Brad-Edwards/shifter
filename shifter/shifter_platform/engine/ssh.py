@@ -226,3 +226,29 @@ class SSHConnection:
     ) -> None:
         """Async context manager exit."""
         await self.disconnect()
+
+
+def build_ssh_connection(
+    *,
+    host: str,
+    port: int,
+    username: str,
+    private_key: str,
+    host_public_key: str,
+    session_id: str | None,
+) -> SSHConnection:
+    """Canonical production ``TerminalConnectionFactory`` (issue #993).
+
+    The default factory injected wherever Engine constructs a live terminal
+    connection. It takes the already-authorized connection facts and returns a
+    not-yet-connected :class:`SSHConnection`. Callers substitute a fake with the
+    same signature to drive tests without a live ``asyncssh`` transport.
+    """
+    return SSHConnection(
+        host=host,
+        username=username,
+        private_key=private_key,
+        host_public_key=host_public_key,
+        port=port,
+        session_id=session_id,
+    )

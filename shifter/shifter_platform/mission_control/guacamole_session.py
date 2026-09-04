@@ -40,11 +40,9 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from mission_control._guacamole_session_builders import (
-    GuacamoleSettings,
     _build_ngfw_ssh_url,
     _build_range_ssh_url,
     _build_rdp_url,
-    _guac_settings,
 )
 from mission_control.guacamole_bootstrap import BootstrapFailure, BootstrapQueueFull, enqueue_guacamole_bootstrap
 from mission_control.models import GuacamoleBootstrapRequest
@@ -53,7 +51,38 @@ from shared.log_sanitize import safe_log_value
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from mission_control.guacamole import GuacamoleClient
+
 logger = logging.getLogger(__name__)
+
+_GUAC_AUTH_NOT_CONFIGURED = "Guacamole JSON auth is not configured"
+_GUACAMOLE_BASE_PATH = "/guacamole"
+
+
+def _bind_guacamole_client(service_name: str) -> GuacamoleClient:
+    """Bind Guacamole runtime configuration into a client, or raise a 503.
+
+    Runs synchronously on the request thread so a missing signing secret fails
+    closed before any bootstrap is enqueued (matching the prior view behaviour).
+    Reads the existing ``GUACAMOLE_*`` settings once at this application-service
+    edge; the client and its retry loop never read Django settings (issue #993).
+    """
+    from django.conf import settings
+
+    from mission_control.guacamole import GuacamoleClientConfig, get_guacamole_client
+
+    signing_secret = getattr(settings, "GUACAMOLE_JSON_AUTH_SECRET", "")
+    if not signing_secret:
+        logger.error(_GUAC_AUTH_NOT_CONFIGURED)
+        raise BootstrapFailure(f"{service_name} service not configured", status_code=503)
+    config = GuacamoleClientConfig(
+        base_url=getattr(settings, "GUACAMOLE_BASE_URL", _GUACAMOLE_BASE_PATH),
+        secret_key=signing_secret,
+        api_base_url=getattr(settings, "GUACAMOLE_API_BASE_URL", None),
+        retry_attempts=getattr(settings, "GUACAMOLE_TOKEN_RETRY_ATTEMPTS", 3),
+        retry_base_delay_ms=getattr(settings, "GUACAMOLE_TOKEN_RETRY_BASE_DELAY_MS", 200),
+    )
+    return get_guacamole_client(config)
 
 
 @dataclass(frozen=True)
@@ -90,30 +119,38 @@ def _worker_build_callable(
     protocol: str,
     user: User,
     target_id: str,
-    guac_settings: GuacamoleSettings,
+    guac_client: GuacamoleClient,
 ) -> Callable[[], str]:
     """Return the closed-access-kind worker callable that builds the signed URL.
 
     The dispatch keeps range SSH and NGFW SSH distinct (they share the Guacamole
     SSH transport but not their ownership/connection-name policy). Adding a new
     browser-session kind adds one branch here plus its resolver/adapter, reusing
-    the same bootstrap, delivery, config, error, and logging envelopes.
+    the same bootstrap, delivery, client, error, and logging envelopes.
     """
     protocols = GuacamoleBootstrapRequest.Protocol
     if protocol == protocols.RDP:
-        return lambda: _build_rdp_url(user=user, instance_uuid=target_id, guac_settings=guac_settings)
+        return lambda: _build_rdp_url(user=user, instance_uuid=target_id, guac_client=guac_client)
     if protocol == protocols.RANGE_SSH:
-        return lambda: _build_range_ssh_url(user=user, instance_uuid=target_id, guac_settings=guac_settings)
+        return lambda: _build_range_ssh_url(user=user, instance_uuid=target_id, guac_client=guac_client)
     if protocol == protocols.NGFW_SSH:
-        return lambda: _build_ngfw_ssh_url(user=user, app_id=target_id, guac_settings=guac_settings)
+        return lambda: _build_ngfw_ssh_url(user=user, app_id=target_id, guac_client=guac_client)
     raise ValueError(f"Unsupported Guacamole access kind: {protocol!r}")
 
 
-def launch_guacamole_session(*, user: User, protocol: str, target_id: str) -> GuacamoleSessionLaunch:
+def launch_guacamole_session(
+    *,
+    user: User,
+    protocol: str,
+    target_id: str,
+    guacamole_client: GuacamoleClient | None = None,
+) -> GuacamoleSessionLaunch:
     """Launch a Guacamole browser session for ``user`` against ``target_id``.
 
-    Binds Guacamole configuration, enqueues the bounded async bootstrap (#929),
-    and returns the HTTP-neutral :class:`GuacamoleSessionLaunch`. Raises
+    Binds Guacamole configuration into a client (or uses the injected
+    ``guacamole_client`` — the explicit, keyword-only test seam, issue #993),
+    enqueues the bounded async bootstrap (#929), and returns the HTTP-neutral
+    :class:`GuacamoleSessionLaunch`. Raises
     :class:`~mission_control.guacamole_bootstrap.BootstrapFailure` for a
     synchronous readiness/config failure (e.g. missing signing secret -> 503)
     and :class:`~mission_control.guacamole_bootstrap.BootstrapQueueFull` when
@@ -121,7 +158,7 @@ def launch_guacamole_session(*, user: User, protocol: str, target_id: str) -> Gu
     resolution/generation failures are persisted on the bootstrap row and
     surfaced by the status endpoint, not raised here.
     """
-    guac_settings = _guac_settings(_service_name(protocol))
+    guac_client = guacamole_client or _bind_guacamole_client(_service_name(protocol))
     if protocol == GuacamoleBootstrapRequest.Protocol.NGFW_SSH:
         logger.info(
             "Guacamole SSH bootstrap queued for NGFW: user=%s ngfw_uuid=%s",
@@ -132,7 +169,7 @@ def launch_guacamole_session(*, user: User, protocol: str, target_id: str) -> Gu
         protocol=protocol,
         user=user,
         target_id=target_id,
-        guac_settings=guac_settings,
+        guac_client=guac_client,
     )
     try:
         bootstrap = enqueue_guacamole_bootstrap(
