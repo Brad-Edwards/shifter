@@ -154,11 +154,43 @@ are recorded) and authorized by the workspace role, the same as rename and
 archive. Personal workspaces can set the policy too, so a single-user install
 can opt its own ranges into zero egress.
 
+## Resource quotas and usage
+
+Each workspace can carry per-resource limits so shared infrastructure such as a
+university or lab cannot be exhausted by a single workspace. Two resources are
+limited:
+
+- **Concurrent ranges**: how many ranges the workspace may have running at once.
+- **Member seats**: how many members the workspace may hold.
+
+The **Quota** surface shows an owner or admin the current usage against each
+limit, and a history of when a limit was applied. A resource with no configured
+limit shows as unlimited, which preserves the prior behavior for every workspace
+that has not had a limit set.
+
+Each limit is either a soft cap or a hard cap:
+
+- A **hard cap** blocks the over-limit action. Launching a range past the
+  concurrent-range limit is refused, and adding a member past the seat limit is
+  refused.
+- A **soft cap** allows the action but records that the limit was exceeded, so an
+  administrator can see the overage on the Quota surface and in the deployment
+  audit history.
+
+Every quota decision is recorded, and each applied limit (a soft-cap warning or a
+hard-cap block) also appears in the administrator audit history. Lowering a limit
+below the current usage never evicts members or destroys running ranges; it only
+governs subsequent actions. Enforcement runs in the portal before any cloud
+resource is created, so it behaves identically on AWS and GCP.
+
+Setting a limit is a platform-administration task rather than a workspace-role
+action, so the Quota surface is read-only. A platform administrator sets limits
+through the Django administration interface.
+
 ## What is not here yet
 
 This release delivers the console shell, navigation, workspace context,
 switcher, the organization settings surface, the workspace lifecycle surface,
-and the membership, roles, and invitation surfaces above. The remaining administration
-surfaces (user lifecycle, range scoping, policy, quota, and audit
-review) arrive in later releases; their sections are present as placeholders
-until then.
+the membership, roles, invitation, and resource-quota surfaces above. The
+remaining administration surfaces (user lifecycle, range scoping, and policy)
+arrive in later releases; their sections are present as placeholders until then.

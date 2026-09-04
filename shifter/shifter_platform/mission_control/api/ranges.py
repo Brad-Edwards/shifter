@@ -13,6 +13,7 @@ from rest_framework.response import Response
 
 from cms.services import (
     WorkspaceLaunchDenied,
+    WorkspaceLaunchQuotaExceeded,
     get_active_range,
     get_mission_control_range_lease,
     has_mission_control_openvpn_profile,
@@ -232,6 +233,15 @@ class LaunchRangeView(MissionControlAPIView):
                 code="workspace_not_available",
                 message="Selected workspace is not available.",
                 status_code=403,
+            )
+        except WorkspaceLaunchQuotaExceeded:
+            # An enforcing per-workspace concurrent-range quota is a 409 Conflict,
+            # distinct from an authorization 403 and a request-rate 429 (ADR-046-R10).
+            logger.info("Range launch quota exhausted: user=%s scenario=%s", user.pk, safe_log_value(scenario))
+            return self.error_response(
+                code="workspace_range_quota_exceeded",
+                message="This workspace has reached its concurrent range limit.",
+                status_code=409,
             )
         except CMSError as exc:
             logger.exception("Range creation failed: user=%s scenario=%s", user.pk, safe_log_value(scenario))
