@@ -49,6 +49,8 @@ class AuditAction(models.TextChoices):
     RECOVER = "recover", "Recover"
     SPARE_PROVISION = "spare_provision", "Spare Provision"
     CAPACITY_ASSESS = "capacity_assess", "Capacity Assess"
+    # Tenant quota enforcement (PLAT-239)
+    QUOTA_APPLIED = "quota_applied", "Quota Applied"
     # Warm pool (#28): closed vocabulary for pool lifecycle and claim events so
     # pool operations, claims, fallbacks, and cleanup are audited and observable.
     WARM_PREPARE = "warm_prepare", "Warm Prepare"

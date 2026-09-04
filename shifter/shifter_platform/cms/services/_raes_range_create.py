@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.conf import settings
+from django.db import transaction
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
@@ -384,7 +385,16 @@ def _create_raes_native_range_impl(
     try:
         _dispatch_raes_package(request_id, user, source, backend_admission, workspace_id, egress_mode)
     except Exception:
-        _set_range_instance_status(range_instance, ResourceStatus.FAILED)
+        # Dispatch failed before an Engine lifecycle can converge, so mark the
+        # range FAILED and release the open concurrent-range reservation as one
+        # atomic convergence step. No terminal status event will arrive to repair
+        # a partial write, so the FAILED transition and the release must commit
+        # together or not at all (ADR-046-R10).
+        from workspaces.services import release_workspace_concurrent_range
+
+        with transaction.atomic():
+            _set_range_instance_status(range_instance, ResourceStatus.FAILED)
+            release_workspace_concurrent_range(workspace_id, request_id)
         raise
 
     _audit_raes_range_provision(request_id, scenario, user, range_source)

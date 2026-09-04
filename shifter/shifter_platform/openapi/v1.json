@@ -11968,6 +11968,63 @@
         ]
       }
     },
+    "/api/v1/workspaces/{workspace_uuid}/quota/": {
+      "get": {
+        "operationId": "api_v1_workspace_quota",
+        "description": "Read a workspace's resource quota usage and recent decisions (owner/admin, PLAT-239).\n\nRead-only. Usage against configured limits and the recent quota decisions let\nan administrator see when and why a cap applied. Quota *policy* is authored\nonly through the superuser-only Django-admin escape hatch, never here.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceQuota"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspace_uuid}/restore/": {
       "post": {
         "operationId": "api_v1_workspace_restore",
@@ -14933,6 +14990,14 @@
           "state"
         ]
       },
+      "ModeEnum": {
+        "enum": [
+          "advisory",
+          "enforcing"
+        ],
+        "type": "string",
+        "description": "* `advisory` - Advisory (soft cap)\n* `enforcing` - Enforcing (hard cap)"
+      },
       "NGFWCreate": {
         "type": "object",
         "description": "Validate NGFW creation requests.",
@@ -15182,6 +15247,11 @@
         "required": [
           "notification_id",
           "status"
+        ]
+      },
+      "NullEnum": {
+        "enum": [
+          null
         ]
       },
       "OrganizationProfile": {
@@ -15480,6 +15550,15 @@
         ],
         "type": "string",
         "description": "* `kali` - kali\n* `ubuntu` - ubuntu\n* `windows` - windows\n* `panos` - panos"
+      },
+      "OutcomeEnum": {
+        "enum": [
+          "admitted",
+          "warned",
+          "rejected"
+        ],
+        "type": "string",
+        "description": "* `admitted` - Admitted\n* `warned` - Warned (soft cap applied)\n* `rejected` - Rejected (hard cap applied)"
       },
       "OwnerRef": {
         "type": "object",
@@ -18093,6 +18172,14 @@
           "success"
         ]
       },
+      "ResourceEnum": {
+        "enum": [
+          "concurrent_ranges",
+          "member_seats"
+        ],
+        "type": "string",
+        "description": "* `concurrent_ranges` - Concurrent ranges\n* `member_seats` - Member seats"
+      },
       "ResourceKindsEnum": {
         "enum": [
           "ranges",
@@ -19129,6 +19216,138 @@
           "role",
           "user_id",
           "workspace_uuid"
+        ]
+      },
+      "WorkspaceQuota": {
+        "type": "object",
+        "description": "Read-only workspace quota surface: usage per resource + recent decisions (PLAT-239).",
+        "properties": {
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceQuotaResource"
+            },
+            "readOnly": true
+          },
+          "recent_decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceQuotaDecision"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "recent_decisions",
+          "resources",
+          "workspace_uuid"
+        ]
+      },
+      "WorkspaceQuotaDecision": {
+        "type": "object",
+        "description": "One recorded quota decision (append-only evidence) projection.",
+        "properties": {
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResourceEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "outcome": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OutcomeEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "limit": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModeEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "usage_before": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "requested_delta": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "reason_code": {
+            "type": "string",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "limit",
+          "mode",
+          "outcome",
+          "reason_code",
+          "requested_delta",
+          "resource",
+          "usage_before"
+        ]
+      },
+      "WorkspaceQuotaResource": {
+        "type": "object",
+        "description": "Per-resource usage-against-limit projection (PLAT-239).\n\n``limit``/``mode`` are ``null`` for an unconfigured resource (unlimited).",
+        "properties": {
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResourceEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "usage": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "limit": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
+          "mode": {
+            "readOnly": true,
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ModeEnum"
+              },
+              {
+                "$ref": "#/components/schemas/NullEnum"
+              }
+            ]
+          }
+        },
+        "required": [
+          "limit",
+          "mode",
+          "resource",
+          "usage"
         ]
       },
       "WorkspaceRoleEnum": {

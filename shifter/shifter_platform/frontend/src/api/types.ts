@@ -70,6 +70,12 @@ export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferW
 // authorizes every change.
 export type WorkspaceEgressPolicy = components["schemas"]["EgressPolicyEnum"];
 export type SetWorkspaceEgressPolicyRequest = components["schemas"]["SetWorkspaceEgressPolicy"];
+// Workspace resource quotas & usage (#1946, PLAT-239). Read-only projection of
+// usage against configured limits plus recent quota decisions; policy authoring
+// is a superuser-only Django-admin escape hatch, never a SPA surface.
+export type WorkspaceQuota = components["schemas"]["WorkspaceQuota"];
+export type WorkspaceQuotaResource = components["schemas"]["WorkspaceQuotaResource"];
+export type WorkspaceQuotaDecision = components["schemas"]["WorkspaceQuotaDecision"];
 
 /**
  * Workspace membership & roles types (#1941, PLAT-234), re-exported from the
