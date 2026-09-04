@@ -143,27 +143,17 @@ def _teardown_owned_range_resources(
 ) -> None:
     """Tear down the request-owned cloud resources via the canonical algorithm.
 
-    Shared by explicit destroy (``_run_terraform_destroy``) and provision-failure
-    compensation (``_attempt_terraform_auto_cleanup``) so the two do not drift
-    into divergent lifecycle algorithms (ADR-039-R1/R3). It detaches NGFW,
-    reconstructs the *realized* CIDRs the range actually holds (never authored
-    intent, which never carried them), runs the provider-routed destroy, cleans up
-    VPN and Terraform state, and releases ownership -- subnet reservations and the
-    child-instance projection via ``_post_destroy_cleanup`` -- ONLY after destroy
-    confirms absence. A partial or failed destroy propagates with ownership
-    retained, so the operation stays retryable (ADR-043-R7).
-
-    ``delete_vpn_identity`` is one deliberate lifecycle difference: an explicit
-    terminal destroy deletes the deterministic GCE principal, while provision
-    compensation preserves it (``False``) to avoid GCP's 30-day service-account
-    tombstone on the next retry, revoking only the generation's secrets.
-
-    ``revoke_vpn_even_if_destroy_fails`` is the other: compensation MUST revoke the
-    issued remote-access generation whether or not cloud destruction succeeds. A
-    failed compensation settles the range ``FAILED`` with possibly-surviving orphan
-    resources, and leaving the generation's credentials active would grant an
-    authenticated user continued access to them. Terminal destroy keeps the
-    existing on-success-only behavior (``False``).
+    Shared by explicit destroy and provision-failure compensation so the two do
+    not drift into divergent lifecycle algorithms (ADR-039-R1/R3): NGFW detach,
+    realized-CIDR reconstruction (never authored intent), provider-routed destroy,
+    VPN + Terraform-state cleanup, and ownership release via ``_post_destroy_cleanup``
+    ONLY after destroy confirms absence. A partial/failed destroy propagates with
+    ownership retained, so the operation stays retryable (ADR-043-R7).
+    ``delete_vpn_identity`` deletes the deterministic GCE principal on terminal
+    destroy but is ``False`` for compensation (preserve identity for retry).
+    ``revoke_vpn_even_if_destroy_fails`` makes compensation revoke the issued
+    remote-access generation even on a failed destroy, so credentials cannot
+    outlive a failed provision that left orphans reachable.
     """
     request_id = operation.request_id
     range_id = operation.range_id
@@ -190,19 +180,22 @@ def _teardown_owned_range_resources(
         logger.info("Cleaning up Terraform state...")
         range_terraform_runner.cleanup_range_state(request_id, operation.backend)
     finally:
-        # Security boundary: revoke issued remote-access credentials even when the
-        # destroy failed, so they cannot outlive a failed provision that left
-        # orphan resources reachable. Identity preservation still follows
-        # ``delete_vpn_identity``.
+        # Revoke issued remote-access credentials even on a failed destroy, so they
+        # cannot outlive a failed provision that left orphan resources reachable.
+        # Capture the failure class and log it below (in finally, not the handler):
+        # logger.exception would attach a raw stack trace barred here (ADR-043-R5).
+        revoke_failure: str | None = None
         if revoke_vpn_even_if_destroy_fails and not vpn_revoked:
             try:
                 _cleanup_openvpn_if_enabled(range_id, request_id, delete_identity=delete_vpn_identity)
             except Exception as exc:
-                logger.error(
-                    "Failed to revoke remote-access generation during compensation for range_id=%s (%s)",
-                    range_id,
-                    type(exc).__name__,
-                )
+                revoke_failure = type(exc).__name__
+        if revoke_failure is not None:
+            logger.error(
+                "Failed to revoke remote-access generation during compensation for range_id=%s (%s)",
+                range_id,
+                revoke_failure,
+            )
         # Ownership (reservations, child projections) is released only behind the
         # confirmed-destroy postcondition; a failed destroy keeps it so a CIDR is
         # not reused while orphan resources still occupy it.
@@ -214,34 +207,33 @@ def _teardown_owned_range_resources(
 def _attempt_terraform_auto_cleanup(operation: RangeOperation) -> None:
     """Best-effort compensation destroy after a failed provision.
 
-    Runs the same teardown algorithm as an explicit destroy so orphaned cloud
-    resources are reclaimed through one lifecycle, but stays best-effort: a
-    failure is bounded-logged (no raw provider/Terraform diagnostics per
-    ADR-043-R5) and swallowed with ownership retained for retry, and the
-    deterministic access identity is preserved. The caller records the range
-    outcome as ``FAILED`` regardless; a successful compensation must not convert a
-    failed provision into a successful lifecycle result.
+    Runs the shared teardown so orphaned resources are reclaimed through one
+    lifecycle, but stays best-effort: failures are bounded-logged (no raw
+    Terraform diagnostics, ADR-043-R5) with ownership retained and identity
+    preserved for retry. The caller still records the range ``FAILED``.
     """
     logger.error(
         "Provision failed for range_id=%s request_id=%s - attempting compensation destroy...",
         operation.range_id,
         operation.request_id,
     )
+    # Capture the failure class and log outside the handler: a raw exception body
+    # carries Terraform stderr barred at this boundary (ADR-043-R5).
+    failure: str | None = None
     try:
         _teardown_owned_range_resources(operation, delete_vpn_identity=False, revoke_vpn_even_if_destroy_fails=True)
     except Exception as exc:
-        # Bounded classification only: raw exception bodies carry Terraform stderr
-        # and must not cross this boundary (ADR-043-R5). The type name is enough
-        # for an operator to act; ownership was retained by the teardown helper.
+        failure = type(exc).__name__
+    if failure is None:
+        logger.info("Compensation destroy succeeded for range_id=%s", operation.range_id)
+    else:
         logger.error(
             "Compensation destroy FAILED for range_id=%s request_id=%s (%s); "
             "cloud resources and ownership retained for retry.",
             operation.range_id,
             operation.request_id,
-            type(exc).__name__,
+            failure,
         )
-    else:
-        logger.info("Compensation destroy succeeded for range_id=%s", operation.range_id)
 
 
 def _dispatch_terraform_operation(kind: str, operation: RangeOperation) -> None:
