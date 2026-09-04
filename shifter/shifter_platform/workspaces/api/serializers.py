@@ -2,7 +2,12 @@
 
 from rest_framework import serializers
 
-from workspaces.models import EGRESS_POLICY_CHOICES
+from workspaces.models import (
+    EGRESS_POLICY_CHOICES,
+    QUOTA_MODE_CHOICES,
+    QUOTA_OUTCOME_CHOICES,
+    QUOTA_RESOURCE_CHOICES,
+)
 from workspaces.roles import WorkspaceRole
 
 
@@ -165,6 +170,39 @@ class SetWorkspaceEgressPolicySerializer(serializers.Serializer):
         if unknown:
             raise serializers.ValidationError(dict.fromkeys(sorted(unknown), "Unknown field."))
         return attrs
+
+
+class WorkspaceQuotaResourceSerializer(serializers.Serializer):
+    """Per-resource usage-against-limit projection (PLAT-239).
+
+    ``limit``/``mode`` are ``null`` for an unconfigured resource (unlimited).
+    """
+
+    resource = serializers.ChoiceField(read_only=True, choices=QUOTA_RESOURCE_CHOICES)
+    usage = serializers.IntegerField(read_only=True)
+    limit = serializers.IntegerField(read_only=True, allow_null=True)
+    mode = serializers.ChoiceField(read_only=True, choices=QUOTA_MODE_CHOICES, allow_null=True)
+
+
+class WorkspaceQuotaDecisionSerializer(serializers.Serializer):
+    """One recorded quota decision (append-only evidence) projection."""
+
+    resource = serializers.ChoiceField(read_only=True, choices=QUOTA_RESOURCE_CHOICES)
+    outcome = serializers.ChoiceField(read_only=True, choices=QUOTA_OUTCOME_CHOICES)
+    limit = serializers.IntegerField(read_only=True)
+    mode = serializers.ChoiceField(read_only=True, choices=QUOTA_MODE_CHOICES)
+    usage_before = serializers.IntegerField(read_only=True)
+    requested_delta = serializers.IntegerField(read_only=True)
+    reason_code = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+
+
+class WorkspaceQuotaSerializer(serializers.Serializer):
+    """Read-only workspace quota surface: usage per resource + recent decisions (PLAT-239)."""
+
+    workspace_uuid = serializers.UUIDField(read_only=True)
+    resources = WorkspaceQuotaResourceSerializer(many=True, read_only=True)
+    recent_decisions = WorkspaceQuotaDecisionSerializer(many=True, read_only=True)
 
 
 class TransferWorkspaceOwnershipSerializer(serializers.Serializer):

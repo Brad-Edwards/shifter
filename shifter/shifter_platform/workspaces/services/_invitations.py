@@ -35,7 +35,9 @@ from ._memberships import (
     _lock_workspace_and_actor,
     _require_owner_authority,
     _role_value,
+    raise_member_seats_exhausted,
 )
+from ._quota import WorkspaceQuotaRejected
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -423,6 +425,23 @@ def accept_workspace_invitation(
     invitation_hint = WorkspaceInvitation.objects.filter(public_id=claim.invitation_uuid).only("workspace_id").first()
     if invitation_hint is None:
         raise _error("invitation_invalid", _INVALID_INVITATION_MESSAGE)
+    try:
+        return _accept_invitation_locked(user, identity, claim, invitation_hint, audit=audit)
+    except WorkspaceQuotaRejected as rejected:
+        # Seat hard cap: the acceptance transaction has rolled back; record the
+        # rejection evidence and map it once, mirroring the direct-add path.
+        raise_member_seats_exhausted(rejected, audit)
+
+
+def _accept_invitation_locked(
+    user: User,
+    identity: VerifiedIdentity,
+    claim: WorkspaceInvitationClaim,
+    invitation_hint: WorkspaceInvitation,
+    *,
+    audit: MembershipAuditContext,
+) -> WorkspaceMembershipProjection:
+    """Consume the staged grant under the workspace mutex (seat quota enforced within)."""
     with transaction.atomic():
         workspace = Workspace.objects.select_for_update().filter(pk=invitation_hint.workspace_id).first()
         invitation = (
