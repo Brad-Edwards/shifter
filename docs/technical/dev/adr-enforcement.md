@@ -139,7 +139,13 @@ Migration state (CI gate):
 The first slice intentionally stays small:
 
 - `adr-registry`
-  Validates the ADR registry and exception files.
+  Validates the ADR registry and exception files. It also validates the closed
+  typed interface contracts required by ADR-039, ADR-051, and ADR-054. The
+  `dedicated-customer-authority/v1` contract makes removal or weakening of
+  ADR-054's customer boundary, authority separation, event-migration gate,
+  infrastructure ownership, outage behavior, or evidence classes fail locally
+  and in CI. This is structural enforcement of the accepted contract, not a
+  substitute for its runtime, migration, IAM, or network tests.
 
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
