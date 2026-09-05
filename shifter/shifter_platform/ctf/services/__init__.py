@@ -56,6 +56,7 @@ from ctf.services.content_hydration import (
     assert_event_content_hydration_ready,
     hydrate_event_ctf_content,
 )
+from ctf.services.content_refresh import ContentRefreshResult, refresh_event_ctf_content
 from ctf.services.content_resolution import resolve_scenario_ctf_content
 from ctf.services.dashboard import active_event_summary
 from ctf.services.event import (
@@ -71,7 +72,6 @@ from ctf.services.event import (
     get_event,
     get_event_stats,
     get_organizer_events,
-    list_events_for_organizer,
     open_registration,
     pause_event,
     resume_event,
@@ -132,6 +132,7 @@ from ctf.services.submission import (
 )
 
 __all__ = [
+    "ContentRefreshResult",
     "ParticipantPasswordIssuance",
     "activate_event",
     "active_event_summary",
@@ -196,11 +197,11 @@ __all__ = [
     "hydrate_event_ctf_content",
     "list_brackets",
     "list_challenges_for_event",
-    "list_events_for_organizer",
     "list_participants_for_event",
     "open_registration",
     "pause_event",
     "provision_participant_range",
+    "refresh_event_ctf_content",
     "remove_challenge_file",
     "remove_flag",
     "remove_hint",

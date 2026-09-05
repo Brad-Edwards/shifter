@@ -27,7 +27,11 @@ from .checks.deploy_workflow import (
 from .checks.documentation import (
     check_documentation_coverage,
     check_guardrail_docs,
+    check_lilrae_identity_boundary,
     check_no_agent_attribution,
+)
+from .checks.eks_cross_stack_sourcing import (
+    check_eks_cross_stack_sourcing,
 )
 from .checks.k8s_security import (
     check_k8s_deployment_security_context,
@@ -83,9 +87,11 @@ CHECKS = {
     "no-terraform-operational-placeholders": check_no_terraform_operational_placeholders,
     "github-oidc-no-admin-access": check_github_oidc_no_admin_access,
     "documentation-coverage": check_documentation_coverage,
+    "lilrae-identity-boundary": check_lilrae_identity_boundary,
     "published-contract-snapshots-immutable": check_published_contract_snapshots_immutable,
     "no-agent-attribution": check_no_agent_attribution,
     "quality-path-ownership": check_quality_path_ownership,
+    "eks-cross-stack-sourcing": check_eks_cross_stack_sourcing,
 }
 CHECK_LEVELS = {
     "fast": [
@@ -113,9 +119,11 @@ CHECK_LEVELS = {
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
         "documentation-coverage",
+        "lilrae-identity-boundary",
         "published-contract-snapshots-immutable",
         "no-agent-attribution",
         "quality-path-ownership",
+        "eks-cross-stack-sourcing",
     ],
     "ci": [
         "adr-registry",
@@ -143,9 +151,11 @@ CHECK_LEVELS = {
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
         "documentation-coverage",
+        "lilrae-identity-boundary",
         "published-contract-snapshots-immutable",
         "no-agent-attribution",
         "quality-path-ownership",
+        "eks-cross-stack-sourcing",
     ],
     "all": list(CHECKS),
 }

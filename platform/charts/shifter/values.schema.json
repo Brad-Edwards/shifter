@@ -15,6 +15,7 @@
     "images",
     "imagePullPolicy",
     "identity",
+    "provisioner",
     "runtime",
     "portal",
     "workers",
@@ -59,12 +60,14 @@
       "required": [
         "gcpBackendConfig",
         "gcpManagedTls",
-        "kubernetesJobLauncher"
+        "kubernetesJobLauncher",
+        "gcpAccessNodePool"
       ],
       "properties": {
         "gcpBackendConfig": { "type": "boolean" },
         "gcpManagedTls": { "type": "boolean" },
-        "kubernetesJobLauncher": { "type": "boolean" }
+        "kubernetesJobLauncher": { "type": "boolean" },
+        "gcpAccessNodePool": { "type": "boolean" }
       }
     },
     "namespaces": {
@@ -112,11 +115,12 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["platform", "guacd", "guacamoleClient"],
+      "required": ["platform", "guacd", "guacamoleClient", "provisioner"],
       "properties": {
         "platform": { "$ref": "#/$defs/imageIdentity" },
         "guacd": { "$ref": "#/$defs/imageIdentity" },
-        "guacamoleClient": { "$ref": "#/$defs/imageIdentity" }
+        "guacamoleClient": { "$ref": "#/$defs/imageIdentity" },
+        "provisioner": { "$ref": "#/$defs/imageIdentity" }
       }
     },
     "imagePullPolicy": {
@@ -135,6 +139,14 @@
             "pattern": "^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$"
           }
         }
+      }
+    },
+    "provisioner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskRunner"],
+      "properties": {
+        "taskRunner": { "enum": ["gcp", "aws"] }
       }
     },
     "runtime": {
@@ -167,7 +179,8 @@
         "operationResultApplier",
         "outboxDrainer",
         "provisionerLauncher",
-        "reconciler"
+        "reconciler",
+        "warmPoolReconciler"
       ],
       "properties": {
         "cms": { "$ref": "#/$defs/scaledWorkload" },
@@ -179,7 +192,8 @@
         "operationResultApplier": { "$ref": "#/$defs/scaledWorkload" },
         "outboxDrainer": { "$ref": "#/$defs/scaledWorkload" },
         "provisionerLauncher": { "$ref": "#/$defs/scaledWorkload" },
-        "reconciler": { "$ref": "#/$defs/scaledWorkload" }
+        "reconciler": { "$ref": "#/$defs/scaledWorkload" },
+        "warmPoolReconciler": { "$ref": "#/$defs/scaledWorkload" }
       }
     },
     "guacd": {
@@ -479,7 +493,8 @@
                     "required": [
                       "alb.ingress.kubernetes.io/certificate-arn",
                       "alb.ingress.kubernetes.io/wafv2-acl-arn",
-                      "alb.ingress.kubernetes.io/listen-ports"
+                      "alb.ingress.kubernetes.io/listen-ports",
+                      "alb.ingress.kubernetes.io/inbound-cidrs"
                     ],
                     "properties": {
                       "alb.ingress.kubernetes.io/certificate-arn": {
@@ -490,6 +505,9 @@
                       },
                       "alb.ingress.kubernetes.io/listen-ports": {
                         "pattern": "^\\[\\{\"HTTPS\":[0-9]{1,5}\\}\\]$"
+                      },
+                      "alb.ingress.kubernetes.io/inbound-cidrs": {
+                        "pattern": "^[0-9a-fA-F:./]+(,[0-9a-fA-F:./]+)*$"
                       }
                     }
                   }
@@ -530,7 +548,8 @@
                     "required": [
                       "alb.ingress.kubernetes.io/certificate-arn",
                       "alb.ingress.kubernetes.io/wafv2-acl-arn",
-                      "alb.ingress.kubernetes.io/listen-ports"
+                      "alb.ingress.kubernetes.io/listen-ports",
+                      "alb.ingress.kubernetes.io/inbound-cidrs"
                     ],
                     "properties": {
                       "alb.ingress.kubernetes.io/certificate-arn": {
@@ -541,6 +560,9 @@
                       },
                       "alb.ingress.kubernetes.io/listen-ports": {
                         "pattern": "^\\[\\{\"HTTPS\":[0-9]{1,5}\\}\\]$"
+                      },
+                      "alb.ingress.kubernetes.io/inbound-cidrs": {
+                        "pattern": "^[0-9a-fA-F:./]+(,[0-9a-fA-F:./]+)*$"
                       }
                     }
                   }

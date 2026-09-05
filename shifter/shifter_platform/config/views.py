@@ -19,7 +19,6 @@ from shared.audit import (
     audit_auth_event,
     get_client_ip,
 )
-from shared.auth import is_ctf_organizer, is_ctf_participant
 from shared.errors import classify_user_message
 
 # SonarCloud S1192: extracted duplicated string literals.
@@ -54,11 +53,8 @@ def _render_identity_platform_login(request, *, status_code: int = 200):
                 **client_config,
                 "sessionExchangeUrl": reverse("identity_platform_session"),
                 "dashboardUrl": reverse("dashboard_router"),
-                "loginUrl": reverse("platform_login"),
-                "passwordResetUrl": reverse("platform_login"),
                 "verificationContinueUrl": f"{site_url}{reverse('platform_login')}",
             },
-            "allowed_email_domain": client_config["allowedEmailDomain"],
         },
         status=status_code,
     )
@@ -86,7 +82,14 @@ def _render_identity_platform_logout(request):
 def platform_login(request):
     """Route authentication to the configured provider."""
     if request.user.is_authenticated:
-        return HttpResponseRedirect(reverse("dashboard_router"))
+        from config.workspace_invitation_auth import preserve_staged_invitation_across_logout
+        from shared.workspace_invitation_handoff import STAGED_INVITATION_SESSION_KEY
+
+        staged = preserve_staged_invitation_across_logout(request)
+        if staged is None:
+            return HttpResponseRedirect(reverse("dashboard_router"))
+        logout(request)
+        request.session[STAGED_INVITATION_SESSION_KEY] = staged
 
     if settings.AUTH_PROVIDER == "oidc":
         return HttpResponseRedirect(reverse("oidc_authentication_init"))
@@ -140,30 +143,14 @@ def legacy_oidc_authenticate(request):
 
 @login_required
 def dashboard_router(request):
-    """Route authenticated users to the correct dashboard based on user type.
+    """Route authenticated users to the role-aware SPA home/dashboard."""
+    from config.workspace_invitation_auth import pop_post_login_continuation
 
-    - platform SPA enabled -> the role-aware SPA home/dashboard at ``/``
-    - standard users -> Mission Control dashboard
-    - ctf_organizer -> CTF Admin dashboard
-    - ctf_participant -> Mission Control dashboard (with restricted nav)
-
-    When ``PLATFORM_SPA_ENABLED`` is on, the first authenticated screen is the
-    platform shell's role-aware dashboard (#1369); the SPA decides the in-app
-    landing from the bootstrap payload. When off, the legacy per-role routing
-    below is unchanged, so rollback is a flag flip.
-    """
-    if getattr(settings, "PLATFORM_SPA_ENABLED", False):
-        logger.debug("Routing %s to the platform SPA dashboard", request.user.email)
-        return HttpResponseRedirect(reverse("home"))
-    # Legacy routing: every user type currently lands on Mission Control; the
-    # per-type log lines are kept for operational visibility.
-    if is_ctf_organizer(request.user):
-        logger.debug("Routing organizer %s to Mission Control dashboard", request.user.email)
-    elif is_ctf_participant(request.user):
-        logger.debug("Routing participant %s to Mission Control dashboard", request.user.email)
-    else:
-        logger.debug("Routing standard user %s to Mission Control", request.user.email)
-    return HttpResponseRedirect(reverse(DASHBOARD_URL))
+    continuation = pop_post_login_continuation(request)
+    if continuation is not None:
+        return HttpResponseRedirect(continuation)
+    logger.debug("Routing %s to the platform SPA dashboard", request.user.email)
+    return HttpResponseRedirect(reverse("home"))
 
 
 @require_POST

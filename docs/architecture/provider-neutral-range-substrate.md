@@ -25,10 +25,12 @@ and on ADR-011's root-selected backend bundles.
 
 ## Decision
 
-Each backend bundle selects exactly one range-substrate adapter. The substrate is a
-request-scoped convergence boundary for the complete range resource set: networks,
-instances, an optional NGFW attachment, and the remote-access bindings required to
-reach those instances. It exposes four operations:
+Each backend bundle selects a provider family. When that provider has more than one
+registered range backend, the range's persisted backend binding selects exactly one
+range-substrate adapter; mutable deployment defaults never reinterpret an existing
+range. The substrate is a request-scoped convergence boundary for the complete range
+resource set: networks, instances, an optional NGFW attachment, and the remote-access
+bindings required to reach those instances. It exposes four operations:
 
 | Operation | Input obligation | Successful postcondition |
 | --- | --- | --- |
@@ -291,19 +293,72 @@ claim full range-substrate conformance or be selected for a profile that require
 
 - `aws` selects the AWS Terraform range-substrate adapter. Terraform state/locking and
   the existing AWS range isolation/IAM/secret controls remain adapter obligations.
-- `gcp` initially selects the GCP GDC adapter. Its current non-lossless pod lifecycle
-  and disabled pause/resume path are explicit conformance gaps, not acceptable no-ops.
-  ADR-030 also limits GDC to explicitly permitted non-user modes until an approved
-  live-fire containment backend passes the separate range-side escape gate.
+- `gcp` has distinct GCE and GDC range-substrate adapters selected by the persisted
+  `Range.range_backend` binding through `shared.range_instantiation_policy`.
+  GCE is the default and approved live-fire backend; ADR-030 limits GDC to explicitly
+  permitted non-user modes. Pause/resume is implemented for both GCP adapters (issue
+  #614): GCE stop/start over the Compute Engine instances client and GDC VM Runtime
+  stop/start over the existing `kubectl virt` primitive shipped in the provisioner
+  image, each observing the resulting instance state. Lifecycle capability is decided
+  by the realized asset mix through `shared.range_lifecycle_capability` and enforced at
+  two tiers: the CMS gate and the Mission Control projection refuse/omit an unsupported
+  range pre-dispatch, and the provisioner re-checks before any mutation. A GDC scenario
+  Pod has no persistent state, so any range containing a pod-backed asset remains
+  unsupported (fail-closed with `unsupported-capability`); pod delete/recreate is never
+  presented as pause. Evidence for one GCP adapter or resource mix must not advertise
+  lifecycle capability for the other. The remaining conformance gaps are the generic
+  black-box substrate suite (see below) and disposable real-provider promotion evidence;
+  a range whose complete realized mix is not proven lossless remains unsupported.
 - Azure is deferred. It may enter only as another backend bundle and adapter behind the
-  published contract, after both initial adapters pass conformance. Azure must not add
+  published contract after its adapter passes conformance. Azure must not add
   provider branches to CMS, Engine, CTF, Mission Control, shared schemas, or public
   status/error contracts.
 
-The extensibility parameter is the bundle-selected substrate adapter plus its declared
-resource/lifecycle capability profile. The next backend or a future GCP substrate is a
-registry entry, adapter, backend settings model, and conformance evidence. It does not
-require re-editing the four-operation port or domain workflow.
+The extensibility parameter is the persisted, registry-selected substrate adapter plus
+its declared resource/lifecycle capability profile. The next provider or a future GCP
+substrate is a registry entry, adapter, backend settings model, and conformance evidence.
+It does not require re-editing the four-operation port or domain workflow.
+
+### Optional warm-pool activation capability
+
+Issue #28 adds an optional `range-warm-activation/v1` capability beside the
+four-operation substrate; it does not add a mandatory fifth operation to
+`range-substrate/v1`. An adapter advertises this capability only for the exact backend
+and realized resource mix for which it can satisfy both of these semantics:
+
+- existing `provision` accepts a trusted `warm-prepared` allocation profile and
+  converges the normal immutable realization intent into a system-owned, quarantined
+  generation. Infrastructure and scenario bootstrap may be ready, but no participant
+  credential, participant access binding, session, or publicly reachable participant
+  path exists;
+- `activate` consumes an atomically claimed generation, its unchanged realization and
+  compatibility digests, the expected adapter-state generation, and a trusted
+  owner/workspace/product projection. It removes or rotates every pre-claim guest,
+  provider, and access identity, creates fresh claimant-specific bindings, and reports
+  success only after isolation and access readiness are observed. The claimant identity
+  is loaded from the immutable Engine operation input, never from HTTP, environment, or
+  process arguments.
+
+The allocation claim is an Engine/CMS persistence operation above the adapter. It must
+commit before asynchronous activation and must not hold a database lock across provider
+I/O. A miss, race, disabled policy, or `unsupported-capability` result takes the existing
+cold `provision` path with the already-validated launch inputs. Once claimed, a failed
+generation is never returned to the ready pool; it is quarantined and destroyed through
+the canonical lifecycle. `destroy`, not an adapter-local pool cleanup API, remains the
+only resource-removal operation.
+
+Warm eligibility is digest-based. It includes the persisted backend/partition and
+placement class, instantiation purpose and product/access posture, the exact validated
+RAES package/plan plus resolved image and artifact bindings, and every other immutable
+input that changes realized resources or isolation. Mutable scenario identifiers,
+aliases, current registry contents, and caller-supplied compatibility keys are
+insufficient. The legacy `RequestSpec`/`RangeSpec` embeds `user_id`; therefore it cannot
+be warm-reassigned without a separate versioned ownership-neutral intent contract and
+must remain unsupported/cold-fallback rather than mutating or contradicting persisted
+intent.
+
+The detailed cross-layer guardrails are recorded in
+[`range-warm-pool-preflight-28.md`](range-warm-pool-preflight-28.md).
 
 ## Program-reference traceability
 

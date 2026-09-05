@@ -165,12 +165,6 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
-  - id: aws-polaris-range
-    path: scripts/polaris-aws-range
-    owner: "@Brad-Edwards"
-    toolchain: aws-1.13.3
-    providers:
-      - registry.terraform.io/hashicorp/aws
   - id: provisioner-range
     path: shifter/engine/provisioner/terraform/modules/range
     owner: "@Brad-Edwards"
@@ -255,6 +249,11 @@ modules:
     contract: terraform_test
     test: tests/security.tftest.hcl
     test_profile: aws-1.13.3
+  - path: platform/terraform/modules/portal/eks-provisioner-env
+    owner: "@Brad-Edwards"
+    contract: deferred
+    reason: "Contract-test rollout tracked in #1597."
+    tracking: "#1597"
   - path: platform/terraform/modules/portal/messaging
     owner: "@Brad-Edwards"
     contract: deferred
@@ -290,11 +289,21 @@ modules:
     contract: terraform_test
     test: tests/az_count.tftest.hcl
     test_profile: aws-1.13.3
-  - path: platform/terraform/modules/range/vpc
+  - path: platform/terraform/modules/provisioner-iam
     owner: "@Brad-Edwards"
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
+  - path: platform/terraform/modules/range/ssm-export
+    owner: "@Brad-Edwards"
+    contract: deferred
+    reason: "Contract-test rollout tracked in #1597."
+    tracking: "#1597"
+  - path: platform/terraform/modules/range/vpc
+    owner: "@Brad-Edwards"
+    contract: terraform_test
+    test: tests/firewall.tftest.hcl
+    test_profile: aws-1.13.3
   # GCP shared modules
   - path: platform/terraform/gcp/modules/cicd-github-oidc
     owner: "@Brad-Edwards"

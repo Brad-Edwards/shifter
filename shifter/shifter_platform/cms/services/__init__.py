@@ -2,7 +2,7 @@
 
 Content and asset management for Shifter platform. The implementation is
 split across private submodules (``_common``, ``_agents``, ``_credentials``,
-``_range_queries``, ``_range_create``, ``_range_destroy``, ``_range_pause``,
+``_range_queries``, ``_raes_range_create``, ``_range_destroy``, ``_range_pause``,
 ``_range_resume``, ``_uploads``, ``_scenarios``, ``_ngfws``, ``_queries``)
 and re-exported here so callers continue to use
 ``from cms.services import X``.
@@ -28,7 +28,7 @@ from __future__ import annotations
 from cms.assets.services import AgentUploadSpec
 from cms.assets.services import create_agent as assets_create_agent
 from cms.assets.services import delete_agent as assets_delete_agent
-from cms.exceptions import CMSError, WorkspaceLaunchDenied
+from cms.exceptions import CMSError, RangeScopeAdminError, WorkspaceLaunchDenied, WorkspaceLaunchQuotaExceeded
 from cms.models import AgentConfig, RangeInstance
 from cms.scenarios.images import project_scenario_images
 from cms.signals import range_status_changed as range_status_changed
@@ -36,10 +36,10 @@ from engine.services import EventCapacitySignal as EngineEventCapacitySignal
 from engine.services import admit_range_capacity as engine_admit_range_capacity
 from engine.services import assess_declared_event_capacity as engine_assess_declared_event_capacity
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
-from engine.services import create_range as engine_create_range
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
 from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_by_uuid
 from engine.services import get_openvpn_profile as engine_get_openvpn_profile
+from engine.services import get_range_pause_resume_capability as engine_get_range_pause_resume_capability
 from engine.services import has_openvpn_profile as engine_has_openvpn_profile
 from engine.services import pause_range as engine_pause_range
 from engine.services import (
@@ -92,7 +92,6 @@ from ._range_access import (
     get_range_rdp_connection_info,
     get_range_ssh_connection_info,
 )
-from ._range_create import create_range
 from ._range_destroy import (
     cancel_range,
     cancel_range_by_request_id,
@@ -130,6 +129,12 @@ from ._range_vpn import (
     has_ctf_openvpn_profile,
     has_mission_control_openvpn_profile,
 )
+from ._range_workspace_admin import (
+    RangeRebindResult,
+    RangeScopeAuditContext,
+    list_range_scope_bindings,
+    rebind_range_workspace,
+)
 from ._scenarios import (
     get_scenario,
     list_launchable_scenarios,
@@ -142,12 +147,24 @@ from ._uploads import (
     get_storage_used,
     initiate_upload,
 )
+from ._user_offboarding import (
+    TRANSFERABLE_RESOURCE_KINDS,
+    OffboardingAuditContext,
+    OwnershipTransferSummary,
+    transfer_user_ownership,
+)
+from ._warm_pool_claim import attempt_warm_claim
+from ._warm_pool_reconcile import reconcile_warm_pool
+
+# The public product launch seam is permanently RAES-owned after #1311.
+create_range = create_range_dispatch
 
 # Cross-layer re-export preserved on cms.services so the layer-imports gate
 # (scripts/check_layer_imports/layer_imports.yaml) can continue to allow only
 # `cms.services` from mission_control / ctf rather than reaching into
 # cms.signals directly.
 __all__ = (
+    "TRANSFERABLE_RESOURCE_KINDS",
     "AgentConfig",
     "AgentUploadSpec",
     "AuditEvent",
@@ -157,17 +174,24 @@ __all__ = (
     "CtfOpenVpnProfileUnavailable",
     "EngineEventCapacitySignal",
     "NonUserWorkflow",
+    "OffboardingAuditContext",
     "OpenVpnProfileConflict",
     "OpenVpnProfileNotFound",
     "OpenVpnProfileUnavailable",
+    "OwnershipTransferSummary",
     "PackRegistrationRequest",
     "RangeInstance",
     "RangeLeaseConflict",
     "RangeLeaseNotFound",
+    "RangeRebindResult",
+    "RangeScopeAdminError",
+    "RangeScopeAuditContext",
     "RegisteredPack",
     "WorkspaceLaunchDenied",
+    "WorkspaceLaunchQuotaExceeded",
     "assets_create_agent",
     "assets_delete_agent",
+    "attempt_warm_claim",
     "audit_log",
     "cancel_range",
     "cancel_range_by_request_id",
@@ -189,10 +213,10 @@ __all__ = (
     "engine_admit_range_capacity",
     "engine_assess_declared_event_capacity",
     "engine_cancel_range_by_request",
-    "engine_create_range",
     "engine_destroy_range_by_request",
     "engine_get_instance_ips_by_uuid",
     "engine_get_openvpn_profile",
+    "engine_get_range_pause_resume_capability",
     "engine_has_openvpn_profile",
     "engine_pause_range",
     "engine_range_owner_reassignment_available",
@@ -231,6 +255,7 @@ __all__ = (
     "list_launchable_scenarios",
     "list_mission_control_range_history",
     "list_ngfws",
+    "list_range_scope_bindings",
     "list_ranges",
     "list_scenarios",
     "pause_range",
@@ -239,9 +264,12 @@ __all__ = (
     "range_owner_reassignment_available",
     "range_status_changed",
     "reassign_range_owner",
+    "rebind_range_workspace",
     "reconcile_ctf_range_leases",
+    "reconcile_warm_pool",
     "register_pack",
     "resume_range",
     "resume_range_by_request_id",
+    "transfer_user_ownership",
     "validate_scenario_requirements",
 )

@@ -14,9 +14,10 @@ from uuid import UUID
 
 from django.db import transaction
 
+from ctf.enums import EventCapability
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag
-from ctf.services.authorization import assert_actor_owns_event as _assert_actor_owns_event
+from ctf.services.authorization import assert_event_capability as _assert_event_capability
 from shared.log_sanitize import safe_log_value
 
 from ._flag_verify import _validate_programmable_config, hash_flag, validate_http_flag_config
@@ -150,7 +151,7 @@ def add_flag(
             details={"challenge_id": str(challenge_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(challenge.event):
         raise CTFStateError(
@@ -226,7 +227,7 @@ def update_flag(
         ) from None
 
     challenge = flag_obj.challenge
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(challenge.event):
         raise CTFStateError(
@@ -304,7 +305,7 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
             details={"flag_id": str(flag_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, flag_obj.challenge.event)
+    _assert_event_capability(actor_id, flag_obj.challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(flag_obj.challenge.event):
         raise CTFStateError(

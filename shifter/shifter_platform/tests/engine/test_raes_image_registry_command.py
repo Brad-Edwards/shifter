@@ -1,8 +1,7 @@
 """Tests for the raes_image_registry management command (#1566).
 
 Drives the real command against a real database and the real engine.services
-write path: register/list/disable, argument validation via CommandError, and the
-SHIFTER_RAES_NATIVE_PROVISIONING gate.
+write path: register/list/disable and argument validation via CommandError.
 """
 
 from __future__ import annotations
@@ -19,12 +18,6 @@ from engine.services import RaesImageMappingOptions, upsert_raes_image_mapping
 pytestmark = pytest.mark.django_db
 
 
-@pytest.fixture
-def native_on(settings):
-    settings.RAES_NATIVE_PROVISIONING_ENABLED = True
-    return settings
-
-
 def _run(*argv: str) -> str:
     out = StringIO()
     call_command("raes_image_registry", *argv, stdout=out)
@@ -32,7 +25,7 @@ def _run(*argv: str) -> str:
 
 
 class TestRegister:
-    def test_registers_mapping(self, native_on):
+    def test_registers_mapping(self):
         output = _run(
             "--action",
             "register",
@@ -54,7 +47,7 @@ class TestRegister:
         assert mapping.enabled is True
         assert "registered gce:alpine@3.19" in output
 
-    def test_register_disabled_flag(self, native_on):
+    def test_register_disabled_flag(self):
         _run(
             "--action",
             "register",
@@ -68,17 +61,17 @@ class TestRegister:
         )
         assert RaesImageMapping.objects.get(source_name="kali").enabled is False
 
-    def test_missing_required_arg_raises(self, native_on):
+    def test_missing_required_arg_raises(self):
         with pytest.raises(CommandError):
             _run("--action", "register", "--provider", "gce", "--source-name", "kali")  # no --image-ref
 
-    def test_invalid_provider_raises(self, native_on):
+    def test_invalid_provider_raises(self):
         with pytest.raises(CommandError):
             _run("--action", "register", "--provider", "azure", "--source-name", "kali", "--image-ref", "img")
 
 
 class TestList:
-    def test_lists_rows_and_count(self, native_on):
+    def test_lists_rows_and_count(self):
         upsert_raes_image_mapping(provider="gce", source_name="alpine", image_ref="img-any")
         upsert_raes_image_mapping(
             provider="gce",
@@ -91,7 +84,7 @@ class TestList:
         assert "gce:kali@1 -> img-v1 [enabled]" in output
         assert "2 mapping(s)" in output
 
-    def test_enabled_only_filters_disabled(self, native_on):
+    def test_enabled_only_filters_disabled(self):
         upsert_raes_image_mapping(provider="gce", source_name="kali", image_ref="img")
         upsert_raes_image_mapping(
             provider="gce",
@@ -106,23 +99,16 @@ class TestList:
 
 
 class TestDisable:
-    def test_disables_existing_mapping(self, native_on):
+    def test_disables_existing_mapping(self):
         upsert_raes_image_mapping(provider="gce", source_name="kali", image_ref="img-keep")
         output = _run("--action", "disable", "--provider", "gce", "--source-name", "kali")
         assert RaesImageMapping.objects.get(source_name="kali").enabled is False
         assert "disabled gce:kali@* -> img-keep [disabled]" in output
 
-    def test_disable_missing_mapping_raises(self, native_on):
+    def test_disable_missing_mapping_raises(self):
         with pytest.raises(CommandError):
             _run("--action", "disable", "--provider", "gce", "--source-name", "absent")
 
-    def test_disable_missing_required_arg_raises(self, native_on):
+    def test_disable_missing_required_arg_raises(self):
         with pytest.raises(CommandError):
             _run("--action", "disable", "--provider", "gce")  # no --source-name
-
-
-class TestNativeProvisioningGate:
-    def test_command_refuses_when_flag_off(self, settings):
-        settings.RAES_NATIVE_PROVISIONING_ENABLED = False
-        with pytest.raises(CommandError):
-            _run("--action", "list")

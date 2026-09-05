@@ -21,9 +21,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from cyberscript.enums import ResourceStatus
-from cyberscript.exceptions import ValidationError as OperationResultError
-
+from shared.enums import ResourceStatus
+from shared.exceptions import ValidationError as OperationResultError
 from shared.operation_result_members import _parse_raes_member
 from shared.raes.status import RAES_OPERATION_STATES, RAES_STATE_SUCCEEDED
 
@@ -98,6 +97,10 @@ REASON_CODES = frozenset(
         "dependency_unavailable",
         "invalid_state",
         "internal_error",
+        # ADR-039 unsupported-capability (issue #614): the range's realized asset
+        # mix cannot be losslessly paused/resumed on its substrate adapter, so the
+        # operation is refused before any mutation rather than faking success.
+        "unsupported_capability",
     }
 )
 

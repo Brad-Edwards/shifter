@@ -304,6 +304,144 @@
         }
       }
     },
+    "/api/v1/administer/users/{id}/lifecycle/": {
+      "post": {
+        "operationId": "api_v1_administer_users_lifecycle",
+        "description": "Activate, deactivate, or suspend a user account. Requires ``auth.change_user``.\n\nThe one closed desired-state lifecycle command (PLAT-236, #1943). Suspend and\ndeactivate both block sign-in and retain assignments; they differ only in the\nsuspension discriminator. Soft deletion is the separate ``/delete/`` endpoint\n(``auth.delete_user``).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleTransitionRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleTransitionRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/users/{id}/reset-password/": {
+      "post": {
+        "operationId": "api_v1_administer_users_reset_password",
+        "description": "Trigger a Django password-reset email for an eligible account. ``auth.change_user``.\n\nUses Django's proven password-reset machinery for an active local, non-CTF\naccount only; a provider-bound account resets at its provider and a temporary\nCTF account keeps its event-scoped credential flow (PLAT-236, #1943). Returns\na safe accepted/error envelope; no secret is ever returned.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/administer/users/{id}/set-active/": {
       "post": {
         "operationId": "api_v1_administer_users_set_active",
@@ -383,18 +521,136 @@
         }
       }
     },
+    "/api/v1/administer/users/{id}/transfer-ownership/": {
+      "post": {
+        "operationId": "api_v1_administer_users_transfer_ownership",
+        "description": "Transfer a departing user's owned resources to a replacement. Superuser-only.\n\nA single bounded composition-root command (never sequential SPA calls): it\nresolves and authorizes both accounts, then delegates to\n``cms.services.transfer_user_ownership`` (the only layer permitted to reach\nboth the range and workspace domains). Both transfer kinds are the\nADR-046-R13 platform-administrator offboarding override.\n\nThis command requires a **superuser** session, not merely ``auth.change_user``\n(issue #1943 review F5): a superuser already holds cross-tenant/root authority,\nso transferring ranges and workspaces during offboarding is not an escalation.\nGating on ``auth.change_user`` alone would let a staff user who is merely a\nmember of another tenant's workspace acquire ranges they could not otherwise\nadminister. Range reassignment reuses the existing CMS/Engine authority and\nrefuses live-VPN ranges; workspace transfer requires the replacement to be an\nexisting member. It never removes memberships, transfers credentials/agents,\nor rewrites provenance.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferOwnershipResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/audit/": {
       "get": {
         "operationId": "audit_list",
         "description": "List and retrieve audit events with the existing filter surface.",
         "parameters": [
           {
-            "name": "ordering",
-            "required": false,
             "in": "query",
-            "description": "Which field to use when ordering the results.",
+            "name": "action",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_id",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_type",
+            "schema": {
+              "type": "string",
+              "maxLength": 10
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_id",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_type",
+            "schema": {
+              "type": "string",
+              "maxLength": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_date",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           },
           {
@@ -407,12 +663,19 @@
             }
           },
           {
-            "name": "search",
-            "required": false,
             "in": "query",
-            "description": "A search term.",
+            "name": "request_id",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -567,7 +830,7 @@
     "/api/v1/cms/catalog/": {
       "get": {
         "operationId": "cms_catalog_list",
-        "description": "Return all catalog entries as read-only presentation DTOs.",
+        "description": "List the canonical RAES-backed catalog projection.",
         "tags": [
           "cms"
         ],
@@ -622,7 +885,7 @@
     "/api/v1/cms/catalog/{scenario_id}/": {
       "get": {
         "operationId": "cms_catalog_retrieve",
-        "description": "Return one catalog entry's read-only presentation DTO.",
+        "description": "Return one canonical RAES-backed catalog projection.",
         "parameters": [
           {
             "in": "path",
@@ -684,7 +947,7 @@
     "/api/v1/cms/catalog/packs/": {
       "post": {
         "operationId": "cms_catalog_packs_create",
-        "description": "Validate and register a pack, returning a bounded 201 summary.",
+        "description": "Register an untrusted pack through the uniform ingestion service.",
         "tags": [
           "cms"
         ],
@@ -969,10 +1232,21 @@
         ]
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/": {
+    "/api/v1/cms/ranges/{request_id}/workspace/": {
       "post": {
-        "operationId": "cms_scenario_editor_scenarios_create",
-        "description": "Create a custom scenario through the scenario-editor service layer.",
+        "operationId": "api_v1_cms_range_workspace_rebind",
+        "description": "Reassign a range's workspace scope. Staff + rebind op in both scopes.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
         "tags": [
           "cms"
         ],
@@ -980,17 +1254,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ScenarioCreate"
+                "$ref": "#/components/schemas/RangeWorkspaceRebindRequest"
               }
             },
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/ScenarioCreate"
+                "$ref": "#/components/schemas/RangeWorkspaceRebindRequest"
               }
             },
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/ScenarioCreate"
+                "$ref": "#/components/schemas/RangeWorkspaceRebindRequest"
               }
             }
           },
@@ -1005,11 +1279,11 @@
           }
         ],
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ScenarioCreated"
+                  "$ref": "#/components/schemas/RangeWorkspaceRebindResult"
                 }
               }
             },
@@ -1035,16 +1309,13 @@
             },
             "description": "Permission denied."
           }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
+        }
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
+    "/api/v1/cms/scenarios/{scenario_id}/": {
       "get": {
-        "operationId": "cms_scenario_editor_scenarios_retrieve",
-        "description": "Return full structural detail (or a read-only RAES projection).",
+        "operationId": "cms_scenarios_retrieve",
+        "description": "Return a read-only RAES scenario detail projection.",
         "parameters": [
           {
             "in": "path",
@@ -1101,288 +1372,12 @@
         "x-required-scopes": [
           "cms:authoring:read"
         ]
-      },
+      }
+    },
+    "/api/v1/cms/scenarios/{scenario_id}/metadata/": {
       "patch": {
-        "operationId": "cms_scenario_editor_scenarios_partial_update",
-        "description": "Replace a custom scenario's definition through the service layer.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "scenario_id",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedScenarioUpdate"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedScenarioUpdate"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchedScenarioUpdate"
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioDetail"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      },
-      "delete": {
-        "operationId": "cms_scenario_editor_scenarios_destroy",
-        "description": "Soft-delete a custom scenario through the service layer.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "scenario_id",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No response body"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/": {
-      "post": {
-        "operationId": "cms_scenario_editor_scenarios_clone_create",
-        "description": "Clone the source scenario through the service layer.",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "scenario_id",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioClone"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioClone"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/ScenarioClone"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioCreated"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/": {
-      "get": {
-        "operationId": "cms_scenario_editor_scenarios_export_retrieve",
-        "description": "Return the scenario's YAML rendering (metadata overlay stripped).",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "scenario_id",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "tags": [
-          "cms"
-        ],
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioExport"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:read"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/": {
-      "patch": {
-        "operationId": "cms_scenario_editor_scenarios_metadata_partial_update",
-        "description": "Apply an explicit desired-state metadata update through the service layer.",
+        "operationId": "cms_scenarios_metadata_partial_update",
+        "description": "Update the availability/audience overlay for a RAES package source.",
         "parameters": [
           {
             "in": "path",
@@ -1460,10 +1455,10 @@
         ]
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/": {
+    "/api/v1/cms/scenarios/{scenario_id}/realizability/": {
       "get": {
-        "operationId": "cms_scenario_editor_scenarios_realizability_retrieve",
-        "description": "Return the bounded realizability assessment, or 404 for an unknown scenario.\n\nA non-realizable or indeterminate result is a successful response with\ngaps -- the author needs to read them. Only an unknown scenario is an\nerror.",
+        "operationId": "cms_scenarios_realizability_retrieve",
+        "description": "Return the backend realizability assessment for one RAES source.",
         "parameters": [
           {
             "in": "path",
@@ -1522,105 +1517,51 @@
         ]
       }
     },
-    "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
-      "post": {
-        "operationId": "cms_scenario_editor_scenarios_from_yaml_create",
-        "description": "Create a custom scenario through the scenario-editor service layer.",
+    "/api/v1/cms/workspaces/{workspace_uuid}/range-scoping/": {
+      "get": {
+        "operationId": "api_v1_cms_workspace_range_scope_list",
+        "description": "Paginated ranges scoped to a workspace by its public UUID. Staff + list op.",
+        "parameters": [
+          {
+            "name": "ordering",
+            "required": false,
+            "in": "query",
+            "description": "Which field to use when ordering the results.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "A search term.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
         "tags": [
           "cms"
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "ApiTokenAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScenarioCreated"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Authentication failed."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Permission denied."
-          }
-        },
-        "x-required-scopes": [
-          "cms:authoring:write"
-        ]
-      }
-    },
-    "/api/v1/cms/scenario-editor/validate-yaml/": {
-      "post": {
-        "operationId": "cms_scenario_editor_validate_yaml_create",
-        "description": "Return a domain validation result for YAML editor callers.",
-        "tags": [
-          "cms"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/YAMLContent"
-              }
-            }
-          },
-          "required": true
-        },
         "security": [
           {
             "ApiTokenAuth": []
@@ -1634,7 +1575,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/YAMLValidationResult"
+                  "$ref": "#/components/schemas/PaginatedRangeScopeBindingList"
                 }
               }
             },
@@ -1660,10 +1601,7 @@
             },
             "description": "Permission denied."
           }
-        },
-        "x-required-scopes": [
-          "cms:authoring:read"
-        ]
+        }
       }
     },
     "/api/v1/ctf/awards/{award_id}/delete/": {
@@ -2644,7 +2582,67 @@
     "/api/v1/ctf/events/": {
       "get": {
         "operationId": "ctf_events_list",
-        "description": "Return the organizer's events.",
+        "description": "Return the events the actor may administer (authority-aware, bounded).\n\nA platform administrator sees all live events; an ordinary organizer sees\nowned plus live staff-assigned events. Search/status/owner/ordering are\nallowlisted data filters; the admin path is bounded to the canonical page\nsize. The v1 ``{\"events\": [...]}`` envelope is unchanged (ADR-040).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ordering",
+            "schema": {
+              "enum": [
+                "event_start",
+                "-event_start",
+                "name",
+                "-name",
+                "status",
+                "-status",
+                ""
+              ],
+              "type": "string"
+            },
+            "description": "* `event_start` - event_start\n* `-event_start` - -event_start\n* `name` - name\n* `-name` - -name\n* `status` - status\n* `-status` - -status"
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            }
+          }
+        ],
         "tags": [
           "ctf"
         ],
@@ -2691,7 +2689,7 @@
       },
       "post": {
         "operationId": "ctf_events_create",
-        "description": "Create an event from the request body.",
+        "description": "Create an event from the request body.\n\nCreation is organizer authority, never the platform-admin override\n(ADR-052): a new event has no existing event on which to resolve override\nauthority, and creation makes the actor ``created_by``. The list GET is\nadmitted for organizers or platform admins, but POST requires a genuine\nCTF organizer, so a pure superuser cannot create an event and acquire\nownership.",
         "tags": [
           "ctf"
         ],
@@ -2760,7 +2758,7 @@
     "/api/v1/ctf/events/{event_id}/": {
       "get": {
         "operationId": "ctf_events_retrieve",
-        "description": "Return the full event detail projection.",
+        "description": "Return the full event detail projection with owner and access context.",
         "parameters": [
           {
             "in": "path",
@@ -3338,6 +3336,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScheduledTaskListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/content/refresh/": {
+      "post": {
+        "operationId": "ctf_events_content_refresh_create",
+        "description": "Validate the fence, reconcile to the configured revision, return the outcome.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventContentRefreshRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventContentRefreshRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventContentRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventContentRefreshResult"
                 }
               }
             },
@@ -4972,6 +5050,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScheduledTask"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/transfer-ownership/": {
+      "post": {
+        "operationId": "ctf_events_transfer_ownership_create",
+        "description": "Promote a current co-organizer to owner; the previous owner stays a co-organizer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventMutationResult"
                 }
               }
             },
@@ -8431,7 +8589,7 @@
     "/api/v1/ctf/webhooks/{webhook_id}/": {
       "delete": {
         "operationId": "ctf_webhooks_destroy",
-        "description": "Soft-delete the webhook after ownership checks.",
+        "description": "Soft-delete the webhook; the service asserts the config capability on its event.",
         "parameters": [
           {
             "in": "path",
@@ -10686,9 +10844,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -10765,9 +10920,6 @@
           "required": true
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -10846,9 +10998,6 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
-          },
-          {
             "cookieAuth": []
           }
         ],
@@ -10922,9 +11071,6 @@
           }
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -11003,8 +11149,92 @@
         ],
         "security": [
           {
-            "ApiTokenAuth": []
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/egress-policy/": {
+      "put": {
+        "operationId": "api_v1_workspace_set_egress_policy",
+        "description": "Set the network egress policy of a workspace (owner/admin, PLAT-238, #1945).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceEgressPolicy"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceEgressPolicy"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceEgressPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
           {
             "cookieAuth": []
           }
@@ -11015,6 +11245,333 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/invitations/": {
+      "get": {
+        "operationId": "api_v1_workspace_invitations_list",
+        "description": "List invitation projections visible to the authorized actor.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceInvitation"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      },
+      "post": {
+        "operationId": "api_v1_workspace_invitations_issue",
+        "description": "Issue and deliver one current workspace invitation.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueWorkspaceInvitation"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueWorkspaceInvitation"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueWorkspaceInvitation"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceInvitation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/resend/": {
+      "post": {
+        "operationId": "api_v1_workspace_invitations_resend",
+        "description": "Rotate and resend one authorized current invitation.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceInvitation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspace_uuid}/invitations/{invitation_uuid}/revoke/": {
+      "post": {
+        "operationId": "api_v1_workspace_invitations_revoke",
+        "description": "Revoke one authorized current invitation.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceInvitation"
                 }
               }
             },
@@ -11578,6 +12135,63 @@
         ]
       }
     },
+    "/api/v1/workspaces/{workspace_uuid}/quota/": {
+      "get": {
+        "operationId": "api_v1_workspace_quota",
+        "description": "Read a workspace's resource quota usage and recent decisions (owner/admin, PLAT-239).\n\nRead-only. Usage against configured limits and the recent quota decisions let\nan administrator see when and why a cap applied. Quota *policy* is authored\nonly through the superuser-only Django-admin escape hatch, never here.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_uuid",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceQuota"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspace_uuid}/restore/": {
       "post": {
         "operationId": "api_v1_workspace_restore",
@@ -11597,9 +12211,6 @@
           "workspaces"
         ],
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -11687,9 +12298,6 @@
           "required": true
         },
         "security": [
-          {
-            "ApiTokenAuth": []
-          },
           {
             "cookieAuth": []
           }
@@ -12120,10 +12728,22 @@
               "type": "string"
             },
             "readOnly": true
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "readOnly": true
+          },
+          "available_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
           }
         },
         "required": [
           "account_origin",
+          "available_actions",
           "date_joined",
           "display_name",
           "email",
@@ -12135,6 +12755,7 @@
           "is_staff",
           "is_superuser",
           "last_login",
+          "lifecycle_state",
           "must_change_password",
           "organizer_grant_source",
           "user_type",
@@ -12521,48 +13142,12 @@
           },
           "modes": {
             "$ref": "#/components/schemas/BootstrapModes"
-          },
-          "feature_flags": {
-            "$ref": "#/components/schemas/BootstrapFeatureFlags"
           }
         },
         "required": [
-          "feature_flags",
           "modes",
           "permissions",
           "principal"
-        ]
-      },
-      "BootstrapFeatureFlags": {
-        "type": "object",
-        "description": "Server-owned feature flags surfaced to the SPA (no secret values).",
-        "properties": {
-          "platform_spa": {
-            "type": "boolean"
-          },
-          "mission_control_spa": {
-            "type": "boolean"
-          },
-          "scenario_editor_spa": {
-            "type": "boolean"
-          },
-          "ctf_workspace_spa": {
-            "type": "boolean"
-          },
-          "raes_native_provisioning": {
-            "type": "boolean"
-          },
-          "administer_spa": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "administer_spa",
-          "ctf_workspace_spa",
-          "mission_control_spa",
-          "platform_spa",
-          "raes_native_provisioning",
-          "scenario_editor_spa"
         ]
       },
       "BootstrapModes": {
@@ -12598,6 +13183,9 @@
           "is_ctf_participant": {
             "type": "boolean"
           },
+          "can_administer_ctf": {
+            "type": "boolean"
+          },
           "can_view_users": {
             "type": "boolean"
           },
@@ -12610,6 +13198,7 @@
         },
         "required": [
           "can_access_threat_research",
+          "can_administer_ctf",
           "can_change_users",
           "can_delete_users",
           "can_view_users",
@@ -12652,7 +13241,7 @@
       },
       "CatalogEntry": {
         "type": "object",
-        "description": "Read-only catalog entry projection for the CMS catalog API.\n\nSerializes the presentation DTO from ``cms.scenarios.catalog_presentation``.\n``raes`` is present only for RAES package-backed entries; legacy YAML/DB\nentries serialize it as ``null``.",
+        "description": "Read-only catalog entry projection for the CMS catalog API.\n\nSerializes the presentation DTO from ``cms.scenarios.catalog_presentation``.\nEvery emitted entry is backed by a RAES package source.",
         "properties": {
           "id": {
             "type": "string",
@@ -13176,14 +13765,6 @@
           "role"
         ]
       },
-      "ChannelEnum": {
-        "enum": [
-          "ssh",
-          "rdp"
-        ],
-        "type": "string",
-        "description": "* `ssh` - ssh\n* `rdp` - rdp"
-      },
       "CleanupControlRequest": {
         "type": "object",
         "description": "Defer or cancel the pending automated range cleanup (CTF-1003).",
@@ -13385,22 +13966,6 @@
           "vpn_profile_available"
         ]
       },
-      "DCConfig": {
-        "type": "object",
-        "description": "Domain-controller configuration, mirroring ``schema.DCConfig``.",
-        "properties": {
-          "domain_name": {
-            "type": "string"
-          },
-          "netbios_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "domain_name",
-          "netbios_name"
-        ]
-      },
       "DashboardEvent": {
         "type": "object",
         "description": "Bounded active-event summary.",
@@ -13472,6 +14037,14 @@
           "success"
         ]
       },
+      "EgressPolicyEnum": {
+        "enum": [
+          "status-quo",
+          "none"
+        ],
+        "type": "string",
+        "description": "* `status-quo` - Inherit deployment baseline\n* `none` - Zero egress (no outbound NAT path)"
+      },
       "EmailTemplateResponse": {
         "type": "object",
         "description": "Per-event email-template override projection.",
@@ -13523,10 +14096,91 @@
           }
         }
       },
+      "EventContentRefreshRequest": {
+        "type": "object",
+        "description": "Refresh managed event content to the configured revision (issue #1971).\n\nThe organizer supplies only the digest they currently see as an optimistic\nconcurrency fence; the server-configured bundle is the target. No object\nkey, URL, bundle body, flag, or target digest is caller-controlled.",
+        "properties": {
+          "expected_current_digest": {
+            "type": "string",
+            "description": "The declared digest the organizer currently sees (optimistic fence).",
+            "maxLength": 71,
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "expected_current_digest"
+        ]
+      },
+      "EventContentRefreshResult": {
+        "type": "object",
+        "description": "Bounded result of an in-place managed content refresh.",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "outcome": {
+            "type": "string",
+            "readOnly": true
+          },
+          "changed_categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "challenge_count": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "flag_count": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "hint_count": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "prerequisite_count": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "challenge_count",
+          "changed_categories",
+          "event_id",
+          "flag_count",
+          "hint_count",
+          "outcome",
+          "prerequisite_count"
+        ]
+      },
       "EventDetail": {
         "type": "object",
-        "description": "Full organizer-facing event detail projection.",
+        "description": "Full organizer-facing event detail projection with owner and access context.",
         "properties": {
+          "owner": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OwnerRef"
+              }
+            ],
+            "readOnly": true
+          },
+          "access_source": {
+            "type": "string",
+            "description": "Return the closed authority source by which the actor reaches ``event``.",
+            "readOnly": true
+          },
+          "access_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
           "id": {
             "type": "string",
             "readOnly": true
@@ -13662,9 +14316,20 @@
           "theme_color": {
             "type": "string",
             "readOnly": true
+          },
+          "managed_content": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ManagedContentSummary"
+              }
+            ],
+            "nullable": true,
+            "readOnly": true
           }
         },
         "required": [
+          "access_capabilities",
+          "access_source",
           "attempt_limit_cooldown_seconds",
           "attempt_limit_mode",
           "auto_cleanup",
@@ -13676,8 +14341,10 @@
           "event_timezone",
           "id",
           "logo_url",
+          "managed_content",
           "max_participants",
           "name",
+          "owner",
           "range_config",
           "range_spinup_minutes",
           "rating_visibility",
@@ -13760,6 +14427,19 @@
           "status"
         ]
       },
+      "EventOwnershipTransferRequest": {
+        "type": "object",
+        "description": "Ownership-transfer request: the target user's id (an existing co-organizer).",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
       "EventPage": {
         "type": "object",
         "description": "One organizer-authored event page (CTF-1303).",
@@ -13838,7 +14518,7 @@
       },
       "EventStaffAssignRequest": {
         "type": "object",
-        "description": "Assignment request: organizer-tier user email plus staff role.",
+        "description": "Assignment request: organizer-tier user email plus staff role.\n\n``role`` stays an unconstrained ``CharField`` at the HTTP boundary to keep the\nv1 request contract backward-compatible (ADR-040 — a request enum is a\nbreaking change). The closed ``EventStaffRole`` vocabulary is still enforced\nfail-closed in ``assign_event_staff``, which rejects an unknown role with a\n400 (#1922).",
         "properties": {
           "email": {
             "type": "string",
@@ -13902,7 +14582,7 @@
       },
       "EventSummary": {
         "type": "object",
-        "description": "List projection of one of an organizer's events.",
+        "description": "List projection of one event with owner and server-derived access context.",
         "properties": {
           "id": {
             "type": "string",
@@ -13929,13 +14609,36 @@
           "team_mode": {
             "type": "boolean",
             "readOnly": true
+          },
+          "owner": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OwnerRef"
+              }
+            ],
+            "readOnly": true
+          },
+          "access_source": {
+            "type": "string",
+            "description": "Return the closed authority source by which the actor reaches ``event``.",
+            "readOnly": true
+          },
+          "access_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
           }
         },
         "required": [
+          "access_capabilities",
+          "access_source",
           "event_end",
           "event_start",
           "id",
           "name",
+          "owner",
           "status",
           "team_mode"
         ]
@@ -14290,7 +14993,7 @@
             "$ref": "#/components/schemas/InstancePresentationRoleEnum"
           },
           "os_type": {
-            "$ref": "#/components/schemas/InstancePresentationOsTypeEnum"
+            "$ref": "#/components/schemas/OsTypeEnum"
           },
           "join_domain": {
             "type": "boolean"
@@ -14314,16 +15017,6 @@
           "uuid"
         ]
       },
-      "InstancePresentationOsTypeEnum": {
-        "enum": [
-          "kali",
-          "ubuntu",
-          "windows",
-          "panos"
-        ],
-        "type": "string",
-        "description": "* `kali` - kali\n* `ubuntu` - ubuntu\n* `windows` - windows\n* `panos` - panos"
-      },
       "InstancePresentationRoleEnum": {
         "enum": [
           "attacker",
@@ -14333,6 +15026,24 @@
         ],
         "type": "string",
         "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc\n* `ngfw` - ngfw"
+      },
+      "IssueWorkspaceInvitation": {
+        "type": "object",
+        "description": "Closed invitation-issuance command.",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "role": {
+            "$ref": "#/components/schemas/WorkspaceRoleEnum"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ]
       },
       "KindEnum": {
         "enum": [
@@ -14396,6 +15107,63 @@
         "required": [
           "error"
         ]
+      },
+      "LifecycleTransitionRequest": {
+        "type": "object",
+        "description": "Explicit request body for the account lifecycle transition operation.\n\n``action`` is the closed set of change-permission transitions; soft deletion\nis a distinct endpoint gated on ``auth.delete_user``.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/LifecycleTransitionRequestActionEnum"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "LifecycleTransitionRequestActionEnum": {
+        "enum": [
+          "activate",
+          "deactivate",
+          "suspend"
+        ],
+        "type": "string",
+        "description": "* `activate` - activate\n* `deactivate` - deactivate\n* `suspend` - suspend"
+      },
+      "ManagedContentSummary": {
+        "type": "object",
+        "description": "Bounded managed-content status for the organizer (issue #1971).\n\nExposes only the current revision fence and drift state so the organizer can\nrefresh; never object keys, flag material, or validator configuration.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "declared_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "state": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_refreshable": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "declared_digest",
+          "is_refreshable",
+          "scenario_id",
+          "state"
+        ]
+      },
+      "ModeEnum": {
+        "enum": [
+          "advisory",
+          "enforcing"
+        ],
+        "type": "string",
+        "description": "* `advisory` - Advisory (soft cap)\n* `enforcing` - Enforcing (hard cap)"
       },
       "NGFWCreate": {
         "type": "object",
@@ -14646,6 +15414,11 @@
         "required": [
           "notification_id",
           "status"
+        ]
+      },
+      "NullEnum": {
+        "enum": [
+          null
         ]
       },
       "OrganizationProfile": {
@@ -14935,6 +15708,43 @@
           "team_mode"
         ]
       },
+      "OsTypeEnum": {
+        "enum": [
+          "kali",
+          "ubuntu",
+          "windows",
+          "panos"
+        ],
+        "type": "string",
+        "description": "* `kali` - kali\n* `ubuntu` - ubuntu\n* `windows` - windows\n* `panos` - panos"
+      },
+      "OutcomeEnum": {
+        "enum": [
+          "admitted",
+          "warned",
+          "rejected"
+        ],
+        "type": "string",
+        "description": "* `admitted` - Admitted\n* `warned` - Warned (soft cap applied)\n* `rejected` - Rejected (hard cap applied)"
+      },
+      "OwnerRef": {
+        "type": "object",
+        "description": "Bounded event-owner projection: stable id and display name only (ADR-052).\n\nNever serializes the Django ``User``, provider subject, email, groups, or role\nfacts. Consumed by the organizer/platform-admin list and detail so the owner\nis visible without leaking identity payload.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "display_name": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "display_name",
+          "id"
+        ]
+      },
       "PackRegistration": {
         "type": "object",
         "description": "Validate the shape of a uniform pack-registration request body (#1578).\n\nThis is a thin boundary check: it rejects missing/oversized/wrong-typed\nfields so the service and the reference-record validator receive a\nwell-formed request. Domain validation (source-kind allowlist, digest shape,\nbounded provenance, pack conformance, no-shadow) remains authoritative in the\nservice and model — this serializer does not restate it.",
@@ -15136,6 +15946,37 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PrincipalWorkspaceContext"
+            }
+          }
+        }
+      },
+      "PaginatedRangeScopeBindingList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeScopeBinding"
             }
           }
         }
@@ -16331,40 +17172,6 @@
           }
         }
       },
-      "PatchedScenarioUpdate": {
-        "type": "object",
-        "description": "Structured update request: full definition replacement (no identity change).",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "ngfw": {
-            "type": "boolean",
-            "default": false
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioInstance"
-            }
-          },
-          "subnets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioSubnet"
-            }
-          },
-          "participant_access": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioParticipantAccess"
-            }
-          }
-        }
-      },
       "Prerequisite": {
         "type": "object",
         "description": "List projection of one challenge prerequisite.",
@@ -17289,6 +18096,12 @@
           },
           "is_active": {
             "type": "boolean"
+          },
+          "pause_supported": {
+            "type": "boolean"
+          },
+          "resume_supported": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -17297,9 +18110,11 @@
           "is_active",
           "is_ready",
           "is_terminal",
+          "pause_supported",
           "range_id",
           "range_type",
           "request_id",
+          "resume_supported",
           "scenario_id",
           "status",
           "user_id"
@@ -17406,6 +18221,59 @@
           "strategy"
         ]
       },
+      "RangeScopeBinding": {
+        "type": "object",
+        "description": "Bounded, read-only projection of a range scoped to a workspace.\n\nExplicit fields only (never a ``ModelSerializer``): no internal workspace or\nrange id, range spec, instance/IP/access detail, credential, or ORM object is\nexposed.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Return the durable request correlation UUID, or null for a legacy request-less row.",
+            "readOnly": true
+          },
+          "owner_id": {
+            "type": "integer"
+          },
+          "range_source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "scenario_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "is_reassignable": {
+            "type": "boolean",
+            "description": "Whether this range's scope may be reassigned here.\n\nAuthoritative, never provenance-based: a range is reassignable when it is\naddressable by a request correlation and not owned by a domain aggregate\n(the set of aggregate-bound ids is resolved once per page and passed in\nvia ``aggregate_bound_ids``). Advisory only; the server reauthorizes.",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "expires_at",
+          "is_reassignable",
+          "owner_id",
+          "range_source",
+          "request_id",
+          "scenario_id",
+          "status",
+          "updated_at"
+        ]
+      },
       "RangeStatusResponse": {
         "type": "object",
         "description": "Participant range status projection (or the not-assigned sentinel).",
@@ -17478,6 +18346,31 @@
         ],
         "type": "string",
         "description": "* `demo` - demo"
+      },
+      "RangeWorkspaceRebindRequest": {
+        "type": "object",
+        "description": "Closed request body for a scope reassignment: a target workspace UUID only.",
+        "properties": {
+          "target_workspace_uuid": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "target_workspace_uuid"
+        ]
+      },
+      "RangeWorkspaceRebindResult": {
+        "type": "object",
+        "description": "Bounded result: whether the binding changed (``false`` = idempotent no-op).",
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changed"
+        ]
       },
       "RateChallengeRequest": {
         "type": "object",
@@ -17555,6 +18448,22 @@
           "success"
         ]
       },
+      "ResourceEnum": {
+        "enum": [
+          "concurrent_ranges",
+          "member_seats"
+        ],
+        "type": "string",
+        "description": "* `concurrent_ranges` - Concurrent ranges\n* `member_seats` - Member seats"
+      },
+      "ResourceKindsEnum": {
+        "enum": [
+          "ranges",
+          "workspaces"
+        ],
+        "type": "string",
+        "description": "* `ranges` - ranges\n* `workspaces` - workspaces"
+      },
       "ResourceStatusEnum": {
         "enum": [
           "pending",
@@ -17570,86 +18479,9 @@
         "type": "string",
         "description": "* `pending` - pending\n* `provisioning` - provisioning\n* `ready` - ready\n* `pausing` - pausing\n* `paused` - paused\n* `resuming` - resuming\n* `destroying` - destroying\n* `destroyed` - destroyed\n* `failed` - failed"
       },
-      "ScenarioClone": {
-        "type": "object",
-        "description": "Clone request body.",
-        "properties": {
-          "new_scenario_id": {
-            "type": "string"
-          },
-          "new_name": {
-            "type": "string",
-            "default": ""
-          }
-        },
-        "required": [
-          "new_scenario_id"
-        ]
-      },
-      "ScenarioCreate": {
-        "type": "object",
-        "description": "Structured create request: identity plus definition.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "ngfw": {
-            "type": "boolean",
-            "default": false
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioInstance"
-            }
-          },
-          "subnets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioSubnet"
-            }
-          },
-          "participant_access": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioParticipantAccess"
-            }
-          },
-          "scenario_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "description",
-          "instances",
-          "name",
-          "scenario_id"
-        ]
-      },
-      "ScenarioCreated": {
-        "type": "object",
-        "description": "Response for a create/clone: the new scenario's identity.",
-        "properties": {
-          "scenario_id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "name": {
-            "type": "string",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "name",
-          "scenario_id"
-        ]
-      },
       "ScenarioDetail": {
         "type": "object",
-        "description": "Full scenario detail with source-capability flags for the editor.\n\n``source`` classifies the entry (``builtin`` / ``custom`` / ``raes`` /\n``ctf``) and the capability booleans tell the SPA which actions to offer.\n``instances`` / ``subnets`` are populated for structural (demo) scenarios;\n``raes`` carries the read-only provenance block for RAES entries.",
+        "description": "Read-only RAES package identity and availability for the SPA.",
         "properties": {
           "id": {
             "type": "string",
@@ -17659,20 +18491,12 @@
             "type": "string",
             "readOnly": true
           },
-          "description": {
-            "type": "string",
-            "readOnly": true
-          },
           "scenario_type": {
             "type": "string",
             "readOnly": true
           },
           "source": {
             "type": "string",
-            "readOnly": true
-          },
-          "is_default": {
-            "type": "boolean",
             "readOnly": true
           },
           "enabled": {
@@ -17687,43 +18511,6 @@
             "type": "boolean",
             "readOnly": true
           },
-          "editable": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "deletable": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "exportable": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "ngfw": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioInstance"
-            },
-            "readOnly": true
-          },
-          "subnets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioSubnet"
-            },
-            "readOnly": true
-          },
-          "participant_access": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScenarioParticipantAccess"
-            },
-            "readOnly": true
-          },
           "raes": {
             "allOf": [
               {
@@ -17735,109 +18522,15 @@
           }
         },
         "required": [
-          "deletable",
-          "description",
-          "editable",
           "enabled",
-          "exportable",
           "id",
-          "instances",
-          "is_default",
           "launchable",
           "name",
-          "ngfw",
-          "participant_access",
           "raes",
           "scenario_type",
           "source",
-          "staff_only",
-          "subnets"
+          "staff_only"
         ]
-      },
-      "ScenarioExport": {
-        "type": "object",
-        "description": "Response for an export: the scenario id and its YAML rendering.",
-        "properties": {
-          "scenario_id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "yaml": {
-            "type": "string",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "scenario_id",
-          "yaml"
-        ]
-      },
-      "ScenarioInstance": {
-        "type": "object",
-        "description": "A single scenario instance, mirroring ``schema.InstanceConfig``.\n\nKept field-complete against the Pydantic schema so a round-trip through the\neditor never silently drops instance fields (the legacy form hardcoded a\npartial list). The service layer re-validates the full definition.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "role": {
-            "$ref": "#/components/schemas/ScenarioInstanceRoleEnum"
-          },
-          "os_type": {
-            "$ref": "#/components/schemas/ScenarioInstanceOsTypeEnum"
-          },
-          "xdr_agent": {
-            "type": "boolean",
-            "default": false
-          },
-          "domain_controller": {
-            "type": "boolean",
-            "default": false
-          },
-          "join_domain": {
-            "type": "boolean",
-            "default": false
-          },
-          "dc_config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/DCConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "ami_key": {
-            "type": "string",
-            "nullable": true
-          },
-          "instance_type": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "required": [
-          "name",
-          "os_type",
-          "role"
-        ]
-      },
-      "ScenarioInstanceOsTypeEnum": {
-        "enum": [
-          "kali",
-          "windows",
-          "ubuntu",
-          "from_agent"
-        ],
-        "type": "string",
-        "description": "* `kali` - kali\n* `windows` - windows\n* `ubuntu` - ubuntu\n* `from_agent` - from_agent"
-      },
-      "ScenarioInstanceRoleEnum": {
-        "enum": [
-          "attacker",
-          "victim",
-          "dc"
-        ],
-        "type": "string",
-        "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc"
       },
       "ScenarioListItem": {
         "type": "object",
@@ -17934,22 +18627,6 @@
           "staff_only"
         ]
       },
-      "ScenarioParticipantAccess": {
-        "type": "object",
-        "description": "One participant-facing channel, mirroring ``ParticipantAccessConfig``.",
-        "properties": {
-          "target": {
-            "type": "string"
-          },
-          "channel": {
-            "$ref": "#/components/schemas/ChannelEnum"
-          }
-        },
-        "required": [
-          "channel",
-          "target"
-        ]
-      },
       "ScenarioRealizability": {
         "type": "object",
         "description": "Backend realizability assessment for one catalog entry (ADR-034-R3).\n\nSerializes the projection from ``cms.scenarios.realizability``. A negative\nassessment is a successful response with ``outcome`` set and ``gaps``\npopulated -- non-realizability is a domain answer, not an HTTP error.\n``indeterminate`` means the assessment could not be completed and must never\nbe rendered as realizable.",
@@ -17979,31 +18656,6 @@
           "outcome",
           "scenario_id",
           "target_id"
-        ]
-      },
-      "ScenarioSubnet": {
-        "type": "object",
-        "description": "A single scenario subnet, mirroring ``schema.SubnetConfig``.",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "connected_to": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "instances",
-          "name"
         ]
       },
       "ScheduledTask": {
@@ -18138,6 +18790,18 @@
         },
         "required": [
           "is_active"
+        ]
+      },
+      "SetWorkspaceEgressPolicy": {
+        "type": "object",
+        "description": "Set-egress-policy command: one closed choice from the workspace subset (PLAT-238).\n\nThe workspace-selectable vocabulary is the contextual subset of the canonical\n``installation.range_egress.RangeEgressMode`` (``status-quo`` / ``none``). The\nserializer owns HTTP shape and rejects unknown fields; ``workspaces.services``\nre-validates against the canonical enum and owns authority and persistence.",
+        "properties": {
+          "egress_policy": {
+            "$ref": "#/components/schemas/EgressPolicyEnum"
+          }
+        },
+        "required": [
+          "egress_policy"
         ]
       },
       "SparePoolRequest": {
@@ -18345,6 +19009,62 @@
         },
         "required": [
           "participant_id"
+        ]
+      },
+      "TransferOwnershipRequest": {
+        "type": "object",
+        "description": "Explicit request body for an offboarding ownership transfer.\n\n``resource_kinds`` is a closed allowlist; there is no wildcard or\n\"all resources\" interpretation (PLAT-236, #1943).",
+        "properties": {
+          "replacement_user_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resource_kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceKindsEnum"
+            }
+          }
+        },
+        "required": [
+          "replacement_user_id",
+          "resource_kinds"
+        ]
+      },
+      "TransferOwnershipResult": {
+        "type": "object",
+        "description": "Bounded, secret-free summary of an offboarding ownership transfer.",
+        "properties": {
+          "source_user_id": {
+            "type": "integer"
+          },
+          "replacement_user_id": {
+            "type": "integer"
+          },
+          "ranges_reassigned": {
+            "type": "integer"
+          },
+          "ranges_blocked": {
+            "type": "integer"
+          },
+          "workspaces_transferred": {
+            "type": "integer"
+          },
+          "workspaces_already_owned": {
+            "type": "integer"
+          },
+          "workspaces_blocked_no_membership": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ranges_blocked",
+          "ranges_reassigned",
+          "replacement_user_id",
+          "source_user_id",
+          "workspaces_already_owned",
+          "workspaces_blocked_no_membership",
+          "workspaces_transferred"
         ]
       },
       "TransferWorkspaceOwnership": {
@@ -18626,6 +19346,14 @@
             "readOnly": true,
             "nullable": true
           },
+          "egress_policy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EgressPolicyEnum"
+              }
+            ],
+            "readOnly": true
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -18640,6 +19368,7 @@
         "required": [
           "archived_at",
           "created_at",
+          "egress_policy",
           "is_archived",
           "is_personal",
           "name",
@@ -18648,6 +19377,78 @@
           "updated_at",
           "uuid"
         ]
+      },
+      "WorkspaceInvitation": {
+        "type": "object",
+        "description": "Public invitation projection; bearer credentials never cross this API.",
+        "properties": {
+          "invitation_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceRoleEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceInvitationStatusEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "email",
+          "expires_at",
+          "invitation_uuid",
+          "role",
+          "status",
+          "updated_at",
+          "workspace_uuid"
+        ]
+      },
+      "WorkspaceInvitationStatusEnum": {
+        "enum": [
+          "pending",
+          "expired",
+          "accepted",
+          "revoked"
+        ],
+        "type": "string",
+        "description": "* `pending` - pending\n* `expired` - expired\n* `accepted` - accepted\n* `revoked` - revoked"
       },
       "WorkspaceMembership": {
         "type": "object",
@@ -18693,6 +19494,138 @@
           "workspace_uuid"
         ]
       },
+      "WorkspaceQuota": {
+        "type": "object",
+        "description": "Read-only workspace quota surface: usage per resource + recent decisions (PLAT-239).",
+        "properties": {
+          "workspace_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceQuotaResource"
+            },
+            "readOnly": true
+          },
+          "recent_decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceQuotaDecision"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "recent_decisions",
+          "resources",
+          "workspace_uuid"
+        ]
+      },
+      "WorkspaceQuotaDecision": {
+        "type": "object",
+        "description": "One recorded quota decision (append-only evidence) projection.",
+        "properties": {
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResourceEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "outcome": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OutcomeEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "limit": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModeEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "usage_before": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "requested_delta": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "reason_code": {
+            "type": "string",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "limit",
+          "mode",
+          "outcome",
+          "reason_code",
+          "requested_delta",
+          "resource",
+          "usage_before"
+        ]
+      },
+      "WorkspaceQuotaResource": {
+        "type": "object",
+        "description": "Per-resource usage-against-limit projection (PLAT-239).\n\n``limit``/``mode`` are ``null`` for an unconfigured resource (unlimited).",
+        "properties": {
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResourceEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "usage": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "limit": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
+          "mode": {
+            "readOnly": true,
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ModeEnum"
+              },
+              {
+                "$ref": "#/components/schemas/NullEnum"
+              }
+            ]
+          }
+        },
+        "required": [
+          "limit",
+          "mode",
+          "resource",
+          "usage"
+        ]
+      },
       "WorkspaceRoleEnum": {
         "enum": [
           "owner",
@@ -18701,46 +19634,6 @@
         ],
         "type": "string",
         "description": "* `owner` - Owner\n* `admin` - Admin\n* `member` - Member"
-      },
-      "YAMLContent": {
-        "type": "object",
-        "description": "Validate a YAML-content request body.",
-        "properties": {
-          "yaml_content": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "yaml_content"
-        ]
-      },
-      "YAMLValidationResult": {
-        "type": "object",
-        "description": "Response for the YAML validate endpoint.",
-        "properties": {
-          "valid": {
-            "type": "boolean",
-            "readOnly": true
-          },
-          "errors": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "readOnly": true
-          },
-          "definition": {
-            "type": "object",
-            "additionalProperties": {},
-            "readOnly": true,
-            "nullable": true
-          }
-        },
-        "required": [
-          "definition",
-          "errors",
-          "valid"
-        ]
       },
       "_NamedRef": {
         "type": "object",

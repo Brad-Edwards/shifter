@@ -31,12 +31,17 @@ export const WORKSPACE_SURFACES: readonly WorkspaceSurface[] = [
   // surface to view its own membership and leave (#1941, PLAT-234). The gate
   // stays a capability predicate, never a role-code shortcut.
   { key: "membership", label: "Membership", requiredAnyOperation: ["read_members", "leave_workspace"] },
-  { key: "invitations", label: "Invitations" },
+  { key: "invitations", label: "Invitations", requiredAnyOperation: ["read_invitations"] },
   { key: "users", label: "Users" },
-  { key: "range-scoping", label: "Range scoping" },
+  // Range scoping is owner/admin scope administration (#1944, PLAT-237); the
+  // gate is advisory presentation only, and the server reauthorizes every call.
+  { key: "range-scoping", label: "Range scoping", requiredAnyOperation: ["list_range_scope_bindings"] },
   { key: "policy", label: "Policy" },
   { key: "quota", label: "Quota" },
-  { key: "audit", label: "Audit" },
+  // Audit is intentionally NOT a workspace-scoped surface (#1947, PLAT-240): the
+  // audit store is deployment-global with no per-row workspace scope, so a
+  // workspace-nested entry would falsely imply the switcher scopes/authorizes the
+  // feed. The administrator audit history lives at the top-level /administer/audit.
 ];
 
 /** True when the selected workspace's advisory capabilities permit the surface. */

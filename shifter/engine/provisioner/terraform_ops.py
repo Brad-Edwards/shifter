@@ -43,7 +43,6 @@ from range_backend_resolution import (
 from range_subnet_allocation import (
     _post_destroy_cleanup,
     _realized_range_spec_for_destroy,
-    _release_subnet_allocations_best_effort,
     _reserve_range_subnet_cidrs,
 )
 from state_helpers import _validate_provisioned_outputs
@@ -54,7 +53,7 @@ from terraform_ngfw_range import (
     _remove_ngfw_attachments_for_destroy,
     _validate_ngfw_range_attachment,
 )
-from terraform_vars import build_range_variables
+from terraform_vars import RangeVariableContext, build_range_variables
 from vpn_access import (
     cleanup_openvpn_access,
     finalize_openvpn_access,
@@ -102,6 +101,20 @@ class RangeOperation:
     purpose: InstantiationPurpose = InstantiationPurpose.LIVE_FIRE
     remote_access_capability: dict[str, object] | None = None
     operation_id: str | None = None
+    # Effective egress posture pinned at create (PLAT-238, ADR-017-R5). Threaded
+    # into the range Terraform variables so ``none`` suppresses the participant
+    # default route/NAT per-range; ``status-quo`` inherits the deployment baseline.
+    egress_mode: str = "status-quo"
+
+
+def _operation_variable_context(operation: RangeOperation) -> RangeVariableContext:
+    """Bundle the per-operation range-variable binding (PLAT-238 egress included)."""
+    return RangeVariableContext(
+        scenario_artifact=operation.scenario_artifact,
+        backend=operation.backend,
+        remote_access_capability=operation.remote_access_capability,
+        egress_mode=operation.egress_mode,
+    )
 
 
 def _build_operation_variables(
@@ -109,63 +122,118 @@ def _build_operation_variables(
     range_id: int,
     user_id: int,
     range_spec: dict[str, Any],
-    scenario_artifact: dict[str, Any] | None,
-    backend: str | None = None,
-    remote_access_capability: dict[str, object] | None = None,
+    context: RangeVariableContext,
 ) -> dict[str, Any]:
-    """Build backend variables while preserving legacy call behavior.
+    """Build backend variables from the range spec and the per-operation binding.
 
-    ``backend`` (the #1666 per-operation binding) selects the variable shape from
-    persisted ownership for destroy/compensation; ``None`` keeps the env-selector
-    behavior for provision and non-GCP callers.
+    ``context.backend`` (the #1666 per-operation binding) selects the variable
+    shape from persisted ownership for destroy/compensation; ``None`` keeps the
+    env-selector behavior. ``context.egress_mode`` is the pinned per-range posture
+    (PLAT-238); it flows into the range Terraform variables so a ``none`` range
+    suppresses NAT/default-route regardless of the deployment env.
     """
-    kwargs: dict[str, Any] = {"backend": backend}
-    if remote_access_capability is not None:
-        kwargs["remote_access_capability"] = remote_access_capability
-    if scenario_artifact is not None:
-        kwargs["scenario_artifact"] = scenario_artifact
-    return build_range_variables(request_id, range_id, user_id, range_spec, **kwargs)
+    return build_range_variables(request_id, range_id, user_id, range_spec, context)
+
+
+def _teardown_owned_range_resources(
+    operation: RangeOperation,
+    *,
+    delete_vpn_identity: bool,
+    revoke_vpn_even_if_destroy_fails: bool = False,
+) -> None:
+    """Tear down the request-owned cloud resources via the canonical algorithm.
+
+    Shared by explicit destroy and provision-failure compensation so the two do
+    not drift into divergent lifecycle algorithms (ADR-039-R1/R3): NGFW detach,
+    realized-CIDR reconstruction (never authored intent), provider-routed destroy,
+    VPN + Terraform-state cleanup, and ownership release via ``_post_destroy_cleanup``
+    ONLY after destroy confirms absence. A partial/failed destroy propagates with
+    ownership retained, so the operation stays retryable (ADR-043-R7).
+    ``delete_vpn_identity`` deletes the deterministic GCE principal on terminal
+    destroy but is ``False`` for compensation (preserve identity for retry).
+    ``revoke_vpn_even_if_destroy_fails`` makes compensation revoke the issued
+    remote-access generation even on a failed destroy, so credentials cannot
+    outlive a failed provision that left orphans reachable.
+    """
+    request_id = operation.request_id
+    range_id = operation.range_id
+    user_id = operation.user_id
+    _remove_ngfw_attachments_for_destroy(user_id, range_id, operation.range_spec)
+    # Authored intent never carried CIDRs; tear down the ones this range holds.
+    realized_spec = _realized_range_spec_for_destroy(
+        request_id, operation.range_spec, operation_id=operation.operation_id
+    )
+    vpn_revoked = False
+    terraform_succeeded = False
+    try:
+        destroy_variables = _build_operation_variables(
+            request_id,
+            range_id,
+            user_id,
+            realized_spec,
+            _operation_variable_context(operation),
+        )
+        range_terraform_runner.destroy_range(request_id, variables=destroy_variables, backend=operation.backend)
+        _cleanup_openvpn_if_enabled(range_id, request_id, delete_identity=delete_vpn_identity)
+        vpn_revoked = True
+        terraform_succeeded = True
+        logger.info("Cleaning up Terraform state...")
+        range_terraform_runner.cleanup_range_state(request_id, operation.backend)
+    finally:
+        # Revoke issued remote-access credentials even on a failed destroy, so they
+        # cannot outlive a failed provision that left orphan resources reachable.
+        # Capture the failure class and log it below (in finally, not the handler):
+        # logger.exception would attach a raw stack trace barred here (ADR-043-R5).
+        revoke_failure: str | None = None
+        if revoke_vpn_even_if_destroy_fails and not vpn_revoked:
+            try:
+                _cleanup_openvpn_if_enabled(range_id, request_id, delete_identity=delete_vpn_identity)
+            except Exception as exc:
+                revoke_failure = type(exc).__name__
+        if revoke_failure is not None:
+            logger.error(
+                "Failed to revoke remote-access generation during compensation for range_id=%s (%s)",
+                range_id,
+                revoke_failure,
+            )
+        # Ownership (reservations, child projections) is released only behind the
+        # confirmed-destroy postcondition; a failed destroy keeps it so a CIDR is
+        # not reused while orphan resources still occupy it.
+        if terraform_succeeded:
+            _post_destroy_cleanup(request_id, range_id, operation_id=operation.operation_id)
+        _maybe_pause_user_ngfw(user_id, range_id)
 
 
 def _attempt_terraform_auto_cleanup(operation: RangeOperation) -> None:
-    """Best-effort `terraform destroy` after a failed provision."""
+    """Best-effort compensation destroy after a failed provision.
+
+    Runs the shared teardown so orphaned resources are reclaimed through one
+    lifecycle, but stays best-effort: failures are bounded-logged (no raw
+    Terraform diagnostics, ADR-043-R5) with ownership retained and identity
+    preserved for retry. The caller still records the range ``FAILED``.
+    """
     logger.error(
-        "Provision failed for range_id=%s request_id=%s - attempting Terraform cleanup...",
+        "Provision failed for range_id=%s request_id=%s - attempting compensation destroy...",
         operation.range_id,
         operation.request_id,
     )
+    # Capture the failure class and log outside the handler: a raw exception body
+    # carries Terraform stderr barred at this boundary (ADR-043-R5).
+    failure: str | None = None
     try:
-        cleanup_variables = _build_operation_variables(
-            operation.request_id,
-            operation.range_id,
-            operation.user_id,
-            operation.range_spec,
-            operation.scenario_artifact,
-            operation.backend,
-            operation.remote_access_capability,
-        )
-        range_terraform_runner.destroy_range(
-            operation.request_id, variables=cleanup_variables, backend=operation.backend
-        )
-        range_terraform_runner.cleanup_range_state(operation.request_id, operation.backend)
-        logger.info("Auto-cleanup succeeded for range_id=%s", operation.range_id)
-    except Exception:
-        logger.exception(
-            "Auto-cleanup FAILED for range_id=%s request_id=%s. "
-            "Orphaned cloud resources may exist and require manual cleanup.",
+        _teardown_owned_range_resources(operation, delete_vpn_identity=False, revoke_vpn_even_if_destroy_fails=True)
+    except Exception as exc:
+        failure = type(exc).__name__
+    if failure is None:
+        logger.info("Compensation destroy succeeded for range_id=%s", operation.range_id)
+    else:
+        logger.error(
+            "Compensation destroy FAILED for range_id=%s request_id=%s (%s); "
+            "cloud resources and ownership retained for retry.",
             operation.range_id,
             operation.request_id,
+            failure,
         )
-    finally:
-        if operation.remote_access_capability is not None:
-            try:
-                # Preserve the deterministic GCE principal across retry. A
-                # terminal range destroy deletes it; compensation revokes all
-                # secrets but avoids GCP's 30-day service-account tombstone.
-                _cleanup_openvpn_if_enabled(operation.range_id, operation.request_id, delete_identity=False)
-            except Exception:
-                logger.exception("Failed to revoke OpenVPN generation during provision compensation")
-    _release_subnet_allocations_best_effort(operation.request_id, operation_id=operation.operation_id)
 
 
 def _dispatch_terraform_operation(kind: str, operation: RangeOperation) -> None:
@@ -256,6 +324,7 @@ def run_range_terraform(operation: str, request_id: str, *, operation_id: str | 
             purpose=operation_purpose,
             remote_access_capability=remote_access_capability,
             operation_id=operation_id,
+            egress_mode=range_data.get("egress_mode", "status-quo"),
         )
         _dispatch_terraform_operation(operation, range_operation)
     except Exception as e:
@@ -277,7 +346,6 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
     range_id = operation.range_id
     user_id = operation.user_id
     range_spec = operation.range_spec
-    scenario_artifact = operation.scenario_artifact
     remote_access_capability = operation.remote_access_capability
     update_range_status(
         range_id=range_id,
@@ -319,9 +387,7 @@ def _run_terraform_provision(operation: RangeOperation) -> None:
         range_id,
         user_id,
         realized_spec,
-        scenario_artifact,
-        backend=operation.backend,
-        remote_access_capability=remote_access_capability,
+        _operation_variable_context(operation),
     )
 
     # Run the provider-routed apply, carrying the trusted purpose so the
@@ -421,39 +487,13 @@ def _run_terraform_destroy(operation: RangeOperation) -> None:
     """
     request_id = operation.request_id
     range_id = operation.range_id
-    user_id = operation.user_id
-    range_spec = operation.range_spec
-    scenario_artifact = operation.scenario_artifact
-    backend = operation.backend
-    remote_access_capability = operation.remote_access_capability
     if not _ensure_range_is_active(request_id, range_id):
         return
 
-    _remove_ngfw_attachments_for_destroy(user_id, range_id, range_spec)
-    # Authored intent never carried CIDRs; teardown uses the ones this range
-    # actually holds.
-    realized_spec = _realized_range_spec_for_destroy(request_id, range_spec, operation_id=operation.operation_id)
-
     logger.info("Running terraform destroy for range...")
-    terraform_succeeded = False
-    try:
-        destroy_variables = _build_operation_variables(
-            request_id,
-            range_id,
-            user_id,
-            realized_spec,
-            scenario_artifact,
-            backend,
-            remote_access_capability,
-        )
-        range_terraform_runner.destroy_range(request_id, variables=destroy_variables, backend=backend)
-        _cleanup_openvpn_if_enabled(range_id, request_id)
-        terraform_succeeded = True
-        logger.info("Cleaning up Terraform state...")
-        range_terraform_runner.cleanup_range_state(request_id, backend)
-    finally:
-        if terraform_succeeded:
-            _post_destroy_cleanup(request_id, range_id, operation_id=operation.operation_id)
-        _maybe_pause_user_ngfw(user_id, range_id)
+    # An explicit destroy deletes the deterministic access identity; on failure
+    # the shared helper propagates with ownership retained, so DESTROYED is not
+    # recorded below.
+    _teardown_owned_range_resources(operation, delete_vpn_identity=True)
 
     update_range_status(range_id=range_id, status=STATUS_DESTROYED)

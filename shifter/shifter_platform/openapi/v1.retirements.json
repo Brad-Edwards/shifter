@@ -62,6 +62,62 @@
       ]
     },
     {
+      "adr": "ADR-024",
+      "issue": 1311,
+      "paths": [
+        "/api/v1/cms/scenario-editor/scenarios/",
+        "/api/v1/cms/scenario-editor/scenarios/from-yaml/",
+        "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/",
+        "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/",
+        "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/",
+        "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/",
+        "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/realizability/",
+        "/api/v1/cms/scenario-editor/validate-yaml/"
+      ],
+      "response_schema_properties": [
+        {
+          "schema": "Bootstrap",
+          "property": "feature_flags"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "deletable"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "description"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "editable"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "exportable"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "instances"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "is_default"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "ngfw"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "participant_access"
+        },
+        {
+          "schema": "ScenarioDetail",
+          "property": "subnets"
+        }
+      ]
+    },
+    {
       "adr": "ADR-049",
       "issue": 535,
       "paths": [],

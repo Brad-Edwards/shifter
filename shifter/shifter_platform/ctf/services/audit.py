@@ -11,14 +11,75 @@ from shared.audit import (
     AuditEntityType,
     AuditEvent,
     audit_log,
+    get_actor_from_request,
+    get_client_ip,
+    get_request_id,
 )
 
 if TYPE_CHECKING:
+    from django.http import HttpRequest
+    from rest_framework.request import Request
+
     from ctf.models import (
         CTFContentHydrationReceipt,
         CTFEvent,
         CTFParticipant,
         CTFRangeRecovery,
+    )
+
+
+def audit_platform_admin_event_action(
+    *,
+    request: Request | HttpRequest,
+    event: CTFEvent,
+    operation: str,
+    effective_actor_id: int | None,
+    action: str = AuditAction.UPDATE,
+    changed_fields: list[str] | None = None,
+    outcome: str | None = None,
+) -> None:
+    """Strictly audit a successful platform-admin override mutation on an event (ADR-052-R4).
+
+    Records bounded identifiers and safe outcome metadata only: the closed
+    ``authority_source=platform_admin``, the event id, the operation, the
+    effective actor user id whose superuser authority was evaluated, and optional
+    changed field names / outcome marker. Never records event content, participant
+    data, flags, solutions, credentials, secrets, signed URLs, provider payloads,
+    or raw exception text.
+
+    Request attribution (actor type/id, source IP, request id, user agent) is read
+    at the HTTP boundary; for an API-token call the token is the ``apikey`` actor
+    while ``effective_actor_id`` separately names the user whose live authority was
+    evaluated. ``strict=True`` so a persistence failure raises: a database-only
+    caller runs this inside the mutation transaction and rolls the mutation back,
+    while a non-rollbackable caller records bounded intent before its first side
+    effect and a correlated outcome after (both share the request id).
+    """
+    actor_type, actor_id = get_actor_from_request(request)
+    new_state: dict[str, Any] = {
+        "operation": operation,
+        "authority_source": "platform_admin",
+        "event_id": str(event.pk),
+        "effective_actor_user_id": effective_actor_id,
+    }
+    if changed_fields:
+        new_state["changed_fields"] = sorted(changed_fields)
+    if outcome:
+        new_state["outcome"] = outcome
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event.pk),
+            action=action,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            new_state=new_state,
+            context="ctf_platform_admin_event_action",
+            source_ip=get_client_ip(request),
+            request_id=get_request_id(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", "")[:255],
+        ),
+        strict=True,
     )
 
 
@@ -80,6 +141,45 @@ def audit_content_hydration(
                 "prerequisite_count": receipt.prerequisite_count,
             },
             context="ctf_content_hydration",
+        ),
+        strict=True,
+    )
+
+
+def audit_content_refresh(
+    *,
+    actor_id: int,
+    event: CTFEvent,
+    receipt: CTFContentHydrationReceipt,
+    outcome: str,
+    previous_digest: str,
+    changed_categories: tuple[str, ...],
+) -> None:
+    """Strictly record an in-place managed-content refresh (issue #1971).
+
+    Records the previous and target digests, bounded counts, and the categories
+    of change (never content values, flag material, or object coordinates).
+    """
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event.pk),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            previous_state={"declared_digest": previous_digest},
+            new_state={
+                "ctf_content_refresh": outcome,
+                "event_id": str(event.pk),
+                "scenario_id": receipt.scenario_id,
+                "declared_digest": receipt.declared_digest,
+                "challenge_count": receipt.challenge_count,
+                "flag_count": receipt.flag_count,
+                "hint_count": receipt.hint_count,
+                "prerequisite_count": receipt.prerequisite_count,
+                "changed_categories": list(changed_categories),
+            },
+            context="ctf_content_refresh",
         ),
         strict=True,
     )
@@ -243,4 +343,78 @@ def audit_vpn_profile_download(
         generation=generation,
         profile_version=profile_version,
         product="ctf",
+    )
+
+
+def audit_event_staff_change(
+    *,
+    actor_id: int,
+    event_id: UUID,
+    target_user_id: int,
+    action: str,
+    role: str | None = None,
+    previous_role: str | None = None,
+) -> None:
+    """Strictly record an event-staff authority mutation (#1922).
+
+    ``action`` is one of ``assigned`` / ``reroled`` / ``revoked``. Records only
+    bounded IDs and role names — never email, tokens, or event content. Strict:
+    audit failure rolls back the mutation it accompanies.
+    """
+    action_map = {
+        "assigned": AuditAction.CREATE,
+        "reroled": AuditAction.UPDATE,
+        "revoked": AuditAction.DELETE,
+    }
+    new_state: dict[str, Any] = {
+        "ctf_event_staff": action,
+        "event_id": str(event_id),
+        "target_user_id": target_user_id,
+    }
+    if role is not None:
+        new_state["role"] = role
+    if previous_role is not None:
+        new_state["previous_role"] = previous_role
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            action=action_map.get(action, AuditAction.UPDATE),
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state=new_state,
+            context="ctf_event_staff",
+        ),
+        strict=True,
+    )
+
+
+def audit_event_ownership_transferred(
+    *,
+    actor_id: int,
+    event_id: UUID,
+    previous_owner_id: int,
+    new_owner_id: int,
+) -> None:
+    """Strictly record a canonical-ownership transfer (#1922).
+
+    Records only the event and old/new owner IDs. Strict: audit failure rolls
+    back the transfer transaction.
+    """
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CONFIG,
+            entity_id=_entity_id_from_uuid(event_id),
+            action=AuditAction.UPDATE,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            previous_state={"owner_id": previous_owner_id},
+            new_state={
+                "ctf_event_ownership_transfer": "transferred",
+                "event_id": str(event_id),
+                "owner_id": new_owner_id,
+            },
+            context="ctf_event_ownership_transfer",
+        ),
+        strict=True,
     )

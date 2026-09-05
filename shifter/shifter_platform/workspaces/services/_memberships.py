@@ -6,7 +6,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -18,6 +18,12 @@ from workspaces.roles import WorkspaceOperation, WorkspaceRole, role_permits
 from ._authorization import (
     _DENIED_MESSAGE,
     WorkspaceAuthorizationError,
+)
+from ._quota import (
+    WorkspaceQuotaAuditContext,
+    WorkspaceQuotaRejected,
+    admit_workspace_member_seat,
+    record_workspace_quota_rejection,
 )
 
 if TYPE_CHECKING:
@@ -153,6 +159,29 @@ def _write_audit(
     )
 
 
+def _seat_quota_audit(audit: MembershipAuditContext) -> WorkspaceQuotaAuditContext:
+    """Forward membership request attribution to the quota decision record."""
+    return WorkspaceQuotaAuditContext(
+        actor_type=audit.actor_type,
+        actor_id=audit.actor_id,
+        source_ip=audit.source_ip,
+        user_agent=audit.user_agent,
+        request_id=audit.request_id,
+    )
+
+
+def raise_member_seats_exhausted(rejected: WorkspaceQuotaRejected, audit: MembershipAuditContext) -> NoReturn:
+    """Record a hard-cap seat rejection and raise the classified membership error.
+
+    Called only from a committed path *after* the enclosing membership transaction
+    has rolled back, so the rejection evidence survives while the denied membership
+    insert does not (ADR-046-R10). Both membership-add paths (direct add and
+    invitation acceptance) route their rejection through here.
+    """
+    record_workspace_quota_rejection(rejected.workspace_id, rejected.verdict, _seat_quota_audit(audit))
+    raise _error("workspace_member_seats_exhausted", "The workspace has reached its member-seat limit") from None
+
+
 def _require_owner_authority(actor_membership: WorkspaceMembership) -> None:
     """Require owner authority for commands that manage another owner."""
     if actor_membership.role != WorkspaceRole.OWNER.value:
@@ -175,6 +204,63 @@ def _require_not_personal_owner(workspace: Workspace, target: WorkspaceMembershi
     """Protect the immutable owner binding of a personal workspace."""
     if workspace.personal_for_user_id == target.user_id:
         raise _error("personal_workspace_protected", "Personal workspace ownership cannot be changed")
+
+
+def _insert_workspace_membership(
+    workspace: Workspace,
+    target: User,
+    role_value: str,
+    audit: MembershipAuditContext,
+    *,
+    exact_existing_is_idempotent: bool,
+) -> WorkspaceMembershipProjection:
+    """Insert and strict-audit one membership under the caller-held workspace lock."""
+    existing = (
+        WorkspaceMembership.objects.select_for_update()
+        .select_related("workspace", "user")
+        .filter(workspace=workspace, user=target)
+        .first()
+    )
+    if existing is not None:
+        if exact_existing_is_idempotent and existing.role == role_value:
+            return _projection(existing)
+        raise _error("membership_exists", "The account already has a workspace membership")
+
+    # A brand-new membership consumes one seat. Evaluated under the caller-held
+    # workspace mutex so the count is race-safe; an admitted/warned decision is
+    # recorded in this transaction, a hard cap raises WorkspaceQuotaRejected which
+    # the add/accept boundary records and maps once the transaction unwinds
+    # (PLAT-239, ADR-046-R10).
+    admit_workspace_member_seat(workspace.pk, _seat_quota_audit(audit))
+
+    try:
+        with transaction.atomic():
+            membership = WorkspaceMembership.objects.create(
+                workspace=workspace,
+                user=target,
+                role=role_value,
+            )
+    except IntegrityError:
+        concurrent = (
+            WorkspaceMembership.objects.select_related("workspace", "user")
+            .filter(workspace=workspace, user=target)
+            .first()
+        )
+        if concurrent is not None and exact_existing_is_idempotent and concurrent.role == role_value:
+            return _projection(concurrent)
+        if concurrent is not None:
+            raise _error("membership_exists", "The account already has a workspace membership") from None
+        raise
+
+    membership = WorkspaceMembership.objects.select_related("workspace", "user").get(pk=membership.pk)
+    _write_audit(membership, AuditAction.CREATE, audit, new_state=_membership_state(membership))
+    logger.info(
+        "workspace membership created workspace_id=%s user_id=%s role=%s",
+        workspace.pk,
+        target.pk,
+        role_value,
+    )
+    return _projection(membership)
 
 
 def get_self_membership(
@@ -221,56 +307,31 @@ def add_workspace_member(
 ) -> WorkspaceMembershipProjection:
     """Add an existing active account to a non-personal workspace."""
     role_value = _role_value(role)
-    with transaction.atomic():
-        workspace, actor_membership = _lock_workspace_and_actor(actor, workspace_uuid, WorkspaceOperation.ADD_MEMBER)
-        if workspace.personal_for_user_id is not None:
-            raise _error("personal_workspace_protected", "Personal workspaces cannot have collaborators")
-        if role_value == WorkspaceRole.OWNER.value:
-            _require_owner_authority(actor_membership)
-
-        targets = list(UserModel.objects.filter(email__iexact=target_email.strip(), is_active=True).order_by("pk")[:2])
-        if len(targets) != 1:
-            raise _error("member_add_failed", "Active workspace member account not found")
-        target = targets[0]
-        existing = (
-            WorkspaceMembership.objects.select_for_update()
-            .select_related("workspace", "user")
-            .filter(workspace=workspace, user=target)
-            .first()
-        )
-        if existing is not None:
-            if existing.role == role_value:
-                return _projection(existing)
-            raise _error("membership_exists", "The account already has a different workspace role")
-
-        try:
-            with transaction.atomic():
-                membership = WorkspaceMembership.objects.create(
-                    workspace=workspace,
-                    user=target,
-                    role=role_value,
-                )
-        except IntegrityError:
-            concurrent = (
-                WorkspaceMembership.objects.select_related("workspace", "user")
-                .filter(workspace=workspace, user=target)
-                .first()
+    try:
+        with transaction.atomic():
+            workspace, actor_membership = _lock_workspace_and_actor(
+                actor, workspace_uuid, WorkspaceOperation.ADD_MEMBER
             )
-            if concurrent is not None and concurrent.role == role_value:
-                return _projection(concurrent)
-            if concurrent is not None:
-                raise _error("membership_exists", "The account already has a different workspace role") from None
-            raise
+            if workspace.personal_for_user_id is not None:
+                raise _error("personal_workspace_protected", "Personal workspaces cannot have collaborators")
+            if role_value == WorkspaceRole.OWNER.value:
+                _require_owner_authority(actor_membership)
 
-        membership = WorkspaceMembership.objects.select_related("workspace", "user").get(pk=membership.pk)
-        _write_audit(membership, AuditAction.CREATE, audit, new_state=_membership_state(membership))
-        logger.info(
-            "workspace membership created workspace_id=%s user_id=%s role=%s",
-            workspace.pk,
-            target.pk,
-            role_value,
-        )
-        return _projection(membership)
+            targets = list(
+                UserModel.objects.filter(email__iexact=target_email.strip(), is_active=True).order_by("pk")[:2]
+            )
+            if len(targets) != 1:
+                raise _error("member_add_failed", "Active workspace member account not found")
+            target = targets[0]
+            return _insert_workspace_membership(
+                workspace,
+                target,
+                role_value,
+                audit,
+                exact_existing_is_idempotent=True,
+            )
+    except WorkspaceQuotaRejected as rejected:
+        raise_member_seats_exhausted(rejected, audit)
 
 
 def change_workspace_member_role(

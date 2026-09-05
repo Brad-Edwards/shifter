@@ -1649,7 +1649,7 @@ class TestGdcProvisioning:
         """GCE carries scenario intent only inside the digest-bound artifact."""
         from shared.range_cells import build_scenario_artifact
 
-        from terraform_vars import build_range_variables
+        from terraform_vars import RangeVariableContext, build_range_variables
 
         scenario_payload = {
             "scenario_id": "polaris",
@@ -1693,14 +1693,14 @@ class TestGdcProvisioning:
             mp.setenv("CLOUD_PROVIDER", "gcp")
             mp.setenv("GCP_RANGE_BACKEND", "gce")
             variables = build_range_variables(
-                request_id="req-gce",
-                range_id=42,
-                user_id=7,
-                range_spec=runtime_spec,
-                scenario_artifact=artifact,
+                "req-gce",
+                42,
+                7,
+                runtime_spec,
+                RangeVariableContext(scenario_artifact=artifact),
             )
 
-        assert variables["operation"] == {"request_id": "req-gce", "range_id": 42}
+        assert variables["operation"] == {"request_id": "req-gce", "range_id": 42, "egress_mode": "status-quo"}
         host, dc = variables["scenario_artifact"]["payload"]["subnets"][0]["instances"]
         assert host["ami_key"] == "polaris-vm"
         assert host["os_type"] == "kali"
@@ -1732,10 +1732,10 @@ class TestGdcProvisioning:
             mp.setattr("terraform_vars.get_ami_id", MagicMock(return_value="ami-deadbeef"))
 
             variables = build_range_variables(
-                request_id="req-aws",
-                range_id=1,
-                user_id=2,
-                range_spec={"ngfw": False, "subnets": []},
+                "req-aws",
+                1,
+                2,
+                {"ngfw": False, "subnets": []},
             )
 
         # AWS-only variables are present; the GCE shape omits these.

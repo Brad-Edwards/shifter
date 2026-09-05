@@ -14,6 +14,14 @@ LABEL maintainer="Shifter maintainers" \
 ARG TERRAFORM_VERSION=1.14.3
 ARG PULUMI_VERSION=3.142.0
 
+# kubectl + the KubeVirt `virt` plugin (virtctl, installed as `kubectl-virt`)
+# drive GDC VM Runtime guest start/stop for range pause/resume (issue #614,
+# gdc_vmruntime_assets.run_power_operation). Both are integrity-verified against
+# the vendor-published checksums before install. KUBEVIRT_VERSION tracks the
+# deployed GDC VM Runtime version and is overridable at build time.
+ARG KUBECTL_VERSION=v1.31.4
+ARG KUBEVIRT_VERSION=v1.4.0
+
 # Single root-stage RUN: install build tools, terraform, pulumi, create the
 # non-root runtime user with its writable plugin-cache / pulumi dirs, and
 # create the writable Terraform workspace mount point.
@@ -43,6 +51,28 @@ RUN apt-get update && apt-get install -y curl openssh-client unzip && \
     grep "pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" pulumi_checksums.txt | sha256sum -c - && \
     tar -xzf "pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" -C /usr/local/bin --strip-components=1 && \
     rm "pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" pulumi_checksums.txt && \
+    # Install kubectl, integrity-verified against dl.k8s.io's published hash.
+    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+      -o kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
+    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+      -o kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" && \
+    echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c - && \
+    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
+    rm kubectl kubectl.sha256 && \
+    # Install the KubeVirt virt plugin (virtctl) as kubectl-virt, integrity-verified
+    # against the release CHECKSUMS.sha256 before it is placed on PATH.
+    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+      -o "virtctl-${KUBEVIRT_VERSION}-linux-amd64" \
+      "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/virtctl-${KUBEVIRT_VERSION}-linux-amd64" && \
+    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+      -o virtctl_CHECKSUMS.sha256 \
+      "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/CHECKSUMS.sha256" && \
+    grep "virtctl-${KUBEVIRT_VERSION}-linux-amd64" virtctl_CHECKSUMS.sha256 | sha256sum -c - && \
+    install -o root -g root -m 0755 "virtctl-${KUBEVIRT_VERSION}-linux-amd64" /usr/local/bin/kubectl-virt && \
+    rm "virtctl-${KUBEVIRT_VERSION}-linux-amd64" virtctl_CHECKSUMS.sha256 && \
+    # Exercise both from the final layer (offline): kubectl resolves the plugin.
+    kubectl version --client >/dev/null && \
+    kubectl-virt help >/dev/null && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     # Create non-root user matching shifter_platform's appuser:1000 / appgroup:1000.
     groupadd --gid 1000 appgroup && \
@@ -67,22 +97,17 @@ COPY engine/provisioner/requirements.lock engine/provisioner/requirements-gcp.lo
 RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.lock && \
     pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements-gcp.lock
 
-# First-party shared packages on PYTHONPATH (cyberscript = wire-contract constants,
-# installation = root installation config) — same pattern as shifter_platform/Dockerfile.
+# First-party installation config on PYTHONPATH — the same pattern as
+# shifter_platform/Dockerfile.
 # `config.resolve_cloud_provider` validates CLOUD_PROVIDER against
 # installation.registry (PLAT-2005), which needs pydantic; pydantic is a declared
-# provisioner runtime dependency (requirements.lock), installed above. Range-cell
-# consumers use only cyberscript's dependency-light envelope, exception, and digest
-# paths; canonical Pydantic validation runs producer-side before persistence.
-COPY cyberscript /opt/shifter-libs/cyberscript
+# provisioner runtime dependency (requirements.lock), installed above.
 COPY installation /opt/shifter-libs/installation
 
 # Dependency-light platform contract modules used by the provisioner runtime.
-# Copy the whole `shared` package (same whole-dir pattern as cyberscript and
-# installation above) so imports like `shared.range_instantiation_policy`,
+# Copy the whole `shared` package so imports like `shared.range_instantiation_policy`,
 # `shared.range_escape`, and `shared.log_sanitize` (added by the #1348 refactor)
-# resolve alongside `shared.range_cells`. `shared/__init__.py` re-exports only
-# from cyberscript (already present), and the provisioner never imports the
+# resolve alongside `shared.range_cells`. The provisioner never imports the
 # Django modules (models.py, admin.py, migrations, …), so copying the whole
 # package does not pull Django into the provisioner runtime.
 COPY shifter_platform/shared /opt/shifter-libs/shared
@@ -108,11 +133,15 @@ RUN mkdir -p /opt/terraform-providers && \
 # that add a mounted writable volume must mount it at this path so
 # terraform_base can stage modules and write `.terraform/`,
 # `.terraform.lock.hcl`, and `terraform.tfvars.json`.
+# KUBECACHEDIR points kubectl's discovery cache at the writable /tmp mount so
+# the GDC VM Runtime `kubectl virt` power op works under a read-only root
+# filesystem (issue #614); kubectl creates the directory on first use.
 ENV HOME=/home/appuser \
     PULUMI_HOME=/home/appuser/.pulumi \
     TF_PLUGIN_CACHE_DIR=/home/appuser/.terraform.d/plugin-cache \
     TF_CLI_CONFIG_FILE=/app/terraform.tfrc \
     TERRAFORM_WORKSPACE_DIR=/var/run/provisioner/workspace \
+    KUBECACHEDIR=/tmp/.kube-cache \
     PYTHONPATH=/opt/shifter-libs
 
 # Drop privileges before invoking Terraform/Pulumi. Numeric UID:GID is used

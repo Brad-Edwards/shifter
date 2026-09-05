@@ -13,9 +13,10 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from engine import cancel_range, cancel_range_by_request, create_range
+from engine import cancel_range, cancel_range_by_request
 from engine.models import ProvisionerLaunchIntent, Range
 from engine.models._launch import InterruptState
+from engine.services import create_raes_range
 from shared.enums import ResourceStatus
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
@@ -62,6 +63,16 @@ def _request_spec(user_id):
                 ],
             )
         ],
+    )
+
+
+def create_range(spec, *, workspace_id):
+    """Persist through the authoritative RAES engine seam."""
+    return create_raes_range(
+        request_id=spec.request_id,
+        user_id=spec.user_id,
+        compiled_plan={"kind": "raes_provisioning_plan", "raes_version": "2.0", "resources": {}},
+        workspace_id=workspace_id,
     )
 
 

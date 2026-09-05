@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import psycopg
-from cyberscript.enums import ResourceStatus
+from shared.enums import ResourceStatus
 from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
 from shared.operation_results import build_result_identity, parse_result_payload, result_kind_for
 

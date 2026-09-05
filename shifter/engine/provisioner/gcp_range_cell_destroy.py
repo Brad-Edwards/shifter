@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from config import GCERangeCellConfig, load_gce_range_cell_config, range_cell_config_for_slot
+from config import GCERangeCellConfig, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_credentials import (
     GCEGuestSecretOps,
@@ -16,6 +16,7 @@ from gcp_range_cell_ops import _delete_resource, _get_or_none, _wait_for_operati
 from gcp_range_cell_plan import render_range_cell_plan
 from gcp_range_cell_types import RangeCellPlan, ResourceDict
 from provisioner_db import get_range_data_by_request_id
+from range_placement import resolve_placement_from_range_data
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,22 @@ def _destroy_instances(plan: RangeCellPlan, clients: GCEClients, secret_ops: GCE
 
 
 def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None:
-    """Delete firewalls, subnets, and (when range-owned) the VPC itself."""
+    """Delete the range-owned router/NAT, firewalls, subnets, and (when range-owned) the VPC."""
+    # The range-owned Cloud Router (carrying the Cloud NAT) references this range's
+    # subnets, so it is torn down before them (PLAT-238). Absent for a `none` range.
+    router_nat = plan.get("router_nat")
+    if router_nat is not None:
+        _delete_resource(
+            plan,
+            clients,
+            clients.routers.get,
+            clients.routers.delete,
+            "region",
+            project=plan["project_id"],
+            region=plan["region"],
+            router=router_nat["router_name"],
+        )
+
     for firewall in reversed(plan["firewalls"]):
         _delete_resource(
             plan,
@@ -162,18 +178,20 @@ def destroy_range_cell(
     # but the range's reserved pool slot (ADR-008-R7) is read so the plan renders
     # consistently with provision. The row exists while the range is DESTROYING.
     range_data = get_range_data_by_request_id(request_uuid)
-    # Bind the config to this range's zone before anything reads region/zone:
-    # the fleet spans regions because Compute CPU quota is per project per
-    # region. Derived from the allocation slot, so destroy resolves identically.
-    _slot = int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
-    resolved_config = range_cell_config_for_slot(resolved_config, _slot)
+    # Bind the config to this range's realized zone (stored on the row at range
+    # creation) before anything reads region/zone. Destroy reconstructs the exact
+    # zone the range was placed in -- never a recomputation against a pool that may
+    # have changed since -- so it cannot look in the wrong region and strand
+    # resources. Empty placement keeps the scalar single-zone config.
+    range_host_pool_slot = int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+    resolved_config = resolve_placement_from_range_data(resolved_config, range_data)
     plan = render_range_cell_plan(
         request_uuid,
         variables,
         resolved_config,
         require_images=False,
         vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
-        range_host_pool_slot=(_slot),
+        range_host_pool_slot=range_host_pool_slot,
     )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()

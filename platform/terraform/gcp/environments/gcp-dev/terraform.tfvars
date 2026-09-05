@@ -22,49 +22,20 @@ gke_master_ipv4_cidr = "172.16.0.0/28"
 gke_master_authorized_cidrs = []
 range_network_cidr          = "10.50.0.0/16"
 
-# Event capacity (KeplerOps CTF, 300 concurrent ranges). The cluster is REGIONAL,
-# so *_node_count is PER ZONE and multiplies by 3.
-#
-# THESE COUNTS ARE CAPPED BY AN IP RANGE, NOT BY QUOTA OR COST.
-#
-# All three pools below share the `gke-provisioner-pods` secondary range
-# (10.46.0.0/20) at maxPodsPerNode=110. GKE carves a /24 out of that range per
-# node, so the range holds 4096/256 = 16 nodes TOTAL across all three pools
-# combined. The range reports utilization 1.0 today. Any apply that asks for
-# more than 16 nodes between these pools does not fail fast -- it hangs retrying
-# node creation against an exhausted range ("IP space of subnet ... is
-# exhausted") and blocks the deploy before Helm ever runs.
-#
-#   web         3/zone x3 = 9 nodes ]
-#   workers     1/zone x3 = 3 nodes ]- 15 of the 16 the /20 can hold
-#   provisioner 1/zone x3 = 3 nodes ]
-#
-# Real event capacity does NOT come from these pools. The cluster's default pod
-# range `gke-pods` (10.44.0.0/16) holds 256 nodes and was sitting entirely
-# unused; the workload pool carrying guacd/guacamole-client/portal lives there
-# instead. Growing event capacity means adding nodes on `gke-pods`, never
-# raising the counts below.
-#
-# The durable fix is to move these pools onto `gke-pods` too, which requires
-# REPLACING them (pod range is immutable on an existing pool) and so is a
-# planned migration, not a tfvars edit. Same reason web/workers stay on
-# e2-standard-4: a machine_type change also forces pool replacement.
-#
-# Capacity is STATIC deliberately: an HPA scales only after CPU climbs, which is
-# the wrong shape when 300 participants connect inside the same few minutes.
-# Scale back down after the event.
 web_machine_type         = "e2-standard-4"
 worker_machine_type      = "e2-standard-4"
 provisioner_machine_type = "n2-standard-8"
+access_machine_type      = "e2-standard-4"
 
-web_node_count         = 3
+web_node_count         = 1
 worker_node_count      = 1
 provisioner_node_count = 1
+access_node_count      = 1
 
 cloud_sql_database_version  = "POSTGRES_15"
-cloud_sql_tier              = "db-custom-8-30720"
-cloud_sql_availability_type = "REGIONAL"
-cloud_sql_disk_size_gb      = 100
+cloud_sql_tier              = "db-custom-1-3840"
+cloud_sql_availability_type = "ZONAL"
+cloud_sql_disk_size_gb      = 20
 cloud_sql_database_name     = "shifter"
 cloud_sql_user_name         = "shifter"
 
@@ -72,7 +43,7 @@ cloud_sql_user_name         = "shifter"
 # AUTH and SERVER_AUTHENTICATION TLS are enforced unconditionally by the
 # platform-core module regardless of tier (ADR-008-R6, #963).
 redis_tier           = "STANDARD_HA"
-redis_memory_size_gb = 16
+redis_memory_size_gb = 1
 
 public_hostname         = "shifter.example.com"
 enable_managed_tls      = true

@@ -62,8 +62,11 @@ if __name__ == "__main__":
     )
     raes_range_parser.add_argument(
         "operation",
-        choices=["provision", "destroy"],
-        help="Operation to perform: provision (create) or destroy (teardown)",
+        choices=["provision", "destroy", "activate"],
+        help=(
+            "Operation to perform: provision (create), destroy (teardown), or "
+            "activate (hand a claimed warm generation to its claimant, #28)"
+        ),
     )
     raes_range_parser.add_argument(
         "--request-id",
@@ -109,12 +112,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.resource == "raes-range":
-        from raes_range_ops import run_raes_range_destroy, run_raes_range_provision
+        from raes_range_ops import (
+            run_raes_range_activate,
+            run_raes_range_destroy,
+            run_raes_range_provision,
+        )
 
         logger.info("Starting RAES range %s for request_id=%s", args.operation, args.request_id)
         logger.info(_ENVIRONMENT_LOG, os.environ.get("ENVIRONMENT", "unknown"))
         if args.operation == "provision":
             run_raes_range_provision(args.request_id, operation_id=args.operation_id)
+        elif args.operation == "activate":
+            run_raes_range_activate(args.request_id, operation_id=args.operation_id)
         else:
             run_raes_range_destroy(args.request_id, operation_id=args.operation_id)
         logger.info("Completed RAES range %s for request_id=%s", args.operation, args.request_id)

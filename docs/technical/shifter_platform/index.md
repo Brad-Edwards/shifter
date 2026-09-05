@@ -154,6 +154,15 @@ new authority model or feature flag.
 - [Organization/workspace admin console](org-workspace-admin-console.md): the
   `/api/v1/workspaces/context/` projection, staff-session boundary, and SPA
   shell/routing/selection.
+- [User lifecycle administration](user-lifecycle-administration.md): the
+  `management.lifecycle` transition service and `UserProfile.suspended_at`
+  discriminator, inactive-account authentication enforcement, the Django
+  password-reset dispatcher, and the bounded ownership-transfer command
+  (ADR-046-R13).
+- [Range-to-workspace scoping administration](range-workspace-scoping-administration.md):
+  the CMS list and expected-source compare-and-set rebind seams, the owner/admin
+  workspace scope operations, the Engine compare-and-set facade, and the
+  fail-closed handling of domain-owned aggregates (ADR-046-R14).
 
 ## Audit logging
 
@@ -162,3 +171,6 @@ are visible through Django admin and the staff-session-only `/api/v1/audit/`
 read API.
 
 - [Audit system architecture](../../architecture/audit-system-architecture.md)
+- [Administrator audit and activity history](admin-audit-activity.md): the
+  hardened `/api/v1/audit/` read API, its typed filters, and the staff-facing
+  `/administer/audit` SPA surface.

@@ -21,6 +21,20 @@ export type PaginatedAdminUserListItemList = components["schemas"]["PaginatedAdm
 export type OrganizerGrantResult = components["schemas"]["OrganizerGrantResult"];
 
 /**
+ * User lifecycle administration types (#1943, PLAT-236). The `management`
+ * transition service + composition-root transfer command and their DRF
+ * serializers are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. `lifecycle_state` and `available_actions` on
+ * `AdminUserDetail` are server-derived; the SPA never reconstructs transition or
+ * reset-eligibility policy from them.
+ */
+export type AccountLifecycleAction = components["schemas"]["LifecycleTransitionRequestActionEnum"];
+export type LifecycleTransitionRequest = components["schemas"]["LifecycleTransitionRequest"];
+export type TransferOwnershipRequest = components["schemas"]["TransferOwnershipRequest"];
+export type TransferOwnershipResult = components["schemas"]["TransferOwnershipResult"];
+export type TransferOwnershipResourceKind = components["schemas"]["TransferOwnershipRequest"]["resource_kinds"][number];
+
+/**
  * Organization/workspace admin console types (#1938, PLAT-231), re-exported from
  * the generated OpenAPI schema. The `workspaces.services` projection + DRF
  * serializer are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
@@ -51,6 +65,17 @@ export type PaginatedOrganizationProfileList = components["schemas"]["PaginatedO
 export type Workspace = components["schemas"]["Workspace"];
 export type CreateWorkspaceRequest = components["schemas"]["CreateWorkspace"];
 export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferWorkspaceOwnership"];
+// Workspace network egress policy (#1945, PLAT-238). The workspace-selectable
+// subset of the canonical RangeEgressMode vocabulary; the server re-validates and
+// authorizes every change.
+export type WorkspaceEgressPolicy = components["schemas"]["EgressPolicyEnum"];
+export type SetWorkspaceEgressPolicyRequest = components["schemas"]["SetWorkspaceEgressPolicy"];
+// Workspace resource quotas & usage (#1946, PLAT-239). Read-only projection of
+// usage against configured limits plus recent quota decisions; policy authoring
+// is a superuser-only Django-admin escape hatch, never a SPA surface.
+export type WorkspaceQuota = components["schemas"]["WorkspaceQuota"];
+export type WorkspaceQuotaResource = components["schemas"]["WorkspaceQuotaResource"];
+export type WorkspaceQuotaDecision = components["schemas"]["WorkspaceQuotaDecision"];
 
 /**
  * Workspace membership & roles types (#1941, PLAT-234), re-exported from the
@@ -63,6 +88,23 @@ export type TransferWorkspaceOwnershipRequest = components["schemas"]["TransferW
 export type WorkspaceMembership = components["schemas"]["WorkspaceMembership"];
 export type AddWorkspaceMemberRequest = components["schemas"]["AddWorkspaceMember"];
 export type ChangeWorkspaceMemberRoleRequest = components["schemas"]["ChangeWorkspaceMemberRole"];
+
+/** Signed workspace invitation administration contracts (#1942, PLAT-235). */
+export type WorkspaceInvitation = components["schemas"]["WorkspaceInvitation"];
+export type IssueWorkspaceInvitationRequest = components["schemas"]["IssueWorkspaceInvitation"];
+
+/**
+ * Range-to-workspace scope administration types (#1944, PLAT-237), re-exported
+ * from the generated OpenAPI schema. The `cms.services` scope-admin seam + DRF
+ * serializers are authoritative; regenerate `schema.d.ts` via `npm run gen:api`
+ * rather than hand-copying. Ranges are addressed by their public request UUID and
+ * workspaces by their public UUID; `is_reassignable` is a server-derived
+ * affordance and the endpoints reauthorize every call.
+ */
+export type RangeScopeBinding = components["schemas"]["RangeScopeBinding"];
+export type PaginatedRangeScopeBindingList = components["schemas"]["PaginatedRangeScopeBindingList"];
+export type RangeWorkspaceRebindRequest = components["schemas"]["RangeWorkspaceRebindRequest"];
+export type RangeWorkspaceRebindResult = components["schemas"]["RangeWorkspaceRebindResult"];
 
 /**
  * Mission Control domain types (#1370), re-exported from the generated OpenAPI
@@ -95,32 +137,20 @@ export type UploadInitiateResponse = components["schemas"]["UploadInitiateRespon
 export type UploadCompleteResponse = components["schemas"]["UploadCompleteResponse"];
 
 /**
- * Scenario Editor domain types (#1371), re-exported from the generated OpenAPI
- * schema. The backend serializers (mirroring the Pydantic `ScenarioTemplate`)
- * remain the authoritative validator; do not hand-copy these shapes — regenerate
- * `schema.d.ts` via `npm run gen:api` instead.
+ * Read-only RAES catalog types, re-exported from the generated OpenAPI schema.
+ * Do not hand-copy these shapes — regenerate `schema.d.ts` via
+ * `npm run gen:api` instead.
  */
 export type ScenarioCatalogEntry = components["schemas"]["CatalogEntry"];
 export type ScenarioDetail = components["schemas"]["ScenarioDetail"];
-export type ScenarioInstance = components["schemas"]["ScenarioInstance"];
-export type ScenarioSubnet = components["schemas"]["ScenarioSubnet"];
-export type ScenarioDCConfig = components["schemas"]["DCConfig"];
-export type ScenarioCreate = components["schemas"]["ScenarioCreate"];
-export type ScenarioUpdate = components["schemas"]["PatchedScenarioUpdate"];
-export type ScenarioClone = components["schemas"]["ScenarioClone"];
 export type ScenarioMetadataUpdate = components["schemas"]["PatchedScenarioMetadataUpdate"];
-export type ScenarioCreated = components["schemas"]["ScenarioCreated"];
-export type ScenarioExport = components["schemas"]["ScenarioExport"];
 export type ScenarioMetadataState = components["schemas"]["ScenarioMetadataState"];
 export type ScenarioRaesFields = components["schemas"]["RaesCatalogFields"];
 export type ScenarioRealizability = components["schemas"]["ScenarioRealizability"];
 export type ScenarioRealizabilityGap = components["schemas"]["RealizabilityGap"];
-export type ScenarioYamlValidation = components["schemas"]["YAMLValidationResult"];
-export type ScenarioInstanceRole = components["schemas"]["ScenarioInstanceRoleEnum"];
-export type ScenarioInstanceOsType = components["schemas"]["ScenarioInstanceOsTypeEnum"];
 
 /** Scenario source classification the detail endpoint returns in `source`. */
-export type ScenarioSource = "builtin" | "custom" | "raes" | "ctf";
+export type ScenarioSource = "raes";
 
 /**
  * RAES image registry types (#1566), re-exported from the generated OpenAPI
@@ -137,14 +167,6 @@ export const RAES_IMAGE_PROVIDERS: ReadonlyArray<{ value: RaesImageProvider; lab
   { value: "gce", label: "Google Compute Engine" },
   { value: "aws", label: "AWS EC2" },
 ];
-
-/**
- * Runtime option lists for the structured editor. Typed against the generated
- * enums so an invalid value fails typecheck; the backend serializer + Pydantic
- * schema stay authoritative (these are UI affordances only).
- */
-export const INSTANCE_ROLES: readonly ScenarioInstanceRole[] = ["attacker", "victim", "dc"];
-export const INSTANCE_OS_TYPES: readonly ScenarioInstanceOsType[] = ["kali", "windows", "ubuntu", "from_agent"];
 
 /**
  * CTF participant workspace domain types (#1372), re-exported from the generated
@@ -183,6 +205,8 @@ export type CtfEventWrite = components["schemas"]["EventWrite"];
 export type CtfEventListResponse = components["schemas"]["EventListResponse"];
 export type CtfEventMutationResult = components["schemas"]["EventMutationResult"];
 export type CtfForceDeleteEventResult = components["schemas"]["ForceDeleteEventResult"];
+export type CtfEventContentRefreshRequest = components["schemas"]["EventContentRefreshRequest"];
+export type CtfEventContentRefreshResult = components["schemas"]["EventContentRefreshResult"];
 export type CtfScenarioRef = components["schemas"]["CtfScenarioRef"];
 export type CtfScenarioListResponse = components["schemas"]["CtfScenarioListResponse"];
 export type CtfChallengeSummary = components["schemas"]["ChallengeSummary"];

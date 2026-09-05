@@ -246,3 +246,73 @@ def test_unknown_workspace_uuid_is_an_opaque_denial(admin):
 
     # A workspace the actor cannot see and one that does not exist look identical.
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# egress policy (PLAT-238, #1945)
+# ---------------------------------------------------------------------------
+
+
+def _egress(workspace_uuid) -> str:
+    return _detail(workspace_uuid) + "egress-policy/"
+
+
+def test_detail_exposes_the_egress_policy(organization, admin):
+    workspace = _make_workspace(admin, organization)
+
+    body = _client(admin).get(_detail(workspace.uuid)).json()
+
+    assert body["egress_policy"] == "status-quo"
+
+
+def test_owner_sets_egress_policy_via_put(organization, admin):
+    workspace = _make_workspace(admin, organization)
+
+    response = _client(admin).put(_egress(workspace.uuid), {"egress_policy": "none"}, format="json")
+
+    assert response.status_code == 200
+    assert response.json()["egress_policy"] == "none"
+    workspace.refresh_from_db()
+    assert workspace.egress_policy == "none"
+
+
+def test_bare_member_cannot_set_egress_policy(organization, admin, django_user_model):
+    workspace = _make_workspace(admin, organization)
+    member = _user(django_user_model, "egress-member")
+    WorkspaceMembership.objects.create(workspace=workspace, user=member, role=WorkspaceRole.MEMBER.value)
+
+    response = _client(member).put(_egress(workspace.uuid), {"egress_policy": "none"}, format="json")
+
+    assert response.status_code == 403
+    workspace.refresh_from_db()
+    assert workspace.egress_policy == "status-quo"
+
+
+def test_set_egress_policy_rejects_a_deployment_only_mode(organization, admin):
+    workspace = _make_workspace(admin, organization)
+
+    response = _client(admin).put(_egress(workspace.uuid), {"egress_policy": "deny-all"}, format="json")
+
+    assert response.status_code == 400
+    workspace.refresh_from_db()
+    assert workspace.egress_policy == "status-quo"
+
+
+def test_set_egress_policy_rejects_an_unknown_field(organization, admin):
+    workspace = _make_workspace(admin, organization)
+
+    response = _client(admin).put(
+        _egress(workspace.uuid),
+        {"egress_policy": "none", "allowed_cidrs": ["10.0.0.0/8"]},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    workspace.refresh_from_db()
+    assert workspace.egress_policy == "status-quo"
+
+
+def test_set_egress_policy_on_unknown_workspace_is_opaque(admin):
+    response = _client(admin).put(_egress(uuid.uuid4()), {"egress_policy": "none"}, format="json")
+
+    assert response.status_code == 403

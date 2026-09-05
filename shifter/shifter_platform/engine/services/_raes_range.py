@@ -1,15 +1,9 @@
-"""Engine-side creation + dispatch for the RAES-native provisioning path (ADR-031).
+"""Engine-side creation and dispatch for the canonical RAES path (ADR-031).
 
-Parallel to :func:`engine.services.create_range` (the cyberscript path), but the
-persisted truth is the serialized RAES ``ProvisioningPlan`` stored in
-``mission_control_range.range_config`` (reused, no new table), realized by the
-provisioner's ``raes-range`` command. The cyberscript ``create_range`` /
-``interpret`` bodies are untouched (ADR-031-R2).
-
-This module is reached only through the RAES dispatch port
-(``cms.raes.dispatch``) which is constructed behind the
-``SHIFTER_RAES_NATIVE_PROVISIONING`` flag; nothing here runs on the cyberscript
-path.
+The persisted truth is the serialized RAES ``ProvisioningPlan`` stored in
+``mission_control_range.range_config`` and realized by the provisioner's
+``raes-range`` command. This module is reached through the RAES dispatch port
+(``cms.raes.dispatch``) and is the only range-creation authority.
 """
 
 from __future__ import annotations
@@ -21,6 +15,7 @@ from uuid import UUID, uuid4
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
+from installation.range_egress import RangeEgressMode
 
 from engine.ecs import start_raes_range_provisioning
 from shared.enums import RequestType
@@ -28,12 +23,17 @@ from shared.raes.artifact_binding import ArtifactBinding
 from shared.raes.content_delivery import DeliveryBinding
 from shared.raes.participant_access import ParticipantAccessBinding
 
+from ._common import _persist_task_arn
 from ._range_backend_binding import (
+    assert_backend_supports_egress_none,
     backend_binding_fields,
+    egress_binding_fields,
     require_workspace_binding,
     verify_existing_binding,
+    verify_existing_egress_binding,
     verify_existing_workspace_binding,
 )
+from ._range_placement import select_placement_zone
 
 if TYPE_CHECKING:
     from engine.models import Range
@@ -74,6 +74,7 @@ def create_raes_range(
     user_id: int,
     compiled_plan: dict[str, Any],
     workspace_id: int,
+    egress_mode: str = RangeEgressMode.STATUS_QUO.value,
     backend_admission: BackendAdmission | None = None,
     bindings: RangeBindings | None = None,
 ) -> RaesRangeRef:
@@ -120,8 +121,8 @@ def create_raes_range(
     re-resolves; on the idempotent reuse path they are not re-created.
     """
     bindings = bindings or RangeBindings()
-    # Imported lazily (like the cyberscript ``create_range`` path) so importing
-    # the ``engine`` app does not define models before the app registry is ready.
+    # Imported lazily so importing the ``engine`` app does not define models
+    # before the app registry is ready.
     from engine.models import (
         RaesArtifactSatisfactionBinding,
         RaesContentDeliveryBinding,
@@ -137,17 +138,24 @@ def create_raes_range(
     if existing is not None:
         verify_existing_binding(existing, request_uuid, backend_admission)
         verify_existing_workspace_binding(existing, request_uuid, workspace_id)
+        verify_existing_egress_binding(existing, request_uuid, egress_mode)
         _verify_existing_participant_access(existing, bindings.participant_access)
         return RaesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
         )
 
     binding_fields = backend_binding_fields(backend_admission)
+    egress_fields = egress_binding_fields(egress_mode)
+    assert_backend_supports_egress_none(binding_fields.get("range_backend"), egress_fields["egress_mode"])
     user_model = get_user_model()
     with transaction.atomic():
         user = user_model.objects.get(id=user_id)
         request = Request.objects.create(request_id=request_uuid, request_type=RequestType.RANGE.value, user=user)
         subnet_index = Range.allocate_subnet_index()
+        # #2029 realized multi-region placement: pick the zone from the
+        # RANGE_NETWORK_ZONES pool in the same transaction as the slot (empty keeps
+        # single-zone). The provisioner reads it back and never recomputes.
+        placement_zone = select_placement_zone(subnet_index - 1)
         range_obj = Range.objects.create(
             uuid=uuid4(),
             user=user,
@@ -155,9 +163,11 @@ def create_raes_range(
             cms_user_id=user_id,
             status=Range.Status.PROVISIONING,
             subnet_index=subnet_index,
+            placement_zone=placement_zone,
             range_config=compiled_plan,
             workspace_id=workspace_id,
             **binding_fields,
+            **egress_fields,
         )
         RaesContentDeliveryBinding.objects.bulk_create(
             RaesContentDeliveryBinding(
@@ -207,12 +217,14 @@ def create_raes_range(
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
     try:
-        start_raes_range_provisioning(request_uuid)
+        task_ref = start_raes_range_provisioning(request_uuid)
     except Exception:
         range_obj.status = Range.Status.FAILED
         range_obj.error_message = "Provisioning dispatch failed"
         range_obj.save(update_fields=["status", "error_message", "updated_at"])
         raise
+    if task_ref:
+        _persist_task_arn(range_obj, "provision", task_ref)
 
     return RaesRangeRef(
         request_id=str(request_uuid), range_id=str(range_obj.uuid), status=range_obj.status, accepted=True

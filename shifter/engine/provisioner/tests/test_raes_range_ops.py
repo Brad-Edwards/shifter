@@ -24,7 +24,8 @@ from shared.raes.operation_input import RaesOperationInput
 from shared.raes.participant_access import ParticipantAccessBinding
 
 import raes_range_ops
-from config import GCERangeImageProfile
+import range_placement
+from config import GCERangeCellConfig, GCERangeImageProfile
 from raes_plan import RAES_PROVISIONING_PLAN_CONTRACT_VERSION, RaesPlan, RaesPlanImage, RaesPlanNode
 
 _OPERATION_ID = "11111111-2222-3333-4444-555555555555"
@@ -78,6 +79,7 @@ def _projection(**overrides) -> RaesOperationInput:
         "range_backend": "gce",
         "instantiation_purpose": "live_fire",
         "legacy_range_id": 7,
+        "egress_mode": "status-quo",
         "_image_candidates": {},
     }
     kwargs.update(overrides)
@@ -93,10 +95,14 @@ def patched(monkeypatch):
         load_config=MagicMock(),
         append=MagicMock(),
         read_input=MagicMock(side_effect=lambda *a, **k: _run()),
+        get_range_data=MagicMock(return_value={"subnet_index": 1, "placement_zone": ""}),
     )
     calls.load_config.return_value = calls.config
     monkeypatch.setattr(raes_range_ops, "get_raes_operation_input", calls.read_input)
     monkeypatch.setattr(raes_range_ops, "load_gce_range_cell_config", calls.load_config)
+    # Placement is read from the range row in range_placement; stub the DB read
+    # there so the RAES lifecycle never touches the real database.
+    monkeypatch.setattr(range_placement, "get_range_data_by_request_id", calls.get_range_data)
     monkeypatch.setattr(raes_range_ops, "apply_raes_range_cell", calls.apply)
     monkeypatch.setattr(raes_range_ops, "destroy_raes_range_cell", calls.destroy)
     monkeypatch.setattr(raes_range_ops, "append_operation_step_result", calls.append)
@@ -259,6 +265,13 @@ class TestProvision:
         assert [n.address for n in raes_plan.nodes] == ["node.web"]
         patched.load_config.assert_called_once_with(backend="gce")
         assert patched.apply.call_args.kwargs["options"].config is patched.config
+
+    def test_forwards_the_pinned_egress_mode_from_the_projection(self, patched):
+        # The pinned egress posture rides the operation input and must reach the
+        # realizer; dropping it would silently give the range the default posture.
+        patched.read_input.side_effect = lambda *a, **k: _run(egress_mode="none")
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+        assert patched.apply.call_args.kwargs["options"].egress_mode == "none"
 
     def test_forwards_content_delivery_bindings_from_the_projection(self, patched):
         # #1564: the bindings gate + realize source-backed content delivery. They
@@ -530,3 +543,49 @@ class TestRegistryResolver:
         legacy.assert_not_called()
         assert profile.source_image == "projects/x/global/images/fenced"
         assert profile.machine_type == "e2-medium"
+
+
+class TestMultiRegionZonePoolPlacement:
+    """The RAES lifecycle binds the pooled zone into the config it hands the
+    apply/destroy realizers -- the same seam the legacy lifecycle uses, so the
+    feature fires on the RAES-native path too. Placement is derived from the
+    range's persisted allocation slot (``subnet_index - 1``), so provision and
+    destroy resolve the same zone.
+    """
+
+    @staticmethod
+    def _pooled_config() -> GCERangeCellConfig:
+        return GCERangeCellConfig(
+            project_id="proj",
+            region="us-central1",
+            zone="us-central1-a",
+            network_mode="shared-vpc",
+            network_id="projects/proj/global/networks/range",
+        )
+
+    def test_provision_binds_the_stored_placement_zone(self, patched):
+        patched.load_config.return_value = self._pooled_config()
+        patched.get_range_data.return_value = {"subnet_index": 2, "placement_zone": "us-east4-a"}
+
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        bound = patched.apply.call_args.kwargs["options"].config
+        assert (bound.zone, bound.region) == ("us-east4-a", "us-east4")
+
+    def test_destroy_binds_the_same_stored_zone(self, patched):
+        patched.load_config.return_value = self._pooled_config()
+        patched.get_range_data.return_value = {"subnet_index": 2, "placement_zone": "us-east4-a"}
+
+        raes_range_ops.run_raes_range_destroy("req-1", operation_id=_OPERATION_ID)
+
+        bound = patched.destroy.call_args.kwargs["config"]
+        assert (bound.zone, bound.region) == ("us-east4-a", "us-east4")
+
+    def test_no_stored_placement_leaves_the_configured_scalar_zone(self, patched):
+        patched.load_config.return_value = self._pooled_config()
+        patched.get_range_data.return_value = {"subnet_index": 2, "placement_zone": ""}
+
+        raes_range_ops.run_raes_range_provision("req-1", operation_id=_OPERATION_ID)
+
+        bound = patched.apply.call_args.kwargs["options"].config
+        assert (bound.zone, bound.region) == ("us-central1-a", "us-central1")

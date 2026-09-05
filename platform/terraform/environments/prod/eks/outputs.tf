@@ -46,14 +46,19 @@ output "workload_role_arns" {
 }
 
 output "runtime_env" {
-  description = "Validated non-secret runtime bindings and secret references consumed by the AWS renderer."
-  value       = var.runtime_env
+  description = "Management-plane runtime bindings merged with the assembled provisioner Job environment, consumed by the AWS renderer."
+  value       = module.eks_provisioner_env.runtime_env
   sensitive   = true
 }
 
 output "ingress_source_cidrs" {
-  description = "Validated ingress source CIDRs consumed by chart network policy."
-  value       = var.ingress_source_cidrs
+  description = "EKS public-subnet CIDRs from which ALB target traffic reaches pods."
+  value       = var.public_subnet_cidrs
+}
+
+output "edge_client_cidrs" {
+  description = "Validated public client CIDRs consumed by the ALB inbound restriction."
+  value       = var.edge_client_cidrs
 }
 
 output "provider_api_cidrs" {

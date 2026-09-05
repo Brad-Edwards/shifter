@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from engine.ssh import SSHConnection
+    from shared.remote_access import TerminalConnection, TerminalConnectionFactory
 
 logger = logging.getLogger(__name__)
 
@@ -147,9 +148,10 @@ def get_owned_instance_request_ref(user: User, instance_uuid: str) -> str | None
             Instance.objects.select_related("request").filter(uuid=instance_uuid, request__user_id=user_id).first()
         )
     except (DjangoValidationError, ValueError):
-        return None
+        instance = None
     # ``request`` is nullable on the model, so an instance whose request row was
-    # detached resolves to no ref rather than raising.
+    # detached resolves to no ref rather than raising. A malformed uuid (caught
+    # above) lands here as ``instance = None`` and resolves to no ref too.
     if instance is None or instance.request is None:
         return None
     return str(instance.request.request_id)
@@ -283,15 +285,29 @@ def get_ssh_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
     }
 
 
-def connect_terminal(user: User, instance_uuid: str) -> SSHConnection:
-    """Get SSH connection to instance."""
-    from engine.ssh import SSHConnection
+def connect_terminal(
+    user: User,
+    instance_uuid: str,
+    *,
+    connection_factory: TerminalConnectionFactory | None = None,
+) -> TerminalConnection:
+    """Get a terminal connection to an instance.
 
+    Ownership, READY state, declared-channel, and secret resolution all run
+    first; only then is ``connection_factory`` invoked with the authorized
+    connection facts. It defaults to :func:`engine.ssh.build_ssh_connection`
+    (a real ``asyncssh`` transport); a caller may inject a fake with the same
+    keyword-only signature to drive tests without a live connection or a
+    library patch (issue #993).
+    """
+    from engine.ssh import build_ssh_connection
+
+    factory = connection_factory or build_ssh_connection
     ssh_info = get_ssh_connection_info(user, instance_uuid)
     # Windows doesn't have tmux, so skip session_id for Windows
     session_id = None if ssh_info["os_type"] == "windows" else instance_uuid
 
-    return SSHConnection(
+    return factory(
         host=ssh_info["host"],
         username=ssh_info["username"],
         private_key=ssh_info["private_key"],

@@ -41,13 +41,18 @@ from shared.range_instantiation_policy import (
 )
 
 from cloud.exceptions import CloudError
-from config import GCERangeImageProfile, load_gce_range_cell_config
+from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
-from provisioner_db_operation_input import RaesOperationRun, get_raes_operation_input
+from provisioner_db_operation_input import (
+    RaesOperationRun,
+    get_activation_operation_input,
+    get_raes_operation_input,
+)
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, apply_raes_range_cell, destroy_raes_range_cell
 from raes_plan import RaesPlanNode, parse_plan
 from raes_snapshot import snapshot_resources
+from range_placement import resolve_range_cell_placement
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +119,18 @@ def _require_gce_live_fire_binding(operation_input: RaesOperationInput) -> str:
     if not admission.admitted:
         raise _binding_error(admission.reason, admission.code)
     return admission.backend
+
+
+def _config_for_range_placement(request_id: str, config: GCERangeCellConfig) -> GCERangeCellConfig:
+    """Bind ``config`` to this range's realized zone before any plan/cloud work.
+
+    The RAES lifecycle boundary is the symmetric counterpart of the legacy
+    ``gcp_range_cells`` binding: it reads the zone chosen at range creation and
+    stored on the row, so provision and destroy target the exact same zone and
+    teardown never recomputes against a pool that may have changed. An empty stored
+    zone returns the config unchanged, preserving single-region behaviour.
+    """
+    return resolve_range_cell_placement(request_id, config)
 
 
 def _registry_resolver(operation_input: RaesOperationInput) -> Callable[[RaesPlanNode], GCERangeImageProfile]:
@@ -242,13 +259,14 @@ def run_raes_range_provision(request_id: str, *, operation_id: str | None = None
     try:
         backend = _require_gce_live_fire_binding(operation_input)
         config = load_gce_range_cell_config(backend=backend)
+        config = _config_for_range_placement(request_id, config)
         raes_plan = parse_plan(operation_input.plan)
         apply_result = apply_raes_range_cell(
             request_id,
             range_id,
             raes_plan,
             _registry_resolver(operation_input),
-            options=RaesGceApplyOptions(config=config),
+            options=RaesGceApplyOptions(config=config, egress_mode=operation_input.egress_mode),
             delivery_bindings=operation_input.binding_transport(),
             access_bindings=operation_input.access_binding_transport(),
         )
@@ -309,6 +327,57 @@ def _realized_members(apply_result: dict[str, object]) -> list[dict[str, object]
     return members
 
 
+def run_raes_range_activate(request_id: str, *, operation_id: str | None = None) -> None:
+    """Hand a claimed warm generation to its claimant (#28).
+
+    Scrubs every pre-claim credential/access identity, realizes the claimant's
+    fresh access, and negatively verifies the pre-claim access is revoked, then
+    reports ``running`` -> snapshot -> ``ready`` with the claimant's realized
+    member/access projection. Any failure reports a terminal failure with a closed
+    reason code; the Engine applier fails the generation and it is retired through
+    the canonical destroy lifecycle rather than handed over.
+    """
+    from uuid import UUID
+
+    from raes_gcp_activate import activate_raes_range_cell, default_activation_ops
+
+    operation = "activate"
+    provisional_ref, generation = _require_generation(request_id, operation_id, operation)
+    try:
+        run = get_activation_operation_input(generation, request_id=request_id)
+    except Exception:
+        _report_failure(
+            provisional_ref, operation, "operation input could not be read or validated", _INPUT_REASON_CODE
+        )
+        raise
+    ref = OperationRef(request_id=run.request_id, operation_id=run.operation_id)
+    activation = run.input
+
+    logger.info("Starting RAES range activation for request_id=%s", request_id)
+    _report(ref, operation, ResultStep.RAES_ACTIVATE_RUNNING, {"raes_status": "running"})
+    try:
+        result = activate_raes_range_cell(
+            activation=activation,
+            prepared_generation=UUID(activation.prepared_generation_fence),
+            activate_generation=UUID(run.operation_id),
+            ops=default_activation_ops(),
+        )
+        raes_plan = parse_plan(activation.raes_input.plan)
+        verified = {
+            *(item.address for item in raes_plan.content),
+            *(account.address for account in raes_plan.accounts),
+            *(feature.address for feature in raes_plan.features),
+        }
+        resources = snapshot_resources(raes_plan, verified)
+    except Exception as exc:
+        reason_code, diagnostic = _classify_failure(exc, "raes range activate")
+        logger.error("RAES range activation failed for request_id=%s", request_id)
+        _report_failure(ref, operation, diagnostic, reason_code)
+        raise
+    _report(ref, operation, ResultStep.RAES_ACTIVATE_SNAPSHOT, {"resources": resources})
+    _report(ref, operation, ResultStep.RAES_TERMINAL_READY, {"raes_status": "succeeded", "members": result.members})
+
+
 def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) -> None:
     """Tear down every GCE resource owned by an RAES range cell for a generation."""
     operation = "destroy"
@@ -323,6 +392,7 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
     try:
         backend = _require_gce_live_fire_binding(operation_input)
         config = load_gce_range_cell_config(backend=backend)
+        config = _config_for_range_placement(request_id, config)
         raes_plan = parse_plan(operation_input.plan)
         destroy_raes_range_cell(request_id, range_id, raes_plan, config=config)
     except Exception as exc:

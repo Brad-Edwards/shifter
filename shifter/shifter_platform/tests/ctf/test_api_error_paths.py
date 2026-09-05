@@ -450,19 +450,6 @@ class TestApiParticipantErrorPaths:
             resp = authenticated_organizer_client.post(url, data={"file": upload})
         assert resp.status_code in (403, 400)
 
-    def test_admin_file_upload_permission_error(
-        self, authenticated_organizer_client: Client, ctf_challenge: CTFChallenge
-    ):
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
-        upload = SimpleUploadedFile("c.txt", b"data", content_type="text/plain")
-        with patch("ctf.services.attachment.add_challenge_file", side_effect=CTFPermissionError("p")):
-            resp = authenticated_organizer_client.post(
-                reverse("ctf:admin_challenge_file_upload", kwargs={"challenge_id": ctf_challenge.id}),
-                data={"file": upload},
-            )
-        assert resp.status_code == 403
-
     def test_file_download_participant(
         self,
         authenticated_participant_client: Client,

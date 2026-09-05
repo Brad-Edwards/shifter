@@ -1,7 +1,7 @@
 """Tests for the run_raes_backend_validation management command (#1264).
 
-Covers the flag gate, scenario requirement, and the launch -> wait -> validate ->
-teardown orchestration (with the launch/status/evidence seams mocked so no real
+Covers the scenario requirement and the launch -> wait -> validate -> teardown
+orchestration (with the launch/status/evidence seams mocked so no real
 provisioning runs). The evidence collector itself is tested in
 tests/cms/raes/test_validation.py.
 """
@@ -25,11 +25,6 @@ _MOD = "cms.management.commands.run_raes_backend_validation"
 @pytest.fixture
 def smoke_env(monkeypatch):
     monkeypatch.setenv("SMOKE_TEST_USER_EMAIL", "raes-validation@example.com")
-
-
-@pytest.fixture
-def native_on(settings):
-    settings.RAES_NATIVE_PROVISIONING_ENABLED = True
 
 
 def _valid_summary(request_id):
@@ -56,20 +51,13 @@ def _mock_launch_ready(monkeypatch, request_id, torn):
 
 
 @pytest.mark.django_db
-def test_flag_off_refuses(settings, smoke_env):
-    settings.RAES_NATIVE_PROVISIONING_ENABLED = False
-    with pytest.raises(CommandError):
-        call_command(_CMD, "--scenario", "raes-x")
-
-
-@pytest.mark.django_db
-def test_missing_scenario_refuses(native_on, smoke_env):
+def test_missing_scenario_refuses(smoke_env):
     with pytest.raises(CommandError):
         call_command(_CMD)
 
 
 @pytest.mark.django_db
-def test_happy_path_launches_validates_and_tears_down(native_on, smoke_env, monkeypatch):
+def test_happy_path_launches_validates_and_tears_down(smoke_env, monkeypatch):
     request_id = uuid4()
     torn: dict = {}
     _mock_launch_ready(monkeypatch, request_id, torn)
@@ -81,7 +69,7 @@ def test_happy_path_launches_validates_and_tears_down(native_on, smoke_env, monk
 
 
 @pytest.mark.django_db
-def test_incomplete_evidence_fails_but_still_tears_down(native_on, smoke_env, monkeypatch):
+def test_incomplete_evidence_fails_but_still_tears_down(smoke_env, monkeypatch):
     request_id = uuid4()
     torn: dict = {}
     _mock_launch_ready(monkeypatch, request_id, torn)
@@ -96,7 +84,7 @@ def test_incomplete_evidence_fails_but_still_tears_down(native_on, smoke_env, mo
 
 
 @pytest.mark.django_db
-def test_keep_flag_skips_teardown(native_on, smoke_env, monkeypatch):
+def test_keep_flag_skips_teardown(smoke_env, monkeypatch):
     request_id = uuid4()
     torn: dict = {}
     _mock_launch_ready(monkeypatch, request_id, torn)

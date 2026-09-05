@@ -191,8 +191,8 @@ class TestHintUsage:
 
 
 @pytest.mark.django_db
-class TestHintPurchaseContext:
-    """Tests for hint cost/purchase context variables (CTF-304)."""
+class TestHintPurchaseProjection:
+    """Tests for hint cost fields in the participant SPA API (CTF-304)."""
 
     @pytest.fixture
     def participant_client(self, participant):
@@ -204,54 +204,36 @@ class TestHintPurchaseContext:
         """Context includes next_hint_cost with correct point deduction."""
         # 200-point challenge, 25% penalty hint = 50 pts cost
         CTFHint.objects.create(challenge=active_challenge, text="H1", penalty=25, order=0)
-        url = reverse("ctf:challenge_detail", kwargs={"challenge_id": active_challenge.pk})
+        url = reverse("v1:ctf:api_participant_challenge_detail", kwargs={"challenge_id": active_challenge.pk})
         response = participant_client.get(url)
         assert response.status_code == 200
-        assert response.context["next_hint_cost"] == 50
+        assert response.json()["next_hint_cost"] == 50
 
     def test_points_after_next_hint_in_context(self, participant_client, active_challenge, participant):
         """Context includes points_after_next_hint with correct projected value."""
         # 200-point challenge, 25% penalty = 150 pts after
         CTFHint.objects.create(challenge=active_challenge, text="H1", penalty=25, order=0)
-        url = reverse("ctf:challenge_detail", kwargs={"challenge_id": active_challenge.pk})
+        url = reverse("v1:ctf:api_participant_challenge_detail", kwargs={"challenge_id": active_challenge.pk})
         response = participant_client.get(url)
         assert response.status_code == 200
-        assert response.context["points_after_next_hint"] == 150
-
-    def test_penalty_warning_false_when_below_100(self, participant_client, active_challenge, participant):
-        """penalty_warning is False when projected penalty < 100%."""
-        CTFHint.objects.create(challenge=active_challenge, text="H1", penalty=50, order=0)
-        url = reverse("ctf:challenge_detail", kwargs={"challenge_id": active_challenge.pk})
-        response = participant_client.get(url)
-        assert response.context["penalty_warning"] is False
-
-    def test_penalty_warning_true_at_100(self, participant_client, active_challenge, participant):
-        """penalty_warning is True when projected penalty reaches 100%."""
-        h1 = CTFHint.objects.create(challenge=active_challenge, text="H1", penalty=60, order=0)
-        CTFHint.objects.create(challenge=active_challenge, text="H2", penalty=60, order=1)
-        # Unlock first hint so next hint pushes total to 120 (capped at 100)
-        use_hint(participant.id, h1.id)
-        url = reverse("ctf:challenge_detail", kwargs={"challenge_id": active_challenge.pk})
-        response = participant_client.get(url)
-        assert response.context["penalty_warning"] is True
-        # Points floor at 0 (CTF-203, issue #519).
-        assert response.context["points_after_next_hint"] == 0
+        assert response.json()["points_after_next_hint"] == 150
 
     def test_no_hints_gives_zero_cost(self, participant_client, active_challenge, participant):
         """When no hints exist, cost variables are zero/default."""
-        url = reverse("ctf:challenge_detail", kwargs={"challenge_id": active_challenge.pk})
+        url = reverse("v1:ctf:api_participant_challenge_detail", kwargs={"challenge_id": active_challenge.pk})
         response = participant_client.get(url)
-        assert response.context["next_hint_cost"] == 0
-        assert response.context["points_after_next_hint"] == active_challenge.points
-        assert response.context["penalty_warning"] is False
+        payload = response.json()
+        assert payload["next_hint_cost"] == 0
+        assert payload["points_after_next_hint"] == active_challenge.points
 
     def test_zero_penalty_hint_gives_zero_cost(self, participant_client, active_challenge, participant):
         """A hint with 0% penalty shows zero cost."""
         CTFHint.objects.create(challenge=active_challenge, text="Free hint", penalty=0, order=0)
-        url = reverse("ctf:challenge_detail", kwargs={"challenge_id": active_challenge.pk})
+        url = reverse("v1:ctf:api_participant_challenge_detail", kwargs={"challenge_id": active_challenge.pk})
         response = participant_client.get(url)
-        assert response.context["next_hint_cost"] == 0
-        assert response.context["points_after_next_hint"] == active_challenge.points
+        payload = response.json()
+        assert payload["next_hint_cost"] == 0
+        assert payload["points_after_next_hint"] == active_challenge.points
 
     def test_marginal_cost_with_prior_hints(self, participant_client, active_challenge, participant):
         """next_hint_cost reflects marginal loss, not raw single-hint deduction.
@@ -264,10 +246,11 @@ class TestHintPurchaseContext:
         h1 = CTFHint.objects.create(challenge=active_challenge, text="H1", penalty=60, order=0)
         CTFHint.objects.create(challenge=active_challenge, text="H2", penalty=60, order=1)
         use_hint(participant.id, h1.id)
-        url = reverse("ctf:challenge_detail", kwargs={"challenge_id": active_challenge.pk})
+        url = reverse("v1:ctf:api_participant_challenge_detail", kwargs={"challenge_id": active_challenge.pk})
         response = participant_client.get(url)
-        assert response.context["next_hint_cost"] == 80
-        assert response.context["points_after_next_hint"] == 0
+        payload = response.json()
+        assert payload["next_hint_cost"] == 80
+        assert payload["points_after_next_hint"] == 0
 
 
 # ============================================================================

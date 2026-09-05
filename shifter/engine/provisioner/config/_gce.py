@@ -11,7 +11,7 @@ unchanged.
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from shared.sftp_root import DEFAULT_SFTP_ROOT_BY_OS
 
@@ -42,8 +42,6 @@ __all__ = [
     "GCERangeImageProfile",
     "gce_image_profile_fingerprint",
     "load_gce_range_cell_config",
-    "range_cell_config_for_slot",
-    "range_cell_zone_pool",
 ]
 
 
@@ -283,34 +281,3 @@ def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellCon
         private_google_access=_get_bool_env("GCP_RANGE_PRIVATE_GOOGLE_ACCESS", False),
         host_mgmt_ssh_port=_get_int_env("GCP_RANGE_HOST_MGMT_SSH_PORT", 2222),
     )
-
-
-def range_cell_zone_pool() -> tuple[str, ...]:
-    """Return the configured multi-region zone pool for range cells.
-
-    ``RANGE_NETWORK_ZONES`` is a comma-separated list of fully-qualified GCE
-    zones (for example ``us-central1-a,us-east4-a,us-east1-b``). Empty or unset
-    keeps the single-zone behaviour driven by ``RANGE_NETWORK_ZONE``.
-
-    Compute CPU quota is enforced per project *per region*, so a fleet larger
-    than one region's quota must be spread across regions. The range VPC is a
-    global resource and its firewall rules are network-wide, so cross-region
-    range subnets need no additional peering or rules -- only a per-range zone.
-    """
-    return tuple(z.strip() for z in os.environ.get("RANGE_NETWORK_ZONES", "").split(",") if z.strip())
-
-
-def range_cell_config_for_slot(config: GCERangeCellConfig, slot: int | None) -> GCERangeCellConfig:
-    """Return ``config`` bound to the zone this range's allocation slot maps to.
-
-    Selection is a deterministic function of the range's own allocation slot, so
-    create and destroy independently resolve the same zone without persisting a
-    second piece of state. Returns ``config`` unchanged when no pool is
-    configured or the caller has no slot, preserving single-region deployments.
-    """
-    zones = range_cell_zone_pool()
-    if not zones or slot is None:
-        return config
-    zone = zones[slot % len(zones)]
-    # A GCE zone is "<region>-<letter>"; the region is the zone minus its suffix.
-    return replace(config, zone=zone, region=zone.rsplit("-", 1)[0])

@@ -45,7 +45,6 @@ from ._gce import (
     GCERangeImageProfile,
     gce_image_profile_fingerprint,
     load_gce_range_cell_config,
-    range_cell_config_for_slot,
 )
 from ._gcp_backend import (
     get_gcp_range_backend,
@@ -116,7 +115,6 @@ __all__ = [
     "load_gdc_vmruntime_config",
     "load_raes_content_delivery_config",
     "load_range_network_config",
-    "range_cell_config_for_slot",
     "resolve_cloud_provider",
     "resolve_ngfw_attachment_config",
 ]

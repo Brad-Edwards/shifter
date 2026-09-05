@@ -223,11 +223,6 @@ CHANNEL_LAYERS = _build_channel_layers(os.environ)
 # exist. Non-secret boolean; absent env means disabled.
 WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
 
-# SPA cutover rollout flags (issues #1302 / #1369 / #1370 / #1371 / #1372 / #1373,
-# ADR-013 / ADR-029) live in config/_spa_flags_settings.py to keep this module
-# under the Sonar S104 500-line cap; re-exported via star-import.
-from config._spa_flags_settings import *  # noqa: E402  # NOSONAR
-
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
 WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTION_DAYS", 7)
@@ -275,6 +270,10 @@ from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
 # 500-line cap; the IAM-auth DB path lives there (issue #159).
 from config._database_settings import *  # noqa: E402  # NOSONAR
 from config._raes_settings import *  # noqa: E402  # NOSONAR
+
+# #28: deployment-owned warm-pool policy (parsed/validated by shared.warm_pool.policy),
+# plus the warm-pool metrics namespace and deployment scope identity.
+from config._warm_pool_settings import *  # noqa: E402  # NOSONAR
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -375,12 +374,6 @@ AGENT_USER_STORAGE_QUOTA_MB = 5120
 # 10 minutes for presigned URL
 AGENT_UPLOAD_URL_EXPIRES = 600
 
-# Experiment script upload limits
-# 1MB max per script
-SCRIPT_MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024
-# 10 minutes for presigned URL
-SCRIPT_UPLOAD_URL_EXPIRES = 600
-
 # Server-side upload inspection (issue #696). Provider-neutral byte budget for
 # the magic-byte header read performed at finalization across CTF, agent, and
 # experiment-script uploads. The floor is dictated by the largest registered
@@ -395,10 +388,6 @@ try:
 except ValueError:
     _UPLOAD_INSPECTION_RAW = _UPLOAD_INSPECTION_FLOOR
 UPLOAD_INSPECTION_MAX_HEADER_BYTES = max(_UPLOAD_INSPECTION_RAW, _UPLOAD_INSPECTION_FLOOR)
-
-# Experiment execution limits
-EXPERIMENT_MAX_TOTAL_RUNS = 10
-EXPERIMENT_MAX_PARALLEL_RUNS = 5
 
 # Guacamole RDP Integration
 # Guacamole connection + bootstrap settings live in ``config/_guacamole_settings``

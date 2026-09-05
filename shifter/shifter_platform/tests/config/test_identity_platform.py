@@ -109,6 +109,52 @@ def test_platform_login_embeds_parseable_identity_config(client):
     SITE_URL="https://portal.example.test",
     IDENTITY_PLATFORM_API_KEY="test-api-key",
     IDENTITY_PLATFORM_PROJECT_ID="test-project",
+    IDENTITY_ALLOWED_EMAIL_DOMAIN="sentinel-domain.example",
+    IDENTITY_ALLOWED_EMAILS=["sentinel-allowlisted@partner.example"],
+)
+def test_platform_login_omits_policy_and_narrative_disclosures(client):
+    """The anonymous login page must not disclose the approved domain, the
+    allow-listed addresses, the identity provider, the session flow, or the
+    alternate CTF login surface (issue #1920)."""
+    response = client.get(reverse("platform_login"))
+    assert response.status_code == 200
+    body = response.content.decode("utf-8")
+
+    # Policy / PII projections must not reach the anonymous HTML or the embedded
+    # config, even when configured to sentinel values.
+    assert "sentinel-domain.example" not in body
+    assert "sentinel-allowlisted@partner.example" not in body
+
+    match = re.search(
+        r'<script id="identity-platform-config" type="application/json">(.*?)</script>',
+        body,
+        re.DOTALL,
+    )
+    assert match is not None, "identity-platform-config json_script block not rendered"
+    config = json.loads(match.group(1))
+    assert "allowedEmailDomain" not in config
+    assert "allowedEmails" not in config
+
+    # Removed narrative / routing copy: provider name, session mechanics, the
+    # alternate CTF surface, and the tenant-hinting "Corporate email" label.
+    assert "Identity Platform" not in body
+    assert "CTF participants" not in body
+    assert "Corporate email" not in body
+
+    # The minimal sign-in surface still renders.
+    assert b'id="identity-email"' in response.content
+    assert b'id="identity-password"' in response.content
+    assert b'id="identity-auth-submit"' in response.content
+    assert b'id="identity-totp-enrollment-section"' in response.content
+    assert b'id="identity-verify-email-section"' in response.content
+
+
+@override_settings(
+    AUTH_PROVIDER="identity_platform",
+    DEBUG=False,
+    SITE_URL="https://portal.example.test",
+    IDENTITY_PLATFORM_API_KEY="test-api-key",
+    IDENTITY_PLATFORM_PROJECT_ID="test-project",
 )
 def test_platform_login_rejects_post_requests(client):
     response = client.post(reverse("platform_login"))
@@ -345,6 +391,29 @@ def test_identity_platform_client_config_derives_auth_domain():
     assert config["apiKey"] == "test-api-key"
     assert config["projectId"] == "test-project"
     assert config["authDomain"] == "test-project.firebaseapp.com"
+
+
+@override_settings(
+    AUTH_PROVIDER="identity_platform",
+    DEBUG=False,
+    IDENTITY_PLATFORM_API_KEY="test-api-key",
+    IDENTITY_PLATFORM_PROJECT_ID="test-project",
+    IDENTITY_ALLOWED_EMAIL_DOMAIN="sentinel-domain.example",
+    IDENTITY_ALLOWED_EMAILS=["sentinel-allowlisted@partner.example"],
+)
+def test_identity_platform_client_config_omits_policy_projections():
+    """The browser config must not carry the approved domain or allow-listed
+    addresses; email admission stays server-side (issue #1920)."""
+    from config import identity_platform as identity_platform_auth
+
+    config = identity_platform_auth.identity_platform_client_config()
+
+    assert "allowedEmailDomain" not in config
+    assert "allowedEmails" not in config
+    # Server-side admission still resolves the policy.
+    assert identity_platform_auth.is_allowed_identity_email("user@sentinel-domain.example") is True
+    assert identity_platform_auth.is_allowed_identity_email("sentinel-allowlisted@partner.example") is True
+    assert identity_platform_auth.is_allowed_identity_email("intruder@evil.example") is False
 
 
 @override_settings(

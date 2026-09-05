@@ -34,6 +34,7 @@ from gcp_range_cells import (
     GCEGuestSecretOps,
     GCEVertexCredentialOps,
     _build_clients,
+    _ensure_firewall,
     _ensure_instance,
     _ensure_openvpn_gateway,
     apply_range_cell,
@@ -159,6 +160,7 @@ def _variables(
     payload: dict | None = None,
     bindings: list[dict] | None = None,
     remote_access: bool = False,
+    egress_mode: str = "status-quo",
 ) -> dict:
     scenario_payload = deepcopy(payload if payload is not None else _scenario_payload())
     if bindings is None:
@@ -180,7 +182,22 @@ def _variables(
         remote_access=(
             build_openvpn_capability(_LINUX_UUID, datetime.now(UTC) + timedelta(days=5)) if remote_access else None
         ),
+        egress_mode=egress_mode,
     )
+
+
+def test_cyberscript_status_quo_plan_owns_a_router_nat():
+    """The cyberscript GCE plan builder honors the pinned egress mode (PLAT-238)."""
+    plan = render_range_cell_plan("req-123", _variables(egress_mode="status-quo"), _sample_config())
+    assert plan.get("router_nat") is not None
+    assert plan["router_nat"]["subnetwork_self_links"] == [subnet["self_link"] for subnet in plan["subnets"]]
+
+
+def test_cyberscript_none_plan_has_no_router_nat_and_no_web_egress():
+    plan = render_range_cell_plan("req-123", _variables(egress_mode="none"), _sample_config())
+    assert "router_nat" not in plan
+    firewall_names = {fw["name"] for fw in plan["firewalls"]}
+    assert not any(name.endswith("egress-web") for name in firewall_names)
 
 
 def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
@@ -194,6 +211,7 @@ def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
         svc.get.side_effect = get_side_effect
         svc.insert.return_value = SimpleNamespace(name="op")
         svc.delete.return_value = SimpleNamespace(name="op")
+        svc.patch.return_value = SimpleNamespace(name="op")
         return svc
 
     op_service = MagicMock()
@@ -203,6 +221,7 @@ def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
         subnetworks=service(),
         firewalls=service(),
         addresses=service(),
+        routers=service(),
         instances=service(),
         global_operations=op_service,
         region_operations=op_service,
@@ -756,6 +775,40 @@ def test_dedicated_access_cidrs_split_participant_ingress_from_management():
     )
 
 
+def test_ensure_firewall_inserts_when_missing():
+    plan = render_range_cell_plan("req-123", _variables(), _sample_config())
+    mgmt = _firewall_by_name(plan, "mgmt")
+    clients = _mock_clients(exists=False)
+
+    _ensure_firewall(plan, clients, mgmt)
+
+    clients.firewalls.insert.assert_called_once()
+    clients.firewalls.patch.assert_not_called()
+
+
+def test_ensure_firewall_reconciles_existing_broad_rule_to_planned_body():
+    # #1711 / ADR-039-R9: an existing rule (e.g. a legacy broad *-mgmt that once
+    # opened participant RDP) must be converged to the narrowed planned body, not
+    # trusted because its name exists. Reconcile = patch with the fresh body.
+    config = dataclasses.replace(
+        _sample_config(),
+        portal_network_cidrs=("10.46.0.0/20",),
+        access_network_cidrs=("10.47.0.0/24",),
+    )
+    plan = render_range_cell_plan("req-123", _variables(), config)
+    mgmt = _firewall_by_name(plan, "mgmt")
+    clients = _mock_clients(exists=True)
+
+    _ensure_firewall(plan, clients, mgmt)
+
+    clients.firewalls.insert.assert_not_called()
+    clients.firewalls.patch.assert_called_once()
+    _, kwargs = clients.firewalls.patch.call_args
+    assert kwargs["firewall"] == "shifter-r-42-mgmt"
+    # The converged body is SSH-only -- the broad participant RDP is gone.
+    assert kwargs["firewall_resource"]["allowed"] == [{"I_p_protocol": "tcp", "ports": ["22", "2222"]}]
+
+
 def test_range_cell_firewalls_do_not_allow_cross_range_private_traffic():
     first_variables = _variables()
     second_variables = deepcopy(first_variables)
@@ -807,6 +860,21 @@ def test_range_cell_firewalls_reject_malformed_boundary_cidrs(field, cidr, messa
     variables = _variables()
 
     with pytest.raises(RuntimeError, match=message):
+        render_range_cell_plan("req-123", variables, config)
+
+
+def test_range_cell_firewalls_reject_access_management_source_overlap():
+    # #1711 / ADR-039-R9: the access-workload source and the provisioner/management
+    # source must be disjoint identities. An overlap would let the broad management
+    # source re-enter the participant path, defeating the dedicated access identity.
+    config = dataclasses.replace(
+        _sample_config(),
+        portal_network_cidrs=("10.46.0.0/20",),
+        access_network_cidrs=("10.46.1.0/24",),
+    )
+    variables = _variables()
+
+    with pytest.raises(RuntimeError, match="must not overlap portal_network_cidrs"):
         render_range_cell_plan("req-123", variables, config)
 
 
@@ -1081,8 +1149,11 @@ def test_render_plan_resolves_distinct_images_for_same_role_by_ami_key():
     assert by_name["alternate"]["profile"].disk_size_gb == 150
 
 
-def test_mgmt_firewall_opens_host_management_ssh_port():
-    """The management ingress rule opens SSH, RDP, and the Docker-host mgmt port."""
+def test_mgmt_firewall_is_ssh_only_and_omits_participant_ingress_without_access_range():
+    """Fail closed (#1711 / ADR-039-R9): with no access-workload range configured,
+    the management ingress rule is SSH-only (host SSH + Docker-host mgmt port) and
+    participant ingress (22/3389 from an access source) is omitted entirely -- the
+    management source never inherits participant RDP as a fallback."""
     config = GCERangeCellConfig(
         project_id="test-project",
         region="us-central1",
@@ -1091,13 +1162,16 @@ def test_mgmt_firewall_opens_host_management_ssh_port():
         service_account_email="range-host@test-project.iam.gserviceaccount.com",
         kali=GCERangeImageProfile(source_image="projects/shifter/global/images/polaris-vm"),
         dc=GCERangeImageProfile(source_image="projects/shifter/global/images/polaris-dc"),
-        portal_network_cidrs=("10.40.0.0/20",),
+        portal_network_cidrs=("10.46.0.0/20",),
         host_mgmt_ssh_port=2222,
     )
     plan = render_range_cell_plan("req-123", _variables(), config)
     mgmt = next(fw for fw in plan["firewalls"] if fw["name"] == "shifter-r-42-mgmt")
 
-    assert mgmt["allowed"] == [{"IPProtocol": "tcp", "ports": ["22", "3389", "2222"]}]
+    assert mgmt["allowed"] == [{"IPProtocol": "tcp", "ports": ["22", "2222"]}]
+    # No participant access rule and no RDP anywhere without an access range.
+    assert not [fw for fw in plan["firewalls"] if fw["name"] == "shifter-r-42-access"]
+    assert all("3389" not in fw.get("allowed", [{}])[0].get("ports", []) for fw in plan["firewalls"] if "allowed" in fw)
 
 
 def test_instance_resource_installs_key_for_host_login_user():
@@ -1507,7 +1581,9 @@ def test_resource_bodies_use_proto_field_names():
 
     mgmt = next(fw for fw in plan["firewalls"] if fw["name"].endswith("-mgmt"))
     fw_body = firewall_resource(plan, mgmt)
-    assert fw_body["allowed"] == [{"I_p_protocol": "tcp", "ports": ["22", "3389", "2222"]}]
+    # Management ingress is SSH-only (host SSH + Docker-host mgmt port); no
+    # participant RDP fallback (#1711). Ports carried through proto translation.
+    assert fw_body["allowed"] == [{"I_p_protocol": "tcp", "ports": ["22", "2222"]}]
     assert "target_tags" in fw_body
 
     host = plan["instances"][0]
@@ -1694,10 +1770,12 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     global_operations = object()
     region_operations = object()
     zone_operations = object()
+    router = object()
     compute_module.NetworksClient = mocker.Mock(return_value=network)
     compute_module.SubnetworksClient = mocker.Mock(return_value=subnetwork)
     compute_module.FirewallsClient = mocker.Mock(return_value=firewall)
     compute_module.AddressesClient = mocker.Mock(return_value=address)
+    compute_module.RoutersClient = mocker.Mock(return_value=router)
     compute_module.InstancesClient = mocker.Mock(return_value=instance)
     compute_module.GlobalOperationsClient = mocker.Mock(return_value=global_operations)
     compute_module.RegionOperationsClient = mocker.Mock(return_value=region_operations)
@@ -1716,6 +1794,7 @@ def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
     assert clients.subnetworks is subnetwork
     assert clients.firewalls is firewall
     assert clients.addresses is address
+    assert clients.routers is router
     assert clients.instances is instance
     assert clients.global_operations is global_operations
     assert clients.region_operations is region_operations

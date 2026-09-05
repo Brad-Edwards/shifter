@@ -6,15 +6,13 @@ RAES scenario names its images by source; a tenant operator maps each source to
 a real provider image here. Without a matching, enabled mapping (and no already
 concrete image reference), realization fails loud.
 
-This surface is part of the RAES native provisioning path. Every entry point is
-gated by `SHIFTER_RAES_NATIVE_PROVISIONING`: with the flag off, the API and the
-management command refuse and the SPA page is not served.
+This surface is part of the only supported range-provisioning path. The API,
+management command, and SPA page are always available to authorized operators.
 
 ## Before You Start
 
 You need:
 
-- `SHIFTER_RAES_NATIVE_PROVISIONING=true` on the tenant.
 - CMS authoring access (staff or the Threat Research group). The same access
   gates the Scenario Editor.
 - The authored image `source` name and version from the scenario or package, and
@@ -32,9 +30,8 @@ service write path, so they behave identically.
 
 ### SPA (Author area)
 
-1. Enable the platform SPA (`PLATFORM_SPA_ENABLED`) and open the portal.
-2. Go to **Author > RAES Images**.
-3. Fill in the provider, source name, optional version, and image reference,
+1. Open the portal and go to **Author > RAES Images**.
+2. Fill in the provider, source name, optional version, and image reference,
    then choose **Register mapping**. Optional sizing fields (machine type, disk
    size, disk type) set backend defaults for that mapping.
 

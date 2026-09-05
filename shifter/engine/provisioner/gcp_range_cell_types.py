@@ -123,6 +123,21 @@ class RangeCellPlan(TypedDict):
     instances: list[InstancePlan]
     firewalls: list[FirewallPlan]
     vpn_gateway: NotRequired[OpenVpnGatewayPlan]
+    # Range-owned Cloud Router + Cloud NAT (PLAT-238, ADR-026-R6). Present only for
+    # a non-`none` range: it gives that range's participant subnets an explicit,
+    # range-scoped NAT egress path instead of the deprecated shared all-subnet NAT.
+    # A `none` (zero-egress) range omits it entirely, so its subnets carry no NAT
+    # path at all -- a firewall deny alone is not that guarantee.
+    router_nat: NotRequired[RouterNatPlan]
+
+
+class RouterNatPlan(TypedDict):
+    """A range-owned Cloud Router carrying a Cloud NAT scoped to this range's subnets."""
+
+    router_name: str
+    nat_name: str
+    # self_links of the range subnets this NAT covers (LIST_OF_SUBNETWORKS scope).
+    subnetwork_self_links: list[str]
 
 
 __all__ = [
@@ -134,6 +149,7 @@ __all__ = [
     "OpenVpnGatewayPlan",
     "RangeCellPlan",
     "ResourceDict",
+    "RouterNatPlan",
     "ScenarioInstance",
     "SubnetPlan",
 ]

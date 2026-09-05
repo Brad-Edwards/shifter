@@ -326,9 +326,36 @@ def _gcp_local_input_checks(environment: str, repo_root: Path) -> list[CheckResu
     return [CheckResult("GCP control-plane inputs", Status.OK, "public hostname, managed TLS, and CIDRs are valid")]
 
 
+def _aws_eks_local_input_checks(environment: str, base: Path) -> list[CheckResult]:
+    """Evaluate the checked-in inputs the isolated EKS root needs for a local deploy.
+
+    The EKS root does not use the ``local.auto.tfvars`` overlay the core/range/portal roots
+    do: it is applied from a protected JSON var-file with an explicit backend config (see
+    ``aws_eks.deploy_eks``). The var-file is passed explicitly at deploy time, so the
+    checked-in artifact preflight verifies by convention is the root's S3 backend config.
+    """
+    eks_root = base / "eks"
+    if not eks_root.is_dir():
+        return [CheckResult("eks root", Status.FAIL, f"missing EKS Terraform root {eks_root} (see {_DOCS}).")]
+    backend = eks_root / f"{environment}.s3.tfbackend"
+    if not backend.exists():
+        return [
+            CheckResult(
+                "eks backend config",
+                Status.FAIL,
+                f"missing {backend}; the EKS root cannot init its remote state (see {_DOCS}).",
+            )
+        ]
+    return [CheckResult("eks backend config", Status.OK, f"{backend.name} present")]
+
+
 def _aws_local_input_checks(environment: str, component: str | None, repo_root: Path) -> list[CheckResult]:
-    """Evaluate presence of AWS local.auto.tfvars overlays for the selected components."""
+    """Evaluate presence of the checked-in AWS Terraform inputs for the selected components."""
     base = repo_root / "platform" / "terraform" / "environments" / environment
+    # The EKS root has its own input model (protected JSON var-file + backend config); it
+    # must not be validated against the core/range/portal local.auto.tfvars overlays (#1828).
+    if component == "eks":
+        return _aws_eks_local_input_checks(environment, base)
     overlay_dirs = {"core": base, "range": base / "range", "portal": base / "portal"}
     components = [component] if component in overlay_dirs else list(overlay_dirs)
     results = []
@@ -449,20 +476,53 @@ def _confirm_manual_prereqs(cloud: Cloud) -> None:
 # --- CI entrypoint (python -m preflight) --------------------------------------
 
 
+def cloud_env_from_root_config(config_path: str) -> tuple[Cloud, str]:
+    """Derive the preflight cloud and environment from a root ``shifter.yaml``.
+
+    This is the canonical-config entrypoint the backend bundle's doctor validation check
+    uses (``shifter-config doctor`` cannot template a profile into a static argv, so the
+    profile is derived here from the loaded root config). It reuses
+    ``installation.loader.load_root_config`` rather than re-parsing YAML, so the same closed
+    validation that guards a deploy also guards this readiness check.
+    """
+    repo_root = get_repo_root()
+    package_root = str(repo_root / "shifter")
+    if package_root not in sys.path:
+        sys.path.insert(0, package_root)
+    from installation.loader import load_root_config
+
+    config = load_root_config(config_path)
+    return Cloud(config.backend), config.deployment.profile
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the preflight gate from the command line (CI uses ``python -m preflight``)."""
     parser = argparse.ArgumentParser(description="Validate Shifter deploy prerequisites.")
-    parser.add_argument("--cloud", required=True, choices=[c.value for c in Cloud])
-    parser.add_argument("--env", required=True, dest="environment")
+    parser.add_argument("--cloud", choices=[c.value for c in Cloud], default=None)
+    parser.add_argument("--env", dest="environment", default=None)
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Derive --cloud and --env from a root shifter.yaml (mutually exclusive with --cloud/--env).",
+    )
     parser.add_argument("--component", choices=sorted(_AWS_COMPONENT_STACKS), default=None)
     parser.add_argument("--mode", choices=[m.value for m in Mode], default=Mode.CI.value)
     parser.add_argument("--headless", action="store_true", default=None)
     args = parser.parse_args(argv)
 
+    if args.config is not None:
+        if args.cloud is not None or args.environment is not None:
+            parser.error("--config is mutually exclusive with --cloud/--env")
+        cloud, environment = cloud_env_from_root_config(args.config)
+    elif args.cloud is not None and args.environment is not None:
+        cloud, environment = Cloud(args.cloud), args.environment
+    else:
+        parser.error("provide --config, or both --cloud and --env")
+
     preflight_gate(
-        Cloud(args.cloud),
+        cloud,
         Mode(args.mode),
-        args.environment,
+        environment,
         component=args.component,
         headless=args.headless,
     )

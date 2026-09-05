@@ -109,11 +109,88 @@ fixed, closed set: **owner**, **admin**, and **member**.
   and is the final authority. Managing owners is restricted to owners, so an
   admin may be shown an action on an owner that the server then declines.
 
+## Invite and onboard members
+
+**Administer → Organization → Workspaces → (a workspace) → Invitations** lets a
+staff user who is also a workspace owner or admin invite a person who does not
+yet have a Shifter account.
+
+- Enter the recipient's email and choose the closed workspace role. Only a
+  workspace owner can issue an owner invitation.
+- The recipient gets a time-limited link. They must authenticate through the
+  configured identity provider with that verified email address; Shifter then
+  creates the membership atomically. An invitation never creates a placeholder
+  account and never changes an existing member's role.
+- Pending invitations can be resent, which invalidates every earlier link, or
+  revoked immediately. Expired links can be resent to issue a fresh expiry.
+- The invitation list shows the recipient, role, derived status, and expiry. It
+  never displays or returns the signed invitation credential.
+- Invitation administration requires a staff browser session and current
+  workspace authority. Platform API tokens are deliberately rejected.
+
+If a link is invalid, expired, revoked, already consumed, or used by a different
+verified identity, the recipient sees a bounded failure message and should ask a
+workspace administrator to send a new invitation.
+
+## Network egress policy
+
+Each workspace has a network egress policy that controls outbound internet
+access for the ranges launched in it. An owner or admin sets it on the workspace
+detail surface. Two choices are available:
+
+- **Inherit deployment baseline** (the default): ranges keep the deployment's
+  existing network posture, so behavior is unchanged from before this setting
+  existed.
+- **Zero egress (no outbound NAT path)**: newly provisioned ranges have no
+  outbound path to the internet. On AWS the participant subnets receive no
+  default route, NAT, or internet-gateway path. On GCP the range's subnets are
+  attached to no Cloud NAT and the guests have no external address, so a
+  guest cannot reach the internet even though internal range traffic and the
+  management fabric still work.
+
+The policy applies only to ranges provisioned after the change; it never alters
+a range that is already running. Changing it is audited (the old and new value
+are recorded) and authorized by the workspace role, the same as rename and
+archive. Personal workspaces can set the policy too, so a single-user install
+can opt its own ranges into zero egress.
+
+## Resource quotas and usage
+
+Each workspace can carry per-resource limits so shared infrastructure such as a
+university or lab cannot be exhausted by a single workspace. Two resources are
+limited:
+
+- **Concurrent ranges**: how many ranges the workspace may have running at once.
+- **Member seats**: how many members the workspace may hold.
+
+The **Quota** surface shows an owner or admin the current usage against each
+limit, and a history of when a limit was applied. A resource with no configured
+limit shows as unlimited, which preserves the prior behavior for every workspace
+that has not had a limit set.
+
+Each limit is either a soft cap or a hard cap:
+
+- A **hard cap** blocks the over-limit action. Launching a range past the
+  concurrent-range limit is refused, and adding a member past the seat limit is
+  refused.
+- A **soft cap** allows the action but records that the limit was exceeded, so an
+  administrator can see the overage on the Quota surface and in the deployment
+  audit history.
+
+Every quota decision is recorded, and each applied limit (a soft-cap warning or a
+hard-cap block) also appears in the administrator audit history. Lowering a limit
+below the current usage never evicts members or destroys running ranges; it only
+governs subsequent actions. Enforcement runs in the portal before any cloud
+resource is created, so it behaves identically on AWS and GCP.
+
+Setting a limit is a platform-administration task rather than a workspace-role
+action, so the Quota surface is read-only. A platform administrator sets limits
+through the Django administration interface.
+
 ## What is not here yet
 
 This release delivers the console shell, navigation, workspace context,
 switcher, the organization settings surface, the workspace lifecycle surface,
-and the membership and roles surface above. The remaining administration
-surfaces (invitations, user lifecycle, range scoping, policy, quota, and audit
-review) arrive in later releases; their sections are present as placeholders
-until then.
+the membership, roles, invitation, and resource-quota surfaces above. The
+remaining administration surfaces (user lifecycle, range scoping, and policy)
+arrive in later releases; their sections are present as placeholders until then.

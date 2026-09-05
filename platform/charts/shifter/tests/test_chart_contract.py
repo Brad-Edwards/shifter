@@ -34,18 +34,12 @@ AWS_DEV_WAF_ACL_ARN = (
 # change either GCP profile's rendered bytes. Frozen with Helm 3.15.4 and release
 # name "contract-test"; regenerate deliberately only when GCP output is meant to
 # change.
-#
-# Regenerated deliberately, twice over:
-#  - gcp-dev for the KeplerOps event capacity change (static portal, guacd,
-#    guacamole-client and worker replicas/resources);
-#  - both profiles for RANGE_NETWORK_ZONES joining the provisioner-Job env
-#    allowlist in the shared admission policy. That addition is purely
-#    permissive and inert on any deployment whose ConfigMap does not set the
-#    key, because the projection forwards only non-empty values -- but the
-#    policy template is shared, so prod's rendered bytes move with it.
+# Regenerated for #1311 after removing the retired fleet-wide RAES cutover
+# selector variables from the shared runtime ConfigMap.
+# Regenerated for #28 after adding the warm-pool reconciler worker Deployment.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "9f808e6e10875598c6b1e9b39afb9b6016fc30cbb403d2be7581b79e9e397a58",
-    "gcp-prod": "4779ca4a118e1448e340a446528bf1ff3ea80e22f4725e5c23b7b93e2276ddaa",
+    "gcp-dev": "37eb0dd7e341547007281dab5e4eb7de41820e2ca3ff9e252c7327fe5222467e",
+    "gcp-prod": "c212fb9b3101bbee0baefaff1fd8dd872cca0c8732652e2ddd997957e99d265e",
 }
 
 
@@ -119,8 +113,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                             f"{profile}: {image}",
                         )
 
-    def test_aws_profiles_exclude_kubernetes_job_launcher_capability(self) -> None:
-        forbidden = {
+    def test_aws_profiles_include_kubernetes_job_launcher_capability(self) -> None:
+        """#1826: AWS (EKS) dispatches the provisioner as a Kubernetes Job, so every
+        AWS profile renders the dedicated launcher identity, RBAC, ServiceAccounts,
+        and the fail-closed admission policy bound to the AWS task-runner contract."""
+        required = {
             ("Deployment", "worker-provisioner-launcher"),
             ("ServiceAccount", "provisioner-launcher"),
             ("ServiceAccount", "provisioner"),
@@ -131,9 +128,13 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         }
         for profile in ("aws-dev", "aws-proof", "aws-prod"):
             with self.subTest(profile=profile):
-                _, documents = _render(VALUES_FILES[profile])
+                rendered, documents = _render(VALUES_FILES[profile])
                 identities = {_identity(document) for document in documents}
-                self.assertTrue(forbidden.isdisjoint(identities))
+                self.assertTrue(required.issubset(identities))
+                # AWS binds the admission policy to its own task-runner contract,
+                # never the GCP one (the AWS-derived env allowlist, not a GCP copy).
+                self.assertIn("shifter.dev/task-runner'] == 'aws'", rendered)
+                self.assertNotIn("shifter.dev/task-runner'] == 'gcp'", rendered)
 
     def test_gcp_profiles_retain_compatible_provider_capabilities(self) -> None:
         for profile in ("gcp-dev", "gcp-prod"):
@@ -164,6 +165,7 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                         "alb.ingress.kubernetes.io/wafv2-acl-arn": (
                             "arn:aws:wafv2:us-east-2:123456789012:regional/webacl/example/id"
                         ),
+                        "alb.ingress.kubernetes.io/inbound-cidrs": "203.0.113.0/24",
                     },
                     "host": "shifter.example.com",
                     "tls": {"enabled": False, "secretName": ""},
@@ -200,6 +202,7 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                 "platform": f"example.invalid/shifter/platform@sha256:{digest}",
                 "guacd": f"example.invalid/shifter/guacd@sha256:{digest}",
                 "guacamoleClient": f"example.invalid/shifter/guacamole-client@sha256:{digest}",
+                "provisioner": f"example.invalid/shifter/provisioner@sha256:{digest}",
             },
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -216,7 +219,9 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         self.assertIn('APP_SECRET_ID: "shifter/dev/app"', rendered)
         self.assertIn('DB_SECRET_ID: "shifter/dev/database"', rendered)
         self.assertNotIn("kind: Secret", rendered)
-        self.assertNotIn(("Deployment", "worker-provisioner-launcher"), {_identity(d) for d in documents})
+        # #1826: AWS dispatches the provisioner as a Kubernetes Job, so the
+        # dedicated launcher renders alongside the edge/secret projection.
+        self.assertIn(("Deployment", "worker-provisioner-launcher"), {_identity(d) for d in documents})
 
     def test_aws_dev_scaffold_renders_alb_edge_with_acm_and_waf(self) -> None:
         rendered, documents = _render(VALUES_FILES["aws-dev"])
@@ -248,6 +253,10 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         self.assertEqual(
             annotations["alb.ingress.kubernetes.io/listen-ports"],
             '[{"HTTPS":443}]',
+        )
+        self.assertEqual(
+            annotations["alb.ingress.kubernetes.io/inbound-cidrs"],
+            "203.0.113.0/24",
         )
 
         # No GCP edge objects or identifiers when the GCP capabilities are off.
@@ -348,6 +357,52 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                         self.assertIn("ALL", context["capabilities"]["drop"])
                         self.assertIn("requests", container["resources"])
                         self.assertIn("limits", container["resources"])
+
+    def test_access_node_pool_placement_is_scoped_to_the_gcp_dialers(self) -> None:
+        # #1711 / ADR-039-R9: the access-workload isolation depends on portal + guacd
+        # (and only those) landing on the exclusive access pool. Assert the actual
+        # pod-spec placement rather than trusting the opaque byte-hash contract: a
+        # wrong selector key, a dropped toleration, or a NoExecute/NoSchedule slip
+        # would silently regain a green hash after regeneration.
+        expected_selector = {"node-restriction.kubernetes.io/shifter-pool": "access"}
+        expected_toleration = {
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "access",
+            "effect": "NoSchedule",
+        }
+
+        def _pod_spec(documents: list[dict[str, object]], name: str) -> dict[str, object]:
+            for document in documents:
+                if _identity(document) == ("Deployment", name):
+                    return document["spec"]["template"]["spec"]
+            raise AssertionError(f"Deployment {name} not rendered")
+
+        for profile in ("gcp-dev", "gcp-prod"):
+            with self.subTest(profile=profile):
+                _, documents = _render(VALUES_FILES[profile])
+                for dialer in ("portal-web", "guacd"):
+                    pod_spec = _pod_spec(documents, dialer)
+                    self.assertEqual(pod_spec.get("nodeSelector"), expected_selector)
+                    self.assertIn(expected_toleration, pod_spec.get("tolerations", []))
+                # Non-dialers must never carry the access placement.
+                for other in ("guacamole-client", "worker-engine"):
+                    pod_spec = _pod_spec(documents, other)
+                    self.assertNotIn(
+                        "node-restriction.kubernetes.io/shifter-pool",
+                        pod_spec.get("nodeSelector", {}),
+                    )
+
+        # AWS/neutral profiles (gcpAccessNodePool false) never acquire the GCP label.
+        for profile in ("aws-dev", "aws-proof", "aws-prod"):
+            with self.subTest(profile=profile):
+                _, documents = _render(VALUES_FILES[profile])
+                for dialer in ("portal-web", "guacd"):
+                    pod_spec = _pod_spec(documents, dialer)
+                    self.assertNotIn(
+                        "node-restriction.kubernetes.io/shifter-pool",
+                        pod_spec.get("nodeSelector", {}),
+                    )
 
     def test_schema_rejects_tag_shaped_image_identity(self) -> None:
         result = _helm(

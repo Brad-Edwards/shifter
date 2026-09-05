@@ -9,7 +9,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "./client";
-import type { CreateWorkspaceRequest, TransferWorkspaceOwnershipRequest, Workspace } from "./types";
+import type {
+  CreateWorkspaceRequest,
+  TransferWorkspaceOwnershipRequest,
+  Workspace,
+  WorkspaceEgressPolicy,
+  WorkspaceQuota,
+} from "./types";
 
 export interface WorkspaceListFilters {
   organizationUuid: string;
@@ -21,6 +27,7 @@ export const workspaceKeys = {
   all: ["workspaces", "lifecycle"] as const,
   list: (filters: WorkspaceListFilters) => ["workspaces", "lifecycle", "list", filters] as const,
   detail: (uuid: string) => ["workspaces", "lifecycle", "detail", uuid] as const,
+  quota: (uuid: string) => ["workspaces", "lifecycle", "quota", uuid] as const,
 };
 
 function invalidateWorkspaces(queryClient: ReturnType<typeof useQueryClient>, uuid?: string) {
@@ -53,6 +60,14 @@ export function useWorkspace(uuid: string, enabled = true) {
     queryKey: workspaceKeys.detail(uuid),
     enabled: enabled && Boolean(uuid),
     queryFn: ({ signal }) => apiFetch<Workspace>(`/workspaces/${uuid}/`, { signal }),
+  });
+}
+
+export function useWorkspaceQuota(uuid: string, enabled = true) {
+  return useQuery({
+    queryKey: workspaceKeys.quota(uuid),
+    enabled: enabled && Boolean(uuid),
+    queryFn: ({ signal }) => apiFetch<WorkspaceQuota>(`/workspaces/${uuid}/quota/`, { signal }),
   });
 }
 
@@ -98,6 +113,21 @@ export function useRestoreWorkspace(uuid: string) {
     onSuccess: (data) => {
       queryClient.setQueryData(workspaceKeys.detail(uuid), data);
       invalidateWorkspaces(queryClient);
+    },
+  });
+}
+
+export function useSetWorkspaceEgressPolicy(uuid: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (egressPolicy: WorkspaceEgressPolicy) =>
+      apiFetch<Workspace>(`/workspaces/${uuid}/egress-policy/`, {
+        method: "PUT",
+        body: { egress_policy: egressPolicy },
+      }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(workspaceKeys.detail(uuid), data);
+      invalidateWorkspaces(queryClient, uuid);
     },
   });
 }

@@ -294,7 +294,12 @@ The first slice intentionally stays small:
   change filter in `.github/workflows/deploy.yml` must stay scoped to
   Terraform-consumed platform files. Quality routing is separate and runs by
   exclusion: `.github/workflows/deploy.yml` must expose a `quality_relevant`
-  output that runs Quality unless the diff is ordinary docs-only. Guardrail
+  output that runs Quality unless the diff is ordinary docs-only. That output
+  also fails closed on an empty or undetermined changed-file set: an
+  `any_changed` classifier is false when the GitHub PR-files API returns zero
+  files (its eventual consistency can do this for a freshly created PR), and
+  `quality_relevant` ORs in `any_changed != 'true'` so an unclassifiable diff
+  runs Quality instead of silently bypassing it (#2024). Guardrail
   docs, including `.github/pull_request_template.md`,
   `.github/copilot-instructions.md`, `docs/adr/**`, and this ADR enforcement
   page, are explicitly quality-relevant so ADR guard validates them. PR Gate
@@ -542,6 +547,20 @@ The first slice intentionally stays small:
   explicit GCLB, Google API, private service, and in-cluster service
   ranges. Runs in the `ci` level and shares the Helm-rendered
   validation boundary with `k8s-deployment-security-context`.
+
+- `eks-cross-stack-sourcing`
+  Enforces ADR-044-R6 against the AWS EKS Terraform roots under
+  `platform/terraform/environments/*/eks/`. The EKS control plane
+  composes over the existing portal and range data plane and must
+  source cross-stack values (control-plane database, secrets KMS key,
+  agent bucket, range VPC/subnets/AMIs/instance roles) through native
+  AWS data sources and SSM Parameter Store. The check fails closed on
+  any `terraform_remote_state` data source in those roots, which would
+  couple the consumer to another stack's whole state file. Runs in both
+  the `fast` and `ci` levels. The AWS/GCP provisioner-env contract
+  parity that R6 also requires is proven by the platform test suite
+  (`tests/shared/cloud/test_aws_runtime_role_parity.py`), not this
+  structural guard.
 
 - `no-plaintext-secrets-in-tfvars`
   Architecture check that scans `*.tfvars` files committed under

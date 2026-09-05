@@ -6,7 +6,7 @@ import base64
 import logging
 from collections.abc import Callable
 
-from config import GCERangeCellConfig, load_gce_range_cell_config, range_cell_config_for_slot
+from config import GCERangeCellConfig, load_gce_range_cell_config
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_credentials import (
     GCEGuestSecretOps,
@@ -26,6 +26,7 @@ from gcp_range_cell_resources import (
     network_resource,
     openvpn_gateway_address_resource,
     openvpn_gateway_instance_resource,
+    router_nat_resource,
     subnetwork_resource,
 )
 from gcp_range_cell_types import (
@@ -37,6 +38,7 @@ from gcp_range_cell_types import (
 )
 from log_redact import safe_log_fingerprint
 from provisioner_db import get_range_data_by_request_id
+from range_placement import resolve_placement_from_range_data
 from utils.crypto import generate_ssh_host_keypair
 
 __all__ = [
@@ -82,16 +84,55 @@ def _ensure_subnetwork(plan: RangeCellPlan, clients: GCEClients, subnet: SubnetP
 
 
 def _ensure_firewall(plan: RangeCellPlan, clients: GCEClients, firewall: FirewallPlan) -> None:
-    """Create one range firewall rule if it is missing."""
+    """Create one range firewall rule, or reconcile an existing rule to the plan.
+
+    Name existence is not correctness (#1711 / ADR-039-R9): a rule that already
+    exists may carry a stale, broader body -- most importantly a legacy combined
+    ``*-mgmt`` rule that opened participant RDP from the broad management source
+    before this issue split participant access onto its own dedicated-source rule.
+    Trusting the name would leave that broad rule live on already-active cells.
+    So an existing rule is patched to converge on the freshly rendered body rather
+    than skipped. Patch is idempotent: an already-matching rule is a no-op update.
+    """
     name = firewall["name"]
+    body = firewall_resource(plan, firewall)
     existing = _get_or_none(clients.firewalls.get, clients.google_exceptions, project=plan["project_id"], firewall=name)
-    if existing is not None:
-        logger.info("GCE range firewall exists name_fp=%s", safe_log_fingerprint(name))
+    if existing is None:
+        operation = clients.firewalls.insert(project=plan["project_id"], firewall_resource=body)
+        _wait_for_operation(plan, clients, operation, "global")
         return
-    operation = clients.firewalls.insert(
-        project=plan["project_id"], firewall_resource=firewall_resource(plan, firewall)
-    )
+    logger.info("GCE range firewall reconcile name_fp=%s", safe_log_fingerprint(name))
+    operation = clients.firewalls.patch(project=plan["project_id"], firewall=name, firewall_resource=body)
     _wait_for_operation(plan, clients, operation, "global")
+
+
+def _ensure_router_nat(plan: RangeCellPlan, clients: GCEClients) -> None:
+    """Create the range-owned Cloud Router + NAT if the plan carries one (PLAT-238).
+
+    Present only for a non-``none`` range; a zero-egress range has no ``router_nat``
+    element and therefore no NAT path. Idempotent: an existing router of the same
+    name is left in place (the NAT config is deterministic from the plan).
+    """
+    router_nat = plan.get("router_nat")
+    if router_nat is None:
+        return
+    name = router_nat["router_name"]
+    existing = _get_or_none(
+        clients.routers.get,
+        clients.google_exceptions,
+        project=plan["project_id"],
+        region=plan["region"],
+        router=name,
+    )
+    if existing is not None:
+        logger.info("GCE range router/NAT exists name_fp=%s", safe_log_fingerprint(name))
+        return
+    operation = clients.routers.insert(
+        project=plan["project_id"],
+        region=plan["region"],
+        router_resource=router_nat_resource(plan),
+    )
+    _wait_for_operation(plan, clients, operation, "region")
 
 
 def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: InstancePlan) -> None:
@@ -287,6 +328,7 @@ def _provision_range_resources(
         _ensure_network(plan, clients)
     for subnet in plan["subnets"]:
         _ensure_subnetwork(plan, clients, subnet)
+    _ensure_router_nat(plan, clients)
     for firewall in plan["firewalls"]:
         _ensure_firewall(plan, clients, firewall)
     instance_outputs: list[ResourceDict] = []
@@ -398,17 +440,17 @@ def apply_range_cell(
     # provider or secret client, let alone mutating a cloud resource. The gateway
     # VM runs as the range's reserved pool identity (ADR-008-R7).
     range_data = get_range_data_by_request_id(request_uuid)
-    # Bind the config to this range's zone before anything reads region/zone:
-    # the fleet spans regions because Compute CPU quota is per project per
-    # region. Derived from the allocation slot, so destroy resolves identically.
-    _slot = int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
-    resolved_config = range_cell_config_for_slot(resolved_config, _slot)
+    # Bind the config to this range's realized zone (chosen at range creation and
+    # stored on the row) before anything reads region/zone. Empty placement keeps
+    # the scalar single-zone config. Never recomputed from the pool here.
+    range_host_pool_slot = int(range_data["subnet_index"]) - 1 if range_data.get("subnet_index") is not None else None
+    resolved_config = resolve_placement_from_range_data(resolved_config, range_data)
     plan = render_range_cell_plan(
         request_uuid,
         variables,
         resolved_config,
         vpn_gateway_pool_slot=range_data.get("vpn_gateway_pool_slot"),
-        range_host_pool_slot=(_slot),
+        range_host_pool_slot=range_host_pool_slot,
     )
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()

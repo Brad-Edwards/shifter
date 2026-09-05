@@ -1,15 +1,25 @@
-"""GCP provisioner Job environment projection.
+"""Provisioner Job environment projection (GKE and EKS).
 
-Forwards the runtime env-var contract that ephemeral GKE provisioner Jobs
-need. Split out of the former single-module ``engine/ecs.py`` (#685); the
-import path stays ``engine.ecs`` via the package facade.
+Forwards the runtime env-var contract that ephemeral provisioner Jobs need. On
+GCP the values ride ``_GCP_PROVISIONER_ENV_KEYS``; on AWS (#1826) the provisioner
+now runs as a Kubernetes Job on EKS instead of an ECS task, so the contract that
+used to be baked into the ECS task definition
+(``platform/terraform/modules/engine-provisioner/task_definition.tf``) is
+forwarded here as ``_AWS_PROVISIONER_ENV_KEYS`` from the platform runtime env.
+Sensitive keys are separated into Secret-backed ``secretKeyRef`` env by the
+neutral Job manifest builder via ``shared.cloud.sensitive_env`` — this module
+only assembles the flat forwarded dict. Split out of the former single-module
+``engine/ecs.py`` (#685); the import path stays ``engine.ecs`` via the package
+facade.
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Collection
 
 from django.conf import settings
+from installation.runtime_inventory import AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS
 
 _GCP_PROVISIONER_ENV_KEYS = (
     "CLOUD_PROVIDER",
@@ -33,8 +43,8 @@ _GCP_PROVISIONER_ENV_KEYS = (
     "RANGE_NETWORK_CIDR",
     "RANGE_NETWORK_REGION",
     "RANGE_NETWORK_ZONE",
-    "RANGE_NETWORK_ZONES",
     "PORTAL_NETWORK_CIDRS",
+    "ACCESS_NETWORK_CIDRS",
     "GCP_PROVISIONER_SERVICE_ACCOUNT_EMAIL",
     "GCP_RANGE_BACKEND",
     "GCP_RANGE_PLANE",
@@ -133,6 +143,32 @@ _GCP_PROVISIONER_ENV_KEYS = (
 )
 
 
+# AWS (EKS) provisioner Job env contract (#1826). The authoritative key set is
+# the standalone bundle contract
+# ``installation.runtime_inventory.AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS``
+# (single source of truth; kept in lockstep with the AWS provisioner admission
+# env allowlist in values-aws-*.yaml). It mirrors the environment the AWS
+# provisioner used to receive from its ECS task definition; on EKS the
+# provisioner runs as a Kubernetes Job and these are forwarded from the
+# platform runtime env. DB_PASSWORD / FIELD_ENCRYPTION_KEY are intentionally
+# absent (RDS IAM auth + entrypoint hydration); DC_DOMAIN_PASSWORD is the one
+# Secret-backed env, routed to a secretKeyRef by shared.cloud.sensitive_env.
+_AWS_PROVISIONER_ENV_KEYS = AWS_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS
+
+
+def _forward_env(keys: Collection[str], fallback_values: dict[str, str]) -> dict[str, str] | None:
+    """Forward ``keys`` from the process env, applying fallbacks and dropping empties."""
+    env_overrides: dict[str, str] = {}
+    for key in keys:
+        value = os.environ.get(key)
+        if value is None or value == "":
+            value = fallback_values.get(key, "")
+        if value is None or value == "":
+            continue
+        env_overrides[key] = str(value)
+    return env_overrides or None
+
+
 def _get_gcp_provisioner_env_overrides() -> dict[str, str] | None:
     """Forward the runtime env contract needed by ephemeral GKE provisioner Jobs."""
     if settings.CLOUD_PROVIDER != "gcp":
@@ -161,13 +197,35 @@ def _get_gcp_provisioner_env_overrides() -> dict[str, str] | None:
         "CLOUD_PROJECT_ID": getattr(settings, "GCP_PROJECT_ID", ""),
     }
 
-    env_overrides: dict[str, str] = {}
-    for key in _GCP_PROVISIONER_ENV_KEYS:
-        value = os.environ.get(key)
-        if value is None or value == "":
-            value = fallback_values.get(key, "")
-        if value is None or value == "":
-            continue
-        env_overrides[key] = str(value)
+    return _forward_env(_GCP_PROVISIONER_ENV_KEYS, fallback_values)
 
-    return env_overrides or None
+
+def _get_aws_provisioner_env_overrides() -> dict[str, str] | None:
+    """Forward the runtime env contract needed by ephemeral EKS provisioner Jobs (#1826).
+
+    Values come from the platform runtime env (the ``platform-runtime`` ConfigMap
+    the launcher worker consumes), so each forwarded literal matches the ConfigMap
+    the fail-closed admission policy validates the Job against. Fallbacks are
+    limited to the three identity keys whose settings are the same source as the
+    ConfigMap, so the forwarded value never diverges from what the policy expects.
+    """
+    if settings.CLOUD_PROVIDER != "aws":
+        return None
+
+    fallback_values = {
+        "CLOUD_PROVIDER": settings.CLOUD_PROVIDER,
+        "ENVIRONMENT": getattr(settings, "ENVIRONMENT", ""),
+        "AWS_REGION": getattr(settings, "AWS_REGION", ""),
+    }
+
+    return _forward_env(_AWS_PROVISIONER_ENV_KEYS, fallback_values)
+
+
+def _get_provisioner_env_overrides() -> dict[str, str] | None:
+    """Return the provider-appropriate provisioner Job env overrides.
+
+    Both AWS (EKS) and GCP (GKE) dispatch the provisioner as a Kubernetes Job and
+    forward their runtime env contract here; each builder returns ``None`` when the
+    active provider does not match, so exactly one contributes.
+    """
+    return _get_gcp_provisioner_env_overrides() or _get_aws_provisioner_env_overrides()
