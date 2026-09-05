@@ -2034,7 +2034,7 @@
     "title": "Provider-neutral range substrate",
     "status": "accepted",
     "scope": "range_provisioning",
-    "decision": "Each root-selected backend bundle selects a provider family, and a provider's persisted registered range-backend binding selects exactly one provider-neutral range-substrate adapter exposing four convergent operations -- provision, destroy, pause, and resume -- over the complete range resource set (networks, instances, optional NGFW, and remote-access bindings). The port consumes existing validated RangeSpec or RAES realization intent rather than a new topology schema, returns closed versioned non-secret resource bindings, uses one classified error contract and request-scoped idempotency semantics, and is trusted only after the shared black-box lifecycle/security conformance suite passes. Task dispatch, backend metadata, public workflow/status, RAES semantic conformance, and Guacamole credential/session construction remain separate concerns. AWS Terraform, GCP GCE, and GCP GDC are the initial adapters; capability and evidence are scoped to the selected adapter and its admitted resource mix, while Azure is deferred until its adapter passes conformance.",
+    "decision": "Each root-selected backend bundle selects a provider family, and a provider's persisted registered range-backend binding selects exactly one provider-neutral range-substrate adapter exposing four convergent operations -- provision, destroy, pause, and resume -- over the complete range resource set (networks, instances, optional NGFW, and remote-access bindings). The port consumes existing validated RangeSpec or RAES realization intent rather than a new topology schema, returns closed versioned non-secret resource bindings, uses one classified error contract and request-scoped idempotency semantics, and is trusted only after the shared black-box lifecycle/security conformance suite passes. Task dispatch, backend metadata, public workflow/status, RAES semantic conformance, and Guacamole credential/session construction remain separate concerns. AWS Terraform, GCP GCE, and GCP GDC are the initial adapters; capability and evidence are scoped to the selected adapter and its admitted resource mix, while Azure is deferred until its adapter passes conformance. Warm preparation is an internal provision profile and fresh-owner activation is a separately advertised optional capability; neither weakens the four-operation core contract or permits ownership transfer without credential and runtime-state replacement.",
     "interface_contract": {
       "kind": "range-substrate/v1",
       "operations": [
@@ -2043,6 +2043,16 @@
         "pause",
         "resume"
       ],
+      "optional_capabilities": {
+        "warm_activation": {
+          "kind": "range-warm-activation/v1",
+          "provision_profile": "warm-prepared",
+          "operations": [
+            "activate"
+          ],
+          "unsupported_code": "unsupported-capability"
+        }
+      },
       "resources": [
         "network",
         "instance",
@@ -2133,6 +2143,11 @@
         "id": "ADR-039-R10",
         "description": "User-held client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only a trusted product launch path may mint the closed capability beside scenario intent; product provenance and ownership stay at the product/CMS boundary, while the capability binds one authoritative participant-access target and an enforced server-owned access deadline. CMS persists one lease for every new CTF and Mission Control range: the current deadline is the sole automatic-cleanup authority and the immutable generation ceiling bounds certificate `notAfter`. CTF derives both from event cleanup. Mission Control starts at 30 days, extends only through server-selected 30-day increments, and cannot exceed 365 days from creation; HTTP callers cannot select a deadline or increment. The DB-authoritative reconciler locks due rows and reuses canonical system-attributed destroy and existing product projections rather than a CTF- or Mission-Control-specific cleanup workflow. Any future product must supply the same enforced lease semantics or introduce an explicitly versioned renewal/revocation lifecycle; caller-supplied, silently expiring, and unbounded deadlines are prohibited, and topology alone never activates a VPN. A required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the user-controlled target), creates one owner/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former owner, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret; the provisioner writes serviceAccountUser only on that generated gateway account before Compute attaches it. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every live-fire adapter eligible for an enabled product profile must pass the same real-client handshake, isolation, lifecycle, secret-deletion, and capacity conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
         "checks": []
+      },
+      {
+        "id": "ADR-039-R11",
+        "description": "Warm pooling is an optional range-warm-activation/v1 adapter capability beside the four-operation substrate. Existing provision may accept a trusted warm-prepared profile only when the exact backend/resource mix advertises that capability; its postcondition is a system-owned quarantined generation with the validated immutable realization ready but no participant credential, access binding, session, or reachable participant path. Atomic claim is an Engine/CMS database allocation transition above the adapter and commits before provider I/O. Activate consumes the unchanged compatibility/realization digests, expected state generation, and an Engine-minted owner/workspace/product projection; owner identity is prohibited from HTTP, environment, and argv. Success requires rotation/removal of every pre-claim guest/provider/access identity, fresh claimant bindings, negative residue checks, isolation, and observed readiness. Miss, race, disabled policy, and unsupported capability preserve the existing cold-provision path; a claimed or suspect generation is never re-offered and is removed only through canonical destroy. Compatibility uses immutable backend/partition/placement, purpose/product/access posture, RAES package/plan, resolved image/artifact bindings, and other realization inputs, never mutable aliases or caller keys. Because legacy RangeSpec embeds user_id, it remains cold-only until a versioned ownership-neutral intent exists; persisted intent must not be mutated or contradicted to make reassignment appear valid. The CTF recovery-spare policy remains a separate event-recovery workflow even if both use shared low-level claim, capacity, lifecycle, audit, or adapter primitives.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2144,7 +2159,9 @@
       "https://github.com/Brad-Edwards/shifter/issues/1322",
       "https://github.com/Brad-Edwards/shifter/issues/1695",
       "https://github.com/Brad-Edwards/shifter/issues/1696",
+      "https://github.com/Brad-Edwards/shifter/issues/28",
       "docs/architecture/provider-neutral-range-substrate.md",
+      "docs/architecture/range-warm-pool-preflight-28.md",
       "docs/architecture/ctf-openvpn-participant-access-preflight-1695.md",
       "docs/architecture/non-ctf-openvpn-range-access-preflight-1696.md",
       "docs/architecture/branch-routing-provider-coupling-inventory.md",

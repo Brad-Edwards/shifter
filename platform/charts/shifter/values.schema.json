@@ -179,7 +179,8 @@
         "operationResultApplier",
         "outboxDrainer",
         "provisionerLauncher",
-        "reconciler"
+        "reconciler",
+        "warmPoolReconciler"
       ],
       "properties": {
         "cms": { "$ref": "#/$defs/scaledWorkload" },
@@ -191,7 +192,8 @@
         "operationResultApplier": { "$ref": "#/$defs/scaledWorkload" },
         "outboxDrainer": { "$ref": "#/$defs/scaledWorkload" },
         "provisionerLauncher": { "$ref": "#/$defs/scaledWorkload" },
-        "reconciler": { "$ref": "#/$defs/scaledWorkload" }
+        "reconciler": { "$ref": "#/$defs/scaledWorkload" },
+        "warmPoolReconciler": { "$ref": "#/$defs/scaledWorkload" }
       }
     },
     "guacd": {

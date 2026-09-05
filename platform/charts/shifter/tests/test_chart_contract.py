@@ -36,9 +36,10 @@ AWS_DEV_WAF_ACL_ARN = (
 # change.
 # Regenerated for #1311 after removing the retired fleet-wide RAES cutover
 # selector variables from the shared runtime ConfigMap.
+# Regenerated for #28 after adding the warm-pool reconciler worker Deployment.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "51afa72745007c1ff80093e259611fb00804374f10c3d0dd67ec7b702292ea3e",
-    "gcp-prod": "5e70fcaf5380e9b473ad27148a535a176e4a142b82671cebeb07ee19db37abed",
+    "gcp-dev": "37eb0dd7e341547007281dab5e4eb7de41820e2ca3ff9e252c7327fe5222467e",
+    "gcp-prod": "c212fb9b3101bbee0baefaff1fd8dd872cca0c8732652e2ddd997957e99d265e",
 }
 
 

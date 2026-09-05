@@ -47,7 +47,11 @@ ACCEPTED_CONTRACT_VERSIONS = frozenset({"1"})
 # by the domain authorization (engine.launch_intents); the envelope only bounds
 # the vocabulary so an unknown discriminator fails closed at the wire.
 RESOURCES = frozenset({"range", "raes-range", "ngfw"})
-OPERATIONS = frozenset({"provision", "destroy", "pause", "resume", "deprovision", "start", "stop"})
+# ``activate`` (#28, ADR-039-R11) hands an atomically claimed warm generation to
+# its claimant with fresh, fully sanitized access. Like every other value here it
+# is only a wire discriminator; engine.launch_intents authorizes which resource
+# may carry it (raes-range only).
+OPERATIONS = frozenset({"provision", "destroy", "pause", "resume", "deprovision", "start", "stop", "activate"})
 
 _ENVELOPE_KEYS = frozenset({"contract_version", "operation_id", "request_id", "resource", "operation", "payload"})
 _DIGEST_PREFIX = "sha256:"

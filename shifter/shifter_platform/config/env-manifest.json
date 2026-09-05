@@ -626,6 +626,21 @@
       "default": "'24'",
       "name": "VPN_GATEWAY_POOL_SIZE",
       "source_file": "config/settings.py"
+    },
+    {
+      "default": "''",
+      "name": "WARM_POOL_DEPLOYMENT_NAME",
+      "source_file": "config/_warm_pool_settings.py"
+    },
+    {
+      "default": "'Shifter/WarmPool'",
+      "name": "WARM_POOL_METRICS_NAMESPACE",
+      "source_file": "config/_warm_pool_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "WARM_POOL_POLICY_JSON",
+      "source_file": "config/_warm_pool_settings.py"
     }
   ]
 }
