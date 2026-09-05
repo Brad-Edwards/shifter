@@ -2374,17 +2374,18 @@ class TestGceRangePreconditions:
         )
 
     def test_missing_required_var_fails(self):
+        config = self._config()
         env = dict(self._FULL_ENV)
         del env["RANGE_NETWORK_ZONE"]
         with pytest.raises(SystemExit) as exc:
-            gcp_control_plane.check_gce_range_preconditions(self._config(), env=env, image_exists=lambda *_: True)
+            gcp_control_plane.check_gce_range_preconditions(config, env=env, image_exists=lambda *_: True)
         assert exc.value.code == 1
 
     def test_missing_image_fails(self):
+        config = self._config()
+        env = dict(self._FULL_ENV)
         with pytest.raises(SystemExit) as exc:
-            gcp_control_plane.check_gce_range_preconditions(
-                self._config(), env=dict(self._FULL_ENV), image_exists=lambda *_: False
-            )
+            gcp_control_plane.check_gce_range_preconditions(config, env=env, image_exists=lambda *_: False)
         assert exc.value.code == 1
 
     def test_allow_flag_downgrades_failures_to_warning(self):

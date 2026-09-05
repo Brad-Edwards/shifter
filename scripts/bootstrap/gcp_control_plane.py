@@ -2145,6 +2145,44 @@ def _gce_image_exists(project: str, kind: str, name: str) -> bool:
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
+def _warn_missing_runner_wif(env: Mapping[str, str]) -> None:
+    """Warn (never fail) when the CI runner/WIF identity is absent (fresh-GCP-order step 2)."""
+    if missing := [name for name in _GCE_RUNNER_WIF_VARS if not (env.get(name) or "").strip()]:
+        warn(
+            "Runner/WIF identity not configured (" + ", ".join(missing) + "). Not required for this "
+            "local operator-ADC bootstrap, but required for the CI image-bake and deploy pipeline "
+            "(fresh-GCP-order step 2). See docs/dev/deploy-secrets.md."
+        )
+
+
+def _missing_gce_range_images(
+    env: Mapping[str, str], project: str, image_exists: Callable[[str, str, str], bool]
+) -> list[str]:
+    """Return a description for each configured range guest image that does not resolve in the project."""
+    missing: list[str] = []
+    for name in _GCE_RANGE_IMAGE_VARS:
+        if not (reference := (env.get(name) or "").strip()):
+            continue
+        image_project, kind, image_name = _parse_gce_image_reference(reference, project)
+        if not image_exists(image_project, kind, image_name):
+            missing.append(f"{name}={reference} (no {kind} '{image_name}' in project '{image_project}')")
+    return missing
+
+
+def _report_gce_range_precondition_failures(missing_vars: list[str], missing_images: list[str]) -> None:
+    """Emit one error line per missing range-cell variable and per unbaked range guest image."""
+    for name in missing_vars:
+        error(
+            f"Required GCE range-cell variable {name} is not set (fresh-GCP-order step 3). "
+            "See docs/dev/deploy-secrets.md."
+        )
+    for detail in missing_images:
+        error(
+            f"Range guest image not baked: {detail} (fresh-GCP-order step 4). "
+            "See docs/architecture/gcp-guest-images.md."
+        )
+
+
 def check_gce_range_preconditions(
     config: GDCBootstrapConfig,
     *,
@@ -2168,37 +2206,15 @@ def check_gce_range_preconditions(
     header("GCE range-plane preconditions")
     project = _range_cell_project_id(config, env)
 
-    if missing_wif := [name for name in _GCE_RUNNER_WIF_VARS if not (env.get(name) or "").strip()]:
-        warn(
-            "Runner/WIF identity not configured (" + ", ".join(missing_wif) + "). Not required for this "
-            "local operator-ADC bootstrap, but required for the CI image-bake and deploy pipeline "
-            "(fresh-GCP-order step 2). See docs/dev/deploy-secrets.md."
-        )
-
+    _warn_missing_runner_wif(env)
     missing_vars = [name for name in _REQUIRED_GCE_RANGE_VARS if not (env.get(name) or "").strip()]
-
-    missing_images: list[str] = []
-    for name in _GCE_RANGE_IMAGE_VARS:
-        if not (reference := (env.get(name) or "").strip()):
-            continue
-        image_project, kind, image_name = _parse_gce_image_reference(reference, project)
-        if not image_exists(image_project, kind, image_name):
-            missing_images.append(f"{name}={reference} (no {kind} '{image_name}' in project '{image_project}')")
+    missing_images = _missing_gce_range_images(env, project, image_exists)
 
     if not missing_vars and not missing_images:
         success(f"GCE range preconditions satisfied (range-cell project {project}).")
         return
 
-    for name in missing_vars:
-        error(
-            f"Required GCE range-cell variable {name} is not set (fresh-GCP-order step 3). "
-            "See docs/dev/deploy-secrets.md."
-        )
-    for detail in missing_images:
-        error(
-            f"Range guest image not baked: {detail} (fresh-GCP-order step 4). "
-            "See docs/architecture/gcp-guest-images.md."
-        )
+    _report_gce_range_precondition_failures(missing_vars, missing_images)
 
     if allow_missing_range_images:
         warn(
