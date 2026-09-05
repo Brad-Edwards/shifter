@@ -2,7 +2,7 @@
 
 The in-box seed is loaded through the SAME ``register_pack`` service an
 operator uses — there is no privileged code path. The shipped manifest declares
-the canonical Polaris pack; these tests prove the mechanism end-to-end with a
+the in-box seed; these tests prove the mechanism end-to-end with a
 temporary manifest and confirm the shipped manifest parses to the expected
 declaration.
 """

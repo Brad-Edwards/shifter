@@ -153,8 +153,8 @@ follow-up without re-editing the ownership model or changing its meaning.
   what an old change claimed; active ADRs and current guides define the present
   boundary.
 - The current bootstrap README says the manifest is empty, while
-  `manifest.yaml` contains Polaris. Correct current guidance without deleting
-  the pack, renaming runtime symbols, or treating the manifest as a release
+  `manifest.yaml` declares an in-box seed pack. Correct current guidance without
+  deleting the pack, renaming runtime symbols, or treating the manifest as a release
   catalog in this issue.
 - Do not duplicate RAES schemas, satisfiability rules, package validation,
   `RaesPackageSource`, launchability logic, exception hierarchies, error
@@ -170,7 +170,7 @@ follow-up without re-editing the ownership model or changing its meaning.
   content, manifest entry, Terraform, workflow, runner, or deployment change.
 - No Shifter-to-BigRAE code, setting, resource-tag, repository, package, or URL
   rename.
-- No relocation or deletion of the checked-in Polaris pack; cross-repository
+- No relocation or deletion of the checked-in in-box seed pack; cross-repository
   movement belongs to Hub/env-packs sequencing.
 - No marketplace, catalog client, pack downloader, entitlement system,
   subscription model, credential broker, signing service, artifact store, or
