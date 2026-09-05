@@ -272,9 +272,15 @@ class AgentListItemSerializer(serializers.Serializer):
 
 
 class AgentListResponseSerializer(serializers.Serializer):
-    """Response body for ``AgentListView.get``."""
+    """Response body for ``AgentListView.get``.
+
+    ``max_file_size_bytes`` is the server-owned per-file upload ceiling (bytes)
+    the SPA reads to guard uploads before initiation, so the frontend limit
+    cannot drift from the value the backend enforces.
+    """
 
     agents = AgentListItemSerializer(many=True)
+    max_file_size_bytes = serializers.IntegerField()
 
 
 class ScenarioListItemSerializer(serializers.Serializer):
@@ -348,7 +354,10 @@ class UploadInitiateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Agent name is required")
         if not filename:
             raise serializers.ValidationError("Filename is required")
-        if not isinstance(file_size, int) or file_size <= 0:
+        # ``file_size`` is a raw ``JSONField``; reject any non-positive-int JSON
+        # value. ``bool`` is a subclass of ``int`` in Python, so guard it first
+        # or ``true`` would be admitted as one byte.
+        if isinstance(file_size, bool) or not isinstance(file_size, int) or file_size <= 0:
             raise serializers.ValidationError("Valid file size is required")
         if agent_type not in AGENT_TYPE_CHOICES:
             choices = ", ".join(AGENT_TYPE_CHOICES)

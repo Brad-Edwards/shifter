@@ -126,6 +126,14 @@ class TestGeneratePresignedUploadUrl:
         assert call.kwargs["Params"]["ContentType"] == "application/octet-stream"
         assert call.kwargs["ExpiresIn"] == 900
 
+    def test_passes_content_length_through_to_signed_request(self, s3_client, settings):
+        settings.AGENT_UPLOAD_URL_EXPIRES = 900
+        s3_client.generate_presigned_url.return_value = "https://s3.example.com/presigned"
+
+        generate_presigned_upload_url(123, "agent.msi", content_length=2048)
+
+        assert s3_client.generate_presigned_url.call_args.kwargs["Params"]["ContentLength"] == 2048
+
     def test_raises_s3error_on_cloud_storage_error(self, s3_client, settings):
         settings.AGENT_UPLOAD_URL_EXPIRES = 900
         s3_client.generate_presigned_url.side_effect = _client_error("500", "PutObject")

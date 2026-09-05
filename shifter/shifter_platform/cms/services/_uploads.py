@@ -51,7 +51,20 @@ def _initiate_upload_inner(
     from cms.assets.s3 import S3Error, generate_presigned_upload_url
     from cms.assets.services import get_storage_used
     from cms.assets.upload_token import generate_upload_token
-    from cms.assets.validation import ValidationError, validate_file_extension
+    from cms.assets.validation import ValidationError, enforce_max_file_size_bytes, validate_file_extension
+
+    # Per-file ceiling first, before the per-user quota lookup or any presigned
+    # URL issuance. This is a separate policy from the storage quota: a request
+    # over both limits receives the per-file decision here.
+    try:
+        enforce_max_file_size_bytes(file_size)
+    except ValidationError as e:
+        logger.warning(
+            "initiate_upload: file size %s exceeds per-file limit for user_id=%s",
+            safe_log_value(file_size),
+            user.id,
+        )
+        raise CMSError(str(e)) from e
 
     current_usage = get_storage_used(user)
     quota_bytes = settings.AGENT_USER_STORAGE_QUOTA_MB * 1024 * 1024
@@ -81,6 +94,7 @@ def _initiate_upload_inner(
         presigned_url, s3_key = generate_presigned_upload_url(
             user_id=user.id,
             filename=filename,
+            content_length=file_size,
         )
     except S3Error as e:
         logger.exception("initiate_upload: S3 error for user_id=%s", user.id)
@@ -195,7 +209,8 @@ def _verify_upload_object_or_raise(s3_key: str, expected_size: int, user_id: int
     fields such as ``etag`` / ``generation``) so completion can bind the later
     immutable copy to the exact version validated here.
     """
-    from cms.assets.s3 import S3Error, verify_s3_object_exists
+    from cms.assets.s3 import S3Error, delete_agent, verify_s3_object_exists
+    from cms.assets.validation import ValidationError, agent_max_file_size_bytes, enforce_max_file_size_bytes
 
     try:
         identity = verify_s3_object_exists(s3_key)
@@ -204,6 +219,34 @@ def _verify_upload_object_or_raise(s3_key: str, expected_size: int, user_id: int
         raise CMSError("Upload not found in storage") from e
 
     actual_size = identity["content_length"]
+
+    # Absolute per-file cap against the CURRENT server policy, before the token's
+    # declared-size equality check. A stale or crafted token may have been signed
+    # under a different cap, so this uses the live limit and the authoritative
+    # provider-reported length, never the token's declared file_size. An oversized
+    # object is cleaned up (best effort) and rejected even if cleanup fails;
+    # nothing downstream (inspection, immutable copy, tag, DB row, creation audit)
+    # runs.
+    try:
+        enforce_max_file_size_bytes(actual_size)
+    except ValidationError as e:
+        logger.warning(
+            "complete_upload: object exceeds per-file limit user_id=%s s3_key=%s actual=%s limit=%s",
+            user_id,
+            safe_log_value(s3_key),
+            actual_size,
+            agent_max_file_size_bytes(),
+        )
+        try:
+            delete_agent(s3_key)
+        except S3Error:
+            logger.exception(
+                "complete_upload: cleanup after oversize object failed user_id=%s s3_key=%s",
+                user_id,
+                safe_log_value(s3_key),
+            )
+        raise CMSError(str(e)) from e
+
     if actual_size != expected_size:
         logger.error(
             "complete_upload: size mismatch for user_id=%s - expected=%s, actual=%s",

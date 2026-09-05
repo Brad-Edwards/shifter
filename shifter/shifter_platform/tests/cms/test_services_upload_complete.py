@@ -207,6 +207,66 @@ class TestCompleteUploadObjectValidation:
             services.complete_upload(user, token_2)
 
 
+class TestCompleteUploadPerFileLimit:
+    """The per-file ceiling is re-checked against the authoritative object length."""
+
+    def test_object_at_exact_limit_succeeds(self, user, windows_os, s3_complete, settings):
+        settings.AGENT_MAX_FILE_SIZE_MB = 1
+        cap = 1 * 1024 * 1024
+        s3_complete.head_object.return_value = {"ContentLength": cap, "ETag": '"etag"'}
+        agent = services.complete_upload(user, _token(user, file_size=cap))
+        assert AgentConfig.objects.filter(pk=agent.pk).exists()
+
+    def test_oversized_object_deleted_and_rejected_even_when_token_declares_it(self, user, s3_complete, settings):
+        # The token itself declares the oversized length (a stale token signed under
+        # a higher cap), so the declared-size equality check would pass. The
+        # absolute-cap check must fire first: delete the object and reject, without
+        # reaching header inspection, the immutable copy, tagging, or a DB row.
+        settings.AGENT_MAX_FILE_SIZE_MB = 1
+        over = 1 * 1024 * 1024 + 1
+        s3_complete.head_object.return_value = {"ContentLength": over, "ETag": '"etag"'}
+        s3_key = f"agents/{user.id}/abc_agent.msi"
+
+        with pytest.raises(CMSError, match="exceeds maximum allowed"):
+            services.complete_upload(user, _token(user, s3_key=s3_key, file_size=over))
+
+        s3_complete.delete_object.assert_called_once()
+        assert s3_complete.delete_object.call_args.kwargs["Key"] == s3_key
+        s3_complete.get_object.assert_not_called()
+        s3_complete.copy_object.assert_not_called()
+        s3_complete.put_object_tagging.assert_not_called()
+        assert AgentConfig.objects.count() == 0
+
+    def test_oversized_object_rejected_even_if_cleanup_fails(self, user, s3_complete, settings):
+        settings.AGENT_MAX_FILE_SIZE_MB = 1
+        over = 1 * 1024 * 1024 + 1
+        s3_complete.head_object.return_value = {"ContentLength": over, "ETag": '"etag"'}
+        s3_complete.delete_object.side_effect = ClientError(
+            {"Error": {"Code": "500", "Message": "boom"}}, "DeleteObject"
+        )
+        with pytest.raises(CMSError, match="exceeds maximum allowed"):
+            services.complete_upload(user, _token(user, file_size=over))
+        assert AgentConfig.objects.count() == 0
+
+    def test_cap_check_precedes_declared_size_equality(self, user, s3_complete, settings):
+        # The token declares a DIFFERENT (within-cap-looking) size than the actual
+        # oversized object. If the declared-size equality check ran before the
+        # absolute-cap check, this would surface the generic "size mismatch" error
+        # and skip the cleanup delete, stranding the over-cap object. The cap check
+        # must run first: cap message + object deleted.
+        settings.AGENT_MAX_FILE_SIZE_MB = 1
+        over = 1 * 1024 * 1024 + 1
+        s3_complete.head_object.return_value = {"ContentLength": over, "ETag": '"etag"'}
+        s3_key = f"agents/{user.id}/abc_agent.msi"
+
+        with pytest.raises(CMSError, match="exceeds maximum allowed"):
+            services.complete_upload(user, _token(user, s3_key=s3_key, file_size=1000))
+
+        s3_complete.delete_object.assert_called_once()
+        assert s3_complete.delete_object.call_args.kwargs["Key"] == s3_key
+        assert AgentConfig.objects.count() == 0
+
+
 class TestCompleteUploadHeaderInspection:
     def test_magic_byte_mismatch_deletes_object_and_aborts(self, user, s3_complete):
         s3_complete.get_object.return_value = {"Body": MagicMock(read=MagicMock(return_value=_ZIP_HEADER))}

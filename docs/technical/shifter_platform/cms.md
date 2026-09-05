@@ -182,11 +182,33 @@ upload lock before the lock is cleared. Empty, malformed, missing-token, stale,
 wrong-user, or expired-token cancel requests leave the lock in place; stale locks
 recover through the upload lock timeout.
 
+Per-file size limit. A single agent installer may be at most
+`AGENT_MAX_FILE_SIZE_MB` (default 2048, i.e. 2 GiB using binary MiB). This
+per-file ceiling is distinct from the per-user storage quota below. It is
+enforced at three trust boundaries against one policy helper
+(`cms.assets.validation.agent_max_file_size_bytes`), so the layers cannot drift:
+the SPA guards the picked file before initiation; `initiate_upload` rejects a
+declared `file_size` above the ceiling before any quota lookup or presigned URL
+is issued; and `complete_upload` re-checks the authoritative provider-reported
+object length against the current ceiling (independently of the token's declared
+size), deleting the object and rejecting even a stale or crafted token that was
+signed under a different cap. The presigned PUT also binds the declared length
+into the provider's signed request as defense in depth, but the finalization
+check is the authoritative boundary. The SPA reads the ceiling from the
+`max_file_size_bytes` field on the agent-list response so its client-side guard
+always matches the server value.
+
 #### User Quota
 
 | Function | Purpose |
 |----------|---------|
 | `get_storage_used(user)` | Check storage quota |
+
+The per-user storage quota (`AGENT_USER_STORAGE_QUOTA_MB`, default 5120, i.e. 5
+GiB) caps the total size of a user's active agents and is a separate policy from
+the per-file size limit above. A request may satisfy the per-file limit yet still
+be rejected because it would exceed the aggregate quota; a request over both
+receives the per-file decision first.
 
 #### Scenarios
 
