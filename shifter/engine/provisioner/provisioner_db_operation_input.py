@@ -32,13 +32,16 @@ from shared.operation_envelope import (
     validate_operation_envelope,
 )
 from shared.raes.operation_input import RaesOperationInput, RaesOperationInputError, parse_raes_operation_input
+from shared.warm_pool.activation_input import ActivationInput, ActivationInputError, parse_activation_input
 
 from provisioner_db import get_db_connection
 
 __all__ = [
+    "ActivationRun",
     "OperationInputError",
     "RaesOperationRun",
     "ValidatedOperationInput",
+    "get_activation_operation_input",
     "get_operation_input",
     "get_raes_operation_input",
 ]
@@ -71,6 +74,15 @@ class RaesOperationRun:
     operation_id: str
     request_id: str
     input: RaesOperationInput
+
+
+@dataclass(frozen=True)
+class ActivationRun:
+    """The proven identity plus the parsed warm-pool activation projection (#28)."""
+
+    operation_id: str
+    request_id: str
+    input: ActivationInput
 
 
 _SELECT_OPERATION_INPUT_SQL = """
@@ -166,3 +178,22 @@ def get_raes_operation_input(operation_id: str, *, request_id: str, operation: s
     except RaesOperationInputError as exc:
         raise OperationInputError(f"raes operation input is invalid: {exc}") from None
     return RaesOperationRun(operation_id=validated.operation_id, request_id=validated.request_id, input=projection)
+
+
+def get_activation_operation_input(operation_id: str, *, request_id: str) -> ActivationRun:
+    """Return the proven identity and parsed warm-pool activation projection (#28).
+
+    Runs the closed activation payload parser (claimant projection + the embedded
+    ownership-neutral RAES realization projection) on top of the transport and
+    identity validation, so a tampered claimant field or a malformed RAES input
+    fails here -- before the provisioner scrubs or rotates anything on the claimed
+    generation -- rather than part-way through activation.
+    """
+    validated = get_operation_input(
+        operation_id=operation_id, request_id=request_id, resource="raes-range", operation="activate"
+    )
+    try:
+        projection = parse_activation_input(validated.payload)
+    except ActivationInputError as exc:
+        raise OperationInputError(f"activation operation input is invalid: {exc}") from None
+    return ActivationRun(operation_id=validated.operation_id, request_id=validated.request_id, input=projection)

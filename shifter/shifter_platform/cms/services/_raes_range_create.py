@@ -352,6 +352,34 @@ def _create_raes_native_range_impl(
         instantiation_purpose=instantiation_purpose,
         correlation_key=request_id,
     )
+
+    # #28: attempt an atomic warm-pool claim before cold provisioning. A hit
+    # transfers a ready, compatible, system-owned generation to this user (audited
+    # ownership rehome) and enqueues activation, which realizes the claimant's
+    # fresh, sanitized access. A miss / disabled policy / unsupported backend
+    # cold-falls-back through the unchanged reservation + dispatch path below, with
+    # the inputs already validated for this launch.
+    from cms.services._range_workspace import resolve_effective_egress_mode
+    from cms.services._warm_pool_claim import WarmClaimRequest, attempt_warm_claim
+
+    claimed_request_id = attempt_warm_claim(
+        WarmClaimRequest(
+            user=user,
+            scenario=scenario,
+            package_digest=source.package_digest,
+            lock_digest=source.lock_digest,
+            backend=backend_admission.backend if backend_admission else "",
+            instantiation_purpose=instantiation_purpose,
+            range_source=range_source,
+            workspace_id=workspace_id,
+            egress_mode=resolve_effective_egress_mode(workspace_id),
+            request_id=request_id,
+        )
+    )
+    if claimed_request_id is not None:
+        _audit_raes_range_provision(claimed_request_id, scenario, user, range_source)
+        return _build_raes_range_context(claimed_request_id, scenario, user)
+
     _request_id, _cms_request, range_instance, egress_mode = _reserve_active_range_slot(
         user, range_source, _persist, workspace_id, request_id
     )

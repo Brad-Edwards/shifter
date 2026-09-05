@@ -153,6 +153,8 @@ from ._user_offboarding import (
     OwnershipTransferSummary,
     transfer_user_ownership,
 )
+from ._warm_pool_claim import attempt_warm_claim
+from ._warm_pool_reconcile import reconcile_warm_pool
 
 # The public product launch seam is permanently RAES-owned after #1311.
 create_range = create_range_dispatch
@@ -189,6 +191,7 @@ __all__ = (
     "WorkspaceLaunchQuotaExceeded",
     "assets_create_agent",
     "assets_delete_agent",
+    "attempt_warm_claim",
     "audit_log",
     "cancel_range",
     "cancel_range_by_request_id",
@@ -263,6 +266,7 @@ __all__ = (
     "reassign_range_owner",
     "rebind_range_workspace",
     "reconcile_ctf_range_leases",
+    "reconcile_warm_pool",
     "register_pack",
     "resume_range",
     "resume_range_by_request_id",
