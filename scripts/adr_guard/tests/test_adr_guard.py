@@ -493,6 +493,140 @@ class AdrGuardTests(unittest.TestCase):
         ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
         self.assertTrue(any("interface_contract" in item.message for item in violations))
 
+    def test_accessibility_enforcement_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "accessibility-enforcement/v1",
+            "standard": {
+                "target": "wcag-2.2-aa",
+                "governed_scope": "complete-human-facing-pages-and-processes",
+                "automated_conformance_claim": False,
+            },
+            "toolchain": {
+                "static": "eslint-plugin-jsx-a11y",
+                "component": "vitest-axe",
+                "browser": "@axe-core/playwright",
+                "runner": "playwright",
+                "parallel_conformance_runners": False,
+                "wcag_tags": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
+            },
+            "cadence": {
+                "pull_request": "complete-registered-pr-matrix",
+                "nightly": "same-matrix-expanded-browser-projects",
+                "on_demand": "same-runner-allowlisted-deployed-target",
+                "manual": "material-release-and-annual",
+            },
+            "coverage": {
+                "source": "test-owned-surface-state-matrix",
+                "new_surface": "fail-until-registered",
+                "removed_surface": "fail-until-pruned",
+                "surface_kinds": [
+                    "spa-route",
+                    "django-html-route",
+                    "mkdocs-page",
+                    "enabled-third-party-ui",
+                ],
+            },
+            "baseline": {
+                "comparison": "trusted-base-exact-finding-set",
+                "additions": "forbidden",
+                "resolved_entries": "must-be-removed",
+                "counts_or_thresholds": False,
+                "raw_dom": False,
+                "tool_upgrade": "remediate-or-separately-waive",
+            },
+            "manual_audit": {
+                "method": "wcag-em",
+                "initial_trigger": "before-first-conforming-release",
+                "release_trigger": "new-or-materially-changed-surface-or-process",
+                "incident_trigger": "accessibility-critical-incident",
+                "maximum_interval_days": 365,
+                "reviewer": "accessibility-trained-independent-when-practicable",
+                "record": "docs/audit/accessibility",
+                "release_gate": "before-write-capable-release",
+            },
+            "waivers": {
+                "registry": "docs/adr/exceptions.yaml",
+                "scope": "exact-fingerprint",
+                "approval": "adr-codeowner-no-self-approval",
+                "expiry": "no-later-than-next-planned-release",
+                "conformance_effect": "release-only-not-conformance",
+            },
+            "security": {
+                "pr_permissions": "contents-read",
+                "normal_auth_boundaries": True,
+                "csp_relaxation": False,
+                "free_form_target_url": False,
+                "sensitive_artifacts": False,
+            },
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-055"), [])
+
+        mutations = {
+            "weakened WCAG target": lambda value: value["standard"].update(
+                {"target": "wcag-2.1-aa"}
+            ),
+            "automated conformance overclaim": lambda value: value["standard"].update(
+                {"automated_conformance_claim": True}
+            ),
+            "parallel browser runner": lambda value: value["toolchain"].update(
+                {"runner": "pa11y"}
+            ),
+            "missing inherited WCAG tag": lambda value: value["toolchain"]["wcag_tags"].remove(
+                "wcag2a"
+            ),
+            "changed-page-only PR scan": lambda value: value["cadence"].update(
+                {"pull_request": "changed-pages-only"}
+            ),
+            "unregistered page allowed": lambda value: value["coverage"].update(
+                {"new_surface": "warn"}
+            ),
+            "count threshold baseline": lambda value: value["baseline"].update(
+                {"counts_or_thresholds": True}
+            ),
+            "baseline can grow": lambda value: value["baseline"].update(
+                {"additions": "reviewed"}
+            ),
+            "manual audit only on demand": lambda value: value["manual_audit"].update(
+                {"release_trigger": "optional"}
+            ),
+            "critical incident audit removed": lambda value: value["manual_audit"].update(
+                {"incident_trigger": "none"}
+            ),
+            "second waiver registry": lambda value: value["waivers"].update(
+                {"registry": "frontend/accessibility-waivers.json"}
+            ),
+            "self-approved waiver": lambda value: value["waivers"].update(
+                {"approval": "author"}
+            ),
+            "CSP relaxation": lambda value: value["security"].update(
+                {"csp_relaxation": True}
+            ),
+            "authenticated traces uploaded": lambda value: value["security"].update(
+                {"sensitive_artifacts": True}
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-055"))
+
+        entry_without_contract = {
+            "id": "ADR-055",
+            "title": "Continuous accessibility enforcement",
+            "status": "accepted",
+            "scope": "repository",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
     def test_validate_adr_exceptions_rejects_expired_entries(self) -> None:
         errors = ADR_GUARD.validate_adr_exceptions(
             [

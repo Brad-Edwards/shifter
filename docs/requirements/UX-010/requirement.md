@@ -17,3 +17,9 @@ Every public surface of the platform shall conform to WCAG 2.2 Level AA. Conform
 ## Rationale
 
 No accessibility pass has ever been done on this codebase. WCAG 2.2 AA is the standard baseline for accessible web applications, and treating it as table stakes for an OSS project that wants any kind of public adoption is the floor, anything less excludes users with disabilities and creates legal exposure for adopters.
+
+## Traceability
+
+- DOCUMENTS → ADR `docs/adr/index.yaml` (ADR-055 continuous accessibility enforcement contract)
+- DOCUMENTS → DOCUMENTATION `docs/architecture/continuous-accessibility-enforcement-preflight-713.md` (WCAG scope, manual-audit cadence, release evidence, triage, and waiver design)
+- DOCUMENTS → GITHUB_ISSUE `713` (Architecture decision for continuous accessibility enforcement)

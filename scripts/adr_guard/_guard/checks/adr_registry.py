@@ -25,6 +25,7 @@ REQUIRED_INTERFACE_CONTRACTS = {
     "ADR-039": "range-substrate/v1",
     "ADR-051": "ctf-communications/v1",
     "ADR-054": "dedicated-customer-authority/v1",
+    "ADR-055": "accessibility-enforcement/v1",
 }
 RANGE_SUBSTRATE_OPERATIONS = frozenset({"provision", "destroy", "pause", "resume"})
 RANGE_SUBSTRATE_RESOURCES = frozenset({"network", "instance", "ngfw", "remote-access"})
@@ -116,6 +117,12 @@ DEDICATED_CUSTOMER_AUTHORITY_VERIFICATION = frozenset(
         "effective-iam-network-denial",
         "dependency-outage-behavior",
     }
+)
+ACCESSIBILITY_WCAG_TAGS = frozenset(
+    {"wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"}
+)
+ACCESSIBILITY_SURFACE_KINDS = frozenset(
+    {"spa-route", "django-html-route", "mkdocs-page", "enabled-third-party-ui"}
 )
 _ADR_INDEX_PATH = "docs/adr/index.yaml"
 _ADR_EXCEPTIONS_PATH = "docs/adr/exceptions.yaml"
@@ -494,6 +501,137 @@ def _validate_dedicated_customer_authority_contract(
     return errors
 
 
+def _validate_accessibility_enforcement_contract(
+    contract: dict[str, object], adr_id: str
+) -> list[str]:
+    """Validate ADR-055's closed accessibility governance contract."""
+    expected_keys = {
+        "kind",
+        "standard",
+        "toolchain",
+        "cadence",
+        "coverage",
+        "baseline",
+        "manual_audit",
+        "waivers",
+        "security",
+    }
+    errors: list[str] = []
+    actual_keys = set(contract)
+    if actual_keys != expected_keys:
+        errors.append(
+            f"{adr_id} interface_contract must contain exactly {sorted(expected_keys)}; got {sorted(actual_keys)}"
+        )
+
+    prefix = f"{adr_id} interface_contract"
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("standard"),
+            f"{prefix}.standard",
+            fixed={
+                "target": "wcag-2.2-aa",
+                "governed_scope": "complete-human-facing-pages-and-processes",
+                "automated_conformance_claim": False,
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("toolchain"),
+            f"{prefix}.toolchain",
+            fixed={
+                "static": "eslint-plugin-jsx-a11y",
+                "component": "vitest-axe",
+                "browser": "@axe-core/playwright",
+                "runner": "playwright",
+                "parallel_conformance_runners": False,
+            },
+            string_sets={"wcag_tags": ACCESSIBILITY_WCAG_TAGS},
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("cadence"),
+            f"{prefix}.cadence",
+            fixed={
+                "pull_request": "complete-registered-pr-matrix",
+                "nightly": "same-matrix-expanded-browser-projects",
+                "on_demand": "same-runner-allowlisted-deployed-target",
+                "manual": "material-release-and-annual",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("coverage"),
+            f"{prefix}.coverage",
+            fixed={
+                "source": "test-owned-surface-state-matrix",
+                "new_surface": "fail-until-registered",
+                "removed_surface": "fail-until-pruned",
+            },
+            string_sets={"surface_kinds": ACCESSIBILITY_SURFACE_KINDS},
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("baseline"),
+            f"{prefix}.baseline",
+            fixed={
+                "comparison": "trusted-base-exact-finding-set",
+                "additions": "forbidden",
+                "resolved_entries": "must-be-removed",
+                "counts_or_thresholds": False,
+                "raw_dom": False,
+                "tool_upgrade": "remediate-or-separately-waive",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("manual_audit"),
+            f"{prefix}.manual_audit",
+            fixed={
+                "method": "wcag-em",
+                "initial_trigger": "before-first-conforming-release",
+                "release_trigger": "new-or-materially-changed-surface-or-process",
+                "incident_trigger": "accessibility-critical-incident",
+                "maximum_interval_days": 365,
+                "reviewer": "accessibility-trained-independent-when-practicable",
+                "record": "docs/audit/accessibility",
+                "release_gate": "before-write-capable-release",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("waivers"),
+            f"{prefix}.waivers",
+            fixed={
+                "registry": "docs/adr/exceptions.yaml",
+                "scope": "exact-fingerprint",
+                "approval": "adr-codeowner-no-self-approval",
+                "expiry": "no-later-than-next-planned-release",
+                "conformance_effect": "release-only-not-conformance",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("security"),
+            f"{prefix}.security",
+            fixed={
+                "pr_permissions": "contents-read",
+                "normal_auth_boundaries": True,
+                "csp_relaxation": False,
+                "free_form_target_url": False,
+                "sensitive_artifacts": False,
+            },
+        )
+    )
+    return errors
+
+
 def validate_interface_contract(contract: object, adr_id: str) -> list[str]:
     """Validate executable invariants declared by a typed ADR interface contract."""
     if not isinstance(contract, dict):
@@ -507,6 +645,8 @@ def validate_interface_contract(contract: object, adr_id: str) -> list[str]:
         return _validate_ctf_communications_contract(contract, adr_id)
     if contract["kind"] == "dedicated-customer-authority/v1":
         return _validate_dedicated_customer_authority_contract(contract, adr_id)
+    if contract["kind"] == "accessibility-enforcement/v1":
+        return _validate_accessibility_enforcement_contract(contract, adr_id)
 
     errors: list[str] = []
     errors.extend(

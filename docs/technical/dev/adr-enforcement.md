@@ -140,12 +140,16 @@ The first slice intentionally stays small:
 
 - `adr-registry`
   Validates the ADR registry and exception files. It also validates the closed
-  typed interface contracts required by ADR-039, ADR-051, and ADR-054. The
+  typed interface contracts required by ADR-039, ADR-051, ADR-054, and ADR-055. The
   `dedicated-customer-authority/v1` contract makes removal or weakening of
   ADR-054's customer boundary, authority separation, event-migration gate,
   infrastructure ownership, outage behavior, or evidence classes fail locally
-  and in CI. This is structural enforcement of the accepted contract, not a
-  substitute for its runtime, migration, IAM, or network tests.
+  and in CI. The `accessibility-enforcement/v1` contract likewise pins the
+  WCAG target, one axe/Playwright toolchain, every-PR/nightly/deployed cadence,
+  fail-closed surface inventory, exact finding ratchet, manual-audit evidence,
+  central waiver policy, and security boundary. This is structural enforcement
+  of accepted decisions, not a substitute for their runtime, migration, IAM,
+  network, browser, or manual-audit tests.
 
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
