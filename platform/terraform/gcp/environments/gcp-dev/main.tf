@@ -45,9 +45,13 @@ module "cicd_github_oidc" {
   github_org       = var.github_org
   github_repo      = var.github_repo
   platform_network = module.platform_core.network_name
-  # The GDC VM Runtime reads gs:// disk images using the bare-metal GCR
-  # service account key carried in GDC_VM_IMAGE_GCS_SECRET_ID.
-  image_reader_service_accounts = ["baremetal-gcr@${var.project_id}.iam.gserviceaccount.com"]
+  # The GDC VM Runtime reads gs:// disk images using the bare-metal GCR service
+  # account key carried in GDC_VM_IMAGE_GCS_SECRET_ID. That SA (baremetal-gcr) is
+  # created only by the GDC substrate bootstrap, so it does not exist on the
+  # default GCE range backend; the reader list is empty there and is populated
+  # (with baremetal-gcr) only for a GDC deployment. Gated so a fresh GCE apply
+  # does not fail binding a non-existent SA (ADR: GDC not selected by default).
+  image_reader_service_accounts = var.gdc_vm_runtime_image_readers
   labels                        = local.labels
 }
 

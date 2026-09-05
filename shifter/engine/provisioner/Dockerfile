@@ -14,13 +14,20 @@ LABEL maintainer="Shifter maintainers" \
 ARG TERRAFORM_VERSION=1.14.3
 ARG PULUMI_VERSION=3.142.0
 
-# kubectl + the KubeVirt `virt` plugin (virtctl, installed as `kubectl-virt`)
-# drive GDC VM Runtime guest start/stop for range pause/resume (issue #614,
-# gdc_vmruntime_assets.run_power_operation). Both are integrity-verified against
-# the vendor-published checksums before install. KUBEVIRT_VERSION tracks the
-# deployed GDC VM Runtime version and is overridable at build time.
+# kubectl is always installed. The KubeVirt `virt` plugin (virtctl, installed as
+# `kubectl-virt`) drives GDC VM Runtime guest start/stop for range pause/resume
+# (issue #614, gdc_vmruntime_assets.run_power_operation). virtctl is installed
+# ONLY when INSTALL_KUBEVIRT=true (GDC deployments); the default GCE range backend
+# never invokes it (GCE pause/resume uses the Compute API), so the default image
+# omits it — no GDC tooling on the default path (ADR: GDC not selected by default).
+# KubeVirt publishes no release checksums file, so virtctl integrity is verified
+# against the pinned VIRTCTL_SHA256 digest (of virtctl-${KUBEVIRT_VERSION}-linux-amd64)
+# rather than a non-existent upstream CHECKSUMS asset. KUBEVIRT_VERSION tracks the
+# deployed GDC VM Runtime version; bump VIRTCTL_SHA256 in lockstep.
 ARG KUBECTL_VERSION=v1.31.4
 ARG KUBEVIRT_VERSION=v1.4.0
+ARG INSTALL_KUBEVIRT=false
+ARG VIRTCTL_SHA256=ebc167273e40a295721c61d04c4458fa8f037c5a00b347dbb4f5456a02ce4e7a
 
 # Single root-stage RUN: install build tools, terraform, pulumi, create the
 # non-root runtime user with its writable plugin-cache / pulumi dirs, and
@@ -59,20 +66,21 @@ RUN apt-get update && apt-get install -y curl openssh-client unzip && \
     echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c - && \
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
     rm kubectl kubectl.sha256 && \
-    # Install the KubeVirt virt plugin (virtctl) as kubectl-virt, integrity-verified
-    # against the release CHECKSUMS.sha256 before it is placed on PATH.
-    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
-      -o "virtctl-${KUBEVIRT_VERSION}-linux-amd64" \
-      "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/virtctl-${KUBEVIRT_VERSION}-linux-amd64" && \
-    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
-      -o virtctl_CHECKSUMS.sha256 \
-      "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/CHECKSUMS.sha256" && \
-    grep "virtctl-${KUBEVIRT_VERSION}-linux-amd64" virtctl_CHECKSUMS.sha256 | sha256sum -c - && \
-    install -o root -g root -m 0755 "virtctl-${KUBEVIRT_VERSION}-linux-amd64" /usr/local/bin/kubectl-virt && \
-    rm "virtctl-${KUBEVIRT_VERSION}-linux-amd64" virtctl_CHECKSUMS.sha256 && \
-    # Exercise both from the final layer (offline): kubectl resolves the plugin.
+    # Exercise kubectl offline (it resolves kubectl-* plugins from PATH).
     kubectl version --client >/dev/null && \
-    kubectl-virt help >/dev/null && \
+    # Install the KubeVirt virt plugin (virtctl) as kubectl-virt ONLY for GDC VM
+    # Runtime deployments (INSTALL_KUBEVIRT=true). KubeVirt publishes no release
+    # checksums file, so integrity is verified against the pinned VIRTCTL_SHA256
+    # digest. The default GCE backend skips this entirely.
+    if [ "${INSTALL_KUBEVIRT}" = "true" ]; then \
+      curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+        -o "virtctl-${KUBEVIRT_VERSION}-linux-amd64" \
+        "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/virtctl-${KUBEVIRT_VERSION}-linux-amd64" && \
+      echo "${VIRTCTL_SHA256}  virtctl-${KUBEVIRT_VERSION}-linux-amd64" | sha256sum -c - && \
+      install -o root -g root -m 0755 "virtctl-${KUBEVIRT_VERSION}-linux-amd64" /usr/local/bin/kubectl-virt && \
+      rm "virtctl-${KUBEVIRT_VERSION}-linux-amd64" && \
+      kubectl-virt help >/dev/null; \
+    fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     # Create non-root user matching shifter_platform's appuser:1000 / appgroup:1000.
     groupadd --gid 1000 appgroup && \
