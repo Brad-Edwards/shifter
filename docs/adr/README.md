@@ -6,6 +6,9 @@ This directory holds the machine-readable part of ADR enforcement.
 
 - `index.yaml`: accepted ADRs and their enforceable rules
 - `exceptions.yaml`: time-bounded exceptions to specific rules
+- [BigRAE adoption proposals](proposals/README.md): proposed ADR-054 through
+  ADR-057 and precise prior-ADR clarifications from review #2080. These are not
+  accepted rules and do not change the operative registry or enforcement.
 
 The files use JSON syntax with a `.yaml` extension so they stay human-readable while remaining parseable by the standard library.
 

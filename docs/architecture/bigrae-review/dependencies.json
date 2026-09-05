@@ -1,0 +1,194 @@
+{
+  "review": 2080,
+  "baseline": "b9b82681818fed7da26fcedaa93d37586bc14c74",
+  "verified_on": "2026-09-05",
+  "direction": "issue is blocked_by prerequisite",
+  "edges": [
+    {
+      "issue": 2081,
+      "blocked_by": 2075
+    },
+    {
+      "issue": 2082,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 2082,
+      "blocked_by": 1937
+    },
+    {
+      "issue": 2083,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 2083,
+      "blocked_by": 1586
+    },
+    {
+      "issue": 2084,
+      "blocked_by": 94
+    },
+    {
+      "issue": 2084,
+      "blocked_by": 1699
+    },
+    {
+      "issue": 2086,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 2087,
+      "blocked_by": 1295
+    },
+    {
+      "issue": 2087,
+      "blocked_by": 1019
+    },
+    {
+      "issue": 2088,
+      "blocked_by": 2086
+    },
+    {
+      "issue": 2088,
+      "blocked_by": 615
+    },
+    {
+      "issue": 2089,
+      "blocked_by": 2082
+    },
+    {
+      "issue": 2090,
+      "blocked_by": 1698
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 2082
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 2086
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 2087
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 2088
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 2084
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 2085
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 2083
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 681
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 27
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 1526
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 1906
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 1910
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 1816
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 1020
+    },
+    {
+      "issue": 2091,
+      "blocked_by": 1622
+    },
+    {
+      "issue": 2092,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 2092,
+      "blocked_by": 2091
+    },
+    {
+      "issue": 2092,
+      "blocked_by": 2089
+    },
+    {
+      "issue": 2092,
+      "blocked_by": 2090
+    },
+    {
+      "issue": 2092,
+      "blocked_by": 1531
+    },
+    {
+      "issue": 2092,
+      "blocked_by": 202
+    },
+    {
+      "issue": 2093,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 2093,
+      "blocked_by": 1295
+    },
+    {
+      "issue": 1295,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 681,
+      "blocked_by": 1295
+    },
+    {
+      "issue": 1586,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 1019,
+      "blocked_by": 1295
+    },
+    {
+      "issue": 1020,
+      "blocked_by": 1295
+    },
+    {
+      "issue": 1526,
+      "blocked_by": 2085
+    },
+    {
+      "issue": 615,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 1937,
+      "blocked_by": 2081
+    },
+    {
+      "issue": 1699,
+      "blocked_by": 2081
+    }
+  ],
+  "cycle_check": "passed against baseline open nodes and all new issues",
+  "readback": "all planned edges present"
+}
