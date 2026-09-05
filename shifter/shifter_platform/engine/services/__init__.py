@@ -59,6 +59,8 @@ from ._range import (
 )
 from ._range_by_request import (
     RangeOwnershipTransferBlocked,
+    RangeProjectionIntegrityError,
+    RangeWorkspaceRebindOutcome,
     cancel_range_by_request,
     destroy_range_by_request,
     range_owner_reassignment_available_by_request,
@@ -99,6 +101,8 @@ __all__ = (
     "RangeBindings",
     "RangeMembership",
     "RangeOwnershipTransferBlocked",
+    "RangeProjectionIntegrityError",
+    "RangeWorkspaceRebindOutcome",
     "SSHConnection",
     "SecretsError",
     "VpnProfileConflict",

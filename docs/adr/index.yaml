@@ -2610,6 +2610,11 @@
         "id": "ADR-046-R13",
         "description": "As a narrow, explicit exception to R8's owner-only ownership boundary, a platform administrator may transfer a departing user's owned workspaces and ranges to a replacement during user offboarding (PLAT-236, #1943). This override is authorized only by a superuser session at the composition root (a superuser already holds cross-tenant root authority, so the transfer is not an escalation); it is never reachable through workspace-role authority or the auth.change_user model permission alone, and a visible Administer control does not otherwise become workspace or range authority. It is exposed only through a single bounded composition-root command that delegates per resource kind: workspace ownership goes through the workspaces.services facade command (admin_transfer_workspace_ownership) and range ownership through the existing cms.services reassign authority. Workspace transfer moves ownership of non-personal workspaces the source owns to a replacement who already holds a membership in each workspace (a non-member workspace is reported blocked, never silently rehomed and never given a fabricated membership, preserving ADR-048); it excludes personal compatibility workspaces (immutable), promotes the replacement to owner before demoting the source so the last-owner invariant holds throughout, locks each workspace row, and writes one request-attributed strict shared.audit event per transfer. Range transfer preserves the CMS/Engine ownership projections, the new owner's workspace membership requirement, active-range uniqueness, and the live-VPN refusal, and strict-audits each move. The command never removes memberships, changes CTF roles, transfers credential/agent ownership, unbinds identity, or rewrites provenance/attribution.",
         "checks": []
+      },
+      {
+        "id": "ADR-046-R14",
+        "description": "Range-scope administration is distinct from range-owner reassignment and interactive range access. Its closed workspace operations are owner/admin-only and never reuse REASSIGN_RANGE, READ_RANGE, staff status, organization authority, or the PLAT-236 superuser offboarding override as authority. The staff-session administration API lists only a bounded, paginated CMS projection for a workspace; it does not grant access to another user's range. Rebinding accepts only the range request UUID and a target workspace public UUID, reauthorizes the actor for scope administration in both the persisted source and target workspaces, requires the unchanged range owner to remain a member of the active target workspace, and never creates membership. One CMS-owned, request-attributed, strict-audited transaction locks and compare-and-set verifies the CMS Request, CMS RangeInstance, and Engine Range bindings, then changes all three or none; projection absence, multiplicity, or disagreement fails closed and is not silently repaired. Rebinding changes no user/owner, provenance, lifecycle, lease, credential, access-channel, backend, pinned egress, capacity, scenario, or cloud state. A range participating in another domain's immutable workspace aggregate, including an ADR-051-bound CTF event, cannot move independently unless that owning domain validates the same target through its public service boundary; absent that seam, the move fails closed. Public responses and logs remain bounded and non-enumerating, and workspace identities never enter scenario contracts, provider input, argv, environment, or guest metadata.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -2624,6 +2629,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/1938",
       "https://github.com/Brad-Edwards/shifter/issues/1939",
       "https://github.com/Brad-Edwards/shifter/issues/1943",
+      "https://github.com/Brad-Edwards/shifter/issues/1944",
       "https://github.com/Brad-Edwards/shifter/issues/1945",
       "https://github.com/Brad-Edwards/shifter/issues/1946",
       "docs/architecture/organization-workspace-preflight-1325.md",
@@ -2634,6 +2640,7 @@
       "docs/architecture/workspace-network-egress-policy-preflight-1945.md",
       "docs/architecture/workspace-resource-quotas-preflight-1946.md",
       "docs/architecture/user-lifecycle-administration-preflight-1943.md",
+      "docs/architecture/range-workspace-scoping-administration-preflight-1944.md",
       "scripts/check_layer_imports/layer_imports.yaml",
       "shifter/shifter_platform/management/management/commands/check_model_fks.py",
       "shifter/shifter_platform/cms/models/provisioning.py",
