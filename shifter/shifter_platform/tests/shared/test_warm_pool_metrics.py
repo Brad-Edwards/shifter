@@ -7,7 +7,6 @@ outcomes, and fail-soft emission (an observability blip never raises).
 
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -157,13 +156,15 @@ class _FakeMonitoringClient:
 
 class TestGcpPublisher:
     def test_put_metric_data_builds_time_series(self, monkeypatch):
-        fake_module = SimpleNamespace(
-            TimeSeries=_FakeTimeSeries,
-            Point=lambda payload: payload,
-            MetricServiceClient=_FakeMonitoringClient,
-        )
-        # ``from google.cloud import monitoring_v3`` resolves this submodule.
-        monkeypatch.setitem(sys.modules, "google.cloud.monitoring_v3", fake_module)
+        # Patch the real ``monitoring_v3`` module's attributes rather than injecting a
+        # fake via sys.modules: ``from google.cloud import monitoring_v3`` binds the
+        # already-imported real submodule (present in CI), so a sys.modules override is
+        # ignored once the package attribute exists. importorskip guards the rare env
+        # where the google client library is absent.
+        monitoring = pytest.importorskip("google.cloud.monitoring_v3")
+        monkeypatch.setattr(monitoring, "MetricServiceClient", _FakeMonitoringClient)
+        monkeypatch.setattr(monitoring, "TimeSeries", _FakeTimeSeries)
+        monkeypatch.setattr(monitoring, "Point", lambda payload: payload)
         monkeypatch.setattr("shared.cloud.gcp.base.get_project_id", lambda: "proj-1", raising=False)
         monkeypatch.setattr(_FakeMonitoringClient, "created", None)
 
