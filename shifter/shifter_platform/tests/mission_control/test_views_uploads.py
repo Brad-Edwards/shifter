@@ -131,7 +131,8 @@ class TestInitiateUpload:
         assert resp.status_code == 400
         body = _body(resp)
         assert body["error"]["message"] == "Upload could not be initiated"
-        assert "\n" not in body["error"]["message"] and "\r" not in body["error"]["message"]
+        assert "\n" not in body["error"]["message"]
+        assert "\r" not in body["error"]["message"]
 
     @override_settings(AWS_S3_BUCKET_NAME="test-bucket")
     def test_success_returns_presigned_url_and_sets_lock(self, authenticated_client):

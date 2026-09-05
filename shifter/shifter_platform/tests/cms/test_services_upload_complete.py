@@ -226,9 +226,10 @@ class TestCompleteUploadPerFileLimit:
         over = 1 * 1024 * 1024 + 1
         s3_complete.head_object.return_value = {"ContentLength": over, "ETag": '"etag"'}
         s3_key = f"agents/{user.id}/abc_agent.msi"
+        token = _token(user, s3_key=s3_key, file_size=over)
 
         with pytest.raises(CMSError, match="exceeds maximum allowed"):
-            services.complete_upload(user, _token(user, s3_key=s3_key, file_size=over))
+            services.complete_upload(user, token)
 
         s3_complete.delete_object.assert_called_once()
         assert s3_complete.delete_object.call_args.kwargs["Key"] == s3_key
@@ -244,8 +245,9 @@ class TestCompleteUploadPerFileLimit:
         s3_complete.delete_object.side_effect = ClientError(
             {"Error": {"Code": "500", "Message": "boom"}}, "DeleteObject"
         )
+        token = _token(user, file_size=over)
         with pytest.raises(CMSError, match="exceeds maximum allowed"):
-            services.complete_upload(user, _token(user, file_size=over))
+            services.complete_upload(user, token)
         assert AgentConfig.objects.count() == 0
 
     def test_cap_check_precedes_declared_size_equality(self, user, s3_complete, settings):
@@ -258,9 +260,10 @@ class TestCompleteUploadPerFileLimit:
         over = 1 * 1024 * 1024 + 1
         s3_complete.head_object.return_value = {"ContentLength": over, "ETag": '"etag"'}
         s3_key = f"agents/{user.id}/abc_agent.msi"
+        token = _token(user, s3_key=s3_key, file_size=1000)
 
         with pytest.raises(CMSError, match="exceeds maximum allowed"):
-            services.complete_upload(user, _token(user, s3_key=s3_key, file_size=1000))
+            services.complete_upload(user, token)
 
         s3_complete.delete_object.assert_called_once()
         assert s3_complete.delete_object.call_args.kwargs["Key"] == s3_key
