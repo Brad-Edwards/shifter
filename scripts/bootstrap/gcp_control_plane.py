@@ -10,7 +10,7 @@ import subprocess  # nosec B404
 import sys
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
@@ -2096,13 +2096,178 @@ def _gdc_bootstrap_result(
     }
 
 
-def gdc_bootstrap_cluster(config: GDCBootstrapConfig, dry_run: bool = False) -> dict[str, str]:
+# --- GCE range-plane preconditions (fresh-GCP-order steps 2-4) --------------------
+#
+# The maintained standup order (scripts/bootstrap/README.md "Fresh GCP Account
+# Order") prepares the CI runner/WIF identity and bakes the range guest images
+# BEFORE the control-plane bootstrap. gdc-bootstrap historically ran no such gate,
+# so a fresh project could deploy a control plane that cannot launch any range.
+# These checks fail fast on that gap for the default GCE range backend.
+
+# Required GCE range-cell variables (docs/dev/deploy-secrets.md, the "yes" rows of
+# "GCE range-cell backend variables"). A live range needs each of these set.
+_REQUIRED_GCE_RANGE_VARS: tuple[str, ...] = (
+    "RANGE_NETWORK_ZONE",
+    "GCP_RANGE_LINUX_IMAGE",
+    "GCP_RANGE_DC_IMAGE",
+    "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
+)
+
+# Range guest-image variables whose referenced image must already be baked into the
+# range-cell project (fresh-GCP-order step 4). Only variables that are set are checked.
+_GCE_RANGE_IMAGE_VARS: tuple[str, ...] = (
+    "GCP_RANGE_LINUX_IMAGE",
+    "GCP_RANGE_DC_IMAGE",
+    "GCP_RANGE_KALI_IMAGE",
+    "GCP_RANGE_WINDOWS_IMAGE",
+)
+
+# GitHub Actions -> GCP federation identity for the CI image-bake and deploy
+# pipeline (fresh-GCP-order step 2). Not used by the local operator-ADC bootstrap.
+_GCE_RUNNER_WIF_VARS: tuple[str, ...] = (
+    "GCP_SERVICE_ACCOUNT",
+    "GCP_WORKLOAD_IDENTITY_PROVIDER",
+)
+
+
+def _range_cell_project_id(config: GDCBootstrapConfig, env: Mapping[str, str]) -> str:
+    """Resolve the project the range cells provision into (GCP_RANGE_CELL_PROJECT_ID, else control plane)."""
+    return (env.get("GCP_RANGE_CELL_PROJECT_ID") or "").strip() or config.project_id
+
+
+def _parse_gce_image_reference(reference: str, default_project: str) -> tuple[str, str, str]:
+    """Return ``(project, kind, name)`` for a GCE image reference; ``kind`` is ``family`` or ``image``.
+
+    Accepts ``projects/<p>/global/images/family/<f>``, ``projects/<p>/global/images/<img>``,
+    ``family/<f>``, and a bare name (treated as a family, matching the packer image contract).
+    """
+    ref = reference.strip()
+    if match := re.fullmatch(r"projects/(?P<project>[^/]+)/global/images/family/(?P<name>.+)", ref):
+        return match.group("project"), "family", match.group("name")
+    if match := re.fullmatch(r"projects/(?P<project>[^/]+)/global/images/(?P<name>.+)", ref):
+        return match.group("project"), "image", match.group("name")
+    if ref.startswith("family/"):
+        return default_project, "family", ref[len("family/") :]
+    return default_project, "family", ref
+
+
+def _gce_image_exists(project: str, kind: str, name: str) -> bool:
+    """Return True when the referenced GCE image (or image family) resolves in the project."""
+    if kind == "family":
+        cmd = ["gcloud", "compute", "images", "describe-from-family", name]
+    else:
+        cmd = ["gcloud", "compute", "images", "describe", name]
+    cmd += ["--project", project, "--format=value(name)"]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # nosec B603 B607
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def _warn_missing_runner_wif(env: Mapping[str, str]) -> None:
+    """Warn (never fail) when the CI runner/WIF identity is absent (fresh-GCP-order step 2)."""
+    if missing := [name for name in _GCE_RUNNER_WIF_VARS if not (env.get(name) or "").strip()]:
+        warn(
+            "Runner/WIF identity not configured (" + ", ".join(missing) + "). Not required for this "
+            "local operator-ADC bootstrap, but required for the CI image-bake and deploy pipeline "
+            "(fresh-GCP-order step 2). See docs/dev/deploy-secrets.md."
+        )
+
+
+def _missing_gce_range_images(
+    env: Mapping[str, str], project: str, image_exists: Callable[[str, str, str], bool]
+) -> list[str]:
+    """Return a description for each configured range guest image that does not resolve in the project."""
+    missing: list[str] = []
+    for name in _GCE_RANGE_IMAGE_VARS:
+        if not (reference := (env.get(name) or "").strip()):
+            continue
+        image_project, kind, image_name = _parse_gce_image_reference(reference, project)
+        if not image_exists(image_project, kind, image_name):
+            missing.append(f"{name}={reference} (no {kind} '{image_name}' in project '{image_project}')")
+    return missing
+
+
+def _report_gce_range_precondition_failures(missing_vars: list[str], missing_images: list[str]) -> None:
+    """Emit one error line per missing range-cell variable and per unbaked range guest image."""
+    for name in missing_vars:
+        error(
+            f"Required GCE range-cell variable {name} is not set (fresh-GCP-order step 3). "
+            "See docs/dev/deploy-secrets.md."
+        )
+    for detail in missing_images:
+        error(
+            f"Range guest image not baked: {detail} (fresh-GCP-order step 4). "
+            "See docs/architecture/gcp-guest-images.md."
+        )
+
+
+def check_gce_range_preconditions(
+    config: GDCBootstrapConfig,
+    *,
+    allow_missing_range_images: bool = False,
+    env: Mapping[str, str] | None = None,
+    image_exists: Callable[[str, str, str], bool] | None = None,
+) -> None:
+    """Fail fast on the fresh-GCP-order range prerequisites before the GCE control-plane deploy.
+
+    Enforces "prepare identity and images first" (scripts/bootstrap/README.md
+    "Fresh GCP Account Order" steps 2-4): warns when the CI runner/WIF identity is
+    absent (the local operator-ADC bootstrap does not need it), and fails when a
+    required GCE range-cell variable is unset or a referenced range guest image is not
+    yet baked into the range-cell project. ``allow_missing_range_images`` downgrades those
+    failures to warnings for a deliberate platform-first bring-up. ``env`` and
+    ``image_exists`` are injectable boundaries for tests.
+    """
+    env = os.environ if env is None else env
+    image_exists = _gce_image_exists if image_exists is None else image_exists
+
+    header("GCE range-plane preconditions")
+    project = _range_cell_project_id(config, env)
+
+    _warn_missing_runner_wif(env)
+    missing_vars = [name for name in _REQUIRED_GCE_RANGE_VARS if not (env.get(name) or "").strip()]
+    missing_images = _missing_gce_range_images(env, project, image_exists)
+
+    if not missing_vars and not missing_images:
+        success(f"GCE range preconditions satisfied (range-cell project {project}).")
+        return
+
+    _report_gce_range_precondition_failures(missing_vars, missing_images)
+
+    if allow_missing_range_images:
+        warn(
+            "Proceeding despite the range prerequisites above (--allow-missing-range-images): the control "
+            "plane will deploy, but ranges cannot launch until the images are baked and the variables are set."
+        )
+        return
+
+    error(
+        "GCE range preconditions failed. Prepare the runner/WIF identity and bake the range guest images "
+        "before deploying (scripts/bootstrap/README.md 'Fresh GCP Account Order' steps 2-4), or pass "
+        "--allow-missing-range-images for a deliberate platform-first bring-up."
+    )
+    sys.exit(1)
+
+
+def gdc_bootstrap_cluster(
+    config: GDCBootstrapConfig,
+    dry_run: bool = False,
+    *,
+    allow_missing_range_images: bool = False,
+) -> dict[str, str]:
     """Bootstrap the repeatable GDC-on-Compute-Engine VM Runtime cluster."""
     if not config.project_id:
         error("GDC bootstrap requires a GCP project ID. Set PANW_GCP_DEV or pass --project-id.")
         sys.exit(1)
 
     builds_substrate = config.builds_gdc_substrate
+
+    # The default GCE range backend needs its guest images and range-cell variables
+    # in place before the control plane deploys (fresh-GCP-order steps 2-4). Gate
+    # before any mutation. The GDC substrate path uses a different range plane and is
+    # exempt from these GCE checks.
+    if not builds_substrate and not dry_run:
+        check_gce_range_preconditions(config, allow_missing_range_images=allow_missing_range_images)
+
     confirm_prompt = _announce_gdc_bootstrap_plan(config, builds_substrate)
 
     if not dry_run and not confirm(confirm_prompt):

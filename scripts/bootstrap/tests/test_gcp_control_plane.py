@@ -18,6 +18,7 @@ import shutil
 import subprocess
 from contextlib import nullcontext
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -2314,6 +2315,7 @@ class TestGdcBootstrapRangeBackend:
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", range_backend="gce")
         with (
             patch("gcp_control_plane.confirm", return_value=True),
+            patch("gcp_control_plane.check_gce_range_preconditions") as mock_precond,
             patch("gcp_control_plane.ensure_gdc_apis") as mock_apis,
             patch("gcp_control_plane.ensure_gdc_service_account") as mock_sa,
             patch("gcp_control_plane.stage_gdc_bootstrap_assets") as mock_stage,
@@ -2325,6 +2327,8 @@ class TestGdcBootstrapRangeBackend:
         ):
             result = gcp_control_plane.gdc_bootstrap_cluster(config, dry_run=False)
 
+        # The gce path gates on the range preconditions before any mutation (#1509).
+        mock_precond.assert_called_once_with(config, allow_missing_range_images=False)
         mock_apis.assert_not_called()
         mock_sa.assert_not_called()
         mock_stage.assert_not_called()
@@ -2362,3 +2366,72 @@ class TestGdcBootstrapRangeBackend:
         mock_apis.assert_called_once()
         mock_vm_image.assert_called_once()
         assert result["workstation"] == config.workstation.name
+
+
+class TestGceRangePreconditions:
+    """gdc-bootstrap gates the fresh-GCP-order range prerequisites (#1509)."""
+
+    _FULL_ENV: ClassVar[dict[str, str]] = {
+        "GCP_SERVICE_ACCOUNT": "deploy@prod-x.iam.gserviceaccount.com",
+        "GCP_WORKLOAD_IDENTITY_PROVIDER": "projects/1/locations/global/workloadIdentityPools/p/providers/gh",
+        "RANGE_NETWORK_ZONE": "us-central1-a",
+        "GCP_RANGE_LINUX_IMAGE": "projects/prod-x/global/images/family/shifter-ubuntu",
+        "GCP_RANGE_DC_IMAGE": "projects/prod-x/global/images/family/shifter-dc",
+        "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@prod-x.iam.gserviceaccount.com",
+    }
+
+    @staticmethod
+    def _config():
+        return deploy.GDCBootstrapConfig(project_id="prod-x", cluster_id="cluster1", range_backend="gce")
+
+    def test_all_present_passes(self):
+        gcp_control_plane.check_gce_range_preconditions(
+            self._config(), env=dict(self._FULL_ENV), image_exists=lambda *_: True
+        )
+
+    def test_missing_required_var_fails(self):
+        config = self._config()
+        env = dict(self._FULL_ENV)
+        del env["RANGE_NETWORK_ZONE"]
+        with pytest.raises(SystemExit) as exc:
+            gcp_control_plane.check_gce_range_preconditions(config, env=env, image_exists=lambda *_: True)
+        assert exc.value.code == 1
+
+    def test_missing_image_fails(self):
+        config = self._config()
+        env = dict(self._FULL_ENV)
+        with pytest.raises(SystemExit) as exc:
+            gcp_control_plane.check_gce_range_preconditions(config, env=env, image_exists=lambda *_: False)
+        assert exc.value.code == 1
+
+    def test_allow_flag_downgrades_failures_to_warning(self):
+        env = dict(self._FULL_ENV)
+        del env["GCP_RANGE_DC_IMAGE"]
+        # Missing var AND a missing image, but the opt-out lets a platform-first bring-up proceed.
+        gcp_control_plane.check_gce_range_preconditions(
+            self._config(), allow_missing_range_images=True, env=env, image_exists=lambda *_: False
+        )
+
+    def test_missing_wif_is_warning_only(self, capsys):
+        env = {k: v for k, v in self._FULL_ENV.items() if k not in ("GCP_SERVICE_ACCOUNT",)}
+        gcp_control_plane.check_gce_range_preconditions(self._config(), env=env, image_exists=lambda *_: True)
+        assert "GCP_SERVICE_ACCOUNT" in capsys.readouterr().out
+
+    def test_image_exists_checked_in_range_cell_project_override(self):
+        env = dict(self._FULL_ENV) | {"GCP_RANGE_CELL_PROJECT_ID": "range-proj"}
+        seen: list[tuple[str, str, str]] = []
+
+        def _exists(project: str, kind: str, name: str) -> bool:
+            seen.append((project, kind, name))
+            return True
+
+        gcp_control_plane.check_gce_range_preconditions(self._config(), env=env, image_exists=_exists)
+        # Full-URL references keep their own project; a bare/family reference would use the override.
+        assert ("prod-x", "family", "shifter-ubuntu") in seen
+
+    def test_parse_image_reference_forms(self):
+        parse = gcp_control_plane._parse_gce_image_reference
+        assert parse("projects/p/global/images/family/shifter-ubuntu", "d") == ("p", "family", "shifter-ubuntu")
+        assert parse("projects/p/global/images/my-image-v1", "d") == ("p", "image", "my-image-v1")
+        assert parse("family/shifter-kali", "d") == ("d", "family", "shifter-kali")
+        assert parse("shifter-dc", "d") == ("d", "family", "shifter-dc")
