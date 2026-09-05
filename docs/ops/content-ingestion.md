@@ -65,7 +65,7 @@ operator registers their own content. The bootstrap is idempotent, so it is safe
 to run after each deploy. It validates the complete declaration before writing
 and registers the batch atomically: a missing/malformed manifest or any invalid
 or drifted entry fails visibly and leaves no partially installed batch. The
-manifest currently declares the Polaris pack.
+manifest declares the in-box bootstrap seed.
 
 ## Resolution and launchability
 

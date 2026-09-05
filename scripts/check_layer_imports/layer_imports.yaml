@@ -82,6 +82,11 @@ allowed:
     - shared
     - cms.services
     - management.services
+    # ADR-051 (#2048): CTF confines a communication campaign to a workspace and
+    # resolves an event's tenancy scope through the public tenancy facade. This is
+    # the one sanctioned CTF -> workspaces edge; CTF never imports workspaces.models
+    # or holds a cross-layer workspace ForeignKey (it carries scalar workspace_id).
+    - workspaces.services
 
   # Composition root: wires public domain service facades and the ASGI/routing
   # + operational-metrics surfaces. Enumerated narrowly — it must not import

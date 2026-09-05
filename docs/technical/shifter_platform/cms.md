@@ -183,7 +183,7 @@ wrong-user, or expired-token cancel requests leave the lock in place; stale lock
 recover through the upload lock timeout.
 
 Per-file size limit. A single agent installer may be at most
-`AGENT_MAX_FILE_SIZE_MB` (default 2048, i.e. 2 GiB using binary MiB). This
+`AGENT_MAX_FILE_SIZE_MB` (default 2048, that is 2 GiB using binary MiB). This
 per-file ceiling is distinct from the per-user storage quota below. It is
 enforced at three trust boundaries against one policy helper
 (`cms.assets.validation.agent_max_file_size_bytes`), so the layers cannot drift:
@@ -204,8 +204,8 @@ always matches the server value.
 |----------|---------|
 | `get_storage_used(user)` | Check storage quota |
 
-The per-user storage quota (`AGENT_USER_STORAGE_QUOTA_MB`, default 5120, i.e. 5
-GiB) caps the total size of a user's active agents and is a separate policy from
+The per-user storage quota (`AGENT_USER_STORAGE_QUOTA_MB`, default 5120, that is
+5 GiB) caps the total size of a user's active agents and is a separate policy from
 the per-file size limit above. A request may satisfy the per-file limit yet still
 be rejected because it would exceed the aggregate quota; a request over both
 receives the per-file decision first.
