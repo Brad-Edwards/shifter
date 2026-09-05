@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, replace
+from typing import cast
 
 __all__ = [
     "WarmPoolBucketPolicy",
@@ -212,10 +213,12 @@ def _narrow_bucket(bucket: WarmPoolBucketPolicy, caps: dict[str, int]) -> WarmPo
         0 <= new_minimum <= new_target <= new_maximum,
         f"bucket {bucket.id}: narrowed values must keep 0<=minimum<=target<=maximum",
     )
-    narrowed: WarmPoolBucketPolicy = replace(
-        bucket, target=new_target, minimum=new_minimum, maximum=new_maximum, idle_ttl_seconds=new_ttl
+    # ``dataclasses.replace`` returns the same dataclass type, but Sonar infers the
+    # generic ``DataclassInstance``; the cast restates the concrete return type.
+    return cast(
+        WarmPoolBucketPolicy,
+        replace(bucket, target=new_target, minimum=new_minimum, maximum=new_maximum, idle_ttl_seconds=new_ttl),
     )
-    return narrowed
 
 
 def _override_is_noop(override: WarmPoolOverride) -> bool:
@@ -277,17 +280,18 @@ def resolve_effective_policy(
     if override is None or _override_is_noop(override):
         return deployment
     if override.disable:
-        disabled: WarmPoolRuntimePolicy = replace(deployment, enabled=False, buckets=())
-        return disabled
+        return cast(WarmPoolRuntimePolicy, replace(deployment, enabled=False, buckets=()))
 
     deployment_ids = {b.id for b in deployment.buckets}
-    effective: WarmPoolRuntimePolicy = replace(
-        deployment,
-        max_total_ready=_resolve_max_total_ready(deployment, override),
-        replenish_concurrency=_narrow_int(
-            deployment.replenish_concurrency, override.replenish_concurrency, "replenish_concurrency"
+    return cast(
+        WarmPoolRuntimePolicy,
+        replace(
+            deployment,
+            max_total_ready=_resolve_max_total_ready(deployment, override),
+            replenish_concurrency=_narrow_int(
+                deployment.replenish_concurrency, override.replenish_concurrency, "replenish_concurrency"
+            ),
+            cost_ceiling=_resolve_cost_ceiling(deployment, override),
+            buckets=_select_narrowed_buckets(deployment, override, deployment_ids),
         ),
-        cost_ceiling=_resolve_cost_ceiling(deployment, override),
-        buckets=_select_narrowed_buckets(deployment, override, deployment_ids),
     )
-    return effective

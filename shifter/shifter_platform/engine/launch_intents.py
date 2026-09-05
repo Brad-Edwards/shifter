@@ -13,7 +13,7 @@ from django.utils import timezone
 
 # The dispatch-failure lifecycle lives in its own module (Sonar S104); re-exported
 # here so existing ``from engine.launch_intents import ...`` importers are unaffected.
-from engine.launch_intents_failure import (  # noqa: F401
+from engine.launch_intents_failure import (
     PROVISIONER_DISPATCH_FAILED,
     clear_provisioner_operation_after_failure,
     fail_current_provisioner_operation,
@@ -31,6 +31,20 @@ from engine.operation_inputs import operation_input_payload
 from shared.cloud import PROVISIONER_CONTAINER_NAME
 from shared.cloud.kubernetes.naming import build_idempotent_job_name
 from shared.operation_envelope import build_operation_envelope
+
+# Public surface, including the dispatch-failure names re-exported from
+# ``launch_intents_failure`` (Sonar S104 split) so existing importers are unaffected.
+__all__ = [
+    "PROVISIONER_DISPATCH_FAILED",
+    "authorize_provisioner_payload",
+    "clear_provisioner_operation_after_failure",
+    "command_from_payload",
+    "enqueue_provisioner_launch",
+    "fail_current_provisioner_operation",
+    "request_provision_interrupt",
+    "task_ref_for_intent",
+    "validate_provisioner_command",
+]
 
 _OPERATIONS = {
     "range": {"provision", "destroy", "pause", "resume"},

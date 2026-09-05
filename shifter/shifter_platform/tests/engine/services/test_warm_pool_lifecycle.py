@@ -328,8 +328,9 @@ class TestCapacity:
         assert result.blocking is False
 
     def test_scope_ref_deterministic_and_bucket_scoped(self):
-        assert warm_capacity_scope_ref("shifter", "b1") == warm_capacity_scope_ref("shifter", "b1")
-        assert warm_capacity_scope_ref("shifter", "b1") != warm_capacity_scope_ref("shifter", "b2")
+        first = warm_capacity_scope_ref("shifter", "b1")
+        assert first == warm_capacity_scope_ref("shifter", "b1")
+        assert first != warm_capacity_scope_ref("shifter", "b2")
 
 
 class TestEnqueue:

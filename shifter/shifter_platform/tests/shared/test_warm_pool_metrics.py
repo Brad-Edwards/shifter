@@ -121,7 +121,8 @@ class TestResolveClient:
             lambda name: SimpleNamespace(put_metric_data=lambda **kw: seen.append(kw)),
         )
         assert emit_gauges([_SNAP]) is True
-        assert seen and seen[0]["Namespace"] == "Shifter/WarmPool"
+        assert seen
+        assert seen[0]["Namespace"] == "Shifter/WarmPool"
 
 
 class _FakeLabels(dict):
@@ -164,7 +165,7 @@ class TestGcpPublisher:
         # ``from google.cloud import monitoring_v3`` resolves this submodule.
         monkeypatch.setitem(sys.modules, "google.cloud.monitoring_v3", fake_module)
         monkeypatch.setattr("shared.cloud.gcp.base.get_project_id", lambda: "proj-1", raising=False)
-        _FakeMonitoringClient.created = None
+        monkeypatch.setattr(_FakeMonitoringClient, "created", None)
 
         publisher = _GcpMonitoringPublisher()
         publisher.put_metric_data(

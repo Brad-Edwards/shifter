@@ -11,7 +11,6 @@ closed on any doubt. Live efficacy is proven on a real range (the repo norm).
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import ClassVar
 from uuid import uuid4
 
 import pytest
@@ -54,12 +53,10 @@ def _activation():
 
 
 class _FakeVpnOps:
-    instances: ClassVar[list] = []
-
-    def __init__(self):
+    def __init__(self, present, sink):
         self.deleted: list = []
-        self._present = _FakeVpnOps._present
-        type(self).instances.append(self)
+        self._present = present
+        sink.append(self)
 
     def delete_generation(self, range_id, generation, *, delete_identity=True):
         self.deleted.append((range_id, generation, delete_identity))
@@ -68,6 +65,13 @@ class _FakeVpnOps:
         if isinstance(self._present, Exception):
             raise self._present
         return self._present
+
+
+def _install_fake_vpn(monkeypatch, *, present=False):
+    """Install a per-test fake ``GCPVpnSecretOps`` and return the recorder list."""
+    created: list = []
+    monkeypatch.setattr("vpn_secrets.GCPVpnSecretOps", lambda: _FakeVpnOps(present, created))
+    return created
 
 
 class TestScrubPreClaimAccess:
@@ -88,16 +92,14 @@ class TestScrubPreClaimAccess:
             "gcp_guest_secrets.delete_raes_account_secret",
             lambda rid, key, username, auth_method: acct.append((rid, key, username, auth_method)),
         )
-        _FakeVpnOps.instances = []
-        _FakeVpnOps._present = False
-        monkeypatch.setattr("vpn_secrets.GCPVpnSecretOps", _FakeVpnOps)
+        vpn_ops = _install_fake_vpn(monkeypatch)
 
         prepared = uuid4()
         GceActivationOps.scrub_pre_claim_access(_activation(), prepared)
 
         assert ssh == [(1001, "n1"), (1001, "n2")]
         assert acct == [(1001, "n1", "alice", "password")]  # the empty-auth account is skipped
-        assert _FakeVpnOps.instances[-1].deleted == [(1001, prepared, True)]
+        assert vpn_ops[-1].deleted == [(1001, prepared, True)]
 
 
 class TestRealizeClaimantAccess:
@@ -116,24 +118,18 @@ class TestRealizeClaimantAccess:
 
 class TestPriorAccessRevoked:
     def test_true_when_issuer_absent(self, monkeypatch):
-        _FakeVpnOps.instances = []
-        _FakeVpnOps._present = False
-        monkeypatch.setattr("vpn_secrets.GCPVpnSecretOps", _FakeVpnOps)
+        vpn_ops = _install_fake_vpn(monkeypatch, present=False)
         prepared = uuid4()
         assert GceActivationOps.prior_access_revoked(_activation(), prepared) is True
         # It scrubs (belt-and-suspenders) then checks the issuer is absent.
-        assert _FakeVpnOps.instances[-1].deleted == [(1001, prepared, True)]
+        assert vpn_ops[-1].deleted == [(1001, prepared, True)]
 
     def test_false_when_issuer_still_present(self, monkeypatch):
-        _FakeVpnOps.instances = []
-        _FakeVpnOps._present = True
-        monkeypatch.setattr("vpn_secrets.GCPVpnSecretOps", _FakeVpnOps)
+        _install_fake_vpn(monkeypatch, present=True)
         assert GceActivationOps.prior_access_revoked(_activation(), uuid4()) is False
 
     def test_false_when_probe_raises(self, monkeypatch):
-        _FakeVpnOps.instances = []
-        _FakeVpnOps._present = RuntimeError("secret store unreachable")
-        monkeypatch.setattr("vpn_secrets.GCPVpnSecretOps", _FakeVpnOps)
+        _install_fake_vpn(monkeypatch, present=RuntimeError("secret store unreachable"))
         # Fail closed: a probe that cannot prove revocation returns False.
         assert GceActivationOps.prior_access_revoked(_activation(), uuid4()) is False
 
@@ -159,8 +155,9 @@ class TestRealizeClaimantAccessOnCell:
             raise RuntimeError("apply failed")
 
         monkeypatch.setattr(raes_gcp_activate_realize, "realize_access_on_existing_cell", _boom)
+        activation = _activation()
         with pytest.raises(raes_gcp_activate_realize.ActivationRealizationError):
-            raes_gcp_activate_realize.realize_claimant_access_on_cell(_activation(), uuid4())
+            raes_gcp_activate_realize.realize_claimant_access_on_cell(activation, uuid4())
 
 
 class _FakePlan:

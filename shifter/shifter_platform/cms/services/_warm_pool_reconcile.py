@@ -46,7 +46,6 @@ from shared.warm_pool.compatibility import CompatibilityKey, compatibility_diges
 from shared.warm_pool.policy import WarmPoolBucketPolicy, WarmPoolRuntimePolicy
 
 if TYPE_CHECKING:
-    from cms.models import RangeInstance
     from shared.range_instantiation_policy import BackendAdmission
 
 logger = logging.getLogger(__name__)
@@ -315,7 +314,7 @@ def _warm_prepare_dispatch(
     failure. All allocated resources (managed user, capacity draw, reservation) are
     cleaned up on the non-dispatch paths.
     """
-    from cms.models import RangeInstance
+    from cms.models import RangeInstance, Request
     from cms.services._raes_range_create import (
         _audit_raes_range_provision,
         _dispatch_raes_package,
@@ -346,7 +345,7 @@ def _warm_prepare_dispatch(
             correlation_key=request_id,
         )
 
-        def _persist(cms_request: Any) -> RangeInstance:
+        def _persist(cms_request: Request) -> RangeInstance:
             """Create the system-owned CMS RangeInstance row for the warm generation."""
             return RangeInstance.objects.create(
                 request=cms_request,

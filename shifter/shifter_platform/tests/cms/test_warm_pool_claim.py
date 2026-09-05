@@ -126,14 +126,16 @@ class TestClaimOrchestration:
         assert result == claimed_request_id
         assert rehomed == [(4242, user, True)]
         assert self.enqueued == [claimed_request_id]
-        assert self.outcomes and self.outcomes[-1]["outcome"] == "hit"
+        assert self.outcomes
+        assert self.outcomes[-1]["outcome"] == "hit"
 
     def test_miss_cold_falls_back(self, monkeypatch):
         self._patch_claim(monkeypatch, None)
         result = attempt_warm_claim(_request("gce", "polaris", user=SimpleNamespace(id=1)))
         assert result is None
         assert self.enqueued == []
-        assert self.outcomes and self.outcomes[-1]["outcome"] == "fallback"
+        assert self.outcomes
+        assert self.outcomes[-1]["outcome"] == "fallback"
 
     def test_inconsistent_ledger_row_rolls_back(self, monkeypatch):
         generation = SimpleNamespace(request_id=uuid4(), uuid=uuid4(), bucket_id="gce-polaris")
