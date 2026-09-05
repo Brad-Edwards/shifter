@@ -27,7 +27,7 @@ from ctf.enums import (
 )
 from shared.field_encryption import EncryptedStringField
 
-from ._base import CTFBaseModel
+from ._base import CTFBaseModel, ImmutableFieldsMixin
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -47,7 +47,7 @@ def _scoring_mode_choices() -> list[tuple[str, str]]:
     return ScoringMode.choices() + [(mode, mode.title()) for mode in sorted(registered_scoring_modes())]
 
 
-class CTFEvent(CTFBaseModel):
+class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
     """CTF competition event.
 
     Represents a single CTF competition with its configuration,
@@ -112,6 +112,18 @@ class CTFEvent(CTFBaseModel):
         on_delete=models.PROTECT,
         related_name="ctf_events_created",
         help_text="User who created this event",
+    )
+    workspace_id = models.IntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Workspace this event is scoped to (immutable soft reference; ADR-046/ADR-051, #2048). "
+            "Resolved at creation from an authorized workspace or the creator's personal workspace "
+            "(existing events are backfilled). Never a cross-layer foreign key and, once set, never "
+            "changed. Cross-event campaign confinement is enforced against this scalar at the "
+            "campaign boundary; an event without a scope simply cannot be targeted by a campaign."
+        ),
     )
     status = models.CharField(
         max_length=20,
@@ -248,6 +260,11 @@ class CTFEvent(CTFBaseModel):
             models.Index(fields=["created_by", "status"]),
         ]
 
+    # The workspace scope is the event's tenancy boundary (ADR-051): rebinding it
+    # would silently move the event, its participants, and every scoped
+    # communication into a different tenant, so it is frozen once set.
+    IMMUTABLE_FIELDS = ("workspace_id",)
+
     def __str__(self) -> str:
         """Return event name."""
         return self.name
@@ -259,6 +276,7 @@ class CTFEvent(CTFBaseModel):
         self._validate_registration_deadline(errors)
         self._validate_team_settings(errors)
         self._validate_scoreboard_freeze_time(errors)
+        self.validate_immutable(errors)
         if errors:
             raise ValidationError(errors)
 

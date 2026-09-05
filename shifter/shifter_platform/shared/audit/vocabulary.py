@@ -79,6 +79,8 @@ class AuditEntityType(models.TextChoices):
     WORKSPACE_INVITATION = "workspace_invitation", "Workspace Invitation"
     WORKSPACE = "workspace", "Workspace"
     ORGANIZATION = "organization", "Organization"
+    # ADR-051, #2048: scoped CTF communications (campaigns, intents, deliveries).
+    COMMUNICATION = "communication", "Communication"
 
 
 class AuditActorType(models.TextChoices):

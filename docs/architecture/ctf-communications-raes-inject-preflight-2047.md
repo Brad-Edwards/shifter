@@ -8,6 +8,8 @@ Requirements: `CTF-008`, `CTF-010`, `CTF-012`, `CTF-014`
 
 Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/2047>
 
+Domain-model implementation slice: <https://github.com/Brad-Edwards/shifter/issues/2048>
+
 This decision defines the boundaries for one CTF communications capability. It
 does not implement that capability and is not an implementation plan.
 
@@ -193,11 +195,11 @@ cannot be used as cross-tenant membership probes.
 
 ## Audience Resolution
 
-`AudienceSpec` supports exactly the product scopes required by #2047: one
-participant, an explicit participant set, one or more teams, one event, or
-multiple events. It stores public CTF identifiers and a closed membership
-profile, never email addresses, arbitrary user IDs, SQL/ORM expressions, or a
-free-form filter JSON object.
+`AudienceSpec` supports exactly the product scopes required by umbrella issue
+#2047 and its #2048 domain-model slice: one participant, an explicit participant
+set, one or more teams, one event, or multiple events. It stores public CTF
+identifiers and a closed membership profile, never email addresses, arbitrary
+user IDs, SQL/ORM expressions, or a free-form filter JSON object.
 
 General event communication reuses `viewing_participant_q()` so banned
 participants are not silently re-admitted and disqualified participants retain
@@ -382,6 +384,27 @@ terminal failure state; backlog, retry exhaustion, and oldest-due age are
 operator-visible. Cancellation stops only not-yet-claimed work. It cannot recall
 provider-accepted email, a published browser notification, a participant read,
 or a completed intervention.
+
+Participant removal or deletion prevents inclusion in every future snapshot and
+immediately removes inbox/read/acknowledgement authority through the canonical
+parent-scoped participant predicate. In the removal transaction, unclaimed
+delivery commands for that participation are cancelled and its encrypted
+delivery coordinates are erased; claimed or provider-accepted attempts retain
+their truthful terminal state. The immutable, event-qualified snapshot identity
+remains bounded historical evidence until normal retention, is never retargeted
+to another user or email, and is not exposed through participant APIs.
+
+Event cancellation prevents new releases and due-time materialization for that
+event, cancels its pending scheduled occurrences and event-qualified unclaimed
+delivery commands, and leaves accepted/published/read history truthful until the
+normal retention deadline. A multi-event draft containing a cancelled target
+must be replaced rather than silently narrowing its target set; an already
+released multi-event intent cancels only work qualified to the cancelled event.
+Range replacement similarly fences all unclaimed generation-bound work for the
+old generation. The old intent and occurrence remain historical evidence; a
+replacement range requires a new generation-qualified occurrence and
+idempotency identity, while communication that was never range-bound is
+unaffected.
 
 ## Adversarial Range Ingress Threat Model
 
