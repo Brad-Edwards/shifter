@@ -1126,9 +1126,7 @@ class TestGdcControlPlaneImages:
         assert "INSTALL_KUBEVIRT=true" not in default_out
 
         # GDC range backend: virtctl is installed (digest-pinned) for VM Runtime.
-        deploy.push_gcp_control_plane_images(
-            outputs, image_tag=PINNED_IMAGE_TAG, install_kubevirt=True, dry_run=True
-        )
+        deploy.push_gcp_control_plane_images(outputs, image_tag=PINNED_IMAGE_TAG, install_kubevirt=True, dry_run=True)
         gdc_out = capsys.readouterr().out
         assert "INSTALL_KUBEVIRT=true" in gdc_out
 
