@@ -94,6 +94,13 @@
       "technical_docs": ["technical/shifter_platform/user-lifecycle-administration.md"]
     },
     {
+      "id": "range-workspace-scoping-administration",
+      "title": "Range-to-workspace scoping administration",
+      "requirement": "PLAT-237",
+      "user_docs": ["features/range-workspace-scoping-administration.md"],
+      "technical_docs": ["technical/shifter_platform/range-workspace-scoping-administration.md"]
+    },
+    {
       "id": "aws-eks-backend-bundle",
       "title": "AWS EKS backend bundle",
       "requirement": "GEN-001",
