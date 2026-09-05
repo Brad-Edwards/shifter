@@ -2,7 +2,7 @@
 
 - Status: proposed (2026-09-05)
 - Review: #2080; findings F06–F09
-- Design detail: [range and agent security plan](../../architecture/bigrae-review/sandbox-security.md)
+- Design detail: [range and agent security plan linked from review #2080](https://github.com/Brad-Edwards/shifter/issues/2080)
 
 ## Context
 

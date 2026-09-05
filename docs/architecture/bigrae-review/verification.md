@@ -83,6 +83,8 @@ Native checks followed `AGENTS.md`, including the repository TFLint config and
 strict Kubeconform options. Final `adr_guard --all --level ci` passed all 30
 selected checks. Vale reported no errors, warnings or suggestions in the six
 changed ADR files. Local Markdown targets resolve and `git diff --check` passed.
+The complete `make policy` target also passed, including all eight import
+contracts and prose checks across the eleven changed Markdown files.
 The review added 46 native blocking relationships, checked the combined graph
 for cycles and confirmed every planned edge through API readback. It clarified
 23 existing issues and moved focused prerequisites into the three new milestones.
