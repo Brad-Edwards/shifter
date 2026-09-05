@@ -17,6 +17,13 @@
       "technical_docs": ["technical/shifter_platform/engine.md"]
     },
     {
+      "id": "warm-pool",
+      "title": "Range warm pool for faster initial launch",
+      "requirement": "GEN-001",
+      "user_docs": ["features/ranges.md", "features/ctf-organizer-guide.md"],
+      "technical_docs": ["technical/shifter_platform/engine.md"]
+    },
+    {
       "id": "terminal",
       "title": "Terminal",
       "requirement": "GEN-001",
@@ -85,6 +92,13 @@
       "requirement": "PLAT-236",
       "user_docs": ["features/user-lifecycle-administration.md"],
       "technical_docs": ["technical/shifter_platform/user-lifecycle-administration.md"]
+    },
+    {
+      "id": "range-workspace-scoping-administration",
+      "title": "Range-to-workspace scoping administration",
+      "requirement": "PLAT-237",
+      "user_docs": ["features/range-workspace-scoping-administration.md"],
+      "technical_docs": ["technical/shifter_platform/range-workspace-scoping-administration.md"]
     },
     {
       "id": "aws-eks-backend-bundle",

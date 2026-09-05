@@ -28,7 +28,7 @@ from __future__ import annotations
 from cms.assets.services import AgentUploadSpec
 from cms.assets.services import create_agent as assets_create_agent
 from cms.assets.services import delete_agent as assets_delete_agent
-from cms.exceptions import CMSError, WorkspaceLaunchDenied, WorkspaceLaunchQuotaExceeded
+from cms.exceptions import CMSError, RangeScopeAdminError, WorkspaceLaunchDenied, WorkspaceLaunchQuotaExceeded
 from cms.models import AgentConfig, RangeInstance
 from cms.scenarios.images import project_scenario_images
 from cms.signals import range_status_changed as range_status_changed
@@ -129,6 +129,12 @@ from ._range_vpn import (
     has_ctf_openvpn_profile,
     has_mission_control_openvpn_profile,
 )
+from ._range_workspace_admin import (
+    RangeRebindResult,
+    RangeScopeAuditContext,
+    list_range_scope_bindings,
+    rebind_range_workspace,
+)
 from ._scenarios import (
     get_scenario,
     list_launchable_scenarios,
@@ -147,6 +153,8 @@ from ._user_offboarding import (
     OwnershipTransferSummary,
     transfer_user_ownership,
 )
+from ._warm_pool_claim import attempt_warm_claim
+from ._warm_pool_reconcile import reconcile_warm_pool
 
 # The public product launch seam is permanently RAES-owned after #1311.
 create_range = create_range_dispatch
@@ -175,11 +183,15 @@ __all__ = (
     "RangeInstance",
     "RangeLeaseConflict",
     "RangeLeaseNotFound",
+    "RangeRebindResult",
+    "RangeScopeAdminError",
+    "RangeScopeAuditContext",
     "RegisteredPack",
     "WorkspaceLaunchDenied",
     "WorkspaceLaunchQuotaExceeded",
     "assets_create_agent",
     "assets_delete_agent",
+    "attempt_warm_claim",
     "audit_log",
     "cancel_range",
     "cancel_range_by_request_id",
@@ -243,6 +255,7 @@ __all__ = (
     "list_launchable_scenarios",
     "list_mission_control_range_history",
     "list_ngfws",
+    "list_range_scope_bindings",
     "list_ranges",
     "list_scenarios",
     "pause_range",
@@ -251,7 +264,9 @@ __all__ = (
     "range_owner_reassignment_available",
     "range_status_changed",
     "reassign_range_owner",
+    "rebind_range_workspace",
     "reconcile_ctf_range_leases",
+    "reconcile_warm_pool",
     "register_pack",
     "resume_range",
     "resume_range_by_request_id",

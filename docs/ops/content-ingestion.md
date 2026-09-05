@@ -54,17 +54,18 @@ python manage.py register_pack \
   --actor <username>
 ```
 
-## In-box catalog
+## In-box bootstrap seed
 
-The packs Shifter ships by default are declared in
+The packs Shifter registers into the tenant by default (an in-box bootstrap
+seed, not a shipped distribution catalog) are declared in
 `cms/scenarios/inbox_packs/manifest.yaml` and registered through the same service
 by `python manage.py bootstrap_inbox_catalog --actor <username>`. There is no
-privileged load path for the in-box catalog: it is registered exactly the way an
+privileged load path for the seed: it is registered exactly the way an
 operator registers their own content. The bootstrap is idempotent, so it is safe
 to run after each deploy. It validates the complete declaration before writing
 and registers the batch atomically: a missing/malformed manifest or any invalid
-or drifted entry fails visibly and leaves no partially installed batch. No
-conformant default packs ship yet, so the manifest is currently empty.
+or drifted entry fails visibly and leaves no partially installed batch. The
+manifest currently declares the Polaris pack.
 
 ## Resolution and launchability
 

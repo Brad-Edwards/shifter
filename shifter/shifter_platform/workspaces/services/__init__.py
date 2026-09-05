@@ -89,6 +89,7 @@ from ._quota_admin import (
     set_workspace_quota_policy,
     workspace_quota_usage,
 )
+from ._range_scope_admin import RangeRebindAuthorization, authorize_range_rebind
 
 # ``WorkspaceOperation`` is re-exported here on purpose: callers name the
 # operation they want authorized, and the facade is the only module they may
@@ -105,6 +106,7 @@ __all__ = [
     "OrganizationRef",
     "OrganizationValidationError",
     "QuotaVerdict",
+    "RangeRebindAuthorization",
     "WorkspaceAuditContext",
     "WorkspaceAuthorization",
     "WorkspaceAuthorizationError",
@@ -130,6 +132,7 @@ __all__ = [
     "archive_workspace",
     "authorize_bound_workspace",
     "authorize_launch_workspace_locked",
+    "authorize_range_rebind",
     "authorize_workspace",
     "authorized_workspace_ids",
     "change_workspace_member_role",

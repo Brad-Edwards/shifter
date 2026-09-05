@@ -43,7 +43,11 @@ from shared.range_instantiation_policy import (
 from cloud.exceptions import CloudError
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from provisioner_db_appends import OperationRef, append_operation_step_result
-from provisioner_db_operation_input import RaesOperationRun, get_raes_operation_input
+from provisioner_db_operation_input import (
+    RaesOperationRun,
+    get_activation_operation_input,
+    get_raes_operation_input,
+)
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, apply_raes_range_cell, destroy_raes_range_cell
 from raes_plan import RaesPlanNode, parse_plan
@@ -321,6 +325,57 @@ def _realized_members(apply_result: dict[str, object]) -> list[dict[str, object]
                 member[key] = str(instance.get(key, ""))
         members.append(member)
     return members
+
+
+def run_raes_range_activate(request_id: str, *, operation_id: str | None = None) -> None:
+    """Hand a claimed warm generation to its claimant (#28).
+
+    Scrubs every pre-claim credential/access identity, realizes the claimant's
+    fresh access, and negatively verifies the pre-claim access is revoked, then
+    reports ``running`` -> snapshot -> ``ready`` with the claimant's realized
+    member/access projection. Any failure reports a terminal failure with a closed
+    reason code; the Engine applier fails the generation and it is retired through
+    the canonical destroy lifecycle rather than handed over.
+    """
+    from uuid import UUID
+
+    from raes_gcp_activate import activate_raes_range_cell, default_activation_ops
+
+    operation = "activate"
+    provisional_ref, generation = _require_generation(request_id, operation_id, operation)
+    try:
+        run = get_activation_operation_input(generation, request_id=request_id)
+    except Exception:
+        _report_failure(
+            provisional_ref, operation, "operation input could not be read or validated", _INPUT_REASON_CODE
+        )
+        raise
+    ref = OperationRef(request_id=run.request_id, operation_id=run.operation_id)
+    activation = run.input
+
+    logger.info("Starting RAES range activation for request_id=%s", request_id)
+    _report(ref, operation, ResultStep.RAES_ACTIVATE_RUNNING, {"raes_status": "running"})
+    try:
+        result = activate_raes_range_cell(
+            activation=activation,
+            prepared_generation=UUID(activation.prepared_generation_fence),
+            activate_generation=UUID(run.operation_id),
+            ops=default_activation_ops(),
+        )
+        raes_plan = parse_plan(activation.raes_input.plan)
+        verified = {
+            *(item.address for item in raes_plan.content),
+            *(account.address for account in raes_plan.accounts),
+            *(feature.address for feature in raes_plan.features),
+        }
+        resources = snapshot_resources(raes_plan, verified)
+    except Exception as exc:
+        reason_code, diagnostic = _classify_failure(exc, "raes range activate")
+        logger.error("RAES range activation failed for request_id=%s", request_id)
+        _report_failure(ref, operation, diagnostic, reason_code)
+        raise
+    _report(ref, operation, ResultStep.RAES_ACTIVATE_SNAPSHOT, {"resources": resources})
+    _report(ref, operation, ResultStep.RAES_TERMINAL_READY, {"raes_status": "succeeded", "members": result.members})
 
 
 def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) -> None:

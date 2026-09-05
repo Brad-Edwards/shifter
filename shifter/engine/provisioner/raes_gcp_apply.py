@@ -439,3 +439,38 @@ def apply_raes_range_cell(
         "instances": instance_outputs,
         "composition_verified_addresses": sorted(verified),
     }
+
+
+def realize_access_on_existing_cell(
+    request_uuid: str,
+    range_id: int,
+    raes_plan: RaesPlan,
+    resolve_image: Callable[[RaesPlanNode], GCERangeImageProfile],
+    options: RaesGceApplyOptions | None = None,
+    access_bindings: list[dict[str, Any]] | None = None,
+) -> list[ResourceDict]:
+    """Rotate credentials and realize participant access on an already-realized cell (#28).
+
+    Warm activation reuses the exact apply realization path -- ``_ensure_raes_instance``
+    is idempotent, so re-running :func:`_provision_raes_resources` against an
+    already-realized range cell recreates no infrastructure; it re-establishes the
+    guest account credentials (freshly, after the caller has scrubbed the pre-claim
+    secrets) and publishes the claimant's participant access. Authored content and
+    directory realization are deliberately *not* re-run: they were delivered at
+    warm-prepare and must not be reset by an ownership handover.
+
+    Returns the realized instance outputs (the member/access projection source).
+    """
+    resolved_options = options or RaesGceApplyOptions()
+    runtime = _apply_runtime(resolved_options)
+    realized_access = join_participant_access(access_bindings or (), raes_plan)
+    plan = build_raes_range_cell_plan(
+        request_uuid, range_id, raes_plan, resolve_image, runtime.config, realized_access, resolved_options.egress_mode
+    )
+    return _provision_raes_resources(
+        plan,
+        runtime,
+        _bootstrap_by_node(raes_plan),
+        _accounts_by_node(raes_plan),
+        _access_by_node(realized_access),
+    )

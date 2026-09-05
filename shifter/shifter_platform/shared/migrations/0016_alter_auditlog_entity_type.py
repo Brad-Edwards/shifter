@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("shared", "0014_alter_auditlog_action"),
+        ("shared", "0015_alter_auditlog_action"),
     ]
 
     operations = [
