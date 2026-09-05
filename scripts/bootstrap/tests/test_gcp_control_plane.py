@@ -2313,9 +2313,21 @@ class TestGdcBootstrapRangeBackend:
     def test_gce_backend_skips_substrate_and_deploys_control_plane(self):
         """The gce backend never touches the substrate (no SA-key creation) and deploys the control plane."""
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", range_backend="gce")
+        # The gce path gates on the range preconditions before any mutation (#1509).
+        # Satisfy them for real -- required range vars set and the gcloud image
+        # probe returns success -- by patching only the process boundary, rather
+        # than mocking the first-party check_gce_range_preconditions (ADR-019-R1).
+        range_env = {
+            "RANGE_NETWORK_ZONE": "us-central1-a",
+            "GCP_RANGE_LINUX_IMAGE": "projects/prod-rwctxzl6shxk/global/images/family/shifter-ubuntu",
+            "GCP_RANGE_DC_IMAGE": "projects/prod-rwctxzl6shxk/global/images/family/shifter-dc",
+            "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@prod-rwctxzl6shxk.iam.gserviceaccount.com",
+        }
+        image_probe_ok = subprocess.CompletedProcess(["gcloud"], 0, stdout="an-image\n", stderr="")
         with (
             patch("gcp_control_plane.confirm", return_value=True),
-            patch("gcp_control_plane.check_gce_range_preconditions") as mock_precond,
+            patch.dict(os.environ, range_env),
+            patch("gcp_control_plane.subprocess.run", return_value=image_probe_ok),
             patch("gcp_control_plane.ensure_gdc_apis") as mock_apis,
             patch("gcp_control_plane.ensure_gdc_service_account") as mock_sa,
             patch("gcp_control_plane.stage_gdc_bootstrap_assets") as mock_stage,
@@ -2327,8 +2339,7 @@ class TestGdcBootstrapRangeBackend:
         ):
             result = gcp_control_plane.gdc_bootstrap_cluster(config, dry_run=False)
 
-        # The gce path gates on the range preconditions before any mutation (#1509).
-        mock_precond.assert_called_once_with(config, allow_missing_range_images=False)
+        # Preconditions passed (no SystemExit) and the gce path skipped the substrate.
         mock_apis.assert_not_called()
         mock_sa.assert_not_called()
         mock_stage.assert_not_called()
