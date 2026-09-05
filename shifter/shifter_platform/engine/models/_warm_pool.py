@@ -132,6 +132,8 @@ class WarmRangeGeneration(models.Model):
     retired_at = models.DateTimeField(null=True, blank=True, help_text="When destroy was confirmed (provider absence)")
 
     class Meta:
+        """Indexes and constraints backing the atomic claim and reconciler sweeps."""
+
         indexes = [
             # The claim query: ready generations in an authorized bucket carrying the
             # exact compatibility digest, bound by backend/range_source.
@@ -156,10 +158,13 @@ class WarmRangeGeneration(models.Model):
                 condition=(
                     models.Q(state="claimed", claimed_by_request_id__isnull=False, claimed_at__isnull=False)
                     | (~models.Q(state="claimed") & models.Q(claimed_by_request_id__isnull=True))
-                    # Terminal/retiring rows retain their claim provenance if they
-                    # were claimed before retirement; allow claimed_by to persist
-                    # once set by permitting it on retiring/terminal too.
-                    | models.Q(state__in=["retiring", "terminal"])
+                    # Any post-claim state (a consumed activation, an unhealthy
+                    # failed activation, or a retiring/terminal teardown) retains its
+                    # claim provenance if it was claimed before the transition; allow
+                    # claimed_by to persist once set by permitting it on those states.
+                    # Pre-claim active states (provisioning/ready) still require a
+                    # null claimed_by via the clause above.
+                    | models.Q(state__in=["activated", "unhealthy", "retiring", "terminal"])
                 ),
                 name="warmgen_claim_consistency",
             ),

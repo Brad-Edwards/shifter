@@ -21,28 +21,33 @@ time so the provision suppresses participant access (quarantine). No provider I/
 happens in a transaction: provision and destroy travel through durable RAES intents.
 
 The reconciler prepares for the v1 warm target class (personal-workspace Mission
-Control live-fire launches) and builds its compatibility digest with the same
-:func:`cms.services._warm_pool_claim.build_compatibility_key` the launch claim path
-uses, so a generation it prepares is claimable by exactly those launches.
+Control live-fire launches) and builds its compatibility digest from the same
+:class:`shared.warm_pool.compatibility.CompatibilityKey` dimensions the launch
+claim path uses, so a generation it prepares is claimable by exactly those launches.
 """
 
 from __future__ import annotations
 
 import logging
 import secrets
-from datetime import timedelta
-from uuid import uuid4
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
 
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.utils import timezone
 
-from cms.services._warm_pool_claim import ISOLATION_PERSONAL, build_compatibility_key
+from cms.services._warm_pool_claim import ISOLATION_PERSONAL
 from shared.enums import RangeSource, ResourceStatus
 from shared.operation_envelope import canonical_payload_digest
 from shared.range_instantiation_policy import InstantiationPurpose, backend_supports_warm_activation
-from shared.warm_pool.compatibility import compatibility_digest
+from shared.warm_pool.compatibility import CompatibilityKey, compatibility_digest
 from shared.warm_pool.policy import WarmPoolBucketPolicy, WarmPoolRuntimePolicy
+
+if TYPE_CHECKING:
+    from cms.models import RangeInstance
+    from shared.range_instantiation_policy import BackendAdmission
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +84,7 @@ def _policy_fingerprint(policy: WarmPoolRuntimePolicy, bucket: WarmPoolBucketPol
 def _bucket_compatibility_digest(bucket: WarmPoolBucketPolicy, *, package_digest: str, lock_digest: str) -> str:
     """Compute the compatibility digest a generation in this bucket must carry."""
     return compatibility_digest(
-        build_compatibility_key(
+        CompatibilityKey(
             backend=bucket.backend,
             instantiation_purpose=WARM_PURPOSE.value,
             range_source=WARM_RANGE_SOURCE.value,
@@ -108,7 +113,7 @@ def create_managed_warm_user() -> User:
     )
 
 
-def reconcile_warm_pool(*, now=None) -> dict[str, int]:
+def reconcile_warm_pool(*, now: datetime | None = None) -> dict[str, int]:
     """Run one warm-pool reconcile pass. Returns a bounded per-outcome summary."""
     moment = now or timezone.now()
     policy: WarmPoolRuntimePolicy = settings.WARM_POOL_POLICY
@@ -155,15 +160,13 @@ def _emit_pool_gauges(policy: WarmPoolRuntimePolicy) -> None:
 
 
 def _reconcile_bucket(
-    bucket: WarmPoolBucketPolicy, policy: WarmPoolRuntimePolicy, moment, summary: dict[str, int]
+    bucket: WarmPoolBucketPolicy, policy: WarmPoolRuntimePolicy, moment: datetime, summary: dict[str, int]
 ) -> None:
+    """Converge one bucket: finalize, recover stalled, retire stale/excess, replenish."""
     from engine.services import (
         active_generation_count,
         finalize_retiring_generations,
-        ready_generations,
         recover_stalled_generations,
-        retire_generation,
-        total_active_generation_count,
     )
 
     summary["finalized"] += finalize_retiring_generations(bucket.id)
@@ -177,36 +180,80 @@ def _reconcile_bucket(
     if identity is None:
         # The bucket's scenario no longer resolves to a registered source: retire
         # every unclaimed generation and provision nothing.
-        for gen in ready_generations(bucket.id):
-            if retire_generation(gen):
-                summary["retired"] += 1
+        summary["retired"] += _retire_all_ready(bucket)
         return
     package_digest, lock_digest = identity
     current_digest = _bucket_compatibility_digest(bucket, package_digest=package_digest, lock_digest=lock_digest)
 
-    live_ready = []
+    live_ready, retired = _retire_stale_ready(bucket, current_digest, moment)
+    summary["retired"] += retired
+    active = active_generation_count(bucket.id)
+    active, retired = _scale_down_excess(bucket, policy, live_ready, active)
+    summary["retired"] += retired
+    summary["provisioned"] += _replenish_shortfall(bucket, policy, current_digest, active)
+
+
+def _retire_all_ready(bucket: WarmPoolBucketPolicy) -> int:
+    """Retire every unclaimed generation in a bucket (its scenario no longer resolves)."""
+    from engine.services import ready_generations, retire_generation
+
+    retired = 0
+    for gen in ready_generations(bucket.id):
+        if retire_generation(gen):
+            retired += 1
+    return retired
+
+
+def _retire_stale_ready(bucket: WarmPoolBucketPolicy, current_digest: str, moment: datetime) -> tuple[list[Any], int]:
+    """Retire ready generations past their idle deadline or carrying a stale digest.
+
+    Returns ``(survivors, retired_count)`` -- the still-live ready generations plus
+    how many were retired.
+    """
+    from engine.services import ready_generations, retire_generation
+
+    live_ready: list[Any] = []
+    retired = 0
     for gen in ready_generations(bucket.id):
         expired = gen.idle_deadline is not None and gen.idle_deadline <= moment
         incompatible = gen.compatibility_digest != current_digest
         if expired or incompatible:
             if retire_generation(gen):
-                summary["retired"] += 1
+                retired += 1
         else:
             live_ready.append(gen)
+    return live_ready, retired
 
-    active = active_generation_count(bucket.id)
 
-    # Scale down excess unclaimed generations toward target.
+def _scale_down_excess(
+    bucket: WarmPoolBucketPolicy, policy: WarmPoolRuntimePolicy, live_ready: list[Any], active: int
+) -> tuple[int, int]:
+    """Retire unclaimed generations above target per the scale-down order.
+
+    Returns ``(active, retired_count)`` with ``active`` decremented for each retirement.
+    """
+    from engine.services import retire_generation
+
+    retired = 0
     if active > bucket.target:
         excess = active - bucket.target
         victims = live_ready if policy.scale_down == "oldest-first" else list(reversed(live_ready))
         for gen in victims[:excess]:
             if retire_generation(gen):
-                summary["retired"] += 1
+                retired += 1
                 active -= 1
+    return active, retired
 
-    # Replenish a shortfall up to target, bounded by maximum, the deployment
-    # total-ready ceiling, and per-pass concurrency.
+
+def _replenish_shortfall(
+    bucket: WarmPoolBucketPolicy, policy: WarmPoolRuntimePolicy, current_digest: str, active: int
+) -> int:
+    """Warm-prepare up to the shortfall, bounded by maximum, ceiling, and concurrency.
+
+    Returns the number of generations dispatched this pass.
+    """
+    from engine.services import total_active_generation_count
+
     ceiling = policy.max_total_ready or sum(b.maximum for b in policy.buckets)
     ceiling_headroom = max(0, ceiling - total_active_generation_count())
     budget = min(
@@ -215,9 +262,11 @@ def _reconcile_bucket(
         ceiling_headroom,
         policy.replenish_concurrency,
     )
+    provisioned = 0
     for _ in range(budget):
         if _provision_warm_generation(bucket, policy, current_digest):
-            summary["provisioned"] += 1
+            provisioned += 1
+    return provisioned
 
 
 def _resolve_bucket_identity(bucket: WarmPoolBucketPolicy) -> tuple[str, str] | None:
@@ -238,20 +287,7 @@ def _provision_warm_generation(bucket: WarmPoolBucketPolicy, policy: WarmPoolRun
     one bad preparation does not abort the pass; capacity drawn for a failed
     dispatch is released.
     """
-    from cms.models import RangeInstance
-    from cms.services._raes_range_create import (
-        _audit_raes_range_provision,
-        _dispatch_raes_package,
-        _load_raes_source_or_raise,
-    )
     from cms.services._range_backend_admission import assert_backend_admitted
-    from cms.services._range_launch_common import _reserve_active_range_slot
-    from cms.services._range_workspace import admit_workspace_launch, resolve_launch_workspace
-    from engine.services import (
-        admit_warm_generation_capacity,
-        create_warm_generation,
-        warm_capacity_scope_ref,
-    )
 
     # Admission FIRST, before allocating any managed user, so an unsupported or
     # mismatched bucket (explicitly-accepted configuration) does not leak an
@@ -264,11 +300,40 @@ def _provision_warm_generation(bucket: WarmPoolBucketPolicy, policy: WarmPoolRun
     ):
         logger.warning("warm-pool: bucket=%s backend not warm-capable; skipping", bucket.id)
         return False
+    return _warm_prepare_dispatch(bucket, policy, compatibility, backend_admission)
+
+
+def _warm_prepare_dispatch(
+    bucket: WarmPoolBucketPolicy,
+    policy: WarmPoolRuntimePolicy,
+    compatibility: str,
+    backend_admission: BackendAdmission,
+) -> bool:
+    """Reserve, draw capacity, and dispatch one warm-prepare (helper of ``_provision_warm_generation``).
+
+    Returns True on a dispatched preparation, False on a capacity refusal or any
+    failure. All allocated resources (managed user, capacity draw, reservation) are
+    cleaned up on the non-dispatch paths.
+    """
+    from cms.models import RangeInstance
+    from cms.services._raes_range_create import (
+        _audit_raes_range_provision,
+        _dispatch_raes_package,
+        _load_raes_source_or_raise,
+    )
+    from cms.services._range_launch_common import _reserve_active_range_slot
+    from cms.services._range_workspace import admit_workspace_launch, resolve_launch_workspace
+    from engine.services import (
+        WarmGenerationDraft,
+        admit_warm_generation_capacity,
+        create_warm_generation,
+        warm_capacity_scope_ref,
+    )
 
     system_user = create_managed_warm_user()
     draw_key = uuid4()
     scope_ref = warm_capacity_scope_ref(settings.WARM_POOL_DEPLOYMENT_NAME, bucket.id)
-    request_id = None
+    request_id: UUID | None = None
     try:
         source = _load_raes_source_or_raise(bucket.scenario)
         request_id = uuid4()
@@ -281,7 +346,8 @@ def _provision_warm_generation(bucket: WarmPoolBucketPolicy, policy: WarmPoolRun
             correlation_key=request_id,
         )
 
-        def _persist(cms_request):
+        def _persist(cms_request: Any) -> RangeInstance:
+            """Create the system-owned CMS RangeInstance row for the warm generation."""
             return RangeInstance.objects.create(
                 request=cms_request,
                 scenario_id=bucket.scenario,
@@ -298,16 +364,18 @@ def _provision_warm_generation(bucket: WarmPoolBucketPolicy, policy: WarmPoolRun
         # Create the ledger row BEFORE dispatch so the provision suppresses
         # participant access (quarantine), and draw capacity before provider work.
         create_warm_generation(
-            bucket_id=bucket.id,
-            compatibility_digest=compatibility,
-            effective_policy_fingerprint=_policy_fingerprint(policy, bucket),
-            backend=bucket.backend,
-            range_source=WARM_RANGE_SOURCE.value,
-            capacity_partition=bucket.capacity_partition,
-            capacity_scope_ref=scope_ref,
-            capacity_draw_key=draw_key,
-            request_id=request_id,
-            idle_deadline=timezone.now() + timedelta(seconds=bucket.idle_ttl_seconds),
+            WarmGenerationDraft(
+                bucket_id=bucket.id,
+                compatibility_digest=compatibility,
+                effective_policy_fingerprint=_policy_fingerprint(policy, bucket),
+                backend=bucket.backend,
+                range_source=WARM_RANGE_SOURCE.value,
+                capacity_partition=bucket.capacity_partition,
+                capacity_scope_ref=scope_ref,
+                capacity_draw_key=draw_key,
+                request_id=request_id,
+                idle_deadline=timezone.now() + timedelta(seconds=bucket.idle_ttl_seconds),
+            )
         )
         # Capacity admission is a real gate, not advisory: a refused (REJECTED)
         # capacity or cost assessment must stop the warm provision. Clean up the
@@ -327,7 +395,7 @@ def _provision_warm_generation(bucket: WarmPoolBucketPolicy, policy: WarmPoolRun
         return False
 
 
-def _abandon_preparation(request_id, system_user, draw_key) -> None:
+def _abandon_preparation(request_id: UUID | None, system_user: User | None, draw_key: UUID) -> None:
     """Clean up a warm preparation that was refused or failed before/at dispatch (#28).
 
     Releases the capacity draw, moves any created ledger row to a reconciler-owned
@@ -354,7 +422,7 @@ def _abandon_preparation(request_id, system_user, draw_key) -> None:
     _delete_managed_warm_user(system_user)
 
 
-def _delete_managed_warm_user(system_user) -> None:
+def _delete_managed_warm_user(system_user: User | None) -> None:
     """Delete the managed warm-pool system user, best-effort and marker-checked."""
     if system_user is None:
         return

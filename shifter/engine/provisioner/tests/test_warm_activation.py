@@ -13,7 +13,12 @@ from uuid import uuid4
 
 import pytest
 from shared.raes.operation_input import RaesInputBindings, build_raes_operation_input
-from shared.warm_pool.activation_input import build_activation_input, parse_activation_input
+from shared.warm_pool.activation_input import (
+    ActivationClaimant,
+    ActivationGeneration,
+    build_activation_input,
+    parse_activation_input,
+)
 
 from raes_gcp_activate import ActivationError, activate_raes_range_cell
 
@@ -28,15 +33,15 @@ def _activation():
         legacy_range_id=1001,
     )
     payload = build_activation_input(
-        claimant_user_id=42,
-        claimant_username="claimant@example.com",
-        workspace_id=7,
-        range_source="mission-control",
-        instantiation_purpose="live_fire",
-        range_backend="gce",
-        legacy_range_id=1001,
-        compatibility_digest="sha256:" + "a" * 64,
-        prepared_generation_fence=str(uuid4()),
+        claimant=ActivationClaimant(user_id=42, username="claimant@example.com", workspace_id=7),
+        generation=ActivationGeneration(
+            range_source="mission-control",
+            instantiation_purpose="live_fire",
+            range_backend="gce",
+            legacy_range_id=1001,
+            compatibility_digest="sha256:" + "a" * 64,
+            prepared_generation_fence=str(uuid4()),
+        ),
         raes_input=raes_input,
     )
     return parse_activation_input(payload)
@@ -71,9 +76,10 @@ def test_scrub_precedes_realize_precedes_verify():
 
 def test_failed_negative_verification_fails_closed():
     ops = _FakeOps(revoked=False)
+    activation = _activation()
     with pytest.raises(ActivationError) as exc:
         activate_raes_range_cell(
-            activation=_activation(), prepared_generation=uuid4(), activate_generation=uuid4(), ops=ops
+            activation=activation, prepared_generation=uuid4(), activate_generation=uuid4(), ops=ops
         )
     assert "revoked" in str(exc.value)
     # Scrub and realize ran, verify failed; the generation is not handed over.
@@ -87,9 +93,10 @@ def test_scrub_failure_aborts_before_realize():
             raise RuntimeError("scrub failed")
 
     ops = _ScrubBoom()
+    activation = _activation()
     with pytest.raises(RuntimeError):
         activate_raes_range_cell(
-            activation=_activation(), prepared_generation=uuid4(), activate_generation=uuid4(), ops=ops
+            activation=activation, prepared_generation=uuid4(), activate_generation=uuid4(), ops=ops
         )
     # Realize never runs if scrub fails: no window with both credentials valid.
     assert ops.calls == ["scrub"]

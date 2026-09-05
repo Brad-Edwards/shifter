@@ -58,8 +58,9 @@ class TestDefaults:
         assert policy.is_active() is False
 
     def test_disabled_with_buckets_rejected(self):
+        data = {"enabled": False, "buckets": [_bucket()]}
         with pytest.raises(ValidationError) as exc:
-            WarmPoolPolicy.model_validate({"enabled": False, "buckets": [_bucket()]})
+            WarmPoolPolicy.model_validate(data)
         assert "disabled" in str(exc.value)
 
     def test_extra_keys_forbidden(self):
@@ -67,8 +68,9 @@ class TestDefaults:
             WarmPoolPolicy.model_validate({"enabled": False, "junk": True})
 
     def test_no_arbitrary_extension_dict_on_bucket(self):
+        data = _enabled_policy(buckets=[_bucket(provider_overrides={"x": 1})])
         with pytest.raises(ValidationError):
-            WarmPoolPolicy.model_validate(_enabled_policy(buckets=[_bucket(provider_overrides={"x": 1})]))
+            WarmPoolPolicy.model_validate(data)
 
 
 class TestEnabledInvariants:
@@ -84,24 +86,33 @@ class TestEnabledInvariants:
         assert policy.scale_down == WarmPoolScaleDownStrategy.OLDEST_FIRST
 
     def test_duplicate_bucket_ids_rejected(self):
+        data = _enabled_policy(buckets=[_bucket(), _bucket(scenario="other")])
         with pytest.raises(ValidationError) as exc:
-            WarmPoolPolicy.model_validate(_enabled_policy(buckets=[_bucket(), _bucket(scenario="other")]))
+            WarmPoolPolicy.model_validate(data)
         assert "duplicate bucket id" in str(exc.value)
 
     @pytest.mark.parametrize("interval", [0, 100_000])
     def test_replenish_interval_bounds(self, interval):
+        data = _enabled_policy(replenish_interval_seconds=interval)
         with pytest.raises(ValidationError):
-            WarmPoolPolicy.model_validate(_enabled_policy(replenish_interval_seconds=interval))
+            WarmPoolPolicy.model_validate(data)
 
     @pytest.mark.parametrize("concurrency", [0, 1000])
     def test_replenish_concurrency_bounds(self, concurrency):
+        data = _enabled_policy(replenish_concurrency=concurrency)
         with pytest.raises(ValidationError):
-            WarmPoolPolicy.model_validate(_enabled_policy(replenish_concurrency=concurrency))
+            WarmPoolPolicy.model_validate(data)
 
     def test_max_total_ready_smaller_than_bucket_target_rejected(self):
+        data = _enabled_policy(max_total_ready=1, buckets=[_bucket(target=3, maximum=3)])
         with pytest.raises(ValidationError) as exc:
-            WarmPoolPolicy.model_validate(_enabled_policy(max_total_ready=1, buckets=[_bucket(target=3, maximum=3)]))
+            WarmPoolPolicy.model_validate(data)
         assert "starve" in str(exc.value)
+
+    def test_max_total_ready_over_ceiling_rejected(self):
+        data = _enabled_policy(max_total_ready=100_000)
+        with pytest.raises(ValidationError):
+            WarmPoolPolicy.model_validate(data)
 
 
 class TestBucketInvariants:
@@ -110,24 +121,26 @@ class TestBucketInvariants:
         [(2, 1, 4), (0, 3, 2), (-1, 0, 1)],
     )
     def test_ordering_enforced(self, minimum, target, maximum):
+        data = _enabled_policy(buckets=[_bucket(minimum=minimum, target=target, maximum=maximum)])
         with pytest.raises(ValidationError) as exc:
-            WarmPoolPolicy.model_validate(
-                _enabled_policy(buckets=[_bucket(minimum=minimum, target=target, maximum=maximum)])
-            )
+            WarmPoolPolicy.model_validate(data)
         assert "minimum <= target <= maximum" in str(exc.value)
 
     @pytest.mark.parametrize("ttl", [0, 10_000_000])
     def test_idle_ttl_bounds(self, ttl):
+        data = _enabled_policy(buckets=[_bucket(idle_ttl_seconds=ttl)])
         with pytest.raises(ValidationError):
-            WarmPoolPolicy.model_validate(_enabled_policy(buckets=[_bucket(idle_ttl_seconds=ttl)]))
+            WarmPoolPolicy.model_validate(data)
 
     def test_unknown_backend_rejected(self):
+        data = _enabled_policy(buckets=[_bucket(backend="azure")])
         with pytest.raises(ValidationError):
-            WarmPoolPolicy.model_validate(_enabled_policy(buckets=[_bucket(backend="azure")]))
+            WarmPoolPolicy.model_validate(data)
 
     def test_duplicate_image_set_rejected(self):
+        data = _enabled_policy(buckets=[_bucket(image_set=["a", "a"])])
         with pytest.raises(ValidationError) as exc:
-            WarmPoolPolicy.model_validate(_enabled_policy(buckets=[_bucket(image_set=["a", "a"])]))
+            WarmPoolPolicy.model_validate(data)
         assert "image_set" in str(exc.value)
 
     def test_optional_narrowing_dimensions_accepted(self):
@@ -140,8 +153,9 @@ class TestBucketInvariants:
         assert bucket.image_set == ["kali", "dc"]
 
     def test_negative_cost_ceiling_rejected(self):
+        data = _enabled_policy(buckets=[_bucket(cost_ceiling=-1.0)])
         with pytest.raises(ValidationError):
-            WarmPoolPolicy.model_validate(_enabled_policy(buckets=[_bucket(cost_ceiling=-1.0)]))
+            WarmPoolPolicy.model_validate(data)
 
 
 class TestSettingsBlock:

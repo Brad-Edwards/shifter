@@ -86,6 +86,7 @@ from ._vpn import (
     has_openvpn_profile,
 )
 from ._warm_pool import (
+    WarmGenerationDraft,
     active_generation_count,
     admit_warm_generation_capacity,
     bucket_state_counts,
@@ -121,6 +122,7 @@ __all__ = (
     "VpnProfileConflict",
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
+    "WarmGenerationDraft",
     "active_generation_count",
     "admit_range_capacity",
     "admit_warm_generation_capacity",

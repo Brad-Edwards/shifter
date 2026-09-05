@@ -41,7 +41,7 @@ from shared.raes.status import RAES_STATE_FAILED
 from ._operation_apply_effects import _audit, _enqueue_range_status_event, _save_status, _terminal_timestamps
 
 if TYPE_CHECKING:
-    from engine.models import OperationResultInbox, Range
+    from engine.models import OperationResultInbox, Range, WarmRangeGeneration
 
 logger = logging.getLogger(__name__)
 
@@ -295,24 +295,29 @@ def _apply_uncancelled_raes_result(
         return apply_failure(range_obj, payload, str(row.request_id), is_range=True)
 
     if step is ResultStep.RAES_TERMINAL_READY:
-        pending = _pending_warm_generation(row, range_obj)
-        if pending is not None:
-            # Warm-prepare terminal: the infrastructure is realized, but the range
-            # is system-owned with no participant access. It must NOT become public
-            # READY (that would let a claimant race access surfaces before
-            # activation scrubs); it stays quarantined until activation. The pool
-            # tracks readiness on the ledger row, not on Range.status (#28).
-            return _apply_warm_prepared(row, payload, range_obj, pending)
-        # Normal cold provision, or a warm activation: transition to READY with the
-        # (claimant) realized access.
-        detail = _apply_ready_with_realized_access(row, payload, range_obj)
-        # A successful warm activation settles the claimed ledger row to ACTIVATED
-        # (consumed; the range is now the claimant's live range). Capacity stays held
-        # while the range exists and is released when the range is destroyed (#28).
-        _settle_warm_generation_on_activation(row, range_obj)
-        return detail
+        return _apply_terminal_ready(row, payload, range_obj)
 
     return _apply_observation(row, step, payload, range_obj)
+
+
+def _apply_terminal_ready(row: OperationResultInbox, payload: dict[str, Any], range_obj: Range) -> str:
+    """Apply a RAES terminal-READY result, branching warm-prepare vs cold/activation."""
+    pending = _pending_warm_generation(row, range_obj)
+    if pending is not None:
+        # Warm-prepare terminal: the infrastructure is realized, but the range
+        # is system-owned with no participant access. It must NOT become public
+        # READY (that would let a claimant race access surfaces before
+        # activation scrubs); it stays quarantined until activation. The pool
+        # tracks readiness on the ledger row, not on Range.status (#28).
+        return _apply_warm_prepared(row, payload, range_obj, pending)
+    # Normal cold provision, or a warm activation: transition to READY with the
+    # (claimant) realized access.
+    detail = _apply_ready_with_realized_access(row, payload, range_obj)
+    # A successful warm activation settles the claimed ledger row to ACTIVATED
+    # (consumed; the range is now the claimant's live range). Capacity stays held
+    # while the range exists and is released when the range is destroyed (#28).
+    _settle_warm_generation_on_activation(row, range_obj)
+    return detail
 
 
 def _settle_warm_generation_on_activation(row: OperationResultInbox, range_obj: Range) -> None:
@@ -336,7 +341,7 @@ def _settle_warm_generation_on_activation(row: OperationResultInbox, range_obj: 
     logger.info("warm generation activated (consumed): request_id=%s", row.request_id)
 
 
-def _pending_warm_generation(row: OperationResultInbox, range_obj: Range):
+def _pending_warm_generation(row: OperationResultInbox, range_obj: Range) -> WarmRangeGeneration | None:
     """Return the PROVISIONING warm ledger row for this request, or None.
 
     Only a ``provision`` operation can be a warm-prepare; an ``activate`` result
@@ -356,7 +361,9 @@ def _pending_warm_generation(row: OperationResultInbox, range_obj: Range):
     )
 
 
-def _apply_warm_prepared(row: OperationResultInbox, payload: dict[str, Any], range_obj: Range, gen) -> str:
+def _apply_warm_prepared(
+    row: OperationResultInbox, payload: dict[str, Any], range_obj: Range, gen: WarmRangeGeneration
+) -> str:
     """Realize a warm-prepared generation: persist infra, keep quarantined, flip ledger READY.
 
     Persists the realized instance projection and the succeeded sidecar observation,

@@ -360,19 +360,21 @@ def _create_raes_native_range_impl(
     # cold-falls-back through the unchanged reservation + dispatch path below, with
     # the inputs already validated for this launch.
     from cms.services._range_workspace import resolve_effective_egress_mode
-    from cms.services._warm_pool_claim import attempt_warm_claim
+    from cms.services._warm_pool_claim import WarmClaimRequest, attempt_warm_claim
 
     claimed_request_id = attempt_warm_claim(
-        user=user,
-        scenario=scenario,
-        package_digest=source.package_digest,
-        lock_digest=source.lock_digest,
-        backend=backend_admission.backend if backend_admission else "",
-        instantiation_purpose=instantiation_purpose,
-        range_source=range_source,
-        workspace_id=workspace_id,
-        egress_mode=resolve_effective_egress_mode(workspace_id),
-        request_id=request_id,
+        WarmClaimRequest(
+            user=user,
+            scenario=scenario,
+            package_digest=source.package_digest,
+            lock_digest=source.lock_digest,
+            backend=backend_admission.backend if backend_admission else "",
+            instantiation_purpose=instantiation_purpose,
+            range_source=range_source,
+            workspace_id=workspace_id,
+            egress_mode=resolve_effective_egress_mode(workspace_id),
+            request_id=request_id,
+        )
     )
     if claimed_request_id is not None:
         _audit_raes_range_provision(claimed_request_id, scenario, user, range_source)

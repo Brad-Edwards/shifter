@@ -41,7 +41,9 @@ def _key(**overrides) -> CompatibilityKey:
 
 class TestDeterminism:
     def test_equal_keys_equal_digest(self):
-        assert compatibility_digest(_key()) == compatibility_digest(_key())
+        first = compatibility_digest(_key())
+        second = compatibility_digest(_key())
+        assert first == second
 
     def test_digest_is_prefixed_sha256(self):
         assert compatibility_digest(_key()).startswith("sha256:")
@@ -72,13 +74,15 @@ class TestSensitivity:
 class TestFailClosed:
     @pytest.mark.parametrize("field", ["backend", "range_source", "package_digest", "lock_digest", "scenario"])
     def test_missing_required_dimension_rejected(self, field):
+        key = _key(**{field: ""})
         with pytest.raises(WarmPoolCompatibilityError) as exc:
-            compatibility_digest(_key(**{field: ""}))
+            compatibility_digest(key)
         assert field in str(exc.value)
 
     def test_non_string_dimension_rejected(self):
+        key = _key(egress_mode=123)  # type: ignore[arg-type]
         with pytest.raises(WarmPoolCompatibilityError):
-            compatibility_digest(_key(egress_mode=123))  # type: ignore[arg-type]
+            compatibility_digest(key)
 
 
 class TestSchemaTag:

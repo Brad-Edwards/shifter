@@ -42,17 +42,20 @@ class WarmPoolPolicyError(Exception):
 
 
 def _require(condition: bool, message: str) -> None:
+    """Raise :class:`WarmPoolPolicyError` with ``message`` unless ``condition`` holds."""
     if not condition:
         raise WarmPoolPolicyError(message)
 
 
 def _require_int(value: object, field_name: str, *, minimum: int = 0) -> int:
+    """Return ``value`` as an int, failing closed unless it is an int ``>= minimum``."""
     if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
         raise WarmPoolPolicyError(f"{field_name} must be an int >= {minimum}")
     return value
 
 
 def _optional_float(value: object, field_name: str) -> float | None:
+    """Return ``value`` as a non-negative float, or None; fail closed otherwise."""
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
@@ -109,6 +112,7 @@ class WarmPoolRuntimePolicy:
 
 
 def _parse_bucket(raw: object) -> WarmPoolBucketPolicy:
+    """Parse one raw bucket object into a validated :class:`WarmPoolBucketPolicy`."""
     if not isinstance(raw, dict):
         raise WarmPoolPolicyError("each bucket must be an object")
     image_set = raw.get("image_set", [])
@@ -186,6 +190,7 @@ class WarmPoolOverride:
 
 
 def _narrow_int(deployment: int, override: int | None, name: str) -> int:
+    """Return the override value when it narrows ``deployment``; reject any widening."""
     if override is None:
         return deployment
     _require(override >= 0, f"{name} override must be non-negative")
@@ -194,6 +199,7 @@ def _narrow_int(deployment: int, override: int | None, name: str) -> int:
 
 
 def _narrow_bucket(bucket: WarmPoolBucketPolicy, caps: dict[str, int]) -> WarmPoolBucketPolicy:
+    """Apply downward-only per-bucket caps, re-validating the narrowed ordering."""
     unknown = sorted(set(caps) - {"target", "minimum", "maximum", "idle_ttl_seconds"})
     _require(not unknown, f"bucket {bucket.id}: override cannot set {unknown}")
     new_maximum = _narrow_int(bucket.maximum, caps.get("maximum"), f"bucket {bucket.id} maximum")
@@ -206,7 +212,58 @@ def _narrow_bucket(bucket: WarmPoolBucketPolicy, caps: dict[str, int]) -> WarmPo
         0 <= new_minimum <= new_target <= new_maximum,
         f"bucket {bucket.id}: narrowed values must keep 0<=minimum<=target<=maximum",
     )
-    return replace(bucket, target=new_target, minimum=new_minimum, maximum=new_maximum, idle_ttl_seconds=new_ttl)
+    narrowed: WarmPoolBucketPolicy = replace(
+        bucket, target=new_target, minimum=new_minimum, maximum=new_maximum, idle_ttl_seconds=new_ttl
+    )
+    return narrowed
+
+
+def _override_is_noop(override: WarmPoolOverride) -> bool:
+    """Return True when ``override`` sets no field and therefore changes nothing."""
+    return (
+        not override.disable
+        and override.bucket_ids is None
+        and override.max_total_ready is None
+        and override.replenish_concurrency is None
+        and override.cost_ceiling is None
+        and not override.bucket_caps
+    )
+
+
+def _select_narrowed_buckets(
+    deployment: WarmPoolRuntimePolicy, override: WarmPoolOverride, deployment_ids: set[str]
+) -> tuple[WarmPoolBucketPolicy, ...]:
+    """Restrict to the override's bucket subset (if any) and apply per-bucket caps."""
+    selected = deployment.buckets
+    if override.bucket_ids is not None:
+        unknown = sorted(set(override.bucket_ids) - deployment_ids)
+        _require(not unknown, f"override names unknown bucket(s): {unknown}")
+        wanted = set(override.bucket_ids)
+        selected = tuple(b for b in deployment.buckets if b.id in wanted)
+    unknown_caps = sorted(set(override.bucket_caps) - deployment_ids)
+    _require(not unknown_caps, f"override caps name unknown bucket(s): {unknown_caps}")
+    return tuple(_narrow_bucket(b, override.bucket_caps.get(b.id, {})) for b in selected)
+
+
+def _resolve_cost_ceiling(deployment: WarmPoolRuntimePolicy, override: WarmPoolOverride) -> float | None:
+    """Return the effective cost ceiling; the override may only lower the deployment ceiling."""
+    if override.cost_ceiling is None:
+        return deployment.cost_ceiling
+    _require(override.cost_ceiling >= 0, "cost_ceiling override must be non-negative")
+    if deployment.cost_ceiling is not None:
+        _require(
+            override.cost_ceiling <= deployment.cost_ceiling,
+            "cost_ceiling override may not exceed the deployment ceiling",
+        )
+    return override.cost_ceiling
+
+
+def _resolve_max_total_ready(deployment: WarmPoolRuntimePolicy, override: WarmPoolOverride) -> int:
+    """Return the effective max-total-ready cap; the override may only lower it."""
+    if override.max_total_ready is None:
+        return deployment.max_total_ready
+    baseline = deployment.max_total_ready or override.max_total_ready
+    return _narrow_int(baseline, override.max_total_ready, "max_total_ready")
 
 
 def resolve_effective_policy(
@@ -217,51 +274,20 @@ def resolve_effective_policy(
     Pure and server-side. An override may only narrow; any attempt to widen a limit,
     name an unknown bucket, or add a bucket raises :class:`WarmPoolPolicyError`.
     """
-    if override is None or (
-        not override.disable
-        and override.bucket_ids is None
-        and override.max_total_ready is None
-        and override.replenish_concurrency is None
-        and override.cost_ceiling is None
-        and not override.bucket_caps
-    ):
+    if override is None or _override_is_noop(override):
         return deployment
     if override.disable:
-        return replace(deployment, enabled=False, buckets=())
+        disabled: WarmPoolRuntimePolicy = replace(deployment, enabled=False, buckets=())
+        return disabled
 
     deployment_ids = {b.id for b in deployment.buckets}
-    selected = deployment.buckets
-    if override.bucket_ids is not None:
-        unknown = sorted(set(override.bucket_ids) - deployment_ids)
-        _require(not unknown, f"override names unknown bucket(s): {unknown}")
-        selected = tuple(b for b in deployment.buckets if b.id in set(override.bucket_ids))
-
-    unknown_caps = sorted(set(override.bucket_caps) - deployment_ids)
-    _require(not unknown_caps, f"override caps name unknown bucket(s): {unknown_caps}")
-    narrowed = tuple(_narrow_bucket(b, override.bucket_caps.get(b.id, {})) for b in selected)
-
-    effective_cost = deployment.cost_ceiling
-    if override.cost_ceiling is not None:
-        _require(override.cost_ceiling >= 0, "cost_ceiling override must be non-negative")
-        if deployment.cost_ceiling is not None:
-            _require(
-                override.cost_ceiling <= deployment.cost_ceiling,
-                "cost_ceiling override may not exceed the deployment ceiling",
-            )
-        effective_cost = override.cost_ceiling
-
-    return replace(
+    effective: WarmPoolRuntimePolicy = replace(
         deployment,
-        max_total_ready=(
-            deployment.max_total_ready
-            if override.max_total_ready is None
-            else _narrow_int(
-                deployment.max_total_ready or override.max_total_ready, override.max_total_ready, "max_total_ready"
-            )
-        ),
+        max_total_ready=_resolve_max_total_ready(deployment, override),
         replenish_concurrency=_narrow_int(
             deployment.replenish_concurrency, override.replenish_concurrency, "replenish_concurrency"
         ),
-        cost_ceiling=effective_cost,
-        buckets=narrowed,
+        cost_ceiling=_resolve_cost_ceiling(deployment, override),
+        buckets=_select_narrowed_buckets(deployment, override, deployment_ids),
     )
+    return effective

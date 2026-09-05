@@ -28,6 +28,8 @@ from typing import Any
 from shared.raes.operation_input import RaesOperationInput, RaesOperationInputError, parse_raes_operation_input
 
 __all__ = [
+    "ActivationClaimant",
+    "ActivationGeneration",
     "ActivationInput",
     "ActivationInputError",
     "build_activation_input",
@@ -39,7 +41,8 @@ __all__ = [
 ACTIVATION_SCHEMA = "range-warm-activation/v1"
 
 # Bounded to keep the input a reference-only projection, never a registry dump.
-_MAX_USERNAME_LEN = 254  # a login/email identity, RFC-5321 local+domain ceiling
+# 254 == a login/email identity, the RFC-5321 local+domain ceiling.
+_MAX_USERNAME_LEN = 254
 
 _INPUT_KEYS = frozenset(
     {
@@ -67,17 +70,20 @@ class ActivationInputError(Exception):
 
 
 def _require(condition: bool, message: str) -> None:
+    """Raise :class:`ActivationInputError` with ``message`` unless ``condition`` holds."""
     if not condition:
         raise ActivationInputError(message)
 
 
 def _require_positive_int(value: object, field: str) -> int:
+    """Return ``value`` as a positive int, failing closed otherwise."""
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ActivationInputError(f"activation input {field} must be a positive int")
     return value
 
 
 def _require_nonempty_str(value: object, field: str, *, max_len: int) -> str:
+    """Return ``value`` as a bounded non-empty string, failing closed otherwise."""
     if not isinstance(value, str) or not value.strip():
         raise ActivationInputError(f"activation input {field} must be a non-empty string")
     if len(value) > max_len:
@@ -145,17 +151,31 @@ def parse_activation_input(payload: object) -> ActivationInput:
     )
 
 
+@dataclass(frozen=True)
+class ActivationClaimant:
+    """The trusted claimant identity projection for one warm activation."""
+
+    user_id: int
+    username: str
+    workspace_id: int
+
+
+@dataclass(frozen=True)
+class ActivationGeneration:
+    """The claimed warm generation's realization-identity projection."""
+
+    range_source: str
+    instantiation_purpose: str
+    range_backend: str
+    legacy_range_id: int
+    compatibility_digest: str
+    prepared_generation_fence: str
+
+
 def build_activation_input(
     *,
-    claimant_user_id: int,
-    claimant_username: str,
-    workspace_id: int,
-    range_source: str,
-    instantiation_purpose: str,
-    range_backend: str,
-    legacy_range_id: int,
-    compatibility_digest: str,
-    prepared_generation_fence: str,
+    claimant: ActivationClaimant,
+    generation: ActivationGeneration,
     raes_input: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Compose and validate the activation operation-input payload in one step.
@@ -166,15 +186,15 @@ def build_activation_input(
     """
     payload = {
         "schema": ACTIVATION_SCHEMA,
-        "claimant_user_id": claimant_user_id,
-        "claimant_username": claimant_username,
-        "workspace_id": workspace_id,
-        "range_source": range_source,
-        "instantiation_purpose": instantiation_purpose,
-        "range_backend": range_backend,
-        "legacy_range_id": legacy_range_id,
-        "compatibility_digest": compatibility_digest,
-        "prepared_generation_fence": prepared_generation_fence,
+        "claimant_user_id": claimant.user_id,
+        "claimant_username": claimant.username,
+        "workspace_id": claimant.workspace_id,
+        "range_source": generation.range_source,
+        "instantiation_purpose": generation.instantiation_purpose,
+        "range_backend": generation.range_backend,
+        "legacy_range_id": generation.legacy_range_id,
+        "compatibility_digest": generation.compatibility_digest,
+        "prepared_generation_fence": generation.prepared_generation_fence,
         "raes_input": dict(raes_input),
     }
     parse_activation_input(payload)

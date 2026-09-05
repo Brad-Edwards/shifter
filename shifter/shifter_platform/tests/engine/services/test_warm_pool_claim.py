@@ -127,7 +127,8 @@ class TestClaimMatching:
             range_source=_RANGE_SOURCE,
             claimant_request_id=uuid4(),
         )
-        assert claimed is not None and claimed.pk == gen.pk
+        assert claimed is not None
+        assert claimed.pk == gen.pk
 
 
 class TestConcurrency:

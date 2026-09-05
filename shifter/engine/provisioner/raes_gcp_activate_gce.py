@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 class GceActivationOps:
     """Production activation ops for the GCE range-cell backend."""
 
-    def scrub_pre_claim_access(self, activation: ActivationInput, prepared_generation: UUID) -> None:
+    @staticmethod
+    def scrub_pre_claim_access(activation: ActivationInput, prepared_generation: UUID) -> None:
         """Delete every pre-claim guest/provider secret and the warm-prepare VPN identity.
 
         Exhaustive over the *entire realized plan*, not merely the claimant's
@@ -53,7 +54,8 @@ class GceActivationOps:
                 delete_raes_account_secret(range_id, target, username, auth_method)
         GCPVpnSecretOps().delete_generation(range_id, prepared_generation, delete_identity=True)
 
-    def realize_claimant_access(self, activation: ActivationInput, activate_generation: UUID) -> list[dict[str, Any]]:
+    @staticmethod
+    def realize_claimant_access(activation: ActivationInput, activate_generation: UUID) -> list[dict[str, Any]]:
         """Realize the claimant's fresh access on the already-realized range cell.
 
         Binds the declared participant access to the plan, mints a fresh
@@ -65,7 +67,8 @@ class GceActivationOps:
 
         return realize_claimant_access_on_cell(activation, activate_generation)
 
-    def prior_access_revoked(self, activation: ActivationInput, prepared_generation: UUID) -> bool:
+    @staticmethod
+    def prior_access_revoked(activation: ActivationInput, prepared_generation: UUID) -> bool:
         """Authoritatively verify no pre-claim credential/access material still resolves.
 
         Fail-closed negative verification (#28): returns True only when every

@@ -7,12 +7,17 @@ outcomes, and fail-soft emission (an observability blip never raises).
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pytest
 
 from shared.warm_pool.metrics import (
     CLAIM_FALLBACK,
     CLAIM_HIT,
     WarmPoolBucketSnapshot,
+    _GcpMonitoringPublisher,
+    _resolve_client,
     build_gauge_metric_data,
     emit_claim_outcome,
     emit_gauges,
@@ -79,3 +84,95 @@ class TestClaimOutcome:
         assert (
             emit_claim_outcome(bucket_id="b", backend="gce", outcome=CLAIM_HIT, client=_FakeClient(boom=True)) is False
         )
+
+
+class TestResolveClient:
+    def test_aws_returns_cloudwatch_client(self, monkeypatch):
+        import boto3
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "CLOUD_PROVIDER", "aws", raising=False)
+        monkeypatch.setattr(boto3, "client", lambda name: SimpleNamespace(kind=name))
+        client = _resolve_client()
+        assert client.kind == "cloudwatch"
+
+    def test_gcp_returns_monitoring_publisher(self, monkeypatch):
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "CLOUD_PROVIDER", "gcp", raising=False)
+        assert isinstance(_resolve_client(), _GcpMonitoringPublisher)
+
+    def test_unsupported_provider_raises(self, monkeypatch):
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "CLOUD_PROVIDER", "azure", raising=False)
+        with pytest.raises(RuntimeError):
+            _resolve_client()
+
+    def test_emit_gauges_resolves_client_when_none(self, monkeypatch):
+        import boto3
+        from django.conf import settings
+
+        seen: list = []
+        monkeypatch.setattr(settings, "CLOUD_PROVIDER", "aws", raising=False)
+        monkeypatch.setattr(
+            boto3,
+            "client",
+            lambda name: SimpleNamespace(put_metric_data=lambda **kw: seen.append(kw)),
+        )
+        assert emit_gauges([_SNAP]) is True
+        assert seen and seen[0]["Namespace"] == "Shifter/WarmPool"
+
+
+class _FakeLabels(dict):
+    """A dict that also supports attribute-free ``.update`` (dict already does)."""
+
+
+class _FakeMetric:
+    def __init__(self):
+        self.type = None
+        self.labels = _FakeLabels()
+
+
+class _FakeResource:
+    def __init__(self):
+        self.type = None
+        self.labels = _FakeLabels()
+
+
+class _FakeTimeSeries:
+    def __init__(self):
+        self.metric = _FakeMetric()
+        self.resource = _FakeResource()
+        self.points: list = []
+
+
+class _FakeMonitoringClient:
+    created: tuple | None = None
+
+    def create_time_series(self, *, name, time_series):
+        type(self).created = (name, list(time_series))
+
+
+class TestGcpPublisher:
+    def test_put_metric_data_builds_time_series(self, monkeypatch):
+        fake_module = SimpleNamespace(
+            TimeSeries=_FakeTimeSeries,
+            Point=lambda payload: payload,
+            MetricServiceClient=_FakeMonitoringClient,
+        )
+        # ``from google.cloud import monitoring_v3`` resolves this submodule.
+        monkeypatch.setitem(sys.modules, "google.cloud.monitoring_v3", fake_module)
+        monkeypatch.setattr("shared.cloud.gcp.base.get_project_id", lambda: "proj-1", raising=False)
+        _FakeMonitoringClient.created = None
+
+        publisher = _GcpMonitoringPublisher()
+        publisher.put_metric_data(
+            Namespace="Shifter/WarmPool",
+            MetricData=build_gauge_metric_data([_SNAP]),
+        )
+        name, series = _FakeMonitoringClient.created
+        assert name == "projects/proj-1"
+        assert len(series) == 4  # one point per gauge metric
+        assert series[0].metric.type.startswith("custom.googleapis.com/shifter.warmpool/")
+        assert series[0].resource.labels["project_id"] == "proj-1"

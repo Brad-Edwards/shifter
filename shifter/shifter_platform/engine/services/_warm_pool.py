@@ -23,6 +23,7 @@ safe on the launch path:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid5
@@ -31,9 +32,10 @@ from django.db import transaction
 from django.db.models import Q
 
 from engine.services._capacity_admit import admit_range_capacity, release_range_capacity
+from shared.capacity import CapacityAssessmentResult
 
 if TYPE_CHECKING:
-    from engine.models import WarmRangeGeneration
+    from engine.models import Range, WarmRangeGeneration
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ logger = logging.getLogger(__name__)
 _WARM_SCOPE_NAMESPACE = UUID("2a7b5c9e-3d81-4f26-8b14-6c0d9e2f1a55")
 
 __all__ = [
+    "WarmGenerationDraft",
     "active_generation_count",
     "admit_warm_generation_capacity",
     "bucket_state_counts",
@@ -84,7 +87,9 @@ def warm_capacity_scope_ref(deployment_name: str, bucket_id: str) -> UUID:
     return uuid5(_WARM_SCOPE_NAMESPACE, f"{deployment_name}:{bucket_id}")
 
 
-def admit_warm_generation_capacity(*, scope_ref: UUID, draw_key: UUID, now: datetime | None = None):
+def admit_warm_generation_capacity(
+    *, scope_ref: UUID, draw_key: UUID, now: datetime | None = None
+) -> CapacityAssessmentResult:
     """Draw one warm generation's share from its bucket scope budget.
 
     Thin pass-through to :func:`admit_range_capacity`: the warm pool is a
@@ -195,19 +200,27 @@ def total_active_generation_count() -> int:
     return WarmRangeGeneration.objects.filter(state__in=WarmRangeGeneration.NONTERMINAL_UNCLAIMED_STATES).count()
 
 
-def create_warm_generation(
-    *,
-    bucket_id: str,
-    compatibility_digest: str,
-    effective_policy_fingerprint: str,
-    backend: str,
-    range_source: str,
-    capacity_partition: str,
-    capacity_scope_ref: UUID,
-    capacity_draw_key: UUID,
-    request_id: UUID,
-    idle_deadline: datetime,
-) -> WarmRangeGeneration:
+@dataclass(frozen=True)
+class WarmGenerationDraft:
+    """The fields for a new PROVISIONING warm-generation ledger row (#28).
+
+    Groups the realization identity and capacity-draw references so the reconciler
+    hands the Engine one immutable value object instead of a wide argument list.
+    """
+
+    bucket_id: str
+    compatibility_digest: str
+    effective_policy_fingerprint: str
+    backend: str
+    range_source: str
+    capacity_partition: str
+    capacity_scope_ref: UUID
+    capacity_draw_key: UUID
+    request_id: UUID
+    idle_deadline: datetime
+
+
+def create_warm_generation(draft: WarmGenerationDraft) -> WarmRangeGeneration:
     """Create a PROVISIONING warm-generation ledger row keyed by request_id.
 
     Created at reservation time, before dispatch, so the warm-prepare provision
@@ -216,17 +229,17 @@ def create_warm_generation(
     from engine.models import WarmRangeGeneration
 
     return WarmRangeGeneration.objects.create(
-        bucket_id=bucket_id,
-        compatibility_digest=compatibility_digest,
-        effective_policy_fingerprint=effective_policy_fingerprint,
-        backend=backend,
-        range_source=range_source,
-        capacity_partition=capacity_partition,
-        capacity_scope_ref=capacity_scope_ref,
-        capacity_draw_key=capacity_draw_key,
-        request_id=request_id,
+        bucket_id=draft.bucket_id,
+        compatibility_digest=draft.compatibility_digest,
+        effective_policy_fingerprint=draft.effective_policy_fingerprint,
+        backend=draft.backend,
+        range_source=draft.range_source,
+        capacity_partition=draft.capacity_partition,
+        capacity_scope_ref=draft.capacity_scope_ref,
+        capacity_draw_key=draft.capacity_draw_key,
+        request_id=draft.request_id,
         state=WarmRangeGeneration.State.PROVISIONING,
-        idle_deadline=idle_deadline,
+        idle_deadline=draft.idle_deadline,
     )
 
 
@@ -317,24 +330,34 @@ def recover_stalled_generations(bucket_id: str, *, stall_grace_seconds: int, now
     )
     for generation in rows:
         realized = Range.objects.filter(request__request_id=generation.request_id).order_by("-pk").first()
-        failed = realized is not None and realized.status == Range.Status.FAILED
-        never_realized_stalled = (
-            generation.state == WarmRangeGeneration.State.PROVISIONING
-            and realized is None
-            and generation.created_at <= cutoff
-        )
-        claimed_activation_stalled = (
-            generation.state == WarmRangeGeneration.State.CLAIMED
-            and realized is not None
-            and realized.status == Range.Status.PROVISIONING
-            and generation.created_at <= cutoff
-        )
-        unhealthy = generation.state == WarmRangeGeneration.State.UNHEALTHY
-        if (unhealthy or failed or never_realized_stalled or claimed_activation_stalled) and retire_generation(
-            generation
-        ):
+        if _generation_is_stalled(generation, realized, cutoff) and retire_generation(generation):
             retired += 1
     return retired
+
+
+def _generation_is_stalled(generation: WarmRangeGeneration, realized: Range | None, cutoff: datetime) -> bool:
+    """Return True when a non-terminal generation should be recovered (retired).
+
+    A generation is stalled when it is UNHEALTHY, its realized range is FAILED, it
+    never realized a range past the stall grace, or a CLAIMED generation's range is
+    still merely PROVISIONING past the grace (activation never completed).
+    """
+    from engine.models import Range, WarmRangeGeneration
+
+    unhealthy = generation.state == WarmRangeGeneration.State.UNHEALTHY
+    failed = realized is not None and realized.status == Range.Status.FAILED
+    never_realized_stalled = (
+        generation.state == WarmRangeGeneration.State.PROVISIONING
+        and realized is None
+        and generation.created_at <= cutoff
+    )
+    claimed_activation_stalled = (
+        generation.state == WarmRangeGeneration.State.CLAIMED
+        and realized is not None
+        and realized.status == Range.Status.PROVISIONING
+        and generation.created_at <= cutoff
+    )
+    return unhealthy or failed or never_realized_stalled or claimed_activation_stalled
 
 
 def retire_generations_for_request(request_id: UUID) -> int:

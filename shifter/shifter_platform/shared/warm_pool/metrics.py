@@ -58,10 +58,12 @@ class WarmPoolBucketSnapshot:
 
 
 def _namespace() -> str:
+    """Return the configured warm-pool metrics namespace (default ``Shifter/WarmPool``)."""
     return getattr(settings, "WARM_POOL_METRICS_NAMESPACE", "Shifter/WarmPool")
 
 
 def _dimensions(bucket_id: str, backend: str, region: str) -> list[dict[str, str]]:
+    """Return the low-cardinality metric dimensions for one pool bucket."""
     dims = [{"Name": "Bucket", "Value": bucket_id}, {"Name": "Backend", "Value": backend}]
     if region:
         dims.append({"Name": "Region", "Value": region})
@@ -148,7 +150,8 @@ class _GcpMonitoringPublisher:
     namespace. google libs are imported lazily so the AWS path never loads them.
     """
 
-    def put_metric_data(self, **kwargs: object) -> None:
+    @staticmethod
+    def put_metric_data(**kwargs: object) -> None:
         import time
 
         from google.cloud import monitoring_v3

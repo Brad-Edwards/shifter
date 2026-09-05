@@ -211,7 +211,7 @@ def _activation_input_payload(target: Range, request: Request) -> dict[str, obje
     (preflight #28 security gate 6).
     """
     from engine.models import WarmRangeGeneration
-    from shared.warm_pool.activation_input import build_activation_input
+    from shared.warm_pool.activation_input import ActivationClaimant, ActivationGeneration, build_activation_input
 
     gen = (
         WarmRangeGeneration.objects.filter(request_id=request.request_id, state=WarmRangeGeneration.State.CLAIMED)
@@ -223,15 +223,19 @@ def _activation_input_payload(target: Range, request: Request) -> dict[str, obje
     claimant = target.user
     purpose = target.instantiation_purpose or "live_fire"
     return build_activation_input(
-        claimant_user_id=int(target.cms_user_id or claimant.id),
-        claimant_username=str(claimant.username),
-        workspace_id=int(target.workspace_id),
-        range_source=gen.range_source,
-        instantiation_purpose=str(purpose),
-        range_backend=str(target.range_backend or gen.backend),
-        legacy_range_id=int(target.id),
-        compatibility_digest=gen.compatibility_digest,
-        prepared_generation_fence=str(gen.operation_id or ""),
+        claimant=ActivationClaimant(
+            user_id=int(target.cms_user_id or claimant.id),
+            username=str(claimant.username),
+            workspace_id=int(target.workspace_id),
+        ),
+        generation=ActivationGeneration(
+            range_source=gen.range_source,
+            instantiation_purpose=str(purpose),
+            range_backend=str(target.range_backend or gen.backend),
+            legacy_range_id=int(target.id),
+            compatibility_digest=gen.compatibility_digest,
+            prepared_generation_fence=str(gen.operation_id or ""),
+        ),
         # The full realization projection (plan + the now-unsuppressed participant
         # access bindings) so the provisioner can locate the realized hosts and
         # realize the claimant's fresh access.
@@ -252,6 +256,27 @@ def _request_has_pending_warm_generation(request: Request) -> bool:
     ).exists()
 
 
+def _range_operation_payload(target: Range, resource: str, request: Request, operation: str) -> dict[str, object]:
+    """Compose the operation-input projection for a :class:`Range` target."""
+    if resource == "raes-range" and operation == "activate":
+        return _activation_input_payload(target, request)
+    if resource == "raes-range":
+        # A warm-prepare provision suppresses participant access so the realized
+        # generation is system-owned and quarantined until it is claimed and
+        # activated (#28).
+        return _raes_input_payload(target, request, suppress_access=_request_has_pending_warm_generation(request))
+    return {
+        "range_spec": target.range_config or {},
+        "legacy_range_backend": _resolved_range_backend(target, request),
+        # Effective egress posture pinned at create (PLAT-238, ADR-017-R5).
+        # Delivered per-range so the provisioner realizes it from the operation
+        # input, never from the deployment-owned RANGE_EGRESS_MODE env once a
+        # decision is pinned. Always present on a new generation; the provisioner
+        # parser fails closed on absence rather than defaulting (ADR-043 window).
+        "egress_mode": target.egress_mode,
+    }
+
+
 def operation_input_payload(
     target: Range | Instance, resource: str, request: Request, *, operation: str = "provision"
 ) -> dict[str, object]:
@@ -264,21 +289,5 @@ def operation_input_payload(
     ``activate`` operation (#28) carries the claimant projection instead.
     """
     if isinstance(target, Range):
-        if resource == "raes-range" and operation == "activate":
-            return _activation_input_payload(target, request)
-        if resource == "raes-range":
-            # A warm-prepare provision suppresses participant access so the realized
-            # generation is system-owned and quarantined until it is claimed and
-            # activated (#28).
-            return _raes_input_payload(target, request, suppress_access=_request_has_pending_warm_generation(request))
-        return {
-            "range_spec": target.range_config or {},
-            "legacy_range_backend": _resolved_range_backend(target, request),
-            # Effective egress posture pinned at create (PLAT-238, ADR-017-R5).
-            # Delivered per-range so the provisioner realizes it from the operation
-            # input, never from the deployment-owned RANGE_EGRESS_MODE env once a
-            # decision is pinned. Always present on a new generation; the provisioner
-            # parser fails closed on absence rather than defaulting (ADR-043 window).
-            "egress_mode": target.egress_mode,
-        }
+        return _range_operation_payload(target, resource, request, operation)
     return {"role": str(target.role), "os_type": str(target.os_type)}

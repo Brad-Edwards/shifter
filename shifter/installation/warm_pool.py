@@ -231,6 +231,14 @@ class WarmPoolPolicy(BaseModel):
             return self
         if not self.buckets:
             raise ValueError("warm pool is enabled but declares no buckets; add a bucket or set enabled=false")
+        self._check_cadence_invariants()
+        self._check_bucket_ceiling_invariants()
+        if self.cost_ceiling is not None and self.cost_ceiling < 0:
+            raise ValueError("cost_ceiling must be non-negative")
+        return self
+
+    def _check_cadence_invariants(self) -> None:
+        """Validate the deployment cadence and concurrency bounds."""
         if not _MIN_REPLENISH_INTERVAL_S <= self.replenish_interval_seconds <= _MAX_REPLENISH_INTERVAL_S:
             raise ValueError(
                 f"replenish_interval_seconds {self.replenish_interval_seconds} must be between "
@@ -240,6 +248,9 @@ class WarmPoolPolicy(BaseModel):
             raise ValueError(
                 f"replenish_concurrency {self.replenish_concurrency} must be between 1 and {_MAX_CONCURRENCY}"
             )
+
+    def _check_bucket_ceiling_invariants(self) -> None:
+        """Validate bucket id uniqueness and the total-ready ceiling accounting."""
         ids = [bucket.id for bucket in self.buckets]
         if len(set(ids)) != len(ids):
             dupes = sorted({bid for bid in ids if ids.count(bid) > 1})
@@ -255,9 +266,6 @@ class WarmPoolPolicy(BaseModel):
             )
         if self.max_total_ready and self.max_total_ready < max((b.target for b in self.buckets), default=0):
             raise ValueError("max_total_ready is smaller than a single bucket target; it would starve that bucket")
-        if self.cost_ceiling is not None and self.cost_ceiling < 0:
-            raise ValueError("cost_ceiling must be non-negative")
-        return self
 
     def is_active(self) -> bool:
         """Return True when the pool should be reconciled and claims attempted."""

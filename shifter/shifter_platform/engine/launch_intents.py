@@ -11,6 +11,13 @@ from django.db import transaction
 from django.db.models import Model, QuerySet
 from django.utils import timezone
 
+# The dispatch-failure lifecycle lives in its own module (Sonar S104); re-exported
+# here so existing ``from engine.launch_intents import ...`` importers are unaffected.
+from engine.launch_intents_failure import (  # noqa: F401
+    PROVISIONER_DISPATCH_FAILED,
+    clear_provisioner_operation_after_failure,
+    fail_current_provisioner_operation,
+)
 from engine.models import (
     Instance,
     InterruptState,
@@ -33,7 +40,6 @@ _OPERATIONS = {
     "raes-range": {"provision", "destroy", "pause", "resume", "activate"},
     "ngfw": {"provision", "deprovision", "start", "stop"},
 }
-PROVISIONER_DISPATCH_FAILED = "Provisioner dispatch failed"
 
 # Bounded convergence budget for a provision-task interrupt (#277). Safe internal
 # default; promote to a typed deployment setting only if operators need to tune it.
@@ -184,20 +190,11 @@ def _authorize_request_range(
     _require_current_generation(row, expected_operation_id)
     operation = str(payload.get("operation"))
     if operation == "activate":
-        # Warm activation (#28) is authorized only for a *claimed* warm generation
-        # on a realized, system-prepared range -- never for an arbitrary range that
-        # merely happens to be READY. The claimed ledger row is the authority.
-        from engine.models import WarmRangeGeneration
+        # Warm activation (#28) authority lives on its own seam; the claimed warm
+        # generation on a quarantined range is the authority, not a READY range.
+        from engine.warm_activation_authz import authorize_warm_activation
 
-        claimed = WarmRangeGeneration.objects.filter(
-            request_id=request.request_id, state=WarmRangeGeneration.State.CLAIMED
-        ).exists()
-        if not claimed:
-            raise ValueError("no claimed warm generation authorizes activation for this request")
-        # A claimed warm generation is quarantined in PROVISIONING (never public
-        # READY) until activation completes; activation is the transition to READY.
-        if row.status != Range.Status.PROVISIONING:
-            raise ValueError("range state does not authorize activation")
+        authorize_warm_activation(request, row)
         return
     allowed_states = {
         "provision": {Range.Status.PENDING, Range.Status.PROVISIONING},
@@ -339,112 +336,6 @@ def _interruptible_provision_intent(range_obj: Range) -> ProvisionerLaunchIntent
     if (payload.get("resource"), payload.get("operation")) != _INTERRUPTIBLE_PROVISION:
         return None
     return intent
-
-
-def clear_provisioner_operation_after_failure(row: Range | Instance) -> list[str]:
-    """Close a failed lifecycle episode so the same operation can be retried."""
-    if row.provisioner_operation_id is None and not row.provisioner_operation:
-        return []
-    row.provisioner_operation = ""
-    row.provisioner_operation_id = None
-    return ["provisioner_operation", "provisioner_operation_id"]
-
-
-def _resolve_failure_target(payload: dict[str, object]) -> Range | Instance | None:
-    """Lock the domain row named by a validated failure payload."""
-    target: Range | Instance | None
-    if "request_id" not in payload:
-        target = Range.objects.select_for_update().filter(pk=int(str(payload["range_id"]))).first()
-    else:
-        request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
-        if request is None:
-            target = None
-        elif payload.get("resource") in {"range", "raes-range"}:
-            target = Range.objects.select_for_update().filter(request=request).first()
-        else:
-            target = Instance.objects.select_for_update().filter(request=request, role=Instance.Role.NGFW).first()
-    return target
-
-
-def _generation_still_authorizes_failure(
-    payload: dict[str, object],
-    target: Range | Instance,
-    expected_operation_id: UUID | str,
-) -> bool:
-    """Return whether a provider failure still owns the current lifecycle."""
-    try:
-        authorize_provisioner_payload(
-            payload,
-            target=target,
-            expected_operation_id=expected_operation_id,
-        )
-    except ValueError:
-        return False
-    return True
-
-
-def _publish_range_dispatch_failure(payload: dict[str, object], target: Range) -> None:
-    """Publish the standard failed status event for a Range dispatch."""
-    from engine.models import RangeEventOutbox
-    from shared.enums import ResourceStatus
-    from shared.messages.events import EVENT_TYPE_STATUS_UPDATED
-
-    event_id = uuid4()
-    related_request = target.request
-    request_id = str(related_request.request_id) if related_request is not None else str(payload.get("request_id", ""))
-    event = {
-        "event_type": EVENT_TYPE_STATUS_UPDATED,
-        "event_id": str(event_id),
-        "timestamp": timezone.now().isoformat(),
-        "request_id": request_id,
-        "range_id": target.id,
-        "user_id": target.user_id,
-        "new_status": ResourceStatus.FAILED.value,
-        "error_message": PROVISIONER_DISPATCH_FAILED,
-    }
-    RangeEventOutbox.objects.create(
-        event_id=event_id,
-        event_type=EVENT_TYPE_STATUS_UPDATED,
-        payload=event,
-        next_attempt_at=timezone.now(),
-    )
-
-
-def _apply_dispatch_failure(payload: dict[str, object], target: Range | Instance) -> None:
-    """Persist the sanitized failure state and its dependent projections."""
-    from engine.models import App
-    from shared.enums import ResourceStatus
-
-    target.status = ResourceStatus.FAILED.value
-    update_fields = ["status", "updated_at"]
-    update_fields.extend(clear_provisioner_operation_after_failure(target))
-    if isinstance(target, Range):
-        target.error_message = PROVISIONER_DISPATCH_FAILED
-        update_fields.append("error_message")
-    target.save(update_fields=update_fields)
-    if isinstance(target, Range):
-        _publish_range_dispatch_failure(payload, target)
-    else:
-        App.objects.filter(instance=target).update(
-            status=ResourceStatus.FAILED.value,
-            updated_at=timezone.now(),
-        )
-
-
-def fail_current_provisioner_operation(
-    payload: dict[str, object],
-    expected_operation_id: UUID | str,
-) -> bool:
-    """Fail only the domain projection still owned by this operation generation."""
-    try:
-        command_from_payload(payload)
-    except (KeyError, TypeError, ValueError):
-        return False
-    target = _resolve_failure_target(payload)
-    if target is None or not _generation_still_authorizes_failure(payload, target, expected_operation_id):
-        return False
-    _apply_dispatch_failure(payload, target)
-    return True
 
 
 def _materialize_operation_input(payload: dict[str, object], operation_id: UUID) -> None:
