@@ -1,10 +1,10 @@
-"""In-box catalog bootstrap through the uniform ingestion path (#1578, ADR-034).
+"""In-box bootstrap seed through the uniform ingestion path (#1578, ADR-034).
 
-The in-box catalog is loaded through the SAME ``register_pack`` service an
-operator uses — there is no privileged code path. There are no conformant default
-packs yet, so the shipped manifest is empty; these tests prove the mechanism
-end-to-end with a temporary manifest and confirm the shipped manifest stays a
-valid, empty declaration.
+The in-box seed is loaded through the SAME ``register_pack`` service an
+operator uses — there is no privileged code path. The shipped manifest declares
+the canonical Polaris pack; these tests prove the mechanism end-to-end with a
+temporary manifest and confirm the shipped manifest parses to the expected
+declaration.
 """
 
 from __future__ import annotations
