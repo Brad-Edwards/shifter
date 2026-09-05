@@ -1114,6 +1114,22 @@ class TestGdcControlPlaneImages:
         for image in ("portal", "pulumi-provisioner", "guacd", "guacamole-client"):
             assert f"{image}:{PINNED_IMAGE_TAG}" in output
 
+    def test_push_gcp_control_plane_images_gates_virtctl_by_backend(self, capsys):
+        outputs = _sample_gcp_control_plane_outputs("prod-rwctxzl6shxk")
+
+        # Default (GCE range backend): the provisioner image omits the GDC-only
+        # virtctl tooling, so a fresh apply never binds the non-existent KubeVirt
+        # checksums asset. The gate is passed as a docker build arg.
+        deploy.push_gcp_control_plane_images(outputs, image_tag=PINNED_IMAGE_TAG, dry_run=True)
+        default_out = capsys.readouterr().out
+        assert "INSTALL_KUBEVIRT=false" in default_out
+        assert "INSTALL_KUBEVIRT=true" not in default_out
+
+        # GDC range backend: virtctl is installed (digest-pinned) for VM Runtime.
+        deploy.push_gcp_control_plane_images(outputs, image_tag=PINNED_IMAGE_TAG, install_kubevirt=True, dry_run=True)
+        gdc_out = capsys.readouterr().out
+        assert "INSTALL_KUBEVIRT=true" in gdc_out
+
     def test_resolve_gcp_control_plane_image_tag_prefers_env_override(self, monkeypatch):
         monkeypatch.setenv("SHIFTER_IMAGE_TAG", PINNED_IMAGE_TAG)
 
