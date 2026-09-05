@@ -1455,9 +1455,16 @@ def push_gcp_control_plane_images(
     outputs: dict[str, dict[str, object]],
     *,
     image_tag: str,
+    install_kubevirt: bool = False,
     dry_run: bool = False,
 ) -> None:
-    """Build and push the control-plane images to Artifact Registry."""
+    """Build and push the control-plane images to Artifact Registry.
+
+    ``install_kubevirt`` gates the provisioner image's virtctl (KubeVirt) tooling:
+    it is baked in only for the GDC VM Runtime range backend, which is the only
+    backend that invokes it. The default GCE backend builds a slimmer image
+    without it (ADR: GDC not selected by default).
+    """
     pinned_image_tag = validate_image_tag(image_tag)
     image_roots = _get_string_mapping_output(outputs, "artifact_registry_image_roots")
     artifact_registry_host = str(image_roots["portal"]).split("/")[0]
@@ -1465,11 +1472,13 @@ def push_gcp_control_plane_images(
 
     run_cmd(["gcloud", "auth", "configure-docker", artifact_registry_host, "--quiet"], dry_run=dry_run)
 
+    provisioner_build_args = ["--build-arg", f"INSTALL_KUBEVIRT={'true' if install_kubevirt else 'false'}"]
     image_builds = [
         (
             f"{image_roots['portal']}:{pinned_image_tag}",
             repo_root / "shifter",
             repo_root / "shifter" / "shifter_platform" / "Dockerfile",
+            [],
         ),
         (
             f"{image_roots['pulumi-provisioner']}:{pinned_image_tag}",
@@ -1477,22 +1486,25 @@ def push_gcp_control_plane_images(
             # paths, both relative to shifter/.
             repo_root / "shifter",
             repo_root / "shifter" / "engine" / "provisioner" / "Dockerfile",
+            provisioner_build_args,
         ),
         (
             f"{image_roots['guacd']}:{pinned_image_tag}",
             repo_root / "shifter" / "engine" / "guacd",
             repo_root / "shifter" / "engine" / "guacd" / "Dockerfile",
+            [],
         ),
         (
             f"{image_roots['guacamole-client']}:{pinned_image_tag}",
             repo_root / "shifter" / "engine" / "guacamole",
             repo_root / "shifter" / "engine" / "guacamole" / "Dockerfile",
+            [],
         ),
     ]
 
-    for tag, context_dir, dockerfile in image_builds:
+    for tag, context_dir, dockerfile, build_args in image_builds:
         run_cmd(
-            ["docker", "build", "-f", str(dockerfile), "-t", tag, str(context_dir)],
+            ["docker", "build", "-f", str(dockerfile), *build_args, "-t", tag, str(context_dir)],
             dry_run=dry_run,
         )
         run_cmd(["docker", "push", tag], dry_run=dry_run)
@@ -1973,7 +1985,12 @@ def bootstrap_gcp_control_plane(config: GDCBootstrapConfig, dry_run: bool = Fals
 
     bootstrap_operator_email = ensure_gcp_identity_platform_operator(config, outputs, dry_run=dry_run)
     image_tag = resolve_gcp_control_plane_image_tag()
-    push_gcp_control_plane_images(outputs, image_tag=image_tag, dry_run=dry_run)
+    push_gcp_control_plane_images(
+        outputs,
+        image_tag=image_tag,
+        install_kubevirt=config.builds_gdc_substrate,
+        dry_run=dry_run,
+    )
     image_identities = resolve_gcp_control_plane_image_identities(outputs, image_tag=image_tag)
     with tempfile.TemporaryDirectory(prefix="shifter-gcp-platform-") as staging_root_name:
         values_path = stage_gcp_control_plane_values(
