@@ -371,6 +371,128 @@ class AdrGuardTests(unittest.TestCase):
         ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
         self.assertTrue(any("interface_contract" in item.message for item in violations))
 
+    def test_dedicated_customer_authority_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "dedicated-customer-authority/v1",
+            "deployment": {
+                "customer_count": 1,
+                "unrelated_customer_shared_control_plane": False,
+                "isolation_proof": "effective-config-identity-network-data-secret-evidence",
+            },
+            "authorities": {
+                "composition": "owning-service-boundaries",
+                "workspace_membership_grants_event_authority": False,
+                "external_client_effect_ownership": False,
+                "scopes": [
+                    "deployment-customer",
+                    "organization",
+                    "workspace",
+                    "event",
+                    "participant",
+                    "application-operator",
+                    "cloud-operator",
+                    "external-client",
+                ],
+            },
+            "event_transition": {
+                "pre_migration": "deployment-global-event-records",
+                "activation": "issue-2048-required-backfill-and-schema",
+                "post_migration": "required-immutable-workspace-binding",
+                "unresolved_backfill": "fail-closed",
+                "event_authority": "event-native-before-and-after",
+            },
+            "ownership": {
+                "api_services": "versioned-api-to-domain-service-facades",
+                "iam": "deployment-operator-provider-policy",
+                "datastore": "domain-owned-postgresql",
+                "secrets": "deployment-local-secret-authority",
+                "network": "platform-and-range-infrastructure",
+                "evidence": "shared-audit-and-provider-observations",
+            },
+            "outages": {
+                "identity_provider": "deny-new-idp-session",
+                "datastore": "deny-state-dependent-admission",
+                "registry": "deny-new-acquisition-without-validated-local-state",
+                "secret_store": "deny-secret-dependent-effect",
+                "model_provider": "fail-dependent-capability-without-authority-change",
+                "provider_api": "retain-failed-or-indeterminate-truth",
+                "audit": "strict-mutation-fails-or-degraded-state-visible",
+            },
+            "verification": [
+                "session-token-parity",
+                "revoked-authority",
+                "cross-event-denial",
+                "event-binding-migration",
+                "remote-access-revocation",
+                "audited-platform-override",
+                "effective-iam-network-denial",
+                "dependency-outage-behavior",
+            ],
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-054"), [])
+
+        mutations = {
+            "multiple customers": lambda value: value["deployment"].update({"customer_count": 2}),
+            "shared unrelated-customer control plane": lambda value: value["deployment"].update(
+                {"unrelated_customer_shared_control_plane": True}
+            ),
+            "label-only isolation proof": lambda value: value["deployment"].update(
+                {"isolation_proof": "customer-label"}
+            ),
+            "workspace role grants event authority": lambda value: value["authorities"].update(
+                {"workspace_membership_grants_event_authority": True}
+            ),
+            "external client owns effects": lambda value: value["authorities"].update(
+                {"external_client_effect_ownership": True}
+            ),
+            "missing cloud operator": lambda value: value["authorities"]["scopes"].remove("cloud-operator"),
+            "post-migration state claimed before activation": lambda value: value["event_transition"].update(
+                {"pre_migration": "workspace-bound-events"}
+            ),
+            "nullable post-migration binding": lambda value: value["event_transition"].update(
+                {"post_migration": "nullable-workspace-binding"}
+            ),
+            "best-effort unresolved backfill": lambda value: value["event_transition"].update(
+                {"unresolved_backfill": "skip-event"}
+            ),
+            "client-owned API service": lambda value: value["ownership"].update(
+                {"api_services": "external-client"}
+            ),
+            "shared secret fallback": lambda value: value["outages"].update(
+                {"secret_store": "shared-admin-fallback"}
+            ),
+            "model outage grants authority": lambda value: value["outages"].update(
+                {"model_provider": "fallback-with-elevated-tools"}
+            ),
+            "missing migration evidence": lambda value: value["verification"].remove(
+                "event-binding-migration"
+            ),
+            "missing token parity evidence": lambda value: value["verification"].remove(
+                "session-token-parity"
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-054"))
+
+        entry_without_contract = {
+            "id": "ADR-054",
+            "title": "Dedicated customer authority",
+            "status": "accepted",
+            "scope": "repository",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
     def test_validate_adr_exceptions_rejects_expired_entries(self) -> None:
         errors = ADR_GUARD.validate_adr_exceptions(
             [

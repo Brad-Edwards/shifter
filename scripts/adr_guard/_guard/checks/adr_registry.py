@@ -10,7 +10,6 @@ from .._common import (
     validate_adr_exceptions,
 )
 
-
 REQUIRED_ADR_KEYS = {
     "id",
     "title",
@@ -25,6 +24,7 @@ REQUIRED_ADR_KEYS = {
 REQUIRED_INTERFACE_CONTRACTS = {
     "ADR-039": "range-substrate/v1",
     "ADR-051": "ctf-communications/v1",
+    "ADR-054": "dedicated-customer-authority/v1",
 }
 RANGE_SUBSTRATE_OPERATIONS = frozenset({"provision", "destroy", "pause", "resume"})
 RANGE_SUBSTRATE_RESOURCES = frozenset({"network", "instance", "ngfw", "remote-access"})
@@ -92,6 +92,30 @@ CTF_COMMUNICATION_VERIFICATION_CLASSES = frozenset(
 )
 CTF_COMMUNICATION_DOCUMENTATION_CLASSES = frozenset(
     {"participant", "organizer", "scenario-author", "technical", "operator", "api-client"}
+)
+DEDICATED_CUSTOMER_AUTHORITY_SCOPES = frozenset(
+    {
+        "deployment-customer",
+        "organization",
+        "workspace",
+        "event",
+        "participant",
+        "application-operator",
+        "cloud-operator",
+        "external-client",
+    }
+)
+DEDICATED_CUSTOMER_AUTHORITY_VERIFICATION = frozenset(
+    {
+        "session-token-parity",
+        "revoked-authority",
+        "cross-event-denial",
+        "event-binding-migration",
+        "remote-access-revocation",
+        "audited-platform-override",
+        "effective-iam-network-denial",
+        "dependency-outage-behavior",
+    }
 )
 _ADR_INDEX_PATH = "docs/adr/index.yaml"
 _ADR_EXCEPTIONS_PATH = "docs/adr/exceptions.yaml"
@@ -374,6 +398,102 @@ def _validate_ctf_communications_contract(contract: dict[str, object], adr_id: s
     return errors
 
 
+def _validate_dedicated_customer_authority_contract(
+    contract: dict[str, object], adr_id: str
+) -> list[str]:
+    """Validate ADR-054's dedicated-customer and internal-authority contract."""
+    expected_keys = {
+        "kind",
+        "deployment",
+        "authorities",
+        "event_transition",
+        "ownership",
+        "outages",
+        "verification",
+    }
+    errors: list[str] = []
+    actual_keys = set(contract)
+    if actual_keys != expected_keys:
+        errors.append(
+            f"{adr_id} interface_contract must contain exactly {sorted(expected_keys)}; got {sorted(actual_keys)}"
+        )
+
+    prefix = f"{adr_id} interface_contract"
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("deployment"),
+            f"{prefix}.deployment",
+            fixed={
+                "customer_count": 1,
+                "unrelated_customer_shared_control_plane": False,
+                "isolation_proof": "effective-config-identity-network-data-secret-evidence",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("authorities"),
+            f"{prefix}.authorities",
+            fixed={
+                "composition": "owning-service-boundaries",
+                "workspace_membership_grants_event_authority": False,
+                "external_client_effect_ownership": False,
+            },
+            string_sets={"scopes": DEDICATED_CUSTOMER_AUTHORITY_SCOPES},
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("event_transition"),
+            f"{prefix}.event_transition",
+            fixed={
+                "pre_migration": "deployment-global-event-records",
+                "activation": "issue-2048-required-backfill-and-schema",
+                "post_migration": "required-immutable-workspace-binding",
+                "unresolved_backfill": "fail-closed",
+                "event_authority": "event-native-before-and-after",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("ownership"),
+            f"{prefix}.ownership",
+            fixed={
+                "api_services": "versioned-api-to-domain-service-facades",
+                "iam": "deployment-operator-provider-policy",
+                "datastore": "domain-owned-postgresql",
+                "secrets": "deployment-local-secret-authority",
+                "network": "platform-and-range-infrastructure",
+                "evidence": "shared-audit-and-provider-observations",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("outages"),
+            f"{prefix}.outages",
+            fixed={
+                "identity_provider": "deny-new-idp-session",
+                "datastore": "deny-state-dependent-admission",
+                "registry": "deny-new-acquisition-without-validated-local-state",
+                "secret_store": "deny-secret-dependent-effect",
+                "model_provider": "fail-dependent-capability-without-authority-change",
+                "provider_api": "retain-failed-or-indeterminate-truth",
+                "audit": "strict-mutation-fails-or-degraded-state-visible",
+            },
+        )
+    )
+    errors.extend(
+        _validate_exact_string_members(
+            contract.get("verification"),
+            DEDICATED_CUSTOMER_AUTHORITY_VERIFICATION,
+            f"{prefix}.verification",
+        )
+    )
+    return errors
+
+
 def validate_interface_contract(contract: object, adr_id: str) -> list[str]:
     """Validate executable invariants declared by a typed ADR interface contract."""
     if not isinstance(contract, dict):
@@ -385,6 +505,8 @@ def validate_interface_contract(contract: object, adr_id: str) -> list[str]:
 
     if contract["kind"] == "ctf-communications/v1":
         return _validate_ctf_communications_contract(contract, adr_id)
+    if contract["kind"] == "dedicated-customer-authority/v1":
+        return _validate_dedicated_customer_authority_contract(contract, adr_id)
 
     errors: list[str] = []
     errors.extend(

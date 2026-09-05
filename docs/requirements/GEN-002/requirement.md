@@ -30,6 +30,7 @@ The repo now has guardrail enforcement in ADR registry, adr_guard, CI, hooks, an
 - IMPLEMENTS → CONFIG `docs/adr/index.yaml` (Machine-readable ADR registry)
 - IMPLEMENTS → CONFIG `docs/adr/exceptions.yaml` (Time-bounded ADR exceptions)
 - IMPLEMENTS → CODE_FILE `scripts/adr_guard/adr_guard.py` (ADR guard architecture policy runner)
+- IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/adr_registry.py` (Typed accepted-ADR interface-contract validator)
 - IMPLEMENTS → CONFIG `.gc/plan-rules.md` (Ground Control plan rules for architecture checks)
 - IMPLEMENTS → CONFIG `.github/workflows/_quality.yml` (CI architecture and quality gate)
 - IMPLEMENTS → CONFIG `.pre-commit-config.yaml` (Local guardrail pre-commit hooks)
