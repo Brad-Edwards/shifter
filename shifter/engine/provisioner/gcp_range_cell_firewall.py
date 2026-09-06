@@ -49,18 +49,90 @@ _NON_PUBLIC_IPV4_CIDRS: tuple[ipaddress.IPv4Network, ...] = tuple(
 )
 
 
-def _public_ipv4_source_ranges() -> list[str]:
-    """Return routable public IPv4 space without private/reserved sources."""
+def _ipv4_complement(excluded: list[ipaddress.IPv4Network]) -> list[str]:
+    """Return routable IPv4 space with every excluded network removed.
+
+    The universal range minus the excluded set, expressed as the minimal list of
+    CIDRs. Used both for the public-internet source complement (VPN ingress) and
+    for the sanctioned public-web egress destination, so neither lane can name an
+    excluded (internal/special-use/deployment-owned) destination by construction
+    rather than by relying on rule-precedence order.
+
+    The exclusion set is collapsed into a minimal disjoint set before subtraction.
+    Without collapsing, an earlier exclusion can split a later, broader exclusion
+    across fragments so the broader one is subnet_of no single remaining fragment
+    and is never removed (for instance the Google VIP /30 processed before a
+    declared public management /24 that contains it). Collapsing merges
+    contained/overlapping/adjacent networks so every subtraction is exact.
+    """
     allowed: list[ipaddress.IPv4Network] = [ipaddress.IPv4Network(_UNIVERSAL_IPV4_CIDR)]
-    for excluded in _NON_PUBLIC_IPV4_CIDRS:
+    for excluded_network in ipaddress.collapse_addresses(excluded):
         next_allowed: list[ipaddress.IPv4Network] = []
         for network in allowed:
-            if excluded.subnet_of(network):
-                next_allowed.extend(network.address_exclude(excluded))
+            if excluded_network.subnet_of(network):
+                next_allowed.extend(network.address_exclude(excluded_network))
             else:
                 next_allowed.append(network)
         allowed = next_allowed
     return [str(network) for network in sorted(allowed, key=lambda item: (int(item.network_address), item.prefixlen))]
+
+
+def _public_ipv4_source_ranges() -> list[str]:
+    """Return routable public IPv4 space without private/reserved sources."""
+    return _ipv4_complement(list(_NON_PUBLIC_IPV4_CIDRS))
+
+
+def _denied_egress_networks(config: GCERangeCellConfig) -> list[ipaddress.IPv4Network]:
+    """ADR-056-R4 denied-network inventory for range-cell egress.
+
+    The complete set of destinations a compromised range guest must never reach
+    through a sanctioned egress lane, assembled once and reused by the public-web
+    egress complement and the operator allow-CIDR overlap check so a new
+    management network is excluded from both by a single edit:
+
+    - IANA special-use space (``_NON_PUBLIC_IPV4_CIDRS``), which subsumes every
+      RFC1918 deployment-owned range (platform pod/service/node, control-plane,
+      portal, private-service, operator/runner, retained GDC management, and peer
+      range subnets are all RFC1918) plus link-local metadata (169.254.0.0/16);
+    - the Google private-API VIP (a public-IP but deployment-only special
+      destination reachable only through the sanctioned Private Google Access
+      lane); and
+    - the explicitly declared deployment-owned management/access CIDRs carried on
+      the range config (Terraform-derived via the runtime env), so a
+      non-RFC1918 management network would still be covered.
+    """
+    denied: dict[str, ipaddress.IPv4Network] = {str(net): net for net in _NON_PUBLIC_IPV4_CIDRS}
+    vip = ipaddress.ip_network(_GOOGLE_PRIVATE_API_VIP_CIDR)
+    if isinstance(vip, ipaddress.IPv4Network):
+        denied[str(vip)] = vip
+    for values in (config.portal_network_cidrs, config.access_network_cidrs):
+        for value in values:
+            text = str(value).strip()
+            if not text:
+                continue
+            net = ipaddress.ip_network(text, strict=False)
+            if isinstance(net, ipaddress.IPv4Network):
+                denied[str(net)] = net
+    return list(denied.values())
+
+
+def _reject_denied_egress_overlap(cidrs: list[str], denied_networks: list[ipaddress.IPv4Network]) -> None:
+    """Fail closed when an operator egress allow-CIDR overlaps the denied inventory.
+
+    ADR-056-R2/R4: a sanctioned egress allow-CIDR is for public destinations only.
+    Rejecting overlap with the denied-network inventory (management, peer-range,
+    private-service, metadata, and special-use space) stops an allow-CIDR from
+    re-opening an internal path the default deny is meant to close, instead of
+    trusting firewall rule order.
+    """
+    for cidr in cidrs:
+        network = ipaddress.ip_network(cidr)
+        for denied in denied_networks:
+            if network.overlaps(denied):
+                raise RuntimeError(
+                    "egress_allow_cidrs must not overlap the denied-network inventory "
+                    f"(management/peer-range/private-service/metadata/special-use): {network} overlaps {denied}"
+                )
 
 
 def _validated_boundary_cidrs(field: str, values: tuple[str, ...]) -> list[str]:
@@ -173,6 +245,7 @@ def _egress_rules(
     subnet_cidrs: list[str],
     egress_allow_cidrs: list[str],
     allow_public_web_egress: bool,
+    public_web_destinations: list[str],
     config: GCERangeCellConfig,
 ) -> list[FirewallPlan]:
     """Render intra-range egress, the default deny, and configured exceptions."""
@@ -205,14 +278,19 @@ def _egress_rules(
                 "allowed": [{"IPProtocol": "all"}],
             }
         )
-    if allow_public_web_egress:
+    if allow_public_web_egress and public_web_destinations:
+        # ADR-056-R2: sanctioned public-web egress targets the public-internet
+        # complement only (0.0.0.0/0 minus the denied-network inventory), so it
+        # cannot reach management, peer-range, private-service, metadata, or
+        # special-use space at 80/443 -- the exclusion is structural, not a matter
+        # of rule precedence against the default deny.
         rules.append(
             {
                 "name": _short_resource_name("shifter-r", range_id, "egress-web"),
                 "direction": "EGRESS",
                 "priority": 1200,
                 "target_tags": [range_tag],
-                "destination_ranges": [_UNIVERSAL_IPV4_CIDR],
+                "destination_ranges": public_web_destinations,
                 "allowed": [{"IPProtocol": "tcp", "ports": ["80", "443"]}],
             }
         )
@@ -321,10 +399,17 @@ def build_firewall_plan(
     egress_allow_cidrs = (
         [] if deny_general_egress else _validated_boundary_cidrs("egress_allow_cidrs", config.egress_allow_cidrs)
     )
+    # ADR-056-R2/R4: one denied-network inventory drives both the operator
+    # allow-CIDR overlap check and the public-web egress complement, so a
+    # sanctioned egress lane can never name an internal/management/metadata
+    # destination.
+    denied_networks = _denied_egress_networks(config)
+    _reject_denied_egress_overlap(egress_allow_cidrs, denied_networks)
     allow_public_web_egress = not deny_general_egress and (
         include_optional_cleanup
         or any(instance["profile"].allow_public_web_egress for instance in (instance_plans or []))
     )
+    public_web_destinations = _ipv4_complement(denied_networks) if allow_public_web_egress else []
     firewalls = _subnet_ingress_rules(range_id, subnet_plans)
     firewalls.extend(_boundary_ingress_rules(range_id, range_tag, access_network_cidrs, portal_network_cidrs, config))
     firewalls.extend(
@@ -334,6 +419,7 @@ def build_firewall_plan(
             subnet_cidrs,
             egress_allow_cidrs,
             allow_public_web_egress,
+            public_web_destinations,
             config,
         )
     )
