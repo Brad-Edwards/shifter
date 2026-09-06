@@ -21,6 +21,19 @@ resource "google_container_cluster" "platform" {
   node_config {
     service_account = var.node_service_account_email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    metadata = {
+      disable-legacy-endpoints = "true"
+    }
+
+    shielded_instance_config {
+      enable_secure_boot          = true
+      enable_integrity_monitoring = true
+    }
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
   }
 
   networking_mode = "VPC_NATIVE"
