@@ -3302,5 +3302,159 @@
       "scripts/adr_guard/_guard/checks/adr_registry.py",
       "scripts/adr_guard/tests/test_adr_guard.py"
     ]
+  },
+  {
+    "id": "ADR-055",
+    "title": "WCAG 2.2 AA is enforced by a browser regression ratchet and release-scoped manual audit",
+    "status": "accepted",
+    "scope": "repository",
+    "interface_contract": {
+      "kind": "accessibility-enforcement/v1",
+      "standard": {
+        "target": "wcag-2.2-aa",
+        "governed_scope": "complete-human-facing-pages-and-processes",
+        "automated_conformance_claim": false
+      },
+      "toolchain": {
+        "static": "eslint-plugin-jsx-a11y",
+        "component": "vitest-axe",
+        "browser": "@axe-core/playwright",
+        "runner": "playwright",
+        "parallel_conformance_runners": false,
+        "wcag_tags": [
+          "wcag2a",
+          "wcag2aa",
+          "wcag21a",
+          "wcag21aa",
+          "wcag22aa"
+        ]
+      },
+      "cadence": {
+        "pull_request": "complete-registered-pr-matrix",
+        "nightly": "same-matrix-expanded-browser-projects",
+        "on_demand": "same-runner-allowlisted-deployed-target",
+        "manual": "material-release-and-annual"
+      },
+      "coverage": {
+        "source": "test-owned-surface-state-matrix",
+        "new_surface": "fail-until-registered",
+        "removed_surface": "fail-until-pruned",
+        "surface_kinds": [
+          "spa-route",
+          "django-html-route",
+          "mkdocs-page",
+          "enabled-third-party-ui"
+        ]
+      },
+      "baseline": {
+        "comparison": "trusted-base-exact-finding-set",
+        "additions": "forbidden",
+        "resolved_entries": "must-be-removed",
+        "counts_or_thresholds": false,
+        "raw_dom": false,
+        "tool_upgrade": "remediate-or-separately-waive"
+      },
+      "manual_audit": {
+        "method": "wcag-em",
+        "initial_trigger": "before-first-conforming-release",
+        "release_trigger": "new-or-materially-changed-surface-or-process",
+        "incident_trigger": "accessibility-critical-incident",
+        "maximum_interval_days": 365,
+        "reviewer": "accessibility-trained-independent-when-practicable",
+        "record": "docs/audit/accessibility",
+        "release_gate": "before-write-capable-release"
+      },
+      "waivers": {
+        "registry": "docs/adr/exceptions.yaml",
+        "scope": "exact-fingerprint",
+        "approval": "adr-codeowner-no-self-approval",
+        "expiry": "no-later-than-next-planned-release",
+        "conformance_effect": "release-only-not-conformance"
+      },
+      "security": {
+        "pr_permissions": "contents-read",
+        "normal_auth_boundaries": true,
+        "csp_relaxation": false,
+        "free_form_target_url": false,
+        "sensitive_artifacts": false
+      }
+    },
+    "decision": "Every human-facing web page or view Shifter ships or relies on in a supported journey targets WCAG 2.2 Level AA, including the Django-hosted SPA, retained Django pages, public MkDocs site, and deployment-managed third-party UI when enabled. The existing frontend package owns one layered accessibility stack: jsx-a11y and Vitest/axe for fast feedback, plus Playwright with axe-core for rendered full-page regression checks. Every pull request runs the complete registered PR surface/state matrix in a dedicated read-only job that directly feeds the canonical deploy.yml PR Gate; nightly and deployed on-demand tiers reuse the same matrix and rules rather than creating another runner or baseline. A fail-closed inventory reconciles canonical React routes, human-facing Django routes, built public docs, and enabled integration surfaces so a new page cannot be unowned. Existing automated debt is an exact base-branch-compared finding set that may only shrink; dated exact waivers stay in the central ADR exception policy and never become baseline growth. Automated success is not WCAG conformance: a WCAG-EM-based human audit is required before the first conforming release, before releases with new or materially changed surfaces/processes, and at least annually, with reviewed commit-pinned evidence checked before Release Please can create a tag or GitHub Release. A waiver may authorize release but does not convert a known failure into conformance or permit an unqualified WCAG claim. Full rationale and boundaries are in docs/architecture/continuous-accessibility-enforcement-preflight-713.md. Governing issue: #713.",
+    "rules": [
+      {
+        "id": "ADR-055-R1",
+        "description": "The conformance target is WCAG 2.2 Level AA for complete human-facing pages and processes: the Django-hosted SPA, retained Django authentication/invitation/reset/privacy/admin HTML, ADR-038 public MkDocs output, and deployment-managed third-party UI when an enabled profile makes it part of a supported journey. APIs, WebSockets, health/CSP-report endpoints, email, internal excluded docs, CLIs, and scenario-guest content are not web-page targets under this ADR. Third-party or operator-authored content does not excuse the Shifter-owned page or process; a genuine outside-control limitation requires an accessible alternative and accurately scoped partial-conformance/release disclosure.",
+        "checks": [
+          "adr-registry"
+        ]
+      },
+      {
+        "id": "ADR-055-R2",
+        "description": "The existing frontend package owns the accessibility toolchain. Preserve eslint-plugin-jsx-a11y and the config canary plus existing Vitest/vitest-axe checks for relevant frontend changes, and use @axe-core/playwright with the existing Playwright runner for rendered pages. The blocking ruleset includes wcag2a, wcag2aa, wcag21a, wcag21aa, and wcag22aa from the pinned axe engine. Every pull request runs the full registered PR matrix in Chromium at desktop and narrow/reflow viewports through a dedicated deploy.yml job that directly feeds PR Gate and has no path-based skip; nightly adds Firefox/WebKit and deployed on-demand runs reuse the same rules and identifiers. Pa11y, Lighthouse scores, and best-practice rules are not WCAG conformance gates.",
+        "checks": [
+          "adr-registry"
+        ]
+      },
+      {
+        "id": "ADR-055-R3",
+        "description": "One test-owned surface/state matrix under shifter/shifter_platform/frontend/e2e is reconciled fail-closed with canonical SPA route objects, human-facing Django URL patterns, every page produced by mkdocs build --strict, and enabled deployed-only integrations. Entries carry stable test coordinates (surface/state id, canonical route reference, synthetic actor/state fixture, viewport, readiness assertion, execution tier, remediation source), never copied authorization, domain DTOs, validators, or workflow state. New uncovered and removed stale routes/pages fail. Hidden/conditional content is activated before scanning; redirects, blank/error/denied pages when not expected, bootstrap failures, scanner errors, zero executed rules, and unresolved incomplete results cannot pass as the requested surface.",
+        "checks": [
+          "adr-registry"
+        ]
+      },
+      {
+        "id": "ADR-055-R4",
+        "description": "UX-050's automated-debt baseline is an exact set of privacy-safe fingerprints (surface/state id, execution project including browser/viewport/theme, rule id, WCAG tags, frame path, normalized target), not a count, threshold, raw HTML snapshot, broad selector exclusion, or disabled rule. On a pull request the proposed baseline must equal the still-observed subset of the trusted base-branch baseline: new/changed fingerprints, baseline additions/substitutions, stale resolved entries, ruleset regressions, and tool/setup failures fail. Initial enrollment is allowed only when the trusted base has no artifact, the seed exactly equals the observed scan, and the PR changes no product component, template, route, or stylesheet; thereafter missing or malformed base state fails closed. Manual findings, axe incomplete results, missing surfaces, and auth/setup/scanner failures are never baselined. Tool upgrades expose debt; they do not authorize rebaselining.",
+        "checks": [
+          "adr-registry"
+        ]
+      },
+      {
+        "id": "ADR-055-R5",
+        "description": "Manual evaluation follows WCAG-EM and includes complete processes, keyboard-only use, 200%/400% zoom and reflow, contrast/forced-colors, reduced motion, and real screen-reader/browser combinations, with mobile assistive technology where claimed. It is required before the first conforming release, before a release containing a new or materially changed surface/process, after accessibility-critical incidents, and at least annually. The durable reviewed record under docs/audit/accessibility names the exact audited commit/build, matrix revision, scope/sample, environments and assistive technologies, success-criterion findings, issues/waivers, reviewer/approver, date, and result. A release predecessor must validate current passing evidence before the write-capable Release Please action; stale, post-audit surface changes, missing approval, wrong scope/SHA/profile, or failure blocks release.",
+        "checks": [
+          "adr-registry"
+        ]
+      },
+      {
+        "id": "ADR-055-R6",
+        "description": "docs/adr/exceptions.yaml remains the sole waiver registry. Each accessibility waiver enumerates exact fingerprints and surface/state/WCAG criteria, user impact, infeasibility, accessible alternative/compensating control, remediation issue, owner, short expiry no later than the next planned release, and approval through the ADR CODEOWNER boundary; the primary implementer does not self-approve. Reuse adr_guard's central exception validation and Violation filtering, extending that one schema with optional exact-fingerprint scope if necessary; do not overload paths/check names, add tool-local suppressions, parse waivers in the browser runner, or create another expiry policy. A waiver can authorize release but cannot support an unqualified WCAG conformance claim.",
+        "checks": [
+          "adr-registry"
+        ]
+      },
+      {
+        "id": "ADR-055-R7",
+        "description": "Accessibility automation preserves existing security boundaries: synthetic PR actors use normal Django/CTF sessions, CSRF, host/origin and backend authorization; CSP is not weakened for axe injection; PR execution is GitHub-hosted with contents:read, no cloud/IdP/deployment credentials, no id-token, no pull_request_target, and no free-form target URL. PR targets are loopback/same-origin and deployed targets come from a closed protected-environment mapping. Cookies, CSRF/reset/invite tokens, signed URLs, raw DOM/axe HTML, request/response bodies, storage state, screenshots, and authenticated traces never enter argv, logs, GITHUB_OUTPUT, commits, or public artifacts. Diagnostics are bounded to surface/state, route template, rule/WCAG tags, normalized target, and help URL.",
+        "checks": [
+          "adr-registry"
+        ]
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "pre-commit",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/713",
+      "docs/architecture/continuous-accessibility-enforcement-preflight-713.md",
+      "docs/requirements/UX-010/requirement.md",
+      "docs/requirements/UX-050/requirement.md",
+      "https://www.w3.org/TR/WCAG22/",
+      "https://www.w3.org/WAI/test-evaluate/conformance/wcag-em/",
+      "shifter/shifter_platform/frontend/package.json",
+      "shifter/shifter_platform/frontend/eslint.config.js",
+      "shifter/shifter_platform/frontend/playwright.config.ts",
+      "shifter/shifter_platform/frontend/src/test/eslint-a11y-canary.test.ts",
+      "shifter/shifter_platform/frontend/src/router.tsx",
+      "shifter/shifter_platform/config/urls.py",
+      "mkdocs.yml",
+      ".github/workflows/_quality.yml",
+      ".github/workflows/deploy.yml",
+      ".github/workflows/release-please.yml",
+      "docs/adr/exceptions.yaml"
+    ]
   }
 ]

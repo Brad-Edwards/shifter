@@ -29,5 +29,5 @@ Terraform applies mutate cloud infrastructure and state. Cancelling an in-flight
 - IMPLEMENTS → POLICY `scripts/adr_guard/adr_guard.py` (ADR guard deploy workflow integrity rule)
 - IMPLEMENTS → ADR `docs/adr/index.yaml` (ADR registry Terraform deploy integrity rule)
 - TESTS → TEST `scripts/adr_guard/tests/test_adr_guard.py` (ADR guard deploy workflow integrity tests)
-- DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md` (CI/CD Terraform deploy integrity documentation)
-- DOCUMENTS → DOCUMENTATION `shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md` (ADR enforcement Terraform deploy integrity documentation)
+- DOCUMENTS → DOCUMENTATION `docs/technical/dev/ci-cd.md` (CI/CD Terraform deploy integrity documentation)
+- DOCUMENTS → DOCUMENTATION `docs/technical/dev/adr-enforcement.md` (ADR enforcement Terraform deploy integrity documentation)
