@@ -151,6 +151,11 @@ The first slice intentionally stays small:
   of accepted decisions, not a substitute for their runtime, migration, IAM,
   network, browser, or manual-audit tests.
 
+  ADR-055's exact section values live in `ACCESSIBILITY_FIXED_SECTIONS`, with
+  closed string collections in `ACCESSIBILITY_STRING_SET_SECTIONS`. Extend the
+  contract table, registry entry, and mutation test together; do not add a new
+  branch of repeated per-section validation.
+
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
