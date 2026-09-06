@@ -113,6 +113,15 @@ preservation required by the published contract. An unsupported resource mix fai
 before mutation with `unsupported-capability`; it is never silently skipped or treated
 as success.
 
+State preservation is relative to the admitted contract, not a promise that
+stop/start preserves volatile execution. GCE stop/start retains persistent
+resources but not RAM/application state as suspension does. A request requiring
+those stronger semantics remains unsupported unless its adapter proves them;
+it must not be silently narrowed. The
+[participant-control profile](raes-participant-control-realization-envelope-1967.md)
+therefore distinguishes native resource pause/resume from portable participant
+memory, process/session continuity and a frozen world clock.
+
 ### Error contract
 
 Adapters map provider failures into one small substrate failure record; they do not

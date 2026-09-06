@@ -3042,6 +3042,11 @@
         "id": "ADR-051-R11",
         "description": "CTF communications must not register triggers, audiences, channels, content renderers, RAES handlers, or workload ingress through ctf.extensions or AppConfig.ready. Existing trusted-Django-app flag/scoring extensions, CTFEvent branding projection, and Django LocaleMiddleware/gettext catalogs remain their separate CTF-014 incumbents. Authored message locale variants are immutable campaign data, not UI translation catalogs or a custom translation workflow; event branding never supplies content, link-host, email-template, or authorization policy.",
         "checks": []
+      },
+      {
+        "id": "ADR-051-R12",
+        "description": "The #2049 delivery engine extends the #2048 communication ledger rather than introducing another outbox or workflow owner. Occurrence release revalidates source authority and atomically commits bounded immutable audience, commands, in-app availability, and correlated strict audit; accepting a future declaration commits recoverable timing work without exposing future content. Release, lifecycle fencing, and worker claims share deterministic locking; claim leases fence stale completion, recovery, and retries without holding database locks across transport I/O. A claim is not evidence of a send. Reclaimed work rechecks cancellation and current scope; conflicting idempotent replay is rejected. Authored occurrence identity is separate from mutable retry/run-now timestamps; rescheduling fences superseded declarations, scheduler event routing never narrows campaign-wide authorization, and task controls cannot bypass communication policy. Lifecycle communication handoff is recoverable without browser polling. CMS retains range lease/credential-ceiling and expiry ownership independently of communication delivery. Scheduler completion, channel acceptance, participant receipt, and partial-failure aggregation retain distinct truthful meanings. Retry and backlog budgets are bounded and shared across processes, and all worker/configuration/secret/observability surfaces satisfy the #2049 preflight. These are architecture obligations; registry validation alone does not prove runtime delivery or recovery.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -3053,6 +3058,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/2047",
       "https://github.com/Brad-Edwards/shifter/issues/2048",
       "docs/architecture/ctf-communications-raes-inject-preflight-2047.md",
+      "docs/architecture/ctf-communication-delivery-engine-preflight-2049.md",
       "docs/architecture/email-templating-delivery-preflight-581.md",
       "docs/architecture/notifications-websocket-fanout-preflight-941.md",
       "docs/design/ctf-email-template-rendering-preflight-1095.md",
@@ -3455,6 +3461,204 @@
       ".github/workflows/deploy.yml",
       ".github/workflows/release-please.yml",
       "docs/adr/exceptions.yaml"
+    ]
+  },
+  {
+    "id": "ADR-056",
+    "title": "GCP live-fire range cells use provider-enforced isolation and participant-bounded identity",
+    "status": "accepted",
+    "scope": "gcp_range_plane",
+    "decision": "A compromised GCE live-fire guest, including root on a Docker host, is confined by provider-enforced per-range subnet/tag firewall policy, range-owned routing and NAT, a complete deny inventory of the management and range networks, and participant-bounded IAM. Participant-controlled VMs have no external NIC and default to no attached Google service account; a service account may be attached only for an explicitly approved capability that cannot use the existing provisioner bootstrap boundary, and its token is treated as participant-visible, range-bounded, and without Compute, IAM, project Secret Manager, shared Storage, or control-plane authority. Guest or container metadata firewalling is defense in depth: because a root guest can reach the GCE metadata endpoint, containment is proven by absence of a management or cross-range credential and by root-context effective-permission tests, with any retained narrow capability explicitly accepted. Range egress is range-owned: each non-zero-egress range gets its own Cloud NAT and a zero-egress range gets none; any shared NAT is a bounded migration bridge that enrolls only explicitly listed pre-migration subnets and never every subnet. Sanctioned egress lanes target the public-internet complement and operator allow-CIDRs that are validated to exclude the denied-network inventory, so a guest cannot reach management, peer-range, private-service, or metadata destinations through them. The canonical provider-neutral range-cell, egress, instantiation-policy, lifecycle, and escape-report contracts remain authoritative; GCP firewall/NAT/IAM are realizations below them. GDC VM Runtime, scenario Pods, L2 Networks, namespaces, and NetworkAttachmentDefinitions remain non-user validation resources and are not hardened or reopened as participant containment.",
+    "rules": [
+      {
+        "id": "ADR-056-R1",
+        "description": "Each live-fire range cell uses an isolated range subnet and unique target tags with same-cell communication only, no external NIC, explicit sanctioned management/access ingress, default-deny egress, and no cross-cell or management/private-service reachability. GCE labels are inventory only. A participant identity has no permission to change tags, instances, routes, firewalls, NAT, IAM, peer resources, or provisioner-owned state.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R2",
+        "description": "Range egress is range-owned. Each non-zero-egress range gets its own regional Cloud NAT and a zero-egress (`none`) range gets none; any shared range NAT is a migration bridge that enrolls only the explicitly listed pre-migration subnets for its own region via LIST_OF_SUBNETWORKS and never ALL_SUBNETWORKS (which would NAT a zero-egress range, since a firewall deny does not remove NAT enrollment). The effective ADR-017 egress mode carried by shared.range_cells is the single policy vocabulary: mode `none` creates no range or shared NAT enrollment. Sanctioned public-web egress targets the public-internet complement of the denied-network inventory, and an operator egress allow-CIDR is rejected when it overlaps that inventory, so neither lane can name a management, peer-range, private-service, metadata, or special-use destination by rule precedence or accident. DNS transport is tested separately and may not be inferred from name-resolution failure.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R3",
+        "description": "Every participant-controllable GCE VM defaults to no attached GSA. If an approved range-bounded GSA is unavoidable, cloud-platform is only an OAuth transport scope and the token's effective IAM is the boundary; it may expose only the named range capability and never Compute, IAM, project-wide secret lifecycle/read, shared object storage, database, Kubernetes, or provisioner authority. Provisioner identities and credentials are never attached or delivered to guests. Container metadata blocks remain defense in depth and cannot satisfy root-on-host evidence.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R4",
+        "description": "A single denied-network inventory is assembled once and reused by the typed GCE range-cell firewall rendering (both the public-web egress complement and the operator allow-CIDR overlap validation) so a new management network is excluded from both by one edit. The inventory is IANA special-use space (which subsumes every RFC1918 deployment-owned range: platform pod/service/node, control-plane, portal, private-service, operator/runner, retained GDC management, and peer range subnets) plus link-local metadata, the Google private-API VIP, and the deployment-owned management/access CIDRs declared on the range config (Terraform-derived via the runtime env). The escape-validation suite (shared.range_escape) carries the equivalent boundary taxonomy for live probes.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R5",
+        "description": "shared.range_cells, shared.range_instantiation_policy, the RAES contract, gcp_range_cell_plan/firewall/resources, shared.range_escape, existing cloud adapters/exceptions, sanitized logging, Engine operation persistence/reconciliation, and the IAM resource-scope checker remain canonical. Implementation may extend their closed values and tests but may not create a duplicate range DTO, egress vocabulary, firewall compiler, escape report, config loader, exception hierarchy, permission ledger, lifecycle, or workflow.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R6",
+        "description": "A range is not trusted for live fire until static mutated-plan tests and live gcp-dev probes from participant and root-capable host context prove same-cell positive control, peer-cell denial, platform/management denial, metadata credential confinement, provisioner-resource denial, effective IAM least privilege, and DNS/internet behavior matching the configured mode. Preprovisioned-firewall mode must prove equivalent generated policy or fail closed. Every unreachable, skipped, indeterminate, or narrowly accepted boundary remains distinct in the existing versioned escape report with bounded diagnostics.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R7",
+        "description": "GDC remains fail-closed for live-fire apply while destroy, compensation, retry, and reconciliation continue from persisted ownership for already-owned GDC resources. This decision does not approve vpc-per-range, redesign Vertex or DNS egress, add a participant workload to GKE, or move management/provisioner workloads into the range plane.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1295",
+      "docs/architecture/gcp-range-cell-containment-threat-model.md",
+      "docs/ops/range-escape-validation.md",
+      "shifter/engine/provisioner/gcp_range_cell_firewall.py",
+      "shifter/engine/provisioner/gcp_range_cell_plan.py",
+      "shifter/engine/provisioner/gcp_range_cell_resources.py",
+      "shifter/engine/provisioner/tests/test_gcp_range_cells.py",
+      "shifter/shifter_platform/shared/range_cells.py",
+      "shifter/shifter_platform/shared/range_escape.py",
+      "platform/terraform/gcp/modules/range/vpc",
+      "platform/terraform/gcp/modules/portal/iam",
+      "scripts/check_tf_gcp_iam_resource_scope"
+    ]
+  },
+  {
+    "id": "ADR-057",
+    "title": "GCP control-plane east-west isolation is layered defense-in-depth; authenticated workload transport (service mesh) is evaluated and deferred",
+    "status": "accepted",
+    "scope": "gcp_control_plane",
+    "decision": "The GCP GKE control-plane east-west boundary is a layered, defense-in-depth isolation posture rather than a single enforced-trust control, and these controls are complementary: GKE Dataplane V2-enforced default-deny NetworkPolicy limits which pods can reach which (reachability); Workload Identity authenticates workloads to Google APIs, not to each other; the restrict-provisioner-jobs ValidatingAdmissionPolicy constrains admitted Job specifications at creation; and application-layer authentication and authorization (browser Identity Platform sessions with CSRF, API tokens, and Kubernetes RBAC on the provisioner-launcher to Kubernetes API path) govern permitted calls. None of these authenticates the peer on an allowed pod-to-pod connection: cryptographic workload-to-workload transport authentication (mTLS) is intentionally absent and is the specific capability a service mesh would add. That capability is evaluated and DEFERRED, not adopted by default. This supersedes the original #1295 unconditional service-mesh requirement per the #2080 adoption review: choose mTLS/mesh only when a demonstrated requirement is not met by the existing service authentication, TLS, network-policy, and admission controls, and do not mandate Istio or a second network-policy framework by default. The concrete gap closed under this ADR is that a GKE Standard, VPC-native cluster does not enforce NetworkPolicy without an enabling datapath, so the committed default-deny policies were admitted but inert; enabling Dataplane V2 makes the deny-by-default reachability boundary real (ADR-008-R6). Mesh candidates were assessed: upstream Istio ambient is the only option that supplies workload-identity mTLS and principal authorization without sidecar injection, so it would not enlarge the exact one-container/no-init provisioner Job admission contract; Google managed Cloud Service Mesh and Linkerd inject sidecars that conflict with that contract; Cilium mutual authentication couples a dataplane migration with a beta trust system. If a future requirement for authenticated workload transport or cryptographic service identity that these controls do not provide is demonstrated, a mesh is adopted through a new ADR that records the requirement and the operator and cost tradeoffs (privileged CNI/ztunnel trust anchors, mesh CA and rotation, Binary Authorization for mesh images, per-workload KSA identities, and sidecar/mTLS overhead on the short-lived provisioner-Job path), with ambient mode preferred so the Job admission contract is preserved. GDC VM Runtime remains fenced to dev/operator validation (ADR-030, ADR-039) and is not a participant containment boundary.",
+    "rules": [
+      {
+        "id": "ADR-057-R1",
+        "description": "The GCP control-plane east-west boundary is layered defense-in-depth: GKE Dataplane V2-enforced default-deny NetworkPolicy (reachability), Workload Identity (workload-to-Google-API identity), the restrict-provisioner-jobs admission policy (admitted Job specifications), and application-layer authentication/authorization (Identity Platform sessions with CSRF, API tokens, Kubernetes RBAC) for permitted calls. Peer authentication on an allowed pod-to-pod connection (mTLS) is not provided by these controls and is the deferred service-mesh capability. No service mesh and no second network-policy framework is adopted by default (#2080).",
+        "checks": []
+      },
+      {
+        "id": "ADR-057-R2",
+        "description": "Committed NetworkPolicy is not credited as a boundary unless an enabling GKE datapath (Dataplane V2, or Calico) is declared so the policies are enforced rather than merely rendered. This realizes ADR-008-R6 for the GCP control plane; release evidence proves the enforcing provider, not just the presence of policy objects.",
+        "checks": []
+      },
+      {
+        "id": "ADR-057-R3",
+        "description": "A service mesh is adopted only when a demonstrated requirement is not met by the existing service authentication, TLS, NetworkPolicy, and admission controls. Such adoption requires a new ADR that records the requirement and the operator and cost tradeoffs, keeps the exact provisioner-Job admission contract intact (ambient/no-sidecar preferred), and gates namespace enrollment on healthy, pinned, Binary-Authorization-verified mesh prerequisites that fail closed rather than bypass policy.",
+        "checks": []
+      },
+      {
+        "id": "ADR-057-R4",
+        "description": "The public edge (Google load balancer, managed certificate, Cloud Armor, GKE NEG, hostname, HTTPS redirect, health checks, and portal login/session/CSRF/WebSocket behavior) remains the north-south boundary. Google Front End traffic to the public listener is the explicit north-south exception and never supplies workload authority; it is not evidence of east-west mTLS.",
+        "checks": []
+      },
+      {
+        "id": "ADR-057-R5",
+        "description": "The provisioner-launcher to provisioner-Job path is Kubernetes API CREATE with dedicated RBAC and fail-closed admission, not a service-to-service call; no inbound mesh or network allow is created for a fictional Job service. Database, cache, Google API, and GCE range flows retain provider TLS/IAM, NetworkPolicy, and range controls; transport encryption never substitutes for user or application authorization.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1295",
+      "https://github.com/Brad-Edwards/shifter/issues/2080",
+      "docs/architecture/gcp-range-cell-containment-threat-model.md",
+      "platform/terraform/gcp/modules/portal/gke",
+      "platform/k8s/gcp/base/networkpolicies.yaml",
+      "platform/k8s/gcp/base/validatingadmissionpolicy-provisioner-jobs.yaml"
+    ]
+  },
+  {
+    "id": "ADR-058",
+    "title": "RAES participant control uses explicit review and bounded GCE resource actions",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Against accepted OpenRAE ADR-108 and participant-control-composition/rev1 at ebb70a34b8e7d1cc8964c443841ae57e12ed1014, Shifter independently selects shifter-ctf-gce-range-lifecycle version 1: capability restriction, explicit proposal-bound review and resource control for one trusted RAES participant/controller/run/episode binding and its dedicated CTF GCE range generation. Native pause/resume are admitted resource actions, not new portable effect tags or RAM-preserving suspension. Selected portable permit, deny, withhold, audit and request-review effects retain their released meanings and closed bindings. CTF owns product approval/correlation, CMS owns lifecycle and embedding, the released RAES runtime owns portable composition/history/budgets, Engine owns native operation truth, and the existing gcp-gce adapter performs fenced invocation/readback. Platform integrity and the independent ADR-056/ADR-057 limits remain out of world. GEN-2005 is DRAFT design authority; #1967 supplies no runtime, schema, manifest or conformance claim. Exact released RAES artifacts, #1968 implementation and #1969 real-boundary evidence are required before support advertisement. No LilRAE parity is implied.",
+    "rules": [
+      {
+        "id": "ADR-058-R1",
+        "description": "Only shared.raes may import and interpret the exact released RAES contracts, composition/runtime and conformance implementation. ADR-108 and PC-01 through PC-15 at accepted revision ebb70a34b8e7d1cc8964c443841ae57e12ed1014 provide design authority; accepted commits, copied DTOs, local verdicts, git dependencies and a list of upstream UIDs are not consumable releases. OpenRAE/rae #1070, #1072, #1069 and #1071 supply the required semantics, contract, runtime and conformance artifacts.",
+        "checks": [
+          "layer-imports"
+        ]
+      },
+      {
+        "id": "ADR-058-R2",
+        "description": "The declared world is the validated and admitted participant/resource world actually realized by the bound range. Shifter control-plane, tenant, management IAM/secrets/metadata, isolation, worker, provider-control, operation-transport, audit and access-broker integrity remain out of world. Classification is by ownership and admission, not a technology name: isolated scenario-modeled accounts or services do not inherit management authority. Integrity failure is failed/invalid realization, not an in-world attack or protection event. ADR-056 containment and ADR-057 transport limits remain independent.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R3",
+        "description": "The sole initial local profile is shifter-ctf-gce-range-lifecycle version 1 with mandatory capability, explicit-review and resource-budget roles named in the architecture note. Bind actual profile/mechanism/protocol/provider implementation/configuration versions and digests, exact PC-03 context K, history heads, authority, resource scope, participant/controller/run/episode, package and native generation. Resolve pure immutable inputs through released RAES composition, finite acyclic dependencies and conjunction of incumbent gates and mandatory resolved permits. Missing, unknown, unsupported, failed, weakened or abstaining mandatory slots cannot release; stale cuts require bounded re-resolution. Conflicting effect requests have no lexical winner. Scenario content cannot select code, local profiles, providers, callbacks or configuration. Native pause/resume must use released closed proposal/action mappings; they are not invented portable tags or synonyms for interrupt/shutdown.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R4",
+        "description": "Explicit approval, authorization, execution admission and audit are independent. Approval binds the exact proposal/action/target/policy/configuration and finite validity interval; preserve denial and expiry. Require current EventCapability.RANGES through resolve_event_authority, bearer-first/session authentication, CSRF and exact ctf:event:write scope, plus CMS ownership/workspace gates and strict audit for every authority source. Keep the real approver/source separate from participant.user; admin_external_audit alone does not cover owner/staff decisions. Same-qualified-actor request and explicit approval is allowed without a two-person claim. Changes to the approved content or authority require new approval. No scenario, workload, sidecar, owner substitution or audit row is approval.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R5",
+        "description": "Reuse ctf.bridges, public CMS/Engine services, exact operation reservation, ProvisionerLaunchIntent, immutable OperationInput, closed operation/result contracts, append-only OperationResultInbox, Engine-only application, shared audit and ADR-025 propagation. Native pause/resume uses resource=range and range-substrate/v1:gcp-gce, not raes-range or a second executor. Extend the locked pre-Job suppression gate and enforce the current generation/authority/worker-ownership fence at each actual cloud invocation. Job acceptance/result fencing alone is insufficient; conflicting invalidation cannot acknowledge a completed fence while an older worker can invoke. Uncertain ownership or provider state blocks blind takeover/retry. Do not grant the provisioner direct CTF model access or reuse destroy-specific provision interruption. All in-scope native entry points on an active binding must enforce or refuse; out-of-world emergency interference invalidates realization. Partial or indeterminate outcomes remain visible and require authoritative readback, not fabricated whole-range success.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R6",
+        "description": "Use the released ADR-104 P1 durable single-owner runtime with one immutable target/run per store; CMS owns out-of-world installation/lifecycle/routing through shared.raes, not a second runtime or P3 shared-store coordination. RAES atomically commits control history, provider-state transitions, effect claims and finite root lifetime/depth/effect/rule/resolution/fan-out budgets at expected heads. A narrow CTF product record owns only native approval/authorization/fence/correlation references; Engine remains native execution truth and audit remains evidence. Preserve PC-11 logical run/root/rule-revision/slot/firing-epoch identity across retries and its exact source-to-reserved-generation relationship. Native approval/audit, RAES intent and Engine reservation are separate durable boundaries with reconciliation, not cross-store/cloud two-phase commit. Never hide portable workflow state in sidecar, communication, range-config, task, operation or audit JSON, nor fabricate correlation from a latest-operation lookup.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R7",
+        "description": "Installation policy must admit finite approval/budget limits and exact provider/configuration/storage/owner identities through canonical settings/env-manifest/installation validators, renderers, runtime inventories and parity checks. This ADR adds no executable configuration or unvalidated control-profile data contract. Do not relabel provisioning-only SHIFTER_REALIZER_CONFIGURATION as control evidence. Apply independent audience/sink policy to content, decisions, reasons, approvals, receipts and audit; mandatory audit is distinct from optional experimental capture/retention/export. Keep raw rejected content, private provider state, secrets, commands and raw errors out of portable records, argv, logs, metrics, events and public errors. Preserve existing hardened GCP Job admission, launcher identity/RBAC, per-Job secret handling, structured argv, network policy, bounded errors and sanitizers. Explicit serializer unknown-member checks do not substitute for parser-level duplicate-member detection.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R8",
+        "description": "Version 1 admits only a nonempty dedicated GCE persistent-resource footprint within the trusted participant scope. Exclude Local SSD-dependent preservation, unobserved/shared resources, external restart controllers and attached NGFWs that can enter a lifecycle cascade. GCE stop/start does not preserve RAM/application execution, freeze a human/world clock, reset portable memory or erase influence/history; stronger requested guarantees fail unsupported. Preserve complete native access/readback gates and do not emulate pause with destroy/recreate. Restart, destroy, resize, network mutation, arbitrary guest commands, dynamic IFC, runtime shielding, handoff, AWS, GDC, Mission Control, simulation, federation and genuinely live/external profiles are not selected, rather than being declared impossible in RAES. No backend manifest is widened by this documentation or by provisioning sidecars, and no LilRAE mechanism/fidelity/conformance parity is asserted.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R9",
+        "description": "GEN-2005 remains DRAFT with DOCUMENTS links for the #1967 design, #1968 implementation tracking and #1969 proof tracking; these are not runtime implementation or test claims. Activate and record actual IMPLEMENTS/TESTS artifacts with implementation. An installed candidate can be exercised under explicit proof admission, but released support additionally requires #1969 real-boundary evidence matching API-407 declarations, installed configuration/implementation, runtime results, native readback, audit and released conformance. Core control must not depend on CTF communications #2050/#2054, which consume the core. Existing ADR/import/guardrail checks validate structure, not these future runtime guarantees.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1967",
+      "https://github.com/Brad-Edwards/shifter/issues/1968",
+      "https://github.com/Brad-Edwards/shifter/issues/1969",
+      "https://github.com/OpenRAE/rae/commit/ebb70a34b8e7d1cc8964c443841ae57e12ed1014",
+      "https://github.com/OpenRAE/rae/blob/ebb70a34b8e7d1cc8964c443841ae57e12ed1014/docs/decisions/adrs/adr-108-modular-participant-control-and-governed-effects.md",
+      "https://github.com/OpenRAE/rae/blob/ebb70a34b8e7d1cc8964c443841ae57e12ed1014/docs/research/modular-participant-control/composition.md",
+      "docs/architecture/raes-participant-control-realization-envelope-1967.md",
+      "docs/architecture/ctf-communications-raes-inject-preflight-2047.md",
+      "docs/architecture/provider-neutral-range-substrate.md",
+      "docs/architecture/raes-interactive-access-gcp-preflight-1710.md",
+      "shifter/shifter_platform/shared/raes",
+      "shifter/shifter_platform/shared/range_lifecycle_capability.py",
+      "shifter/shifter_platform/ctf/services/authorization.py",
+      "shifter/shifter_platform/ctf/services/range/lifecycle.py",
+      "shifter/shifter_platform/ctf/bridges.py",
+      "shifter/shifter_platform/cms/services/_range_lifecycle.py",
+      "shifter/shifter_platform/engine/launch_intents.py",
+      "shifter/shifter_platform/engine/models/_operation_io.py",
+      "shifter/shifter_platform/engine/services/_operation_apply.py",
+      "shifter/shifter_platform/shared/audit",
+      "shifter/engine/provisioner/range_ops/_pause_resume.py",
+      "docs/requirements/GEN-2005/requirement.md",
+      "docs/adr/README.md",
+      "https://github.com/Brad-Edwards/shifter/issues/1967#issuecomment-5555762123",
+      "https://docs.cloud.google.com/compute/docs/instances/stop-start-instance"
     ]
   }
 ]

@@ -371,11 +371,20 @@ class RecipientSnapshot(CTFBaseModel):
 class DeliveryAttempt(CTFBaseModel):
     """One durable per-transport delivery command for one recipient snapshot (ADR-051).
 
-    Created transactionally at release; the transport worker (a later slice) claims
-    and sends it. Delivery is at-least-once: a stable ``(intent, snapshot, channel)``
+    Created transactionally at release; the transport worker (#2098) claims and
+    sends it. Delivery is at-least-once: a stable ``(intent, snapshot, channel)``
     identity plus the unique ``(snapshot, channel)`` command row collapse enqueue
     and replay, and ``attempt_number`` distinguishes retries. Status is truthful:
     ``accepted`` means the backend accepted the message, never that it was read.
+
+    The delivery engine (#2098) claims a command with a short lock, stamps
+    ``lease_token`` and ``lease_expires_at``, then does the transport call with no
+    lock held. Only a worker whose ``lease_token`` still matches may record the
+    outcome, so a reclaimed stale worker cannot overwrite a newer lease. ``due_at``
+    is when a ``QUEUED``/``RETRY_DUE`` command is next claimable; ``lease_expires_at``
+    is when a ``CLAIMED`` command may be reclaimed. ``attempted_at`` marks the
+    transport boundary (never proof of acceptance) and ``observed_at`` when the
+    outcome was persisted.
     """
 
     intent = models.ForeignKey(
@@ -393,12 +402,44 @@ class DeliveryAttempt(CTFBaseModel):
         max_length=24,
         choices=DeliveryStatus.choices(),
         default=DeliveryStatus.QUEUED.value,
-        help_text="queued | claimed | retry_due | accepted | permanent_failure | cancelled",
+        help_text="queued | claimed | retry_due | accepted | permanent_failure | cancelled | suppressed | expired",
     )
     attempt_number = models.PositiveIntegerField(default=0, help_text="Incremented per transport retry")
     idempotency_key = models.CharField(max_length=_REF_MAX, help_text="Stable per (intent, snapshot, channel)")
     due_at = models.DateTimeField(null=True, blank=True, help_text="When the command is next due to be claimed")
     result_reason = models.CharField(max_length=64, blank=True, default="", help_text="Bounded terminal reason class")
+    provider_receipt = models.CharField(
+        max_length=_REF_MAX,
+        blank=True,
+        default="",
+        help_text="Optional stable backend message identity for at-least-once de-duplication; never provider text",
+    )
+    lease_token = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Opaque per-claim fence; a stale worker whose token no longer matches cannot record an outcome",
+    )
+    lease_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When a CLAIMED lease may be reclaimed by another worker (stale-lease recovery)",
+    )
+    first_attempt_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="First transport-attempt time; the stable baseline for the elapsed-time ceiling across retries",
+    )
+    attempted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Latest transport-attempt boundary: set just before the call, never proof of acceptance",
+    )
+    observed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the worker persisted the observed transport outcome",
+    )
 
     class Meta:
         """Django model metadata."""
@@ -416,6 +457,10 @@ class DeliveryAttempt(CTFBaseModel):
         indexes = [
             models.Index(fields=["status", "due_at"]),
             models.Index(fields=["intent", "status"]),
+            # Worker claim query: due commands for a channel with a registered adapter.
+            models.Index(fields=["channel", "status", "due_at"]),
+            # Stale-lease recovery sweep: CLAIMED commands past their lease expiry.
+            models.Index(fields=["status", "lease_expires_at"]),
         ]
 
     def __str__(self) -> str:

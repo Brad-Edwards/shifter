@@ -10,6 +10,12 @@ Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/2047>
 
 Domain-model implementation slice: <https://github.com/Brad-Edwards/shifter/issues/2048>
 
+Delivery-engine slice: [#2049 preflight](ctf-communication-delivery-engine-preflight-2049.md).
+That note records the post-#2048 repository state and specializes the execution
+guardrails below; descriptions here of not-yet-added #2048 facilities are historical.
+Its CTF-010 guidance distinguishes future scheduling from due-time release and
+preserves CMS ownership of range expiry independently of communication delivery.
+
 This decision defines the boundaries for one CTF communications capability. It
 does not implement that capability and is not an implementation plan.
 
@@ -259,6 +265,13 @@ turns text into control. No currently accepted boundary realizes arbitrary RAES
 interventions, so an intervention profile without an exact typed mapping is
 unsupported and fails before intent persistence, delivery, or effect. Delivering
 only the prose would be a silent semantic approximation and is prohibited.
+[ADR-058](raes-participant-control-realization-envelope-1967.md) selects
+explicitly reviewed, bounded native GCE range pause/resume around an admitted
+portable proposal; it does not add a portable effect tag or turn text into
+control. An ADR-051 integration still needs the exact released typed mapping,
+GEN-2005 authority, #1968 implementation and #1969 real-boundary evidence.
+The core control path does not depend on communications #2050/#2054; these
+integrations consume the core, preserving the dependency direction.
 
 RAES shared-time, script order, story/event identity, participant-delivery
 identity, scenario/package digest, and range generation form occurrence evidence.

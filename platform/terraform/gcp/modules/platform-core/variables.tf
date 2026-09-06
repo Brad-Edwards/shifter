@@ -8,6 +8,12 @@ variable "environment" {
   type        = string
 }
 
+variable "deploy_service_account_email" {
+  description = "Email of the CI deploy service account that runs terraform apply for this stack. Granted resource-scoped actAs on the GKE node SA (see modules/portal/iam). Empty when an operator identity with broad actAs applies the stack."
+  type        = string
+  default     = ""
+}
+
 variable "region" {
   description = "Primary GCP region."
   type        = string
