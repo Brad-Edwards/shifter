@@ -31,8 +31,12 @@ Current mechanisms:
   exact fields. ADR-054 uses `dedicated-customer-authority/v1` to pin the
   one-customer deployment claim, independent authority scopes, #2048 activation
   conditions, infrastructure owners, fail-closed outage posture, and required
-  evidence classes. This structural check does not claim that runtime or cloud
-  evidence has run; those tests remain mandatory at their owning boundary.
+  evidence classes. ADR-055 uses `accessibility-enforcement/v1` to pin the WCAG
+  target, incumbent axe/Playwright toolchain, execution cadence, coverage
+  inventory, non-growing finding baseline, manual-audit evidence, central
+  waiver policy, and scanner security posture. These structural checks do not
+  claim that runtime, cloud, browser, or audit evidence has run; those tests
+  remain mandatory at their owning boundary.
 - `lilrae-identity-boundary`: ADR-024-R6 terminology enforcement. Current
   architecture prose treats LilRAE and APTL as one identity across a rename,
   treats TechVault only as a scenario pack, and requires retired TechVault
