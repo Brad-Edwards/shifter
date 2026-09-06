@@ -4,6 +4,13 @@ Architecture rules in this repo are enforced by tooling, not just prose.
 
 ## What Exists
 
+The [model-access design for #681](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/index.md)
+adds proposed ADR-059 through ADR-061 and documentation coverage for the
+planned feature. Registry/import validation applies now. Runtime enforcement
+of broker authorization, atomic budgets, revocation and provider isolation
+must land with the owning implementation issues and their behavioral/cloud
+tests; a passing documentation check is not evidence of those guarantees.
+
 The current enforcement stack has six parts:
 
 1. `docs/adr/index.yaml`

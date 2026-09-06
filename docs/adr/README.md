@@ -17,6 +17,14 @@ evidence are required before support is advertised.
 
 ## Runtime Enforcement
 
+Proposed ADR-059, ADR-060 and ADR-061 record the
+[#681 model-access design](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/index.md): a
+deployment-owned broker, Engine-owned allocation and mandatory budgets,
+and evidence-based revocation/operation. Their registry entries are proposed
+design policy. Existing import and registry checks validate structure; they
+do not prove the future broker, accounting, cloud isolation or release claims.
+Implementation and qualification ownership is explicit in the linked backlog.
+
 The enforcement entrypoint is:
 
 ```bash
