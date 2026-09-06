@@ -3,7 +3,7 @@
 
 Credentialed GCP CI must establish reviewed-code provenance at the WIF trust
 boundary, not inside dispatched workflow code (#1690). This guard pins the
-`cicd-github-oidc` module to the exact-subject federation shape:
+`cicd-oidc-identity` module to the exact-subject federation shape:
 
 - the Workload Identity **provider** `attribute_condition` must gate on an exact
   protected `assertion.ref` (not repository-only), so a feature-branch or tag
@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 WIF_MODULE_GLOBS: tuple[str, ...] = (
-    "platform/terraform/gcp/modules/cicd-github-oidc/*.tf",
+    "platform/terraform/gcp/modules/cicd-oidc-identity/*.tf",
 )
 
 PROVIDER_RE = re.compile(

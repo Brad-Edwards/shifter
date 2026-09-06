@@ -34,6 +34,10 @@ jobs:
     # root, so this platform destroy never removes the runner it runs on.
     name: Destroy (gcp-dev)
     runs-on: gcp-dev
+    # The GCP deploy secrets (GCP_SERVICE_ACCOUNT / GCP_WORKLOAD_IDENTITY_PROVIDER)
+    # are scoped to the gcp-dev GitHub Environment; without this the destroy job
+    # reads them as empty repo-level secrets and fails auth before any teardown.
+    environment: gcp-dev
     permissions:
       contents: read
       id-token: write

@@ -294,28 +294,10 @@ variable "ctf_content_bucket_name" {
   default     = ""
 }
 
-variable "enable_cicd_github_oidc" {
-  description = "Create the GitHub Actions -> GCP Workload Identity federation (pool, provider, packer build SA). Default true. Set false for tenants whose org blocks the GitHub OIDC issuer (constraints on iam.workloadIdentityPoolProviders) or that do not use GitHub Actions CI; the platform itself does not depend on it (#1723)."
-  type        = bool
-  default     = true
-}
-
 variable "gdc_vm_runtime_image_readers" {
   description = "Service accounts granted read on the GDC VM image bucket (GDC VM Runtime image-pull identity). Empty on the default GCE range backend, which never creates the GDC substrate SA; set to the baremetal-gcr SA only for a GDC deployment (--range-backend gdc), which is what creates that SA. A hardcoded baremetal-gcr entry breaks a fresh GCE apply because the SA does not exist (ADR: GDC plumbing must not be selected by default). Mirrors the optional-empty vmseries_bootstrap_bucket_name pattern."
   type        = list(string)
   default     = []
-}
-
-variable "github_org" {
-  description = "GitHub organization allowed to federate into the packer build service account."
-  type        = string
-  default     = "Brad-Edwards"
-}
-
-variable "github_repo" {
-  description = "GitHub repository allowed to federate into the packer build service account."
-  type        = string
-  default     = "shifter"
 }
 
 # ------------------------------------------------------------------------------
