@@ -12,6 +12,20 @@ resource "google_container_cluster" "platform" {
 
   networking_mode = "VPC_NATIVE"
 
+  # GKE Dataplane V2 (#1295): a Standard, VPC-native cluster does NOT enforce
+  # Kubernetes NetworkPolicy unless an enforcing datapath is selected. Without
+  # this, the committed default-deny NetworkPolicies (platform/k8s/gcp/base/
+  # networkpolicies.yaml: default-deny-platform / default-deny-jobs) are admitted
+  # by the API server but silently unenforced, so the "default-deny network
+  # boundary" the control plane relies on does not exist. ADVANCED_DATAPATH is
+  # the Cilium-based Dataplane V2 provider; it enforces NetworkPolicy natively
+  # (and is mutually exclusive with the legacy Calico `network_policy` addon).
+  # This mirrors the AWS/EKS posture, where the vpc-cni NetworkPolicy agent is
+  # enabled so the same chart NetworkPolicies are enforced rather than rendered.
+  # Note: datapath_provider is set at creation; adopting it on an existing
+  # cluster requires a recreate (an operator step, not a code concern here).
+  datapath_provider = "ADVANCED_DATAPATH"
+
   ip_allocation_policy {
     cluster_secondary_range_name  = var.gke_pods_secondary_range_name
     services_secondary_range_name = var.gke_services_secondary_range_name
