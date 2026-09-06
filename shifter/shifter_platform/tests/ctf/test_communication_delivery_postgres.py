@@ -98,7 +98,9 @@ def test_fair_batches_do_not_let_one_event_monopolize(organizer_user, ctf_event,
     claimed = delivery_svc.claim_batch(delivery_svc.WorkerConfig.from_settings(), now=timezone.now())
 
     claimed_events = {DeliveryAttempt.objects.get(pk=a.pk).snapshot.event_id for a in claimed}
-    assert busy.id in claimed_events and ctf_event.id in claimed_events  # neither event starved
+    # Neither event is starved: both are represented in the claimed batch.
+    assert busy.id in claimed_events
+    assert ctf_event.id in claimed_events
     per_event = {}
     for a in claimed:
         eid = DeliveryAttempt.objects.get(pk=a.pk).snapshot.event_id

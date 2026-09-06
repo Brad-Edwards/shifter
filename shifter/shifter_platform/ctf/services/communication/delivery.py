@@ -24,7 +24,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from secrets import SystemRandom, token_hex
-from typing import Any
 from uuid import UUID
 
 from django.conf import settings
@@ -70,7 +69,7 @@ _DEFAULTS = {
 }
 
 
-def _setting(name: str) -> Any:
+def _setting(name: str) -> int | float:
     """Return a bounded worker setting, defaulting when the settings owner is absent."""
     return getattr(settings, name, _DEFAULTS[name])
 
@@ -204,14 +203,16 @@ def _fence_reason(row: DeliveryAttempt) -> str:
     """
     intent = row.intent
     if intent.status in (IntentStatus.CANCELLED.value, IntentStatus.FENCED.value):
-        return f"intent_{intent.status}"
-    if intent.campaign.status == CampaignStatus.CANCELLED.value:
-        return "campaign_cancelled"
-    if row.snapshot.event.status == EventStatus.CANCELLED.value:
-        return "event_cancelled"
-    if not _recipient_still_eligible(row.snapshot):
-        return "participant_ineligible"
-    return ""
+        reason = f"intent_{intent.status}"
+    elif intent.campaign.status == CampaignStatus.CANCELLED.value:
+        reason = "campaign_cancelled"
+    elif row.snapshot.event.status == EventStatus.CANCELLED.value:
+        reason = "event_cancelled"
+    elif not _recipient_still_eligible(row.snapshot):
+        reason = "participant_ineligible"
+    else:
+        reason = ""
+    return reason
 
 
 def _recipient_still_eligible(snapshot: RecipientSnapshot) -> bool:
@@ -252,6 +253,7 @@ def _lease_held(row: DeliveryAttempt, token: str) -> bool:
 
 
 def _clear_lease(row: DeliveryAttempt) -> None:
+    """Release the row's lease so it is claimable again (or terminal)."""
     row.lease_token = _UNLEASED
     row.lease_expires_at = None
 
@@ -315,7 +317,8 @@ def _settle(pk: UUID, token: str, outcome: DeliveryOutcome, cfg: WorkerConfig, n
         elif outcome.outcome == OutcomeClass.TERMINAL:
             row.status = DeliveryStatus.PERMANENT_FAILURE.value
             _clear_lease(row)
-        else:  # RETRIABLE
+        else:
+            # RETRIABLE outcome: retry with backoff until the attempt/elapsed budget is spent.
             baseline = row.first_attempt_at or row.created_at
             elapsed = (now - baseline).total_seconds()
             if row.attempt_number >= cfg.max_attempts or elapsed >= cfg.max_elapsed_seconds:
@@ -342,11 +345,13 @@ def process_attempt(attempt: DeliveryAttempt, cfg: WorkerConfig, now_func: NowFu
         return "stale" if decision == "not_ours" else DeliveryStatus.SUPPRESSED.value
     command = decision
     adapter = get_adapter(command.channel)
-    if adapter is None:  # defensive: channel de-registered mid-run
+    # Defensive: the channel was de-registered mid-run.
+    if adapter is None:
         return "stale"
     try:
         outcome = adapter.deliver(command, timeout=cfg.timeout_seconds)
-    except Exception:  # never let one transport error abort the batch (partial-failure isolation)
+    # Never let one transport error abort the batch (partial-failure isolation).
+    except Exception:
         logger.warning("communication adapter raised for attempt %s channel %s", attempt.pk, command.channel)
         outcome = DeliveryOutcome(OutcomeClass.RETRIABLE, reason="adapter_error")
     return _settle(attempt.pk, token, outcome, cfg, now_func)

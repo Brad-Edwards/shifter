@@ -80,12 +80,14 @@ def _publish(metric_data: list[dict[str, object]], *, client: MetricPublisher | 
         publisher = client or _resolve_client()
         publisher.put_metric_data(Namespace=_namespace(), MetricData=metric_data)
         return True
-    except Exception as exc:  # observability is best-effort; never break delivery
+    # Observability is best-effort; a metrics outage never breaks delivery.
+    except Exception as exc:
         logger.warning("ctf communication metric emit failed: %s", safe_log_value(str(exc)))
         return False
 
 
 def _counter(name: str, dimensions: list[dict[str, str]], value: float) -> dict[str, object]:
+    """Build one CloudWatch-shaped Count metric entry."""
     return {"MetricName": name, "Dimensions": dimensions, "Value": float(value), "Unit": "Count"}
 
 

@@ -33,8 +33,10 @@ from ctf.services.communication import metrics
 
 # Namespace for per-workspace advisory locks so communication admission cannot
 # collide with any other advisory-lock user.
-_ADVISORY_LOCK_NAMESPACE = 20498  # arbitrary stable int for issue #2098 admission
-_GLOBAL_ADMISSION_KEY = 0  # single global key: all admissions serialize their durable checks
+# Arbitrary stable int namespacing issue #2098 admission advisory locks.
+_ADVISORY_LOCK_NAMESPACE = 20498
+# Single global key so all admissions serialize their durable outstanding-work checks.
+_GLOBAL_ADMISSION_KEY = 0
 
 _NON_TERMINAL = (
     DeliveryStatus.QUEUED.value,
@@ -55,6 +57,7 @@ _DEFAULTS = {
 
 
 def _setting(name: str) -> int:
+    """Return a bounded admission setting, defaulting when the settings owner is absent."""
     return int(getattr(settings, name, _DEFAULTS[name]))
 
 
@@ -85,6 +88,7 @@ def _consume(scope_class: str, key: str, limit: int, window: int, code: str, mes
 
 
 def _outstanding(scope_filter: dict[str, object]) -> int:
+    """Count non-terminal (pending + in-flight) delivery commands in the given scope."""
     from ctf.models import DeliveryAttempt
 
     return (
