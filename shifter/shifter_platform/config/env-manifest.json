@@ -533,8 +533,98 @@
       "source_file": "config/_ctf_communication_settings.py"
     },
     {
+      "default": "30",
+      "name": "SHIFTER_CTF_COMMUNICATION_BACKOFF_BASE_SECONDS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "3600",
+      "name": "SHIFTER_CTF_COMMUNICATION_BACKOFF_CAP_SECONDS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "0.25",
+      "name": "SHIFTER_CTF_COMMUNICATION_BACKOFF_JITTER_FRACTION",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "6",
+      "name": "SHIFTER_CTF_COMMUNICATION_MAX_ATTEMPTS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "5000",
+      "name": "SHIFTER_CTF_COMMUNICATION_MAX_AUDIENCE",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "86400",
+      "name": "SHIFTER_CTF_COMMUNICATION_MAX_ELAPSED_SECONDS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "500000",
+      "name": "SHIFTER_CTF_COMMUNICATION_MAX_OUTSTANDING_GLOBAL",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "20000",
+      "name": "SHIFTER_CTF_COMMUNICATION_MAX_OUTSTANDING_PER_EVENT",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "100000",
+      "name": "SHIFTER_CTF_COMMUNICATION_MAX_OUTSTANDING_PER_WORKSPACE",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "'Shifter/CtfCommunication'",
+      "name": "SHIFTER_CTF_COMMUNICATION_METRICS_NAMESPACE",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "600",
+      "name": "SHIFTER_CTF_COMMUNICATION_RATE_GLOBAL",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "30",
+      "name": "SHIFTER_CTF_COMMUNICATION_RATE_PER_ACTOR",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "120",
+      "name": "SHIFTER_CTF_COMMUNICATION_RATE_PER_WORKSPACE",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "60",
+      "name": "SHIFTER_CTF_COMMUNICATION_RATE_WINDOW_SECONDS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
       "default": "str(_DEFAULT_RETENTION_DAYS)",
       "name": "SHIFTER_CTF_COMMUNICATION_RETENTION_DAYS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "10",
+      "name": "SHIFTER_CTF_COMMUNICATION_TRANSPORT_TIMEOUT_SECONDS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "100",
+      "name": "SHIFTER_CTF_COMMUNICATION_WORKER_BATCH_SIZE",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "120",
+      "name": "SHIFTER_CTF_COMMUNICATION_WORKER_LEASE_SECONDS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "25",
+      "name": "SHIFTER_CTF_COMMUNICATION_WORKER_PER_EVENT_CAP",
       "source_file": "config/_ctf_communication_settings.py"
     },
     {

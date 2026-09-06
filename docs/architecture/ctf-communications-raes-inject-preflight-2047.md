@@ -10,6 +10,12 @@ Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/2047>
 
 Domain-model implementation slice: <https://github.com/Brad-Edwards/shifter/issues/2048>
 
+Delivery-engine slice: [#2049 preflight](ctf-communication-delivery-engine-preflight-2049.md).
+That note records the post-#2048 repository state and specializes the execution
+guardrails below; descriptions here of not-yet-added #2048 facilities are historical.
+Its CTF-010 guidance distinguishes future scheduling from due-time release and
+preserves CMS ownership of range expiry independently of communication delivery.
+
 This decision defines the boundaries for one CTF communications capability. It
 does not implement that capability and is not an implementation plan.
 

@@ -174,13 +174,20 @@ class IntentStatus(StrEnum):
 
 
 class DeliveryStatus(StrEnum):
-    """Truthful, transport-specific delivery-attempt status (ADR-051, #2048).
+    """Truthful, transport-specific delivery-attempt status (ADR-051, #2048; engine #2098).
 
     Statuses are honest about what actually happened: QUEUED/CLAIMED/RETRY_DUE
     are in-flight, ACCEPTED means the transport backend accepted the message (not
     that it was read), PERMANENT_FAILURE is terminal, and CANCELLED is
     not-yet-claimed work stopped by cancellation. "Accepted" never means received
     or read.
+
+    The delivery engine (#2098) adds two more terminal dispositions that must
+    never be silently mapped onto ACCEPTED: SUPPRESSED is a claimed command the
+    worker fenced against a cancellation/lifecycle/generation change immediately
+    before its irreversible transport boundary (distinct from CANCELLED, which
+    stops not-yet-claimed work), and EXPIRED is a command that reached its
+    attempt/elapsed ceiling or expiry policy before any backend acceptance.
     """
 
     QUEUED = "queued"
@@ -189,6 +196,8 @@ class DeliveryStatus(StrEnum):
     ACCEPTED = "accepted"
     PERMANENT_FAILURE = "permanent_failure"
     CANCELLED = "cancelled"
+    SUPPRESSED = "suppressed"
+    EXPIRED = "expired"
 
     def __str__(self) -> str:
         """Return the string value for database storage."""

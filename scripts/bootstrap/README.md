@@ -129,9 +129,21 @@ Deployment section of
 `docs/technical/dev/setup.md`.
 
 1. Create the GCP project and enable the required APIs.
-2. Configure Workload Identity Federation for GitHub Actions (pool, provider,
-   service account) and set the `GCP_SERVICE_ACCOUNT` and
-   `GCP_WORKLOAD_IDENTITY_PROVIDER` GitHub secrets.
+2. Apply the foundational OIDC/WIF identity root
+   (`platform/terraform/gcp/global/cicd-oidc`) to create the GitHub Actions
+   Workload Identity pool, provider, and the packer/deploy build service account,
+   then set the `GCP_SERVICE_ACCOUNT` and `GCP_WORKLOAD_IDENTITY_PROVIDER` GitHub
+   secrets from its outputs. This root has its own state prefix, separate from the
+   platform root, so a `gcp-dev-destroy` never removes the credentials CI
+   authenticates as (it mirrors the `global/github-runner` containment):
+
+   ```bash
+   cd platform/terraform/gcp/global/cicd-oidc
+   terraform init -backend-config="bucket=<project-id>-terraform-state" -backend-config="prefix=cicd-oidc"
+   terraform apply -var="project_id=<project-id>"
+   terraform output -raw workload_identity_provider          # GCP_WORKLOAD_IDENTITY_PROVIDER
+   terraform output -raw packer_build_service_account_email  # GCP_SERVICE_ACCOUNT
+   ```
 3. Configure the GCP deployment secrets and variables in
    `docs/dev/deploy-secrets.md` (the `gcp-dev` section), including
    `SHIFTER_CONFIG_GCP_DEV` and the GCE range-cell variables.

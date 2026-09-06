@@ -283,7 +283,7 @@ repos:
         entry: python3 scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py
         language: system
         pass_filenames: false
-        files: ^platform/terraform/gcp/modules/cicd-github-oidc/.*\.tf$
+        files: ^platform/terraform/gcp/modules/cicd-oidc-identity/.*\.tf$
 
       # Issue #1178: the shared range *guest* instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or

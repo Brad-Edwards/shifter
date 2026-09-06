@@ -131,6 +131,17 @@ workers:
         cpu: 500m
         memory: 512Mi
         ephemeral-storage: 256Mi
+  ctfCommunicationWorker:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+        ephemeral-storage: 256Mi
   guacamolePrune:
     replicas: 1
     resources:

@@ -2325,9 +2325,9 @@ class TestGdcBootstrapRangeBackend:
         }
         image_probe_ok = subprocess.CompletedProcess(["gcloud"], 0, stdout="an-image\n", stderr="")
         with (
+            patch.dict(os.environ, range_env, clear=True),
             patch("gcp_control_plane.confirm", return_value=True),
-            patch.dict(os.environ, range_env),
-            patch("gcp_control_plane.subprocess.run", return_value=image_probe_ok),
+            patch("gcp_control_plane.subprocess.run", return_value=image_probe_ok) as mock_image_lookup,
             patch("gcp_control_plane.ensure_gdc_apis") as mock_apis,
             patch("gcp_control_plane.ensure_gdc_service_account") as mock_sa,
             patch("gcp_control_plane.stage_gdc_bootstrap_assets") as mock_stage,
@@ -2339,7 +2339,9 @@ class TestGdcBootstrapRangeBackend:
         ):
             result = gcp_control_plane.gdc_bootstrap_cluster(config, dry_run=False)
 
-        # Preconditions passed (no SystemExit) and the gce path skipped the substrate.
+        image_commands = [invocation.args[0] for invocation in mock_image_lookup.call_args_list]
+        assert [command[4] for command in image_commands] == ["shifter-ubuntu", "shifter-dc"]
+        assert all(command[-3:-1] == ["--project", config.project_id] for command in image_commands)
         mock_apis.assert_not_called()
         mock_sa.assert_not_called()
         mock_stage.assert_not_called()

@@ -134,6 +134,16 @@ roots:
     toolchain: gcp-1.16.1
     providers:
       - registry.terraform.io/hashicorp/google
+  # GCP-native GitHub Actions OIDC/WIF identity (pool, provider, packer build SA).
+  # A foundational identity root with its own state prefix, separate from the
+  # gcp-dev platform root, so a platform destroy never removes the credentials CI
+  # authenticates as (mirrors the github-runner containment).
+  - id: gcp-global-cicd-oidc
+    path: platform/terraform/gcp/global/cicd-oidc
+    owner: "@Brad-Edwards"
+    toolchain: gcp-1.16.1
+    providers:
+      - registry.terraform.io/hashicorp/google
   - id: aws-global-iam
     path: platform/terraform/global/iam
     owner: "@Brad-Edwards"
@@ -305,7 +315,12 @@ modules:
     test: tests/firewall.tftest.hcl
     test_profile: aws-1.13.3
   # GCP shared modules
-  - path: platform/terraform/gcp/modules/cicd-github-oidc
+  - path: platform/terraform/gcp/modules/cicd-oidc-identity
+    owner: "@Brad-Edwards"
+    contract: deferred
+    reason: "Contract-test rollout tracked in #1597."
+    tracking: "#1597"
+  - path: platform/terraform/gcp/modules/packer-build-infra
     owner: "@Brad-Edwards"
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."

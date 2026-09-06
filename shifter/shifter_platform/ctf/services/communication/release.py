@@ -29,7 +29,7 @@ from django.utils import timezone
 
 from ctf.communication_contracts import canonical_digest
 from ctf.enums import EventStatus
-from ctf.enums_communication import CampaignStatus, DeliveryStatus, IntentStatus
+from ctf.enums_communication import CampaignStatus, CommunicationChannel, DeliveryStatus, IntentStatus
 from ctf.exceptions import CTFCommunicationError
 from ctf.models import (
     CommunicationCampaign,
@@ -43,6 +43,7 @@ from ctf.models import (
 )
 from ctf.services.audit import audit_communication_release
 from ctf.services.communication.audience import resolve_recipients
+from ctf.services.communication.backpressure import AdmissionRequest, enforce_admission
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,15 @@ def _resolve_revision(campaign: CommunicationCampaign, revision: MessageRevision
 def _materialize(
     intent: CommunicationIntent, recipients: list[CTFParticipant], channels: list[str], now: datetime
 ) -> None:
-    """Write the per-recipient snapshots, receipts, and per-channel delivery commands."""
+    """Write the per-recipient snapshots, receipts, and per-channel delivery commands.
+
+    In-app availability is committed here, at admission: when ``in_app`` is a
+    selected channel the ``ParticipantReceipt`` (the durable inbox entry) is created
+    in this transaction, so availability never depends on a worker later processing
+    the queued wake-up command (#2098). When ``in_app`` is not selected no receipt is
+    created, so an email-only campaign never exposes an in-app inbox item.
+    """
+    in_app_selected = CommunicationChannel.IN_APP.value in channels
     for participant in recipients:
         snapshot = RecipientSnapshot.objects.create(
             intent=intent,
@@ -107,7 +116,8 @@ def _materialize(
             user_id=participant.user_id,
             delivery_coordinate=participant.email or "",
         )
-        ParticipantReceipt.objects.create(snapshot=snapshot)
+        if in_app_selected:
+            ParticipantReceipt.objects.create(snapshot=snapshot)
         DeliveryAttempt.objects.bulk_create(
             [
                 DeliveryAttempt(
@@ -160,6 +170,18 @@ def release_campaign(
         revision = _resolve_revision(locked, revision)
         recipients = resolve_recipients(target_event_ids, locked.audience_spec)
         channels = list(locked.channels)
+
+        # Backpressure runs only on genuine (non-replay) admission -- the replay
+        # check above already returned -- so a retry never double-reserves capacity.
+        enforce_admission(
+            AdmissionRequest(
+                actor_user_id=actor_user_id if actor_user_id is not None else locked.created_by_id,
+                workspace_id=locked.workspace_id,
+                event_ids=frozenset(target_event_ids),
+                audience_size=len(recipients),
+                channel_count=len(channels),
+            )
+        )
 
         try:
             intent = CommunicationIntent.objects.create(
