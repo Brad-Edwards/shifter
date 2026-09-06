@@ -22,6 +22,7 @@ REQUIRED_ADR_KEYS = {
     "evidence",
 }
 REQUIRED_INTERFACE_CONTRACTS = {
+    "ADR-032": "raes-plan-accessor-boundary/v1",
     "ADR-039": "range-substrate/v1",
     "ADR-051": "ctf-communications/v1",
     "ADR-054": "dedicated-customer-authority/v1",
@@ -466,6 +467,108 @@ def _validate_ctf_communications_contract(contract: dict[str, object], adr_id: s
     return errors
 
 
+def _validate_raes_plan_accessor_boundary_contract(
+    contract: dict[str, object], adr_id: str
+) -> list[str]:
+    """Validate ADR-032's cross-process plan-accessor boundary."""
+    expected_keys = {
+        "kind",
+        "transport",
+        "ownership",
+        "failure_policy",
+        "naming",
+        "compatibility",
+        "delivery",
+    }
+    errors: list[str] = []
+    actual_keys = set(contract)
+    if actual_keys != expected_keys:
+        errors.append(
+            f"{adr_id} interface_contract must contain exactly {sorted(expected_keys)}; got {sorted(actual_keys)}"
+        )
+
+    prefix = f"{adr_id} interface_contract"
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("transport"),
+            f"{prefix}.transport",
+            fixed={
+                "input": "serialized-raes-provisioning-plan",
+                "owner": "shifter",
+                "producer": "shared.raes",
+                "consumer": "standalone-provisioner-plain-data-reader",
+                "provisioner_imports_raes": False,
+                "competing_projection": False,
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("ownership"),
+            f"{prefix}.ownership",
+            fixed={
+                "semantics": "raes",
+                "producer_validation": "shared.raes",
+                "serialization": "shared.raes.runtime_target",
+                "cross_process_validation": "shifter.engine.provisioner.raes_plan",
+                "payload_access": "standalone-versioned-reader",
+                "backend_policy": "shifter-provider-realization",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("failure_policy"),
+            f"{prefix}.failure_policy",
+            fixed={
+                "compatibility_selection": "before-payload-access",
+                "missing_required": "reject-before-provider-mutation",
+                "malformed_present": "reject-before-provider-mutation",
+                "wrong_resource_or_domain": "reject-before-provider-mutation",
+                "unsupported_version": "reject-before-provider-mutation",
+                "unresolved_reference": "reject-before-provider-mutation",
+                "missing_optional": "absent-only-when-contract-declares-optional",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("naming"),
+            f"{prefix}.naming",
+            fixed={
+                "neutral_fallback": "full-canonical-planned-address",
+                "provider_safe_conversion": "backend-naming-boundary",
+                "stable_identity": "compiled-resource-address",
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("compatibility"),
+            f"{prefix}.compatibility",
+            fixed={
+                "typed_oracle": "released-public-plannedresource-accessors",
+                "accessor_first_release": "raes-3.3.0",
+                "wire_oracle": "public-compiler-conformance-and-exact-pin-serialized-fixtures",
+                "private_backend_helpers": False,
+                "exact_pin_required": True,
+            },
+        )
+    )
+    errors.extend(
+        _validate_closed_mapping(
+            contract.get("delivery"),
+            f"{prefix}.delivery",
+            fixed={
+                "decision_issue": 1937,
+                "implementation_issue": 2082,
+                "behavior_change_in_decision_issue": False,
+            },
+        )
+    )
+    return errors
+
+
 def _validate_dedicated_customer_authority_contract(
     contract: dict[str, object], adr_id: str
 ) -> list[str]:
@@ -596,6 +699,8 @@ def validate_interface_contract(contract: object, adr_id: str) -> list[str]:
     if kind_error is not None:
         return [kind_error]
 
+    if contract["kind"] == "raes-plan-accessor-boundary/v1":
+        return _validate_raes_plan_accessor_boundary_contract(contract, adr_id)
     if contract["kind"] == "ctf-communications/v1":
         return _validate_ctf_communications_contract(contract, adr_id)
     if contract["kind"] == "dedicated-customer-authority/v1":

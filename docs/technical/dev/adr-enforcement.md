@@ -140,7 +140,11 @@ The first slice intentionally stays small:
 
 - `adr-registry`
   Validates the ADR registry and exception files. It also validates the closed
-  typed interface contracts required by ADR-039, ADR-051, ADR-054, and ADR-055. The
+  typed interface contracts required by ADR-032, ADR-039, ADR-051, ADR-054, and
+  ADR-055. The `raes-plan-accessor-boundary/v1` contract pins the RAES-free
+  standalone consumer, ownership and validation boundaries, reject-before-
+  mutation posture, full canonical address fallback, exact-pin compatibility
+  evidence, and decision-only scope of #1937. The
   `dedicated-customer-authority/v1` contract makes removal or weakening of
   ADR-054's customer boundary, authority separation, event-migration gate,
   infrastructure ownership, outage behavior, or evidence classes fail locally

@@ -100,6 +100,111 @@ class AdrGuardTests(unittest.TestCase):
             adr_008["evidence"],
         )
 
+    def test_raes_plan_accessor_boundary_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "raes-plan-accessor-boundary/v1",
+            "transport": {
+                "input": "serialized-raes-provisioning-plan",
+                "owner": "shifter",
+                "producer": "shared.raes",
+                "consumer": "standalone-provisioner-plain-data-reader",
+                "provisioner_imports_raes": False,
+                "competing_projection": False,
+            },
+            "ownership": {
+                "semantics": "raes",
+                "producer_validation": "shared.raes",
+                "serialization": "shared.raes.runtime_target",
+                "cross_process_validation": "shifter.engine.provisioner.raes_plan",
+                "payload_access": "standalone-versioned-reader",
+                "backend_policy": "shifter-provider-realization",
+            },
+            "failure_policy": {
+                "compatibility_selection": "before-payload-access",
+                "missing_required": "reject-before-provider-mutation",
+                "malformed_present": "reject-before-provider-mutation",
+                "wrong_resource_or_domain": "reject-before-provider-mutation",
+                "unsupported_version": "reject-before-provider-mutation",
+                "unresolved_reference": "reject-before-provider-mutation",
+                "missing_optional": "absent-only-when-contract-declares-optional",
+            },
+            "naming": {
+                "neutral_fallback": "full-canonical-planned-address",
+                "provider_safe_conversion": "backend-naming-boundary",
+                "stable_identity": "compiled-resource-address",
+            },
+            "compatibility": {
+                "typed_oracle": "released-public-plannedresource-accessors",
+                "accessor_first_release": "raes-3.3.0",
+                "wire_oracle": "public-compiler-conformance-and-exact-pin-serialized-fixtures",
+                "private_backend_helpers": False,
+                "exact_pin_required": True,
+            },
+            "delivery": {
+                "decision_issue": 1937,
+                "implementation_issue": 2082,
+                "behavior_change_in_decision_issue": False,
+            },
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-032"), [])
+
+        mutations = {
+            "provisioner imports RAES": lambda value: value["transport"].update(
+                {"provisioner_imports_raes": True}
+            ),
+            "competing projection": lambda value: value["transport"].update(
+                {"competing_projection": True}
+            ),
+            "accessor used as consumer": lambda value: value["ownership"].update(
+                {"payload_access": "raes-python-accessor"}
+            ),
+            "validation after payload access": lambda value: value["failure_policy"].update(
+                {"compatibility_selection": "after-payload-access"}
+            ),
+            "malformed value defaults": lambda value: value["failure_policy"].update(
+                {"malformed_present": "treat-as-absent"}
+            ),
+            "version skew accepted": lambda value: value["failure_policy"].update(
+                {"unsupported_version": "best-effort-read"}
+            ),
+            "wrong resource accepted": lambda value: value["failure_policy"].update(
+                {"wrong_resource_or_domain": "return-none"}
+            ),
+            "leaf fallback": lambda value: value["naming"].update(
+                {"neutral_fallback": "address-leaf"}
+            ),
+            "private helper oracle": lambda value: value["compatibility"].update(
+                {"private_backend_helpers": True}
+            ),
+            "unversioned compatibility": lambda value: value["compatibility"].update(
+                {"exact_pin_required": False}
+            ),
+            "behavior changes in decision issue": lambda value: value["delivery"].update(
+                {"behavior_change_in_decision_issue": True}
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-032"))
+
+        entry_without_contract = {
+            "id": "ADR-032",
+            "title": "How Shifter realizes RAES scenarios",
+            "status": "accepted",
+            "scope": "shifter_platform",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
     def test_range_substrate_interface_contract_is_structurally_enforced(self) -> None:
         contract = {
             "kind": "range-substrate/v1",
