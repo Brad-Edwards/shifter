@@ -3302,5 +3302,68 @@
       "scripts/adr_guard/_guard/checks/adr_registry.py",
       "scripts/adr_guard/tests/test_adr_guard.py"
     ]
+  },
+  {
+    "id": "ADR-056",
+    "title": "GCP live-fire range cells use provider-enforced isolation and participant-bounded identity",
+    "status": "accepted",
+    "scope": "gcp_range_plane",
+    "decision": "A compromised GCE live-fire guest, including root on a Docker host, is confined by provider-enforced per-range subnet/tag firewall policy, range-owned routing and NAT, a complete deny inventory of the management and range networks, and participant-bounded IAM. Participant-controlled VMs have no external NIC and default to no attached Google service account; a service account may be attached only for an explicitly approved capability that cannot use the existing provisioner bootstrap boundary, and its token is treated as participant-visible, range-bounded, and without Compute, IAM, project Secret Manager, shared Storage, or control-plane authority. Guest or container metadata firewalling is defense in depth: because a root guest can reach the GCE metadata endpoint, containment is proven by absence of a management or cross-range credential and by root-context effective-permission tests, with any retained narrow capability explicitly accepted. Range egress is range-owned: each non-zero-egress range gets its own Cloud NAT and a zero-egress range gets none; any shared NAT is a bounded migration bridge that enrolls only explicitly listed pre-migration subnets and never every subnet. Sanctioned egress lanes target the public-internet complement and operator allow-CIDRs that are validated to exclude the denied-network inventory, so a guest cannot reach management, peer-range, private-service, or metadata destinations through them. The canonical provider-neutral range-cell, egress, instantiation-policy, lifecycle, and escape-report contracts remain authoritative; GCP firewall/NAT/IAM are realizations below them. GDC VM Runtime, scenario Pods, L2 Networks, namespaces, and NetworkAttachmentDefinitions remain non-user validation resources and are not hardened or reopened as participant containment.",
+    "rules": [
+      {
+        "id": "ADR-056-R1",
+        "description": "Each live-fire range cell uses an isolated range subnet and unique target tags with same-cell communication only, no external NIC, explicit sanctioned management/access ingress, default-deny egress, and no cross-cell or management/private-service reachability. GCE labels are inventory only. A participant identity has no permission to change tags, instances, routes, firewalls, NAT, IAM, peer resources, or provisioner-owned state.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R2",
+        "description": "Range egress is range-owned. Each non-zero-egress range gets its own regional Cloud NAT and a zero-egress (`none`) range gets none; any shared range NAT is a migration bridge that enrolls only the explicitly listed pre-migration subnets for its own region via LIST_OF_SUBNETWORKS and never ALL_SUBNETWORKS (which would NAT a zero-egress range, since a firewall deny does not remove NAT enrollment). The effective ADR-017 egress mode carried by shared.range_cells is the single policy vocabulary: mode `none` creates no range or shared NAT enrollment. Sanctioned public-web egress targets the public-internet complement of the denied-network inventory, and an operator egress allow-CIDR is rejected when it overlaps that inventory, so neither lane can name a management, peer-range, private-service, metadata, or special-use destination by rule precedence or accident. DNS transport is tested separately and may not be inferred from name-resolution failure.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R3",
+        "description": "Every participant-controllable GCE VM defaults to no attached GSA. If an approved range-bounded GSA is unavoidable, cloud-platform is only an OAuth transport scope and the token's effective IAM is the boundary; it may expose only the named range capability and never Compute, IAM, project-wide secret lifecycle/read, shared object storage, database, Kubernetes, or provisioner authority. Provisioner identities and credentials are never attached or delivered to guests. Container metadata blocks remain defense in depth and cannot satisfy root-on-host evidence.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R4",
+        "description": "A single denied-network inventory is assembled once and reused by the typed GCE range-cell firewall rendering (both the public-web egress complement and the operator allow-CIDR overlap validation) so a new management network is excluded from both by one edit. The inventory is IANA special-use space (which subsumes every RFC1918 deployment-owned range: platform pod/service/node, control-plane, portal, private-service, operator/runner, retained GDC management, and peer range subnets) plus link-local metadata, the Google private-API VIP, and the deployment-owned management/access CIDRs declared on the range config (Terraform-derived via the runtime env). The escape-validation suite (shared.range_escape) carries the equivalent boundary taxonomy for live probes.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R5",
+        "description": "shared.range_cells, shared.range_instantiation_policy, the RAES contract, gcp_range_cell_plan/firewall/resources, shared.range_escape, existing cloud adapters/exceptions, sanitized logging, Engine operation persistence/reconciliation, and the IAM resource-scope checker remain canonical. Implementation may extend their closed values and tests but may not create a duplicate range DTO, egress vocabulary, firewall compiler, escape report, config loader, exception hierarchy, permission ledger, lifecycle, or workflow.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R6",
+        "description": "A range is not trusted for live fire until static mutated-plan tests and live gcp-dev probes from participant and root-capable host context prove same-cell positive control, peer-cell denial, platform/management denial, metadata credential confinement, provisioner-resource denial, effective IAM least privilege, and DNS/internet behavior matching the configured mode. Preprovisioned-firewall mode must prove equivalent generated policy or fail closed. Every unreachable, skipped, indeterminate, or narrowly accepted boundary remains distinct in the existing versioned escape report with bounded diagnostics.",
+        "checks": []
+      },
+      {
+        "id": "ADR-056-R7",
+        "description": "GDC remains fail-closed for live-fire apply while destroy, compensation, retry, and reconciliation continue from persisted ownership for already-owned GDC resources. This decision does not approve vpc-per-range, redesign Vertex or DNS egress, add a participant workload to GKE, or move management/provisioner workloads into the range plane.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1295",
+      "docs/architecture/gcp-range-cell-containment-threat-model.md",
+      "docs/ops/range-escape-validation.md",
+      "shifter/engine/provisioner/gcp_range_cell_firewall.py",
+      "shifter/engine/provisioner/gcp_range_cell_plan.py",
+      "shifter/engine/provisioner/gcp_range_cell_resources.py",
+      "shifter/engine/provisioner/tests/test_gcp_range_cells.py",
+      "shifter/shifter_platform/shared/range_cells.py",
+      "shifter/shifter_platform/shared/range_escape.py",
+      "platform/terraform/gcp/modules/range/vpc",
+      "platform/terraform/gcp/modules/portal/iam",
+      "scripts/check_tf_gcp_iam_resource_scope"
+    ]
   }
 ]

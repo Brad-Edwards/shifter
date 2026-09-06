@@ -71,7 +71,24 @@ resource "google_dns_record_set" "range_private_googleapis_wildcard" {
 # egress until they are drained/rebuilt onto per-range NAT; range jobs never
 # mutate this object (no concurrent patching).
 locals {
-  shared_range_nat_enabled = length(var.shared_range_nat_subnetwork_self_links) > 0
+  # A range subnet self-link is
+  # https://www.googleapis.com/compute/v1/projects/<p>/regions/<region>/subnetworks/<name>.
+  # Cloud NAT is regional, so group the migration-bridge self-links by their own
+  # region: the primary-region router enrolls only primary-region subnets, and each
+  # additional pooled region gets its own bridge NAT below. Enrollment is always an
+  # explicit LIST_OF_SUBNETWORKS, never ALL_SUBNETWORKS (that would NAT a
+  # zero-egress `none` range -- ADR-026-R6).
+  shared_range_nat_by_region = {
+    for region in distinct([
+      for self_link in var.shared_range_nat_subnetwork_self_links :
+      regex("/regions/([^/]+)/subnetworks/", self_link)[0]
+      ]) : region => [
+      for self_link in var.shared_range_nat_subnetwork_self_links :
+      self_link if regex("/regions/([^/]+)/subnetworks/", self_link)[0] == region
+    ]
+  }
+  shared_range_nat_primary_subnets = lookup(local.shared_range_nat_by_region, var.region, [])
+  shared_range_nat_enabled         = length(local.shared_range_nat_primary_subnets) > 0
 }
 
 resource "google_compute_router" "range_nat" {
@@ -101,7 +118,7 @@ resource "google_compute_router_nat" "range_nat" {
   source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
 
   dynamic "subnetwork" {
-    for_each = toset(var.shared_range_nat_subnetwork_self_links)
+    for_each = toset(local.shared_range_nat_primary_subnets)
     content {
       name                    = subnetwork.value
       source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
@@ -110,21 +127,26 @@ resource "google_compute_router_nat" "range_nat" {
 }
 
 # #2029 multi-region range placement: a range cell placed in a region other than
-# the primary control-plane region (via RANGE_NETWORK_ZONES) still needs an egress
-# path. The range VPC is global and its firewall rules are network-wide, but Cloud
-# NAT is regional, so each additional pooled region gets its own Cloud Router +
-# external address + Cloud NAT. NAT coverage is derived from the *same* zone pool
-# the provisioner places cells with (``range_network_zones``), so the two cannot
-# diverge: a region is covered iff a pooled zone lives in it. The primary `region`
-# is excluded so its existing NAT is untouched (empty pool -> no extra resources,
-# single-region unchanged).
+# the primary control-plane region (via RANGE_NETWORK_ZONES) reaches egress through
+# its own region-aware per-range Cloud NAT (provisioner-owned, ADR-026-R6). This
+# shared extra-region router/NAT is only the migration bridge for pre-migration
+# subnets that live in an additional pooled region: like the primary-region bridge
+# it enrolls exactly the listed subnets via LIST_OF_SUBNETWORKS -- never
+# ALL_SUBNETWORKS, which would also NAT a zero-egress `none` range. A pooled region
+# with no listed subnets gets no shared NAT (empty pool / empty list -> no extra
+# resources, single-region unchanged), and a listed subnet outside the operator's
+# declared zone pool is not bridged.
 locals {
   range_pool_regions = toset([for z in var.range_network_zones : replace(z, "/-[a-z]$/", "")])
-  extra_nat_regions  = toset([for r in local.range_pool_regions : r if r != var.region])
+  shared_range_nat_extra_regions = {
+    for region, subnets in local.shared_range_nat_by_region :
+    region => subnets
+    if region != var.region && contains(local.range_pool_regions, region)
+  }
 }
 
 resource "google_compute_router" "range_nat_extra" {
-  for_each = local.extra_nat_regions
+  for_each = local.shared_range_nat_extra_regions
   name     = "${var.name_prefix}-range-nat-${each.key}"
   project  = var.project_id
   region   = each.key
@@ -132,7 +154,7 @@ resource "google_compute_router" "range_nat_extra" {
 }
 
 resource "google_compute_address" "range_nat_extra" {
-  for_each     = local.extra_nat_regions
+  for_each     = local.shared_range_nat_extra_regions
   name         = "${var.name_prefix}-range-nat-egress-${each.key}"
   project      = var.project_id
   region       = each.key
@@ -140,14 +162,22 @@ resource "google_compute_address" "range_nat_extra" {
 }
 
 resource "google_compute_router_nat" "range_nat_extra" {
-  for_each                           = local.extra_nat_regions
+  for_each                           = local.shared_range_nat_extra_regions
   name                               = "${var.name_prefix}-range-nat-${each.key}"
   project                            = var.project_id
   region                             = each.key
   router                             = google_compute_router.range_nat_extra[each.key].name
   nat_ip_allocate_option             = "MANUAL_ONLY"
   nat_ips                            = [google_compute_address.range_nat_extra[each.key].self_link]
-  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+  source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
+
+  dynamic "subnetwork" {
+    for_each = toset(each.value)
+    content {
+      name                    = subnetwork.value
+      source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
+    }
+  }
 }
 
 resource "google_compute_firewall" "range_deny_ingress_all" {

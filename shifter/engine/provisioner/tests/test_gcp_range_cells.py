@@ -200,6 +200,27 @@ def test_cyberscript_none_plan_has_no_router_nat_and_no_web_egress():
     assert not any(name.endswith("egress-web") for name in firewall_names)
 
 
+@pytest.mark.parametrize("egress_mode", ["none", "deny-all"])
+def test_zero_egress_mode_suppresses_requested_web_and_allow_lanes(egress_mode):
+    # ADR-056-R2: a `none`/`deny-all` range's containment is absolute -- the mode
+    # override must suppress the public-web and operator-allow egress lanes even
+    # when an instance profile requests public-web egress AND the config declares
+    # egress_allow_cidrs, not merely when nobody asked for egress. This proves the
+    # override drops an otherwise-requested lane rather than confirming absence.
+    config = _sample_config()
+    config = dataclasses.replace(
+        config,
+        kali=dataclasses.replace(config.kali, allow_public_web_egress=True),
+        egress_allow_cidrs=("8.8.8.0/24",),
+    )
+
+    plan = render_range_cell_plan("req-123", _variables(egress_mode=egress_mode), config)
+    firewall_names = {fw["name"] for fw in plan["firewalls"]}
+
+    assert not any(name.endswith("-egress-web") for name in firewall_names)
+    assert not any(name.endswith("-egress-allow") for name in firewall_names)
+
+
 def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
     def get_side_effect(**_kwargs):
         if exists:
@@ -427,9 +448,37 @@ def test_render_range_cell_plan_profile_can_allow_public_web_egress():
 
     web = firewalls["shifter-r-42-egress-web"]
     assert web["priority"] == 1200
-    assert web["destination_ranges"] == ["0.0.0.0/0"]
     assert web["allowed"] == [{"IPProtocol": "tcp", "ports": ["80", "443"]}]
+    # ADR-056-R2: the public-web lane targets the public-internet complement, not a
+    # bare 0.0.0.0/0 -- it reaches routable public space but never management,
+    # peer-range, private-service, metadata, or the Google private-API VIP.
+    assert web["destination_ranges"] != ["0.0.0.0/0"]
+    web_dests = [ipaddress.ip_network(cidr) for cidr in web["destination_ranges"]]
+    assert any(ipaddress.ip_address("8.8.8.8") in cidr for cidr in web_dests)
+    for blocked in ("10.0.0.0/8", "169.254.0.0/16", "192.168.0.0/16", "172.16.0.0/12", "199.36.153.8/30"):
+        assert all(not cidr.overlaps(ipaddress.ip_network(blocked)) for cidr in web_dests)
     assert firewalls["shifter-r-42-egress-deny"]["denied"] == [{"IPProtocol": "all"}]
+
+
+def test_public_web_egress_excludes_declared_management_cidr_containing_denied_range():
+    # Regression (#1295 codex): a declared management CIDR that CONTAINS an
+    # already-denied range (the Google private-API VIP /30) must be fully excluded
+    # from the public-web egress complement. Before the exclusion set was
+    # collapsed, the VIP /30 split the surrounding /24 across fragments and most of
+    # the /24 leaked back into the sanctioned public-web lane.
+    config = _sample_config()
+    config = dataclasses.replace(
+        config,
+        portal_network_cidrs=(*config.portal_network_cidrs, "199.36.153.0/24"),
+        kali=dataclasses.replace(config.kali, allow_public_web_egress=True),
+    )
+
+    plan = render_range_cell_plan("req-123", _variables(), config)
+    firewalls = {firewall["name"]: firewall for firewall in plan["firewalls"]}
+
+    web_dests = [ipaddress.ip_network(cidr) for cidr in firewalls["shifter-r-42-egress-web"]["destination_ranges"]]
+    declared = ipaddress.ip_network("199.36.153.0/24")
+    assert all(not cidr.overlaps(declared) for cidr in web_dests)
 
 
 def test_render_range_cell_plan_default_profile_keeps_public_web_denied():
@@ -829,7 +878,7 @@ def test_range_cell_firewalls_do_not_allow_cross_range_private_traffic():
 
 def test_range_cell_firewalls_are_deterministic_from_cell_identity():
     variables = _variables()
-    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=("10.60.0.10/32",))
+    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=("8.8.8.8/32",))
 
     first = render_range_cell_plan("req-123", variables, config)
     second = render_range_cell_plan("req-123", deepcopy(variables), config)
@@ -879,12 +928,34 @@ def test_range_cell_firewalls_reject_access_management_source_overlap():
 
 
 def test_range_cell_firewalls_deduplicate_explicit_egress_cidrs():
-    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=("10.60.0.0/24", "10.60.0.0/24"))
+    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=("8.8.8.0/24", "8.8.8.0/24"))
 
     plan = render_range_cell_plan("req-123", _variables(), config)
     egress = next(rule for rule in plan["firewalls"] if rule["name"].endswith("-egress-allow"))
 
-    assert egress["destination_ranges"] == ["10.60.0.0/24"]
+    assert egress["destination_ranges"] == ["8.8.8.0/24"]
+
+
+@pytest.mark.parametrize(
+    ("cidr", "overlaps"),
+    [
+        ("10.0.0.0/24", "10.0.0.0/8"),  # RFC1918 management/peer-range space
+        ("169.254.169.254/32", "169.254.0.0/16"),  # link-local metadata server
+        ("192.168.5.0/24", "192.168.0.0/16"),  # RFC1918
+        ("199.36.153.8/30", "199.36.153.8/30"),  # Google private-API VIP
+        ("10.40.0.0/24", "10.40.0.0/20"),  # a declared portal/management CIDR
+    ],
+)
+def test_range_cell_firewalls_reject_egress_allow_overlapping_denied_inventory(cidr, overlaps):
+    # ADR-056-R2/R4: a sanctioned egress allow-CIDR is for public destinations
+    # only. Overlap with the denied-network inventory (management, peer-range,
+    # private-service, metadata, special-use) fails closed rather than re-opening
+    # an internal path the default deny is meant to close.
+    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=(cidr,))
+    variables = _variables()
+
+    with pytest.raises(RuntimeError, match="must not overlap the denied-network inventory"):
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_range_cell_rule_count_is_bounded_per_cell_not_per_instance():
