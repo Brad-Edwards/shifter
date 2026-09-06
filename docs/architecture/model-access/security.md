@@ -71,6 +71,31 @@ This is why adding keys is neither an identity-sharding strategy nor an
 immediate revoke mechanism. See
 [Google service-account key lifecycle](https://docs.cloud.google.com/iam/docs/keys-create-delete).
 
+## Sharing authority and isolation
+
+Sharing a broker-held provider identity, model assignment or budget pool
+does not merge range grants or give members authority over each other.
+The [sharing contract](sharing.md) supports selected sets, events/cohorts,
+users, typed groups, named collections and all ranges in one deployment.
+Require canonical IDs and authority over the complete selected collection;
+an organizer's authority cannot spill into another event. All-ranges access
+is operator-only and never crosses the customer/deployment boundary.
+
+Group membership controls applicability, not publishing authority or funded
+eligibility by itself. Self-service groups require separate approved spending
+eligibility. All matching hard restrictions/accounts apply; priority cannot
+bypass a cap. Unknown membership denies. Owner/group changes synchronously
+invalidate the checked membership revision, including for large collections;
+background reassessment cannot leave stale grants usable. Snapshot inclusion
+does not preserve access after authorization is lost.
+
+Shared-only budgets deliberately allow a member to consume the remaining
+pool; show that consequence and offer individual spend/rate/concurrency caps.
+Do not claim fair allocation without such a policy. Limit roster and usage
+views to authorized subjects; use suppressed small-cohort aggregates where
+individual contributions could otherwise be inferred. Shared balances alone
+must not authorize unrestricted per-member attribution.
+
 ## Participant credential and network binding
 
 Opaque credentials identify an Engine-owned grant; request fields cannot
@@ -148,11 +173,14 @@ deployment entries, not a general exemption for private addresses.
 | --- | --- | --- |
 | Root extracts provider credential from metadata, env or bootstrap | No provider credential/SA in the guest; broker-only workload identity. | Root-context metadata, filesystem, process and cloud permission probes with a successful narrow broker call as positive control. |
 | Cross-range/deployment token substitution | Server-side grant tuple, current epoch/authority and source-subnet check. | Two live ranges and a foreign deployment fixture; swap every identity field, token and source. |
+| Group join or overlap widens access/spend | Canonical selectors, publisher and spending eligibility, intersected restrictions, distinct account set and explicit choice conflicts. | Self-service join, foreign-event/all-ranges publication, tied priorities and overlapping group/event bindings; no authority gain or double charge. |
+| Membership change leaves shared access alive | Synchronous membership-revision fence, new admission/epoch, original liability references. | Race invoke/refresh against removal, owner transfer and bulk invalidation; old grants fail while unaffected members continue on the same shared provider identity. |
 | Prompt injection requests admin MCP, cloud tool or arbitrary URL | Model output is data; independent tool grant and closed route adapter; network/IAM deny. | Adversarial prompt/tool fixtures and actual network probes; no privileged effect. |
 | Unbounded subagents or duplicate billing | Atomic parent/range budget and rate/concurrency admission; no automatic ambiguous replay. | Real PostgreSQL contention and many independent broker processes; limits never exceeded. |
 | Stream continues after pause/reset/revoke | Online leases, deadline and grant epoch; cancellation fence. | Revoke during stream across multiple replicas, drop control connectivity, measure last delivery and attempted provider dispatch. |
 | Stale cleanup deletes successor credential | Original full references and generation/epoch compare; idempotent cleanup. | Old-generation destroy/result arrival after new enrollment; successor remains usable. |
 | Quota amplification through aliases/accounts | Shared real quota-pool identity; durable allocation. | Two aliases/GSAs sharing a pool cannot reserve its capacity twice; independent projects can allocate independently. |
+| Sharing creates duplicate commitments or erases spend | One shared commitment with child draws, deduplicated request-account vector and retained original liabilities. | Concurrent first use, same pool through multiple selectors, pool migration with unknown requests; no overcommit, duplicate charge or refund. |
 | Cost evasion via caches, multimodal payload, tool charges or price drift | Closed billing feature set, conservative upper bounds, expiring price revisions. | Boundary/unsupported feature vectors, unknown usage, manipulated usage fields and expired prices. |
 | Parser/smuggling/slow-stream denial of service | Bounded headers, compressed and decompressed bytes, JSON depth, connections, timeouts and buffers. | Malformed lengths, duplicate JSON keys, compression bombs, slow consumers and partial SSE. |
 | Data leaks through provider errors or observability | Safe error mapping and allowlisted metadata-only audit/log/trace fields. | Synthetic sentinel in prompts, responses, headers, tool fields and provider failures; absent from every telemetry/support/evidence sink. |

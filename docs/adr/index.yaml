@@ -3762,7 +3762,12 @@
       },
       {
         "id": "ADR-060-R2",
-        "description": "Reserve every applicable parent/range/grant/quota budget atomically before dispatch using integer money and bounded billable-feature costs. Price validity, rate windows, ordered locking and database constraints are explicit. Unknown usage, timeout, disconnect and worker loss never create automatic refunds or replay; settle once and retain reconciliation obligations. Real PostgreSQL and provider-boundary tests must prove the runtime behavior.",
+        "description": "Reserve the set of all applicable deployment/event/user/group/collection/configured-range/grant/quota accounts atomically before dispatch using integer money and bounded billable-feature costs. Deduplicate shared account IDs without weakening distinct caps. Price validity, rate windows, ordered locking and database constraints are explicit. Unknown usage, timeout, disconnect and worker loss never create automatic refunds or replay; settle once and retain reconciliation obligations. Real PostgreSQL and provider-boundary tests must prove the runtime behavior.",
+        "checks": []
+      },
+      {
+        "id": "ADR-060-R3",
+        "description": "Operators may independently share profiles, provider identity, per-alias assignments, capacity and spend/rate/concurrency across selected ranges, CTF cohorts/events, users, typed groups, named collections or all deployment ranges. Snapshot/dynamic membership, authorized publication and overlap precedence are explicit. Shared assignments and capacity are committed once; shared-only or pooled-plus-individual budgets preserve finite deployment/request bounds. Membership revisions fence stale grants; pool changes preserve spend and unresolved liability. Each range remains independently revocable.",
         "checks": []
       }
     ],
@@ -3771,6 +3776,7 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/060-model-access-allocation-accounting.md",
+      "docs/architecture/model-access/sharing.md",
       "docs/architecture/model-access/architecture.md",
       "docs/architecture/model-access/delivery.md"
     ]

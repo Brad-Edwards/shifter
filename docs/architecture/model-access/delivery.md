@@ -16,7 +16,9 @@ own independent deployed evidence, not an excuse to ship untested code.
 | Package | Issue and outcome | Milestone | Native prerequisites |
 | --- | --- | --- | --- |
 | M01 | [#2118: define policy catalog and shared access contracts](https://github.com/Brad-Edwards/shifter/issues/2118) | 35 | Reviewed design on dev |
-| M02 | [#2119: bind scenario and event intent to enforcing model demand](https://github.com/Brad-Edwards/shifter/issues/2119) | 35 | [#2118](https://github.com/Brad-Edwards/shifter/issues/2118) |
+| M19 | [#2139: persist sharing bindings and resolve overlapping policies](https://github.com/Brad-Edwards/shifter/issues/2139) | 35 | [#2118](https://github.com/Brad-Edwards/shifter/issues/2118) |
+| M20 | [#2140: project sharing membership and fence authority changes](https://github.com/Brad-Edwards/shifter/issues/2140) | 35 | [#2139](https://github.com/Brad-Edwards/shifter/issues/2139) |
+| M02 | [#2119: bind scenario and event intent to enforcing model demand](https://github.com/Brad-Edwards/shifter/issues/2119) | 35 | [#2118](https://github.com/Brad-Edwards/shifter/issues/2118), [#2140](https://github.com/Brad-Edwards/shifter/issues/2140) |
 | M03 | [#2120: persist quota-aware shard allocations and grant bindings](https://github.com/Brad-Edwards/shifter/issues/2120) | 35 | [#2119](https://github.com/Brad-Edwards/shifter/issues/2119) |
 | M04 | [#2121: enforce atomic request budgets and dispatch leases](https://github.com/Brad-Edwards/shifter/issues/2121) | 35 | [#2120](https://github.com/Brad-Edwards/shifter/issues/2120) |
 | M05 | [#2122: add the private broker and authenticated Engine control API](https://github.com/Brad-Edwards/shifter/issues/2122) | 35 | [#2121](https://github.com/Brad-Edwards/shifter/issues/2121) |
@@ -37,7 +39,8 @@ own independent deployed evidence, not an excuse to ship untested code.
 ## Milestone scope
 
 - [35 — BigRAE GCP 1: scope and security foundations](https://github.com/Brad-Edwards/shifter/milestone/35):
-  #2118–#2127, ending in effective GCP identity, network and revocation proof.
+  #2118–#2127 and #2139–#2140, ending in effective GCP identity, network,
+  configurable sharing and revocation proof.
 - [36 — BigRAE GCP 2: reliable operations](https://github.com/Brad-Edwards/shifter/milestone/36):
   #2128–#2130, legacy credential retirement, telemetry/reconciliation, load and restore.
 - [37 — BigRAE GCP 3: qualified scenarios and adoption](https://github.com/Brad-Edwards/shifter/milestone/37):
@@ -60,11 +63,11 @@ number. The [API contract](https://docs.github.com/en/rest/issues/issue-dependen
 defines these native blocking relationships. Narrative references and
 `blocked` labels are not the dependency mechanism.
 
-Readback verified all 18 issue states, milestone assignments, PLAT-202
+Readback verified all 20 issue states, milestone assignments, PLAT-202
 references and the exact changed blocker lists. The complete reachable
 prerequisite graph is acyclic. The machine-readable
-[dependency snapshot](dependencies.json) records 25 implementation edges,
-two terminal prerequisites of #681, and one GCP adoption edge: **28 added
+[dependency snapshot](dependencies.json) records 28 implementation edges,
+two terminal prerequisites of #681, and one GCP adoption edge: **31 added
 relationships** in total.
 
 Only one existing relationship was removed: #2091 blocked by #681. It was
@@ -81,7 +84,10 @@ review, CI or evidence acceptance with a dependency relation.
 
 ```mermaid
 flowchart TD
-    C[2118 Contracts] --> P[2119 Scenario and event policy]
+    C[2118 Contracts] --> SBind[2139 Sharing bindings and overlap]
+    SBind --> Members[2140 Membership and authority fencing]
+    Members --> P[2119 Scenario and event policy]
+    C --> P
     P --> A[2120 Allocation]
     A --> B[2121 Budgets and leases]
     B --> G[2122 Broker and control API]
@@ -115,6 +121,26 @@ Arrows in the diagram run prerequisite → dependent; the JSON and table
 use the GitHub `blocked_by` direction (dependent → prerequisite). The graph
 above shows new work and its immediate external inputs; the JSON also
 retains existing ancestors and adoption blockers.
+
+## Sharing amendment
+
+The original design landed in #2136. The subsequent clarification makes
+partial or complete sharing across selected ranges, users, groups, CTF
+collections and all deployment ranges an explicit first-delivery requirement.
+The [sharing contract](sharing.md) specifies independent facets, membership
+modes, overlapping policies and pooled allocation/accounting.
+
+#2139 owns Engine binding/pool persistence and deterministic effective-policy
+resolution. #2140 owns authoritative membership adapters and transactional
+revision fencing. They consume #2118's shared types and block #2119 before
+allocation/accounting consumers. This amendment adds three native edges and
+removes none; all original blockers and milestone assignments are preserved.
+
+Existing issues #2118–#2121, #2125–#2127 and #2129–#2131 now include explicit
+sharing acceptance for their own boundaries. Shared assignment/capacity stays
+in allocation, atomic pooled balances stay in accounting, management stays in
+the existing UI/API task, and GCP qualification must demonstrate every supported
+collection and partial/all sharing. The complete readback graph has 47 nodes.
 
 ## Existing work and completion boundaries
 
