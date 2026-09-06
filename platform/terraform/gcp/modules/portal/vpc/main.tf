@@ -150,3 +150,58 @@ resource "google_service_networking_connection" "services" {
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.services.name]
 }
+
+# Private Google Access DNS for the platform network. The access node pool is
+# containment-isolated from public internet egress (#1711/#1295), so platform
+# pods that land there (e.g. portal-web, which must sit in the access pod range to
+# dial range guests - ADR-039-R9) cannot reach the PUBLIC googleapis endpoints.
+# They can reach the private.googleapis.com VIP (199.36.153.8/30), and the
+# platform NetworkPolicy allow-platform-google-apis-egress only permits that VIP.
+# Without this zone platform pods resolve *.googleapis.com to public IPs and fail
+# (Secret Manager fetch times out on the access pool). Resolve *.googleapis.com to
+# the VIP so ALL platform pods use Private Google Access, matching the range VPC
+# (modules/range/vpc) and the egress policy. The subnet already has
+# private_ip_google_access = true; the explicit route pins the VIP to Google's
+# fabric rather than the Cloud NAT default route.
+resource "google_compute_route" "platform_private_googleapis" {
+  name             = "${var.name_prefix}-platform-private-googleapis"
+  project          = var.project_id
+  network          = google_compute_network.platform.name
+  description      = "Private Google Access: route the private.googleapis.com VIP over Google's internal fabric for platform pods."
+  dest_range       = "199.36.153.8/30"
+  next_hop_gateway = "default-internet-gateway"
+  priority         = 1000
+}
+
+resource "google_dns_managed_zone" "platform_private_googleapis" {
+  name        = "${var.name_prefix}-platform-googleapis"
+  project     = var.project_id
+  dns_name    = "googleapis.com."
+  description = "Private Google Access: resolve *.googleapis.com to the private.googleapis.com VIP for platform pods."
+
+  visibility = "private"
+
+  private_visibility_config {
+    networks {
+      network_url = google_compute_network.platform.id
+    }
+  }
+}
+
+resource "google_dns_record_set" "platform_private_googleapis_a" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.platform_private_googleapis.name
+  name         = "private.googleapis.com."
+  type         = "A"
+  ttl          = 300
+  rrdatas      = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
+}
+
+resource "google_dns_record_set" "platform_private_googleapis_wildcard" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.platform_private_googleapis.name
+  name         = "*.googleapis.com."
+  type         = "CNAME"
+  ttl          = 300
+  rrdatas      = ["private.googleapis.com."]
+}
