@@ -672,6 +672,17 @@ jobs:
         working-directory: shifter/shifter_platform/frontend
         run: npm run test:coverage
 
+      # Publish the SPA LCOV so the sonarcloud job can measure SPA coverage
+      # against the raes-strict new-code gate (#1526). Fail closed: a missing
+      # report means the coverage producer did not run.
+      - name: Upload SPA coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-shifter-platform-spa
+          path: shifter/shifter_platform/frontend/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Build (Vite)
         working-directory: shifter/shifter_platform/frontend
         run: npm run build
@@ -2332,6 +2343,7 @@ jobs:
       - paths
       - shifter-platform-tests
       - shifter-platform-js-tests
+      - shifter-platform-spa
       - shifter-engine-tests
       - bootstrap-tests
       - check-layer-imports-tests
@@ -2365,6 +2377,14 @@ jobs:
         with:
           name: coverage-shifter-platform-js
           path: shifter/shifter_platform/coverage
+      - name: Download shifter_platform SPA coverage
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')
+          && needs.shifter-platform-spa.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-shifter-platform-spa
+          path: shifter/shifter_platform/frontend/coverage
       - name: Download provisioner coverage
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true')
