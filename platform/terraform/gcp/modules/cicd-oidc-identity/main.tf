@@ -121,8 +121,8 @@ resource "google_service_account_iam_member" "packer_build_token_creator_self" {
 }
 
 resource "google_project_iam_member" "packer_build_roles" {
-  # checkov:skip=CKV_GCP_42:A CI GCE image builder requires compute/storage admin to create builder VMs, disks and images; no non-admin predefined role can create images. Scope is one dedicated, federation-only build SA (#615).
-  # checkov:skip=CKV_GCP_49:cloudbuild.builds.editor is required for `gcloud compute images export` (runs as a Cloud Build job); the SA only impersonates the Cloud Build agent for image export (#615).
+  # checkov:skip=CKV_GCP_42:The shared CI build+deploy SA manages all of platform-core (GKE, Cloud SQL, Redis, Pub/Sub, Secret Manager, KMS, networking, IAM), which requires admin-level predefined roles; this is the scoped enumeration replacing the rehearsal-era roles/owner grant (#407, #615). One dedicated, federation-only SA.
+  # checkov:skip=CKV_GCP_49:iam.serviceAccountUser/serviceAccountTokenCreator are required for the deploy to attach the workload SAs it creates and for `gcloud compute images export` to impersonate the Cloud Build agent (#407, #615).
   for_each = toset(var.build_roles)
 
   project = var.project_id

@@ -43,13 +43,16 @@ variable "allowed_workflow_refs" {
 
 variable "build_roles" {
   description = <<-EOT
-    Project roles granted to the packer build service account. The GCE image
-    build needs to create/manage builder VMs, run them as a service account,
-    write GCE images, reach the builder over IAP (internal-IP builds, no
-    external IP per the org policy), and export images to GCS via Cloud Build.
+    Project roles granted to the shared CI build+deploy service account. It runs
+    BOTH the packer GCE image builds AND the platform-core Terraform apply/destroy
+    (this SA is the only WIF-federated deploy identity), so it needs the roles to
+    manage every platform-core resource. This is the scoped enumeration replacing
+    the rehearsal-era roles/owner grant (#407); a missing role surfaces as a 403
+    during terraform apply/destroy and is added here.
   EOT
   type        = list(string)
   default = [
+    # --- Packer GCE image build/export ---
     # compute.admin (superset of instanceAdmin.v1 + storageAdmin) is what the
     # `gcloud compute images export` Cloud Build identity needs: daisy creates
     # and tears down the export worker VM, its disks and snapshots, then writes
@@ -58,15 +61,29 @@ variable "build_roles" {
     "roles/iap.tunnelResourceAccessor",
     "roles/storage.admin",
     "roles/cloudbuild.builds.editor",
-    "roles/serviceusage.serviceUsageConsumer",
-    # Reach the PRIVATE GKE control plane over Connect Gateway (#1723): the
-    # gateway roles authorize the fleet-membership impersonation, and
-    # container.admin authorizes the actual kubectl apply via GKE's IAM->RBAC
-    # mapping (the deploy applies cluster-scoped objects: namespaces, CRDs,
-    # cluster services). Together these replace the old public-endpoint +
-    # runner-IP-allowlist access path removed from _gcp-dev.yml.
+    # --- GKE control-plane access over Connect Gateway (#1723) ---
+    # The gateway roles authorize fleet-membership impersonation; container.admin
+    # authorizes the kubectl apply via GKE's IAM->RBAC mapping (the deploy applies
+    # cluster-scoped objects: namespaces, CRDs, cluster services). Together these
+    # replace the old public-endpoint + runner-IP-allowlist access path.
+    "roles/gkehub.editor",
     "roles/gkehub.gatewayEditor",
     "roles/gkehub.viewer",
     "roles/container.admin",
+    # --- platform-core Terraform apply/destroy (the full deploy) ---
+    "roles/serviceusage.serviceUsageAdmin",  # enable/disable project APIs
+    "roles/servicenetworking.networksAdmin", # PSA connection for Cloud SQL/Redis private IP
+    "roles/dns.admin",                       # private googleapis managed zones
+    "roles/cloudsql.admin",                  # Cloud SQL instance/db/user
+    "roles/redis.admin",                     # Memorystore
+    "roles/pubsub.admin",                    # messaging topics/subscriptions/DLQ
+    "roles/secretmanager.admin",             # runtime secret create/version
+    "roles/cloudkms.admin",                  # artifact-registry CMEK keyring/key
+    "roles/artifactregistry.admin",          # control-plane image repos
+    "roles/identityplatform.admin",          # Identity Platform config
+    "roles/monitoring.editor",               # messaging alarms / notification channels
+    "roles/iam.serviceAccountAdmin",         # create the workload service accounts
+    "roles/iam.serviceAccountUser",          # attach workload SAs to resources
+    "roles/resourcemanager.projectIamAdmin", # bind workload SA roles at the project
   ]
 }
