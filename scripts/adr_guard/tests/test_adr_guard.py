@@ -90,6 +90,16 @@ class AdrGuardTests(unittest.TestCase):
             self.assertEqual(len(violations), 1)
             self.assertIn("unknown rule id", violations[0].message)
 
+    def test_adr_008_registers_range_secret_boundary_evidence(self) -> None:
+        registry_path = ADR_GUARD.REPO_ROOT / "docs" / "adr" / "index.yaml"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        adr_008 = next(entry for entry in registry if entry["id"] == "ADR-008")
+
+        self.assertIn(
+            "docs/architecture/gcp-range-secret-project-boundary-preflight-1586.md",
+            adr_008["evidence"],
+        )
+
     def test_range_substrate_interface_contract_is_structurally_enforced(self) -> None:
         contract = {
             "kind": "range-substrate/v1",
