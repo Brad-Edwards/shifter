@@ -94,6 +94,7 @@ def emit_containment_signal(
     active = sink if sink is not None else LoggingContainmentSink()
 
     def _deliver() -> None:
+        """Deliver the report to the sink, swallowing and logging any sink error."""
         try:
             active.record(report)
         except Exception:
