@@ -65,6 +65,7 @@ from ._agents import (
     get_agent,
     get_allowed_extensions,
     list_agents,
+    max_agent_file_size_bytes,
 )
 from ._content_ingestion import PackRegistrationRequest, RegisteredPack, register_pack
 from ._credentials import (
@@ -258,6 +259,7 @@ __all__ = (
     "list_range_scope_bindings",
     "list_ranges",
     "list_scenarios",
+    "max_agent_file_size_bytes",
     "pause_range",
     "pause_range_by_request_id",
     "project_scenario_images",

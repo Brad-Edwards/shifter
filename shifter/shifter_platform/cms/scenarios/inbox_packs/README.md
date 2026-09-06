@@ -10,7 +10,7 @@ through the same `cms.services.register_pack` service an operator uses via the
 API or the `register_pack` CLI. The seed is dogfooded through the
 uniform, entitlement-blind ingestion boundary.
 
-`manifest.yaml` currently declares the Polaris pack. Add one entry per
+`manifest.yaml` declares the in-box bootstrap seed. Add one entry per
 shipped pack as they land; the entry shape matches the operator registration
 request (see the example in `manifest.yaml`). Packs themselves are validated as
 foreign input at registration against the `raes-env-packs` contract, and

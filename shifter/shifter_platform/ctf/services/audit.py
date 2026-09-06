@@ -346,6 +346,43 @@ def audit_vpn_profile_download(
     )
 
 
+def audit_communication_release(
+    *,
+    actor_id: int | None,
+    campaign_id: UUID,
+    intent_id: UUID,
+    workspace_id: int,
+    recipient_count: int,
+    channels: list[str],
+) -> None:
+    """Strictly record a scoped-communication intent release (ADR-051, #2048).
+
+    Records only bounded identifiers, the workspace scope, the recipient count,
+    and the selected channels. Never records subjects, bodies, recipient
+    addresses, participant lists, provider payloads, or RAES documents. Strict:
+    an audit failure rolls back the release transaction it runs inside.
+    """
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.COMMUNICATION,
+            entity_id=_entity_id_from_uuid(campaign_id),
+            action=AuditAction.CREATE,
+            actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
+            actor_id=actor_id,
+            new_state={
+                "ctf_communication_release": "released",
+                "campaign_id": str(campaign_id),
+                "intent_id": str(intent_id),
+                "workspace_id": workspace_id,
+                "recipient_count": recipient_count,
+                "channels": sorted(channels),
+            },
+            context="ctf_communication_release",
+        ),
+        strict=True,
+    )
+
+
 def audit_event_staff_change(
     *,
     actor_id: int,

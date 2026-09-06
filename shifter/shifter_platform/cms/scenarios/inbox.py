@@ -6,8 +6,8 @@ SAME :func:`cms.services.register_pack` service an operator uses. This is the
 dogfooding requirement of ADR-053/ADR-034: the in-box seed and operator
 content share one ingestion path.
 
-The shipped manifest (:data:`SHIPPED_INBOX_MANIFEST`) currently declares the
-Polaris pack. The mechanism is exercised by tests; entries are added as
+The shipped manifest (:data:`SHIPPED_INBOX_MANIFEST`) declares the in-box
+seed. The mechanism is exercised by tests; entries are added as
 first-party packs are authored.
 
 Bootstrap asks the service for an idempotent retry: an exact immutable identity
