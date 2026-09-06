@@ -24,6 +24,10 @@ provider "google" {
 
 locals {
   name_prefix = "shifter-${var.environment}"
+  # Deterministic email of the WIF-federated build+deploy SA created in the
+  # foundational root global/cicd-oidc (account_id "<prefix-no-dashes>-packer").
+  # This root references it by email rather than importing that state.
+  deploy_service_account_email = "${replace("shifter-${var.environment}", "-", "")}-packer@${var.project_id}.iam.gserviceaccount.com"
   labels = {
     environment = var.environment
     managed_by  = "terraform"
@@ -46,7 +50,7 @@ module "packer_build_infra" {
   name_prefix                  = local.name_prefix
   region                       = var.region
   platform_network             = module.platform_core.network_name
-  packer_service_account_email = "${replace(local.name_prefix, "-", "")}-packer@${var.project_id}.iam.gserviceaccount.com"
+  packer_service_account_email = local.deploy_service_account_email
   # baremetal-gcr (GDC substrate SA) is absent on the default GCE backend; empty
   # unless a GDC deployment sets it (ADR: GDC plumbing must not be selected by
   # default). See the gdc_vm_runtime_image_readers variable.
@@ -59,6 +63,7 @@ module "platform_core" {
   project_id                        = var.project_id
   environment                       = var.environment
   region                            = var.region
+  deploy_service_account_email      = local.deploy_service_account_email
   artifact_registry_location        = var.artifact_registry_location
   gke_release_channel               = var.gke_release_channel
   range_network_cidr                = var.range_network_cidr

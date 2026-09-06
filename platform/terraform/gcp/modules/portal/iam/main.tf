@@ -148,6 +148,22 @@ resource "google_project_iam_member" "node_roles" {
   member  = "serviceAccount:${google_service_account.gke_nodes.email}"
 }
 
+# The CI deploy SA that runs `terraform apply` for this stack must be able to
+# actAs the GKE node SA to create node pools that run as it. Scoped to this one
+# SA (not a project-wide roles/iam.serviceAccountUser, which trips CKV_GCP_41),
+# mirroring the self-scoped actAs pattern in modules/cicd-oidc-identity. The
+# node_service_account_email output depends_on this binding so the node pools
+# (which consume that output) are never created before the deployer can actAs the
+# node SA. Cluster-independent, so it does not hit the workload-identity binding
+# deadlock documented in platform-core's portal_gke call.
+resource "google_service_account_iam_member" "deploy_act_as_gke_nodes" {
+  count = var.deploy_service_account_email != "" ? 1 : 0
+
+  service_account_id = google_service_account.gke_nodes.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${var.deploy_service_account_email}"
+}
+
 resource "google_project_iam_member" "workload_roles" {
   for_each = merge([
     for account_name, roles in local.workload_project_roles : {

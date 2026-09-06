@@ -46,9 +46,16 @@ jobs:
       TF_BACKEND_PREFIX: shifter/gcp-dev/platform-core
       GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-      SQL_INSTANCE_ADDR: module.platform_core.google_sql_database_instance.platform
-      KMS_KEYRING_ADDR: module.platform_core.google_kms_key_ring.artifact_registry
-      KMS_KEY_ADDR: module.platform_core.google_kms_crypto_key.artifact_registry
+      # Resource-address SUFFIXES matched against `terraform state list`, not full
+      # addresses. These resources live in nested submodules
+      # (module.portal_cloud_sql / module.portal_artifact_registry), so their full
+      # state addresses include those segments. Hardcoding the wrong full address
+      # made the grep -qx silently miss, the steps skipped, and prevent_destroy /
+      # deletion_protection then blocked `terraform destroy`. Matching by suffix
+      # is robust to module nesting/renames.
+      SQL_INSTANCE_SUFFIX: google_sql_database_instance.platform
+      KMS_KEYRING_SUFFIX: google_kms_key_ring.artifact_registry
+      KMS_KEY_SUFFIX: google_kms_crypto_key.artifact_registry
     steps:
       - name: Validate confirmation
         run: |
@@ -142,10 +149,13 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         # Only acts if the instance is still in state. -target the instance so
         # the deletion_protection=false value reaches the live resource before
-        # destroy. A no-op if SQL was already removed.
+        # destroy. A no-op if SQL was already removed. The full address is
+        # resolved by suffix so nested submodules cannot break the match.
         run: |
-          if terraform state list | grep -qx "${SQL_INSTANCE_ADDR}"; then
-            terraform apply -auto-approve -target="${SQL_INSTANCE_ADDR}"
+          addr="$(terraform state list | grep -E "${SQL_INSTANCE_SUFFIX}$" || true)"
+          if [ -n "$addr" ]; then
+            echo "Lifting Cloud SQL deletion protection on: $addr"
+            terraform apply -auto-approve -target="$addr"
           else
             echo "Cloud SQL instance not in state; skipping deletion-protection lift."
           fi
@@ -157,11 +167,13 @@ jobs:
         # destroy does not attempt (and fail on) them. They survive in the
         # project, inert.
         run: |
-          for addr in "${KMS_KEY_ADDR}" "${KMS_KEYRING_ADDR}"; do
-            if terraform state list | grep -qx "${addr}"; then
-              terraform state rm "${addr}"
+          for suffix in "${KMS_KEY_SUFFIX}" "${KMS_KEYRING_SUFFIX}"; do
+            addr="$(terraform state list | grep -E "${suffix}$" || true)"
+            if [ -n "$addr" ]; then
+              echo "Dropping from state: $addr"
+              terraform state rm "$addr"
             else
-              echo "${addr} not in state; skipping."
+              echo "No state entry matching *${suffix}; skipping."
             fi
           done
 
