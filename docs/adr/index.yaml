@@ -3661,5 +3661,99 @@
       "https://github.com/Brad-Edwards/shifter/issues/1967#issuecomment-5555762123",
       "https://docs.cloud.google.com/compute/docs/instances/stop-start-instance"
     ]
+  },
+  {
+    "id": "ADR-059",
+    "title": "Range model and tool access crosses a deployment-owned broker",
+    "status": "proposed",
+    "scope": "shifter_platform",
+    "decision": "PLAT-202 selects a deployment-owned participant model/tool broker with provider credentials outside participant control. Engine owns policy, allocation, grants and accounting; shared owns native contracts; CTF and CMS retain event/scenario/owner admission; the provisioner only realizes a generation-bound operation projection. GCP/Vertex is the first qualification target. This proposed design does not advertise an installed capability or provider parity.",
+    "rules": [
+      {
+        "id": "ADR-059-R1",
+        "description": "Cross-layer access uses owning service facades and native shared contracts. Only shared.raes interprets released scenario contracts. Model needs are logical capabilities bound to exact scenario artifacts, never author-supplied provider coordinates, credentials, URLs or executable configuration.",
+        "checks": ["layer-imports", "cross-layer-model-imports"]
+      },
+      {
+        "id": "ADR-059-R2",
+        "description": "Participant capabilities bind deployment, range, existing execution generation, subject, policy and grant epoch; every invocation requires online authorization. Provider identity stays in the broker, and model permission never grants cloud management, another range, the portal API or privileged operator MCP. Runtime proof is owned by the implementation and qualification issues, not the structural registry check.",
+        "checks": []
+      },
+      {
+        "id": "ADR-059-R3",
+        "description": "The broker has dedicated private TLS ingress, authenticated narrow control operations and deployment-selected provider destinations. GCP preserves the no-service-account guest default and exact range network boundaries. Dynamic-secret project ownership remains with #1586/#2083; model compute, identity, quota and secret-storage projects are distinct concepts. Direct guest provider credentials are migration cleanup compatibility only, never an outage fallback.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/681",
+      "docs/adr/059-range-model-access-broker.md",
+      "docs/architecture/model-access/index.md",
+      "docs/architecture/model-access/architecture.md",
+      "docs/architecture/model-access/security.md",
+      "docs/architecture/model-access/delivery.md"
+    ]
+  },
+  {
+    "id": "ADR-060",
+    "title": "Model allocation and request budgets are Engine-owned commitments",
+    "status": "proposed",
+    "scope": "shifter_platform",
+    "decision": "Model-required admission extends ADR-047's Engine-owned catalog and capacity seams while enforcing mandatory request, spend, token, rate and concurrency budgets. Engine persists stable generation-bound allocations and atomic integer-unit reservations before provider dispatch. Unknown outcomes retain maximum charges and cannot trigger blind retries. Proposed policy is not evidence that these runtime controls exist.",
+    "rules": [
+      {
+        "id": "ADR-060-R1",
+        "description": "Shard eligibility includes approved provider/model/protocol, region/data policy, identity, freshness and real shared quota pools. Versioned deterministic strategies persist assignments and do not multiply quota through aliases or keys. Missing required model admission fails closed independently of general compute advisory policy.",
+        "checks": []
+      },
+      {
+        "id": "ADR-060-R2",
+        "description": "Reserve every applicable parent/range/grant/quota budget atomically before dispatch using integer money and bounded billable-feature costs. Price validity, rate windows, ordered locking and database constraints are explicit. Unknown usage, timeout, disconnect and worker loss never create automatic refunds or replay; settle once and retain reconciliation obligations. Real PostgreSQL and provider-boundary tests must prove the runtime behavior.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/681",
+      "docs/adr/060-model-access-allocation-accounting.md",
+      "docs/architecture/model-access/architecture.md",
+      "docs/architecture/model-access/delivery.md"
+    ]
+  },
+  {
+    "id": "ADR-061",
+    "title": "Model access is released through revocation and operating evidence",
+    "status": "proposed",
+    "scope": "shifter_platform",
+    "decision": "Model-access release requires measured grant revocation, conservative provider outcome handling, body-free audit, bounded operation, migration and restore evidence. Engine invalidation blocks new admissions; short dispatch/continuation leases fence broker transport. Provider cancellation and token revocation remain separately measured external behavior. GCP cohort qualification and future provider qualifications are distinct.",
+    "rules": [
+      {
+        "id": "ADR-061-R1",
+        "description": "Pause/reset/destroy/quarantine/authority loss/expiry revoke the old grant epoch; resume requires new admission. Dispatch and continuation leases target transport fencing within ten seconds, without claiming provider execution cancellation. Cleanup uses original persisted references and cannot affect a successor generation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-061-R2",
+        "description": "Prompts, responses, tool arguments/results, credentials and raw provider errors are excluded from telemetry and evidence. A restricted expiring keyed intent fingerprint is permitted only for retry conflict detection, never audit export. Decision/accounting audit commits before dispatch. Provider retention and data-region policy are reviewed independently.",
+        "checks": []
+      },
+      {
+        "id": "ADR-061-R3",
+        "description": "Rollout proceeds through disabled installation, synthetic validation, canary, bounded cohort and legacy drain. Rollback disables or drains model access instead of restoring guest provider keys. Restore starts admission disabled with a fresh deployment epoch and conservative budget reconciliation. Qualification records exact artifacts, positive/negative IAM/network probes, load, failure, revocation, cleanup and restore evidence; structural checks are not runtime proof.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/681",
+      "docs/adr/061-model-access-operations-qualification.md",
+      "docs/ops/model-access.md",
+      "docs/architecture/model-access/security.md",
+      "docs/architecture/model-access/delivery.md"
+    ]
   }
 ]

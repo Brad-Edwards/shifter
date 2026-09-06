@@ -3,6 +3,13 @@
   "docs_root": "docs",
   "features": [
     {
+      "id": "range-model-access",
+      "title": "Per-range model access (planned; PLAT-202 design)",
+      "requirement": "PLAT-202",
+      "user_docs": ["features/model-access.md"],
+      "technical_docs": ["architecture/model-access/architecture.md", "ops/model-access.md"]
+    },
+    {
       "id": "agents",
       "title": "Agents",
       "requirement": "GEN-001",
