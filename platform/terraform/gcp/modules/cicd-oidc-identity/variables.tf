@@ -83,7 +83,12 @@ variable "build_roles" {
     "roles/identityplatform.admin",          # Identity Platform config
     "roles/monitoring.editor",               # messaging alarms / notification channels
     "roles/iam.serviceAccountAdmin",         # create the workload service accounts
-    "roles/iam.serviceAccountUser",          # attach workload SAs to resources
     "roles/resourcemanager.projectIamAdmin", # bind workload SA roles at the project
+    # serviceAccountUser (actAs) is deliberately NOT granted project-wide: it trips
+    # CKV_GCP_41 and would let the SA run VMs as any identity in the project. The
+    # only actAs the platform apply needs is on the GKE node SA (to create the node
+    # pools); that is granted resource-scoped in modules/portal/iam
+    # (deploy_act_as_gke_nodes), mirroring this module's self-scoped
+    # packer_build_act_as_self.
   ]
 }

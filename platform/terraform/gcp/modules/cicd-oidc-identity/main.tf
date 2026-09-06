@@ -122,7 +122,7 @@ resource "google_service_account_iam_member" "packer_build_token_creator_self" {
 
 resource "google_project_iam_member" "packer_build_roles" {
   # checkov:skip=CKV_GCP_42:The shared CI build+deploy SA manages all of platform-core (GKE, Cloud SQL, Redis, Pub/Sub, Secret Manager, KMS, networking, IAM), which requires admin-level predefined roles; this is the scoped enumeration replacing the rehearsal-era roles/owner grant (#407, #615). One dedicated, federation-only SA.
-  # checkov:skip=CKV_GCP_49:iam.serviceAccountUser/serviceAccountTokenCreator are required for the deploy to attach the workload SAs it creates and for `gcloud compute images export` to impersonate the Cloud Build agent (#407, #615).
+  # checkov:skip=CKV_GCP_49:Provisioning the platform inherently needs SA-management/impersonation roles at project scope - serviceAccountAdmin to create the workload SAs (no narrower role creates SAs) and cloudbuild.builds.editor for `gcloud compute images export` (runs as the Cloud Build agent). serviceAccountUser/serviceAccountTokenCreator are NOT granted project-wide - they stay resource-scoped (packer_build_act_as_self/token_creator_self on this SA; deploy_act_as_gke_nodes on the node SA), so CKV_GCP_41 does not fire (#407, #615).
   for_each = toset(var.build_roles)
 
   project = var.project_id
