@@ -2125,7 +2125,10 @@ _GCE_RANGE_IMAGE_VARS: tuple[str, ...] = (
 # GitHub Actions -> GCP federation identity for the CI image-bake and deploy
 # pipeline (fresh-GCP-order step 2). Not used by the local operator-ADC bootstrap.
 _GCE_RUNNER_WIF_VARS: tuple[str, ...] = (
-    "GCP_SERVICE_ACCOUNT",
+    "GCP_PACKER_BUILD_SERVICE_ACCOUNT",
+    "GCP_PACKER_VALIDATE_SERVICE_ACCOUNT",
+    "GCP_DEPLOY_SERVICE_ACCOUNT",
+    "GCP_DESTROY_SERVICE_ACCOUNT",
     "GCP_WORKLOAD_IDENTITY_PROVIDER",
 )
 

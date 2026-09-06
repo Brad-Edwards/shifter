@@ -84,7 +84,7 @@ variable "deploy_service_account_email" {
   type        = string
   default     = ""
   description = <<-EOT
-    Email of the CI deploy service account (the WIF-federated build+deploy SA in
+    Email of the CI deploy service account (the purpose-scoped WIF SA in
     global/cicd-oidc) that runs `terraform apply` for this stack. Granted
     resource-scoped roles/iam.serviceAccountUser on the GKE node SA so it can
     create the node pools that run as that node SA (actAs). Scoped, not project-

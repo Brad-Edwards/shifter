@@ -61,7 +61,11 @@ OIDC federation per cloud. No long-lived credentials.
 |--------|---------|
 | `AWS_ROLE_ARN` | AWS prod IAM role |
 | `AWS_ROLE_ARN_DEV` | AWS dev IAM role |
-| `GCP_SERVICE_ACCOUNT` | GCP service account email |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | Purpose-scoped GCP deploy service account email |
+| `GCP_DESTROY_SERVICE_ACCOUNT` | Purpose-scoped GCP destroy service account email |
+| `GCP_PACKER_BUILD_SERVICE_ACCOUNT` | Purpose-scoped GCE image build service account email |
+| `GCP_PACKER_VALIDATE_SERVICE_ACCOUNT` | Purpose-scoped GCE image validation service account email |
+| `GCP_PACKER_PROMOTE_SERVICE_ACCOUNT` | Purpose-scoped GCE image promotion service account email |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | GCP Workload Identity Federation provider |
 
 AWS roles defined in `platform/terraform/global/iam/github-oidc.tf`. GCP WIF configured in the GCP project.

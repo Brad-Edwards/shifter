@@ -18,7 +18,7 @@ GCP_CI_ENV = {
     "GCP_PROJECT_ID": "prod-ksqdkj",
     "GCP_PUBLIC_HOSTNAME": "gcp.example.test",
     "GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN": "example.test",
-    "GCP_SERVICE_ACCOUNT": "deploy@prod-ksqdkj.iam.gserviceaccount.com",
+    "GCP_DEPLOY_SERVICE_ACCOUNT": "deploy@prod-ksqdkj.iam.gserviceaccount.com",
     "GCP_WORKLOAD_IDENTITY_PROVIDER": "projects/1/locations/global/workloadIdentityPools/p/providers/gh",
     "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@example.test",
     "GCP_BOOTSTRAP_ADMIN_PASSWORD": "Galvatron7!!!",
@@ -80,6 +80,14 @@ class TestRunPreflightGcpCi:
         report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
         assert not report.ok
         assert any("GCP_PROJECT_ID" in r.message and r.status is Status.FAIL for r in report.results)
+
+    def test_shared_gcp_service_account_does_not_satisfy_deploy_preflight(self):
+        env = dict(GCP_CI_ENV)
+        del env["GCP_DEPLOY_SERVICE_ACCOUNT"]
+        env["GCP_SERVICE_ACCOUNT"] = "legacy@prod-ksqdkj.iam.gserviceaccount.com"
+        report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
+        assert not report.ok
+        assert any("GCP_DEPLOY_SERVICE_ACCOUNT" in check.message for check in report.failures)
 
     def test_missing_operator_creds_fail_without_optout(self):
         env = dict(GCP_CI_ENV)
@@ -234,11 +242,16 @@ class TestRunPreflightLocal:
     def test_gcp_local_flags_insecure_inputs(self, tmp_path):
         tf_dir = tmp_path / "platform" / "terraform" / "gcp" / "environments" / "gcp-dev"
         tf_dir.mkdir(parents=True)
-        (tf_dir / "terraform.tfvars").write_text("enable_managed_tls = false\n")
+        (tf_dir / "terraform.tfvars").write_text(
+            'public_hostname = "gcp.example.test"\n'
+            "enable_managed_tls = false\n"
+            'gke_master_authorized_cidrs = ["10.42.0.0/16"]\n'
+        )
         report = preflight.run_preflight(
             Cloud.GCP, Mode.LOCAL, "gcp-dev", env={}, repo_root=tmp_path, tool_exists=lambda n: "/bin/x"
         )
         assert not report.ok
+        assert any("managed TLS" in result.message for result in report.failures)
 
 
 # --- Report rendering ---------------------------------------------------------

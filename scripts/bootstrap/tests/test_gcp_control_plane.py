@@ -535,6 +535,19 @@ gke_master_authorized_cidrs = []
         with pytest.raises(ValueError, match="public hostname"):
             deploy.validate_gcp_control_plane_security_inputs(tf_dir)
 
+    def test_validate_security_inputs_rejects_disabled_managed_tls(self, tmp_path):
+        """A valid hostname must not hide an explicitly disabled managed TLS setting."""
+        tf_dir = tmp_path / "gcp-dev"
+        tf_dir.mkdir()
+        (tf_dir / "terraform.tfvars").write_text(
+            'public_hostname = "portal.example.test"\n'
+            "enable_managed_tls = false\n"
+            'gke_master_authorized_cidrs = ["10.42.0.0/16"]\n'
+        )
+
+        with pytest.raises(ValueError, match="managed TLS"):
+            deploy.validate_gcp_control_plane_security_inputs(tf_dir)
+
     @staticmethod
     def _write_secure_tfvars(tf_dir, cidrs):
         """Write a terraform.tfvars whose hostname/TLS pass, so a test isolates the CIDR allowlist check."""
@@ -1165,6 +1178,49 @@ class TestGdcControlPlaneImages:
             "--short=7",
             "HEAD",
         ]
+
+    def test_resolves_control_plane_image_tags_to_exact_digests(self):
+        outputs = _sample_gcp_control_plane_outputs()
+        digest = "sha256:" + ("a" * 64)
+        completed = subprocess.CompletedProcess(
+            ["gcloud"],
+            0,
+            stdout=f"{digest}\n",
+            stderr="",
+        )
+
+        with patch("subprocess.run", return_value=completed) as mock_run:
+            identities = gcp_control_plane.resolve_gcp_control_plane_image_identities(
+                outputs,
+                image_tag=PINNED_IMAGE_TAG,
+            )
+
+        roots = outputs["artifact_registry_image_roots"]["value"]
+        assert identities == {
+            "platform": f"{roots['portal']}@{digest}",
+            "guacd": f"{roots['guacd']}@{digest}",
+            "guacamoleClient": f"{roots['guacamole-client']}@{digest}",
+        }
+        assert mock_run.call_count == 3
+
+    @pytest.mark.parametrize("digest", ["", "latest", "sha256:abc"])
+    def test_rejects_missing_or_malformed_control_plane_image_digest(self, digest):
+        outputs = _sample_gcp_control_plane_outputs()
+        completed = subprocess.CompletedProcess(
+            ["gcloud"],
+            0,
+            stdout=f"{digest}\n",
+            stderr="",
+        )
+
+        with (
+            patch("subprocess.run", return_value=completed),
+            pytest.raises(RuntimeError, match="exact digest"),
+        ):
+            gcp_control_plane.resolve_gcp_control_plane_image_identities(
+                outputs,
+                image_tag=PINNED_IMAGE_TAG,
+            )
 
 
 class TestGdcControlPlaneHelmChart:
@@ -2385,7 +2441,10 @@ class TestGceRangePreconditions:
     """gdc-bootstrap gates the fresh-GCP-order range prerequisites (#1509)."""
 
     _FULL_ENV: ClassVar[dict[str, str]] = {
-        "GCP_SERVICE_ACCOUNT": "deploy@prod-x.iam.gserviceaccount.com",
+        "GCP_PACKER_BUILD_SERVICE_ACCOUNT": "build@prod-x.iam.gserviceaccount.com",
+        "GCP_PACKER_VALIDATE_SERVICE_ACCOUNT": "validate@prod-x.iam.gserviceaccount.com",
+        "GCP_DEPLOY_SERVICE_ACCOUNT": "deploy@prod-x.iam.gserviceaccount.com",
+        "GCP_DESTROY_SERVICE_ACCOUNT": "destroy@prod-x.iam.gserviceaccount.com",
         "GCP_WORKLOAD_IDENTITY_PROVIDER": "projects/1/locations/global/workloadIdentityPools/p/providers/gh",
         "RANGE_NETWORK_ZONE": "us-central1-a",
         "GCP_RANGE_LINUX_IMAGE": "projects/prod-x/global/images/family/shifter-ubuntu",
@@ -2426,9 +2485,9 @@ class TestGceRangePreconditions:
         )
 
     def test_missing_wif_is_warning_only(self, capsys):
-        env = {k: v for k, v in self._FULL_ENV.items() if k not in ("GCP_SERVICE_ACCOUNT",)}
+        env = {k: v for k, v in self._FULL_ENV.items() if k not in ("GCP_PACKER_VALIDATE_SERVICE_ACCOUNT",)}
         gcp_control_plane.check_gce_range_preconditions(self._config(), env=env, image_exists=lambda *_: True)
-        assert "GCP_SERVICE_ACCOUNT" in capsys.readouterr().out
+        assert "GCP_PACKER_VALIDATE_SERVICE_ACCOUNT" in capsys.readouterr().out
 
     def test_image_exists_checked_in_range_cell_project_override(self):
         env = dict(self._FULL_ENV) | {"GCP_RANGE_CELL_PROJECT_ID": "range-proj"}

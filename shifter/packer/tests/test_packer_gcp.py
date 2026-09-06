@@ -254,37 +254,102 @@ class TestGcpPromotionEvidenceBinding:
 
     def test_workflow_downloads_and_verifies_validation_evidence(self, promote):
         assert "actions: read" in promote
-        assert "gh run download" in promote
+        assert "actions/artifacts/${VALIDATED_ARTIFACT_ID}/zip" in promote
+        assert "gh run download" not in promote
         assert "verify-promotion-evidence.sh" in promote
+
+    def test_validation_publishes_versioned_image_id_and_artifact_id_evidence(self):
+        validate = (WORKFLOWS_DIR / "packer-gcp-validate.yml").read_text()
+        assert '"schema_version": 1' in validate
+        assert "candidate_image_id:" in validate
+        assert "validation_run_attempt:" in validate
+        assert "artifact-id" in validate
+        assert "validated-artifact-id" in validate
+        assert "validated-image-id" in validate
+
+    def test_evidence_timestamp_is_not_published_as_an_invalid_gcp_label(self):
+        validate = (WORKFLOWS_DIR / "packer-gcp-validate.yml").read_text()
+        assert "validated_at_utc: $validated_at_utc" in validate
+        assert "validated-at=${VALIDATED_AT}" not in validate
+
+    def test_promotion_commits_family_only_after_source_and_ready_checks(self, promote):
+        create = promote.index('gcloud compute images create "${NEW_PROD_IMAGE}"')
+        ready = promote.index('NEW_STATUS="$(gcloud compute images describe')
+        source = promote.index("value(sourceImageId)")
+        family = promote.index('gcloud compute images update "${NEW_PROD_IMAGE}"')
+        assert "--family=" not in promote[create:ready]
+        assert create < ready < source < family
+
+    def test_promotion_serializes_channel_updates_and_validates_image_name(self, promote):
+        assert "group: gcp-image-promotion-prod" in promote
+        assert "cancel-in-progress: false" in promote
+        assert "Source image name must be a valid GCE image resource name" in promote
 
     def test_verifier_script_exists(self):
         assert (GCP_SCRIPTS_DIR / "validate" / "verify-promotion-evidence.sh").exists()
 
-    def _run_verifier(self, tmp_path, *, evidence_updates=None, run_updates=None):
+    def _run_verifier(
+        self,
+        tmp_path,
+        *,
+        evidence_updates=None,
+        run_updates=None,
+        artifact_updates=None,
+        omit_file=None,
+        unset_env=None,
+        env_updates=None,
+    ):
         evidence = {
+            "schema_version": 1,
+            "repository": "Brad-Edwards/shifter",
+            "workflow": ".github/workflows/packer-gcp-validate.yml",
+            "source_ref": "refs/heads/dev",
             "candidate_image": "shifter-polaris-vm-123",
+            "candidate_image_id": "987654321",
             "project": "dev-project",
+            "environment": "dev",
             "image_family": "shifter-polaris-vm",
             "image_type": "polaris-vm",
             "source_revision": "a" * 40,
             "validation_run": "12345",
+            "validation_run_attempt": 2,
+            "validated_at_utc": "20260906T120000",
+            "phases": ["first_boot_health", "reboot_health"],
             "result": "passed",
         }
         run = {
             "id": 12345,
+            "run_attempt": 2,
             "name": "Packer GCE Image Validate",
             "path": ".github/workflows/packer-gcp-validate.yml",
             "event": "workflow_dispatch",
             "head_branch": "dev",
             "head_sha": "a" * 40,
             "conclusion": "success",
+            "repository": {"full_name": "Brad-Edwards/shifter"},
+        }
+        artifact = {
+            "id": 67890,
+            "name": "polaris-vm-gce-validation-evidence",
+            "expired": False,
+            "workflow_run": {"id": 12345},
         }
         evidence.update(evidence_updates or {})
         run.update(run_updates or {})
+        artifact.update(artifact_updates or {})
         evidence_file = tmp_path / "validation-evidence.json"
         run_file = tmp_path / "validation-run.json"
+        artifact_file = tmp_path / "validation-artifact.json"
         evidence_file.write_text(json.dumps(evidence))
         run_file.write_text(json.dumps(run))
+        artifact_file.write_text(json.dumps(artifact))
+        files = {
+            "evidence": evidence_file,
+            "run": run_file,
+            "artifact": artifact_file,
+        }
+        if omit_file is not None:
+            files[omit_file].unlink()
         env = dict(os.environ)
         env.update(
             {
@@ -292,12 +357,20 @@ class TestGcpPromotionEvidenceBinding:
                 "SRC_PROJECT": "dev-project",
                 "IMAGE_FAMILY": "shifter-polaris-vm",
                 "IMAGE_TYPE": "polaris-vm",
+                "SRC_IMAGE_ID": "987654321",
                 "VALIDATED_RUN": "12345",
+                "VALIDATED_RUN_ATTEMPT": "2",
+                "VALIDATED_ARTIFACT_ID": "67890",
                 "VALIDATED_REVISION": "a" * 40,
+                "EXPECTED_REPOSITORY": "Brad-Edwards/shifter",
                 "EVIDENCE_FILE": str(evidence_file),
                 "RUN_FILE": str(run_file),
+                "ARTIFACT_FILE": str(artifact_file),
             }
         )
+        env.update(env_updates or {})
+        if unset_env is not None:
+            env.pop(unset_env, None)
         bash_path = shutil.which("bash")
         assert bash_path is not None
         return subprocess.run(  # noqa: S603
@@ -317,6 +390,20 @@ class TestGcpPromotionEvidenceBinding:
             ({"candidate_image": "other-image"}, None),
             ({"project": "other-project"}, None),
             ({"result": "failed"}, None),
+            ({"schema_version": 2}, None),
+            ({"candidate_image_id": "123"}, None),
+            ({"validation_run_attempt": 1}, None),
+            ({"source_ref": "refs/heads/feature"}, None),
+            ({"environment": "proof"}, None),
+            ({"image_family": "other-family"}, None),
+            ({"image_type": "other-type"}, None),
+            ({"phases": ["first_boot_health"]}, None),
+            ({"validated_at_utc": "2026-09-06T12:00:00Z"}, None),
+            ({"workflow": ".github/workflows/other.yml"}, None),
+            ({"repository": "other/repository"}, None),
+            (None, {"id": 99999}),
+            (None, {"run_attempt": 3}),
+            (None, {"name": "Other workflow"}),
             (None, {"head_branch": "feature"}),
             (None, {"head_sha": "b" * 40}),
             (None, {"conclusion": "failure"}),
@@ -326,6 +413,112 @@ class TestGcpPromotionEvidenceBinding:
     def test_verifier_rejects_mismatched_or_untrusted_evidence(self, tmp_path, evidence_updates, run_updates):
         result = self._run_verifier(tmp_path, evidence_updates=evidence_updates, run_updates=run_updates)
         assert result.returncode != 0
+
+    @pytest.mark.parametrize(
+        "artifact_updates",
+        [
+            {"id": 99999},
+            {"name": "other-evidence"},
+            {"expired": True},
+            {"workflow_run": {"id": 99999}},
+        ],
+    )
+    def test_verifier_rejects_wrong_or_expired_artifact(self, tmp_path, artifact_updates):
+        result = self._run_verifier(tmp_path, artifact_updates=artifact_updates)
+        assert result.returncode != 0
+
+    @pytest.mark.parametrize("omit_file", ["evidence", "run", "artifact"])
+    def test_verifier_rejects_missing_input_files(self, tmp_path, omit_file):
+        result = self._run_verifier(tmp_path, omit_file=omit_file)
+        assert result.returncode != 0
+
+    def test_verifier_rejects_unset_required_environment_value(self, tmp_path):
+        result = self._run_verifier(tmp_path, unset_env="SRC_IMAGE")
+        assert result.returncode != 0
+        assert "SRC_IMAGE is required" in result.stderr
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            ("SRC_IMAGE_ID", "not-numeric"),
+            ("VALIDATED_RUN", "run-123"),
+            ("VALIDATED_RUN_ATTEMPT", "attempt-2"),
+            ("VALIDATED_ARTIFACT_ID", "artifact-67890"),
+            ("VALIDATED_REVISION", "ABC123"),
+        ],
+    )
+    def test_verifier_rejects_malformed_required_identifiers(self, tmp_path, name, value):
+        result = self._run_verifier(tmp_path, env_updates={name: value})
+        assert result.returncode != 0
+
+
+class TestGcpPurposeIdentityWorkflows:
+    """Every credentialed GCP caller selects one literal purpose identity."""
+
+    @pytest.mark.parametrize(
+        ("workflow_name", "environment_marker", "secret_name"),
+        [
+            ("packer-gcp.yml", "gcp-build-", "GCP_PACKER_BUILD_SERVICE_ACCOUNT"),
+            ("packer-gcp-validate.yml", "gcp-validate-", "GCP_PACKER_VALIDATE_SERVICE_ACCOUNT"),
+            ("packer-gcp-promote.yml", "gcp-promote-prod", "GCP_PACKER_PROMOTE_SERVICE_ACCOUNT"),
+            ("gcp-dev-destroy.yml", "gcp-dev-destroy", "GCP_DESTROY_SERVICE_ACCOUNT"),
+        ],
+    )
+    def test_direct_workflow_uses_purpose_environment_and_secret(self, workflow_name, environment_marker, secret_name):
+        workflow = (WORKFLOWS_DIR / workflow_name).read_text()
+        assert environment_marker in workflow
+        assert secret_name in workflow
+        assert "secrets.GCP_SERVICE_ACCOUNT" not in workflow
+
+    def test_reusable_deploy_and_caller_use_deploy_identity(self):
+        reusable = (WORKFLOWS_DIR / "_gcp-dev.yml").read_text()
+        caller = (WORKFLOWS_DIR / "deploy.yml").read_text()
+        for workflow in (reusable, caller):
+            assert "GCP_DEPLOY_SERVICE_ACCOUNT" in workflow
+            assert "GCP_SERVICE_ACCOUNT" not in workflow
+
+    def test_builder_has_no_selectable_guest_identity_fallback(self):
+        build = (WORKFLOWS_DIR / "packer-gcp.yml").read_text()
+        assert "GCP_PACKER_SERVICE_ACCOUNT" not in build
+        assert "GCP_SERVICE_ACCOUNT" not in build
+
+    def test_destroy_rejects_unprotected_ref_before_auth(self):
+        destroy = (WORKFLOWS_DIR / "gcp-dev-destroy.yml").read_text()
+        guard = destroy.index("Reject non-protected dispatch refs")
+        auth = destroy.index("google-github-actions/auth@")
+        assert "refs/heads/dev|refs/heads/main" in destroy
+        assert guard < auth
+
+    def test_identity_split_preserves_existing_state_addresses(self):
+        module = (REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf").read_text()
+        assert 'resource "google_iam_workload_identity_pool_provider" "github"' in module
+        assert 'resource "google_service_account" "packer_build"' in module
+        packer_block = module.split('resource "google_service_account" "packer_build"', 1)[1].split("}\n", 1)[0]
+        assert re.search(r"^\s*count\s*=", packer_block, re.MULTILINE) is None
+        assert "github_gcp_dev" not in module
+
+    def test_no_sa_validator_has_dedicated_iap_firewall_target(self):
+        workflow = (WORKFLOWS_DIR / "packer-gcp-validate.yml").read_text()
+        infrastructure = (REPO_ROOT / "platform/terraform/gcp/modules/packer-build-infra/main.tf").read_text()
+        assert "--no-service-account --no-scopes" in workflow
+        assert "--tags=shifter-validation" in workflow
+        assert 'resource "google_compute_firewall" "validation_iap_ingress"' in infrastructure
+        assert "target_tags   = [var.validation_network_tag]" in infrastructure
+        assert 'source_ranges = ["35.235.240.0/20"]' in infrastructure
+
+    def test_bucket_access_is_terraform_owned(self):
+        identity = (REPO_ROOT / "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf").read_text()
+        deploy = (WORKFLOWS_DIR / "_gcp-dev.yml").read_text()
+        assert 'resource "google_storage_bucket_iam_member" "packer_build_reader"' in identity
+        assert 'resource "google_storage_bucket_iam_member" "deploy_state_object_admin"' in identity
+        assert 'resource "google_storage_bucket_iam_member" "destroy_state_object_admin"' in identity
+        assert '--member="serviceAccount:${GCP_DEPLOY_SERVICE_ACCOUNT}"' not in deploy
+
+    def test_validator_checks_free_form_image_name_before_candidate_lookup(self):
+        validate = (WORKFLOWS_DIR / "packer-gcp-validate.yml").read_text()
+        syntax_check = validate.index("Candidate image name must be a valid GCE image resource name")
+        describe = validate.index('gcloud compute images describe "${CANDIDATE}"')
+        assert syntax_check < describe
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")

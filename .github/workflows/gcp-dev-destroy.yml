@@ -34,17 +34,17 @@ jobs:
     # root, so this platform destroy never removes the runner it runs on.
     name: Destroy (gcp-dev)
     runs-on: gcp-dev
-    # The GCP deploy secrets (GCP_SERVICE_ACCOUNT / GCP_WORKLOAD_IDENTITY_PROVIDER)
-    # are scoped to the gcp-dev GitHub Environment; without this the destroy job
+    # The GCP destroy secrets are scoped to the gcp-dev-destroy Environment;
+    # without this the destroy job
     # reads them as empty repo-level secrets and fails auth before any teardown.
-    environment: gcp-dev
+    environment: gcp-dev-destroy
     permissions:
       contents: read
       id-token: write
     env:
       TF_DIR: platform/terraform/gcp/environments/gcp-dev
       TF_BACKEND_PREFIX: shifter/gcp-dev/platform-core
-      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      GCP_DESTROY_SERVICE_ACCOUNT: ${{ secrets.GCP_DESTROY_SERVICE_ACCOUNT }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       # Resource-address SUFFIXES matched against `terraform state list`, not full
       # addresses. These resources live in nested submodules
@@ -64,14 +64,24 @@ jobs:
             exit 1
           fi
 
+      - name: Reject non-protected dispatch refs
+        run: |
+          case "${GITHUB_REF}" in
+            refs/heads/dev|refs/heads/main) ;;
+            *)
+              echo "::error::gcp-dev-destroy must run from dev or main; got '${GITHUB_REF}'."
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
 
       - name: Ensure GCP auth is configured
         run: |
-          if [ -z "${GCP_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ]; then
-            echo "::error::GCP_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured."
+          if [ -z "${GCP_DESTROY_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ]; then
+            echo "::error::GCP_DESTROY_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured."
             exit 1
           fi
 
@@ -79,7 +89,7 @@ jobs:
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+          service_account: ${{ env.GCP_DESTROY_SERVICE_ACCOUNT }}
           token_format: access_token
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db

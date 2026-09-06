@@ -60,7 +60,7 @@ jobs:
   validate:
     name: Validate ${{ inputs.image_type }} GCE image in ${{ inputs.environment }}
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: gcp-validate-${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
@@ -95,12 +95,12 @@ jobs:
 
       - name: Ensure GCP auth is configured
         env:
-          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GCP_PACKER_VALIDATE_SERVICE_ACCOUNT: ${{ secrets.GCP_PACKER_VALIDATE_SERVICE_ACCOUNT }}
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           missing=""
-          [ -z "${GCP_SERVICE_ACCOUNT}" ] && missing="${missing} GCP_SERVICE_ACCOUNT"
+          [ -z "${GCP_PACKER_VALIDATE_SERVICE_ACCOUNT}" ] && missing="${missing} GCP_PACKER_VALIDATE_SERVICE_ACCOUNT"
           [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ] && missing="${missing} GCP_WORKLOAD_IDENTITY_PROVIDER"
           [ -z "${GCP_PROJECT_ID}" ] && missing="${missing} GCP_PROJECT_ID"
           if [ -n "${missing}" ]; then
@@ -112,7 +112,7 @@ jobs:
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          service_account: ${{ secrets.GCP_PACKER_VALIDATE_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:
@@ -126,6 +126,11 @@ jobs:
           # The image family is the deployment channel; the exact image is the
           # validation/promotion unit. Derive the family from the image type
           # (dc-prebaked is purpose-scoped: shifter-<profile>-dc).
+          if [ "${IMAGE_TYPE}" = "dc-prebaked" ] \
+            && ! printf '%s' "${DC_PROFILE}" | grep -qE '^[a-z0-9][a-z0-9-]*$'; then
+            echo "::error::dc_profile '${DC_PROFILE}' is not a valid profile slug."
+            exit 1
+          fi
           case "${IMAGE_TYPE}" in
             dc-prebaked) FAMILY="shifter-${DC_PROFILE}-dc" ;;
             *)           FAMILY="shifter-${IMAGE_TYPE}" ;;
@@ -142,9 +147,20 @@ jobs:
             echo "::error::No candidate image found (image_type=${IMAGE_TYPE}, family=${FAMILY}). Build it first."
             exit 1
           fi
-          # Confirm the pinned candidate exists in this project and read its family.
+          if ! printf '%s' "${CANDIDATE}" | grep -qE '^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$'; then
+            echo "::error::Candidate image name must be a valid GCE image resource name."
+            exit 1
+          fi
+          # Confirm the pinned candidate exists and bind its server-assigned
+          # numeric ID. Names can be reused after deletion; IDs cannot.
           IMG_FAMILY="$(gcloud compute images describe "${CANDIDATE}" \
             --project="${GCP_PROJECT_ID}" --format='value(family)')"
+          CANDIDATE_IMAGE_ID="$(gcloud compute images describe "${CANDIDATE}" \
+            --project="${GCP_PROJECT_ID}" --format='value(id)')"
+          if ! printf '%s' "${CANDIDATE_IMAGE_ID}" | grep -qE '^[0-9]+$'; then
+            echo "::error::Candidate ${CANDIDATE} has no valid server-assigned numeric image ID."
+            exit 1
+          fi
           # Bind the candidate to the selected profile: the image's own family
           # MUST equal the family for the requested image_type/dc_profile. Without
           # this a caller could validate a sensitive-family image (e.g. a
@@ -157,6 +173,7 @@ jobs:
           echo "Validating candidate image: ${CANDIDATE} (family ${IMG_FAMILY})"
           {
             echo "CANDIDATE=${CANDIDATE}"
+            echo "CANDIDATE_IMAGE_ID=${CANDIDATE_IMAGE_ID}"
             echo "IMAGE_FAMILY=${IMG_FAMILY}"
             echo "VALIDATION_VM=shifter-validate-${IMAGE_TYPE}-${GITHUB_RUN_ID}"
           } >> "$GITHUB_ENV"
@@ -193,10 +210,6 @@ jobs:
             # dc-profiles/ directory is the allowlist). Reject an unknown profile
             # or one without a domain, and validate the profile as a strict slug
             # so it can never traverse the path (#1343 codex Sec F2 + preflight).
-            if ! printf '%s' "${DC_PROFILE}" | grep -qE '^[a-z0-9][a-z0-9-]*$'; then
-              echo "::error::dc_profile '${DC_PROFILE}' is not a valid profile slug."
-              exit 1
-            fi
             PROFILE_FILE="shifter/packer/gcp/dc-profiles/${DC_PROFILE}.pkrvars.hcl"
             if [ ! -f "${PROFILE_FILE}" ]; then
               echo "::error::Unknown dc_profile '${DC_PROFILE}': no checked-in ${PROFILE_FILE}."
@@ -237,6 +250,7 @@ jobs:
             --machine-type="${MACHINE_TYPE}" \
             --no-address \
             --subnet="${GCP_PACKER_SUBNETWORK}" \
+            --tags=shifter-validation \
             --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
             --no-service-account --no-scopes \
             --metadata="${META}" \
@@ -294,48 +308,79 @@ jobs:
             EXPECTED_DOMAIN="${EXPECTED_DOMAIN}" SSH_KEY=/tmp/validator_key \
             bash shifter/packer/gcp/scripts/validate/gather-evidence.sh
 
-      - name: Label the validated candidate and write evidence
+      - name: Write versioned validation evidence
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           set -euo pipefail
-          VALIDATED_AT="$(date -u +%Y%m%d%H%M%S)"
-          # Bind validation evidence to the EXACT candidate image via a non-secret
-          # label; promotion verifies validated=passed before copying it.
-          gcloud compute images update "${CANDIDATE}" \
-            --project="${GCP_PROJECT_ID}" \
-            --update-labels="validated=passed,validated-run=${GITHUB_RUN_ID},validated-revision=${GITHUB_SHA},validated-at=${VALIDATED_AT}"
-          # Bounded, non-secret evidence artifact (workflow record, not app state).
-          cat > validation-evidence.json <<JSON
-          {
-            "candidate_image": "${CANDIDATE}",
-            "project": "${GCP_PROJECT_ID}",
-            "image_family": "${IMAGE_FAMILY}",
-            "image_type": "${IMAGE_TYPE}",
-            "environment": "${{ inputs.environment }}",
-            "source_revision": "${GITHUB_SHA}",
-            "validation_run": "${GITHUB_RUN_ID}",
-            "validated_at_utc": "${VALIDATED_AT}",
-            "phases": ["first_boot_health", "reboot_health"],
-            "result": "passed"
-          }
-          JSON
-          {
-            echo "## GCE Image Validation Passed"
-            echo "- **Image type:** ${IMAGE_TYPE}"
-            echo "- **Candidate:** \`${CANDIDATE}\` (family \`${IMAGE_FAMILY}\`)"
-            echo "- **Labelled:** \`validated=passed\`, run \`${GITHUB_RUN_ID}\`"
-            echo ""
-            echo "**Next step:** promote \`${CANDIDATE}\` with packer-gcp-promote.yml."
-          } >> "$GITHUB_STEP_SUMMARY"
+          VALIDATED_AT="$(date -u +%Y%m%dT%H%M%S)"
+          echo "VALIDATED_AT=${VALIDATED_AT}" >> "$GITHUB_ENV"
+          # jq owns JSON escaping and numeric typing; candidate-controlled names
+          # are never interpolated into a JSON here-document.
+          jq -n \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg workflow ".github/workflows/packer-gcp-validate.yml" \
+            --arg source_ref "${GITHUB_REF}" \
+            --arg candidate_image "${CANDIDATE}" \
+            --arg candidate_image_id "${CANDIDATE_IMAGE_ID}" \
+            --arg project "${GCP_PROJECT_ID}" \
+            --arg image_family "${IMAGE_FAMILY}" \
+            --arg image_type "${IMAGE_TYPE}" \
+            --arg environment "${{ inputs.environment }}" \
+            --arg source_revision "${GITHUB_SHA}" \
+            --argjson validation_run "${GITHUB_RUN_ID}" \
+            --argjson validation_run_attempt "${GITHUB_RUN_ATTEMPT}" \
+            --arg validated_at_utc "${VALIDATED_AT}" \
+            '{
+              "schema_version": 1,
+              repository: $repository,
+              workflow: $workflow,
+              source_ref: $source_ref,
+              candidate_image: $candidate_image,
+              candidate_image_id: $candidate_image_id,
+              project: $project,
+              image_family: $image_family,
+              image_type: $image_type,
+              environment: $environment,
+              source_revision: $source_revision,
+              validation_run: $validation_run,
+              validation_run_attempt: $validation_run_attempt,
+              validated_at_utc: $validated_at_utc,
+              phases: ["first_boot_health", "reboot_health"],
+              result: "passed"
+            }' > validation-evidence.json
 
       - name: Upload validation evidence
-        if: always()
+        id: evidence_upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.image_type }}-gce-validation-evidence
           path: validation-evidence.json
-          if-no-files-found: ignore
+          if-no-files-found: error
+
+      - name: Publish the authoritative validation outcome
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          VALIDATED_ARTIFACT_ID: ${{ steps.evidence_upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "${VALIDATED_ARTIFACT_ID}" | grep -qE '^[0-9]+$'; then
+            echo "::error::Evidence upload returned no numeric artifact ID; refusing to publish validation labels."
+            exit 1
+          fi
+          # Labels are bounded locators. Promotion authenticates the exact run,
+          # attempt, artifact, revision, and immutable image ID before copying.
+          gcloud compute images update "${CANDIDATE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --update-labels="validated=passed,validated-run=${GITHUB_RUN_ID},validated-attempt=${GITHUB_RUN_ATTEMPT},validated-artifact-id=${VALIDATED_ARTIFACT_ID},validated-image-id=${CANDIDATE_IMAGE_ID},validated-revision=${GITHUB_SHA}"
+          {
+            echo "## GCE Image Validation Passed"
+            echo "- **Image type:** ${IMAGE_TYPE}"
+            echo "- **Candidate:** \`${CANDIDATE}\` (ID \`${CANDIDATE_IMAGE_ID}\`, family \`${IMAGE_FAMILY}\`)"
+            echo "- **Evidence:** run \`${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}\`, artifact \`${VALIDATED_ARTIFACT_ID}\`"
+            echo ""
+            echo "**Next step:** promote \`${CANDIDATE}\` with packer-gcp-promote.yml."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Delete the disposable validation VM
         if: always()

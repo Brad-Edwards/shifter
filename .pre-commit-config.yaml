@@ -272,11 +272,11 @@ repos:
         language: system
         files: ^platform/terraform/gcp/modules/github-runner-network/main\.tf$
 
-      # ADR-004-R23 / issue #1690: the GCP GitHub-Actions WIF trust must pin an
+      # ADR-004-R23 / issues #1690 and #1699: GCP GitHub-Actions WIF trust pins
       # exact protected assertion.ref + literal assertion.sub allow-list (no
       # repository-only condition, no repository-wide principalSet binding, no
-      # CKV_GCP_125 waiver), and the static condition must not drift from
-      # local.federated_subjects. pass_filenames:false so the whole module is
+      # CKV_GCP_125 waiver), and purpose subjects/permissions must stay disjoint
+      # and least privilege. pass_filenames:false so the whole module is
       # scanned (the condition/binding consistency check spans main.tf).
       - id: check-tf-gcp-wif-trust
         name: GCP WIF exact-subject trust (ADR-004-R23)
