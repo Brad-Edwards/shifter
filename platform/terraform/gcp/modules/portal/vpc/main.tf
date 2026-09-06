@@ -65,6 +65,19 @@ resource "google_compute_router_nat" "nat" {
   nat_ip_allocate_option             = "MANUAL_ONLY"
   nat_ips                            = [google_compute_address.nat.self_link]
   source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+
+  # The whole platform (GKE nodes + every pod) egresses to the PUBLIC googleapis
+  # endpoints through this NAT (there is no private-googleapis DNS path in this
+  # VPC). A full rollout is a thundering herd: every pod opens gRPC connections
+  # to Secret Manager and other googleapis IPs at once, and crashloop churn holds
+  # source ports in TIME_WAIT. The default 64 static ports/VM exhaust under that
+  # burst, so connections are dropped ("tcp handshaker shutdown" / connect
+  # timeouts) and the Python pods crashloop on runtime-secret fetch. Enable
+  # dynamic port allocation so the NAT scales ports per VM up to max under load
+  # (requires endpoint-independent mapping OFF, which is the default here).
+  enable_dynamic_port_allocation = true
+  min_ports_per_vm               = 64
+  max_ports_per_vm               = 32768
 }
 
 resource "google_compute_firewall" "platform_deny_external_ssh_rdp" {

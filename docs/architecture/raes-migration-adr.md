@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted. Amended by issues #1862 on 2026-07-28 and #1580 on 2026-07-30.
+Accepted. Amended by issues #1862 on 2026-07-28, #1580 on 2026-07-30, and
+#1937 on 2026-09-06.
 
 ## Context
 
@@ -48,6 +49,10 @@ does not read them.
 ## Boundaries
 
 - Only `shared.raes` imports the module family supplied by `raes`.
+- The standalone provisioner validates and reads serialized plans as plain
+  data. Released public RAES accessors are a typed semantic and parity oracle,
+  not a reason to import the monolithic RAES distribution across that process
+  boundary and not a substitute for exact-pin wire validation.
 - The provisioner accepts only `raes_provisioning_plan`,
   `raes-provisioning-plan-v1`, and producer version `2.0.0`.
 - Package ingestion accepts only current RAES contract identities and upstream
