@@ -95,7 +95,7 @@ Dual-network design, same pattern as AWS (see [Networking](networking)).
 
 Networks are peered bidirectionally for platform-to-range connectivity.
 
-GDC deployments use custom L2 networks (VXLAN-based) for per-range guest isolation instead of VPC subnets.
+Live-fire ranges use GCE range cells (a per-range subnet with tag firewall isolation and range-owned NAT) as the approved containment boundary per ADR-030 and ADR-039, with the containment model in ADR-056. GDC custom L2 networks (VXLAN-based) for per-range guest isolation are a dev and operator-validation path only, not a live-fire containment boundary.
 
 ## Deployment Path
 
