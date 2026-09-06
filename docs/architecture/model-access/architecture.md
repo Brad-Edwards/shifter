@@ -175,6 +175,7 @@ new range execution generation.
 | Policy snapshot | Version, digest, bounded effective policy and price revisions, scenario artifact binding and actor/source references. Immutable; secrets are references only. |
 | Allocation | Deployment/range/existing generation, draw and event/owner scope, full alias-to-shard map, original identity/resource references, policy/assessment revisions, deadline and state. One live allocation per bound generation/capability set. |
 | Grant | Random public ID, allocation, subject/workload, current authorization revision, epoch, state, hard expiry; hashed enrollment/access/refresh credentials and their expiries. Tokens and refresh secrets are never stored in clear text. |
+| Authorization projection | Minimal Engine-owned allowed/revoked state and monotonic revision for the upstream subject/event/owner binding. Upstream owning services publish it transactionally through the existing downward CTF-to-CMS-to-Engine service path; it is not a copy of their domain tables. Missing or stale projection denies admission. |
 | Budget account | Scope and explicit UTC window, currency, immutable price basis, limit, spent, reserved, requests and active leases. Integer money/token units and database nonnegative/ceiling constraints. Shared provider pools have their own dimension/unit. |
 | Request reservation | Broker-generated request UUID, scoped optional client retry key, short-lived keyed intent fingerprint, grant epoch, alias/shard, reservation vector, dispatch state, lease/deadline, provider request reference, usage, settlement and uncertainty reason. Unique retry key within the grant and operation. |
 | Reconciliation obligation | Request/allocation reference, original provider/secret reference, next attempt, bounded outcome and last observation. Uses the existing Engine worker/reconciliation scheduling, not another workflow service. |
@@ -340,6 +341,14 @@ outbox delivery alone is too late for revocation. No direct cross-layer model
 imports are allowed. Invocation admission validates current owner/service
 authorization revisions and rejects unresolved mappings. ADR-054's current
 event-native authority applies until #2048's workspace migration is complete.
+Engine must not import or call back into CTF or CMS, even through a service
+module. It checks its own current authorization projection and range state;
+upstream owners update/invalidate that projection through their permitted
+downward bridges in the same transaction as the authority mutation. The
+implementation must enumerate every supported mutation path and test that
+none can commit a revoked authority while leaving its projection active.
+An unintegrated authority path cannot issue a model grant. Broker invocation
+does not create a new CTF-to-Engine reverse dependency.
 
 | Event | Required model-access transition |
 | --- | --- |
