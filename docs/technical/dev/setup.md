@@ -465,7 +465,7 @@ If empty, push a container first.
 
 ## GCP Deployment
 
-GCP uses a single Terraform module (`platform/terraform/gcp/modules/platform-core/`) plus a Helm-packaged control plane (`platform/charts/shifter/`).
+GCP provisions with Terraform (`platform/terraform/gcp/`, rooted at `environments/gcp-dev`, whose main module is `modules/platform-core/`) and a control plane deployed either from the Helm chart `platform/charts/shifter/` (the local `gdc-bootstrap` path) or from the kustomize overlay `platform/k8s/gcp/overlays/gcp-dev/` (the CI `deploy.yml` path).
 
 ### 1. GCP Project Setup
 
@@ -504,19 +504,28 @@ For CI deploys the equivalent values come from GitHub secrets; see
 
 ### 4. Deploy
 
-GCP deployments run through CI/CD on `gcp-dev`. The bootstrap entrypoint is:
+The first clean install runs locally under your own credentials (Workload Identity
+Federation is only needed for CI). Subsequent deploys run through CI with
+`gh workflow run deploy.yml --ref gcp-dev -f environment=gcp-dev`. The local
+bootstrap entrypoint is:
 
 ```bash
-./scripts/bootstrap/deploy.py gdc-bootstrap --project-id <your-gcp-project-id> --cluster-id cluster1
+./scripts/bootstrap/deploy.py gdc-bootstrap --project-id <your-gcp-project-id> --shifter-config ./shifter.yaml
 ```
 
-That flow:
+Despite the command name, the default `--range-backend gce` deploys the GKE control
+plane and the GCE range plane and skips the GDC/ABM VM Runtime substrate. That
+substrate is built only with `--range-backend gdc`. With the default
+`--terraform-identity operator-adc`, Terraform runs under your Application Default
+Credentials, creating no service account or key. The flow:
 
-1. builds or reconciles the GDC substrate
-2. applies GCP Terraform (GKE, Cloud SQL, Memorystore, Pub/Sub, etc.)
+1. applies GCP Terraform (GKE, Cloud SQL, Memorystore, Pub/Sub, and related resources)
+2. seeds the first Identity Platform operator
 3. builds and pushes control-plane images
 4. renders secure Helm values from Terraform outputs and Secret Manager
 5. installs or upgrades the Shifter Helm release
+
+With `--range-backend gdc`, the flow first builds or reconciles the GDC substrate.
 
 ### 5. DNS and TLS
 
