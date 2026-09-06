@@ -42,7 +42,10 @@ Current mechanisms:
 - `scripts/adr_guard/adr_guard.py`: repo-native policy runner
 - `adr-registry` typed interface contracts: accepted ADRs whose closed shape is
   itself an executable invariant must retain their registered contract kind and
-  exact fields. ADR-054 uses `dedicated-customer-authority/v1` to pin the
+  exact fields. ADR-032 uses `raes-plan-accessor-boundary/v1` to pin the
+  serialized-plan ownership split, RAES-free provisioner, fail-closed access,
+  canonical naming identity, exact-pin compatibility evidence, and #2082
+  delivery boundary. ADR-054 uses `dedicated-customer-authority/v1` to pin the
   one-customer deployment claim, independent authority scopes, #2048 activation
   conditions, infrastructure owners, fail-closed outage posture, and required
   evidence classes. ADR-055 uses `accessibility-enforcement/v1` to pin the WCAG
