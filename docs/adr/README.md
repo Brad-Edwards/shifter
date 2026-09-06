@@ -9,6 +9,12 @@ This directory holds the machine-readable part of ADR enforcement.
 
 The files use JSON syntax with a `.yaml` extension so they stay human-readable while remaining parseable by the standard library.
 
+ADR-058 records the [participant-control realization design](../architecture/raes-participant-control-realization-envelope-1967.md)
+under GEN-2005. It is design policy, not a new executable interface contract.
+Existing registry, guardrail and import checks validate structure; they do not
+prove the runtime guarantees. Mechanism implementation and real-boundary
+evidence are required before support is advertised.
+
 ## Runtime Enforcement
 
 The enforcement entrypoint is:

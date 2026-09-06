@@ -3572,5 +3572,93 @@
       "platform/k8s/gcp/base/networkpolicies.yaml",
       "platform/k8s/gcp/base/validatingadmissionpolicy-provisioner-jobs.yaml"
     ]
+  },
+  {
+    "id": "ADR-058",
+    "title": "RAES participant control uses explicit review and bounded GCE resource actions",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Against accepted OpenRAE ADR-108 and participant-control-composition/rev1 at ebb70a34b8e7d1cc8964c443841ae57e12ed1014, Shifter independently selects shifter-ctf-gce-range-lifecycle version 1: capability restriction, explicit proposal-bound review and resource control for one trusted RAES participant/controller/run/episode binding and its dedicated CTF GCE range generation. Native pause/resume are admitted resource actions, not new portable effect tags or RAM-preserving suspension. Selected portable permit, deny, withhold, audit and request-review effects retain their released meanings and closed bindings. CTF owns product approval/correlation, CMS owns lifecycle and embedding, the released RAES runtime owns portable composition/history/budgets, Engine owns native operation truth, and the existing gcp-gce adapter performs fenced invocation/readback. Platform integrity and the independent ADR-056/ADR-057 limits remain out of world. GEN-2005 is DRAFT design authority; #1967 supplies no runtime, schema, manifest or conformance claim. Exact released RAES artifacts, #1968 implementation and #1969 real-boundary evidence are required before support advertisement. No LilRAE parity is implied.",
+    "rules": [
+      {
+        "id": "ADR-058-R1",
+        "description": "Only shared.raes may import and interpret the exact released RAES contracts, composition/runtime and conformance implementation. ADR-108 and PC-01 through PC-15 at accepted revision ebb70a34b8e7d1cc8964c443841ae57e12ed1014 provide design authority; accepted commits, copied DTOs, local verdicts, git dependencies and a list of upstream UIDs are not consumable releases. OpenRAE/rae #1070, #1072, #1069 and #1071 supply the required semantics, contract, runtime and conformance artifacts.",
+        "checks": [
+          "layer-imports"
+        ]
+      },
+      {
+        "id": "ADR-058-R2",
+        "description": "The declared world is the validated and admitted participant/resource world actually realized by the bound range. Shifter control-plane, tenant, management IAM/secrets/metadata, isolation, worker, provider-control, operation-transport, audit and access-broker integrity remain out of world. Classification is by ownership and admission, not a technology name: isolated scenario-modeled accounts or services do not inherit management authority. Integrity failure is failed/invalid realization, not an in-world attack or protection event. ADR-056 containment and ADR-057 transport limits remain independent.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R3",
+        "description": "The sole initial local profile is shifter-ctf-gce-range-lifecycle version 1 with mandatory capability, explicit-review and resource-budget roles named in the architecture note. Bind actual profile/mechanism/protocol/provider implementation/configuration versions and digests, exact PC-03 context K, history heads, authority, resource scope, participant/controller/run/episode, package and native generation. Resolve pure immutable inputs through released RAES composition, finite acyclic dependencies and conjunction of incumbent gates and mandatory resolved permits. Missing, unknown, unsupported, failed, weakened or abstaining mandatory slots cannot release; stale cuts require bounded re-resolution. Conflicting effect requests have no lexical winner. Scenario content cannot select code, local profiles, providers, callbacks or configuration. Native pause/resume must use released closed proposal/action mappings; they are not invented portable tags or synonyms for interrupt/shutdown.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R4",
+        "description": "Explicit approval, authorization, execution admission and audit are independent. Approval binds the exact proposal/action/target/policy/configuration and finite validity interval; preserve denial and expiry. Require current EventCapability.RANGES through resolve_event_authority, bearer-first/session authentication, CSRF and exact ctf:event:write scope, plus CMS ownership/workspace gates and strict audit for every authority source. Keep the real approver/source separate from participant.user; admin_external_audit alone does not cover owner/staff decisions. Same-qualified-actor request and explicit approval is allowed without a two-person claim. Changes to the approved content or authority require new approval. No scenario, workload, sidecar, owner substitution or audit row is approval.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R5",
+        "description": "Reuse ctf.bridges, public CMS/Engine services, exact operation reservation, ProvisionerLaunchIntent, immutable OperationInput, closed operation/result contracts, append-only OperationResultInbox, Engine-only application, shared audit and ADR-025 propagation. Native pause/resume uses resource=range and range-substrate/v1:gcp-gce, not raes-range or a second executor. Extend the locked pre-Job suppression gate and enforce the current generation/authority/worker-ownership fence at each actual cloud invocation. Job acceptance/result fencing alone is insufficient; conflicting invalidation cannot acknowledge a completed fence while an older worker can invoke. Uncertain ownership or provider state blocks blind takeover/retry. Do not grant the provisioner direct CTF model access or reuse destroy-specific provision interruption. All in-scope native entry points on an active binding must enforce or refuse; out-of-world emergency interference invalidates realization. Partial or indeterminate outcomes remain visible and require authoritative readback, not fabricated whole-range success.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R6",
+        "description": "Use the released ADR-104 P1 durable single-owner runtime with one immutable target/run per store; CMS owns out-of-world installation/lifecycle/routing through shared.raes, not a second runtime or P3 shared-store coordination. RAES atomically commits control history, provider-state transitions, effect claims and finite root lifetime/depth/effect/rule/resolution/fan-out budgets at expected heads. A narrow CTF product record owns only native approval/authorization/fence/correlation references; Engine remains native execution truth and audit remains evidence. Preserve PC-11 logical run/root/rule-revision/slot/firing-epoch identity across retries and its exact source-to-reserved-generation relationship. Native approval/audit, RAES intent and Engine reservation are separate durable boundaries with reconciliation, not cross-store/cloud two-phase commit. Never hide portable workflow state in sidecar, communication, range-config, task, operation or audit JSON, nor fabricate correlation from a latest-operation lookup.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R7",
+        "description": "Installation policy must admit finite approval/budget limits and exact provider/configuration/storage/owner identities through canonical settings/env-manifest/installation validators, renderers, runtime inventories and parity checks. This ADR adds no executable configuration or unvalidated control-profile data contract. Do not relabel provisioning-only SHIFTER_REALIZER_CONFIGURATION as control evidence. Apply independent audience/sink policy to content, decisions, reasons, approvals, receipts and audit; mandatory audit is distinct from optional experimental capture/retention/export. Keep raw rejected content, private provider state, secrets, commands and raw errors out of portable records, argv, logs, metrics, events and public errors. Preserve existing hardened GCP Job admission, launcher identity/RBAC, per-Job secret handling, structured argv, network policy, bounded errors and sanitizers. Explicit serializer unknown-member checks do not substitute for parser-level duplicate-member detection.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R8",
+        "description": "Version 1 admits only a nonempty dedicated GCE persistent-resource footprint within the trusted participant scope. Exclude Local SSD-dependent preservation, unobserved/shared resources, external restart controllers and attached NGFWs that can enter a lifecycle cascade. GCE stop/start does not preserve RAM/application execution, freeze a human/world clock, reset portable memory or erase influence/history; stronger requested guarantees fail unsupported. Preserve complete native access/readback gates and do not emulate pause with destroy/recreate. Restart, destroy, resize, network mutation, arbitrary guest commands, dynamic IFC, runtime shielding, handoff, AWS, GDC, Mission Control, simulation, federation and genuinely live/external profiles are not selected, rather than being declared impossible in RAES. No backend manifest is widened by this documentation or by provisioning sidecars, and no LilRAE mechanism/fidelity/conformance parity is asserted.",
+        "checks": []
+      },
+      {
+        "id": "ADR-058-R9",
+        "description": "GEN-2005 remains DRAFT with DOCUMENTS links for the #1967 design, #1968 implementation tracking and #1969 proof tracking; these are not runtime implementation or test claims. Activate and record actual IMPLEMENTS/TESTS artifacts with implementation. An installed candidate can be exercised under explicit proof admission, but released support additionally requires #1969 real-boundary evidence matching API-407 declarations, installed configuration/implementation, runtime results, native readback, audit and released conformance. Core control must not depend on CTF communications #2050/#2054, which consume the core. Existing ADR/import/guardrail checks validate structure, not these future runtime guarantees.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1967",
+      "https://github.com/Brad-Edwards/shifter/issues/1968",
+      "https://github.com/Brad-Edwards/shifter/issues/1969",
+      "https://github.com/OpenRAE/rae/commit/ebb70a34b8e7d1cc8964c443841ae57e12ed1014",
+      "https://github.com/OpenRAE/rae/blob/ebb70a34b8e7d1cc8964c443841ae57e12ed1014/docs/decisions/adrs/adr-108-modular-participant-control-and-governed-effects.md",
+      "https://github.com/OpenRAE/rae/blob/ebb70a34b8e7d1cc8964c443841ae57e12ed1014/docs/research/modular-participant-control/composition.md",
+      "docs/architecture/raes-participant-control-realization-envelope-1967.md",
+      "docs/architecture/ctf-communications-raes-inject-preflight-2047.md",
+      "docs/architecture/provider-neutral-range-substrate.md",
+      "docs/architecture/raes-interactive-access-gcp-preflight-1710.md",
+      "shifter/shifter_platform/shared/raes",
+      "shifter/shifter_platform/shared/range_lifecycle_capability.py",
+      "shifter/shifter_platform/ctf/services/authorization.py",
+      "shifter/shifter_platform/ctf/services/range/lifecycle.py",
+      "shifter/shifter_platform/ctf/bridges.py",
+      "shifter/shifter_platform/cms/services/_range_lifecycle.py",
+      "shifter/shifter_platform/engine/launch_intents.py",
+      "shifter/shifter_platform/engine/models/_operation_io.py",
+      "shifter/shifter_platform/engine/services/_operation_apply.py",
+      "shifter/shifter_platform/shared/audit",
+      "shifter/engine/provisioner/range_ops/_pause_resume.py",
+      "docs/requirements/GEN-2005/requirement.md",
+      "docs/adr/README.md",
+      "https://github.com/Brad-Edwards/shifter/issues/1967#issuecomment-5555762123",
+      "https://docs.cloud.google.com/compute/docs/instances/stop-start-instance"
+    ]
   }
 ]

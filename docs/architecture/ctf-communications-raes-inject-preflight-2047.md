@@ -265,6 +265,13 @@ turns text into control. No currently accepted boundary realizes arbitrary RAES
 interventions, so an intervention profile without an exact typed mapping is
 unsupported and fails before intent persistence, delivery, or effect. Delivering
 only the prose would be a silent semantic approximation and is prohibited.
+[ADR-058](raes-participant-control-realization-envelope-1967.md) selects
+explicitly reviewed, bounded native GCE range pause/resume around an admitted
+portable proposal; it does not add a portable effect tag or turn text into
+control. An ADR-051 integration still needs the exact released typed mapping,
+GEN-2005 authority, #1968 implementation and #1969 real-boundary evidence.
+The core control path does not depend on communications #2050/#2054; these
+integrations consume the core, preserving the dependency direction.
 
 RAES shared-time, script order, story/event identity, participant-delivery
 identity, scenario/package digest, and range generation form occurrence evidence.
