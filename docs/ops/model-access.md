@@ -68,6 +68,14 @@ traffic (up to `N*C/5` continuation checks per second at full utilization).
 Admission and pool row contention can be the first limit; adding broker
 replicas does not increase provider quota or remove database serialization.
 
+Size against effective sharing pools as well as range counts. Test one large
+all-ranges pool, many individual pools and overlapping group/event/user
+bindings. Shared capacity is committed once with child draws; dedicated
+reservations still add against real provider quota. A common budget row can
+become the contention limit. Exercise bounded selector pagination, dynamic
+membership bursts and synchronous revision fencing before background
+reassessment; do not qualify only fixed event-sized snapshots.
+
 Use bounded tests at the declared cohort and a controlled overload case.
 Report the maximum sustainable cohort from evidence. The design makes no
 200-desktop guarantee. HPA may respond to active streams and resource usage
@@ -99,6 +107,38 @@ fixed monthly price without deployment quantities and current tariffs.
 Cross-project sharding has IAM and quota administration cost; separate keys
 do not buy additional quota. Reuse the existing deployment's infrastructure
 until measured load requires a reviewed change.
+
+## Sharing-pool operation
+
+Before publishing a binding, preview its selected ranges, snapshot/dynamic
+mode, independently shared facets, overlapping accounts, priority conflicts
+and active-range effect. Confirm authority across every included event or
+group. All-ranges means one deployment, not all customers. Empty collections
+must never expand into all ranges. Show shared-only pool exhaustion risk and
+offer per-range limits; do not silently partition a pool equally.
+
+Changing a selector or routing revision preserves stable financial accounts,
+spent/reserved balances and original request liabilities. Publish with a
+revision comparison and fresh membership/authority checks. Revoke the old
+affected grant revision before reassessment; dynamic additions receive access
+only after admission. Monitor membership freshness, conflicts, invalidation
+lag, common-account contention and orphaned draw references without exposing
+group rosters in global telemetry.
+
+Drain a pool by stopping new admissions and fencing member grants, then wait
+for active transports and unresolved provider outcomes under the ordinary
+reconciliation rules. Cleanup retains tombstones and original account vectors;
+deleting a group or binding cannot refund spent/unknown charges. Show which
+other bindings still reference the pool before changing provider identity.
+Revoking one range should leave its neighbors usable; disabling a shared
+provider identity is a separate, explicitly wider emergency action.
+
+Restore qualification includes overlapping bindings, pinned shared assignments,
+membership revisions and unknown requests charged to old pools. Reconstruct
+authority before enabling admission; never recover balances by summing
+overlapping constraint accounts as if each were a separate provider invoice.
+See the [sharing contract](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/sharing.md)
+for the selector and allocation rules.
 
 ## Observability and retention
 
