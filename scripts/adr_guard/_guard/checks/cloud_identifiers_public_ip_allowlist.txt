@@ -14,3 +14,4 @@
 35.235.240.0/20   # GCP Identity-Aware Proxy
 199.36.153.4/30   # GCP private googleapis VIP range
 199.36.153.8/30   # GCP restricted googleapis VIP range
+34.126.0.0/18     # GCP Google APIs backend range for Private Google Access

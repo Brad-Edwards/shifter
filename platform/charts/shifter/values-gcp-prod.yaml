@@ -57,6 +57,7 @@ network:
   providerApiCidrs:
     - 199.36.153.4/30
     - 199.36.153.8/30
+    - 34.126.0.0/18
 
 edge:
   ingress:

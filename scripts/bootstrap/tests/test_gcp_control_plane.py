@@ -1016,6 +1016,7 @@ class TestGdcControlPlaneHelmValues:
             "providerApiCidrs": [
                 "199.36.153.4/30",  # NOSONAR - restricted.googleapis.com VIP.
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
+                "34.126.0.0/18",  # NOSONAR - Google APIs backend range for Private Google Access.
             ],
             "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32"],
             "kubernetesApiCidrs": ["10.48.0.0/20"],

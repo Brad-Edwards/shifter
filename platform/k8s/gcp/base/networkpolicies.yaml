@@ -176,6 +176,8 @@ spec:
             cidr: 199.36.153.4/30 # NOSONAR - restricted.googleapis.com VIP range.
         - ipBlock:
             cidr: 199.36.153.8/30 # NOSONAR - private.googleapis.com VIP range.
+        - ipBlock:
+            cidr: 34.126.0.0/18 # NOSONAR - Google APIs backend range for Private Google Access.
       ports:
         - protocol: TCP
           port: 443
@@ -198,6 +200,8 @@ spec:
             cidr: 199.36.153.4/30 # NOSONAR - restricted.googleapis.com VIP range.
         - ipBlock:
             cidr: 199.36.153.8/30 # NOSONAR - private.googleapis.com VIP range.
+        - ipBlock:
+            cidr: 34.126.0.0/18 # NOSONAR - Google APIs backend range for Private Google Access.
       ports:
         - protocol: TCP
           port: 443
