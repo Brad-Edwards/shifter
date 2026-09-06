@@ -12887,17 +12887,21 @@
       },
       "AgentListResponse": {
         "type": "object",
-        "description": "Response body for ``AgentListView.get``.",
+        "description": "Response body for ``AgentListView.get``.\n\n``max_file_size_bytes`` is the server-owned per-file upload ceiling (bytes)\nthe SPA reads to guard uploads before initiation, so the frontend limit\ncannot drift from the value the backend enforces.",
         "properties": {
           "agents": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AgentListItem"
             }
+          },
+          "max_file_size_bytes": {
+            "type": "integer"
           }
         },
         "required": [
-          "agents"
+          "agents",
+          "max_file_size_bytes"
         ]
       },
       "AgentTypeEnum": {
