@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import AbstractBaseUser, AnonymousUser
@@ -129,3 +130,40 @@ def publish_event_notification(
         )
     except Exception:
         logger.exception("Failed to publish %s notification for event %s", kind, event.pk)
+
+
+def publish_communication_wakeup(
+    *,
+    event_id: UUID | str,
+    recipient_user_id: int,
+    snapshot_id: UUID | str,
+    references: dict[str, str],
+) -> bool:
+    """Publish one reference-only in-app communication wake-up, best-effort (#2098).
+
+    The wake-up is an accelerator over the durable inbox (the ``RecipientSnapshot`` /
+    ``ParticipantReceipt`` committed at admission), never the source of truth. It
+    uses the stable per-recipient ``snapshot_id`` as the shared replay identity so
+    distinct communications never collapse onto one row and a replayed wake-up maps
+    to the same row (no duplicate visible entries) -- unlike the event-scoped
+    ``publish_event_notification``, which keys on the event UUID. It carries only
+    identifiers, never message subject, body, recipient PII, or secrets.
+
+    Returns True when a wake-up row was published, False when the subsystem is
+    disabled or there is no account recipient to wake.
+    """
+    from shared.notifications import notifications_enabled, publish_notification
+
+    if not notifications_enabled() or recipient_user_id is None:
+        return False
+    # Idempotent re-registration (mirrors publish_event_notification): a registry
+    # reset or test isolation must not silently drop the wake-up.
+    register_ctf_notifications()
+    published = publish_notification(
+        NOTIFICATION_TYPE,
+        topic=event_topic(event_id),
+        payload={"kind": "communication", **references},
+        recipient_ids=[int(recipient_user_id)],
+        event_id=snapshot_id,
+    )
+    return bool(published)

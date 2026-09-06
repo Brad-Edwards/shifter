@@ -37,9 +37,10 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #1311 after removing the retired fleet-wide RAES cutover
 # selector variables from the shared runtime ConfigMap.
 # Regenerated for #28 after adding the warm-pool reconciler worker Deployment.
+# Regenerated for #2098 after adding the CTF communication delivery-worker Deployment.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "37eb0dd7e341547007281dab5e4eb7de41820e2ca3ff9e252c7327fe5222467e",
-    "gcp-prod": "c212fb9b3101bbee0baefaff1fd8dd872cca0c8732652e2ddd997957e99d265e",
+    "gcp-dev": "1ece5300b3a49e803dca2d13d40319d658d0d9c0acaee137a00c44388644cd05",
+    "gcp-prod": "539a654cf0c915a656c0cbe940d6ed6d4c7c7584c4587231f095cc4cf22bc5d2",
 }
 
 
@@ -431,6 +432,44 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("gcpBackendConfig", result.stderr)
+
+    def test_ctf_communication_worker_renders_for_every_profile(self) -> None:
+        """#2098: the scoped-communication delivery worker must ship in every backend
+        profile (not just render incidentally under the GCP byte hash), with its
+        least-privilege identity, worker command, and heartbeat liveness probe."""
+        expected_args = [
+            "python",
+            "manage.py",
+            "drain_ctf_communication_deliveries",
+            "--loop",
+            "--interval",
+            "10",
+        ]
+        for profile, values_file in VALUES_FILES.items():
+            with self.subTest(profile=profile):
+                _, documents = _render(values_file)
+                deployment = next(
+                    (d for d in documents if _identity(d) == ("Deployment", "ctf-communication-worker")),
+                    None,
+                )
+                self.assertIsNotNone(
+                    deployment, f"{profile}: ctf-communication-worker Deployment must render"
+                )
+                assert deployment is not None  # for type-narrowing
+                pod_spec = deployment["spec"]["template"]["spec"]
+                # Least-privilege worker identity, no provisioner Job privileges, tokenless.
+                self.assertEqual(pod_spec["serviceAccountName"], "workers")
+                self.assertFalse(pod_spec["automountServiceAccountToken"])
+                container = pod_spec["containers"][0]
+                self.assertEqual(container["args"], expected_args)
+                self.assertIn(
+                    "ctf-communication-worker-heartbeat",
+                    " ".join(container["livenessProbe"]["exec"]["command"]),
+                )
+                self.assertEqual(container["envFrom"][0]["configMapRef"]["name"], "platform-runtime")
+        # The neutral (provider-agnostic) defaults also render the worker.
+        _, neutral = _render()
+        self.assertIn(("Deployment", "ctf-communication-worker"), {_identity(d) for d in neutral})
 
 
 if __name__ == "__main__":

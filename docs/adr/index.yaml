@@ -3042,6 +3042,11 @@
         "id": "ADR-051-R11",
         "description": "CTF communications must not register triggers, audiences, channels, content renderers, RAES handlers, or workload ingress through ctf.extensions or AppConfig.ready. Existing trusted-Django-app flag/scoring extensions, CTFEvent branding projection, and Django LocaleMiddleware/gettext catalogs remain their separate CTF-014 incumbents. Authored message locale variants are immutable campaign data, not UI translation catalogs or a custom translation workflow; event branding never supplies content, link-host, email-template, or authorization policy.",
         "checks": []
+      },
+      {
+        "id": "ADR-051-R12",
+        "description": "The #2049 delivery engine extends the #2048 communication ledger rather than introducing another outbox or workflow owner. Occurrence release revalidates source authority and atomically commits bounded immutable audience, commands, in-app availability, and correlated strict audit; accepting a future declaration commits recoverable timing work without exposing future content. Release, lifecycle fencing, and worker claims share deterministic locking; claim leases fence stale completion, recovery, and retries without holding database locks across transport I/O. A claim is not evidence of a send. Reclaimed work rechecks cancellation and current scope; conflicting idempotent replay is rejected. Authored occurrence identity is separate from mutable retry/run-now timestamps; rescheduling fences superseded declarations, scheduler event routing never narrows campaign-wide authorization, and task controls cannot bypass communication policy. Lifecycle communication handoff is recoverable without browser polling. CMS retains range lease/credential-ceiling and expiry ownership independently of communication delivery. Scheduler completion, channel acceptance, participant receipt, and partial-failure aggregation retain distinct truthful meanings. Retry and backlog budgets are bounded and shared across processes, and all worker/configuration/secret/observability surfaces satisfy the #2049 preflight. These are architecture obligations; registry validation alone does not prove runtime delivery or recovery.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -3053,6 +3058,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/2047",
       "https://github.com/Brad-Edwards/shifter/issues/2048",
       "docs/architecture/ctf-communications-raes-inject-preflight-2047.md",
+      "docs/architecture/ctf-communication-delivery-engine-preflight-2049.md",
       "docs/architecture/email-templating-delivery-preflight-581.md",
       "docs/architecture/notifications-websocket-fanout-preflight-941.md",
       "docs/design/ctf-email-template-rendering-preflight-1095.md",
