@@ -34,6 +34,9 @@ from cms.services import (
 from cms.services import (
     list_launchable_scenarios as cms_list_launchable_scenarios,
 )
+from cms.services import (
+    max_agent_file_size_bytes as cms_max_agent_file_size_bytes,
+)
 from mission_control.api._base import (
     MissionControlAPIView,
     MissionControlReadAPIView,
@@ -409,7 +412,12 @@ class AgentListView(MissionControlReadAPIView):
     @extend_schema(responses=AgentListResponseSerializer, operation_id="api_v1_mission_control_agents_list")
     def get(self, request: Request) -> Response:
         """Return agents available to the authenticated actor."""
-        return Response({"agents": cms_list_agents(self.actor_user())})
+        return Response(
+            {
+                "agents": cms_list_agents(self.actor_user()),
+                "max_file_size_bytes": cms_max_agent_file_size_bytes(),
+            }
+        )
 
 
 class ScenarioListView(MissionControlReadAPIView):

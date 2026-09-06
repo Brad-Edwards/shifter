@@ -112,7 +112,9 @@ def _validate_positive_int(value: object, name: str, fn_name: str, user_id: obje
     if value is None:
         logger.error(_LOG_FMT_NONE_PARAM, fn_name, name, user_id)
         raise TypeError(f"{name} cannot be None")
-    if not isinstance(value, int):
+    # ``bool`` is a subclass of ``int`` in Python, so ``isinstance(True, int)``
+    # is True; reject it explicitly so ``True`` is never admitted as one byte.
+    if isinstance(value, bool) or not isinstance(value, int):
         logger.error(
             "%s called with invalid %s type: %s",
             fn_name,

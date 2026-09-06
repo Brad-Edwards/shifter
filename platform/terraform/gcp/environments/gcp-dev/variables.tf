@@ -300,6 +300,12 @@ variable "enable_cicd_github_oidc" {
   default     = true
 }
 
+variable "gdc_vm_runtime_image_readers" {
+  description = "Service accounts granted read on the GDC VM image bucket (GDC VM Runtime image-pull identity). Empty on the default GCE range backend, which never creates the GDC substrate SA; set to the baremetal-gcr SA only for a GDC deployment (--range-backend gdc), which is what creates that SA. A hardcoded baremetal-gcr entry breaks a fresh GCE apply because the SA does not exist (ADR: GDC plumbing must not be selected by default). Mirrors the optional-empty vmseries_bootstrap_bucket_name pattern."
+  type        = list(string)
+  default     = []
+}
+
 variable "github_org" {
   description = "GitHub organization allowed to federate into the packer build service account."
   type        = string
