@@ -3525,5 +3525,52 @@
       "platform/terraform/gcp/modules/portal/iam",
       "scripts/check_tf_gcp_iam_resource_scope"
     ]
+  },
+  {
+    "id": "ADR-057",
+    "title": "GCP control-plane east-west isolation is layered defense-in-depth; authenticated workload transport (service mesh) is evaluated and deferred",
+    "status": "accepted",
+    "scope": "gcp_control_plane",
+    "decision": "The GCP GKE control-plane east-west boundary is a layered, defense-in-depth isolation posture rather than a single enforced-trust control, and these controls are complementary: GKE Dataplane V2-enforced default-deny NetworkPolicy limits which pods can reach which (reachability); Workload Identity authenticates workloads to Google APIs, not to each other; the restrict-provisioner-jobs ValidatingAdmissionPolicy constrains admitted Job specifications at creation; and application-layer authentication and authorization (browser Identity Platform sessions with CSRF, API tokens, and Kubernetes RBAC on the provisioner-launcher to Kubernetes API path) govern permitted calls. None of these authenticates the peer on an allowed pod-to-pod connection: cryptographic workload-to-workload transport authentication (mTLS) is intentionally absent and is the specific capability a service mesh would add. That capability is evaluated and DEFERRED, not adopted by default. This supersedes the original #1295 unconditional service-mesh requirement per the #2080 adoption review: choose mTLS/mesh only when a demonstrated requirement is not met by the existing service authentication, TLS, network-policy, and admission controls, and do not mandate Istio or a second network-policy framework by default. The concrete gap closed under this ADR is that a GKE Standard, VPC-native cluster does not enforce NetworkPolicy without an enabling datapath, so the committed default-deny policies were admitted but inert; enabling Dataplane V2 makes the deny-by-default reachability boundary real (ADR-008-R6). Mesh candidates were assessed: upstream Istio ambient is the only option that supplies workload-identity mTLS and principal authorization without sidecar injection, so it would not enlarge the exact one-container/no-init provisioner Job admission contract; Google managed Cloud Service Mesh and Linkerd inject sidecars that conflict with that contract; Cilium mutual authentication couples a dataplane migration with a beta trust system. If a future requirement for authenticated workload transport or cryptographic service identity that these controls do not provide is demonstrated, a mesh is adopted through a new ADR that records the requirement and the operator and cost tradeoffs (privileged CNI/ztunnel trust anchors, mesh CA and rotation, Binary Authorization for mesh images, per-workload KSA identities, and sidecar/mTLS overhead on the short-lived provisioner-Job path), with ambient mode preferred so the Job admission contract is preserved. GDC VM Runtime remains fenced to dev/operator validation (ADR-030, ADR-039) and is not a participant containment boundary.",
+    "rules": [
+      {
+        "id": "ADR-057-R1",
+        "description": "The GCP control-plane east-west boundary is layered defense-in-depth: GKE Dataplane V2-enforced default-deny NetworkPolicy (reachability), Workload Identity (workload-to-Google-API identity), the restrict-provisioner-jobs admission policy (admitted Job specifications), and application-layer authentication/authorization (Identity Platform sessions with CSRF, API tokens, Kubernetes RBAC) for permitted calls. Peer authentication on an allowed pod-to-pod connection (mTLS) is not provided by these controls and is the deferred service-mesh capability. No service mesh and no second network-policy framework is adopted by default (#2080).",
+        "checks": []
+      },
+      {
+        "id": "ADR-057-R2",
+        "description": "Committed NetworkPolicy is not credited as a boundary unless an enabling GKE datapath (Dataplane V2, or Calico) is declared so the policies are enforced rather than merely rendered. This realizes ADR-008-R6 for the GCP control plane; release evidence proves the enforcing provider, not just the presence of policy objects.",
+        "checks": []
+      },
+      {
+        "id": "ADR-057-R3",
+        "description": "A service mesh is adopted only when a demonstrated requirement is not met by the existing service authentication, TLS, NetworkPolicy, and admission controls. Such adoption requires a new ADR that records the requirement and the operator and cost tradeoffs, keeps the exact provisioner-Job admission contract intact (ambient/no-sidecar preferred), and gates namespace enrollment on healthy, pinned, Binary-Authorization-verified mesh prerequisites that fail closed rather than bypass policy.",
+        "checks": []
+      },
+      {
+        "id": "ADR-057-R4",
+        "description": "The public edge (Google load balancer, managed certificate, Cloud Armor, GKE NEG, hostname, HTTPS redirect, health checks, and portal login/session/CSRF/WebSocket behavior) remains the north-south boundary. Google Front End traffic to the public listener is the explicit north-south exception and never supplies workload authority; it is not evidence of east-west mTLS.",
+        "checks": []
+      },
+      {
+        "id": "ADR-057-R5",
+        "description": "The provisioner-launcher to provisioner-Job path is Kubernetes API CREATE with dedicated RBAC and fail-closed admission, not a service-to-service call; no inbound mesh or network allow is created for a fictional Job service. Database, cache, Google API, and GCE range flows retain provider TLS/IAM, NetworkPolicy, and range controls; transport encryption never substitutes for user or application authorization.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy",
+      "ci"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1295",
+      "https://github.com/Brad-Edwards/shifter/issues/2080",
+      "docs/architecture/gcp-range-cell-containment-threat-model.md",
+      "platform/terraform/gcp/modules/portal/gke",
+      "platform/k8s/gcp/base/networkpolicies.yaml",
+      "platform/k8s/gcp/base/validatingadmissionpolicy-provisioner-jobs.yaml"
+    ]
   }
 ]
