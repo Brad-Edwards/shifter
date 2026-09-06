@@ -10,6 +10,19 @@ resource "google_container_cluster" "platform" {
   remove_default_node_pool = true
   initial_node_count       = 1
 
+  # The default node pool is created then immediately removed
+  # (remove_default_node_pool). Pin it to the dedicated GKE node SA rather than
+  # letting it fall back to the project default compute SA: the scoped CI deploy
+  # identity only holds actAs on the node SA (modules/portal/iam
+  # deploy_act_as_gke_nodes), not the default compute SA, so without this the
+  # cluster create fails with "does not have access to
+  # <project-number>-compute@developer.gserviceaccount.com". It also keeps the
+  # transient pool off the broad default compute SA.
+  node_config {
+    service_account = var.node_service_account_email
+    oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
+  }
+
   networking_mode = "VPC_NATIVE"
 
   # GKE Dataplane V2 (#1295): a Standard, VPC-native cluster does NOT enforce
