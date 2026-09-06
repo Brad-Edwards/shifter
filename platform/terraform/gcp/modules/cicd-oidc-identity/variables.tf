@@ -25,40 +25,6 @@ variable "github_repo" {
   default     = "shifter"
 }
 
-variable "labels" {
-  description = "Resource labels."
-  type        = map(string)
-  default     = {}
-}
-
-variable "region" {
-  description = "Region for the packer builder subnet and image bucket."
-  type        = string
-}
-
-variable "platform_network" {
-  description = "Name/self_link of the platform VPC network that hosts the packer builder subnet (has Cloud NAT for egress)."
-  type        = string
-}
-
-variable "build_subnet_cidr" {
-  description = "Primary CIDR for the dedicated packer builder subnet."
-  type        = string
-  default     = "172.16.8.0/28"
-}
-
-variable "image_bucket_location" {
-  description = "Location for the GDC VM Runtime image bucket (GCE->GCS exports)."
-  type        = string
-  default     = "us-central1"
-}
-
-variable "image_reader_service_accounts" {
-  description = "Service accounts granted read on the GDC VM image bucket (the GDC VM Runtime image-pull identity)."
-  type        = list(string)
-  default     = []
-}
-
 variable "allowed_workflow_refs" {
   description = <<-EOT
     GitHub refs whose OIDC tokens are accepted by the WIF provider. Tokens from
