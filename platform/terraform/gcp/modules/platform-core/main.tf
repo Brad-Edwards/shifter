@@ -354,6 +354,7 @@ module "portal_iam" {
   raes_package_bucket_name       = var.raes_package_bucket_name
   ctf_content_bucket_name        = var.ctf_content_bucket_name
   range_host_identity_pool_size  = var.range_host_identity_pool_size
+  deploy_service_account_email   = var.deploy_service_account_email
 
   depends_on = [module.portal_secrets, module.portal_gcs]
 }

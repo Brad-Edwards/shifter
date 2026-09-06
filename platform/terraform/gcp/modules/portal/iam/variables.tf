@@ -79,3 +79,16 @@ variable "ctf_content_bucket_name" {
   default     = ""
   description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Grants the portal read-only access. Empty disables the binding."
 }
+
+variable "deploy_service_account_email" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    Email of the CI deploy service account (the WIF-federated build+deploy SA in
+    global/cicd-oidc) that runs `terraform apply` for this stack. Granted
+    resource-scoped roles/iam.serviceAccountUser on the GKE node SA so it can
+    create the node pools that run as that node SA (actAs). Scoped, not project-
+    wide, to satisfy CKV_GCP_41. Empty disables the binding (e.g. when the stack
+    is applied by an operator identity that already holds broad actAs).
+  EOT
+}
