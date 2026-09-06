@@ -31,28 +31,26 @@ locals {
   }
 }
 
-# GitHub Actions -> GCP federation for the packer GCE image builds
-# (.github/workflows/packer-gcp.yml). Emits the GCP_WORKLOAD_IDENTITY_PROVIDER
-# and GCP_SERVICE_ACCOUNT values consumed as GitHub secrets.
-module "cicd_github_oidc" {
-  source = "../../modules/cicd-github-oidc"
-  count  = var.enable_cicd_github_oidc ? 1 : 0
+# Packer build-infra for the GCE image bakes (.github/workflows/packer-gcp.yml):
+# the dedicated builder subnet, the IAP-scoped ingress firewall, and the GCS
+# image bucket. It is network-coupled (needs the platform VPC + Cloud NAT), so it
+# stays in the platform root. The GitHub Actions WIF pool/provider and the packer
+# build service account it references now live in the foundational root
+# platform/terraform/gcp/global/cicd-oidc so they survive a platform destroy (the
+# credentials CI authenticates as). This references that SA by its deterministic
+# email rather than creating it.
+module "packer_build_infra" {
+  source = "../../modules/packer-build-infra"
 
-  project_id       = var.project_id
-  environment      = var.environment
-  name_prefix      = local.name_prefix
-  region           = var.region
-  github_org       = var.github_org
-  github_repo      = var.github_repo
-  platform_network = module.platform_core.network_name
-  # The GDC VM Runtime reads gs:// disk images using the bare-metal GCR service
-  # account key carried in GDC_VM_IMAGE_GCS_SECRET_ID. That SA (baremetal-gcr) is
-  # created only by the GDC substrate bootstrap, so it does not exist on the
-  # default GCE range backend; the reader list is empty there and is populated
-  # (with baremetal-gcr) only for a GDC deployment. Gated so a fresh GCE apply
-  # does not fail binding a non-existent SA (ADR: GDC not selected by default).
+  project_id                   = var.project_id
+  name_prefix                  = local.name_prefix
+  region                       = var.region
+  platform_network             = module.platform_core.network_name
+  packer_service_account_email = "${replace(local.name_prefix, "-", "")}-packer@${var.project_id}.iam.gserviceaccount.com"
+  # baremetal-gcr (GDC substrate SA) is absent on the default GCE backend; empty
+  # unless a GDC deployment sets it (ADR: GDC plumbing must not be selected by
+  # default). See the gdc_vm_runtime_image_readers variable.
   image_reader_service_accounts = var.gdc_vm_runtime_image_readers
-  labels                        = local.labels
 }
 
 module "platform_core" {

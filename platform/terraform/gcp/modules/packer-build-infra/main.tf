@@ -34,7 +34,7 @@ resource "google_compute_firewall" "packer_iap_ingress" {
   priority = 800
 
   source_ranges           = ["35.235.240.0/20"] # NOSONAR - Google IAP TCP forwarding range.
-  target_service_accounts = [google_service_account.packer_build.email]
+  target_service_accounts = [var.packer_service_account_email]
 
   allow {
     protocol = "tcp"
@@ -67,7 +67,7 @@ resource "google_storage_bucket" "gdc_vm_images" {
 resource "google_storage_bucket_iam_member" "packer_build_image_writer" {
   bucket = google_storage_bucket.gdc_vm_images.name
   role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.packer_build.email}"
+  member = "serviceAccount:${var.packer_service_account_email}"
 }
 
 # The GDC VM Runtime reads the gs:// disk images using the bare-metal GCR

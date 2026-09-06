@@ -174,15 +174,10 @@ output "workload_service_accounts" {
   value       = module.platform_core.workload_service_accounts
 }
 
-output "packer_workload_identity_provider" {
-  description = "GitHub OIDC provider resource name; set as the GCP_WORKLOAD_IDENTITY_PROVIDER GitHub secret. Null when enable_cicd_github_oidc = false."
-  value       = one(module.cicd_github_oidc[*].workload_identity_provider)
-}
-
-output "packer_build_service_account_email" {
-  description = "Packer build service account email; set as the GCP_SERVICE_ACCOUNT GitHub secret. Null when enable_cicd_github_oidc = false."
-  value       = one(module.cicd_github_oidc[*].packer_build_service_account_email)
-}
+# The GitHub OIDC provider + packer build service account (the CI auth identity)
+# are outputs of the foundational root platform/terraform/gcp/global/cicd-oidc,
+# not this platform root -- so a platform destroy never removes them. Read
+# GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_SERVICE_ACCOUNT from that root's outputs.
 
 output "range_host_service_account_email" {
   description = "GCE range host SA email for hosts that need cloud APIs; set GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL for a same-project range cell."
