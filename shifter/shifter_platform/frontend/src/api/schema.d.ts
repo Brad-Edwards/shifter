@@ -2891,9 +2891,16 @@ export interface components {
             agent_type: components["schemas"]["AgentTypeEnum"];
             agent_type_display: string;
         };
-        /** @description Response body for ``AgentListView.get``. */
+        /**
+         * @description Response body for ``AgentListView.get``.
+         *
+         *     ``max_file_size_bytes`` is the server-owned per-file upload ceiling (bytes)
+         *     the SPA reads to guard uploads before initiation, so the frontend limit
+         *     cannot drift from the value the backend enforces.
+         */
         AgentListResponse: {
             agents: components["schemas"]["AgentListItem"][];
+            max_file_size_bytes: number;
         };
         /**
          * @description * `xdr` - xdr

@@ -22,14 +22,14 @@ schema_version: 1
 
 # Named toolchain profiles. A root references a profile; CI never carries a
 # parallel root-to-version mapping. These represent the three live consumer
-# pins today (AWS deploy CI 1.13.3, GCP validation/deploy 1.7.1, provisioner
+# pins today (AWS deploy CI 1.13.3, GCP validation/deploy 1.16.1, provisioner
 # runtime image 1.14.3); unifying them is deliberately out of scope for #1528.
 profiles:
   aws-1.13.3:
     terraform_version: "1.13.3"
     provider_family: aws
-  gcp-1.7.1:
-    terraform_version: "1.7.1"
+  gcp-1.16.1:
+    terraform_version: "1.16.1"
     provider_family: gcp
   provisioner-1.14.3:
     terraform_version: "1.14.3"
@@ -120,7 +120,7 @@ roots:
   - id: gcp-dev
     path: platform/terraform/gcp/environments/gcp-dev
     owner: "@Brad-Edwards"
-    toolchain: gcp-1.7.1
+    toolchain: gcp-1.16.1
     providers:
       - registry.terraform.io/hashicorp/archive
       - registry.terraform.io/hashicorp/google
@@ -131,7 +131,7 @@ roots:
   - id: gcp-global-github-runner
     path: platform/terraform/gcp/global/github-runner
     owner: "@Brad-Edwards"
-    toolchain: gcp-1.7.1
+    toolchain: gcp-1.16.1
     providers:
       - registry.terraform.io/hashicorp/google
   - id: aws-global-iam
@@ -350,7 +350,7 @@ modules:
     owner: "@Brad-Edwards"
     contract: terraform_test
     test: tests/main.tftest.hcl
-    test_profile: gcp-1.7.1
+    test_profile: gcp-1.16.1
   - path: platform/terraform/gcp/modules/portal/iam
     owner: "@Brad-Edwards"
     contract: deferred
