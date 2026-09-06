@@ -69,6 +69,18 @@ time-bounded exception.
 | `scripts/check_layer_imports` | 96% | 95 |
 | `shifter/packer` | n/a (Packer HCL; no owned production Python) | not a coverage publisher |
 
+**SPA (frontend) floor.** The Django-hosted React SPA
+(`shifter/shifter_platform/frontend`) enforces its own absolute floors in
+`vite.config.ts` (`test.coverage.thresholds` for statements, branches,
+functions, and lines), each set one point under the measured baseline like the
+Python packages so the floor absorbs run-to-run variance and only rises. The
+measured source set is `src/**/*.{ts,tsx}` excluding tests, test support, and
+the generated `src/api/schema.d.ts`; the first-party entrypoint and composition
+root stay measured. The SPA's Vitest LCOV (`frontend/coverage/lcov.info`) is
+uploaded by the `SPA (shifter_platform frontend)` CI job and restored into the
+`sonarcloud` job, so SPA changed lines are held to the same changed-code gate
+below (#1526).
+
 **Changed-code floor**, owned by the SonarCloud `raes-strict` quality gate,
 which fails a PR when `new_coverage < 80` (80% coverage on changed lines), plus
 `new_violations > 0`, new duplicated-lines density > 3%, any new rating worse than
