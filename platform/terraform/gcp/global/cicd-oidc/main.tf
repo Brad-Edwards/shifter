@@ -1,7 +1,7 @@
 # Foundational GitHub Actions -> GCP OIDC/WIF identity root (issue #615 follow-up).
 #
-# The WIF pool/provider and the packer/deploy build service account are the
-# credentials CI authenticates AS. They must OUTLIVE the platform: a
+# The WIF pool/provider and purpose-scoped service accounts are the identities
+# CI authenticates as. They must OUTLIVE the platform: a
 # `gcp-dev-destroy` tears down the platform-core root, and the subsequent CI
 # rebuild has to authenticate (via this WIF) to run at all. So this identity
 # lives in its own Terraform root with a state prefix separate from the platform
@@ -33,10 +33,13 @@ provider "google" {
 module "cicd_oidc_identity" {
   source = "../../modules/cicd-oidc-identity"
 
-  project_id            = var.project_id
-  environment           = var.environment
-  name_prefix           = "shifter-${var.environment}"
-  github_org            = var.github_org
-  github_repo           = var.github_repo
-  allowed_workflow_refs = var.allowed_workflow_refs
+  project_id                             = var.project_id
+  environment                            = var.environment
+  name_prefix                            = "shifter-${var.environment}"
+  github_org                             = var.github_org
+  github_repo                            = var.github_repo
+  allowed_workflow_refs                  = var.allowed_workflow_refs
+  build_read_bucket_names                = var.build_read_bucket_names
+  promotion_reader_service_account_email = var.promotion_reader_service_account_email
+  terraform_state_bucket_name            = var.terraform_state_bucket_name
 }

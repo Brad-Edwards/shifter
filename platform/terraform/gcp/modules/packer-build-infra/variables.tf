@@ -23,6 +23,12 @@ variable "packer_service_account_email" {
   type        = string
 }
 
+variable "validation_network_tag" {
+  description = "Network tag used only by no-SA disposable image-validation VMs for IAP probes."
+  type        = string
+  default     = "shifter-validation"
+}
+
 variable "build_subnet_cidr" {
   description = "Primary CIDR for the dedicated packer builder subnet."
   type        = string

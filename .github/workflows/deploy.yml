@@ -446,7 +446,7 @@ jobs:
       # workflow_dispatch may opt into the first-time-bootstrap bypass.
       require_active_certificate: ${{ github.event_name != 'workflow_dispatch' || inputs.gcp_require_active_certificate }}
     secrets:
-      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       # Deployment-owned identity/config values consumed by _gcp-dev.yml's
       # render steps. Must be forwarded here: the reusable workflow only sees
