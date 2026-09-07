@@ -24,6 +24,25 @@ and available budgets. Assignments remain stable for the admitted generation;
 retry never reruns an unrecorded modulo assignment. Models or credentials
 sharing one provider quota pool do not create extra quota.
 
+Sharing is independently configurable across explicit range sets, CTF
+events/cohorts, a user's ranges, typed groups, named collections or all ranges
+within one deployment. Each binding selects shared profile, provider identity,
+per-alias routing affinity, capacity and monetary/rate/concurrency pools.
+Partial sharing and sharing all these resources are both supported; each
+range retains an independently revocable grant. Snapshot/dynamic membership,
+canonical group ownership and revision fencing are explicit contracts.
+
+Overlapping bindings apply all mandatory restrictions and distinct accounts.
+Operator priority resolves non-combinable choices; conflicting ties reject.
+Shared assignments are persisted once per affinity group, and common capacity
+is reserved once rather than once per member. Each request locks/reserves/
+settles the set of applicable account IDs once. Shared-only budgets need no
+equal per-range partition; optional individual caps tighten the common pool.
+Membership changes cannot reset spend, transfer unresolved liability, bypass
+authorization or leave old grants usable while reassessment runs. The
+[sharing contract](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/sharing.md)
+defines selectors, bounded resolution, precedence and management behavior.
+
 Model-required launches need successful enforcing model admission even when
 general compute planning is disabled or advisory. Missing declarations,
 policy, prices, measurements required by policy, or accounting availability
@@ -35,8 +54,9 @@ with existing operations and capacity draws. They are not another range
 lifecycle. Use integer monetary units, immutable pricing revisions, explicit
 rate-window boundaries, conditional updates/row locks, uniqueness and check
 constraints. Reserve a conservative upper bound before any potentially
-billable provider invocation. Simultaneously enforce deployment, event or
-standalone owner, range, grant, and shared quota-pool limits. Do not use the
+billable provider invocation. Simultaneously enforce all applicable deployment,
+event, user/group/collection, configured range, grant and quota-pool limits.
+Finite deployment and per-request bounds remain mandatory. Do not use the
 capacity models' floating-point quantities for money.
 
 Record dispatch intent before transport. A worker lost around dispatch leaves

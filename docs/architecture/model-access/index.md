@@ -10,10 +10,14 @@ budgeted capability to a deployment-owned broker. Provider credentials stay
 outside participant control. Scenario and event configuration selects logical
 profiles; Engine allocates approved model/account/project shards and owns
 accounting. GCP/Vertex is the first qualification target under #2080.
+Provider identity, model assignments, capacity and budgets can be shared
+independently across selected ranges, users, groups, CTF collections or all
+deployment ranges. Shared resources do not require shared participant tokens.
 
 | Document | Purpose |
 | --- | --- |
 | [Architecture and contracts](architecture.md) | Ownership, configuration, allocation, API, persistence, protocol, lifecycle, and user flows. |
+| [Configurable sharing](sharing.md) | Which ranges share which resources, membership modes, overlapping policies, pooled accounting and management examples. |
 | [Security design](security.md) | Threats, identities, network/IAM boundaries, credential lifecycle, privacy, and negative tests. |
 | [Operations design](../../ops/model-access.md) | Deployment, sizing, objectives, migration, failure recovery, cost, and release evidence. |
 | [Implementation issues and dependencies](delivery.md) | Coding-sized work, milestones, hard blockers, and completion criteria. |
@@ -33,7 +37,7 @@ marked implemented solely because this documentation exists.
 
 First delivery: the selected GCE cohort, multiple approved Vertex projects
 and model aliases, required or explicitly optional scenario model access,
-operator/event/range budgets, and retained existing lifecycle authority.
+configurable sharing and budgets, and retained existing lifecycle authority.
 The catalog and adapter boundary also cover Bedrock, direct provider APIs,
 and bounded external HTTPS tools; their releases require their own issues
 and evidence. Local scenario tools remain inside the range. Privileged

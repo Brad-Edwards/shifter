@@ -16,6 +16,20 @@ allocation strategy and set limits within the delegated budget. The event
 assessment will show whether the planned access is available before launch.
 Organizers cannot add arbitrary models, accounts or external destinations.
 
+Operators will choose which ranges share resources: selected CTF ranges,
+an event or cohort, a user's ranges, a group's ranges, a named collection,
+or all ranges in the deployment. They can share some or all of the provider
+accounts, model assignments, capacity, spend, rate and concurrency allowances.
+For example, all ranges can use one provider account with separate budgets,
+or a user's ranges across several events can draw from one pooled budget.
+The main and small model can have different sharing choices.
+
+Collections can use a fixed membership snapshot or include future eligible
+ranges automatically. A preview will show overlapping policies, pooled
+balances and individual limits before publication. Hard limits still apply
+across overlaps. Each range keeps separate access credentials, so revoking
+one range need not interrupt others using the same shared resources.
+
 A participant will see whether model access is ready, unavailable, suspended
 or exhausted, along with an actionable reason and remaining permitted time
 or usage where policy allows. A scenario requiring model access will not be

@@ -60,7 +60,7 @@ entry and grant. The detailed contracts are in the
 
 | Alternative | Disposition |
 | --- | --- |
-| Per-range keys on a shared provider principal | Reject: identity and provider quota remain shared; application enforcement is bypassable. |
+| Provider keys delivered directly to guests, including per-range keys on a shared principal | Reject direct guest authority: application enforcement is bypassable. Sharing a broker-held provider identity remains supported under ADR-060. |
 | Per-range provider principal with direct tokens | Useful defense for legacy access, but insufficient for mandatory request/spend enforcement outside the broker. |
 | A gateway product as the authority and billing database | Reject a second authority. A future transport library may be adopted after protocol, dependency, and security review; it cannot own grants or budgets. |
 | In-process proxy on the public portal listener | Reject: streaming load and participant HTTP parsing enlarge the portal exposure and failure domain. |

@@ -10,6 +10,11 @@ planned feature. Registry/import validation applies now. Runtime enforcement
 of broker authorization, atomic budgets, revocation and provider isolation
 must land with the owning implementation issues and their behavioral/cloud
 tests; a passing documentation check is not evidence of those guarantees.
+ADR-060-R3 also requires independently configurable sharing, explicit overlap
+and membership rules, deduplicated pool accounting and separately revocable
+range grants. The [sharing contract](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/sharing.md)
+is consumed by #2139/#2140 and the downstream implementation/evidence issues;
+it adds no waiver or claim of existing runtime enforcement.
 
 The current enforcement stack has six parts:
 
@@ -147,7 +152,11 @@ The first slice intentionally stays small:
 
 - `adr-registry`
   Validates the ADR registry and exception files. It also validates the closed
-  typed interface contracts required by ADR-039, ADR-051, ADR-054, and ADR-055. The
+  typed interface contracts required by ADR-032, ADR-039, ADR-051, ADR-054, and
+  ADR-055. The `raes-plan-accessor-boundary/v1` contract pins the RAES-free
+  standalone consumer, ownership and validation boundaries, reject-before-
+  mutation posture, full canonical address fallback, exact-pin compatibility
+  evidence, and decision-only scope of #1937. The
   `dedicated-customer-authority/v1` contract makes removal or weakening of
   ADR-054's customer boundary, authority separation, event-migration gate,
   infrastructure ownership, outage behavior, or evidence classes fail locally

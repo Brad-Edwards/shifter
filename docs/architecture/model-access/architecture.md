@@ -45,7 +45,7 @@ credential inventory, and test the resulting process environment and imports.
 
 ## Configuration and policy precedence
 
-Use three typed inputs, with schema/version and content digest:
+Use four typed inputs, with schema/version and content digest:
 
 1. A deployment catalog owns logical profiles, shard coordinates, immutable
    model mappings, billing-feature allowlists, provider identity references,
@@ -57,6 +57,10 @@ Use three typed inputs, with schema/version and content digest:
    standalone range uses its authorized owner/workspace policy. CTF demand
    includes cohort, concurrent ranges, spares, window and per-participant
    model request/token hints through CTF-908's existing declaration.
+4. Operator-authorized sharing bindings select explicit range sets, CTF
+   events/cohorts, a user's ranges, typed groups, named collections or all
+   deployment ranges. Select independently which profile, provider identity,
+   model assignment, capacity and spend/rate/concurrency resources to share.
 
 Only deployment operators may add shards, provider identity references,
 regions, model/feature aliases, prices or maxima. Scenario authors and event
@@ -65,6 +69,12 @@ effective ceilings and deadlines are minima. An event override outside its
 delegated envelope is rejected, rather than silently clipped. A selected
 profile must satisfy the scenario's required capabilities; an empty
 intersection is a failed admission, not a default profile.
+
+The [sharing contract](sharing.md) defines snapshot/dynamic membership,
+per-alias assignment affinity, and partial or complete sharing. Applicable
+scopes can overlap: hard restrictions and every distinct account still
+apply; explicit priorities resolve non-combinable choices, with conflicting
+ties rejected. A user's cap can span both CTF and standalone ranges.
 
 Only a released RAES field with the matching semantics may be consumed as
 scenario intent. Until such a field is qualified, use a Shifter-owned CMS
@@ -135,6 +145,12 @@ Supported strategies in v1:
   This avoids floating-point and language-specific hash behavior. #2118
   publishes cross-implementation test vectors for this exact encoding.
 
+Assignment affinity is independently `per_range`, `per_user` or `per_pool`
+for each alias. Shared assignment uses the persisted allocation-group UUID
+in place of the draw UUID, as specified in the sharing contract. Serialize
+first allocation and reuse the pinned result; new membership cannot
+reshuffle existing members or silently choose an incompatible alternate.
+
 Provider observations happen outside database transactions. After filtering
 compatibility, residency, health and observation freshness, lock candidate
 quota pools in canonical ID order and recheck committed overlapping
@@ -150,6 +166,11 @@ existing stable request/draw identity rules and release old reservations
 only after old requests cannot continue. Warm ranges may reserve planned
 capacity, but receive no usable participant grant until the actual owner is
 bound at activation. Unused spare reservations expire with the event window.
+
+A configured shared capacity pool commits its reservation once; event/range
+draws reference it without committing the same capacity again. Distinct
+dedicated reservations against the same real provider quota still add up.
+Resolve overlap and shared versus dedicated demand before admission effects.
 
 The model admission result is `admitted`, `rejected` or `indeterminate`, with
 bounded reason codes. Both non-admitted results block required access before
@@ -173,6 +194,8 @@ new range execution generation.
 | Record | Minimum persisted fields and constraints |
 | --- | --- |
 | Policy snapshot | Version, digest, bounded effective policy and price revisions, scenario artifact binding and actor/source references. Immutable; secrets are references only. |
+| Sharing binding and pool | Typed bounded selector, snapshot/dynamic membership, revision, publisher authority, priority, facet references and interval. Stable pool/account IDs survive binding changes; routing revisions and affinity namespaces are explicit. |
+| Membership projection | Canonical owner/group/event/draw references, membership and spending-eligibility revisions, allowed/revoked state. Owning services publish through downward bridges; request-time revision checks fence bulk invalidation before asynchronous reassessment. |
 | Allocation | Deployment/range/existing generation, draw and event/owner scope, full alias-to-shard map, original identity/resource references, policy/assessment revisions, deadline and state. One live allocation per bound generation/capability set. |
 | Grant | Random public ID, allocation, subject/workload, current authorization revision, epoch, state, hard expiry; hashed enrollment/access/refresh credentials and their expiries. Tokens and refresh secrets are never stored in clear text. |
 | Authorization projection | Minimal Engine-owned allowed/revoked state and monotonic revision for the upstream subject/event/owner binding. Upstream owning services publish it transactionally through the existing downward CTF-to-CMS-to-Engine service path; it is not a copy of their domain tables. Missing or stale projection denies admission. |
@@ -180,12 +203,26 @@ new range execution generation.
 | Request reservation | Broker-generated request UUID, scoped optional client retry key, short-lived keyed intent fingerprint, grant epoch, alias/shard, reservation vector, dispatch state, lease/deadline, provider request reference, usage, settlement and uncertainty reason. Unique retry key within the grant and operation. |
 | Reconciliation obligation | Request/allocation reference, original provider/secret reference, next attempt, bounded outcome and last observation. Uses the existing Engine worker/reconciliation scheduling, not another workflow service. |
 
-Budget scopes include deployment, event (or standalone owner/workspace),
-range lifetime, grant and relevant provider quota pools. Recreating a range,
-rotating a token, changing a model alias or starting a subagent does not
+Allocations also retain the complete effective binding/pool revision vector
+and allocation-group reference; they cannot infer these from current group
+membership during settlement or cleanup.
+
+Budget scopes include deployment, event, user across CTF and standalone
+ranges, typed group/workspace, selected collection, configured range lifetime
+accounts, grant bounds and relevant provider quota pools. Shared-only spend
+is supported without an artificial per-range partition; optional individual
+caps tighten it. Finite deployment and request bounds remain mandatory.
+Recreating a range, rotating a token, changing a model alias or starting a
+subagent does not
 reset parent spend. Budget increases are explicit operator changes with
 audit and version checks. Parent caps include all live allocations and
 unknown in-flight costs, not only currently connected ranges.
+
+Treat applicable account IDs as a set: reserve and settle each once even if
+several selectors match the same pool. Different caps all constrain a call,
+but their overlapping constraint ledgers are not multiple provider charges.
+Member removal or pool migration keeps prior spend and unresolved liability
+on the original account vector; it never refunds or resets a parent cap.
 
 ## Request admission and accounting
 
@@ -372,8 +409,9 @@ and ADR-025 events, never inferred solely from a successful bootstrap script.
 Extend the canonical DRF `/api/v1` surface with versioned schema and scope
 registry entries, using domain facades. Proposed resources are operator
 catalog validation/publish/drain, event access-policy revision/assessment,
-and range access-status/revoke/re-enroll. Operator configuration and spend
-expansion require deployment operator authority; organizers can select only
+range access-status/revoke/re-enroll, and sharing collection/binding/pool
+preview/publish/drain. Operator configuration and spend expansion require
+deployment operator authority; organizers can select only
 delegated profiles and tighten event ceilings. Preserve session/CSRF and
 bearer-first scoped-token parity. Use optimistic concurrency (`If-Match` or
 existing revision fields) on policy updates and reauthorize retries.
@@ -397,6 +435,13 @@ operator-only. Participants see availability and actionable limits for their
 own range, never credentials or another participant's usage. An optional
 capability failure is visibly unavailable; a required one blocks readiness.
 Keep CTF-native authority separate from workspace membership.
+
+Expose which ranges and which shared facets as separate choices, including
+selected CTF ranges, a user's ranges, typed group selectors and operator-only
+all ranges. Preview snapshot/dynamic membership, overlapping policies,
+priority conflicts, pooled balances, individual limits and active-range
+impact. Publication rechecks membership, authority and revision; a preview
+cannot authorize later changes. The sharing contract defines the full matrix.
 
 Errors use the existing safe envelope: 400 malformed/unsupported request,
 401 invalid credential, 403 wrong scope/revoked policy, 409 stale binding or

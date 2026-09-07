@@ -20,7 +20,8 @@
       "title": "feat(model-access): bind scenario and event intent to enforcing model demand",
       "milestone": 35,
       "blocked_by": [
-        2118
+        2118,
+        2140
       ]
     },
     {
@@ -174,6 +175,24 @@
         2132,
         2133
       ]
+    },
+    {
+      "work_package": "M19",
+      "number": 2139,
+      "title": "feat(model-access): persist sharing bindings and resolve overlapping policies",
+      "milestone": 35,
+      "blocked_by": [
+        2118
+      ]
+    },
+    {
+      "work_package": "M20",
+      "number": 2140,
+      "title": "feat(model-access): project sharing membership and fence authority changes",
+      "milestone": 35,
+      "blocked_by": [
+        2139
+      ]
     }
   ],
   "added_edges": [
@@ -288,6 +307,18 @@
     {
       "blocked": 2091,
       "blocker": 2131
+    },
+    {
+      "blocked": 2139,
+      "blocker": 2118
+    },
+    {
+      "blocked": 2140,
+      "blocker": 2139
+    },
+    {
+      "blocked": 2119,
+      "blocker": 2140
     }
   ],
   "removed_edges": [
@@ -386,7 +417,8 @@
     ],
     "2118": [],
     "2119": [
-      2118
+      2118,
+      2140
     ],
     "2120": [
       2119
@@ -443,6 +475,34 @@
       2131,
       2132,
       2133
+    ],
+    "2139": [
+      2118
+    ],
+    "2140": [
+      2139
     ]
+  },
+  "sharing_amendment": {
+    "baseline_commit": "b44cfa72d",
+    "new_issues": [
+      2139,
+      2140
+    ],
+    "added_edges": [
+      {
+        "blocked": 2139,
+        "blocker": 2118
+      },
+      {
+        "blocked": 2140,
+        "blocker": 2139
+      },
+      {
+        "blocked": 2119,
+        "blocker": 2140
+      }
+    ],
+    "removed_edges": []
   }
 }
