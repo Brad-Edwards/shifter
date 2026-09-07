@@ -166,7 +166,8 @@ def test_installer_rejects_schema_valid_custom_validator_errors():
 
 def test_enabled_configuration_requires_catalog():
     _, issues = validate_settings_block({SETTINGS_KEY: {"enabled": True}})
-    assert issues and issues[0].path.startswith("settings.model_access")
+    assert issues
+    assert issues[0].path.startswith("settings.model_access")
 
 
 def test_generated_schema_rejects_unknown_catalog_members():

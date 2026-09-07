@@ -15,12 +15,14 @@ OUTPUT = REPO_SHIFTER_ROOT / "installation/published_contract/model-access-polic
 
 
 def rendered_schema() -> str:
+    """Operation for rendered schema."""
     from shared.model_access import model_access_catalog_schema
 
     return json.dumps(model_access_catalog_schema(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
 def main() -> int:
+    """Operation for main."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()

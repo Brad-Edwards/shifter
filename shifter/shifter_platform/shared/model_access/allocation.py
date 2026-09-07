@@ -15,17 +15,23 @@ _DIGEST = re.compile(r"^sha256:([0-9a-f]{64})$", re.ASCII)
 
 
 class AllocationError(ValueError):
+    """Type for AllocationError."""
+
     def __init__(self, code: str) -> None:
+        """Operation for init."""
         self.code = code
         super().__init__(code)
 
 
 @dataclass(frozen=True)
 class ShardWeight:
+    """Type for ShardWeight."""
+
     shard_id: Identifier
     weight: int
 
     def __post_init__(self) -> None:
+        """Operation for post init."""
         if not isinstance(self.shard_id, str) or not _ASCII_ID.fullmatch(self.shard_id):
             raise ValueError("shard_id must be bounded ASCII")
         if isinstance(self.weight, bool) or not isinstance(self.weight, int) or not 1 <= self.weight <= 64:
@@ -34,20 +40,25 @@ class ShardWeight:
 
 @dataclass(frozen=True)
 class RankedShard:
+    """Type for RankedShard."""
+
     shard_id: str
     score: int
 
     @property
     def score_hex(self) -> str:
+        """Operation for score hex."""
         return self.score.to_bytes(32, "big").hex()
 
 
 def _field(value: str) -> bytes:
+    """Operation for field."""
     encoded = value.encode("utf-8")
     return pack(">I", len(encoded)) + encoded
 
 
 def _slot_score(parts: tuple[str, ...], slot: int) -> int:
+    """Operation for slot score."""
     digest = sha256(b"".join(_field(part) for part in parts) + pack(">I", slot)).digest()
     return int.from_bytes(digest, "big")
 
@@ -60,6 +71,7 @@ def rank_weighted_rendezvous(
     logical_alias: str,
     shards: tuple[ShardWeight, ...],
 ) -> tuple[RankedShard, ...]:
+    """Operation for rank weighted rendezvous."""
     if not isinstance(deployment_id, UUID) or not isinstance(allocation_group_id, UUID):
         raise AllocationError("allocation.invalid_uuid")
     if not shards:
@@ -75,8 +87,8 @@ def rank_weighted_rendezvous(
         raise AllocationError("allocation.invalid_alias")
     common = (
         "shifter/model-access/v1",
-        str(deployment_id).lower(),
-        str(allocation_group_id).lower(),
+        str(deployment_id),
+        str(allocation_group_id),
         match.group(1),
         logical_alias,
     )
@@ -99,6 +111,7 @@ def select_shard(
     logical_alias: str,
     shards: tuple[ShardWeight, ...],
 ) -> str:
+    """Operation for select shard."""
     if strategy is AllocationStrategy.FIXED_V1:
         if len(shards) != 1:
             raise AllocationError("allocation.fixed_cardinality")

@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: SHOULD
 wave: 2
 created_at: 2026-04-16T22:49:32.549002Z
-updated_at: 2026-09-06T21:01:45Z
+updated_at: 2026-09-07T05:22:09Z
 ---
 
 # PLAT-202: Per-Range LLM Access Management
@@ -26,6 +26,8 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/architecture.md`
 - IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/canonical-json-v1-vector.json`
 - IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/models.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/core_models.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/sharing_models.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/catalog.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/allocation.py`
 - IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/policy.py`

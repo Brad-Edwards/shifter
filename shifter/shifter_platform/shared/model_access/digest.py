@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 
 def _semantic_data(value: BaseModel | Mapping[str, Any]) -> dict[str, Any]:
+    """Operation for semantic data."""
     data = value.model_dump(mode="json") if isinstance(value, BaseModel) else dict(value)
     data.pop("digest", None)
     data.pop("definition_digest", None)
@@ -30,8 +31,10 @@ def canonical_bytes(value: BaseModel | Mapping[str, Any]) -> bytes:
 
 
 def compute_digest(value: BaseModel | Mapping[str, Any]) -> str:
+    """Operation for compute digest."""
     return "sha256:" + sha256(canonical_bytes(value)).hexdigest()
 
 
 def digest_matches(value: BaseModel | Mapping[str, Any], claimed: str) -> bool:
+    """Operation for digest matches."""
     return hmac.compare_digest(compute_digest(value), claimed)

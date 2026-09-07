@@ -64,6 +64,7 @@
     },
     "AliasAffinity": {
       "additionalProperties": false,
+      "description": "Type for AliasAffinity.",
       "properties": {
         "affinity": {
           "$ref": "#/$defs/AssignmentAffinity"
@@ -82,6 +83,7 @@
       "type": "object"
     },
     "AllocationStrategy": {
+      "description": "Type for AllocationStrategy.",
       "enum": [
         "fixed-v1",
         "weighted-rendezvous-v1"
@@ -90,6 +92,7 @@
       "type": "string"
     },
     "AssignmentAffinity": {
+      "description": "Type for AssignmentAffinity.",
       "enum": [
         "per_range",
         "per_user",
@@ -99,6 +102,7 @@
       "type": "string"
     },
     "BillingComponent": {
+      "description": "Type for BillingComponent.",
       "enum": [
         "input_tokens",
         "output_tokens",
@@ -160,6 +164,7 @@
       "type": "object"
     },
     "Currency": {
+      "description": "Type for Currency.",
       "enum": [
         "AUD",
         "CAD",
@@ -197,6 +202,7 @@
       "type": "object"
     },
     "MembershipMode": {
+      "description": "Type for MembershipMode.",
       "enum": [
         "snapshot",
         "dynamic"
@@ -230,6 +236,7 @@
     },
     "ModelAlias": {
       "additionalProperties": false,
+      "description": "Type for ModelAlias.",
       "properties": {
         "affinity": {
           "$ref": "#/$defs/AssignmentAffinity"
@@ -276,6 +283,7 @@
     },
     "ModelProfile": {
       "additionalProperties": false,
+      "description": "Type for ModelProfile.",
       "properties": {
         "allowed_strategies": {
           "items": {
@@ -351,6 +359,7 @@
     },
     "ModelShard": {
       "additionalProperties": false,
+      "description": "Type for ModelShard.",
       "properties": {
         "billing_components": {
           "items": {
@@ -491,6 +500,7 @@
     },
     "Price": {
       "additionalProperties": false,
+      "description": "Type for Price.",
       "properties": {
         "component": {
           "$ref": "#/$defs/BillingComponent"
@@ -516,6 +526,7 @@
     },
     "PriceSchedule": {
       "additionalProperties": false,
+      "description": "Type for PriceSchedule.",
       "properties": {
         "currency": {
           "$ref": "#/$defs/Currency"
@@ -575,6 +586,7 @@
     },
     "QuotaPool": {
       "additionalProperties": false,
+      "description": "Type for QuotaPool.",
       "properties": {
         "dimension": {
           "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
@@ -621,6 +633,7 @@
       "type": "object"
     },
     "SelectorKind": {
+      "description": "Type for SelectorKind.",
       "enum": [
         "selected_ranges",
         "ctf_event",
@@ -638,6 +651,7 @@
     },
     "SharingBinding": {
       "additionalProperties": false,
+      "description": "Type for SharingBinding.",
       "properties": {
         "authorized_publisher_ref": {
           "$ref": "#/$defs/OwnedReference"
@@ -736,6 +750,7 @@
       "type": "object"
     },
     "SharingFacet": {
+      "description": "Type for SharingFacet.",
       "enum": [
         "profile",
         "provider_identity",
@@ -750,6 +765,7 @@
     },
     "SharingPool": {
       "additionalProperties": false,
+      "description": "Type for SharingPool.",
       "properties": {
         "alias_affinities": {
           "default": [],
@@ -836,6 +852,7 @@
     },
     "SharingSelector": {
       "additionalProperties": false,
+      "description": "Type for SharingSelector.",
       "properties": {
         "ids": {
           "default": [],
@@ -875,6 +892,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Type for ModelAccessCatalog.",
   "properties": {
     "aliases": {
       "items": {

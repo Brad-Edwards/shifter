@@ -41,10 +41,12 @@ def test_same_affinity_namespace_is_stable_for_retries(affinity_id):
         "logical_alias": "coding-main",
         "shards": (ShardWeight(shard_id="a", weight=1), ShardWeight(shard_id="b", weight=2)),
     }
-    assert rank_weighted_rendezvous(**args) == rank_weighted_rendezvous(**args)
+    expected = rank_weighted_rendezvous(**args)
+    assert rank_weighted_rendezvous(**args) == expected
 
 
 def test_fixed_v1_requires_exactly_one_shard():
+    shards = (ShardWeight(shard_id="a", weight=1), ShardWeight(shard_id="b", weight=1))
     with pytest.raises(AllocationError) as exc:
         select_shard(
             strategy=AllocationStrategy.FIXED_V1,
@@ -52,7 +54,7 @@ def test_fixed_v1_requires_exactly_one_shard():
             allocation_group_id=DRAW_ID,
             policy_digest=POLICY_DIGEST,
             logical_alias="coding-main",
-            shards=(ShardWeight(shard_id="a", weight=1), ShardWeight(shard_id="b", weight=1)),
+            shards=shards,
         )
     assert exc.value.code == "allocation.fixed_cardinality"
 

@@ -49,8 +49,9 @@ def test_registry_selects_by_shard_adapter_instead_of_compute_cloud():
 
 def test_unknown_adapter_fails_before_transport():
     shard = load_catalog_json(EXAMPLE.read_text(encoding="utf-8")).shards[0]
+    registry = ProviderAdapterRegistry({})
     with pytest.raises(ContractError) as exc:
-        ProviderAdapterRegistry({}).build(shard)
+        registry.build(shard)
     assert exc.value.code == "provider.unknown_adapter"
 
 
