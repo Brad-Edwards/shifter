@@ -322,10 +322,10 @@ jobs:
         run: |
           python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
 
-      # ADR-004-R23 / issue #1690: the GCP GitHub-Actions WIF trust must pin an
+      # ADR-004-R23 / issues #1690 and #1699: GCP GitHub-Actions WIF trust pins
       # exact protected assertion.ref + literal assertion.sub allow-list (no
       # repository-only condition, no repository-wide principalSet, no CKV_GCP_125
-      # waiver), with the static condition consistent with local.federated_subjects.
+      # waiver), with purpose subjects and permissions disjoint and least privilege.
       # Mirrors the check-tf-gcp-wif-trust pre-commit hook so a commit that skipped
       # pre-commit cannot re-widen the credentialed-CI federation.
       - name: Run check-tf-gcp-wif-trust

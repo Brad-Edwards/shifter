@@ -187,9 +187,11 @@ stored in AWS SSM `/shifter/ami/*`.
   resolve the newest non-deprecated image in the family (the GCP-native analog
   of the AWS SSM parameter—there is no SSM equivalent).
 - Build: `.github/workflows/packer-gcp.yml` (`workflow_dispatch`,
-  `ubuntu-latest` + Workload Identity Federation). Promote dev→prod:
-  `.github/workflows/packer-gcp-promote.yml` (copies the newest dev-family image
-  into the prod project's family and deprecates the previous head).
+  `ubuntu-latest` + purpose-scoped Workload Identity Federation). Validate the
+  exact candidate with `.github/workflows/packer-gcp-validate.yml`. Promote
+  dev→prod with `.github/workflows/packer-gcp-promote.yml`, which verifies the
+  candidate's numeric image ID and exact protected run-attempt/artifact before
+  copying; it attaches the prod family only after READY/source-ID verification.
 - Image types: `ubuntu`, `brokenbk`, `kali`, `windows`, `dc`. **Kali** has no
   public GCP image and the official genericcloud disk is not GCE-bootable, so
   its builder converts Google's `debian-12` base into Kali Rolling in its first

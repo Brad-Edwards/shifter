@@ -32,3 +32,21 @@ variable "allowed_workflow_refs" {
   type        = list(string)
   default     = ["refs/heads/dev", "refs/heads/main"]
 }
+
+variable "promotion_reader_service_account_email" {
+  description = "Prod promote SA email granted read-only access to images when this is the source-project root."
+  type        = string
+  default     = ""
+}
+
+variable "build_read_bucket_names" {
+  description = "Existing GCS input buckets readable by the Packer build identity."
+  type        = set(string)
+  default     = []
+}
+
+variable "terraform_state_bucket_name" {
+  description = "Existing GCS backend bucket receiving deploy/destroy access; defaults to <project>-terraform-state."
+  type        = string
+  default     = ""
+}
