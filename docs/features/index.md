@@ -25,3 +25,4 @@ Detailed guides for each Shifter feature.
 
 - [Credentials](credentials) - Manage SCM and deployment profile credentials
 - [NGFW](ngfw) - Set up persistent firewalls for traffic logging
+- [Per-range model access (planned)](model-access.md) - Proposed organizer, participant, and operator experience under #681

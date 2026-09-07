@@ -1,82 +1,68 @@
-# GitHub Actions -> GCP federation for the packer GCE image builds
-# (packer-gcp.yml). The GCP analog of platform/terraform/global/iam/
-# github-oidc.tf (AWS). GitHub's OIDC token is exchanged for short-lived
-# credentials that impersonate the packer build service account; no long-lived
-# service-account keys are issued.
+# GitHub Actions -> GCP federation for purpose-scoped CI identities.
 
 locals {
-  # Exact-subject WIF federation (ADR-004-R23, #1690) layered on the ADR-037-R7
-  # ref-allowlist (#1685). `federated_subjects` is the single source of truth for
-  # the exact GitHub Actions subjects trusted to impersonate the shared CI build
-  # SA: it drives BOTH the exact-subject WIF bindings below AND the static
-  # `assertion.sub ==` allow-list in the provider condition, which MUST stay in
-  # sync. Checkov CKV_GCP_125 needs a LITERAL `assertion.sub ==` and does not
-  # render `join()`, so those clauses are written out statically; the
-  # check-tf-gcp-wif-trust guard fails the build if they diverge from this list.
-  # Each subject impersonates the SA by its EXACT `sub`
-  # (principal://.../subject/<sub>), never a repository-wide principalSet, which
-  # would trust every workflow, ref, and actor in the repo. An `environment:`
-  # subject does not carry the source branch, so the ref allowlist (below) is what
-  # denies a feature-branch/tag dispatch that reuses an environment subject. The
-  # default is the current single-pool caller union; a future per-purpose pool
-  # narrows it (#1699).
-  federated_subjects = [
-    "repo:${var.github_org}/${var.github_repo}:environment:gcp-dev", # _gcp-dev.yml deploy
-    "repo:${var.github_org}/${var.github_repo}:environment:dev",     # packer-gcp build/validate (dev)
-    "repo:${var.github_org}/${var.github_repo}:environment:proof",   # packer-gcp build/validate (proof)
-    "repo:${var.github_org}/${var.github_repo}:environment:prod",    # packer-gcp-promote
-    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev",  # gcp-dev-destroy (no environment:)
-    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main", # gcp-dev-destroy (no environment:)
-  ]
-  wif_subject_principals = {
-    for sub in local.federated_subjects :
-    sub => "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/${sub}"
-  }
+  image_environment = var.environment == "gcp-dev" ? "dev" : var.environment
+  build_enabled     = contains(["gcp-dev", "proof"], var.environment)
+  validate_enabled  = contains(["gcp-dev", "proof"], var.environment)
+  promote_enabled   = var.environment == "prod"
+  deploy_enabled    = var.environment == "gcp-dev"
+  destroy_enabled   = var.environment == "gcp-dev"
 
-  # CEL fragment for shared build/image callers: assertion.ref must be one of
-  # the allowed protected integration branches (ADR-037-R7, #1685). The
-  # gcp-dev deployment branch is handled separately in the provider condition
-  # and is paired only with the gcp-dev Environment subject.
-  ref_condition = join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == '${r}'"])
+  # Default GitHub Environment subjects do not include a workflow path. Each
+  # purpose therefore has a distinct Environment and a pairwise-disjoint sub.
+  purpose_subjects = {
+    build = local.build_enabled ? [
+      "repo:${var.github_org}/${var.github_repo}:environment:gcp-build-${local.image_environment}",
+    ] : []
+    validate = local.validate_enabled ? [
+      "repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-${local.image_environment}",
+    ] : []
+    promote = local.promote_enabled ? [
+      "repo:${var.github_org}/${var.github_repo}:environment:gcp-promote-prod",
+    ] : []
+    deploy = local.deploy_enabled ? [
+      "repo:${var.github_org}/${var.github_repo}:environment:gcp-dev",
+    ] : []
+    destroy = local.destroy_enabled ? [
+      "repo:${var.github_org}/${var.github_repo}:environment:gcp-dev-destroy",
+    ] : []
+  }
+  federated_subjects = toset(flatten(values(local.purpose_subjects)))
+  purpose_subject_principals = {
+    for purpose, subjects in local.purpose_subjects : purpose => {
+      for sub in subjects :
+      sub => "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/${sub}"
+    }
+  }
+  ref_condition               = join(" || ", [for ref in var.allowed_workflow_refs : "assertion.ref == '${ref}'"])
+  terraform_state_bucket_name = var.terraform_state_bucket_name == "" ? "${var.project_id}-terraform-state" : var.terraform_state_bucket_name
 }
 
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = "${var.name_prefix}-github"
   display_name              = "GitHub Actions (${var.environment})"
-  description               = "Federates ${var.github_org}/${var.github_repo} GitHub Actions for image builds."
+  description               = "Purpose-scoped federation for ${var.github_org}/${var.github_repo}."
 }
 
+# Keep the original resource address so existing pools update their trust
+# condition in place. Checkov requires literal assertion.sub equality clauses,
+# so the profile selector chooses between explicit static CEL strings.
 resource "google_iam_workload_identity_pool_provider" "github" {
-  # No CKV_GCP_125 waiver: the attribute_condition below pins an exact
-  # `assertion.sub ==` allow-list (ADR-004-R23, #1690), which satisfies the check
-  # for real - superseding the ADR-037-R7 ref-only justification for the skip.
   project                            = var.project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = "github"
   display_name                       = "GitHub OIDC"
-
   attribute_mapping = {
     "google.subject"       = "assertion.sub"
     "attribute.repository" = "assertion.repository"
     "attribute.ref"        = "assertion.ref"
   }
-
-  # Three-layer external trust boundary; a token is accepted only when ALL hold:
-  #   1. Repository (ADR-037-R7): tokens from any other repository are rejected
-  #      before the SA binding is consulted.
-  #   2. Ref (ADR-037-R7, #1685): shared build/image subjects require a ref in
-  #      allowed_workflow_refs. The protected gcp-dev branch is admitted only
-  #      when paired with the exact gcp-dev Environment subject. A feature
-  #      branch/tag cannot reuse an environment subject.
-  #   3. Subject (ADR-004-R23, #1690): assertion.sub must be one of the exact
-  #      allow-listed subjects. These clauses are written out statically (Checkov
-  #      cannot render join()) and MUST equal local.federated_subjects
-  #      (check-tf-gcp-wif-trust enforces it). Single-quoted CEL literals so the
-  #      HCL string needs no escaping and the exact `assertion.sub ==` pin
-  #      satisfies CKV_GCP_125 - no waiver needed.
-  attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && ((assertion.ref == 'refs/heads/gcp-dev' && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev') || ((${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:proof' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:prod' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main')))"
-
+  attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && ${
+    var.environment == "gcp-dev" ? "((assertion.ref == 'refs/heads/gcp-dev' && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev') || ((${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-build-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev-destroy')))" :
+    var.environment == "proof" ? "(${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-build-proof' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-proof')" :
+    "(${local.ref_condition}) && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-promote-prod'"
+  }"
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
@@ -85,35 +71,78 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 resource "google_service_account" "packer_build" {
   project      = var.project_id
   account_id   = "${replace(var.name_prefix, "-", "")}-packer"
-  display_name = "Shifter ${var.environment} packer GCE image builder"
+  display_name = "Shifter ${var.environment} GCE image builder"
 }
 
-# Allow only the exact allow-listed GitHub Actions subjects to impersonate the
-# build SA via the pool - one binding per subject, never a repository-wide
-# principalSet (ADR-004-R23, #1690).
+resource "google_service_account" "validate" {
+  count        = local.validate_enabled ? 1 : 0
+  project      = var.project_id
+  account_id   = "${replace(var.name_prefix, "-", "")}-validate"
+  display_name = "Shifter ${var.environment} GCE image validator"
+}
+
+resource "google_service_account" "promote" {
+  count        = local.promote_enabled ? 1 : 0
+  project      = var.project_id
+  account_id   = "${replace(var.name_prefix, "-", "")}-promote"
+  display_name = "Shifter prod GCE image promoter"
+}
+
+resource "google_service_account" "deploy" {
+  count        = local.deploy_enabled ? 1 : 0
+  project      = var.project_id
+  account_id   = "${replace(var.name_prefix, "-", "")}-deploy"
+  display_name = "Shifter gcp-dev platform deployer"
+}
+
+resource "google_service_account" "destroy" {
+  count        = local.destroy_enabled ? 1 : 0
+  project      = var.project_id
+  account_id   = "${replace(var.name_prefix, "-", "")}-destroy"
+  display_name = "Shifter gcp-dev platform destroyer"
+}
+
 resource "google_service_account_iam_member" "packer_build_wif" {
-  for_each           = local.wif_subject_principals
+  for_each           = local.purpose_subject_principals.build
   service_account_id = google_service_account.packer_build.name
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
 
-# The builder VM runs as this same service account, so the build SA needs
-# serviceAccountUser on ITSELF (not project-wide, which would let it run VMs as
-# any SA and trips CKV_GCP_49). This also satisfies the `actAs` the caller needs
-# when it pins both the Cloud Build identity (--cloudbuild-service-account) and
-# the export worker VM (--compute-service-account) to this same SA.
+resource "google_service_account_iam_member" "validate_wif" {
+  for_each           = local.purpose_subject_principals.validate
+  service_account_id = google_service_account.validate[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = each.value
+}
+
+resource "google_service_account_iam_member" "promote_wif" {
+  for_each           = local.purpose_subject_principals.promote
+  service_account_id = google_service_account.promote[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = each.value
+}
+
+resource "google_service_account_iam_member" "deploy_wif" {
+  for_each           = local.purpose_subject_principals.deploy
+  service_account_id = google_service_account.deploy[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = each.value
+}
+
+resource "google_service_account_iam_member" "destroy_wif" {
+  for_each           = local.purpose_subject_principals.destroy
+  service_account_id = google_service_account.destroy[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = each.value
+}
+
 resource "google_service_account_iam_member" "packer_build_act_as_self" {
   service_account_id = google_service_account.packer_build.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.packer_build.email}"
 }
 
-# `gcloud compute images export` runs as a Cloud Build job that mints a
-# short-lived access token for the export worker's compute service account. With
-# the build pinned to this SA (--cloudbuild-service-account), it generates that
-# token for itself, so it needs serviceAccountTokenCreator on ITSELF. Scoped to
-# this SA, not project-wide (mirrors the provisioner signBlob self-binding).
 resource "google_service_account_iam_member" "packer_build_token_creator_self" {
   service_account_id = google_service_account.packer_build.name
   role               = "roles/iam.serviceAccountTokenCreator"
@@ -121,11 +150,101 @@ resource "google_service_account_iam_member" "packer_build_token_creator_self" {
 }
 
 resource "google_project_iam_member" "packer_build_roles" {
-  # checkov:skip=CKV_GCP_42:The shared CI build+deploy SA manages all of platform-core (GKE, Cloud SQL, Redis, Pub/Sub, Secret Manager, KMS, networking, IAM), which requires admin-level predefined roles; this is the scoped enumeration replacing the rehearsal-era roles/owner grant (#407, #615). One dedicated, federation-only SA.
-  # checkov:skip=CKV_GCP_49:Provisioning the platform inherently needs SA-management/impersonation roles at project scope - serviceAccountAdmin to create the workload SAs (no narrower role creates SAs) and cloudbuild.builds.editor for `gcloud compute images export` (runs as the Cloud Build agent). serviceAccountUser/serviceAccountTokenCreator are NOT granted project-wide - they stay resource-scoped (packer_build_act_as_self/token_creator_self on this SA; deploy_act_as_gke_nodes on the node SA), so CKV_GCP_41 does not fire (#407, #615).
-  for_each = toset(var.build_roles)
+  for_each = local.build_enabled ? toset(var.build_roles) : toset([])
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.packer_build.email}"
+}
 
+# Build inputs are granted by their owning bucket, not through project-wide
+# Storage Admin. The exported-image bucket writer lives in packer-build-infra.
+resource "google_storage_bucket_iam_member" "packer_build_reader" {
+  for_each = local.build_enabled ? var.build_read_bucket_names : toset([])
+  bucket   = each.value
+  role     = "roles/storage.objectViewer"
+  member   = "serviceAccount:${google_service_account.packer_build.email}"
+}
+
+resource "google_project_iam_custom_role" "validate" {
+  count       = local.validate_enabled ? 1 : 0
+  project     = var.project_id
+  role_id     = "${replace(var.name_prefix, "-", "_")}_validate"
+  title       = "Shifter GCE image validator"
+  description = "Disposable no-SA validation VM lifecycle and exact-candidate evidence labels."
+  permissions = var.validate_permissions
+}
+
+resource "google_project_iam_member" "validate_roles" {
+  for_each = local.validate_enabled ? toset(concat(var.validate_roles, [google_project_iam_custom_role.validate[0].name])) : toset([])
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.validate[0].email}"
+}
+
+resource "google_project_iam_custom_role" "promote" {
+  count       = local.promote_enabled ? 1 : 0
+  project     = var.project_id
+  role_id     = "${replace(var.name_prefix, "-", "_")}_promote"
+  title       = "Shifter GCE image promoter"
+  description = "Verified prod image copy, channel commit, and previous-head deprecation."
+  permissions = var.promote_permissions
+}
+
+resource "google_project_iam_member" "promote_role" {
+  count   = local.promote_enabled ? 1 : 0
   project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.packer_build.email}"
+  role    = google_project_iam_custom_role.promote[0].name
+  member  = "serviceAccount:${google_service_account.promote[0].email}"
+}
+
+resource "google_project_iam_member" "promotion_source_image_reader" {
+  count   = var.promotion_reader_service_account_email == "" ? 0 : 1
+  project = var.project_id
+  role    = "roles/compute.imageUser"
+  member  = "serviceAccount:${var.promotion_reader_service_account_email}"
+}
+
+resource "google_project_iam_member" "deploy_roles" {
+  for_each = local.deploy_enabled ? toset(var.platform_roles) : toset([])
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.deploy[0].email}"
+}
+
+resource "google_project_iam_member" "destroy_roles" {
+  for_each = local.destroy_enabled ? toset(var.platform_roles) : toset([])
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.destroy[0].email}"
+}
+
+
+# The foundational root owns CI access to its pre-existing backend bucket.
+# These bindings outlive platform-core and replace workflow-time self-grants.
+resource "google_storage_bucket_iam_member" "deploy_state_object_admin" {
+  count  = local.deploy_enabled ? 1 : 0
+  bucket = local.terraform_state_bucket_name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.deploy[0].email}"
+}
+
+resource "google_storage_bucket_iam_member" "deploy_state_bucket_reader" {
+  count  = local.deploy_enabled ? 1 : 0
+  bucket = local.terraform_state_bucket_name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.deploy[0].email}"
+}
+
+resource "google_storage_bucket_iam_member" "destroy_state_object_admin" {
+  count  = local.destroy_enabled ? 1 : 0
+  bucket = local.terraform_state_bucket_name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.destroy[0].email}"
+}
+
+resource "google_storage_bucket_iam_member" "destroy_state_bucket_reader" {
+  count  = local.destroy_enabled ? 1 : 0
+  bucket = local.terraform_state_bucket_name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.destroy[0].email}"
 }

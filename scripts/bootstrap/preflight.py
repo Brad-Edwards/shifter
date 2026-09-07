@@ -217,7 +217,12 @@ def _gcp_secret_checks() -> list[SecretCheck]:
             True,
             f"Set GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN (see {_DOCS}).",
         ),
-        SecretCheck("GCP_SERVICE_ACCOUNT", "Deploy service account", True, f"Set GCP_SERVICE_ACCOUNT (see {_DOCS})."),
+        SecretCheck(
+            "GCP_DEPLOY_SERVICE_ACCOUNT",
+            "Deploy service account",
+            True,
+            f"Set GCP_DEPLOY_SERVICE_ACCOUNT (see {_DOCS}).",
+        ),
         SecretCheck(
             "GCP_WORKLOAD_IDENTITY_PROVIDER",
             "Workload identity provider",

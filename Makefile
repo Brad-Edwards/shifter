@@ -44,7 +44,7 @@ DEVMAIN_BODY := Promotes dev to main. Merge this PR with a merge commit. Do not 
 .DEFAULT_GOAL := help
 .PHONY: help test test-platform test-platform-postgres test-platform-redis \
         test-provisioner test-packer test-installation test-bootstrap \
-        test-check-layer-imports test-js test-adr-guard policy devmain
+        test-check-layer-imports test-js test-platform-e2e test-adr-guard policy devmain
 
 help: ## Show this help
 	@echo "Shifter developer entrypoint. Test targets reproduce CI from a clean"
@@ -95,6 +95,21 @@ test-charts: ## Helm chart contract suite (renders every backend profile)
 
 test-js: ## Platform JavaScript (Jest) suite with coverage
 	cd shifter/shifter_platform && npm ci && npm run test:coverage
+
+# Authenticated SPA E2E (#1526). Builds the real Django-hosted SPA, migrates and
+# seeds a hermetic SQLite stack, and drives Playwright journeys through normal
+# session/CSRF. Mirrors the `shifter-platform-e2e` CI job (which uses PostgreSQL).
+# LOCAL_PROVISIONER/ENGINE_TASK_* stay unset, so range launch enqueues nothing
+# and no cloud is contacted. Requires a Chromium build (installed below).
+test-platform-e2e: ## Authenticated SPA E2E (Playwright) against the hermetic Django-hosted SPA
+	cd shifter/shifter_platform && uv sync --group dev && \
+	  (cd frontend && npm ci && npm run build) && \
+	  rm -f db.sqlite3 && \
+	  $(PLATFORM_ENV) uv run python manage.py collectstatic --noinput && \
+	  $(PLATFORM_ENV) uv run python manage.py migrate --noinput && \
+	  $(PLATFORM_ENV) uv run python manage.py seed_e2e && \
+	  cd frontend && npx playwright install chromium && \
+	  ( $(PLATFORM_ENV) npm run test:e2e; status=$$?; rm -f ../db.sqlite3; exit $$status )
 
 # Mirrors the `adr-guard-tests` CI job, including its pinned interpreter and
 # pyyaml, so the guard suite runs from a clean checkout the same way. CI selects

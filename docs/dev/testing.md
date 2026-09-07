@@ -21,6 +21,7 @@ command (see `docs/DEVELOPMENT_WORKFLOW.md`).
 | `make test-provisioner` | Engine provisioner suite |
 | `make test-installation` / `test-bootstrap` / `test-check-layer-imports` | Package suites |
 | `make test-js` | Platform JavaScript (Jest) with coverage |
+| `make test-platform-e2e` | Authenticated SPA E2E (Playwright); needs a Chromium build |
 | `make test-adr-guard` | Repository-guard suite; mirrors the `adr-guard-tests` CI job |
 | `make test` | Every no-service lane at once |
 
@@ -69,6 +70,18 @@ time-bounded exception.
 | `scripts/check_layer_imports` | 96% | 95 |
 | `shifter/packer` | n/a (Packer HCL; no owned production Python) | not a coverage publisher |
 
+**SPA (frontend) floor.** The Django-hosted React SPA
+(`shifter/shifter_platform/frontend`) enforces its own absolute floors in
+`vite.config.ts` (`test.coverage.thresholds` for statements, branches,
+functions, and lines), each set one point under the measured baseline like the
+Python packages so the floor absorbs run-to-run variance and only rises. The
+measured source set is `src/**/*.{ts,tsx}` excluding tests, test support, and
+the generated `src/api/schema.d.ts`; the first-party entrypoint and composition
+root stay measured. The SPA's Vitest LCOV (`frontend/coverage/lcov.info`) is
+uploaded by the `SPA (shifter_platform frontend)` CI job and restored into the
+`sonarcloud` job, so SPA changed lines are held to the same changed-code gate
+below (#1526).
+
 **Changed-code floor**, owned by the SonarCloud `raes-strict` quality gate,
 which fails a PR when `new_coverage < 80` (80% coverage on changed lines), plus
 `new_violations > 0`, new duplicated-lines density > 3%, any new rating worse than
@@ -97,3 +110,31 @@ regardless of test order or xdist worker.
   [#1601](https://github.com/Brad-Edwards/shifter/issues/1601).
 - Tests that intentionally assert a warning use `pytest.warns` at the behavior
   boundary; that is an assertion, not a baseline exception.
+
+## Authenticated SPA end-to-end (Playwright)
+
+`make test-platform-e2e` runs the authenticated browser journeys against the
+**real Django-hosted built SPA** (#1526). It is hermetic: it builds the SPA,
+migrates and seeds a job-local database, and drives Playwright through normal
+Django sessions and CSRF. The CI job `shifter-platform-e2e` in
+`.github/workflows/_quality.yml` runs the same flow against a job-local
+PostgreSQL service and feeds the `PR Gate`; the make target uses SQLite locally.
+
+Synthetic actors are established by the dev/test-only `seed_e2e` management
+command (staff, threat-research, and standard actors, plus the staff actor's
+administrable organization) and by `dev_login` (CTF organizer/participant). The
+Playwright config's `auth.setup.ts` logs each actor in once and reuses its
+`storageState`. No cloud, provisioner, IdP, or live-range dependency is used:
+`LOCAL_PROVISIONER`/`ENGINE_TASK_*` stay unset, so a range launch enqueues
+nothing and contacts no cloud.
+
+Hermetic scope: login/auth-revocation, workspace lifecycle
+(create/rename/archive/restore), shared-audit history, authorization denial
+(client advisory **and** the authoritative API 403), and CTF
+organizer/participant/threat-research role landings. Journeys that require a live
+provisioner (range readiness/terminal/cleanup, CTF range, Guacamole) are the
+deployed tier and are tracked separately, not run in the PR lane.
+
+Authenticated Playwright traces are retained only on a local retry and are never
+uploaded as CI artifacts (ADR-055-R7). Reproduce failures locally with
+`make test-platform-e2e`.

@@ -120,6 +120,21 @@ resource "google_container_cluster" "platform" {
     enable_components = ["SYSTEM_COMPONENTS"]
   }
 
+  # NodeLocal DNSCache is incompatible with Dataplane V2 (#1295): with kube-proxy
+  # replaced by Cilium eBPF, the node-local-dns daemon can only reach kube-dns
+  # pods on its OWN node via the kube-dns ClusterIP, so node-local-dns on every
+  # node without a kube-dns pod fails to forward ("connect: connection refused"
+  # to kube-dns-upstream) and DNS breaks cluster-wide (cilium/cilium#23848).
+  # GKE (1.35 / REGULAR) turns dnsCacheConfig on by default, so disable it
+  # explicitly: pods then resolve against kube-dns directly through Cilium's eBPF
+  # ClusterIP load-balancing (the normal pod->ClusterIP path, which works). This
+  # is why the platform was healthy before Dataplane V2 and regressed after.
+  addons_config {
+    dns_cache_config {
+      enabled = false
+    }
+  }
+
   resource_labels = var.common_labels
 }
 
