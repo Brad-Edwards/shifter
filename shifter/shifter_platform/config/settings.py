@@ -270,6 +270,7 @@ from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
 # Split into config/_database_settings.py to keep this module under the S104
 # 500-line cap; the IAM-auth DB path lives there (issue #159).
 from config._database_settings import *  # noqa: E402  # NOSONAR
+from config._model_access_settings import *  # noqa: E402  # NOSONAR
 from config._raes_settings import *  # noqa: E402  # NOSONAR
 
 # #28: deployment-owned warm-pool policy (parsed/validated by shared.warm_pool.policy),

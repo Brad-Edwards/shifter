@@ -24,6 +24,7 @@ if str(_SHIFTER_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SHIFTER_PACKAGE_ROOT))
 
 from installation.loader import load_root_config  # noqa: E402
+from installation.render import render_model_access_env  # noqa: E402
 from installation.runtime_inventory import (  # noqa: E402
     AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS,
     AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS,
@@ -201,6 +202,7 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
     if missing:
         raise ValueError("runtime_env is missing required keys: " + ", ".join(missing))
     domain = config.deployment.domain
+    model_access_env = dict(line.split("=", 1) for line in render_model_access_env(config).splitlines())
     return {
         **dict(raw),
         "AUTH_PROVIDER": "oidc",
@@ -208,6 +210,7 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
         "DJANGO_ALLOWED_HOSTS": f"{domain},localhost,127.0.0.1",
         "DJANGO_CSRF_TRUSTED_ORIGINS": f"https://{domain}",
         "ENVIRONMENT": _runtime_environment(config.deployment.profile),
+        **model_access_env,
         "SITE_URL": f"https://{domain}",
     }
 
