@@ -10,6 +10,7 @@ from pydantic import Field, StrictBool, field_validator, model_validator
 
 from shared.model_access.core_models import (
     AccessLimits,
+    BillingComponent,
     ClosedModel,
     Digest,
     Identifier,
@@ -22,66 +23,7 @@ from shared.model_access.core_models import (
     QuotaPool,
     _require_unique,
 )
-from shared.model_access.core_models import AllocationStrategy as AllocationStrategy
-from shared.model_access.core_models import (
-    AssignmentAffinity as AssignmentAffinity,
-)
-from shared.model_access.core_models import BillingComponent as BillingComponent
-from shared.model_access.core_models import (
-    BrokerWorkloadIdentityReference as BrokerWorkloadIdentityReference,
-)
-from shared.model_access.core_models import (
-    Capability as Capability,
-)
-from shared.model_access.core_models import (
-    ComputeTargetReference as ComputeTargetReference,
-)
-from shared.model_access.core_models import (
-    Currency as Currency,
-)
-from shared.model_access.core_models import (
-    DynamicSecretProjectReference as DynamicSecretProjectReference,
-)
-from shared.model_access.core_models import (
-    EffectiveProfile as EffectiveProfile,
-)
-from shared.model_access.core_models import (
-    MembershipMode as MembershipMode,
-)
-from shared.model_access.core_models import (
-    ModelAccountReference as ModelAccountReference,
-)
-from shared.model_access.core_models import (
-    ModelProjectReference as ModelProjectReference,
-)
-from shared.model_access.core_models import (
-    Price as Price,
-)
-from shared.model_access.core_models import (
-    ProviderCredentialReference as ProviderCredentialReference,
-)
-from shared.model_access.core_models import (
-    Region as Region,
-)
-from shared.model_access.core_models import (
-    ScenarioNeed as ScenarioNeed,
-)
-from shared.model_access.core_models import (
-    SelectorKind as SelectorKind,
-)
-from shared.model_access.core_models import (
-    SharingFacet as SharingFacet,
-)
-from shared.model_access.sharing_models import (
-    AliasAffinity as AliasAffinity,
-)
-from shared.model_access.sharing_models import (
-    SharingBinding,
-    SharingPool,
-)
-from shared.model_access.sharing_models import (
-    SharingSelector as SharingSelector,
-)
+from shared.model_access.sharing_models import SharingBinding, SharingPool
 
 
 class ModelAccessCatalog(ClosedModel):
@@ -195,7 +137,13 @@ def _validate_alias_references(catalog: ModelAccessCatalog, ids: dict[str, set[s
         _validate_alias(alias, ids, shards, prices, profiles)
 
 
-def _validate_alias(alias, ids, shards, prices, profiles) -> None:
+def _validate_alias(
+    alias: ModelAlias,
+    ids: dict[str, set[str]],
+    shards: dict[str, ModelShard],
+    prices: dict[str, PriceSchedule],
+    profiles: dict[str, ModelProfile],
+) -> None:
     """Operation for validate alias."""
     if alias.profile_id not in profiles or alias.price_schedule_id not in prices:
         raise ValueError("alias references an unknown profile or price schedule")
@@ -209,7 +157,11 @@ def _validate_alias(alias, ids, shards, prices, profiles) -> None:
         _validate_eligible_shard(shards[shard_id], profile, priced_components)
 
 
-def _validate_eligible_shard(shard, profile, priced_components) -> None:
+def _validate_eligible_shard(
+    shard: ModelShard,
+    profile: ModelProfile,
+    priced_components: set[BillingComponent],
+) -> None:
     """Operation for validate eligible shard."""
     if not set(profile.capabilities).issubset(shard.capabilities):
         raise ValueError("eligible shard cannot satisfy its profile")

@@ -9,7 +9,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from shared.model_access.digest import compute_digest, digest_matches
-from shared.model_access.models import ModelAccessCatalog, SharingBinding
+from shared.model_access.models import ModelAccessCatalog
+from shared.model_access.sharing_models import SharingBinding
 
 _ROOT_PATH = "<root>"
 _VALIDATION_ERROR = "contract.validation"

@@ -202,9 +202,10 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
     if missing:
         raise ValueError("runtime_env is missing required keys: " + ", ".join(missing))
     domain = config.deployment.domain
-    model_access_env = {  # noqa: C416 - explicit comprehension satisfies Sonar S7494
-        key: value for key, value in (line.split("=", 1) for line in render_model_access_env(config).splitlines())
-    }
+    model_access_env = {}
+    for line in render_model_access_env(config).splitlines():
+        key, value = line.split("=", 1)
+        model_access_env[key] = value
     return {
         **dict(raw),
         "AUTH_PROVIDER": "oidc",

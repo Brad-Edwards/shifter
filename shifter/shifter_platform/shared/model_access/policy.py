@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from shared.model_access.catalog import ContractError
-from shared.model_access.models import AccessLimits, EffectiveProfile, ModelProfile, ScenarioNeed
+from shared.model_access.core_models import AccessLimits, EffectiveProfile, ModelProfile, ScenarioNeed
 
 
 def intersect_profile(profile: ModelProfile, need: ScenarioNeed) -> EffectiveProfile | None:

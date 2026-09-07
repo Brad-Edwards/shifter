@@ -8,7 +8,7 @@ from hashlib import sha256
 from struct import pack
 from uuid import UUID
 
-from shared.model_access.models import AllocationStrategy, Identifier
+from shared.model_access.core_models import AllocationStrategy, Identifier
 
 _ASCII_ID = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$", re.ASCII)
 _DIGEST = re.compile(r"^sha256:([0-9a-f]{64})$", re.ASCII)
@@ -92,7 +92,7 @@ def rank_weighted_rendezvous(
         match.group(1),
         logical_alias,
     )
-    ranked = tuple(
+    ranked = (
         RankedShard(
             shard_id=shard.shard_id,
             score=max(_slot_score((*common, shard.shard_id), slot) for slot in range(shard.weight)),

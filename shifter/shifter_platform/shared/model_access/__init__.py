@@ -9,11 +9,8 @@ from shared.model_access.catalog import (
     seal_sharing_binding,
     validate_catalog,
 )
-from shared.model_access.digest import canonical_bytes, compute_digest, digest_matches
-from shared.model_access.models import (
-    AccessGrant,
+from shared.model_access.core_models import (
     AccessLimits,
-    AliasAffinity,
     AllocationStrategy,
     AssignmentAffinity,
     BillingComponent,
@@ -23,7 +20,6 @@ from shared.model_access.models import (
     DynamicSecretProjectReference,
     EffectiveProfile,
     MembershipMode,
-    ModelAccessCatalog,
     ModelAccountReference,
     ModelAlias,
     ModelProfile,
@@ -36,11 +32,10 @@ from shared.model_access.models import (
     QuotaPool,
     ScenarioNeed,
     SelectorKind,
-    SharingBinding,
     SharingFacet,
-    SharingPool,
-    SharingSelector,
 )
+from shared.model_access.digest import canonical_bytes, compute_digest, digest_matches
+from shared.model_access.models import AccessGrant, ModelAccessCatalog
 from shared.model_access.policy import intersect_profile
 from shared.model_access.provider import (
     BillingAmount,
@@ -55,6 +50,7 @@ from shared.model_access.provider import (
     ProviderUsage,
     VerifiedUsage,
 )
+from shared.model_access.sharing_models import AliasAffinity, SharingBinding, SharingPool, SharingSelector
 
 __all__ = [
     "AccessGrant",

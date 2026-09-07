@@ -9,7 +9,7 @@ from typing import Annotated, Protocol, runtime_checkable
 from pydantic import Field, StrictBool, StrictInt, field_validator, model_validator
 
 from shared.model_access.catalog import ContractError
-from shared.model_access.models import (
+from shared.model_access.core_models import (
     BillingComponent,
     Capability,
     ClosedModel,
