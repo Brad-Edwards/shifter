@@ -9,6 +9,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "./client";
+import { principalContextKeys } from "./principalContext";
 import type {
   CreateWorkspaceRequest,
   TransferWorkspaceOwnershipRequest,
@@ -37,6 +38,11 @@ function invalidateWorkspaces(queryClient: ReturnType<typeof useQueryClient>, uu
   if (uuid) {
     queryClient.invalidateQueries({ queryKey: workspaceKeys.detail(uuid) });
   }
+  // The console switcher and workspace-scope layout resolve the selected
+  // workspace from the principal-context membership snapshot, so a create,
+  // rename, or archive/restore must refresh it too — otherwise a just-created
+  // workspace resolves as "not found" until a manual reload.
+  queryClient.invalidateQueries({ queryKey: principalContextKeys.all });
 }
 
 export function useWorkspaces(filters: WorkspaceListFilters, enabled = true) {

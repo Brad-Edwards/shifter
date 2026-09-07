@@ -1,7 +1,8 @@
 # SPA Verification Gates Preflight (#1526)
 
-Status: pre-implementation guidance; two acceptance-criteria conflicts require
-issue clarification before implementation can be declared complete
+Status: pre-implementation guidance; coverage/LCOV enforcement is already
+present, and two acceptance-criteria conflicts require issue clarification
+before the remaining implementation can be declared complete
 
 Date: 2026-09-06
 
@@ -49,12 +50,14 @@ browser-axe gates are architecturally viable under the decisions below.
 
 ## Coverage boundary
 
-The preflight run on 2026-09-06 passed 501 Vitest tests in 79 files and measured
-78.73% statements, 70.61% branches, 73.77% functions, and 80.16% lines. The
-aggregate still hides zero coverage in the composition root and control-plane
-modules, including `router.tsx`, `RootLayout.tsx`, `bootstrap-context.tsx`,
-`api/bootstrap.ts`, and `api/queryClient.ts`. These figures are evidence for
-setting the initial floor, not durable policy values in this note.
+The current preflight run on 2026-09-06 passed 533 Vitest tests in 88 files and
+measured 80.77% statements, 71.85% branches, 75.26% functions, and 82.25%
+lines. The generated LCOV includes `main.tsx`, `router.tsx`, `RootLayout.tsx`,
+`bootstrap-context.tsx`, `api/bootstrap.ts`, `api/queryClient.ts`, and
+`state-map.ts`; focused tests for their main composition, authorization,
+bootstrap, error, and retry policies are now present. These figures confirm the
+current absolute gate, but they do not replace the risk-behavior contract below
+or become durable policy values in this note.
 
 `frontend/vite.config.ts` remains the sole owner of the SPA's measured source
 universe and absolute thresholds. Measure owned executable `src/**/*.ts(x)`;
@@ -72,14 +75,14 @@ query retry policy, and representative mutation failure/retry-by-user behavior.
 A high aggregate percentage cannot substitute for those behaviors, and a list
 of critical files must not become a second route or application schema.
 
-SonarCloud remains the single changed-code authority. Publish the existing SPA
-LCOV output through the existing path-routed SPA job, restore it into the
-existing `sonarcloud` job, include its path in
-`sonar.javascript.lcov.reportPaths`, and remove the SPA-only coverage exclusion.
-The server-side `raes-strict` gate already enforces 80% new-code coverage and PR
-analysis already uses full history and waits for the quality gate. A missing
-LCOV artifact or a failed SPA producer must fail the scan prerequisite; do not
-add a second diff-coverage script or parse terminal output.
+SonarCloud remains the single changed-code authority. The existing path-routed
+SPA job already publishes LCOV with `if-no-files-found: error`; the existing
+`sonarcloud` job restores it, `sonar.javascript.lcov.reportPaths` includes it,
+and the SPA is no longer coverage-excluded. Preserve that one path. The
+server-side `raes-strict` gate enforces 80% new-code coverage and PR analysis
+uses full history and waits for the quality gate. A missing LCOV artifact or a
+failed SPA producer must continue to fail the scan prerequisite; do not add a
+second diff-coverage script or parse terminal output.
 
 ## Test ownership and boundaries
 
@@ -167,6 +170,10 @@ and runtime logging are incumbents to exercise, not normal change targets.
 
 - Do not restore or alias Risk Register, add a generic comments abstraction, or
   relabel unrelated workspace/audit behavior as the retired acceptance flow.
+- The `/risks/` strings retained as arbitrary request paths in
+  `src/api/client.test.ts` test the generic HTTP client only. They are not a
+  route, schema, fixture contract, or evidence that the removed feature exists;
+  do not use them to resolve the issue ambiguity.
 - Do not upload authenticated Playwright traces, storage state, screenshots,
   raw axe JSON/HTML, or response bodies to public Actions artifacts.
 - Do not enforce coverage by parsing console text, add a second diff calculator,
