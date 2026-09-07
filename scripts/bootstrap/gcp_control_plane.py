@@ -603,7 +603,6 @@ def _helm_network_policy_values(
         "googleApiCidrs": [
             "199.36.153.4/30",  # NOSONAR - restricted.googleapis.com VIP range.
             "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP range.
-            "34.126.0.0/18",  # NOSONAR - Google APIs backend range for Private Google Access.
         ],
         "privateServiceCidrs": private_service_cidrs,
         "kubernetesApiCidrs": kubernetes_api_cidrs,
@@ -688,7 +687,6 @@ def render_gcp_helm_values(
             "providerApiCidrs": [
                 "199.36.153.4/30",  # NOSONAR - restricted.googleapis.com VIP.
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
-                "34.126.0.0/18",  # NOSONAR - Google APIs backend range for Private Google Access.
             ],
             "privateServiceCidrs": _gcp_private_service_cidrs(outputs),
             "kubernetesApiCidrs": [str(_get_output_value(outputs, "gke_services_cidr")).strip()],
