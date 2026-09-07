@@ -46,6 +46,29 @@ resource "google_compute_firewall" "packer_iap_ingress" {
   }
 }
 
+# Validation guests deliberately have no service account, so they cannot match
+# the build-SA target above. A dedicated network tag admits only the runner's
+# IAP tunnels to the validator's SSH, management SSH, and LDAP probe ports.
+resource "google_compute_firewall" "validation_iap_ingress" {
+  project   = var.project_id
+  name      = "${var.name_prefix}-validate-iap-ingress"
+  network   = var.platform_network
+  direction = "INGRESS"
+  priority  = 800
+
+  source_ranges = ["35.235.240.0/20"] # NOSONAR - Google IAP TCP forwarding range.
+  target_tags   = [var.validation_network_tag]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22", "389", "2222"]
+  }
+
+  log_config {
+    metadata = "INCLUDE_ALL_METADATA"
+  }
+}
+
 resource "google_storage_bucket" "gdc_vm_images" {
   project = var.project_id
   # Project-prefixed for global uniqueness (GCS bucket names are global). The bare

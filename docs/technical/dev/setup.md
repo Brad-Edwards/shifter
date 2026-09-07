@@ -49,8 +49,8 @@ for the authoritative order.
 
 - A GCP project with the required APIs enabled.
 - Workload Identity Federation configured for GitHub Actions (pool, provider,
-  service account), with `GCP_SERVICE_ACCOUNT` and
-  `GCP_WORKLOAD_IDENTITY_PROVIDER` set as GitHub secrets.
+  purpose service accounts), with the explicit `GCP_*_SERVICE_ACCOUNT` value
+  and `GCP_WORKLOAD_IDENTITY_PROVIDER` set in each purpose Environment.
 - Range guest images available for range provisioning. See
   [`gcp-range-cell-deploy.md`](../../dev/gcp-range-cell-deploy.md).
 
@@ -473,15 +473,23 @@ Create a GCP project and enable the APIs required by the bootstrap path.
 
 ### 2. Configure Workload Identity Federation
 
-Set up OIDC federation for GitHub Actions:
+Apply `platform/terraform/gcp/global/cicd-oidc` for each used identity profile
+(`gcp-dev`, `proof`, and `prod`) and follow the staged cutover/readback in
+`docs/dev/deploy-secrets.md`. Do not hand-create service accounts or broaden the
+provider condition. The profiles create one provider per project and distinct
+purpose identities:
 
-1. Create a Workload Identity Pool and Provider
-2. Create a service account with required roles
-3. Add GitHub secrets:
+1. Create and protect the purpose GitHub Environments.
+2. Apply the purpose identities from an independent operator principal.
+3. Add each output only to its matching Environment:
 
 | Secret | Value |
 |--------|-------|
-| `GCP_SERVICE_ACCOUNT` | Service account email |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | Deploy service account email |
+| `GCP_DESTROY_SERVICE_ACCOUNT` | Destroy service account email |
+| `GCP_PACKER_BUILD_SERVICE_ACCOUNT` | Image build service account email |
+| `GCP_PACKER_VALIDATE_SERVICE_ACCOUNT` | Image validation service account email |
+| `GCP_PACKER_PROMOTE_SERVICE_ACCOUNT` | Image promotion service account email |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | WIF provider resource name |
 
 ### 3. Configure deployment-specific values

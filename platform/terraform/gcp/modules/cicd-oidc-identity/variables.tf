@@ -1,15 +1,20 @@
 variable "project_id" {
-  description = "GCP project that hosts the Workload Identity pool and packer build service account."
+  description = "GCP project that hosts this environment's WIF provider and purpose identities."
   type        = string
 }
 
 variable "environment" {
-  description = "Environment name (dev or prod)."
+  description = "Identity-root profile: gcp-dev, proof, or prod."
   type        = string
+
+  validation {
+    condition     = contains(["gcp-dev", "proof", "prod"], var.environment)
+    error_message = "environment must be gcp-dev, proof, or prod."
+  }
 }
 
 variable "name_prefix" {
-  description = "Resource name prefix (e.g. shifter-gcp-dev)."
+  description = "Resource name prefix (for example shifter-gcp-dev)."
   type        = string
 }
 
@@ -20,75 +25,139 @@ variable "github_org" {
 }
 
 variable "github_repo" {
-  description = "GitHub repository allowed to federate into the build service account."
+  description = "GitHub repository allowed to federate into the purpose identities."
   type        = string
   default     = "shifter"
 }
 
 variable "allowed_workflow_refs" {
-  description = <<-EOT
-    GitHub refs whose OIDC tokens are accepted by the WIF provider. Tokens from
-    any other ref are rejected at the provider before the SA binding is consulted
-    (ADR-037-R7). Defaults to the two protected integration branches. Override
-    only with explicit justification documented in docs/adr/exceptions.yaml.
-  EOT
+  description = "Full protected refs accepted by image, destroy, and ordinary deploy paths."
   type        = list(string)
   default     = ["refs/heads/dev", "refs/heads/main"]
 
   validation {
-    condition     = length(var.allowed_workflow_refs) > 0
-    error_message = "allowed_workflow_refs must contain at least one ref."
+    condition = length(var.allowed_workflow_refs) > 0 && alltrue([
+      for ref in var.allowed_workflow_refs : contains(["refs/heads/dev", "refs/heads/main"], ref)
+    ])
+    error_message = "allowed_workflow_refs may contain only refs/heads/dev and refs/heads/main."
   }
 }
 
 variable "build_roles" {
-  description = <<-EOT
-    Project roles granted to the shared CI build+deploy service account. It runs
-    BOTH the packer GCE image builds AND the platform-core Terraform apply/destroy
-    (this SA is the only WIF-federated deploy identity), so it needs the roles to
-    manage every platform-core resource. This is the scoped enumeration replacing
-    the rehearsal-era roles/owner grant (#407); a missing role surfaces as a 403
-    during terraform apply/destroy and is added here.
-  EOT
+  description = "Predefined roles exercised by the Packer build/export identity."
   type        = list(string)
   default = [
-    # --- Packer GCE image build/export ---
-    # compute.admin (superset of instanceAdmin.v1 + storageAdmin) is what the
-    # `gcloud compute images export` Cloud Build identity needs: daisy creates
-    # and tears down the export worker VM, its disks and snapshots, then writes
-    # the GCE image - no narrower predefined role covers that whole lifecycle.
-    "roles/compute.admin",
+    "roles/compute.instanceAdmin.v1",
+    "roles/compute.storageAdmin",
     "roles/iap.tunnelResourceAccessor",
-    "roles/storage.admin",
     "roles/cloudbuild.builds.editor",
-    # --- GKE control-plane access over Connect Gateway (#1723) ---
-    # The gateway roles authorize fleet-membership impersonation; container.admin
-    # authorizes the kubectl apply via GKE's IAM->RBAC mapping (the deploy applies
-    # cluster-scoped objects: namespaces, CRDs, cluster services). Together these
-    # replace the old public-endpoint + runner-IP-allowlist access path.
+  ]
+}
+
+variable "build_read_bucket_names" {
+  description = "Existing input buckets the Packer build identity may read, such as the Polaris stack bucket."
+  type        = set(string)
+  default     = []
+}
+
+variable "validate_roles" {
+  description = "Predefined roles exercised by the no-SA validation VM path."
+  type        = list(string)
+  default = [
+    "roles/iap.tunnelResourceAccessor",
+  ]
+}
+
+variable "validate_permissions" {
+  description = "Custom-role permissions for exact-candidate validation."
+  type        = list(string)
+  default = [
+    "compute.disks.create",
+    "compute.disks.delete",
+    "compute.disks.get",
+    "compute.disks.use",
+    "compute.disks.useReadOnly",
+    "compute.images.get",
+    "compute.images.getFromFamily",
+    "compute.images.setLabels",
+    "compute.images.useReadOnly",
+    "compute.instances.create",
+    "compute.instances.delete",
+    "compute.instances.get",
+    "compute.instances.reset",
+    "compute.instances.setTags",
+    "compute.machineTypes.get",
+    "compute.networks.get",
+    "compute.networks.use",
+    "compute.subnetworks.get",
+    "compute.subnetworks.use",
+    "compute.zoneOperations.get",
+    "compute.zones.get",
+    "resourcemanager.projects.get",
+    "serviceusage.services.use",
+  ]
+}
+
+variable "promote_permissions" {
+  description = "Custom-role permissions for prod image copy and verified family commit."
+  type        = list(string)
+  default = [
+    "compute.globalOperations.get",
+    "compute.images.create",
+    "compute.images.deprecate",
+    "compute.images.get",
+    "compute.images.getFromFamily",
+    "compute.images.list",
+    "compute.images.setLabels",
+    "compute.images.update",
+    "compute.images.useReadOnly",
+    "resourcemanager.projects.get",
+    "serviceusage.services.use",
+  ]
+}
+
+variable "platform_roles" {
+  description = "Existing platform-core lifecycle roles assigned separately to deploy and destroy."
+  type        = list(string)
+  default = [
+    "roles/compute.admin",
+    "roles/storage.admin",
     "roles/gkehub.editor",
     "roles/gkehub.gatewayEditor",
     "roles/gkehub.viewer",
     "roles/container.admin",
-    # --- platform-core Terraform apply/destroy (the full deploy) ---
-    "roles/serviceusage.serviceUsageAdmin",  # enable/disable project APIs
-    "roles/servicenetworking.networksAdmin", # PSA connection for Cloud SQL/Redis private IP
-    "roles/dns.admin",                       # private googleapis managed zones
-    "roles/cloudsql.admin",                  # Cloud SQL instance/db/user
-    "roles/redis.admin",                     # Memorystore
-    "roles/pubsub.admin",                    # messaging topics/subscriptions/DLQ
-    "roles/secretmanager.admin",             # runtime secret create/version
-    "roles/cloudkms.admin",                  # artifact-registry CMEK keyring/key
-    "roles/artifactregistry.admin",          # control-plane image repos
-    "roles/identityplatform.admin",          # Identity Platform config
-    "roles/monitoring.editor",               # messaging alarms / notification channels
-    "roles/iam.serviceAccountAdmin",         # create the workload service accounts
-    "roles/resourcemanager.projectIamAdmin", # bind workload SA roles at the project
-    # serviceAccountUser (actAs) is deliberately NOT granted project-wide: it trips
-    # CKV_GCP_41 and would let the SA run VMs as any identity in the project. The
-    # only actAs the platform apply needs is on the GKE node SA (to create the node
-    # pools); that is granted resource-scoped in modules/portal/iam
-    # (deploy_act_as_gke_nodes), mirroring this module's self-scoped
-    # packer_build_act_as_self.
+    "roles/serviceusage.serviceUsageAdmin",
+    "roles/servicenetworking.networksAdmin",
+    "roles/dns.admin",
+    "roles/cloudsql.admin",
+    "roles/redis.admin",
+    "roles/pubsub.admin",
+    "roles/secretmanager.admin",
+    "roles/cloudkms.admin",
+    "roles/artifactregistry.admin",
+    "roles/identityplatform.admin",
+    "roles/monitoring.editor",
+    "roles/iam.serviceAccountAdmin",
+    "roles/resourcemanager.projectIamAdmin",
   ]
+}
+
+variable "promotion_reader_service_account_email" {
+  description = "Prod promote SA email granted read-only access to source images by the source-project root."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = var.promotion_reader_service_account_email == "" || can(regex(
+      "^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$",
+      var.promotion_reader_service_account_email,
+    ))
+    error_message = "promotion_reader_service_account_email must be empty or a service-account email."
+  }
+}
+
+variable "terraform_state_bucket_name" {
+  description = "Existing GCS backend bucket receiving resource-scoped deploy/destroy access; defaults to <project>-terraform-state."
+  type        = string
+  default     = ""
 }

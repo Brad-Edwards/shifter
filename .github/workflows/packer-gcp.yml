@@ -46,7 +46,7 @@ jobs:
   build:
     name: Build ${{ inputs.image_type }} GCE image in ${{ inputs.environment }}
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: gcp-build-${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
@@ -93,11 +93,11 @@ jobs:
 
       - name: Ensure GCP build auth is configured
         env:
-          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GCP_PACKER_BUILD_SERVICE_ACCOUNT: ${{ secrets.GCP_PACKER_BUILD_SERVICE_ACCOUNT }}
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
         run: |
-          if [ -z "${GCP_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ]; then
-            echo "::error::GCP_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured for GCE image builds. See docs/dev/deploy-secrets.md."
+          if [ -z "${GCP_PACKER_BUILD_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ]; then
+            echo "::error::GCP_PACKER_BUILD_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured for GCE image builds. See docs/dev/deploy-secrets.md."
             exit 1
           fi
 
@@ -105,7 +105,7 @@ jobs:
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          service_account: ${{ secrets.GCP_PACKER_BUILD_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:
@@ -118,10 +118,9 @@ jobs:
           GCP_PACKER_ZONE: ${{ vars.GCP_PACKER_ZONE }}
           GCP_PACKER_NETWORK: ${{ vars.GCP_PACKER_NETWORK || 'default' }}
           GCP_PACKER_SUBNETWORK: ${{ vars.GCP_PACKER_SUBNETWORK || 'default' }}
-          GCP_PACKER_SERVICE_ACCOUNT: ${{ vars.GCP_PACKER_SERVICE_ACCOUNT }}
           GCP_PACKER_MACHINE_TYPE: ${{ vars.GCP_PACKER_MACHINE_TYPE || 'e2-standard-2' }}
           GCP_PACKER_USE_INTERNAL_IP: ${{ vars.GCP_PACKER_USE_INTERNAL_IP || 'false' }}
-          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GCP_PACKER_BUILD_SERVICE_ACCOUNT: ${{ secrets.GCP_PACKER_BUILD_SERVICE_ACCOUNT }}
           # GCS bucket holding the polaris compose-stack tarball (polaris-vm build
           # only). host-setup.sh fetches gs://<bucket>/<POLARIS_STACK_KEY> and
           # bakes the stack in. The stack is MANDATORY for a promotable polaris-vm
@@ -138,9 +137,9 @@ jobs:
             exit 1
           fi
           ZONE="${GCP_PACKER_ZONE:-${GCP_REGION}-a}"
-          # The builder VM runs as the Packer service account if configured,
-          # otherwise the WIF-impersonated deploy service account.
-          BUILDER_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+          # The WIF caller, builder VM, Cloud Build job, and export worker share
+          # the one purpose-scoped build identity. There is no fallback identity.
+          BUILDER_SA="${GCP_PACKER_BUILD_SERVICE_ACCOUNT}"
           MACHINE_TYPE="${GCP_PACKER_MACHINE_TYPE}"
           # Export as PKR_VAR_* so Packer reads them from the environment — never
           # as -var CLI flags (which would expose values in the process list).
@@ -240,8 +239,7 @@ jobs:
           GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
           GCP_PACKER_ZONE: ${{ vars.GCP_PACKER_ZONE }}
           GCP_PACKER_SUBNETWORK: ${{ vars.GCP_PACKER_SUBNETWORK }}
-          GCP_PACKER_SERVICE_ACCOUNT: ${{ vars.GCP_PACKER_SERVICE_ACCOUNT }}
-          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GCP_PACKER_BUILD_SERVICE_ACCOUNT: ${{ secrets.GCP_PACKER_BUILD_SERVICE_ACCOUNT }}
         run: |
           if [ -z "${GCP_GDC_VM_IMAGE_BUCKET}" ]; then
             echo "::error::Required variable GCP_GDC_VM_IMAGE_BUCKET (the GDC VM Runtime image bucket) is not set. See docs/dev/deploy-secrets.md."
@@ -257,7 +255,7 @@ jobs:
           # SA has no actAs on), and --compute-service-account so the worker VM
           # runs as the same SA. Pin the worker to the internal-IP builder subnet
           # so it complies with the compute.vmExternalIpAccess org policy.
-          BUILD_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+          BUILD_SA="${GCP_PACKER_BUILD_SERVICE_ACCOUNT}"
           # A user-managed Cloud Build SA can't write to the default
           # gs://<projnum>.cloudbuild-logs bucket, so --log-location is required
           # alongside --cloudbuild-service-account. Point it at the image bucket,

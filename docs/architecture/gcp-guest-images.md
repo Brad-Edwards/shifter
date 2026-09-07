@@ -78,7 +78,9 @@ Configure these once (`docs/dev/deploy-secrets.md`):
 | Name | Kind | Source |
 |---|---|---|
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | module output `packer_workload_identity_provider` |
-| `GCP_SERVICE_ACCOUNT` | secret | module output `packer_build_service_account_email` |
+| `GCP_PACKER_BUILD_SERVICE_ACCOUNT` | secret | module output `packer_build_service_account_email` in `gcp-build-dev` / `gcp-build-proof` |
+| `GCP_PACKER_VALIDATE_SERVICE_ACCOUNT` | secret | module output `packer_validate_service_account_email` in `gcp-validate-dev` / `gcp-validate-proof` |
+| `GCP_PACKER_PROMOTE_SERVICE_ACCOUNT` | secret | module output `packer_promote_service_account_email` in `gcp-promote-prod` |
 | `GCP_PROJECT_ID` | secret | the project |
 | `GCP_PACKER_SUBNETWORK` | variable | module output `packer_builder_subnetwork` |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | `true` (IAP builds) |
@@ -126,9 +128,9 @@ image was tested. The pipeline is three stages:
 ```
 packer-gcp.yml         build    → GCE image  shifter-<type>-<ts>   (family shifter-<type>)
 packer-gcp-validate.yml validate → boot the EXACT candidate in a disposable,
-                                    isolated VM; label it validated=passed
-packer-gcp-promote.yml  promote  → bind candidate to protected run + evidence,
-                                    copy it to prod, verify it, deprecate old head
+                                    isolated VM; publish ID-bound evidence
+packer-gcp-promote.yml  promote  → bind candidate ID to run/attempt/artifact,
+                                    verify copy, commit family, deprecate old head
 ```
 
 1. **Validate** (`packer-gcp-validate.yml`) boots the concrete candidate in a
@@ -144,19 +146,21 @@ packer-gcp-promote.yml  promote  → bind candidate to protected run + evidence,
    and no OAuth scopes**, so guest code cannot read a cloud token and mutate its
    own image labels; the runner (WIF) holds all label authority. Passing again
    after the reset proves a clean boot with no manual input. On success the
-   workflow labels the exact candidate `validated=passed` and uploads a bounded,
-   non-secret evidence artifact; the VM is always deleted. Only image types with
+   workflow uploads one versioned, bounded evidence artifact, then labels the
+   exact candidate with its numeric image ID plus exact run, attempt, artifact,
+   and revision locators; the VM is always deleted. Only image types with
    a matching validator are selectable (generic Linux, `polaris-vm`,
    `dc-prebaked`); the sysprepped `windows` and first-boot-promotion `dc` images
    are excluded. Per-container runtime health and seeded AD content that depend
    on per-range credentials are a runtime/range-smoke concern, not part of this
    candidate-boot gate.
 2. **Promote** (`packer-gcp-promote.yml`) takes the **exact** validated candidate
-   image name, verifies it carries `validated=passed`, copies that image into the
-   prod family (derived from the image's own family attribute, so `polaris-vm`
-   and purpose-scoped `<purpose>-dc` families work with no per-name logic),
-   verifies the new prod image is `READY`, and only then deprecates the previous
-   prod head. It never re-resolves "newest in the dev family" at promotion time.
+   image name and numeric ID, verifies the protected run attempt and exact
+   unexpired artifact, then copies that image outside the prod family. It verifies
+   the copy is `READY` and reports the validated `sourceImageId` before attaching
+   the family (derived from the source image) and deprecating the previous head.
+   It never re-resolves "newest in the dev family" at promotion time, and a
+   failed copy cannot advance the family channel.
 
 ### polaris-vm range host (fail-closed compose stack)
 
@@ -221,10 +225,17 @@ test for that live path, and confirm:
 - The disposable validation VM is deleted on both success and failure.
 
 A failure on that first run is a wiring issue in the validation path, not a
-candidate-image defect; fix it before relying on the `validated=passed` label as
-a promotion gate. Follow-up hardening of this subsystem is tracked in #1621
-(attestation-bound evidence, dispatch-ref workflow trust) and #1622 (real
-source-image disk check, deeper DC service/content probing).
+candidate-image defect; fix it before treating its artifact as promotion
+evidence. The #1699 implementation reconciles the code-path findings in #1621
+and #1646: the build identity cannot federate as validate, validation runs only
+from protected refs under a distinct Environment subject, and promotion checks
+the exact successful run attempt, artifact ID, revision, project, image name,
+numeric image ID, family, and validation phases. The mutable image labels are
+only locators for that independently verified record; they cannot mint a pass.
+The operator cutover/readback in `docs/dev/deploy-secrets.md` supplies the live
+effective-policy evidence before those tracking issues are closed, and #2084
+owns the exact-release security decision. #1622 remains the separate deeper
+guest-content validation follow-up.
 
 ## Operating the pipeline
 
