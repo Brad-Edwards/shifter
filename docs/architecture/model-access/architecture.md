@@ -27,7 +27,7 @@ flowchart LR
 | CTF | Event intent, logical profile selection, capacity hints and event authority through `ctf.services`, `ctf.bridges`, and existing organizer APIs. No provider SDK or Engine ORM access. |
 | CMS | Resolve approved scenario/version and model needs, current owner/workspace authorization, and invoke public Engine services before dispatch. Retain `cms.services` admission and hydration. |
 | Engine | Catalog resolution, shard allocation, grant epochs, request/spend/rate/concurrency admission, operation correlation and reconciliation. Extend `engine.services` and Engine models. |
-| Shared | Dependency-light validated model-access DTOs and adapter protocols in proposed `shared/model_access`; provider construction through the existing `shared.cloud` factory/capability registry. RAES interpretation stays in `shared.raes`. |
+| Shared | Dependency-light validated model-access DTOs, normalization/digest helpers and adapter protocols in proposed `shared/model_access`. Provider construction follows the existing `shared.cloud` protocol/factory pattern, but is selected by the validated shard adapter ID rather than the deployment's `CLOUD_PROVIDER`; RAES interpretation stays in `shared.raes`. |
 | Provisioner | Consume a closed, versioned non-secret access projection through ADR-043; bootstrap the admitted endpoint/capability; return bounded installation/readiness or cleanup results. No provider selection or budget database. |
 | Broker | Separate ASGI entry point in the platform package, dedicated Helm Deployment/KSA and pinned image digest. Parse bounded requests, call Engine's private control facade, route only approved provider operations, stream with backpressure, and report metadata/usage. No Django ORM import, schema ownership, provider administration, or direct database credentials. |
 | Provider adapter | Translate a pinned supported client protocol, construct the exact destination, obtain invocation-only identity and normalize safe usage/errors. No prompt interpretation, automatic tool execution or independent routing policy. |
@@ -110,6 +110,101 @@ immediately; adding or changing routing requires a new revision and explicit
 reassessment. Existing allocations retain their original identity and cleanup
 references. Emergency ceilings may only tighten a live grant; expansion or
 residency changes need a new authorized admission and grant epoch.
+
+### Canonical contract and configuration boundary
+
+`shared.model_access` is the only semantic owner of model-access DTOs, enums,
+normalization, digests, allocation algorithms and provider protocol types.
+HTTP serializers, Django models, installation configuration and provider SDK
+objects are adapters to that contract, not second definitions of it. In
+particular, do not extend `shared.schemas.SpecBase`: these are closed policy and
+wire records, not scenario topology entities, and `SpecBase` is not closed.
+
+Every DTO is immutable and closed, uses strict JSON types, and carries explicit
+bounds. Reject booleans where integers are required, non-finite/floating money,
+unknown enum members, unknown keys, duplicate list/set identities and mutually
+inconsistent references. Lists whose order has no contract meaning normalize
+by their canonical ID; lists whose order affects policy declare that fact and
+retain it. Currency is a closed supported code and there is no conversion;
+money and prices use integer micro-units with an explicit billing component and
+unit denominator. Missing limits, prices or units are not infinity or zero.
+
+Keep identity namespaces explicit in names and types: compute target,
+model/billing project or account, broker workload identity, dynamic-secret
+project, provider credential reference, real provider quota pool, stable
+financial account, routing-pool revision, range UUID, capacity draw UUID and
+operation UUID are not interchangeable strings. A shard references these
+objects; it does not collapse them into a generic `project_id`, `account_id` or
+`scope`. Persistence may use scalar cross-layer references, but the DTO field
+and discriminator must preserve which owner and namespace can resolve it.
+
+Raw JSON entry points must reject duplicate object members at every depth
+*before* constructing a mapping. Calling a DTO validator on an already-decoded
+mapping is valid only when the producer already proved duplicate rejection,
+such as `installation.loader`'s root YAML node pass. Pydantic validation alone
+cannot recover a duplicate member discarded by a JSON/YAML decoder. Contract
+errors contain a bounded code and field path only; they never echo a rejected
+value, credential reference, provider response or exception string.
+
+The provider protocol uses closed result DTOs, not provider dictionaries or a
+new public exception hierarchy. Its capability descriptor declares supported
+request protocol/version, streaming, token counting, billing components,
+trustworthy usage fields, cancellation support and a bounded completion
+horizon. A pre-dispatch billing-bound result supplies an integer maximum vector
+for every enabled component; a post-dispatch usage result identifies which
+fields were provider-verified. Errors normalize to bounded category,
+retryability and safe retry delay without raw provider text. Cancellation
+reports `confirmed`, `requested_unconfirmed`, `unsupported` or `unknown`;
+anything except `confirmed` retains the conservative reservation. An unknown
+model, feature, price, usage component or capability mismatch fails before
+transport. Provider exceptions may be chained for internal diagnosis but never
+cross the protocol, API envelope, audit or log boundary verbatim.
+
+For every digest-bearing v1 record, first validate and normalize the complete
+semantic record with defaults materialized, omit only its own digest field,
+then encode UTF-8 JSON with lexicographically sorted object keys, compact
+separators, Unicode unescaped, and non-finite numbers forbidden. The digest is
+lowercase `sha256:<64 hex characters>` over those exact bytes. Contract version
+and every policy-affecting default are inside the digest. Comparisons validate
+the shape and use constant-time comparison. The rendezvous algorithm below
+uses the 64-character hex payload after the validated `sha256:` prefix as its
+`policy digest` string. Any change to normalization is a new contract version,
+not an in-place parser change. Publish golden bytes, digests and allocation
+vectors so Python, Terraform/tooling and future adapters cannot disagree.
+
+The operator-authored deployment catalog is a shared, cross-backend
+`settings.model_access` concern, like `settings.range_egress` and
+`settings.warm_pool`; it must not be added to both `AwsSettings` and
+`GcpBackendSettings`. `installation` remains independently installable, so it
+must validate against a generated, versioned JSON Schema published from the
+canonical `shared.model_access` models, with a parity check that forbids manual
+schema drift. Its distribution also packages that same source tree through the
+`canonical_model_access` link and applies the canonical semantic validator and
+normalizer after schema validation. This preserves independent installation
+without a copied contract or a schema-only gap for cross-reference and digest
+rules. The root loader retains ownership of YAML duplicate/merge-key rejection
+and sanitized `ConfigIssue` rendering. The runtime composition root re-parses
+the rendered projection with the canonical shared parser and refuses startup
+on version, digest or shape failure.
+
+Render the normalized non-secret catalog once through the installation output
+contract and the backend runtime inventories. Pass only the path and expected
+digest through process environment; do not put the catalog body, credential
+material or tokens in environment variables, Helm command arguments, Job
+commands, Terraform variables/state, or process argv. A dedicated mounted
+artifact may contain provider/project/account and identity *references*, never
+credential values. The Engine and broker receive least-privilege projections
+from that artifact; the provisioner receives only an admitted per-operation
+projection through ADR-043. Keep runtime activation independently disabled
+until the consuming and qualification issues land.
+
+`installation.contract.BackendCapability` and `shared.cloud._get_provider()`
+describe capabilities of the deployment's compute backend. They must not be
+used as the model shard registry: a GCE range may route to Bedrock and an AWS
+range may route to Vertex. The model-adapter construction seam therefore takes
+the closed adapter ID and validated shard projection explicitly. Adding a
+provider adds one adapter/registry entry and conformance evidence; it does not
+add branches to scenario, event, allocation or broker policy code.
 
 ## Shards, quota pools and capacity
 

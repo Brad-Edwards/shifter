@@ -428,6 +428,21 @@
       "source_file": "config/_email.py"
     },
     {
+      "default": "''",
+      "name": "MODEL_ACCESS_CATALOG_DIGEST",
+      "source_file": "config/_model_access_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "MODEL_ACCESS_CATALOG_PATH",
+      "source_file": "config/_model_access_settings.py"
+    },
+    {
+      "default": "'false'",
+      "name": "MODEL_ACCESS_ENABLED",
+      "source_file": "config/_model_access_settings.py"
+    },
+    {
       "default": null,
       "name": "OIDC_AUTH_DOMAIN",
       "source_file": "config/_oidc_settings.py"

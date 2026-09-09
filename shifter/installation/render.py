@@ -170,3 +170,31 @@ def render_warm_pool_env(config: RootConfig) -> str:
     projection = warm_pool.runtime_projection(policy)
     encoded = json.dumps(projection, separators=(",", ":"), sort_keys=True)
     return f"{_WARM_POOL_ENV_HEADER}WARM_POOL_POLICY_JSON={encoded}\n"
+
+
+def render_model_access_catalog(config: RootConfig) -> str:
+    """Render the validated non-secret catalog as a dedicated mounted artifact."""
+    import json
+
+    from . import model_access
+
+    raw = config.settings.get(model_access.SETTINGS_KEY)
+    if not isinstance(raw, dict) or not isinstance(raw.get("catalog"), dict):
+        return ""
+    return json.dumps(raw["catalog"], separators=(",", ":"), sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def render_model_access_env(config: RootConfig) -> str:
+    """Render activation plus catalog path/digest without placing the body in env."""
+    from . import model_access
+
+    raw = config.settings.get(model_access.SETTINGS_KEY)
+    if not isinstance(raw, dict) or not isinstance(raw.get("catalog"), dict):
+        return "MODEL_ACCESS_ENABLED=false\nMODEL_ACCESS_CATALOG_PATH=\nMODEL_ACCESS_CATALOG_DIGEST=\n"
+    enabled = "true" if raw.get("enabled") is True else "false"
+    digest = raw["catalog"]["digest"]
+    return (
+        f"MODEL_ACCESS_ENABLED={enabled}\n"
+        f"MODEL_ACCESS_CATALOG_PATH={model_access.DEFAULT_CATALOG_PATH}\n"
+        f"MODEL_ACCESS_CATALOG_DIGEST={digest}\n"
+    )
