@@ -113,26 +113,31 @@ def install_instance_account_credentials(
     try:
         execution = secret_ops.execution_builder(instance_output, provider="gcp", os_type=platform, role="raes-node")
     except Exception as exc:
-        logger.exception(
-            "failed to build authored-account credential setup channel range_id=%s instance_key=%s",
+        # Coarse by design: the underlying exception can carry secrets/PII, so the
+        # raised error stays generic and the context is suppressed (from None).
+        # Log only the exception TYPE (never its message/traceback) + non-secret
+        # identifiers so failures are diagnosable without leaking credentials.
+        logger.error(
+            "credential setup channel build failed range_id=%s instance_key=%s error_type=%s",
             range_id,
             instance_key,
+            type(exc).__name__,
         )
-        raise RaesAccountCredentialError(
-            f"failed to establish authored-account credential setup channel ({type(exc).__name__}: {exc})"
-        ) from exc
+        raise RaesAccountCredentialError("failed to establish authored-account credential setup channel") from None
     try:
         try:
             execution.wait_for_ready(timeout_seconds=300)
         except Exception as exc:
-            logger.exception(
-                "authored-account credential setup channel not ready range_id=%s instance_key=%s",
+            # Coarse by design (see above): log the exception TYPE + non-secret
+            # identifiers only; keep the raised error generic with context
+            # suppressed so no secret/PII reaches the error chain.
+            logger.error(
+                "credential setup channel not ready range_id=%s instance_key=%s error_type=%s",
                 range_id,
                 instance_key,
+                type(exc).__name__,
             )
-            raise RaesAccountCredentialError(
-                f"authored-account credential setup channel not ready ({type(exc).__name__}: {exc})"
-            ) from exc
+            raise RaesAccountCredentialError("failed to establish authored-account credential setup channel") from None
         orchestrator = secret_ops.orchestrator_factory(execution.executor)
         secret_refs: dict[str, str] = {}
         for account in enabled_accounts:
