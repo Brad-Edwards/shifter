@@ -139,6 +139,36 @@ class TestImageLookupKey:
         # means a silently missing image at realization.
         assert plan_image_lookup_keys(_plan()) == ("kali", "windows")
 
+    def test_plan_keys_extract_name_from_mapping_source(self):
+        # The real compiled/serialized RAES plan stores a node's source as a
+        # mapping ({name, build, version, artifact_requirement}), not a bare
+        # string. The Engine must scope the registry projection by the source
+        # NAME (e.g. "kali"), not fall back to os_family, or a source-bearing
+        # GCE range resolves no image (empty image_candidates at realization).
+        plan = {
+            "resources": {
+                "node.attacker": {
+                    "address": "node.attacker",
+                    "resource_type": "node",
+                    "payload": {
+                        "name": "attacker",
+                        "os_family": "linux",
+                        "spec": {
+                            "node": {
+                                "source": {
+                                    "name": "kali",
+                                    "build": None,
+                                    "version": "*",
+                                    "artifact_requirement": None,
+                                }
+                            }
+                        },
+                    },
+                }
+            }
+        }
+        assert plan_image_lookup_keys(plan) == ("kali",)
+
     def test_plan_keys_ignore_non_node_resources_and_are_deduped(self):
         plan = _plan()
         plan["resources"]["node.web2"] = {

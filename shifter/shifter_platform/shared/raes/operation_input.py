@@ -207,7 +207,8 @@ def plan_image_lookup_keys(plan: object) -> tuple[str, ...]:
         node_spec = _require_mapping(payload.get("spec"), f"raes plan resource '{address}' spec").get("node") or {}
         node = _require_mapping(node_spec, f"raes plan resource '{address}' node spec")
         key = image_lookup_key(
-            source_name=_optional_str(node.get("source")), os_family=_optional_str(payload.get("os_family"))
+            source_name=_optional_str(_source_name_of(node.get("source"))),
+            os_family=_optional_str(payload.get("os_family")),
         )
         if key and key not in keys:
             keys.append(key)
@@ -219,6 +220,21 @@ def _optional_str(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value
     return None
+
+
+def _source_name_of(source: object) -> object:
+    """Extract the authored image source NAME from a serialized node ``source``.
+
+    The compiled/serialized RAES plan stores a node's ``source`` as a mapping
+    (``{name, build, version, artifact_requirement}``), so the source name is
+    ``source["name"]`` -- not the mapping itself. A bare string (older/simple
+    form) is returned as-is. Returning the name here lets image-registry keys be
+    scoped to the authored source (e.g. ``kali``/``ubuntu``) rather than
+    collapsing every source-bearing node onto its ``os_family``.
+    """
+    if isinstance(source, Mapping):
+        return source.get("name")
+    return source
 
 
 @dataclass(frozen=True)
