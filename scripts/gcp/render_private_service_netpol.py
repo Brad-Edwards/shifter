@@ -192,6 +192,33 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-jobs-private-service-egress-generated
+  namespace: shifter-jobs
+  labels:
+    app.kubernetes.io/name: shifter
+    app.kubernetes.io/part-of: shifter
+spec:
+  # Range-provisioner Jobs (pulumi-provisioner) read their operation input and
+  # report status through Cloud SQL; under Dataplane V2 the shifter-jobs
+  # default-deny blocks that without this allow. Same private-service endpoints
+  # and ports as the platform policy.
+  podSelector: {{}}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+{ip_blocks}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 6378
 {range_access_section}"""
 
 
