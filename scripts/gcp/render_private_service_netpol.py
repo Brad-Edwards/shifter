@@ -70,6 +70,21 @@ def render_netpol(outputs: dict[str, object]) -> str:
             "a NetworkPolicy without the GKE services range"
         )
 
+    # Under GKE Dataplane V2 (Cilium), egress to the Kubernetes API is enforced on
+    # the TRANSLATED control-plane endpoint (in the master CIDR), not on the
+    # services-CIDR ClusterIP the client dials. The provisioner-launcher API-egress
+    # policy must therefore allow the control-plane range too, or creating the
+    # provisioner Job times out against the API server.
+    gke_master_ipv4_cidr = str(_value(outputs, "gke_master_ipv4_cidr")).strip()
+    if not gke_master_ipv4_cidr:
+        raise ValueError(
+            "gke_master_ipv4_cidr Terraform output must be non-empty; refusing to render "
+            "a Kubernetes API egress NetworkPolicy without the control-plane range"
+        )
+    kube_api_ip_blocks = "\n".join(
+        f"        - ipBlock:\n            cidr: {cidr}" for cidr in (gke_services_cidr, gke_master_ipv4_cidr)
+    )
+
     seen: set[str] = set()
     ordered_cidrs: list[str] = []
     for host_value in (
@@ -173,8 +188,7 @@ spec:
     - Egress
   egress:
     - to:
-        - ipBlock:
-            cidr: {gke_services_cidr}
+{kube_api_ip_blocks}
       ports:
         - protocol: TCP
           port: 443

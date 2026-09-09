@@ -38,6 +38,11 @@ output "gke_services_cidr" {
   value       = var.gke_services_cidr
 }
 
+output "gke_master_ipv4_cidr" {
+  description = "GKE control-plane (master) CIDR. Under Dataplane V2 (Cilium), egress to the Kubernetes API is enforced on the translated control-plane endpoint, not the services-CIDR ClusterIP, so in-cluster API clients must allow this range."
+  value       = var.gke_master_ipv4_cidr
+}
+
 output "gke_pods_cidr" {
   description = "GKE pod CIDR. Non-secret; range-cell escape validation (#1347) treats it as an expected-unreachable boundary."
   value       = var.gke_pods_cidr

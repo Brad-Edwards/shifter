@@ -17,9 +17,15 @@ def _load_module(module_filename: str, module_name: str):
     return module
 
 
-def _outputs(*, gke_services_cidr: str = "10.48.0.0/20", range_network_cidr: str = "10.50.0.0/16") -> dict[str, object]:
+def _outputs(
+    *,
+    gke_services_cidr: str = "10.48.0.0/20",
+    gke_master_ipv4_cidr: str = "172.16.0.0/28",
+    range_network_cidr: str = "10.50.0.0/16",
+) -> dict[str, object]:
     return {
         "range_network_cidr": {"value": range_network_cidr},
+        "gke_master_ipv4_cidr": {"value": gke_master_ipv4_cidr},
         "control_plane_database": {
             "value": {
                 "private_ip": "10.40.0.10",
@@ -66,6 +72,9 @@ def test_render_emits_per_host_cidrs_and_protected_ports():
     assert "name: allow-provisioner-launcher-kubernetes-api-egress-generated" in rendered
     assert "app.kubernetes.io/component: worker-provisioner-launcher" in rendered
     assert rendered.count("cidr: 10.48.0.0/20") == 1  # GKE services range
+    # Dataplane V2 enforces API egress on the control-plane endpoint, so the
+    # provisioner-launcher policy must also allow the master CIDR.
+    assert "cidr: 172.16.0.0/28" in rendered  # GKE control-plane range
     # Negative: the RFC1918 supernets used by the static Kustomize base
     # earlier in development must never appear in the generated output.
     assert "10.0.0.0/8" not in rendered
@@ -103,6 +112,15 @@ def test_render_rejects_missing_gke_services_cidr():
 
     with pytest.raises(ValueError, match="gke_services_cidr"):
         module.render_netpol(_outputs(gke_services_cidr="   "))
+
+
+def test_render_rejects_missing_gke_master_ipv4_cidr():
+    """Empty or missing gke_master_ipv4_cidr means the control-plane range is
+    unknown, so the Kubernetes API egress policy would time out under Dataplane
+    V2; fail the render rather than ship a broken NetworkPolicy."""
+    module = _load_module("render_private_service_netpol.py", "render_private_service_netpol")
+    with pytest.raises(ValueError, match="gke_master_ipv4_cidr"):
+        module.render_netpol(_outputs(gke_master_ipv4_cidr="   "))
 
 
 def test_render_rejects_invalid_host():
