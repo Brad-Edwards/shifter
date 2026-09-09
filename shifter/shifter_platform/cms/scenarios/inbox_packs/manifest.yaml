@@ -23,6 +23,6 @@ packs:
     contract_profile: shifter
     package_ref: cms/scenarios/inbox_packs/smoke-linux
     package_version: "0.1.0"
-    package_digest: sha256:8eb25f38d6ab96d3cad3dfc16a3b809308b213a686876c2c53dd973765be3afc
+    package_digest: sha256:6dea3a2a2f4471cfe4eb78e60cee8d7735e5e1a207e8e3aefbcef034b66c270b
     provenance:
       repo: Brad-Edwards/shifter

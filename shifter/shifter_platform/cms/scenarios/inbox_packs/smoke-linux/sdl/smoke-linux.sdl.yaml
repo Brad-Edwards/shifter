@@ -11,7 +11,9 @@ nodes:
     type: VM
     os: linux
     os_version: Kali Rolling
-    source: {name: kali, version: "1.0"}
+    # Unpinned source: resolves to the tenant's any-version RaesImageMapping for
+    # the 'kali' base image (seeded at deploy from GCP_RANGE_KALI_IMAGE).
+    source: {name: kali}
     resources: {ram: 2 gib, cpu: 2}
     services:
       - {port: 22, name: ssh}
@@ -19,7 +21,9 @@ nodes:
     type: VM
     os: linux
     os_version: Ubuntu 22.04
-    source: {name: ubuntu, version: "1.0"}
+    # Unpinned source: resolves to the tenant's any-version RaesImageMapping for
+    # the 'ubuntu' base image (seeded at deploy from GCP_RANGE_LINUX_IMAGE).
+    source: {name: ubuntu}
     resources: {ram: 1 gib, cpu: 1}
     services:
       - {port: 22, name: ssh}
