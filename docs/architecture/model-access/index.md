@@ -21,6 +21,9 @@ deployment ranges. Shared resources do not require shared participant tokens.
 | [Security design](security.md) | Threats, identities, network/IAM boundaries, credential lifecycle, privacy, and negative tests. |
 | [Operations design](../../ops/model-access.md) | Deployment, sizing, objectives, migration, failure recovery, cost, and release evidence. |
 | [Implementation issues and dependencies](delivery.md) | Coding-sized work, milestones, hard blockers, and completion criteria. |
+| [Example v1 policy](example-policy.v1.json) | Complete disabled, non-secret catalog with its canonical digest. |
+| [Canonical JSON vector](canonical-json-v1-vector.json) | Exact UTF-8 canonical bytes and SHA-256 digest vector. |
+| [Allocation vectors](weighted-rendezvous-v1-vectors.json) | Cross-implementation weighted-rendezvous inputs, ranks, and affinity namespaces. |
 | [ADR-059](../../adr/059-range-model-access-broker.md) | Broker and authority decision. |
 | [ADR-060](../../adr/060-model-access-allocation-accounting.md) | Allocation and mandatory accounting decision. |
 | [ADR-061](../../adr/061-model-access-operations-qualification.md) | Revocation, operation, and qualification decision. |
@@ -28,12 +31,11 @@ deployment ranges. Shared resources do not require shared participant tokens.
 
 ## Scope and support claims
 
-This PR supplies design and an executable backlog, not a model service,
-deployment, migration, new RAES field, or live test result. ADRs are proposed
-until reviewed. PLAT-202's scenario/event configuration, model/account/cloud
-sharding, credential plumbing, and endpoint routing are all designed here;
-provider delivery is phased explicitly in the backlog. No requirement is
-marked implemented solely because this documentation exists.
+Issue #2118 supplies the shared policy/schema/allocation/provider contract and
+the disabled installation/runtime configuration boundary. It does not supply a
+model service, persistence, deployment, migration, new RAES field, provider
+implementation, or live qualification result. Those delivery stages remain in
+the linked backlog, and ADRs remain proposed until their runtime claims land.
 
 First delivery: the selected GCE cohort, multiple approved Vertex projects
 and model aliases, required or explicitly optional scenario model access,
@@ -76,3 +78,20 @@ storage, retention and export policy outside this broker audit boundary.
 
 Implementation must recheck these paths against its current `dev` and retain
 the decisions even if modules have moved.
+
+## Implemented contract foundation
+
+`shared.model_access` owns the frozen v1 DTOs, strict raw-JSON parser,
+normalization/digest helpers, profile intersection, sharing selectors and
+pools, provider protocol/registry, and fixed/weighted-rendezvous allocation.
+The generated schema at
+`shifter/installation/published_contract/model-access-policy.v1.schema.json`
+lets the independently packaged installer validate the same closed shape.
+
+Installation renders the catalog as a dedicated artifact and emits only
+`MODEL_ACCESS_ENABLED`, `MODEL_ACCESS_CATALOG_PATH`, and
+`MODEL_ACCESS_CATALOG_DIGEST` into backend runtime configuration. Runtime
+startup reparses the mounted artifact with the canonical shared parser. The
+default is disabled with no catalog path; enabling delivery still depends on
+the broker, persistence, infrastructure, and qualification work in
+`delivery.md`.

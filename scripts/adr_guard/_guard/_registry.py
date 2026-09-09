@@ -47,6 +47,7 @@ from .checks.mcp_policy import (
     check_mcp_no_shell_exec,
     check_mcp_ops_tls_strict,
 )
+from .checks.accessibility_baseline import check_accessibility_baseline
 from .checks.published_contract import (
     check_published_contract_snapshots_immutable,
 )
@@ -89,6 +90,7 @@ CHECKS = {
     "documentation-coverage": check_documentation_coverage,
     "lilrae-identity-boundary": check_lilrae_identity_boundary,
     "published-contract-snapshots-immutable": check_published_contract_snapshots_immutable,
+    "accessibility-baseline": check_accessibility_baseline,
     "no-agent-attribution": check_no_agent_attribution,
     "quality-path-ownership": check_quality_path_ownership,
     "eks-cross-stack-sourcing": check_eks_cross_stack_sourcing,
@@ -121,6 +123,7 @@ CHECK_LEVELS = {
         "documentation-coverage",
         "lilrae-identity-boundary",
         "published-contract-snapshots-immutable",
+        "accessibility-baseline",
         "no-agent-attribution",
         "quality-path-ownership",
         "eks-cross-stack-sourcing",
@@ -153,6 +156,7 @@ CHECK_LEVELS = {
         "documentation-coverage",
         "lilrae-identity-boundary",
         "published-contract-snapshots-immutable",
+        "accessibility-baseline",
         "no-agent-attribution",
         "quality-path-ownership",
         "eks-cross-stack-sourcing",

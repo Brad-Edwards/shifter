@@ -23,7 +23,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from . import range_egress, registry, warm_pool
+from . import model_access, range_egress, registry, warm_pool
 from .errors import ConfigIssue, InstallationConfigError
 from .schema import RootConfig
 
@@ -206,14 +206,15 @@ def _backend_issues_from_raw(data: dict[str, Any]) -> list[ConfigIssue]:
         # installation.range_egress — not a backend-owned key. Keep it out of the (possibly
         # closed, #1116/#728 AWS) settings_model check so an ``extra='forbid'`` model does
         # not reject it as unknown, then validate it via its own owner below.
-        backend_settings = {
-            k: v for k, v in settings.items() if k not in (range_egress.SETTINGS_KEY, warm_pool.SETTINGS_KEY)
-        }
+        shared_keys = (range_egress.SETTINGS_KEY, warm_pool.SETTINGS_KEY, model_access.SETTINGS_KEY)
+        backend_settings = {k: v for k, v in settings.items() if k not in shared_keys}
         issues.extend(bundle.settings_issues(backend_settings))
         _, range_egress_issues = range_egress.validate_settings_block(settings)
         issues.extend(range_egress_issues)
         _, warm_pool_issues = warm_pool.validate_settings_block(settings)
         issues.extend(warm_pool_issues)
+        _, model_access_issues = model_access.validate_settings_block(settings)
+        issues.extend(model_access_issues)
     secrets = data.get("secrets", {})
     if isinstance(secrets, dict):
         issues.extend(bundle.secret_reference_issues(secrets))
@@ -255,7 +256,7 @@ def load_root_config(path: str | Path) -> RootConfig:
     # settings owned and validated by their own modules, not backend-owned keys. Split
     # them out before the bundle's (possibly closed) settings_model runs, then re-attach
     # and validate them below so their normalized forms land back on ``config.settings``.
-    _shared_settings_keys = (range_egress.SETTINGS_KEY, warm_pool.SETTINGS_KEY)
+    _shared_settings_keys = (range_egress.SETTINGS_KEY, warm_pool.SETTINGS_KEY, model_access.SETTINGS_KEY)
     backend_settings = {k: v for k, v in config.settings.items() if k not in _shared_settings_keys}
     try:
         normalized_settings = bundle.validate_settings(backend_settings)
@@ -273,6 +274,9 @@ def load_root_config(path: str | Path) -> RootConfig:
     normalized_settings, warm_pool_issues = warm_pool.validate_settings_block(normalized_settings)
     if warm_pool_issues:
         raise InstallationConfigError([*warm_pool_issues, *bundle.secret_reference_issues(config.secrets)])
+    normalized_settings, model_access_issues = model_access.validate_settings_block(normalized_settings)
+    if model_access_issues:
+        raise InstallationConfigError([*model_access_issues, *bundle.secret_reference_issues(config.secrets)])
     secret_issues = bundle.secret_reference_issues(config.secrets)
     if secret_issues:
         raise InstallationConfigError(secret_issues)
