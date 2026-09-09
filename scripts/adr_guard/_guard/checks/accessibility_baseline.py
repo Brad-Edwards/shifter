@@ -22,14 +22,17 @@ _A11Y_ENFORCE_ENV = "ADR_GUARD_SNAPSHOT_ENFORCE"
 
 
 def _a11y_enforced() -> bool:
+    """Return True when the CI lane demands the ratchet fail closed."""
     return os.environ.get(_A11Y_ENFORCE_ENV, "").strip().lower() in {"1", "true", "yes"}
 
 
 def _a11y_violation(message: str) -> Violation:
+    """Shorthand for an ADR-055-R4 accessibility-baseline violation."""
     return Violation(_A11Y_CHECK, _A11Y_RULE, _A11Y_BASELINE_REL, message)
 
 
 def _a11y_unverifiable(enforce: bool, message: str) -> list[Violation]:
+    """Report an unverifiable baseline when enforcing; otherwise fail open."""
     return [_a11y_violation(message)] if enforce else []
 
 
@@ -63,6 +66,57 @@ def _a11y_waived_fingerprints(repo_root: Path) -> set[str]:
     return waived
 
 
+def _head_baseline(repo_root: Path) -> tuple[set[str] | None, list[Violation]]:
+    """Parse the committed baseline: (fingerprints, []) on success, (None, []) when
+    absent (nothing to ratchet), or (None, [violation]) when malformed."""
+    head_path = repo_root / _A11Y_BASELINE_REL
+    if not head_path.exists():
+        # No committed baseline: the scan asserts findings against an implicit
+        # empty set, so there is nothing to ratchet.
+        return None, []
+    parsed = _parse_baseline(head_path.read_text(encoding="utf-8"))
+    if parsed is None:
+        return None, [_a11y_violation("committed accessibility baseline is not a JSON array of fingerprint strings")]
+    return parsed, []
+
+
+def _base_baseline(repo_root: Path, enforce: bool) -> tuple[set[str] | None, list[Violation]]:
+    """Read the trusted base-branch baseline: (fingerprints, []) on success, or
+    (None, violations) - empty for a valid first enrollment (no base artifact) and
+    an unverifiable report when the base cannot be read."""
+    base_refs = _boundary_mock_base_reference_candidates(repo_root)
+    base_raw = _git_text(repo_root, ["show", f"{base_refs[0]}:{_A11Y_BASELINE_REL}"]) if base_refs else None
+    if base_raw is None:
+        # No base ref at all is unverifiable; a missing file on a resolved base is a
+        # valid initial enrollment (ADR-055-R4), so enrollment purity - no product/
+        # template/route/stylesheet change - is a reviewed constraint, not re-derived.
+        unresolved = _a11y_unverifiable(
+            enforce,
+            "cannot resolve a base ref to verify the accessibility baseline did not grow; "
+            "the CI lane must fetch base-branch history (fetch-depth: 0)",
+        )
+        return None, ([] if base_refs else unresolved)
+    parsed = _parse_baseline(base_raw)
+    if parsed is None:
+        return None, _a11y_unverifiable(enforce, "cannot parse the base-branch accessibility baseline to verify non-growth")
+    return parsed, []
+
+
+def _growth_violation(added: set[str], repo_root: Path) -> list[Violation]:
+    """Report un-waived baseline growth (ADR-055-R4/R6); empty when all waived."""
+    unwaived = sorted(added - _a11y_waived_fingerprints(repo_root))
+    if not unwaived:
+        return []
+    shown = "; ".join(unwaived[:5]) + ("; ..." if len(unwaived) > 5 else "")
+    return [
+        _a11y_violation(
+            f"accessibility baseline grew by {len(unwaived)} un-waived fingerprint(s); additions are "
+            "forbidden (fix the finding or add an exact-fingerprint waiver in docs/adr/exceptions.yaml "
+            f"naming ADR-055): {shown}"
+        )
+    ]
+
+
 def check_accessibility_baseline(repo_root: Path, files: list[str] | None) -> list[Violation]:
     """The ADR-055 exact-finding accessibility baseline may only shrink (R4).
 
@@ -81,43 +135,10 @@ def check_accessibility_baseline(repo_root: Path, files: list[str] | None) -> li
     # global repository invariant, not scoped to the changed-file set
     del files
     enforce = _a11y_enforced()
-    head_path = repo_root / _A11Y_BASELINE_REL
-    if not head_path.exists():
-        # No committed baseline: the scan asserts findings against an implicit
-        # empty set, so there is nothing to ratchet.
-        return []
-    head = _parse_baseline(head_path.read_text(encoding="utf-8"))
+    head, head_violations = _head_baseline(repo_root)
     if head is None:
-        return [_a11y_violation("committed accessibility baseline is not a JSON array of fingerprint strings")]
-
-    base_refs = _boundary_mock_base_reference_candidates(repo_root)
-    if not base_refs:
-        return _a11y_unverifiable(
-            enforce,
-            "cannot resolve a base ref to verify the accessibility baseline did not grow; "
-            "the CI lane must fetch base-branch history (fetch-depth: 0)",
-        )
-    base_raw = _git_text(repo_root, ["show", f"{base_refs[0]}:{_A11Y_BASELINE_REL}"])
-    if base_raw is None:
-        # No baseline on the base branch yet: initial enrollment. Enrollment
-        # purity (no product/template/route/stylesheet change) is a reviewed
-        # ADR-055-R4 constraint, not re-derived here.
-        return []
-    base = _parse_baseline(base_raw)
+        return head_violations
+    base, base_violations = _base_baseline(repo_root, enforce)
     if base is None:
-        return _a11y_unverifiable(enforce, "cannot parse the base-branch accessibility baseline to verify non-growth")
-
-    added = head - base
-    if not added:
-        return []
-    unwaived = sorted(added - _a11y_waived_fingerprints(repo_root))
-    if not unwaived:
-        return []
-    shown = "; ".join(unwaived[:5]) + ("; ..." if len(unwaived) > 5 else "")
-    return [
-        _a11y_violation(
-            f"accessibility baseline grew by {len(unwaived)} un-waived fingerprint(s); additions are "
-            "forbidden (fix the finding or add an exact-fingerprint waiver in docs/adr/exceptions.yaml "
-            f"naming ADR-055): {shown}"
-        )
-    ]
+        return base_violations
+    return _growth_violation(head - base, repo_root)

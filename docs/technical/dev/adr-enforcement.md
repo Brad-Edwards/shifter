@@ -308,7 +308,10 @@ The first slice intentionally stays small:
   resolves the base ref from `GITHUB_BASE_REF` / `ADR_GUARD_BASE_REF` (falling
   back to `origin/dev`/`origin/main`), fails **open** locally and **closed** under
   `ADR_GUARD_SNAPSHOT_ENFORCE`, and treats an absent base baseline as a valid
-  first enrollment. The per-surface exact-set comparison against the live scan and
+  first enrollment. A committed baseline that is not a JSON array of fingerprint
+  strings is rejected outright, and a base baseline that cannot be parsed is
+  treated as unverifiable (failing open or closed as above). The per-surface
+  exact-set comparison against the live scan and
   the fail-closed surface reconciliation are enforced in the Playwright a11y specs
   (`frontend/e2e/a11y/`), not this check.
 

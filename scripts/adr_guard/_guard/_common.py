@@ -103,38 +103,46 @@ def load_adr_exceptions(repo_root: Path) -> list[dict[str, object]]:
     return data
 
 
+def _is_str_list(value: object) -> bool:
+    """True when ``value`` is a list of strings."""
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _validate_exception_entry(index: int, exception: dict[str, object]) -> list[str]:
+    """Validate one exception entry's schema and expiry; return its errors."""
+    missing = REQUIRED_EXCEPTION_KEYS - set(exception)
+    if missing:
+        return [f"Exception entry {index} is missing keys: {sorted(missing)}"]
+
+    try:
+        expires_on = _parse_iso_date(exception["expires_on"])
+    except ValueError:
+        return [f"Exception entry {index} has invalid expires_on date: {exception['expires_on']!r}"]
+
+    errors: list[str] = []
+    if expires_on < date.today():
+        errors.append(f"Exception entry {index} for {exception['rule_id']} expired on {exception['expires_on']}")
+
+    # ``paths``/``checks`` are optional glob/name lists; ``fingerprints`` is the
+    # optional exact-accessibility-fingerprint scope (ADR-055-R6) - a waiver may
+    # enumerate exact fingerprints instead of overloading paths/checks.
+    for key in ("paths", "checks"):
+        value = exception.get(key, [])
+        if value and not isinstance(value, list):
+            errors.append(f"Exception entry {index} {key} must be a list when present")
+
+    fingerprints = exception.get("fingerprints", [])
+    if fingerprints and not _is_str_list(fingerprints):
+        errors.append(f"Exception entry {index} fingerprints must be a list of strings when present")
+
+    return errors
+
+
 def validate_adr_exceptions(exceptions: list[dict[str, object]]) -> list[str]:
     """Validate exception schema and expiry dates."""
     errors: list[str] = []
     for index, exception in enumerate(exceptions):
-        missing = REQUIRED_EXCEPTION_KEYS - set(exception)
-        if missing:
-            errors.append(f"Exception entry {index} is missing keys: {sorted(missing)}")
-            continue
-
-        try:
-            expires_on = _parse_iso_date(exception["expires_on"])
-        except ValueError:
-            errors.append(f"Exception entry {index} has invalid expires_on date: {exception['expires_on']!r}")
-            continue
-
-        if expires_on < date.today():
-            errors.append(f"Exception entry {index} for {exception['rule_id']} expired on {exception['expires_on']}")
-
-        paths = exception.get("paths", [])
-        if paths and not isinstance(paths, list):
-            errors.append(f"Exception entry {index} paths must be a list when present")
-
-        checks = exception.get("checks", [])
-        if checks and not isinstance(checks, list):
-            errors.append(f"Exception entry {index} checks must be a list when present")
-
-        # Optional exact-fingerprint scope (ADR-055-R6): a waiver may enumerate
-        # exact accessibility fingerprints instead of overloading paths/checks.
-        fingerprints = exception.get("fingerprints", [])
-        if fingerprints and (not isinstance(fingerprints, list) or not all(isinstance(fp, str) for fp in fingerprints)):
-            errors.append(f"Exception entry {index} fingerprints must be a list of strings when present")
-
+        errors.extend(_validate_exception_entry(index, exception))
     return errors
 
 
