@@ -8,13 +8,21 @@
 # therefore has NO privileged load path — it is dogfooded through the uniform
 # ingestion boundary (ADR-053/ADR-034).
 #
+# Only packs whose bytes ship inside the portal image belong here, because the
+# bootstrap resolves each `package_ref` under `RAES_PACKAGE_ROOT` (the app root
+# `/app` in the deployed container). Packs live under `shifter_platform/` so the
+# Dockerfile `COPY shifter_platform .` bakes them in; their `package_ref` is
+# therefore relative to that root. Private scenario packs whose bytes are not in
+# the public image (for example proprietary customer content) are registered
+# out-of-band where their bytes exist, not from this shipped seed.
+#
 packs:
-  - scenario_id: polaris
+  - scenario_id: smoke-linux
     source_kind: repo
     contract_kind: raes
     contract_profile: shifter
-    package_ref: scenario-dev/polaris
+    package_ref: cms/scenarios/inbox_packs/smoke-linux
     package_version: "0.1.0"
-    package_digest: sha256:f1e5a984f2965a7086f10ed7d5dd4322ab3b71843a3c9758258817d514d23058
+    package_digest: sha256:8eb25f38d6ab96d3cad3dfc16a3b809308b213a686876c2c53dd973765be3afc
     provenance:
       repo: Brad-Edwards/shifter

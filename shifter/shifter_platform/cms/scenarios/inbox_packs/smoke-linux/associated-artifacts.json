@@ -1,0 +1,81 @@
+{
+  "schema_version": "associated-artifact-manifest/v1",
+  "manifest_id": "smoke-linux-associated-artifacts",
+  "manifest_version": "0.1.0",
+  "canonicalization_profile": "associated-artifact-set/v1",
+  "scope": "scenario",
+  "parent_ref": {
+    "ref_kind": "scenario",
+    "ref_id": "smoke-linux",
+    "ref_version": null,
+    "ref_digest": null,
+    "ref_path": null
+  },
+  "artifacts": {
+    "artifact-0": {
+      "artifact_id": "artifact-0",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/docs/concepts.md",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "106c79b545f78c39f8e2fedc4e33ac479984bdc40d2eb6879a59479b28bf16dd"
+      },
+      "size_bytes": 619,
+      "created_at": "2026-09-09T00:00:00Z",
+      "source": "shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    },
+    "artifact-1": {
+      "artifact_id": "artifact-1",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/docs/provenance-ledger.yaml",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "434c81fbfee2af9cac639a6fc00fac0a961690d9eb84809f3ff2622a6d778d79"
+      },
+      "size_bytes": 814,
+      "created_at": "2026-09-09T00:00:00Z",
+      "source": "shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    },
+    "artifact-2": {
+      "artifact_id": "artifact-2",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/pack.yaml",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "08add2785e7bd7c2c4e66ade2fb8e152e886d21efb33b30b181ee7800061fed0"
+      },
+      "size_bytes": 517,
+      "created_at": "2026-09-09T00:00:00Z",
+      "source": "shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    },
+    "artifact-3": {
+      "artifact_id": "artifact-3",
+      "role": "other",
+      "media_type": "application/octet-stream",
+      "uri": "raes-environment-pack:/sdl/smoke-linux.sdl.yaml",
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "5ee4ffc265c432848251c3ed368818fde8074cc1b53c1533b778be9410926ded"
+      },
+      "size_bytes": 1553,
+      "created_at": "2026-09-09T00:00:00Z",
+      "source": "shifter",
+      "satisfies_refs": [],
+      "sensitivity": "internal",
+      "description": null
+    }
+  },
+  "set_digest": "sha256:8eb25f38d6ab96d3cad3dfc16a3b809308b213a686876c2c53dd973765be3afc"
+}

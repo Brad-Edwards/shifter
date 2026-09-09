@@ -54,16 +54,19 @@ def test_every_migrated_page_is_owned_by_the_spa_without_rollout_settings(settin
         assert b'id="root"' in response.content, path
 
 
-def test_polaris_is_the_single_digest_bound_shipped_raes_pack():
+def test_smoke_linux_is_the_single_digest_bound_shipped_raes_pack():
     packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
     assert len(packs) == 1
     source = packs[0]
-    assert source.scenario_id == "polaris"
+    assert source.scenario_id == "smoke-linux"
     assert source.contract_kind == "raes"
     assert source.contract_profile == "shifter"
 
-    pack_root = REPO_ROOT / source.package_ref
-    assert validate_pack(pack_root) == "polaris"
+    # The shipped pack's package_ref is relative to RAES_PACKAGE_ROOT, which is the
+    # shifter_platform dir (the manifest's parents[3]) — baked to /app in the
+    # container. Resolve against that root, not the repo root.
+    pack_root = SHIPPED_INBOX_MANIFEST.parents[3] / source.package_ref
+    assert validate_pack(pack_root) == "smoke-linux"
     assert pack_digest(pack_root) == source.package_digest
 
 
