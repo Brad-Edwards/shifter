@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +18,8 @@ from orchestrators.setup_orchestrator import SetupOrchestrator
 from plans.set_authorized_key import SetAuthorizedKeyPlan
 from plans.set_local_password import SetLocalPasswordPlan
 from raes_plan import RaesPlanAccount
+
+logger = logging.getLogger(__name__)
 
 
 class RaesAccountCredentialError(RuntimeError):
@@ -109,13 +112,19 @@ def install_instance_account_credentials(
         return {}
     try:
         execution = secret_ops.execution_builder(instance_output, provider="gcp", os_type=platform, role="raes-node")
-    except Exception:
-        raise RaesAccountCredentialError("failed to establish authored-account credential setup channel") from None
+    except Exception as exc:
+        logger.exception("failed to build authored-account credential setup channel range_id=%s instance_key=%s", range_id, instance_key)
+        raise RaesAccountCredentialError(
+            f"failed to establish authored-account credential setup channel ({type(exc).__name__}: {exc})"
+        ) from exc
     try:
         try:
             execution.wait_for_ready(timeout_seconds=300)
-        except Exception:
-            raise RaesAccountCredentialError("failed to establish authored-account credential setup channel") from None
+        except Exception as exc:
+            logger.exception("authored-account credential setup channel not ready range_id=%s instance_key=%s", range_id, instance_key)
+            raise RaesAccountCredentialError(
+                f"authored-account credential setup channel not ready ({type(exc).__name__}: {exc})"
+            ) from exc
         orchestrator = secret_ops.orchestrator_factory(execution.executor)
         secret_refs: dict[str, str] = {}
         for account in enabled_accounts:
