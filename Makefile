@@ -44,7 +44,7 @@ DEVMAIN_BODY := Promotes dev to main. Merge this PR with a merge commit. Do not 
 .DEFAULT_GOAL := help
 .PHONY: help test test-platform test-platform-postgres test-platform-redis \
         test-provisioner test-packer test-installation test-bootstrap \
-        test-check-layer-imports test-js test-platform-e2e test-adr-guard policy devmain
+        test-check-layer-imports test-js test-platform-e2e test-platform-a11y test-adr-guard policy devmain
 
 help: ## Show this help
 	@echo "Shifter developer entrypoint. Test targets reproduce CI from a clean"
@@ -110,6 +110,19 @@ test-platform-e2e: ## Authenticated SPA E2E (Playwright) against the hermetic Dj
 	  $(PLATFORM_ENV) uv run python manage.py seed_e2e && \
 	  cd frontend && npx playwright install chromium && \
 	  ( $(PLATFORM_ENV) npm run test:e2e; status=$$?; rm -f ../db.sqlite3; exit $$status )
+
+# Browser accessibility scans (#1526, ADR-055). Same hermetic stack as the E2E
+# target; runs the @axe-core/playwright surface matrix. Mirrors the deploy.yml
+# `Accessibility` PR Gate job (which uses PostgreSQL).
+test-platform-a11y: ## Browser accessibility (Playwright + axe) against the hermetic Django-hosted SPA
+	cd shifter/shifter_platform && uv sync --group dev && \
+	  (cd frontend && npm ci && npm run build) && \
+	  rm -f db.sqlite3 && \
+	  $(PLATFORM_ENV) uv run python manage.py collectstatic --noinput && \
+	  $(PLATFORM_ENV) uv run python manage.py migrate --noinput && \
+	  $(PLATFORM_ENV) uv run python manage.py seed_e2e && \
+	  cd frontend && npx playwright install chromium && \
+	  ( $(PLATFORM_ENV) npm run test:e2e:a11y; status=$$?; rm -f ../db.sqlite3; exit $$status )
 
 # Mirrors the `adr-guard-tests` CI job, including its pinned interpreter and
 # pyyaml, so the guard suite runs from a clean checkout the same way. CI selects

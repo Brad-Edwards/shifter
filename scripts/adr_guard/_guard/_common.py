@@ -129,6 +129,12 @@ def validate_adr_exceptions(exceptions: list[dict[str, object]]) -> list[str]:
         if checks and not isinstance(checks, list):
             errors.append(f"Exception entry {index} checks must be a list when present")
 
+        # Optional exact-fingerprint scope (ADR-055-R6): a waiver may enumerate
+        # exact accessibility fingerprints instead of overloading paths/checks.
+        fingerprints = exception.get("fingerprints", [])
+        if fingerprints and (not isinstance(fingerprints, list) or not all(isinstance(fp, str) for fp in fingerprints)):
+            errors.append(f"Exception entry {index} fingerprints must be a list of strings when present")
+
     return errors
 
 
