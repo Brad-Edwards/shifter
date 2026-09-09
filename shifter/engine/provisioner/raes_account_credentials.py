@@ -111,7 +111,7 @@ def install_instance_account_credentials(
     if not enabled_accounts:
         return {}
     try:
-        execution = secret_ops.execution_builder(instance_output, provider="gcp", os_type=platform, role="raes-node")
+        execution = secret_ops.execution_builder(instance_output, os_type=platform, role="raes-node")
     except Exception as exc:
         # Coarse by design: the underlying exception can carry secrets/PII, so the
         # raised error stays generic and the context is suppressed (from None).
