@@ -98,7 +98,9 @@ def _base_baseline(repo_root: Path, enforce: bool) -> tuple[set[str] | None, lis
         return None, ([] if base_refs else unresolved)
     parsed = _parse_baseline(base_raw)
     if parsed is None:
-        return None, _a11y_unverifiable(enforce, "cannot parse the base-branch accessibility baseline to verify non-growth")
+        return None, _a11y_unverifiable(
+            enforce, "cannot parse the base-branch accessibility baseline to verify non-growth"
+        )
     return parsed, []
 
 

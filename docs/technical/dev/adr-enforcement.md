@@ -303,8 +303,10 @@ The first slice intentionally stays small:
   baseline; new fingerprints (baseline growth) fail unless covered by an
   exact-fingerprint waiver in `docs/adr/exceptions.yaml` naming ADR-055 (an
   optional `fingerprints:` list on the exception, validated by the central
-  exception schema, never overloading `paths`/`checks`). Resolved findings
-  (removed entries) always pass. Like `published-contract-snapshots-immutable` it
+  exception schema, never overloading `paths`/`checks`). Each fingerprint is the
+  pipe-joined `surface|project|rule|wcag|target` key emitted by the a11y spec
+  (project is `chromium:<viewport>:<theme>`), so a waiver must quote that exact
+  string. Resolved findings (removed entries) always pass. Like `published-contract-snapshots-immutable` it
   resolves the base ref from `GITHUB_BASE_REF` / `ADR_GUARD_BASE_REF` (falling
   back to `origin/dev`/`origin/main`), fails **open** locally and **closed** under
   `ADR_GUARD_SNAPSHOT_ENFORCE`, and treats an absent base baseline as a valid
