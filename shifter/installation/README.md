@@ -48,6 +48,9 @@ environment variable, or the literal `prompt`.
 
 `range_egress` is the shared, cross-backend egress policy (see [Render](#render)); it is
 validated the same way for every backend and is not part of a backend's own settings model.
+`model_access` is also cross-backend. Its catalog is checked against the generated
+canonical v1 schema and bundled canonical semantic validator, then normalized before
+rendering. It remains disabled until its runtime consumers are deployed.
 
 ## Config File
 
@@ -189,6 +192,30 @@ command exits `1` and prints the same sanitized issues as `validate` when the
 config is invalid. See
 [`docs/architecture/range-egress-ip-allowlist.md`](../../docs/architecture/range-egress-ip-allowlist.md)
 for the full operator workflow.
+
+### Model-access artifact
+
+`settings.model_access` has a closed envelope: `enabled` and an optional
+`catalog`. An enabled envelope requires a complete catalog and valid canonical
+digest. Catalogs contain provider, project/account, identity, quota, price, and
+policy references; they never contain credential values.
+
+Render the catalog body to its protected mounted artifact separately from the
+runtime environment:
+
+```bash
+uv run --project shifter/installation shifter-config render-model-access-catalog \
+  shifter.yaml --output /protected/staging/catalog.json
+uv run --project shifter/installation shifter-config render-model-access-env \
+  shifter.yaml --output /protected/staging/model-access.env
+```
+
+The environment output carries only activation, the fixed runtime mount path
+`/etc/shifter/model-access/catalog.json`, and the expected SHA-256 digest. The
+deployment layer owns mounting the protected artifact at that path. The portal
+reparses the file and refuses startup on shape, version, digest, or size
+mismatch. The complete disabled example and deterministic allocation vectors
+live under `docs/architecture/model-access/`.
 
 ## Runtime Inventory
 
