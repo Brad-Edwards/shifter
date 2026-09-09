@@ -113,7 +113,11 @@ def install_instance_account_credentials(
     try:
         execution = secret_ops.execution_builder(instance_output, provider="gcp", os_type=platform, role="raes-node")
     except Exception as exc:
-        logger.exception("failed to build authored-account credential setup channel range_id=%s instance_key=%s", range_id, instance_key)
+        logger.exception(
+            "failed to build authored-account credential setup channel range_id=%s instance_key=%s",
+            range_id,
+            instance_key,
+        )
         raise RaesAccountCredentialError(
             f"failed to establish authored-account credential setup channel ({type(exc).__name__}: {exc})"
         ) from exc
@@ -121,7 +125,11 @@ def install_instance_account_credentials(
         try:
             execution.wait_for_ready(timeout_seconds=300)
         except Exception as exc:
-            logger.exception("authored-account credential setup channel not ready range_id=%s instance_key=%s", range_id, instance_key)
+            logger.exception(
+                "authored-account credential setup channel not ready range_id=%s instance_key=%s",
+                range_id,
+                instance_key,
+            )
             raise RaesAccountCredentialError(
                 f"authored-account credential setup channel not ready ({type(exc).__name__}: {exc})"
             ) from exc
