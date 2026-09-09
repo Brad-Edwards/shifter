@@ -1,0 +1,70 @@
+name: smoke-linux
+description: >
+  Two-node switched Linux range: a Kali attacker and an Ubuntu victim on one
+  LAN, both reachable over an SSH participant access channel. Authored against
+  raes 2.0.0 for the platform post-deploy smoke.
+
+nodes:
+  lan:
+    type: Switch
+  attacker:
+    type: VM
+    os: linux
+    os_version: Kali Rolling
+    source: {name: kali, version: "1.0"}
+    resources: {ram: 2 gib, cpu: 2}
+    services:
+      - {port: 22, name: ssh}
+  victim:
+    type: VM
+    os: linux
+    os_version: Ubuntu 22.04
+    source: {name: ubuntu, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services:
+      - {port: 22, name: ssh}
+
+infrastructure:
+  lan:
+    count: 1
+    properties: {cidr: 10.80.0.0/24, gateway: 10.80.0.1}
+  attacker:
+    count: 1
+    links: [lan]
+    properties:
+      - lan: 10.80.0.10
+  victim:
+    count: 1
+    links: [lan]
+    properties:
+      - lan: 10.80.0.20
+
+entities:
+  operator:
+    description: Range operator participant
+    role: white
+
+accounts:
+  attacker_login:
+    username: kali
+    node: attacker
+    auth_method: publickey
+  victim_login:
+    username: ubuntu
+    node: victim
+    auth_method: publickey
+
+agents:
+  operator:
+    entity: operator
+    description: Participant with SSH access to both range nodes
+    starting_accounts: [attacker_login, victim_login]
+    interactive_access:
+      attacker_ssh:
+        target_ref: attacker
+        channel: ssh
+        account_ref: attacker_login
+      victim_ssh:
+        target_ref: victim
+        channel: ssh
+        account_ref: victim_login
