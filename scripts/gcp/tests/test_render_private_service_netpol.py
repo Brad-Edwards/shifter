@@ -75,6 +75,10 @@ def test_render_emits_per_host_cidrs_and_protected_ports():
     # Dataplane V2 enforces API egress on the control-plane endpoint, so the
     # provisioner-launcher policy must also allow the master CIDR.
     assert "cidr: 172.16.0.0/28" in rendered  # GKE control-plane range
+    # Range-provisioner Jobs (shifter-jobs) need Cloud SQL egress to read their
+    # operation input / report status under Dataplane V2.
+    assert "name: allow-jobs-private-service-egress-generated" in rendered
+    assert "namespace: shifter-jobs" in rendered
     # Negative: the RFC1918 supernets used by the static Kustomize base
     # earlier in development must never appear in the generated output.
     assert "10.0.0.0/8" not in rendered
@@ -100,8 +104,10 @@ def test_render_deduplicates_overlapping_hosts():
 
     rendered = module.render_netpol(outputs)
 
-    # The /32 should appear once even though two outputs name the same host.
-    assert rendered.count("cidr: 10.40.0.10/32") == 1
+    # The deduped /32 appears once per private-service policy (platform + jobs
+    # share the same endpoint set), i.e. twice total -- never duplicated within a
+    # single policy even though two outputs name the same host.
+    assert rendered.count("cidr: 10.40.0.10/32") == 2
 
 
 def test_render_rejects_missing_gke_services_cidr():
