@@ -228,6 +228,23 @@ def test_management_channel_failure_is_coarse_and_execution_is_closed():
     execution.close.assert_called_once()
 
 
+def test_execution_builder_call_matches_real_builder_signature():
+    """The production execution_builder is executors.factory.build_guest_execution_context.
+
+    install_instance_account_credentials invokes it as
+    ``execution_builder(instance_output, os_type=..., role=...)``; tests mock it
+    with a permissive ``lambda *args, **kwargs`` that would hide an
+    unexpected-keyword TypeError (e.g. a stray ``provider=`` argument), so guard
+    the real signature is call-compatible.
+    """
+    import inspect
+
+    from executors.factory import build_guest_execution_context
+
+    # Must not raise TypeError; mirrors the real call arguments.
+    inspect.signature(build_guest_execution_context).bind({}, os_type="linux", role="raes-node")
+
+
 def test_missing_credential_verification_result_fails_closed():
     ops, _calls = _ops()
     execution = _Execution()
