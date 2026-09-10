@@ -24,6 +24,7 @@ backend model and validates it separately for every backend. See
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,7 +68,12 @@ class GcpBackendSettings(BaseModel):
     declared; the loader validates it separately for every backend (see the module docstring).
     """
 
-    model_config = ConfigDict(extra="forbid")
+    # The YAML/Terraform contract keeps its established key names through aliases,
+    # while internal Python names make the security distinction explicit: these
+    # values are public resource identifiers and references, never secret payloads.
+    # Serializing by alias preserves the normalized RootConfig surface consumed by
+    # downstream deployment tooling.
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
 
     project_id: str = Field(
         pattern=_GCP_PROJECT_ID_PATTERN,
@@ -78,7 +84,8 @@ class GcpBackendSettings(BaseModel):
             "and hyphens, not ending in a hyphen."
         ),
     )
-    dynamic_secret_project_id: str = Field(
+    range_resource_project_id: str = Field(
+        alias="dynamic_secret_project_id",
         pattern=_GCP_PROJECT_ID_PATTERN,
         min_length=6,
         max_length=30,
@@ -87,7 +94,8 @@ class GcpBackendSettings(BaseModel):
             "It may equal project_id only during the documented migration expand phase."
         ),
     )
-    provisioner_static_secret_refs: dict[GcpProvisionerStaticSecretKey, GcpNamedResourceRef] = Field(
+    provisioner_static_resource_refs: dict[GcpProvisionerStaticSecretKey, GcpNamedResourceRef] = Field(
+        alias="provisioner_static_secret_refs",
         default_factory=dict,
         description=(
             "Closed map of operator-created GDC and Vertex input references. The same full references drive "
@@ -98,3 +106,14 @@ class GcpBackendSettings(BaseModel):
         pattern=_GCP_REGION_PATTERN,
         description="Lowercase GCP region/location token (letters, digits, and internal hyphens), e.g. 'us-central1'.",
     )
+
+    @classmethod
+    def from_root_settings(cls, settings: Mapping[str, object]) -> GcpBackendSettings:
+        """Rebuild the backend-owned model from normalized root settings.
+
+        Root settings also contain shared policy blocks owned by their own
+        validators. Select only this model's externally aliased contract keys
+        before applying the closed backend model again.
+        """
+        contract_keys = {field.alias or name for name, field in cls.model_fields.items()}
+        return cls.model_validate({key: value for key, value in settings.items() if key in contract_keys})

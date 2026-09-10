@@ -21,9 +21,24 @@ class TestGcpBackendSettings:
     def test_minimal_valid_settings(self):
         settings = GcpBackendSettings.model_validate(_settings())
         assert settings.project_id == "acme-shifter"
-        assert settings.dynamic_secret_project_id == "acme-range-secrets"
+        assert settings.range_resource_project_id == "acme-range-secrets"
         assert settings.region == "us-central1"
-        assert settings.provisioner_static_secret_refs == {}
+        assert settings.provisioner_static_resource_refs == {}
+
+    def test_normalized_dump_preserves_external_contract_aliases(self):
+        normalized = GcpBackendSettings.model_validate(_settings()).model_dump()
+
+        assert normalized["dynamic_secret_project_id"] == "acme-range-secrets"
+        assert normalized["provisioner_static_secret_refs"] == {}
+        assert "range_resource_project_id" not in normalized
+        assert "provisioner_static_resource_refs" not in normalized
+
+    def test_rebuild_from_root_settings_ignores_shared_policy_blocks(self):
+        settings = {**_settings(), "range_egress": {"mode": "status-quo"}}
+
+        rebuilt = GcpBackendSettings.from_root_settings(settings)
+
+        assert rebuilt.range_resource_project_id == "acme-range-secrets"
 
     def test_static_secret_refs_are_closed_full_resource_names(self):
         settings = GcpBackendSettings.model_validate(
@@ -34,7 +49,7 @@ class TestGcpBackendSettings:
                 }
             )
         )
-        assert set(settings.provisioner_static_secret_refs) == {
+        assert set(settings.provisioner_static_resource_refs) == {
             "GDC_ACCESS_SECRET_ID",
             "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
         }

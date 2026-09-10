@@ -758,7 +758,7 @@ def _dynamic_boundary_errors(name: str, body: str) -> list[str]:
     return errors
 
 
-def _check_dynamic_secret_boundary(files: dict[Path, list[str]]) -> list[Violation]:
+def _check_dynamic_resource_scope(files: dict[Path, list[str]]) -> list[Violation]:
     """Allow only the exact create/lifecycle/read graph designed by #1586/#2083."""
     violations: list[Violation] = []
     combined = "\n".join("\n".join(lines) for lines in files.values())
@@ -884,7 +884,7 @@ def check_paths(paths: list[Path]) -> list[Violation]:
     files = {p: p.read_text().splitlines() for p in paths if p.suffix == ".tf"}
     locals_text = _collect_locals_text(files)
     violations: list[Violation] = []
-    violations.extend(_check_dynamic_secret_boundary(files))
+    violations.extend(_check_dynamic_resource_scope(files))
     for path, lines in files.items():
         violations.extend(_check_literal_members(path, lines))
         violations.extend(_check_map_driven_members(path, lines, locals_text))
