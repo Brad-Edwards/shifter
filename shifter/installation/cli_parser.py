@@ -51,7 +51,7 @@ def _add_validate_parser(subcommands: argparse._SubParsersAction) -> None:
 
 
 def _add_render_parsers(subcommands: argparse._SubParsersAction) -> None:
-    """Wire the ``render`` / ``render-runtime`` / ``render-warm-pool-env`` subcommands."""
+    """Wire the installation-owned render subcommands."""
     render = subcommands.add_parser(
         "render",
         help="Render the range egress policy into provider Terraform bridge .tfvars.",
@@ -88,6 +88,18 @@ def _add_render_parsers(subcommands: argparse._SubParsersAction) -> None:
     )
     _add_config_path_argument(render_warm_pool)
     _add_output_argument(render_warm_pool, "env line")
+    render_model_catalog = subcommands.add_parser(
+        "render-model-access-catalog",
+        help="Render settings.model_access.catalog as a dedicated mounted JSON artifact.",
+    )
+    _add_config_path_argument(render_model_catalog)
+    _add_output_argument(render_model_catalog, "catalog JSON")
+    render_model_env = subcommands.add_parser(
+        "render-model-access-env",
+        help="Render model-access activation, mounted path, and expected digest env lines.",
+    )
+    _add_config_path_argument(render_model_env)
+    _add_output_argument(render_model_env, "model-access env lines")
 
 
 def _add_inventory_parser(subcommands: argparse._SubParsersAction) -> None:

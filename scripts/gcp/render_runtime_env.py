@@ -252,6 +252,27 @@ def _project_from_self_link(self_link: object) -> str:
 
 
 _ENGINE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_MODEL_ACCESS_CATALOG_PATH = "/etc/shifter/model-access/catalog.json"
+
+
+def _model_access_runtime_values() -> dict[str, str]:
+    """Render only activation and the mounted catalog identity, never its body."""
+    enabled = os.environ.get("MODEL_ACCESS_ENABLED", "false").strip().lower()
+    path = os.environ.get("MODEL_ACCESS_CATALOG_PATH", "").strip()
+    digest = os.environ.get("MODEL_ACCESS_CATALOG_DIGEST", "").strip()
+    if enabled not in {"true", "false"}:
+        raise ValueError("MODEL_ACCESS_ENABLED must be true or false")
+    if bool(path) != bool(digest) or (enabled == "true" and not path):
+        raise ValueError("model access requires catalog path and digest together")
+    if path and path != _MODEL_ACCESS_CATALOG_PATH:
+        raise ValueError("model access catalog path must be the fixed mounted artifact path")
+    if digest and not _ENGINE_DIGEST_RE.fullmatch(digest):
+        raise ValueError("model access catalog digest must be sha256:<64 lowercase hex>")
+    return {
+        "MODEL_ACCESS_ENABLED": enabled,
+        "MODEL_ACCESS_CATALOG_PATH": path,
+        "MODEL_ACCESS_CATALOG_DIGEST": digest,
+    }
 
 
 def _validated_engine_digest(engine_image_digest: str) -> str:
@@ -487,6 +508,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     values.update(_email_runtime_values(outputs))
     values.update(_optional_gce_range_values())
     values.update(_ctf_content_runtime_values(outputs))
+    values.update(_model_access_runtime_values())
     # These references originate in the same validated shifter.yaml map that
     # drives per-secret Terraform IAM. Apply them last so a process-local env
     # override cannot decouple runtime lookup from its exact IAM grant.

@@ -64,7 +64,7 @@ quality_units:
     responsibilities:
       lint: [shifter-platform-lint, shifter-platform-lint-js]
       security: [shifter-platform-sast]
-      test: [shifter-platform-tests, shifter-platform-tests-postgres, shifter-platform-js-tests]
+      test: [shifter-platform-tests, shifter-platform-tests-postgres, shifter-platform-js-tests, shifter-platform-e2e]
 
   - id: provisioner
     paths:

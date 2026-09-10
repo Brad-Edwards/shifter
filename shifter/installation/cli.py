@@ -52,7 +52,13 @@ from .publication import (
     serialize_artifact,
     version_snapshot_path,
 )
-from .render import render_cloud_provider_tfvars, render_tfvars, render_warm_pool_env
+from .render import (
+    render_cloud_provider_tfvars,
+    render_model_access_catalog,
+    render_model_access_env,
+    render_tfvars,
+    render_warm_pool_env,
+)
 from .runtime_inventory import RUNTIME_SURFACES, validate_runtime_inventory
 from .scaffold import ScaffoldError, available_backends, scaffold_config
 
@@ -128,6 +134,21 @@ def _cmd_render_warm_pool_env(path_str: str, output: str | None) -> int:
             print(f"  - {issue.render()}", file=sys.stderr)
         return 1
     return _emit_rendered(render_warm_pool_env(config), output, config.backend, what="warm-pool runtime env")
+
+
+def _cmd_render_model_access(path_str: str, output: str | None, *, catalog: bool) -> int:
+    """Render the mounted model-access artifact or its bounded env references."""
+    config_path = Path(path_str)
+    try:
+        config = load_root_config(config_path)
+    except InstallationConfigError as exc:
+        print(f"{config_path}: invalid", file=sys.stderr)
+        for issue in exc.issues:
+            print(f"  - {issue.render()}", file=sys.stderr)
+        return 1
+    rendered = render_model_access_catalog(config) if catalog else render_model_access_env(config)
+    what = "model-access catalog" if catalog else "model-access runtime env"
+    return _emit_rendered(rendered, output, config.backend, what=what)
 
 
 def _cmd_runtime_inventory(repo_root_str: str, *, check: bool) -> int:
@@ -270,6 +291,10 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = _cmd_render_runtime(args.path, args.output)
     elif args.command == "render-warm-pool-env":
         exit_code = _cmd_render_warm_pool_env(args.path, args.output)
+    elif args.command == "render-model-access-catalog":
+        exit_code = _cmd_render_model_access(args.path, args.output, catalog=True)
+    elif args.command == "render-model-access-env":
+        exit_code = _cmd_render_model_access(args.path, args.output, catalog=False)
     elif args.command == "runtime-inventory":
         exit_code = _cmd_runtime_inventory(args.repo_root, check=args.check)
     elif args.command == "init":
