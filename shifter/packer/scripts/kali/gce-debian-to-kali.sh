@@ -102,6 +102,38 @@ systemctl mask networking.service || true
 systemctl enable systemd-networkd.service || true
 systemctl enable ssh.service || true
 
+echo "=== Removing the conflicting NetworkManager stack (Kali metapackages pull it in) ==="
+# kali-linux-headless (tools.sh) and kali-desktop-xfce (base.sh), installed later
+# in this bake, pull in NetworkManager -- a SECOND network stack alongside the
+# GCE-native systemd-networkd this image is built around. With both enabled they
+# fight over the primary NIC: NetworkManager-wait-online.service completes while
+# systemd-networkd never sees its link reach "routable", so
+# systemd-networkd-wait-online.service blocks boot indefinitely (its shipped unit
+# runs with TimeoutStartSec=infinity). multi-user.target is never reached,
+# ssh.service never starts, and the range guest is unreachable -- the
+# provisioner's management-SSH times out. Masking NetworkManager NOW is
+# deliberate: a mask symlink under /etc/systemd/system persists through the later
+# apt install, so the Kali metapackages layer their userland on top while
+# networkd stays the sole boot-time network manager. Masking (not purging) keeps
+# the desktop metapackage's nm-applet dependency satisfied for the xrdp GUI
+# session; NetworkManager simply never runs as a boot service.
+systemctl mask NetworkManager.service NetworkManager-wait-online.service || true
+
+echo "=== Bounding systemd-networkd-wait-online so a range LAN cannot hang boot ==="
+# Range guests sit on switched, often-isolated range LANs whose gateway may not
+# be a real router, so the primary link can come up with an address yet never
+# reach the full "routable" state systemd-networkd-wait-online waits for. Cap the
+# wait at 30s so a failed/incomplete online check fails the oneshot instead of
+# hanging boot forever; multi-user.target (and therefore ssh.service) then always
+# proceeds. This overrides only the timeout, so it is independent of the
+# systemd-networkd-wait-online binary path across Debian/Kali releases. sshd
+# itself only orders after network.target, so bounded network-online is safe.
+mkdir -p /etc/systemd/system/systemd-networkd-wait-online.service.d
+cat > /etc/systemd/system/systemd-networkd-wait-online.service.d/10-range-guest.conf <<'UNIT'
+[Service]
+TimeoutStartSec=30
+UNIT
+
 echo "=== Ensuring SSH host keys are regenerated on first boot ==="
 # common/cleanup.sh strips /etc/ssh/ssh_host_* so images never ship shared host
 # keys. The Ubuntu image regenerates them on first boot; Kali does not, so
