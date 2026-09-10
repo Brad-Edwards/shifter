@@ -26,9 +26,7 @@ class RaesAccountCredentialError(RuntimeError):
     """Bounded failure for one authored-account credential realization."""
 
 
-def _fail_credential_setup_channel(
-    *, message: str, range_id: int, instance_key: str, exc: BaseException
-) -> NoReturn:
+def _fail_credential_setup_channel(*, message: str, range_id: int, instance_key: str, exc: BaseException) -> NoReturn:
     """Record a credential-setup-channel failure and raise a secret-safe error.
 
     The underlying ``exc`` can carry secrets/PII in its message and traceback, so
@@ -46,9 +44,7 @@ def _fail_credential_setup_channel(
         instance_key,
         type(exc).__name__,
     )
-    raise RaesAccountCredentialError(
-        "failed to establish authored-account credential setup channel"
-    ) from None
+    raise RaesAccountCredentialError("failed to establish authored-account credential setup channel") from None
 
 
 @dataclass(frozen=True)
