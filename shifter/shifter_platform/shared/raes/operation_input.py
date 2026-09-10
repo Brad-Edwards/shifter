@@ -206,8 +206,13 @@ def plan_image_lookup_keys(plan: object) -> tuple[str, ...]:
         payload = _require_mapping(entry.get("payload"), f"raes plan resource '{address}' payload")
         node_spec = _require_mapping(payload.get("spec"), f"raes plan resource '{address}' spec").get("node") or {}
         node = _require_mapping(node_spec, f"raes plan resource '{address}' node spec")
+        # A serialized node ``source`` is a mapping whose NAME selects the image
+        # row (a bare string is the name); scope keys to the source, not os_family.
+        source = node.get("source")
+        source_name = source.get("name") if isinstance(source, Mapping) else source
         key = image_lookup_key(
-            source_name=_optional_str(node.get("source")), os_family=_optional_str(payload.get("os_family"))
+            source_name=_optional_str(source_name),
+            os_family=_optional_str(payload.get("os_family")),
         )
         if key and key not in keys:
             keys.append(key)
