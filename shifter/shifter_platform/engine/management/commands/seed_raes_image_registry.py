@@ -57,6 +57,12 @@ _IMAGE_SOURCES: tuple[tuple[str, str, str, str, str], ...] = (
 
 
 def _parse_disk_size(raw: str, source_name: str) -> int | None:
+    """Parse a disk-size env value into a positive int, or None when unset.
+
+    A blank/absent value returns None so the provisioner applies its own default;
+    a non-integer or non-positive value raises ``CommandError`` so a misconfigured
+    ``GCP_RANGE_*_DISK_SIZE_GB`` fails the deploy hook loudly rather than silently.
+    """
     value = raw.strip()
     if not value:
         return None

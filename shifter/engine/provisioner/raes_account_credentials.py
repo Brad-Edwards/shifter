@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NoReturn
 
 from executors.base import CommandExecutor
 from executors.factory import GuestExecutionContext, build_guest_execution_context
@@ -24,6 +24,31 @@ logger = logging.getLogger(__name__)
 
 class RaesAccountCredentialError(RuntimeError):
     """Bounded failure for one authored-account credential realization."""
+
+
+def _fail_credential_setup_channel(
+    *, message: str, range_id: int, instance_key: str, exc: BaseException
+) -> NoReturn:
+    """Record a credential-setup-channel failure and raise a secret-safe error.
+
+    The underlying ``exc`` can carry secrets/PII in its message and traceback, so
+    those are never logged (this uses ``logging.error`` with the exception TYPE
+    only, deliberately NOT ``logging.exception``, which would emit the traceback)
+    and the exception context is suppressed with ``from None``. Only non-secret
+    identifiers plus the exception class name are recorded, keeping the failure
+    diagnosable without leaking credentials. Lives outside the ``except`` blocks
+    so the type-only logging contract stays in one documented place.
+    """
+    logger.error(
+        "%s range_id=%s instance_key=%s error_type=%s",
+        message,
+        range_id,
+        instance_key,
+        type(exc).__name__,
+    )
+    raise RaesAccountCredentialError(
+        "failed to establish authored-account credential setup channel"
+    ) from None
 
 
 @dataclass(frozen=True)
@@ -113,31 +138,22 @@ def install_instance_account_credentials(
     try:
         execution = secret_ops.execution_builder(instance_output, os_type=platform, role="raes-node")
     except Exception as exc:
-        # Coarse by design: the underlying exception can carry secrets/PII, so the
-        # raised error stays generic and the context is suppressed (from None).
-        # Log only the exception TYPE (never its message/traceback) + non-secret
-        # identifiers so failures are diagnosable without leaking credentials.
-        logger.error(
-            "credential setup channel build failed range_id=%s instance_key=%s error_type=%s",
-            range_id,
-            instance_key,
-            type(exc).__name__,
+        _fail_credential_setup_channel(
+            message="credential setup channel build failed",
+            range_id=range_id,
+            instance_key=instance_key,
+            exc=exc,
         )
-        raise RaesAccountCredentialError("failed to establish authored-account credential setup channel") from None
     try:
         try:
             execution.wait_for_ready(timeout_seconds=300)
         except Exception as exc:
-            # Coarse by design (see above): log the exception TYPE + non-secret
-            # identifiers only; keep the raised error generic with context
-            # suppressed so no secret/PII reaches the error chain.
-            logger.error(
-                "credential setup channel not ready range_id=%s instance_key=%s error_type=%s",
-                range_id,
-                instance_key,
-                type(exc).__name__,
+            _fail_credential_setup_channel(
+                message="credential setup channel not ready",
+                range_id=range_id,
+                instance_key=instance_key,
+                exc=exc,
             )
-            raise RaesAccountCredentialError("failed to establish authored-account credential setup channel") from None
         orchestrator = secret_ops.orchestrator_factory(execution.executor)
         secret_refs: dict[str, str] = {}
         for account in enabled_accounts:
