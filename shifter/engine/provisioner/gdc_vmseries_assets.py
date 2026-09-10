@@ -60,9 +60,10 @@ logger = logging.getLogger(__name__)
 
 
 def _ssh_secret_locations(project_id: str, user_id: int, instance_id: str) -> SecretLocations:
+    """Resolve legacy and canonical locations for a VM-Series SSH key."""
     return secret_locations(
         platform_project_id=project_id,
-        dynamic_project_id=dynamic_secret_project_id(project_id),
+        dynamic_project_id=dynamic_secret_project_id(),
         legacy_secret_id=_ssh_secret_id(user_id, instance_id),
         canonical_secret_id=canonical_secret_id(
             credential_class=DynamicSecretClass.VMSERIES_SSH,

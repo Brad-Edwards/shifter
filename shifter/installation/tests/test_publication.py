@@ -466,7 +466,8 @@ def test_conformance_flags_unsupported_version() -> None:
     artifact = build_contract_artifact()
     artifact["supported_contract_versions"] = [PUBLISHED_CONTRACT_VERSION + 99]
     issues = _registry_conformance_issues(artifact)
-    assert issues and all("not a published supported version" in issue.message for issue in issues)
+    assert issues
+    assert all("not a published supported version" in issue.message for issue in issues)
 
 
 def test_conformance_flags_extra_property() -> None:

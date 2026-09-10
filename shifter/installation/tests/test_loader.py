@@ -54,7 +54,8 @@ class TestLoadRootConfig:
         with pytest.raises(InstallationConfigError) as exc:
             load_root_config(path)
         rendered = str(exc.value).lower()
-        assert "duplicate" in rendered and "backend" in rendered
+        assert "duplicate" in rendered
+        assert "backend" in rendered
 
     def test_duplicate_nested_key_raises(self, write_config):
         raw = "backend: aws\ndeployment:\n  name: shifter\n  name: other\n  domain: shifter.example.com\n"

@@ -39,26 +39,28 @@ class TestGcpBackendSettings:
             "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
         }
 
+        unknown_secret = _settings(
+            provisioner_static_secret_refs={"ARBITRARY_SECRET": "projects/acme-shifter/secrets/x"}
+        )
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate(
-                _settings(provisioner_static_secret_refs={"ARBITRARY_SECRET": "projects/acme-shifter/secrets/x"})
-            )
+            GcpBackendSettings.model_validate(unknown_secret)
+        short_secret_ref = _settings(provisioner_static_secret_refs={"GDC_ACCESS_SECRET_ID": "shifter-prod-gdc-access"})
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate(
-                _settings(provisioner_static_secret_refs={"GDC_ACCESS_SECRET_ID": "shifter-prod-gdc-access"})
-            )
+            GcpBackendSettings.model_validate(short_secret_ref)
 
     def test_model_is_closed_and_rejects_unknown_settings(self):
         # extra='forbid' — an unknown GCP setting fails before any infrastructure mutation.
+        unknown_setting = _settings(bogus="value")
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate(_settings(bogus="value"))
+            GcpBackendSettings.model_validate(unknown_setting)
 
     def test_range_egress_is_not_a_model_field(self):
         # range_egress is a shared cross-backend key validated by the loader, not the model
         # (mirrors AwsSettings); the closed model rejects it as an unknown key.
         assert "range_egress" not in GcpBackendSettings.model_fields
+        misplaced_setting = _settings(range_egress={"mode": "status-quo"})
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate(_settings(range_egress={"mode": "status-quo"}))
+            GcpBackendSettings.model_validate(misplaced_setting)
 
     def test_project_id_is_required(self):
         with pytest.raises(ValidationError):
@@ -88,8 +90,9 @@ class TestGcpBackendSettings:
         ],
     )
     def test_invalid_project_id_is_rejected(self, project_id):
+        invalid_settings = _settings(project_id=project_id)
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate(_settings(project_id=project_id))
+            GcpBackendSettings.model_validate(invalid_settings)
 
     @pytest.mark.parametrize("project_id", ["acme-shifter", "your-gcp-project", "shifter", "abc123-def"])
     def test_valid_project_id_is_accepted(self, project_id):
@@ -98,8 +101,9 @@ class TestGcpBackendSettings:
 
     @pytest.mark.parametrize("region", ["", "US-Central1", "us central1", "-us-central1"])
     def test_invalid_region_is_rejected(self, region):
+        invalid_settings = _settings(region=region)
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate(_settings(region=region))
+            GcpBackendSettings.model_validate(invalid_settings)
 
     @pytest.mark.parametrize("region", ["us-central1", "europe-west4", "asia-northeast1"])
     def test_valid_region_is_accepted(self, region):

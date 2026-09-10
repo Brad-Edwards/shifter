@@ -25,8 +25,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Iterator, MutableSequence
 from contextlib import suppress
-from typing import Any, Protocol, cast
+from typing import Protocol, cast
 
 from cloud.gcp.base import get_project_id, import_google_module
 from gcp_dynamic_secrets import (
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 _IAM_ADMIN_MODULE = "google.cloud.iam_admin_v1"
 _SECRETMANAGER_MODULE = "google.cloud.secretmanager"
 _GOOGLE_EXCEPTIONS_MODULE = "google.api_core.exceptions"
+_CREDENTIAL_ACCESSOR_ROLE = "roles/secretmanager.secretAccessor"
 
 
 class _ServiceAccountKey(Protocol):
@@ -108,6 +110,29 @@ class _GoogleExceptions(Protocol):
     AlreadyExists: type[Exception]
 
 
+class _PolicyBinding(Protocol):
+    """IAM policy binding fields used by this module."""
+
+    role: str
+    members: MutableSequence[str]
+
+
+class _PolicyBindings(Protocol):
+    """Protobuf repeated-binding operations used by this module."""
+
+    def __iter__(self) -> Iterator[object]:
+        """Iterate through bindings."""
+
+    def add(self, *, role: str, members: list[str]) -> object:
+        """Append one binding."""
+
+
+class _Policy(Protocol):
+    """IAM policy fields used by this module."""
+
+    bindings: _PolicyBindings
+
+
 def _vertex_secret_id(range_id: int) -> str:
     """Return the deterministic Secret Manager id for a range's Vertex key."""
     return f"shifter-range-{int(range_id)}-vertex-key"
@@ -147,6 +172,7 @@ def _shared_secret_id() -> str:
 
 
 def _shared_secret_name(shared_secret_id: str, fallback_project_id: str) -> str:
+    """Resolve a shared secret id to its full Secret Manager resource name."""
     if shared_secret_id.startswith("projects/"):
         return shared_secret_id
     source_project_id = os.environ.get("GCP_RANGE_VERTEX_PROJECT_ID", "").strip() or fallback_project_id
@@ -177,9 +203,10 @@ def _resolve_range_key_json(
 
 
 def _vertex_secret_locations(platform_project_id: str, range_id: int) -> SecretLocations:
+    """Resolve legacy and canonical locations for a range Vertex key."""
     return secret_locations(
         platform_project_id=platform_project_id,
-        dynamic_project_id=dynamic_secret_project_id(platform_project_id),
+        dynamic_project_id=dynamic_secret_project_id(),
         legacy_secret_id=_vertex_secret_id(range_id),
         canonical_secret_id=canonical_secret_id(
             credential_class=DynamicSecretClass.VERTEX_SERVICE_ACCOUNT_KEY,
@@ -188,30 +215,49 @@ def _vertex_secret_locations(platform_project_id: str, range_id: int) -> SecretL
     )
 
 
-def _binding_role(binding: Any) -> str:
-    return str(binding.get("role", "")) if isinstance(binding, dict) else str(getattr(binding, "role", ""))
+def _binding_role(binding: object) -> str:
+    """Read a role from either a dictionary or protobuf IAM binding."""
+    if isinstance(binding, dict):
+        return str(cast(dict[str, object], binding).get("role", ""))
+    return str(cast(_PolicyBinding, binding).role)
 
 
-def _binding_members(binding: Any):
-    return binding.setdefault("members", []) if isinstance(binding, dict) else binding.members
+def _binding_members(binding: object) -> MutableSequence[str]:
+    """Read the mutable members list from a dictionary or protobuf binding."""
+    if isinstance(binding, dict):
+        raw_members = cast(dict[str, object], binding).setdefault("members", [])
+        if not isinstance(raw_members, list):
+            raise TypeError("IAM binding members must be a list")
+        return cast(list[str], raw_members)
+    return cast(_PolicyBinding, binding).members
+
+
+def _policy_bindings(policy: object) -> list[object] | _PolicyBindings:
+    """Read the mutable bindings collection from a dictionary or protobuf policy."""
+    if isinstance(policy, dict):
+        raw_bindings = cast(dict[str, object], policy).setdefault("bindings", [])
+        if not isinstance(raw_bindings, list):
+            raise TypeError("IAM policy bindings must be a list")
+        return cast(list[object], raw_bindings)
+    return cast(_Policy, policy).bindings
 
 
 def _grant_host_access(secrets: _SecretClient, secret_name: str, host_service_account_email: str) -> None:
     """Merge the per-secret host grant without discarding unrelated bindings."""
     member = f"serviceAccount:{host_service_account_email}"
     policy = secrets.get_iam_policy(request={"resource": secret_name})
-    bindings = policy.setdefault("bindings", []) if isinstance(policy, dict) else cast(Any, policy).bindings
+    bindings = _policy_bindings(policy)
     for binding in bindings:
-        if _binding_role(binding) == "roles/secretmanager.secretAccessor":
+        if _binding_role(binding) == _CREDENTIAL_ACCESSOR_ROLE:
             members = _binding_members(binding)
             if member not in members:
                 members.append(member)
             break
     else:
         if isinstance(bindings, list):
-            bindings.append({"role": "roles/secretmanager.secretAccessor", "members": [member]})
+            bindings.append({"role": _CREDENTIAL_ACCESSOR_ROLE, "members": [member]})
         else:
-            bindings.add(role="roles/secretmanager.secretAccessor", members=[member])
+            bindings.add(role=_CREDENTIAL_ACCESSOR_ROLE, members=[member])
     secrets.set_iam_policy(request={"resource": secret_name, "policy": policy})
 
 
@@ -247,6 +293,7 @@ def ensure_range_vertex_key(
     minted_key_name = ""
 
     def _payload_factory() -> str:
+        """Resolve the key payload and retain any newly minted key name for cleanup."""
         nonlocal minted_key_name
         key_json, minted_key_name = _resolve_range_key_json(
             service_account_email=service_account_email,
@@ -291,6 +338,35 @@ def ensure_range_vertex_key(
     return secret_name
 
 
+def _stored_vertex_key_names(
+    secrets: _SecretClient,
+    exceptions: _GoogleExceptions,
+    locations: SecretLocations,
+) -> set[str]:
+    """Collect the distinct SA key names referenced by all migration locations."""
+    key_names: set[str] = set()
+    for secret_name in locations.read_refs:
+        try:
+            response = secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
+        except exceptions.NotFound:
+            continue
+        if key_name := _key_resource_name(response.payload.data):
+            key_names.add(key_name)
+    return key_names
+
+
+def _delete_vertex_keys(
+    key_names: set[str],
+    iam: _IamClient,
+    exceptions: _GoogleExceptions,
+) -> None:
+    """Delete collected service-account keys, ignoring already-absent keys."""
+    for key_name in sorted(key_names):
+        with suppress(exceptions.NotFound):
+            iam.delete_service_account_key(request={"name": key_name})
+            logger.info("Deleted range Vertex SA key key_fp=%s", safe_log_fingerprint(key_name))
+
+
 def delete_range_vertex_key(
     range_id: int,
     *,
@@ -310,22 +386,10 @@ def delete_range_vertex_key(
 
     shared_secret_id = _shared_secret_id()
 
-    key_names: set[str] = set()
-    if not shared_secret_id:
-        for secret_name in locations.read_refs:
-            try:
-                response = secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
-                if key_name := _key_resource_name(response.payload.data):
-                    key_names.add(key_name)
-            except exceptions.NotFound:
-                continue
+    key_names = set() if shared_secret_id else _stored_vertex_key_names(secrets, exceptions, locations)
 
     if key_names:
-        iam = iam_client or _build_iam_client()
-        for key_name in sorted(key_names):
-            with suppress(exceptions.NotFound):
-                iam.delete_service_account_key(request={"name": key_name})
-                logger.info("Deleted range Vertex SA key key_fp=%s", safe_log_fingerprint(key_name))
+        _delete_vertex_keys(key_names, iam_client or _build_iam_client(), exceptions)
 
     delete_all(secrets, exceptions, locations)
     logger.info(

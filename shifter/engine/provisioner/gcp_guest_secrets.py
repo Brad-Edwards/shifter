@@ -103,7 +103,7 @@ def _read_or_create_secret(
     client, google_exceptions, platform_project_id = _secret_client()
     locations = secret_locations(
         platform_project_id=platform_project_id,
-        dynamic_project_id=dynamic_secret_project_id(platform_project_id),
+        dynamic_project_id=dynamic_secret_project_id(),
         legacy_secret_id=secret_id,
         canonical_secret_id=canonical_id or secret_id,
     )
@@ -115,6 +115,7 @@ def _canonical_guest_secret_id(
     instance: GuestInstance,
     kind: str,
 ) -> str:
+    """Return the centrally classified canonical id for a GCE guest credential."""
     instance_part = str(instance.get("uuid") or instance.get("name") or instance.get("role") or "guest")
     credential_class = {
         "ssh": DynamicSecretClass.GCE_HOST_SSH,
@@ -225,6 +226,7 @@ def _canonical_raes_directory_secret_id(
     subject_address: str,
     purpose: str,
 ) -> str:
+    """Return the canonical id for a range-local RAES directory credential."""
     identity = "\0".join((domain_id, subject_address)).encode("utf-8")
     credential_class = {
         "dsrm-password": DynamicSecretClass.RAES_DOMAIN_DSRM_PASSWORD,
@@ -309,7 +311,7 @@ def _delete_secret_locations(legacy_secret_id: str, canonical_id: str) -> None:
         return
     locations = secret_locations(
         platform_project_id=platform_project_id,
-        dynamic_project_id=dynamic_secret_project_id(platform_project_id),
+        dynamic_project_id=dynamic_secret_project_id(),
         legacy_secret_id=legacy_secret_id,
         canonical_secret_id=canonical_id,
     )

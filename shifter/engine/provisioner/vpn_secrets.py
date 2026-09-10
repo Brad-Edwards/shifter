@@ -24,6 +24,8 @@ from gcp_vpn_identity import gcp_vpn_gateway_pool_service_account_email
 from provisioner_db import get_db_connection
 from vpn_access import VpnSecretOps
 
+_CREDENTIAL_ACCESSOR_ROLE = "roles/secretmanager.secretAccessor"
+
 
 class _AWSSecretsClient(Protocol):
     """Subset of the boto3 Secrets Manager client used by the adapter."""
@@ -189,7 +191,7 @@ class GCPVpnSecretOps(VpnSecretOps):
         self._identity_project_id = project_id or get_project_id()
         if not self._identity_project_id:
             raise RuntimeError("GCP project ID is required for OpenVPN secrets")
-        self._storage_project_id = dynamic_secret_project_id(self._identity_project_id)
+        self._storage_project_id = dynamic_secret_project_id()
 
     def _reserved_pool_slot(self, range_id: int) -> int:
         """Return the OpenVPN gateway pool slot reserved for this range (ADR-008-R7).
@@ -265,7 +267,7 @@ class GCPVpnSecretOps(VpnSecretOps):
         bindings = policy.setdefault("bindings", []) if isinstance(policy, dict) else cast(Any, policy).bindings
         for binding in bindings:
             role = binding.get("role", "") if isinstance(binding, dict) else getattr(binding, "role", "")
-            if role != "roles/secretmanager.secretAccessor":
+            if role != _CREDENTIAL_ACCESSOR_ROLE:
                 continue
             members = binding.setdefault("members", []) if isinstance(binding, dict) else binding.members
             if member not in members:
@@ -273,9 +275,9 @@ class GCPVpnSecretOps(VpnSecretOps):
             break
         else:
             if isinstance(bindings, list):
-                bindings.append({"role": "roles/secretmanager.secretAccessor", "members": [member]})
+                bindings.append({"role": _CREDENTIAL_ACCESSOR_ROLE, "members": [member]})
             else:
-                bindings.add(role="roles/secretmanager.secretAccessor", members=[member])
+                bindings.add(role=_CREDENTIAL_ACCESSOR_ROLE, members=[member])
         self._client.set_iam_policy(request={"resource": name, "policy": policy})
 
     def _publish_once(

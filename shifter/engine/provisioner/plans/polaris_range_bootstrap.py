@@ -63,6 +63,52 @@ _GCP_DEFAULT_SMALL_FAST_MODEL = "claude-haiku-4-5"
 _GCP_DEFAULT_VERTEX_REGION = "global"
 
 
+def _required_gcp_range_id(instance: object) -> object:
+    """Return the range id required to locate the per-range Vertex key."""
+    range_id = getattr(instance, "range_id", None)
+    if range_id in (None, ""):
+        raise ValueError(
+            "Polaris on GCP requires the range id so the a14-kali agent can load its "
+            "per-range Vertex key from Secret Manager"
+        )
+    return range_id
+
+
+def _required_vertex_project(instance: object) -> str:
+    """Resolve the Vertex API project required by the GCP agent."""
+    project = (
+        getattr(instance, "vertex_project_id", None)
+        or os.environ.get("GCP_RANGE_VERTEX_PROJECT_ID")
+        or os.environ.get("GCP_RANGE_CELL_PROJECT_ID")
+        or os.environ.get("GCP_PROJECT_ID")
+        or ""
+    )
+    if not project:
+        raise ValueError(
+            "Polaris on GCP requires a Vertex project: set GCP_RANGE_VERTEX_PROJECT_ID "
+            "(or GCP_RANGE_CELL_PROJECT_ID / GCP_PROJECT_ID) so the a14-kali agent can reach Vertex AI"
+        )
+    return str(project)
+
+
+def _vertex_secret_location(instance: object, range_id: object, vertex_project: str) -> tuple[str, str]:
+    """Resolve an exact persisted ref or the pre-migration legacy location."""
+    secret_ref = str(getattr(instance, "vertex_secret_ref", None) or "").strip()
+    if secret_ref:
+        parts = secret_ref.split("/")
+        if len(parts) != 4 or parts[0] != "projects" or parts[2] != "secrets" or not parts[1] or not parts[3]:
+            raise ValueError("Polaris on GCP requires a full projects/<project>/secrets/<id> Vertex secret ref")
+        return parts[1], parts[3]
+
+    # Outputs persisted before the dedicated-project rollout do not carry
+    # gcp_vertex_secret_ref; their Vertex secret necessarily uses the legacy
+    # compute/platform project and name. New ranges persist the exact full ref.
+    platform_project_id = (
+        os.environ.get("GCP_RANGE_CELL_PROJECT_ID") or os.environ.get("GCP_PROJECT_ID") or vertex_project
+    )
+    return platform_project_id, f"shifter-range-{range_id}-vertex-key"
+
+
 class PolarisRangeBootstrapPlan:
     """Per-range polaris VM bootstrap.
 
@@ -340,46 +386,14 @@ class PolarisRangeBootstrapPlan:
     @staticmethod
     def _gcp_agent_context(instance: object) -> dict[str, Any]:
         """Vertex project/region/model context for the a14-kali agent (GCP plane)."""
-        range_id = getattr(instance, "range_id", None)
-        if range_id in (None, ""):
-            raise ValueError(
-                "Polaris on GCP requires the range id so the a14-kali agent can load its "
-                "per-range Vertex key from Secret Manager"
-            )
-        project = (
-            getattr(instance, "vertex_project_id", None)
-            or os.environ.get("GCP_RANGE_VERTEX_PROJECT_ID")
-            or os.environ.get("GCP_RANGE_CELL_PROJECT_ID")
-            or os.environ.get("GCP_PROJECT_ID")
-            or ""
-        )
-        if not project:
-            raise ValueError(
-                "Polaris on GCP requires a Vertex project: set GCP_RANGE_VERTEX_PROJECT_ID "
-                "(or GCP_RANGE_CELL_PROJECT_ID / GCP_PROJECT_ID) so the a14-kali agent can reach Vertex AI"
-            )
+        range_id = _required_gcp_range_id(instance)
+        project = _required_vertex_project(instance)
         region = (
             getattr(instance, "vertex_region", None)
             or os.environ.get("GCP_RANGE_VERTEX_REGION")
             or _GCP_DEFAULT_VERTEX_REGION
         )
-        secret_ref = str(getattr(instance, "vertex_secret_ref", None) or "").strip()
-        if secret_ref:
-            parts = secret_ref.split("/")
-            if len(parts) != 4 or parts[0] != "projects" or parts[2] != "secrets" or not parts[1] or not parts[3]:
-                raise ValueError("Polaris on GCP requires a full projects/<project>/secrets/<id> Vertex secret ref")
-            secret_project_id, secret_id = parts[1], parts[3]
-        else:
-            platform_project_id = (
-                os.environ.get("GCP_RANGE_CELL_PROJECT_ID") or os.environ.get("GCP_PROJECT_ID") or project
-            )
-            # Outputs persisted before the dedicated-project rollout do not
-            # carry gcp_vertex_secret_ref; their Vertex secret necessarily uses
-            # the legacy compute/platform project and name. New ranges always
-            # persist the exact full ref, so guessing canonical here would break
-            # old-generation bootstrap during cut-over.
-            secret_project_id = platform_project_id
-            secret_id = f"shifter-range-{range_id}-vertex-key"
+        secret_project_id, secret_id = _vertex_secret_location(instance, range_id, project)
         return {
             "range_id": range_id,
             "vertex_project_id": project,

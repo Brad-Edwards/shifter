@@ -180,13 +180,13 @@ def test_dynamic_project_must_be_explicit_even_when_platform_project_is_known(mo
     monkeypatch.delenv("GCP_DYNAMIC_SECRET_PROJECT_ID", raising=False)
 
     with pytest.raises(RuntimeError, match="GCP_DYNAMIC_SECRET_PROJECT_ID"):
-        gcp_dynamic_secrets.dynamic_secret_project_id("platform-project")
+        gcp_dynamic_secrets.dynamic_secret_project_id()
 
 
 def test_dynamic_project_allows_explicit_same_project_migration(monkeypatch):
     monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "platform-project")
 
-    assert gcp_dynamic_secrets.dynamic_secret_project_id("platform-project") == "platform-project"
+    assert gcp_dynamic_secrets.dynamic_secret_project_id() == "platform-project"
 
 
 def test_read_or_create_refuses_to_publish_into_an_existing_empty_container(mocker):
@@ -206,14 +206,16 @@ def test_read_or_create_refuses_to_publish_into_an_existing_empty_container(mock
     client.get_secret.side_effect = _NotFound()
     client.create_secret.side_effect = _AlreadyExists()
     factory = mocker.Mock(return_value="competing-value")
+    exceptions = type("Exceptions", (), {"NotFound": _NotFound, "AlreadyExists": _AlreadyExists})
+    retry_settings = gcp_dynamic_secrets.SecretRetrySettings(concurrent_read_attempts=1)
 
     with pytest.raises(gcp_dynamic_secrets.DynamicSecretPublicationPending):
         gcp_dynamic_secrets.read_or_create(
             client,
-            type("Exceptions", (), {"NotFound": _NotFound, "AlreadyExists": _AlreadyExists}),
+            exceptions,
             locations,
             factory,
-            concurrent_read_attempts=1,
+            retry_settings=retry_settings,
         )
 
     factory.assert_not_called()
@@ -233,14 +235,16 @@ def test_read_or_create_waits_for_an_empty_legacy_container_before_canonical_cre
     client.access_secret_version.side_effect = _NotFound()
     client.get_secret.return_value = object()
     factory = mocker.Mock(return_value="competing-value")
+    exceptions = type("Exceptions", (), {"NotFound": _NotFound, "AlreadyExists": _AlreadyExists})
+    retry_settings = gcp_dynamic_secrets.SecretRetrySettings(concurrent_read_attempts=1)
 
     with pytest.raises(gcp_dynamic_secrets.DynamicSecretPublicationPending):
         gcp_dynamic_secrets.read_or_create(
             client,
-            type("Exceptions", (), {"NotFound": _NotFound, "AlreadyExists": _AlreadyExists}),
+            exceptions,
             locations,
             factory,
-            concurrent_read_attempts=1,
+            retry_settings=retry_settings,
         )
 
     client.get_secret.assert_called_once_with(request={"name": legacy})
@@ -268,7 +272,7 @@ def test_concurrent_loser_reuses_winner_payload_without_minting_an_orphan(mocker
         type("Exceptions", (), {"NotFound": _NotFound, "AlreadyExists": _AlreadyExists}),
         locations,
         factory,
-        concurrent_read_attempts=1,
+        retry_settings=gcp_dynamic_secrets.SecretRetrySettings(concurrent_read_attempts=1),
     )
 
     assert ref == locations.create_ref
@@ -337,7 +341,7 @@ def test_read_or_create_retries_transient_version_publication_with_one_payload(m
         ),
         locations,
         factory,
-        version_add_delay_seconds=0,
+        retry_settings=gcp_dynamic_secrets.SecretRetrySettings(version_add_delay_seconds=0),
     )
 
     assert ref == locations.create_ref

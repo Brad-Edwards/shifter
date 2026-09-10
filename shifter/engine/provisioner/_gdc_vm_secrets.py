@@ -134,6 +134,7 @@ def _instance_secret_locations(
     instance: dict[str, Any],
     purpose: str,
 ) -> SecretLocations:
+    """Resolve legacy and canonical locations for one GDC VM credential."""
     identity = str(instance.get("uuid") or instance.get("name") or instance.get("role") or "vm")
     credential_class = {
         "ssh": DynamicSecretClass.GDC_VM_SSH,
@@ -143,7 +144,7 @@ def _instance_secret_locations(
         raise ValueError(f"unsupported GDC VM secret purpose {purpose!r}")
     return secret_locations(
         platform_project_id=platform_project_id,
-        dynamic_project_id=dynamic_secret_project_id(platform_project_id),
+        dynamic_project_id=dynamic_secret_project_id(),
         legacy_secret_id=_build_instance_secret_name(range_id, instance, kind=purpose),
         canonical_secret_id=canonical_secret_id(
             credential_class=credential_class,

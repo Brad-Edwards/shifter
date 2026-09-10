@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum, auto
-from typing import Any
+from typing import Protocol
 
 _MAX_SECRET_ID_LENGTH = 255
 _ENVIRONMENT_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -50,6 +50,8 @@ class DynamicSecretClass(StrEnum):
 
 @dataclass(frozen=True)
 class _DynamicSecretNameClass:
+    """Stable family and purpose fragments for one credential class."""
+
     family: str
     purpose: str
 
@@ -88,6 +90,7 @@ _PARTICIPANT_SECRET_CLASSES = frozenset(
 
 
 def _sanitize(value: object) -> str:
+    """Normalize a value into a non-empty Secret Manager name fragment."""
     normalized = re.sub(r"[^a-z0-9-]+", "-", str(value).strip().lower())
     return re.sub(r"-{2,}", "-", normalized).strip("-") or "unknown"
 
@@ -135,7 +138,7 @@ def canonical_secret_id(
     return f"{identity[: _MAX_SECRET_ID_LENGTH - len(digest) - 1].rstrip('-')}-{digest}"
 
 
-def dynamic_secret_project_id(platform_project_id: str) -> str:
+def dynamic_secret_project_id() -> str:
     """Resolve the explicitly configured dynamic-secret project.
 
     A compatibility deployment may explicitly set this to ``platform_project_id``.
@@ -167,6 +170,57 @@ class SecretLocations:
     delete_refs: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class SecretRetrySettings:
+    """Bounded waits used while creating and publishing a dynamic secret."""
+
+    concurrent_read_attempts: int = 5
+    concurrent_read_delay_seconds: float = 0.1
+    version_add_attempts: int = 3
+    version_add_delay_seconds: float = 0.1
+
+
+_DEFAULT_RETRY_SETTINGS = SecretRetrySettings()
+
+
+class _SecretPayload(Protocol):
+    """Secret Manager payload subset used by this module."""
+
+    data: bytes
+
+
+class _SecretVersion(Protocol):
+    """Secret Manager version subset used by this module."""
+
+    payload: _SecretPayload
+
+
+class SecretManagerClient(Protocol):
+    """Secret Manager client operations required by the lifecycle helpers."""
+
+    def access_secret_version(self, *, request: dict[str, object]) -> _SecretVersion:
+        """Read one secret version."""
+
+    def get_secret(self, *, request: dict[str, object]) -> object:
+        """Read one secret container."""
+
+    def create_secret(self, *, request: dict[str, object]) -> object:
+        """Create one secret container."""
+
+    def add_secret_version(self, *, request: dict[str, object]) -> object:
+        """Publish one secret value."""
+
+    def delete_secret(self, *, request: dict[str, object]) -> object:
+        """Delete one secret container."""
+
+
+class GoogleSecretExceptions(Protocol):
+    """Google exception classes required by the lifecycle helpers."""
+
+    NotFound: type[Exception]
+    AlreadyExists: type[Exception]
+
+
 def secret_locations(
     *,
     platform_project_id: str,
@@ -184,23 +238,20 @@ def secret_locations(
 
 
 def read_or_create(
-    client: Any,
-    exceptions: Any,
+    client: SecretManagerClient,
+    exceptions: GoogleSecretExceptions,
     locations: SecretLocations,
     payload_factory: Callable[[], str],
     *,
-    concurrent_read_attempts: int = 5,
-    concurrent_read_delay_seconds: float = 0.1,
-    version_add_attempts: int = 3,
-    version_add_delay_seconds: float = 0.1,
+    retry_settings: SecretRetrySettings = _DEFAULT_RETRY_SETTINGS,
 ) -> tuple[str, str]:
     """Resolve legacy/canonical state without racing an in-flight creator."""
     existing = read_published_or_wait(
         client,
         exceptions,
         locations.read_refs,
-        attempts=concurrent_read_attempts,
-        delay_seconds=concurrent_read_delay_seconds,
+        attempts=retry_settings.concurrent_read_attempts,
+        delay_seconds=retry_settings.concurrent_read_delay_seconds,
     )
     if existing is not None:
         return existing
@@ -220,8 +271,8 @@ def read_or_create(
             client,
             exceptions,
             name,
-            attempts=concurrent_read_attempts,
-            delay_seconds=concurrent_read_delay_seconds,
+            attempts=retry_settings.concurrent_read_attempts,
+            delay_seconds=retry_settings.concurrent_read_delay_seconds,
         )
     # Generate credentials only after this process created the container. An
     # existing empty container belongs to an in-flight or failed writer and is
@@ -233,20 +284,20 @@ def read_or_create(
         if isinstance(exception_type, type) and issubclass(exception_type, BaseException):
             retryable_type_list.append(exception_type)
     retryable_types = tuple(retryable_type_list)
-    for attempt in range(version_add_attempts):
+    for attempt in range(retry_settings.version_add_attempts):
         try:
             client.add_secret_version(request={"parent": name, "payload": {"data": value.encode("utf-8")}})
             break
         except retryable_types:
-            if attempt == version_add_attempts - 1:
+            if attempt == retry_settings.version_add_attempts - 1:
                 raise
-            time.sleep(version_add_delay_seconds)
+            time.sleep(retry_settings.version_add_delay_seconds)
     return name, value
 
 
 def read_published_or_wait(
-    client: Any,
-    exceptions: Any,
+    client: SecretManagerClient,
+    exceptions: GoogleSecretExceptions,
     names: tuple[str, ...],
     *,
     attempts: int = 5,
@@ -273,8 +324,8 @@ def read_published_or_wait(
 
 
 def wait_for_published_value(
-    client: Any,
-    exceptions: Any,
+    client: SecretManagerClient,
+    exceptions: GoogleSecretExceptions,
     name: str,
     *,
     attempts: int = 5,
@@ -294,7 +345,7 @@ def wait_for_published_value(
     ) from None
 
 
-def delete_all(client: Any, exceptions: Any, locations: SecretLocations) -> None:
+def delete_all(client: SecretManagerClient, exceptions: GoogleSecretExceptions, locations: SecretLocations) -> None:
     """Delete every exact migration location, ignoring already-absent secrets."""
     for name in locations.delete_refs:
         try:
