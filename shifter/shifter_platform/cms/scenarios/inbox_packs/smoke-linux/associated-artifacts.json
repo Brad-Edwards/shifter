@@ -19,9 +19,9 @@
       "uri": "raes-environment-pack:/docs/concepts.md",
       "checksum": {
         "algorithm": "sha256",
-        "value": "106c79b545f78c39f8e2fedc4e33ac479984bdc40d2eb6879a59479b28bf16dd"
+        "value": "032329a9ddb2a9e501682b92a6c0989b09a1ef06628869ea59a72740da769059"
       },
-      "size_bytes": 619,
+      "size_bytes": 613,
       "created_at": "2026-09-09T00:00:00Z",
       "source": "shifter",
       "satisfies_refs": [],
@@ -77,5 +77,5 @@
       "description": null
     }
   },
-  "set_digest": "sha256:c1a0d48f909a3e5decdf49f2cdcdd02b40685713494b87fec98652700b186310"
+  "set_digest": "sha256:c7c63d215c7c3e368fa50f16776a86353c6a061cc75640fae481081494cb25b8"
 }
