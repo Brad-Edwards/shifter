@@ -29,19 +29,22 @@ nodes:
       - {port: 22, name: ssh}
 
 infrastructure:
+  # CIDR sits within the tenant's range network (range_network_cidr, default
+  # 10.50.0.0/16) so the range-access firewalls/NetworkPolicies that authorize
+  # platform+provisioner reach to range guests actually cover these hosts.
   lan:
     count: 1
-    properties: {cidr: 10.80.0.0/24, gateway: 10.80.0.1}
+    properties: {cidr: 10.50.0.0/24, gateway: 10.50.0.1}
   attacker:
     count: 1
     links: [lan]
     properties:
-      - lan: 10.80.0.10
+      - lan: 10.50.0.10
   victim:
     count: 1
     links: [lan]
     properties:
-      - lan: 10.80.0.20
+      - lan: 10.50.0.20
 
 entities:
   operator:

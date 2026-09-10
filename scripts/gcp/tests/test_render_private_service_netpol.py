@@ -156,6 +156,8 @@ def test_render_emits_range_access_egress_scoped_to_portal_and_guacd():
     assert "- guacd" in rendered
     # Egress to the range network CIDR on the participant channel ports only.
     assert "cidr: 10.50.0.0/16" in rendered
+    assert "name: allow-jobs-range-access-egress-generated" in rendered
+    assert "port: 5985" in rendered  # WinRM for provisioner guest setup
     assert "port: 22" in rendered
     assert "port: 3389" in rendered
 
