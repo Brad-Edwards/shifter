@@ -76,6 +76,7 @@ from ._subnet_coordination import (
 from ._terminal import (
     connect_ngfw_terminal,
     connect_terminal,
+    get_active_range_provisioned_instances,
     get_owned_instance_request_ref,
     get_rdp_connection_info,
     get_ssh_connection_info,
@@ -149,6 +150,7 @@ __all__ = (
     "enqueue_range_activation",
     "evaluate_operation_result",
     "finalize_retiring_generations",
+    "get_active_range_provisioned_instances",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
     "get_openvpn_profile",

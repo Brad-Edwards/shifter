@@ -66,9 +66,9 @@ class TestShippedManifest:
         packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
         assert isinstance(packs, list)
 
-    def test_shipped_manifest_contains_the_canonical_polaris_pack(self):
+    def test_shipped_manifest_contains_the_smoke_linux_pack(self):
         packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
-        assert [pack.scenario_id for pack in packs] == ["polaris"]
+        assert [pack.scenario_id for pack in packs] == ["smoke-linux"]
 
 
 class TestRegisterInboxPacks:
@@ -170,14 +170,20 @@ class TestRegisterInboxPacks:
 
 
 class TestBootstrapCommand:
-    def test_command_registers_and_promotes_the_shipped_polaris_pack(self, admin_actor):
+    def test_command_registers_and_promotes_the_shipped_smoke_linux_pack(self, admin_actor, monkeypatch):
+        from django.conf import settings
         from django.core.management import call_command
 
+        # The shipped pack lives under shifter_platform/ so it bakes into the
+        # container image at /app, where RAES_PACKAGE_ROOT defaults. In a source
+        # checkout RAES_PACKAGE_ROOT defaults to the repo root, so point it at the
+        # shifter_platform root (manifest parents[3]) where the pack resolves.
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(SHIPPED_INBOX_MANIFEST.parents[3]))
         call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
-        source = RaesPackageSource.objects.get(scenario_id="polaris")
+        source = RaesPackageSource.objects.get(scenario_id="smoke-linux")
         assert source.conformance_status == RaesPackageSource.ConformanceStatus.PASSED
-        assert source.conformance_report_ref == "release://scenario-dev/polaris@0.1.0"
-        assert get_catalog_entry("polaris")["launchable"] is True
+        assert source.conformance_report_ref == "release://cms/scenarios/inbox_packs/smoke-linux@0.1.0"
+        assert get_catalog_entry("smoke-linux")["launchable"] is True
 
     def test_command_errors_on_unknown_actor(self, db):
         from django.core.management import CommandError, call_command

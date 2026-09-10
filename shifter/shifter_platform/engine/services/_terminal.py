@@ -285,6 +285,27 @@ def get_ssh_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
     }
 
 
+def get_active_range_provisioned_instances(user: User) -> list[dict[str, Any]]:
+    """Return the realized instances of the user's active range.
+
+    RAES-native ranges persist ``range_spec=None``, so their guests are absent
+    from the CMS range_spec projection (``get_range_by_request_id().instances``).
+    The realized guest records -- each carrying the SDL node ``name``,
+    ``os_type``, and declared ``participant_access_channels`` -- live on the
+    engine ``Range.provisioned_instances``. This is user-scoped, mirroring
+    :func:`get_ssh_connection_info`'s active-range resolution, and returns an
+    empty list when the user holds no active range.
+    """
+    from engine.models import Range
+
+    if user is None:
+        raise ValueError(_USER_REQUIRED_MSG)
+    range_obj = Range.get_active_for_user(user)
+    if range_obj is None:
+        return []
+    return list(range_obj.provisioned_instances or [])
+
+
 def connect_terminal(
     user: User,
     instance_uuid: str,
