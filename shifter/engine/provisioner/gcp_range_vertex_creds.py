@@ -13,7 +13,11 @@ The credential is created with the range and destroyed with it, so a leaked key
 is scoped to Vertex only and revocable per range. The Vertex-only SA and its
 ``roles/aiplatform.user`` binding are provisioned once out-of-band (Terraform),
 which avoids per-range IAM-policy races and service-account quota pressure; the
-dynamic, per-range part is the key.
+dynamic, per-range part is the key. Service-account keys are credentials for the
+same IAM principal, not separate principals: every key on that shared account
+has the account's identical Vertex authorization. Per-range deletion revokes one
+credential but does not provide per-range IAM isolation; #681 owns any future
+move to genuinely separate workload principals.
 """
 
 from __future__ import annotations
@@ -22,9 +26,18 @@ import json
 import logging
 import os
 from contextlib import suppress
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from cloud.gcp.base import get_project_id, import_google_module
+from gcp_dynamic_secrets import (
+    DynamicSecretClass,
+    SecretLocations,
+    canonical_secret_id,
+    delete_all,
+    dynamic_secret_project_id,
+    read_or_create,
+    secret_locations,
+)
 from log_redact import safe_log_fingerprint
 
 logger = logging.getLogger(__name__)
@@ -69,6 +82,9 @@ class _SecretClient(Protocol):
     def access_secret_version(self, *, request: dict[str, object]) -> _SecretVersion:
         """Return the latest secret version."""
 
+    def get_secret(self, *, request: dict[str, object]) -> object:
+        """Return an existing secret container."""
+
     def create_secret(self, *, request: dict[str, object]) -> object:
         """Create a Secret Manager secret."""
 
@@ -77,6 +93,9 @@ class _SecretClient(Protocol):
 
     def set_iam_policy(self, *, request: dict[str, object]) -> object:
         """Set the IAM policy on a secret (scoped per-range accessor grant)."""
+
+    def get_iam_policy(self, *, request: dict[str, object]) -> object:
+        """Get the IAM policy on a secret before merging an accessor grant."""
 
     def delete_secret(self, *, request: dict[str, object]) -> object:
         """Delete a Secret Manager secret."""
@@ -127,6 +146,13 @@ def _shared_secret_id() -> str:
     return os.environ.get("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "").strip()
 
 
+def _shared_secret_name(shared_secret_id: str, fallback_project_id: str) -> str:
+    if shared_secret_id.startswith("projects/"):
+        return shared_secret_id
+    source_project_id = os.environ.get("GCP_RANGE_VERTEX_PROJECT_ID", "").strip() or fallback_project_id
+    return f"projects/{source_project_id}/secrets/{shared_secret_id}"
+
+
 def _as_bytes(data: object) -> bytes:
     """Coerce a Secret Manager / SA-key payload to bytes."""
     return data if isinstance(data, bytes) else str(data).encode("utf-8")
@@ -139,15 +165,54 @@ def _resolve_range_key_json(
     secrets: _SecretClient,
     shared_secret_id: str,
     iam_client: _IamClient | None,
-) -> bytes:
+) -> tuple[bytes, str]:
     """Return the Vertex key JSON, copied from the shared secret or freshly minted."""
     if shared_secret_id:
-        shared_secret_name = f"projects/{resolved_project}/secrets/{shared_secret_id}"
+        shared_secret_name = _shared_secret_name(shared_secret_id, resolved_project)
         shared_version = secrets.access_secret_version(request={"name": f"{shared_secret_name}/versions/latest"})
-        return _as_bytes(shared_version.payload.data)
+        return _as_bytes(shared_version.payload.data), ""
     iam = iam_client or _build_iam_client()
     key = iam.create_service_account_key(request={"name": f"projects/-/serviceAccounts/{service_account_email}"})
-    return _as_bytes(key.private_key_data)
+    return _as_bytes(key.private_key_data), str(key.name)
+
+
+def _vertex_secret_locations(platform_project_id: str, range_id: int) -> SecretLocations:
+    return secret_locations(
+        platform_project_id=platform_project_id,
+        dynamic_project_id=dynamic_secret_project_id(platform_project_id),
+        legacy_secret_id=_vertex_secret_id(range_id),
+        canonical_secret_id=canonical_secret_id(
+            credential_class=DynamicSecretClass.VERTEX_SERVICE_ACCOUNT_KEY,
+            scope=f"range-{range_id}",
+        ),
+    )
+
+
+def _binding_role(binding: Any) -> str:
+    return str(binding.get("role", "")) if isinstance(binding, dict) else str(getattr(binding, "role", ""))
+
+
+def _binding_members(binding: Any):
+    return binding.setdefault("members", []) if isinstance(binding, dict) else binding.members
+
+
+def _grant_host_access(secrets: _SecretClient, secret_name: str, host_service_account_email: str) -> None:
+    """Merge the per-secret host grant without discarding unrelated bindings."""
+    member = f"serviceAccount:{host_service_account_email}"
+    policy = secrets.get_iam_policy(request={"resource": secret_name})
+    bindings = policy.setdefault("bindings", []) if isinstance(policy, dict) else cast(Any, policy).bindings
+    for binding in bindings:
+        if _binding_role(binding) == "roles/secretmanager.secretAccessor":
+            members = _binding_members(binding)
+            if member not in members:
+                members.append(member)
+            break
+    else:
+        if isinstance(bindings, list):
+            bindings.append({"role": "roles/secretmanager.secretAccessor", "members": [member]})
+        else:
+            bindings.add(role="roles/secretmanager.secretAccessor", members=[member])
+    secrets.set_iam_policy(request={"resource": secret_name, "policy": policy})
 
 
 def ensure_range_vertex_key(
@@ -177,48 +242,50 @@ def ensure_range_vertex_key(
     resolved_project = _resolve_project_id(project_id)
     exceptions = google_exceptions or _google_exceptions()
     secrets = secret_client or _build_secret_client()
-    secret_id = _vertex_secret_id(range_id)
-    secret_name = f"projects/{resolved_project}/secrets/{secret_id}"
-
-    with suppress(exceptions.NotFound):
-        secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
-        logger.info("Range Vertex key secret exists secret_fp=%s", safe_log_fingerprint(secret_name))
-        return secret_name
-
+    locations = _vertex_secret_locations(resolved_project, range_id)
     shared_secret_id = _shared_secret_id()
-    key_json = _resolve_range_key_json(
-        service_account_email=service_account_email,
-        resolved_project=resolved_project,
-        secrets=secrets,
-        shared_secret_id=shared_secret_id,
-        iam_client=iam_client,
-    )
+    minted_key_name = ""
 
-    with suppress(exceptions.AlreadyExists):
-        secrets.create_secret(
-            request={
-                "parent": f"projects/{resolved_project}",
-                "secret_id": secret_id,
-                "secret": {"replication": {"automatic": {}}},
-            }
+    def _payload_factory() -> str:
+        nonlocal minted_key_name
+        key_json, minted_key_name = _resolve_range_key_json(
+            service_account_email=service_account_email,
+            resolved_project=resolved_project,
+            secrets=secrets,
+            shared_secret_id=shared_secret_id,
+            iam_client=iam_client,
         )
-    secrets.add_secret_version(request={"parent": secret_name, "payload": {"data": key_json}})
+        return key_json.decode("utf-8")
+
+    try:
+        secret_name, _key_json = read_or_create(
+            secrets,
+            exceptions,
+            locations,
+            _payload_factory,
+        )
+    except Exception as publication_error:
+        if not minted_key_name:
+            raise
+        # A failed add-version response can be ambiguous: the server may have
+        # committed the version before the client saw an error. Read it back
+        # before deleting the newly minted key. If a concurrent writer won,
+        # revoke only this invocation's unused key and continue with the winner.
+        try:
+            response = secrets.access_secret_version(request={"name": f"{locations.create_ref}/versions/latest"})
+        except exceptions.NotFound:
+            iam = iam_client or _build_iam_client()
+            with suppress(exceptions.NotFound):
+                iam.delete_service_account_key(request={"name": minted_key_name})
+            raise publication_error from None
+        stored_key_name = _key_resource_name(response.payload.data)
+        if stored_key_name.rsplit("/", 1)[-1] != minted_key_name.rsplit("/", 1)[-1]:
+            iam = iam_client or _build_iam_client()
+            with suppress(exceptions.NotFound):
+                iam.delete_service_account_key(request={"name": minted_key_name})
+        secret_name = locations.create_ref
     if host_service_account_email:
-        # The secret is freshly created here, so set (not merge) a policy that
-        # grants only the range host SA read access to this one secret.
-        secrets.set_iam_policy(
-            request={
-                "resource": secret_name,
-                "policy": {
-                    "bindings": [
-                        {
-                            "role": "roles/secretmanager.secretAccessor",
-                            "members": [f"serviceAccount:{host_service_account_email}"],
-                        }
-                    ]
-                },
-            }
-        )
+        _grant_host_access(secrets, secret_name, host_service_account_email)
     action = "Copied shared" if shared_secret_id else "Minted"
     logger.info("%s range Vertex key secret_fp=%s", action, safe_log_fingerprint(secret_name))
     return secret_name
@@ -239,26 +306,32 @@ def delete_range_vertex_key(
         return
     exceptions = google_exceptions or _google_exceptions()
     secrets = secret_client or _build_secret_client()
-    secret_id = _vertex_secret_id(range_id)
-    secret_name = f"projects/{resolved_project}/secrets/{secret_id}"
+    locations = _vertex_secret_locations(resolved_project, range_id)
 
     shared_secret_id = _shared_secret_id()
 
-    key_name = ""
+    key_names: set[str] = set()
     if not shared_secret_id:
-        with suppress(exceptions.NotFound):
-            response = secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
-            key_name = _key_resource_name(response.payload.data)
+        for secret_name in locations.read_refs:
+            try:
+                response = secrets.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
+                if key_name := _key_resource_name(response.payload.data):
+                    key_names.add(key_name)
+            except exceptions.NotFound:
+                continue
 
-    if key_name:
+    if key_names:
         iam = iam_client or _build_iam_client()
-        with suppress(exceptions.NotFound):
-            iam.delete_service_account_key(request={"name": key_name})
-            logger.info("Deleted range Vertex SA key key_fp=%s", safe_log_fingerprint(key_name))
+        for key_name in sorted(key_names):
+            with suppress(exceptions.NotFound):
+                iam.delete_service_account_key(request={"name": key_name})
+                logger.info("Deleted range Vertex SA key key_fp=%s", safe_log_fingerprint(key_name))
 
-    with suppress(exceptions.NotFound):
-        secrets.delete_secret(request={"name": secret_name})
-        logger.info("Deleted range Vertex key secret secret_fp=%s", safe_log_fingerprint(secret_name))
+    delete_all(secrets, exceptions, locations)
+    logger.info(
+        "Deleted range Vertex key secret locations secret_fp=%s",
+        safe_log_fingerprint("|".join(locations.delete_refs)),
+    )
 
 
 def _key_resource_name(payload_data: bytes) -> str:

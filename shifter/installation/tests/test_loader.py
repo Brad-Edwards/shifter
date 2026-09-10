@@ -278,6 +278,7 @@ class TestBackendSpecificValidation:
             self._gcp_config(
                 {
                     "project_id": "acme-shifter",
+                    "dynamic_secret_project_id": "acme-range-secrets",
                     "region": "us-central1",
                     "range_egress": {"mode": "allowlist", "allowed_cidrs": ["not-a-cidr"]},
                 }
@@ -457,6 +458,7 @@ class TestValidateRootConfigFile:
                     "secrets": {"django_secret_key": "prompt"},
                     "settings": {
                         "project_id": "acme-shifter",
+                        "dynamic_secret_project_id": "acme-range-secrets",
                         "region": "us-central1",
                         "range_egress": {"mode": "allowlist", "allowed_cidrs": ["not-a-cidr"]},
                     },

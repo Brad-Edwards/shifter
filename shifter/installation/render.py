@@ -85,7 +85,13 @@ def render_tfvars(config: RootConfig) -> str:
         raise InstallationConfigError(
             [ConfigIssue("backend", f"no range egress renderer for backend {config.backend!r}")]
         )
-    return _HEADER + renderer(policy)
+    rendered = renderer(policy)
+    if config.backend == "gcp":
+        dynamic_project = str(config.settings["dynamic_secret_project_id"])
+        rendered += f'dynamic_secret_project_id = "{dynamic_project}"\n'
+        static_refs = config.settings.get("provisioner_static_secret_refs", {})
+        rendered += _hcl_string_map("provisioner_static_secret_refs", dict(static_refs))
+    return _HEADER + rendered
 
 
 def render_cloud_provider_tfvars(config: RootConfig) -> str:
@@ -149,6 +155,16 @@ def _hcl_string_list(name: str, values: list[str]) -> str:
     lines = [f"{name} = ["]
     lines.extend(f'  "{value}",' for value in values)
     lines.append("]")
+    return "\n".join(lines) + "\n"
+
+
+def _hcl_string_map(name: str, values: dict[str, str]) -> str:
+    """Render a validated string map as stable Terraform HCL."""
+    if not values:
+        return f"{name} = {{}}\n"
+    lines = [f"{name} = {{"]
+    lines.extend(f'  {key} = "{values[key]}"' for key in sorted(values))
+    lines.append("}")
     return "\n".join(lines) + "\n"
 
 

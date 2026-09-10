@@ -30,6 +30,7 @@ from .runtime_inventory_aws import (
 # set directly from runtime_inventory_gcp.
 from .runtime_inventory_gcp import (
     GCP_GENERATED_RUNTIME_ENV_KEYS,
+    GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS,
     GCP_SECRET_RUNTIME_ENV_KEYS,
 )
 
@@ -241,7 +242,8 @@ def validate_runtime_inventory(repo_root: str | Path) -> list[RuntimeInventoryIs
         )
     )
 
-    overlap = sorted(GCP_GENERATED_RUNTIME_ENV_KEYS & set(static_keys))
+    generated_runtime_keys = GCP_GENERATED_RUNTIME_ENV_KEYS | GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS
+    overlap = sorted(generated_runtime_keys & set(static_keys))
     if overlap:
         issues.append(
             RuntimeInventoryIssue(

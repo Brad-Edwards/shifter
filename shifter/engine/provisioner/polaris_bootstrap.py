@@ -99,6 +99,7 @@ def _run_polaris_range_bootstrap(
                 self.range_id = range_id
                 self.agent_role_arn = agent_role_arn
                 self.polaris_tests_url = polaris_tests_url
+                self.vertex_secret_ref = str(instance_data.get("gcp_vertex_secret_ref", ""))
 
         context = plan.get_context(_PolarisCtx())
         result = orchestrator.orchestrate(

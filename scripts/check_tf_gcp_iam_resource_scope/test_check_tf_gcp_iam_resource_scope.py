@@ -14,17 +14,14 @@ Two suites:
 
 from __future__ import annotations
 
-import datetime
 import re
 import tempfile
 import textwrap
 import unittest
 from collections import defaultdict
 from pathlib import Path
-from unittest.mock import patch
 
 from .check_tf_gcp_iam_resource_scope import (
-    ALLOWLIST,
     _LITERAL_ROLE_RE,
     _PROJECT_IAM_MEMBER_RE,
     _RANGE_HOST_MEMBER_RE,
@@ -39,9 +36,9 @@ from .check_tf_gcp_iam_resource_scope import (
 LIVE_IAM_DIR = Path("platform/terraform/gcp/modules/portal/iam")
 LIVE_IAM_TF = LIVE_IAM_DIR / "main.tf"
 
-# A minimal representation of the refactored module: the project-role map (no
-# secret/storage role), the map-driven for_each resource, and the two allowlisted
-# residual literals. Reused as the base for the negative fixtures.
+# A minimal workload-role module with no secret/storage grants. Reused as the
+# base for generic negative fixtures; the live module exercises the exact
+# dynamic-secret exception graph.
 _CLEAN_MODULE = """
 locals {
   workload_project_roles = {
@@ -66,17 +63,6 @@ resource "google_project_iam_member" "workload_roles" {
   member  = "serviceAccount:${google_service_account.workload[each.value.account_name].email}"
 }
 
-resource "google_project_iam_member" "portal_dynamic_secret_accessor" {
-  project = var.project_id
-  role    = "roles/secretmanager.secretAccessor"
-  member  = "serviceAccount:${google_service_account.workload["portal"].email}"
-}
-
-resource "google_project_iam_member" "provisioner_dynamic_secret_admin" {
-  project = var.project_id
-  role    = "roles/secretmanager.admin"
-  member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
-}
 """
 
 
@@ -87,7 +73,7 @@ def _write(tmp_path: Path, body: str, name: str = "iam.tf") -> Path:
 
 
 class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
-    def test_clean_module_with_only_allowlisted_residuals_passes(self) -> None:
+    def test_clean_module_without_project_secret_grants_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(Path(tmp), _CLEAN_MODULE)
             self.assertEqual(check_file(tf), [])
@@ -119,7 +105,9 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             f"expected provisioner objectAdmin map violation, got: {reasons}",
         )
 
-    def test_literal_forbidden_grant_is_rejected_regardless_of_resource_name(self) -> None:
+    def test_literal_forbidden_grant_is_rejected_regardless_of_resource_name(
+        self,
+    ) -> None:
         # Renaming the resource does not bypass detection: the guard keys on the
         # role + member, not the resource label.
         module = _CLEAN_MODULE + textwrap.dedent(
@@ -270,9 +258,7 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             f"expected range-host custom-role violation, got: {reasons}",
         )
 
-    def test_extra_allowlisted_pair_beyond_residuals_is_rejected(self) -> None:
-        # workers project-level secretAccessor is NOT allowlisted (only portal is);
-        # a literal grant must still be flagged.
+    def test_project_secret_accessor_is_rejected_outside_exact_boundary(self) -> None:
         module = _CLEAN_MODULE + textwrap.dedent(
             """
             resource "google_project_iam_member" "workers_secret" {
@@ -290,7 +276,9 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             f"expected workers secretAccessor literal violation, got: {reasons}",
         )
 
-    def test_custom_role_with_forbidden_permissions_bound_to_workload_is_rejected(self) -> None:
+    def test_custom_role_with_forbidden_permissions_bound_to_workload_is_rejected(
+        self,
+    ) -> None:
         module = _CLEAN_MODULE + textwrap.dedent(
             """
             resource "google_project_iam_custom_role" "prov_dynamic" {
@@ -314,7 +302,9 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
             f"expected provisioner custom-role violation, got: {reasons}",
         )
 
-    def test_custom_role_with_service_account_setiampolicy_bound_to_workload_is_rejected(self) -> None:
+    def test_custom_role_with_service_account_setiampolicy_bound_to_workload_is_rejected(
+        self,
+    ) -> None:
         # ADR-008-R7 gateway-identity escalation: a project-level custom role
         # granting the provisioner iam.serviceAccounts.setIamPolicy lets it seize
         # any service account. The pool model removes this; re-adding it must fail.
@@ -432,35 +422,205 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
         self.assertTrue(tf_files, "expected .tf files in the iam module")
         self.assertEqual(check_paths(tf_files), [])
 
-    def test_allowlist_residuals_have_future_expiry(self) -> None:
-        # A residual whose expiry has passed becomes a violation; keep them dated
-        # ahead of the #1586 review window so the guard stays green until then.
-        for (workload, role), residual in ALLOWLIST.items():
-            self.assertGreater(
-                residual.expires_on,
-                datetime.date.today(),
-                f"ALLOWLIST residual {workload}:{role} expired on {residual.expires_on}",
-            )
-
-    def test_expired_allowlist_residual_is_reported_by_the_checker(self) -> None:
-        pair, residual = next(iter(ALLOWLIST.items()))
-        expired = type(residual)(
-            reason=residual.reason,
-            expires_on=datetime.date.today() - datetime.timedelta(days=1),
+    def test_old_broad_dynamic_secret_residuals_are_rejected(self) -> None:
+        module = _CLEAN_MODULE + textwrap.dedent(
+            """
+            resource "google_project_iam_member" "old_portal_residual" {
+              project = var.project_id
+              role    = "roles/secretmanager.secretAccessor"
+              member  = "serviceAccount:${google_service_account.workload["portal"].email}"
+            }
+            resource "google_project_iam_member" "old_provisioner_residual" {
+              project = var.project_id
+              role    = "roles/secretmanager.admin"
+              member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+            }
+            """
         )
         with tempfile.TemporaryDirectory() as tmp:
-            tf = _write(Path(tmp), _CLEAN_MODULE)
-            with patch.dict(ALLOWLIST, {pair: expired}):
-                violations = check_file(tf)
+            violations = check_file(_write(Path(tmp), module))
 
-        self.assertEqual(len(violations), 1)
-        self.assertIn(pair[0], violations[0].reason)
-        self.assertIn(pair[1], violations[0].reason)
-        self.assertIn("ALLOWLIST residual that expired", violations[0].reason)
+        reasons = [violation.reason for violation in violations]
+        self.assertTrue(
+            any("portal" in reason and "secretAccessor" in reason for reason in reasons)
+        )
+        self.assertTrue(
+            any(
+                "provisioner" in reason and "secretmanager.admin" in reason
+                for reason in reasons
+            )
+        )
+
+    def test_named_boundary_binding_fails_if_its_condition_is_removed(self) -> None:
+        broken = LIVE_IAM_TF.read_text().replace(
+            "    expression  = local.portal_dynamic_read_condition",
+            "    expression  = true",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = check_file(_write(Path(tmp), broken))
+
+        self.assertTrue(
+            any(
+                "portal_dynamic_secret_accessor" in violation.reason
+                for violation in violations
+            )
+        )
+
+    def test_named_boundary_rejects_widened_condition_local_definitions(self) -> None:
+        cases = {
+            "dedicated_project_switch": (
+                "var.dynamic_secret_project_id != var.project_id",
+                "var.dynamic_secret_project_id == var.project_id",
+            ),
+            "canonical_prefix": (
+                "secrets/shifter-${var.environment}-dynamic-",
+                "secrets/",
+            ),
+            "participant_prefix": (
+                '"${local.canonical_secret_prefix}participant-"',
+                '"${local.canonical_secret_prefix}"',
+            ),
+            "legacy_prefixes": (
+                '"projects/${data.google_project.platform.number}/secrets/shifter-range-",',
+                '"projects/${data.google_project.platform.number}/secrets/",',
+            ),
+            "legacy_name_condition": (
+                "\"resource.name.startsWith('${prefix}')\"",
+                "\"resource.name != ''\"",
+            ),
+            "legacy_raes_directory_exclusion": (
+                "-raes-domain-') == ''",
+                "-raes-domain-') != ''",
+            ),
+            "legacy_participant_classes": (
+                "resource.name.endsWith('-participant-ssh')",
+                "resource.name.endsWith('-ssh')",
+            ),
+            "dynamic_lifecycle_condition": (
+                "resource.name.startsWith('${local.canonical_secret_prefix}')",
+                "resource.name != ''",
+            ),
+            "portal_dynamic_read_condition": (
+                "resource.name.startsWith('${local.canonical_participant_secret_prefix}')",
+                "resource.name.startsWith('${local.canonical_secret_prefix}')",
+            ),
+        }
+        live = LIVE_IAM_TF.read_text()
+        for name, (closed, widened) in cases.items():
+            with self.subTest(name=name):
+                self.assertIn(closed, live)
+                broken = live.replace(closed, widened, 1)
+                with tempfile.TemporaryDirectory() as tmp:
+                    violations = check_file(_write(Path(tmp), broken))
+
+                self.assertTrue(
+                    any(
+                        "condition local" in violation.reason
+                        for violation in violations
+                    ),
+                    f"expected widened {name} to fail, got: {[v.reason for v in violations]}",
+                )
+
+    def test_named_boundary_rejects_condition_above_google_operator_limit(self) -> None:
+        closed = "((${local.legacy_raes_directory_name_condition}) &&"
+        broken = LIVE_IAM_TF.read_text().replace(
+            closed,
+            "(!(${local.legacy_raes_directory_name_condition}) &&",
+            1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = check_file(_write(Path(tmp), broken))
+
+        self.assertTrue(
+            any(
+                "13 logical operators" in violation.reason
+                and "at most 12" in violation.reason
+                for violation in violations
+            ),
+            [violation.reason for violation in violations],
+        )
+
+    def test_named_boundary_rejects_any_extra_creator_permission(self) -> None:
+        broken = LIVE_IAM_TF.read_text().replace(
+            'permissions = ["secretmanager.secrets.create"]',
+            'permissions = ["secretmanager.secrets.create", "iam.serviceAccounts.setIamPolicy"]',
+            1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = check_file(_write(Path(tmp), broken))
+
+        self.assertTrue(
+            any(
+                "dynamic_secret_creator must contain only" in violation.reason
+                for violation in violations
+            ),
+            [violation.reason for violation in violations],
+        )
+
+    def test_named_boundary_rejects_any_extra_lifecycle_permission(self) -> None:
+        broken = LIVE_IAM_TF.read_text().replace(
+            '  permissions = [\n    "secretmanager.secrets.delete",',
+            '  permissions = [\n    "iam.serviceAccounts.setIamPolicy",\n    "secretmanager.secrets.delete",',
+            1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = check_file(_write(Path(tmp), broken))
+
+        self.assertTrue(
+            any(
+                "dynamic_secret_lifecycle permissions/project differ"
+                in violation.reason
+                for violation in violations
+            ),
+            [violation.reason for violation in violations],
+        )
+
+    def test_named_boundary_fails_if_one_required_binding_is_removed(self) -> None:
+        broken = re.sub(
+            r'resource "google_project_iam_member" "portal_dynamic_secret_accessor" \{.*?^\}',
+            "",
+            LIVE_IAM_TF.read_text(),
+            count=1,
+            flags=re.DOTALL | re.MULTILINE,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = check_file(_write(Path(tmp), broken))
+
+        self.assertTrue(
+            any(
+                "portal_dynamic_secret_accessor" in violation.reason
+                for violation in violations
+            )
+        )
+
+    def test_named_boundary_cannot_hide_an_authoritative_multi_member_binding(
+        self,
+    ) -> None:
+        broken = (
+            LIVE_IAM_TF.read_text()
+            .replace(
+                'resource "google_project_iam_member" "portal_dynamic_secret_accessor"',
+                'resource "google_project_iam_binding" "portal_dynamic_secret_accessor"',
+            )
+            .replace(
+                '  member  = "serviceAccount:${google_service_account.workload["portal"].email}"',
+                '  members = ["serviceAccount:${google_service_account.workload["portal"].email}", "allUsers"]',
+                1,
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = check_file(_write(Path(tmp), broken))
+
+        self.assertTrue(
+            any(
+                "portal_dynamic_secret_accessor" in violation.reason
+                for violation in violations
+            )
+        )
 
     def test_live_iam_module_passes(self) -> None:
-        # Live-state regression: the refactored module must hold only the two
-        # allowlisted residual project grants; every static grant is per-resource.
+        # Live-state regression: only the exact #2083 dynamic boundary may
+        # carry project-level Secret Manager permissions.
         self.assertEqual(check_file(LIVE_IAM_TF), [])
 
 
@@ -479,7 +639,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         cls.lines = cls.text.splitlines()
         cls.project_roles = {
             workload: set(roles)
-            for workload, roles in _parse_role_map(cls.text, "workload_project_roles").items()
+            for workload, roles in _parse_role_map(
+                cls.text, "workload_project_roles"
+            ).items()
         }
         cls.bucket_roles = cls._bucket_role_graph(cls.text)
         cls.literal_project_grants = cls._literal_project_grants(cls.lines)
@@ -500,7 +662,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
     def _literal_project_grants(lines: list[str]) -> set[tuple[str, str]]:
         """Expand literal google_project_iam_member grants into {(workload, role)}."""
         grants: set[tuple[str, str]] = set()
-        for _name, _line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+        for _name, _line, body in _extract_resource_blocks(
+            lines, _PROJECT_IAM_MEMBER_RE
+        ):
             role_match = _LITERAL_ROLE_RE.search(body)
             if not role_match:
                 continue
@@ -546,7 +710,10 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
                 # (#1567, gated on raes_package_bucket_name).
                 "portal": {"roles/storage.objectAdmin", "roles/storage.objectViewer"},
                 "workers": {"roles/storage.objectViewer"},
-                "provisioner": {"roles/storage.objectViewer", "roles/storage.objectAdmin"},
+                "provisioner": {
+                    "roles/storage.objectViewer",
+                    "roles/storage.objectAdmin",
+                },
             },
         )
         self.assertNotIn("ctf-scheduler", self.bucket_roles)
@@ -563,12 +730,16 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
             body
             for name, _line, body in _extract_resource_blocks(
                 self.lines,
-                re.compile(r'^\s*resource\s+"google_secret_manager_secret_iam_member"\s+"([^"]+)"'),
+                re.compile(
+                    r'^\s*resource\s+"google_secret_manager_secret_iam_member"\s+"([^"]+)"'
+                ),
             )
             if name == "workload_secret_readers"
         ]
         self.assertEqual(len(reader_blocks), 1)
-        self.assertRegex(reader_blocks[0], r'role\s*=\s*"roles/secretmanager\.secretAccessor"')
+        self.assertRegex(
+            reader_blocks[0], r'role\s*=\s*"roles/secretmanager\.secretAccessor"'
+        )
 
     def test_only_guacamole_db_is_excluded_from_named_secrets(self) -> None:
         match = re.search(
@@ -579,10 +750,31 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1).strip(), 'key != "guacamole-db"')
 
-    def test_literal_project_grants_are_exactly_the_residuals(self) -> None:
-        # Secret/storage literals remain exactly the two ALLOWLIST residuals.
-        self.assertEqual(self.literal_project_grants, set(ALLOWLIST.keys()))
+    def test_literal_project_secret_grants_are_conditioned_portal_reads_only(
+        self,
+    ) -> None:
+        self.assertEqual(
+            self.literal_project_grants,
+            {("portal", "roles/secretmanager.secretAccessor")},
+        )
+        self.assertIn("local.portal_dynamic_read_condition", self.text)
+        self.assertIn("local.legacy_participant_secret_condition", self.text)
+        self.assertIn("local.legacy_raes_directory_name_condition", self.text)
+        self.assertIn("resource.name.extract", self.text)
         self.assertEqual(check_paths(sorted(LIVE_IAM_DIR.glob("*.tf"))), [])
+
+    def test_legacy_portal_condition_excludes_raes_directory_account_password(
+        self,
+    ) -> None:
+        self.assertIn(
+            "shifter-range-{range_scope}-raes-domain-') == ''",
+            self.text,
+        )
+        self.assertIn(
+            "((${local.legacy_raes_directory_name_condition})",
+            self.text,
+        )
+        self.assertNotIn("legacy_participant_suffix_condition", self.text)
 
     def test_range_host_holds_only_logging_and_monitoring_no_storage(self) -> None:
         # ADR-008-R9 / #1644 effective-permission oracle: the participant-reachable
@@ -590,7 +782,9 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         # project-level Cloud Storage role of any kind (its tarball read moved to a
         # provisioner-minted signed URL).
         range_host_roles: set[str] = set()
-        for _name, _line, body in _extract_resource_blocks(self.lines, _PROJECT_IAM_MEMBER_RE):
+        for _name, _line, body in _extract_resource_blocks(
+            self.lines, _PROJECT_IAM_MEMBER_RE
+        ):
             if _RANGE_HOST_MEMBER_RE.search(body):
                 range_host_roles.update(_resource_granted_roles(body))
         self.assertEqual(

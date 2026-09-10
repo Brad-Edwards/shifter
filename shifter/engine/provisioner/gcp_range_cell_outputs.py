@@ -56,6 +56,8 @@ def instance_output(
     instance: InstancePlan,
     credentials: InstanceCredentials,
     config: GCERangeCellConfig,
+    *,
+    vertex_secret_ref: str | None = None,
 ) -> ResourceDict:
     """Render the provisioner output for one created instance."""
     output: ResourceDict = {
@@ -100,6 +102,8 @@ def instance_output(
         "gcp_bootstrap_capability": instance["profile"].bootstrap_capability,
         "gcp_service_account_email": _service_account_output(instance, config),
     }
+    if vertex_secret_ref:
+        output["gcp_vertex_secret_ref"] = vertex_secret_ref
     if instance["profile"].source_machine_image:
         output.update(_machine_image_output(instance))
     # The image's declared Guacamole SFTP root travels as realized per-instance

@@ -363,10 +363,29 @@ class PolarisRangeBootstrapPlan:
             or os.environ.get("GCP_RANGE_VERTEX_REGION")
             or _GCP_DEFAULT_VERTEX_REGION
         )
+        secret_ref = str(getattr(instance, "vertex_secret_ref", None) or "").strip()
+        if secret_ref:
+            parts = secret_ref.split("/")
+            if len(parts) != 4 or parts[0] != "projects" or parts[2] != "secrets" or not parts[1] or not parts[3]:
+                raise ValueError("Polaris on GCP requires a full projects/<project>/secrets/<id> Vertex secret ref")
+            secret_project_id, secret_id = parts[1], parts[3]
+        else:
+            platform_project_id = (
+                os.environ.get("GCP_RANGE_CELL_PROJECT_ID") or os.environ.get("GCP_PROJECT_ID") or project
+            )
+            # Outputs persisted before the dedicated-project rollout do not
+            # carry gcp_vertex_secret_ref; their Vertex secret necessarily uses
+            # the legacy compute/platform project and name. New ranges always
+            # persist the exact full ref, so guessing canonical here would break
+            # old-generation bootstrap during cut-over.
+            secret_project_id = platform_project_id
+            secret_id = f"shifter-range-{range_id}-vertex-key"
         return {
             "range_id": range_id,
             "vertex_project_id": project,
             "vertex_region": region,
+            "vertex_secret_project_id": secret_project_id,
+            "vertex_secret_id": secret_id,
             "gcp_agent_compose_block": GCP_AGENT_COMPOSE_BLOCK,
             **PolarisRangeBootstrapPlan._vertex_models(instance),
         }

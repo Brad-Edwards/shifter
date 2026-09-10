@@ -7,6 +7,7 @@
 
 # REPLACE: your GCP project id (no default — this must be your project).
 project_id                 = "REPLACE_WITH_YOUR_GCP_PROJECT_ID"
+dynamic_secret_project_id  = "REPLACE_WITH_YOUR_GCP_RANGE_SECRET_PROJECT_ID"
 environment                = "gcp-dev"
 region                     = "us-central1"
 artifact_registry_location = "us-central1"

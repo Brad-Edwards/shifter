@@ -3,6 +3,16 @@ output "network_name" {
   value       = module.portal_vpc.network_name
 }
 
+output "dynamic_secret_project_id" {
+  description = "Deployment-scoped project for dynamic range secrets."
+  value       = local.dynamic_secret_project_id
+}
+
+output "provisioner_static_secret_refs" {
+  description = "Exact operator-created GDC/Vertex secret references published to the provisioner runtime."
+  value       = var.provisioner_static_secret_refs
+}
+
 output "range_network_name" {
   description = "Name of the dedicated range VPC."
   value       = module.range_vpc.range_network_name

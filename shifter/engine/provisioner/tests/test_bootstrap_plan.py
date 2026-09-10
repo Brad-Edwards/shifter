@@ -71,6 +71,7 @@ class MockPolarisInstance:
     # GCP threads a provisioner-minted signed tarball URL in via the instance
     # (#1644); the range host has no GCS identity of its own.
     polaris_tests_url: str = "https://storage.googleapis.com/b/o?X-Goog-Signature=deadbeef&generation=42"
+    vertex_secret_ref: str = ""
 
 
 class TestPolarisRangeBootstrapPlan:
@@ -261,6 +262,34 @@ class TestPolarisRangeBootstrapPlan:
         assert context["aws_agent_setup_block"] == ""
         assert context["aws_agent_compose_block"] == ""
         assert "oauth2.googleapis.com:199.36.153.8" in context["gcp_agent_compose_block"]
+
+    def test_gcp_context_uses_persisted_cross_project_vertex_secret_ref(self):
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "vertex-api-project")
+            instance = MockPolarisInstance(
+                vertex_secret_ref=(
+                    "projects/range-secrets/secrets/shifter-gcp-dev-dynamic-workload-vertex-range-7-service-account-key"
+                )
+            )
+            context = PolarisRangeBootstrapPlan(provider="gcp").get_context(instance)
+
+        assert context["vertex_project_id"] == "vertex-api-project"
+        assert context["vertex_secret_project_id"] == "range-secrets"
+        assert context["vertex_secret_id"].startswith("shifter-gcp-dev-dynamic-workload-vertex-")
+
+    def test_gcp_context_falls_back_to_legacy_ref_for_pre_migration_output(self):
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("GCP_RANGE_VERTEX_PROJECT_ID", "vertex-api-project")
+            mp.setenv("GCP_RANGE_CELL_PROJECT_ID", "legacy-compute-project")
+            mp.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+            context = PolarisRangeBootstrapPlan(provider="gcp").get_context(MockPolarisInstance())
+
+        assert context["vertex_secret_project_id"] == "legacy-compute-project"
+        assert context["vertex_secret_id"] == "shifter-range-7-vertex-key"
 
     def test_gcp_context_requires_vertex_project(self, monkeypatch):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan

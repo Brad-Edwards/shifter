@@ -83,7 +83,7 @@ def test_published_bundle_drops_settings_model_class() -> None:
     gcp = backends["gcp"]
     assert "settings_model" not in gcp
     assert isinstance(gcp["settings_schema"], dict)
-    assert {"project_id", "region"} <= set(gcp["settings_schema"].get("properties", {}))
+    assert {"project_id", "dynamic_secret_project_id", "region"} <= set(gcp["settings_schema"].get("properties", {}))
     assert aws["supported_profiles"] == sorted(aws["supported_profiles"])
     assert aws["capabilities"] == sorted(aws["capabilities"])
 

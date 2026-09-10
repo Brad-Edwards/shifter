@@ -61,6 +61,10 @@ _GCP_SECRET_REFERENCE_RUNTIME_KEYS: frozenset[str] = frozenset(
         "REDIS_SECRET_ID",
         "GUACAMOLE_SECRET_ID",
         "GDC_ACCESS_SECRET_ID",
+        "GDC_VM_IMAGE_GCS_SECRET_ID",
+        "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+        "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
         "DC_DOMAIN_PASSWORD_SECRET_ID",
         "EMAIL_API_KEY_SECRET_ID",
     }
@@ -81,7 +85,7 @@ def _gcp_output_roles(name: str) -> tuple[ProcessRole, ...]:
     roles: list[ProcessRole] = [ProcessRole.PORTAL, ProcessRole.WORKER]
     if name in runtime_inventory_gcp.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS:
         roles.append(ProcessRole.PROVISIONER)
-        if name.startswith("GCP_RANGE_"):
+        if name.startswith("GCP_RANGE_") and name not in _GCP_SECRET_REFERENCE_RUNTIME_KEYS:
             roles.append(ProcessRole.RANGE_TASK)
     return tuple(roles)
 

@@ -1,6 +1,8 @@
 locals {
-  name_prefix                = "shifter-${var.environment}"
-  normalized_public_hostname = trimspace(trim(var.public_hostname, "."))
+  name_prefix                         = "shifter-${var.environment}"
+  dynamic_secret_project_id           = trimspace(var.dynamic_secret_project_id)
+  dynamic_secret_project_is_dedicated = local.dynamic_secret_project_id != var.project_id
+  normalized_public_hostname          = trimspace(trim(var.public_hostname, "."))
   # Management-source identity for per-range host management ingress and the
   # OpenVPN health probe (#1711 / ADR-039-R9). Narrowed to the provisioner pod
   # range: provisioner Jobs are pinned to the tainted provisioner node pool, so
@@ -118,6 +120,28 @@ module "project_services" {
 
   project_id        = var.project_id
   required_services = local.required_services
+}
+
+module "dynamic_secret_project_services" {
+  count  = local.dynamic_secret_project_is_dedicated ? 1 : 0
+  source = "../project-services"
+
+  project_id        = local.dynamic_secret_project_id
+  required_services = toset(["secretmanager.googleapis.com"])
+}
+
+# Secret payload reads are not logged by default. Enable DATA_READ explicitly
+# on the deployment-scoped secret project so participant, range-host, and
+# provisioner reads have an auditable revocation trail.
+resource "google_project_iam_audit_config" "dynamic_secret_data_read" {
+  project = local.dynamic_secret_project_id
+  service = "secretmanager.googleapis.com"
+
+  audit_log_config {
+    log_type = "DATA_READ"
+  }
+
+  depends_on = [module.dynamic_secret_project_services]
 }
 
 # #1711 / ADR-039-R9: fail deterministically before any cloud mutation when the
@@ -341,13 +365,15 @@ module "portal_secrets" {
 module "portal_iam" {
   source = "../portal/iam"
 
-  project_id  = var.project_id
-  environment = var.environment
-  name_prefix = local.name_prefix
+  project_id                = var.project_id
+  dynamic_secret_project_id = local.dynamic_secret_project_id
+  environment               = var.environment
+  name_prefix               = local.name_prefix
 
   # ADR-008-R7: resource IDs from the owning modules so workload Secret Manager /
   # Cloud Storage access is bound per named resource instead of at project scope.
   runtime_secret_ids             = module.portal_secrets.runtime_secret_ids
+  provisioner_static_secret_ids  = toset(values(var.provisioner_static_secret_refs))
   assets_bucket_name             = module.portal_gcs.assets_bucket_name
   terraform_state_bucket_name    = "${var.project_id}-terraform-state"
   vmseries_bootstrap_bucket_name = var.vmseries_bootstrap_bucket_name
@@ -356,7 +382,7 @@ module "portal_iam" {
   range_host_identity_pool_size  = var.range_host_identity_pool_size
   deploy_service_account_email   = var.deploy_service_account_email
 
-  depends_on = [module.portal_secrets, module.portal_gcs]
+  depends_on = [module.portal_secrets, module.portal_gcs, module.dynamic_secret_project_services]
 }
 
 module "portal_gke" {

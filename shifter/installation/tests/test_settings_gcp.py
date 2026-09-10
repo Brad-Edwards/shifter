@@ -8,33 +8,73 @@ from pydantic import ValidationError
 from installation.settings_gcp import GcpBackendSettings
 
 
+def _settings(**overrides: str | dict[str, str]) -> dict[str, object]:
+    return {
+        "project_id": "acme-shifter",
+        "dynamic_secret_project_id": "acme-range-secrets",
+        "region": "us-central1",
+        **overrides,
+    }
+
+
 class TestGcpBackendSettings:
     def test_minimal_valid_settings(self):
-        settings = GcpBackendSettings.model_validate({"project_id": "acme-shifter", "region": "us-central1"})
+        settings = GcpBackendSettings.model_validate(_settings())
         assert settings.project_id == "acme-shifter"
+        assert settings.dynamic_secret_project_id == "acme-range-secrets"
         assert settings.region == "us-central1"
+        assert settings.provisioner_static_secret_refs == {}
+
+    def test_static_secret_refs_are_closed_full_resource_names(self):
+        settings = GcpBackendSettings.model_validate(
+            _settings(
+                provisioner_static_secret_refs={
+                    "GDC_ACCESS_SECRET_ID": "projects/acme-shifter/secrets/shifter-prod-gdc-access",
+                    "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID": "projects/vertex-project/secrets/shared-key",
+                }
+            )
+        )
+        assert set(settings.provisioner_static_secret_refs) == {
+            "GDC_ACCESS_SECRET_ID",
+            "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
+        }
+
+        with pytest.raises(ValidationError):
+            GcpBackendSettings.model_validate(
+                _settings(provisioner_static_secret_refs={"ARBITRARY_SECRET": "projects/acme-shifter/secrets/x"})
+            )
+        with pytest.raises(ValidationError):
+            GcpBackendSettings.model_validate(
+                _settings(provisioner_static_secret_refs={"GDC_ACCESS_SECRET_ID": "shifter-prod-gdc-access"})
+            )
 
     def test_model_is_closed_and_rejects_unknown_settings(self):
         # extra='forbid' — an unknown GCP setting fails before any infrastructure mutation.
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate({"project_id": "acme-shifter", "region": "us-central1", "bogus": "value"})
+            GcpBackendSettings.model_validate(_settings(bogus="value"))
 
     def test_range_egress_is_not_a_model_field(self):
         # range_egress is a shared cross-backend key validated by the loader, not the model
         # (mirrors AwsSettings); the closed model rejects it as an unknown key.
         assert "range_egress" not in GcpBackendSettings.model_fields
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate(
-                {"project_id": "acme-shifter", "region": "us-central1", "range_egress": {"mode": "status-quo"}}
-            )
+            GcpBackendSettings.model_validate(_settings(range_egress={"mode": "status-quo"}))
 
     def test_project_id_is_required(self):
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate({"region": "us-central1"})
+            GcpBackendSettings.model_validate(
+                {"dynamic_secret_project_id": "acme-range-secrets", "region": "us-central1"}
+            )
+
+    def test_dynamic_secret_project_id_is_required(self):
+        with pytest.raises(ValidationError):
+            GcpBackendSettings.model_validate({"project_id": "acme-shifter", "region": "us-central1"})
 
     def test_region_is_required(self):
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate({"project_id": "acme-shifter"})
+            GcpBackendSettings.model_validate(
+                {"project_id": "acme-shifter", "dynamic_secret_project_id": "acme-range-secrets"}
+            )
 
     @pytest.mark.parametrize(
         "project_id",
@@ -49,21 +89,21 @@ class TestGcpBackendSettings:
     )
     def test_invalid_project_id_is_rejected(self, project_id):
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate({"project_id": project_id, "region": "us-central1"})
+            GcpBackendSettings.model_validate(_settings(project_id=project_id))
 
     @pytest.mark.parametrize("project_id", ["acme-shifter", "your-gcp-project", "shifter", "abc123-def"])
     def test_valid_project_id_is_accepted(self, project_id):
-        settings = GcpBackendSettings.model_validate({"project_id": project_id, "region": "us-central1"})
+        settings = GcpBackendSettings.model_validate(_settings(project_id=project_id))
         assert settings.project_id == project_id
 
     @pytest.mark.parametrize("region", ["", "US-Central1", "us central1", "-us-central1"])
     def test_invalid_region_is_rejected(self, region):
         with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate({"project_id": "acme-shifter", "region": region})
+            GcpBackendSettings.model_validate(_settings(region=region))
 
     @pytest.mark.parametrize("region", ["us-central1", "europe-west4", "asia-northeast1"])
     def test_valid_region_is_accepted(self, region):
-        settings = GcpBackendSettings.model_validate({"project_id": "acme-shifter", "region": region})
+        settings = GcpBackendSettings.model_validate(_settings(region=region))
         assert settings.region == region
 
 
@@ -89,7 +129,7 @@ class TestGcpBundleIntegration:
     def test_loader_accepts_valid_gcp_settings(self, write_config):
         from installation.loader import load_root_config
 
-        cfg = load_root_config(write_config(self._gcp_config({"project_id": "acme-shifter", "region": "us-central1"})))
+        cfg = load_root_config(write_config(self._gcp_config(_settings())))
         assert cfg.settings["project_id"] == "acme-shifter"
         assert cfg.settings["region"] == "us-central1"
 
@@ -99,9 +139,7 @@ class TestGcpBundleIntegration:
 
         # Only load_root_config should raise inside the pytest.raises block; build the
         # config file first (SonarCloud python:S5915).
-        config_path = write_config(
-            self._gcp_config({"project_id": "acme-shifter", "region": "us-central1", "bogus": "x"})
-        )
+        config_path = write_config(self._gcp_config(_settings(bogus="x")))
         with pytest.raises(InstallationConfigError) as excinfo:
             load_root_config(config_path)
         assert any(issue.path == "settings.bogus" for issue in excinfo.value.issues)

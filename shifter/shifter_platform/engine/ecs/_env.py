@@ -28,6 +28,7 @@ _GCP_PROVISIONER_ENV_KEYS = (
     "AWS_REGION",
     "GCP_REGION",
     "GCP_PROJECT_ID",
+    "GCP_DYNAMIC_SECRET_PROJECT_ID",
     "GOOGLE_CLOUD_PROJECT",
     "CLOUD_PROJECT_ID",
     "DB_HOST",
@@ -193,6 +194,7 @@ def _get_gcp_provisioner_env_overrides() -> dict[str, str] | None:
         "CLOUD_REGION": getattr(settings, "CLOUD_REGION", ""),
         "GCP_REGION": os.environ.get("GCP_REGION") or getattr(settings, "CLOUD_REGION", ""),
         "GCP_PROJECT_ID": getattr(settings, "GCP_PROJECT_ID", ""),
+        "GCP_DYNAMIC_SECRET_PROJECT_ID": getattr(settings, "GCP_DYNAMIC_SECRET_PROJECT_ID", ""),
         "GOOGLE_CLOUD_PROJECT": getattr(settings, "GCP_PROJECT_ID", ""),
         "CLOUD_PROJECT_ID": getattr(settings, "GCP_PROJECT_ID", ""),
     }

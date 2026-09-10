@@ -720,7 +720,7 @@ def test_apply_mints_per_range_vertex_key_when_configured(mocker):
     secret_ops, _ = _mock_secret_ops(mocker)
     vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
 
-    apply_range_cell(
+    outputs = apply_range_cell(
         "req-123",
         _variables(),
         config=_vertex_config(),
@@ -735,6 +735,8 @@ def test_apply_mints_per_range_vertex_key_when_configured(mocker):
         "test-project",
         "range-host@test-project.iam.gserviceaccount.com",
     )
+    assert outputs
+    assert {output["gcp_vertex_secret_ref"] for output in outputs["instances"]} == {"projects/test/secrets/vertex"}
 
 
 def test_apply_skips_vertex_key_when_not_configured(mocker):
@@ -742,7 +744,7 @@ def test_apply_skips_vertex_key_when_not_configured(mocker):
     secret_ops, _ = _mock_secret_ops(mocker)
     vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
 
-    apply_range_cell(
+    outputs = apply_range_cell(
         "req-123",
         _variables(),
         config=_sample_config(),
@@ -752,6 +754,7 @@ def test_apply_skips_vertex_key_when_not_configured(mocker):
     )
 
     vertex_mocks.ensure.assert_not_called()
+    assert all("gcp_vertex_secret_ref" not in output for output in outputs["instances"])
 
 
 def test_destroy_deletes_per_range_vertex_key(mocker):

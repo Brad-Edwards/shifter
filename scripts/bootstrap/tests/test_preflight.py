@@ -16,6 +16,7 @@ DEPLOY_SECRETS_DOC = REPO_ROOT / "docs" / "dev" / "deploy-secrets.md"
 # Full set of GCP secrets present in a healthy CI environment.
 GCP_CI_ENV = {
     "GCP_PROJECT_ID": "prod-ksqdkj",
+    "SHIFTER_CONFIG_GCP_DEV": "backend: gcp\nsettings: {}\n",
     "GCP_PUBLIC_HOSTNAME": "gcp.example.test",
     "GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN": "example.test",
     "GCP_SERVICE_ACCOUNT": "deploy@prod-ksqdkj.iam.gserviceaccount.com",
@@ -80,6 +81,13 @@ class TestRunPreflightGcpCi:
         report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
         assert not report.ok
         assert any("GCP_PROJECT_ID" in r.message and r.status is Status.FAIL for r in report.results)
+
+    def test_missing_shifter_config_fails(self):
+        env = dict(GCP_CI_ENV)
+        del env["SHIFTER_CONFIG_GCP_DEV"]
+        report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
+        assert not report.ok
+        assert any("SHIFTER_CONFIG_GCP_DEV" in r.message and r.status is Status.FAIL for r in report.results)
 
     def test_missing_operator_creds_fail_without_optout(self):
         env = dict(GCP_CI_ENV)

@@ -61,6 +61,8 @@ module "platform_core" {
   source = "../../modules/platform-core"
 
   project_id                        = var.project_id
+  dynamic_secret_project_id         = var.dynamic_secret_project_id
+  provisioner_static_secret_refs    = var.provisioner_static_secret_refs
   environment                       = var.environment
   region                            = var.region
   deploy_service_account_email      = local.deploy_service_account_email

@@ -150,6 +150,7 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | Name | Kind | Required | Notes |
 |---|---|---|---|
 | `GCP_PROJECT_ID` | secret | yes | The Google Cloud project the platform deploys to. |
+| `SHIFTER_CONFIG_GCP_DEV` | secret | yes | Full validated deployment `shifter.yaml`. It is the sole source of `dynamic_secret_project_id`, exact provisioner static-secret refs, and range egress policy for deploy and destroy. |
 | `GCP_REGION` | variable | no | Default `us-central1`. |
 | `GCP_PUBLIC_HOSTNAME` | secret | yes | DNS name the platform serves on (for example, `shifter.your-domain.example`). |
 | `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN` | secret | yes | Identity Platform beforeCreate allow-list; the bootstrap operator must end with `@<this>` for sign-in to succeed. |
@@ -162,6 +163,31 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | secret | no | Comma-separated list of emails elevated to Django `is_staff` on first sign-in. |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | secret | no | Comma-separated list of emails elevated to `is_superuser`. |
 | `SMOKE_TEST_USER_EMAIL` | secret | no | Post-deploy smoke user for the advisory `post-deploy-smoke` job. Same contract as AWS dev smoke; see [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+
+`SHIFTER_CONFIG_GCP_DEV` is also required by both deploy and destroy. Its GCP
+settings must include `dynamic_secret_project_id`; no separate GitHub variable
+or tfvars override owns that value. The project is a pre-existing,
+single-deployment Secret Manager boundary and may equal `project_id` only during
+the documented expand phase. Once cut over it must be distinct.
+
+Supported operator-created inputs are declared once in the same config:
+
+```yaml
+settings:
+  project_id: platform-project
+  dynamic_secret_project_id: range-secret-project
+  provisioner_static_secret_refs:
+    GDC_ACCESS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-access
+    GDC_VM_IMAGE_GCS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-vm-image-gcs
+    GDC_VMSERIES_IMAGE_GCS_SECRET_ID: projects/platform-project/secrets/shifter-gcp-dev-gdc-vm-image-gcs
+    GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID: projects/vertex-project/secrets/shared-vertex-key
+```
+
+Omit unused keys. Values are secret references, never payloads, and must identify
+existing resources before Terraform applies. The renderer uses this closed map
+for both exact provisioner IAM and runtime publication; do not duplicate the
+same references in `local.auto.tfvars` or an ad-hoc runtime overlay. See the
+[range-secret project rollout](../../platform/terraform/gcp/README.md#expand-cut-over-drain-contract).
 
 Native CTF scenario-content references live in the existing application secret,
 not in GitHub variables or the generated ConfigMap. Configure the private

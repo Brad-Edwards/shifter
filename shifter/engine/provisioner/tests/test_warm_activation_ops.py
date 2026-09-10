@@ -240,6 +240,12 @@ class _NotFound(Exception):
 
 
 class TestIssuerPresent:
+    @pytest.fixture(autouse=True)
+    def _explicit_dynamic_secret_project(self, monkeypatch):
+        """Exercise the supported same-project migration posture explicitly."""
+        monkeypatch.setenv("ENVIRONMENT", "test")
+        monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "proj-1")
+
     def _ops(self, *, access):
         import vpn_secrets
 

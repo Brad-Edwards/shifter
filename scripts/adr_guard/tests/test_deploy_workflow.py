@@ -615,6 +615,23 @@ class TestGcpPrivateControlPlaneAccess(unittest.TestCase):
         )
 
 
+class TestGcpDeployPreflightInputs(unittest.TestCase):
+    """#2083: the shared preflight receives every required deployment input."""
+
+    def test_shifter_config_secret_reaches_the_preflight_step(self):
+        workflow = _load("_gcp-dev.yml")
+        jobs = ADR_GUARD._dw_jobs(workflow, "_gcp-dev.yml")
+        step = next(
+            item
+            for item in jobs["deploy"]["steps"]
+            if item.get("name") == "Preflight - validate deploy prerequisites"
+        )
+        self.assertEqual(
+            step.get("env", {}).get("SHIFTER_CONFIG_GCP_DEV"),
+            "${{ secrets.SHIFTER_CONFIG_GCP_DEV }}",
+        )
+
+
 class TestRangePlacementSingleSource(unittest.TestCase):
     """#2029: multi-region range placement and per-region NAT consume ONE input.
 
