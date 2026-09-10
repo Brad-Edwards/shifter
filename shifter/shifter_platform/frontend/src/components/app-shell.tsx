@@ -149,7 +149,7 @@ function LogoutForm() {
   return (
     <form method="post" action="/logout/">
       <input type="hidden" name="csrfmiddlewaretoken" value={getCsrfToken()} />
-      <Button type="submit" variant="ghost" size="sm" className="gap-1.5">
+      <Button type="submit" variant="ghost" size="sm" className="gap-1.5" aria-label="Log out">
         <LogOut className="size-4" />
         <span className="hidden sm:inline">Log out</span>
       </Button>

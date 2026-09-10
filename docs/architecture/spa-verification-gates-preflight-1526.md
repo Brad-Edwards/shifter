@@ -1,10 +1,11 @@
 # SPA Verification Gates Preflight (#1526)
 
-Status: pre-implementation guidance; coverage/LCOV enforcement is already
-present, and two acceptance-criteria conflicts require issue clarification
-before the remaining implementation can be declared complete
+Status: pre-implementation guidance; coverage/LCOV and authenticated functional
+E2E enforcement are already present, the browser accessibility gate is not,
+and two acceptance-criteria conflicts require issue clarification before the
+issue can be declared complete
 
-Date: 2026-09-06
+Date: 2026-09-07
 
 Issue: GitHub #1526, "REV1 Frontend: enforce SPA coverage, E2E, and browser
 accessibility gates"
@@ -45,8 +46,8 @@ Two issue clauses cannot be implemented literally against the current tree:
 
 Do not code around either conflict. In particular, do not resurrect Risk
 Register under another name and do not weaken the artifact rule because test
-credentials are synthetic. The remaining coverage, functional-browser, and
-browser-axe gates are architecturally viable under the decisions below.
+credentials are synthetic. The remaining browser-axe gate is architecturally
+viable under the decisions below.
 
 ## Coverage boundary
 
@@ -95,10 +96,11 @@ second diff-coverage script or parse terminal output.
   authorization, transactions, row locks, audit atomicity, and persistence
   semantics. Browser coverage complements these tests; it does not replace or
   re-express them.
-- Playwright remains the only browser runner. The committed
-  `e2e/scenario-editor.spec.ts` is an unfinished happy-path incumbent, not an
-  authenticated CI contract. Browser tests must use the actual Django-hosted
-  built SPA, normal same-origin session/CSRF behavior, canonical API endpoints,
+- Playwright remains the only browser runner. Extend the authenticated harness
+  in `playwright.config.ts`, `e2e/auth.setup.ts`, `e2e/support/actors.ts`, and
+  the existing journey specs; do not create another server, login, actor, or
+  browser-fixture stack. Browser tests use the actual Django-hosted built SPA,
+  normal same-origin session/CSRF behavior, canonical API endpoints,
   deterministic synthetic actors, and a fresh job-local database. Mutations
   travel through the UI and normal API/service boundaries.
 - Accessibility uses ADR-055's single surface/state matrix and
@@ -120,8 +122,8 @@ second diff-coverage script or parse terminal output.
 | API and errors | `src/api/client.ts`, `csrf.ts`, `errors.ts`, generated `schema.d.ts`, and aliases in `types.ts` | Preserve same-origin session credentials, CSRF, request IDs, the shared error envelope, and generated wire types. |
 | UI state | `components/ui/*`, `components/confirm-dialog.tsx`, `app/state-map.ts`, existing page tests | Reuse loading, alert, form, confirmation, focus, and status patterns; no page-local test-only variants. |
 | Server contracts | DRF serializers/permissions, domain service facades, `shared.api.errors`, `shared.audit`, `shared.log_sanitize` | Seed preconditions through valid fixtures/services and exercise normal endpoints; backend policy remains authoritative. |
-| Auth/session | `config.dev_auth` for hermetic local actors, normal Django session/CSRF middleware, `config.api_bootstrap`, `shared.api.permissions`, domain authorization | Dev auth stays loopback/job-local and cannot mint authority by itself; actor roles are deterministic setup state and endpoints reauthorize. |
-| Production-shaped host | `shared.spa_host`, Django/WhiteNoise build, `scripts/stack-smoke`, and its real OIDC/session harness | Reuse existing host and stack setup rather than introduce a Vite-only fake application server or another auth stack. |
+| Auth/session | `config.dev_auth`, `workspaces.management.commands.seed_e2e`, `e2e/auth.setup.ts`, and `e2e/support/actors.ts`; normal Django session/CSRF middleware, `config.api_bootstrap`, `shared.api.permissions`, and domain authorization | Reuse the current hermetic actor/session setup. Dev auth stays loopback/job-local and cannot mint authority by itself; actor roles are deterministic setup state and endpoints reauthorize. |
+| Production-shaped host | `shared.spa_host`, Django/WhiteNoise build, `Makefile::test-platform-e2e`, `_quality.yml::shifter-platform-e2e`, and `scripts/stack-smoke`'s real OIDC/session harness | Extend the existing job-local Django host for PR evidence; keep the deployed OIDC harness as a distinct later execution tier. Do not introduce a Vite-only fake application server or another auth stack. |
 | CI routing | `deploy.yml` `PR Gate`, `_quality.yml`, `.github/quality-path-filters.yaml`, `scripts/quality_ownership` | Functional/coverage work follows existing ownership; ADR-055's every-PR accessibility job is a direct `PR Gate` dependency, not a second path router. |
 | Analysis | `sonar-project.properties`, SPA LCOV, `raes-strict` SonarCloud gate | One 80% changed-code authority plus package-local absolute floors; missing reports fail closed. |
 | Accessibility policy | ADR-055, `docs/adr/exceptions.yaml`, central `adr_guard` exception filtering | One exact-finding baseline and waiver policy; no rule disables, count threshold, or JavaScript waiver parser. |
@@ -135,7 +137,7 @@ second diff-coverage script or parse terminal output.
 | CSRF, host, origin, and CSP | Keep Django session authentication, CSRF cookie/header validation, `ALLOWED_HOSTS`, browser-policy middleware, same-origin fetches, and WebSocket origin checks enabled. Playwright or axe injection is not permission to add `csrf_exempt`, widen trusted origins/hosts, disable secure policy, or run against an arbitrary remote URL. |
 | Input and schema validation | Browser mutations use the generated OpenAPI projection, DRF serializers, and domain service validators. Fixture setup may create valid prerequisites through existing factories/services/models, but must not bypass database constraints to reproduce an application state or copy enums/DTOs into the test matrix. |
 | Persistence and cleanup | Use a fresh job-local database and temporary media/static state, migrate once, use stable per-scenario identifiers, and tear down on success, failure, and cancellation while preserving the original exit status. Never reuse a developer or deployed database. Parallel mutation tests require isolated actors/data or deliberate serialization. |
-| Secrets and OS exposure | PR tests need no cloud or deployed IdP credential. Session cookies, CSRF values, reset/invite tokens, auth codes, signed URLs, and secret values stay out of argv, process listings, shell tracing, cache keys, `GITHUB_OUTPUT`, logs, screenshots, and public artifacts. If a helper must cross a process boundary, use memory/stdin or a mode-0600 temporary file and pass only its path. |
+| Secrets and OS exposure | PR tests need no cloud or deployed IdP credential. Session cookies, CSRF values, reset/invite tokens, auth codes, signed URLs, and secret values stay out of argv, process listings, shell tracing, cache keys, `GITHUB_OUTPUT`, logs, screenshots, and public artifacts. URL-validation failures must describe the violated rule without echoing the raw configured URL, which may itself contain rejected credentials. If a helper must cross a process boundary, use memory/stdin or a mode-0600 temporary file and pass only its path. |
 | Error envelopes | Preserve `{error: {code, message, details?, request_id?}}` through `shared.api.errors` and `frontend/src/api/errors.ts`. Assert the intended page/state before functional or axe checks. Do not swallow a 401/403/5xx, malformed JSON, timeout, scanner failure, or fallback page and report success; add no test exception family. |
 | Logging and observability | Reuse `X-Request-ID`, bounded GitHub diagnostics, test reports, LCOV, and privacy-safe axe fingerprints. Application logs remain sanitized through `shared.log_sanitize`; tests add no runtime telemetry or audit store. Never dump the environment, DOM, response bodies, cookie jar, or raw trace. |
 | Workflow policy | Hosted PR jobs use `contents: read`, no `id-token: write`, no protected environment or cloud secrets, no `pull_request_target`, and fully pinned actions. Preserve `if-no-files-found: error`, quality-ownership self-routing, `actionlint`, the Sonar wait, and ADR guard. |
@@ -158,13 +160,15 @@ cross-origin redirects, and unsupported schemes.
 
 ## Whole-repository scope
 
-The quality design passes through the frontend package/config/tests, Django SPA
-host and security/auth settings, existing test-data/service seams,
-`scripts/stack-smoke`, `_quality.yml`, `deploy.yml`, the quality path contract,
-Sonar configuration, ADR-055's surface/baseline policy, the central exception
-registry, contributor testing documentation, and the required architecture
-checks. Application serializers, services, repositories, models, migrations,
-and runtime logging are incumbents to exercise, not normal change targets.
+The quality design passes through the frontend package/config/tests and its
+existing authenticated actor fixtures, Django SPA host and security/auth
+settings, `workspaces.management.commands.seed_e2e`, existing test-data/service
+seams, `scripts/stack-smoke`, `_quality.yml`, `deploy.yml`, the quality path
+contract, Sonar configuration, ADR-055's surface/baseline policy, the central
+exception registry, contributor testing documentation, and the required
+architecture checks. Application serializers, services, repositories, models,
+migrations, and runtime logging are incumbents to exercise, not normal change
+targets.
 
 ## Gotchas and anti-patterns
 
@@ -181,6 +185,8 @@ and runtime logging are incumbents to exercise, not normal change targets.
   required composition/auth/failure behaviors.
 - Do not use Vite mocks or network interception for end-to-end assertions; do
   not use a Playwright login shortcut that bypasses Django session creation.
+- Do not echo the raw `SPA_E2E_BASE_URL` in configuration errors; rejecting an
+  embedded credential does not make that credential safe to print in CI logs.
 - Do not duplicate routes, OpenAPI DTOs, enums, validation, authorization,
   mutation retry policy, error envelopes, logging sanitization, audit events,
   or workflow path logic in test support.

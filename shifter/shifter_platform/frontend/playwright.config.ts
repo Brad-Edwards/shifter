@@ -12,11 +12,12 @@ function resolvePrTarget(): { origin: string; host: string; port: string } {
   try {
     url = new URL(raw);
   } catch {
-    throw new Error(`SPA_E2E_BASE_URL is not a valid URL: ${raw}`);
+    // Never echo the raw value: it may carry credentials.
+    throw new Error("SPA_E2E_BASE_URL is not a valid URL.");
   }
   const loopbackHosts = new Set(["127.0.0.1", "localhost"]);
   if (url.protocol !== "http:" || !loopbackHosts.has(url.hostname) || url.username || url.password || url.hash) {
-    throw new Error(`SPA_E2E_BASE_URL must be a credential-free http loopback (127.0.0.1/localhost) URL; got ${raw}`);
+    throw new Error("SPA_E2E_BASE_URL must be a credential-free http loopback (127.0.0.1/localhost) URL.");
   }
   return { origin: url.origin, host: url.hostname, port: url.port || "8000" };
 }

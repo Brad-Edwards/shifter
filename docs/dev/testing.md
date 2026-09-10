@@ -22,6 +22,7 @@ command (see `docs/DEVELOPMENT_WORKFLOW.md`).
 | `make test-installation` / `test-bootstrap` / `test-check-layer-imports` | Package suites |
 | `make test-js` | Platform JavaScript (Jest) with coverage |
 | `make test-platform-e2e` | Authenticated SPA E2E (Playwright); needs a Chromium build |
+| `make test-platform-a11y` | Browser accessibility scans (Playwright + axe); needs a Chromium build |
 | `make test-adr-guard` | Repository-guard suite; mirrors the `adr-guard-tests` CI job |
 | `make test` | Every no-service lane at once |
 
@@ -138,3 +139,22 @@ deployed tier and are tracked separately, not run in the PR lane.
 Authenticated Playwright traces are retained only on a local retry and are never
 uploaded as CI artifacts (ADR-055-R7). Reproduce failures locally with
 `make test-platform-e2e`.
+
+## Browser accessibility (Playwright + axe)
+
+`make test-platform-a11y` runs `@axe-core/playwright` over the ADR-055 surface
+matrix (`frontend/e2e/a11y/`) against the same hermetic stack, with the WCAG 2.2
+A/AA tag set. The `Accessibility` job in `.github/workflows/deploy.yml` runs it on
+**every** pull request as a direct `PR Gate` dependency (it does not inherit the
+frontend path skip, per ADR-055-R2), against a job-local PostgreSQL.
+
+The debt baseline is an exact set of privacy-safe fingerprints
+(`frontend/e2e/a11y/baseline.json`): the scan fails on any new or resolved
+finding, and the `accessibility-baseline` adr_guard check enforces that the
+committed baseline may only shrink versus the trusted base branch (additions
+require an exact-fingerprint waiver in `docs/adr/exceptions.yaml` naming ADR-055,
+per R4/R6). The matrix reconciles fail-closed against the SPA route table
+(`src/test/a11y-surface-reconcile.test.ts`); a new route group with no coverage
+or exclusion fails. Nightly multi-browser runs, deployed-target scans, the
+WCAG-EM manual audit, and the release-evidence gate are the remaining ADR-055
+tail tracked in [#2117](https://github.com/Brad-Edwards/shifter/issues/2117).

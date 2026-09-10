@@ -296,6 +296,27 @@ The first slice intentionally stays small:
   genuinely absent directory at the base (a real first publication) is distinguished
   from an unreadable tree and still passes.
 
+- `accessibility-baseline`
+  Enforces ADR-055-R4/R6: the browser-accessibility exact-finding baseline
+  (`shifter/shifter_platform/frontend/e2e/a11y/baseline.json`) may only shrink.
+  The committed fingerprint set must be a subset of the trusted base-branch
+  baseline; new fingerprints (baseline growth) fail unless covered by an
+  exact-fingerprint waiver in `docs/adr/exceptions.yaml` naming ADR-055 (an
+  optional `fingerprints:` list on the exception, validated by the central
+  exception schema, never overloading `paths`/`checks`). Each fingerprint is the
+  pipe-joined `surface|project|rule|wcag|target` key emitted by the a11y spec
+  (project is `chromium:<viewport>:<theme>`), so a waiver must quote that exact
+  string. Resolved findings (removed entries) always pass. Like `published-contract-snapshots-immutable` it
+  resolves the base ref from `GITHUB_BASE_REF` / `ADR_GUARD_BASE_REF` (falling
+  back to `origin/dev`/`origin/main`), fails **open** locally and **closed** under
+  `ADR_GUARD_SNAPSHOT_ENFORCE`, and treats an absent base baseline as a valid
+  first enrollment. A committed baseline that is not a JSON array of fingerprint
+  strings is rejected outright, and a base baseline that cannot be parsed is
+  treated as unverifiable (failing open or closed as above). The per-surface
+  exact-set comparison against the live scan and
+  the fail-closed surface reconciliation are enforced in the Playwright a11y specs
+  (`frontend/e2e/a11y/`), not this check.
+
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
 
