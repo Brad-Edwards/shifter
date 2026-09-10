@@ -67,9 +67,9 @@
       "uri": "raes-environment-pack:/sdl/smoke-linux.sdl.yaml",
       "checksum": {
         "algorithm": "sha256",
-        "value": "5d539401a08caba0f29af1bf8c02f24578007cf6549242c183be8cc72ccc4558"
+        "value": "f04f6735e53c16193b96e9742cec6ec5eaaeb068a8ded6eb68bbe3275cf505be"
       },
-      "size_bytes": 1834,
+      "size_bytes": 2065,
       "created_at": "2026-09-09T00:00:00Z",
       "source": "shifter",
       "satisfies_refs": [],
@@ -77,5 +77,5 @@
       "description": null
     }
   },
-  "set_digest": "sha256:6dea3a2a2f4471cfe4eb78e60cee8d7735e5e1a207e8e3aefbcef034b66c270b"
+  "set_digest": "sha256:c1a0d48f909a3e5decdf49f2cdcdd02b40685713494b87fec98652700b186310"
 }

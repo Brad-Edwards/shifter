@@ -138,6 +138,36 @@ spec:
           port: 22
         - protocol: TCP
           port: 3389
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-jobs-range-access-egress-generated
+  namespace: shifter-jobs
+  labels:
+    app.kubernetes.io/name: shifter
+    app.kubernetes.io/part-of: shifter
+spec:
+  # Range-provisioner Jobs (pulumi-provisioner) open a management channel to each
+  # range guest to install authored-account credentials and run setup: SSH for
+  # Linux guests, WinRM/RDP for Windows. Under Dataplane V2 the shifter-jobs
+  # default-deny blocks that egress without this allow.
+  podSelector: {{}}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {range_network_cidr}
+      ports:
+        - protocol: TCP
+          port: 22
+        - protocol: TCP
+          port: 3389
+        - protocol: TCP
+          port: 5985
+        - protocol: TCP
+          port: 5986
 """
 
     # YAML is hand-formatted (rather than via PyYAML) for two reasons:
