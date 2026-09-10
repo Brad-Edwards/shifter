@@ -91,43 +91,60 @@ apt-get install -y google-guest-agent google-osconfig-agent google-compute-engin
 systemctl enable google-guest-agent.service || true
 systemctl enable google-osconfig-agent.service || true
 
-echo "=== Restoring GCE-native networking (Kali's ifupdown unit hangs at boot) ==="
-# Kali pulls in ifupdown, whose networking.service blocks boot for its full
-# ~5-minute timeout trying to raise interfaces that systemd-networkd already
-# owns on GCE. That delays sshd past the provisioner's SSH-wait window, so the
-# range guest looks unreachable. GCE networking is systemd-networkd +
-# google-guest-configs, so mask the ifupdown unit and make sure the GCE stack
-# (systemd-networkd + sshd + the guest agent) is what comes up.
+echo "=== GCE-native networking: single systemd-networkd stack for Kali guests ==="
+# The debian-12 base uses systemd-networkd, but the Kali metapackages
+# (kali-linux-headless via tools.sh, kali-desktop-xfce via base.sh, installed
+# later in this bake) pull in ifupdown AND NetworkManager -- giving the image
+# THREE competing network stacks. On a GCE guest that breaks boot two ways:
+#   1. ifupdown's networking.service blocks boot for its ~5-minute timeout
+#      raising interfaces systemd-networkd already owns; and
+#   2. NetworkManager races systemd-networkd for the primary NIC, and neither
+#      brings the link up quickly enough for google-guest-agent. The 2.x agent's
+#      instance_setup reaches the metadata server (169.254.169.254) within a
+#      ~10-second retry window at boot; when the NIC is not up in time the agent
+#      fails, DESTRUCTIVELY "rolls back" the network config (tearing the link
+#      down), and restart-loops forever. Because the agent provides the oslogin
+#      NSS module it is ordered Before nss-user-lookup.target, so its loop blocks
+#      nss-user-lookup.target and therefore ssh.service -- the range guest never
+#      binds :22 and the provisioner's management SSH times out (300s).
+# Fix: make systemd-networkd the SOLE stack and give it a static DHCP config for
+# the primary NIC, so the link -- and the DHCP option-121 route to the metadata
+# server -- comes up in ~2s, well inside the guest-agent's window, exactly like
+# the stock GCE debian image. Mask ifupdown + NetworkManager so they cannot
+# contend or be selected as the guest-agent's network backend. Kali names the
+# NIC eth0 (not ens4), so match e* to cover both. Masking (not purging) leaves
+# the desktop metapackage's NetworkManager dependency satisfied for the xrdp GUI;
+# NetworkManager simply never runs as a boot service.
 systemctl mask networking.service || true
+systemctl mask NetworkManager.service NetworkManager-wait-online.service || true
 systemctl enable systemd-networkd.service || true
 systemctl enable ssh.service || true
 
-echo "=== Removing the conflicting NetworkManager stack (Kali metapackages pull it in) ==="
-# kali-linux-headless (tools.sh) and kali-desktop-xfce (base.sh), installed later
-# in this bake, pull in NetworkManager -- a SECOND network stack alongside the
-# GCE-native systemd-networkd this image is built around. With both enabled they
-# fight over the primary NIC: NetworkManager-wait-online.service completes while
-# systemd-networkd never sees its link reach "routable", so
-# systemd-networkd-wait-online.service blocks boot indefinitely (its shipped unit
-# runs with TimeoutStartSec=infinity). multi-user.target is never reached,
-# ssh.service never starts, and the range guest is unreachable -- the
-# provisioner's management-SSH times out. Masking NetworkManager NOW is
-# deliberate: a mask symlink under /etc/systemd/system persists through the later
-# apt install, so the Kali metapackages layer their userland on top while
-# networkd stays the sole boot-time network manager. Masking (not purging) keeps
-# the desktop metapackage's nm-applet dependency satisfied for the xrdp GUI
-# session; NetworkManager simply never runs as a boot service.
-systemctl mask NetworkManager.service NetworkManager-wait-online.service || true
+mkdir -p /etc/systemd/network
+cat > /etc/systemd/network/20-gce-primary.network <<'NET'
+# GCE primary NIC. DHCP supplies the address, MTU (1460) and -- via option 121 --
+# the route to the metadata server 169.254.169.254, so google-guest-agent reaches
+# the MDS on its first attempt. Kali names the primary NIC eth0; match e* so this
+# also covers predictable names (ens4/enp*) if a future base changes it.
+[Match]
+Name=e*
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+UseMTU=true
+UseRoutes=true
+NET
 
 echo "=== Bounding systemd-networkd-wait-online so a range LAN cannot hang boot ==="
-# Range guests sit on switched, often-isolated range LANs whose gateway may not
-# be a real router, so the primary link can come up with an address yet never
-# reach the full "routable" state systemd-networkd-wait-online waits for. Cap the
-# wait at 30s so a failed/incomplete online check fails the oneshot instead of
-# hanging boot forever; multi-user.target (and therefore ssh.service) then always
-# proceeds. This overrides only the timeout, so it is independent of the
-# systemd-networkd-wait-online binary path across Debian/Kali releases. sshd
-# itself only orders after network.target, so bounded network-online is safe.
+# Range guests sit on switched, sometimes-isolated range LANs whose gateway may
+# not be a real router, so the link can come up with an address yet never reach
+# the full "routable" state systemd-networkd-wait-online waits for. Cap the wait
+# at 30s so a failed/incomplete online check fails the oneshot instead of hanging
+# boot; multi-user.target (and ssh.service) then always proceeds. sshd orders only
+# after network.target, and the guest-agent needs only the DHCP-provided MDS route
+# (present regardless of "routable" state), so bounded network-online is safe.
 mkdir -p /etc/systemd/system/systemd-networkd-wait-online.service.d
 cat > /etc/systemd/system/systemd-networkd-wait-online.service.d/10-range-guest.conf <<'UNIT'
 [Service]
