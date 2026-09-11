@@ -118,6 +118,7 @@ def _outputs(
     public_hostname: str = "portal.example.test",
     managed_tls_enabled: bool = True,
     identity_allowed_email_domain: str = "paloaltonetworks.com",
+    dynamic_secret_project_id: str | None = None,
     identity_allowed_emails: list[str] | None = None,
     email_config: dict | None = None,
     ctf_content_bucket_name: str = "",
@@ -144,6 +145,12 @@ def _outputs(
         },
         "identity_platform_api_key": {"value": "identity-platform-api-key"},
         "identity_platform_project_id": {"value": "shifter-gcp-dev"},
+        "dynamic_secret_project_id": {
+            "value": (
+                "shifter-gcp-dev-range-secrets" if dynamic_secret_project_id is None else dynamic_secret_project_id
+            )
+        },
+        "provisioner_static_secret_refs": {"value": {}},
         "identity_allowed_email_domain": {"value": identity_allowed_email_domain},
         "identity_allowed_emails": {"value": list(identity_allowed_emails or [])},
         "control_plane_database": {
@@ -213,6 +220,7 @@ def test_render_env_emits_production_security_profile():
     # bill the correct quota/consumer project, not the overlay placeholder.
     assert "GCP_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "GOOGLE_CLOUD_PROJECT=shifter-gcp-dev\n" in rendered
+    assert "GCP_DYNAMIC_SECRET_PROJECT_ID=shifter-gcp-dev-range-secrets\n" in rendered
     # #1742: DB_NAME/DB_USER/CLOUD_PROJECT_ID are literals the provisioner-launcher
     # emits and the restrict-provisioner-jobs admission policy validates against the
     # platform-runtime ConfigMap, so they MUST be rendered here or every GCP range
@@ -222,7 +230,7 @@ def test_render_env_emits_production_security_profile():
     assert "CLOUD_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_AUTH_DOMAIN=shifter-gcp-dev.firebaseapp.com\n" in rendered
-    assert "GDC_ACCESS_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-gdc-access\n" in rendered
+    assert "GDC_ACCESS_SECRET_ID=" not in rendered
     assert (
         "DC_DOMAIN_PASSWORD_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-dc-domain-password\n" in rendered
     )
@@ -243,6 +251,54 @@ def test_render_env_emits_production_security_profile():
         "ENGINE_TASK_IMAGE=us-central1-docker.pkg.dev/"
         "shifter-gcp-dev/shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner@" + PINNED_ENGINE_DIGEST + "\n"
     ) in rendered
+
+
+def test_render_env_publishes_static_refs_from_terraform_and_ignores_env_override(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    outputs = _outputs()
+    outputs["provisioner_static_secret_refs"] = {
+        "value": {
+            "GDC_ACCESS_SECRET_ID": "projects/owner-project/secrets/gdc-access",
+            "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID": "projects/vertex-project/secrets/shared-key",
+        }
+    }
+    monkeypatch.setenv("GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID", "projects/wrong-project/secrets/wrong-key")
+
+    rendered = module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
+
+    assert "GDC_ACCESS_SECRET_ID=projects/owner-project/secrets/gdc-access\n" in rendered
+    assert "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID=projects/vertex-project/secrets/shared-key\n" in rendered
+    assert "wrong-project" not in rendered
+
+
+def test_render_env_drops_static_ref_missing_from_terraform_grant_map(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env_without_static_override")
+    outputs = _outputs()
+    monkeypatch.setenv(
+        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
+        "projects/ungranted-project/secrets/ungranted-key",
+    )
+
+    rendered = module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
+
+    assert "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID=" not in rendered
+    assert "ungranted-project" not in rendered
+
+
+@pytest.mark.parametrize(
+    "refs",
+    [
+        {"UNSUPPORTED": "projects/owner-project/secrets/input"},
+        {"GDC_ACCESS_SECRET_ID": "bare-secret-name"},
+    ],
+)
+def test_render_env_rejects_invalid_static_ref_contract(refs):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    outputs = _outputs()
+    outputs["provisioner_static_secret_refs"] = {"value": refs}
+
+    with pytest.raises(ValueError, match="provisioner_static_secret_refs"):
+        module.render_env(outputs, engine_image=PINNED_ENGINE_DIGEST)
 
 
 def test_render_env_emits_cloud_provider():
@@ -284,12 +340,25 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
     _seed_gce_range_env(monkeypatch)
+    outputs = _outputs(
+        identity_allowed_emails=["alice@example.com", "bob@example.com"],
+        email_config=_FULL_MAILGUN_EMAIL_CONFIG,
+        ctf_content_bucket_name="private-ctf-content",
+    )
+    outputs["provisioner_static_secret_refs"] = {
+        "value": {
+            key: f"projects/static-project/secrets/{key.lower().replace('_', '-')}"
+            for key in (
+                "GDC_ACCESS_SECRET_ID",
+                "GDC_VM_IMAGE_GCS_SECRET_ID",
+                "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+                "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+                "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
+            )
+        }
+    }
     rendered = module.render_env(
-        _outputs(
-            identity_allowed_emails=["alice@example.com", "bob@example.com"],
-            email_config=_FULL_MAILGUN_EMAIL_CONFIG,
-            ctf_content_bucket_name="private-ctf-content",
-        ),
+        outputs,
         engine_image=PINNED_ENGINE_DIGEST,
     )
 
@@ -390,6 +459,7 @@ def test_main_writes_rendered_runtime_env(tmp_path, monkeypatch):
         ({"public_hostname": "   "}, "public_hostname"),
         ({"managed_tls_enabled": False}, "managed_tls_enabled"),
         ({"identity_allowed_email_domain": ""}, "identity_allowed_email_domain"),
+        ({"dynamic_secret_project_id": ""}, "dynamic_secret_project_id"),
     ],
 )
 def test_render_env_fails_closed_on_insecure_inputs(missing_kwargs, expected_substring):

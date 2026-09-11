@@ -5,9 +5,10 @@ ADR-008-R7 (docs/architecture/gcp-workload-resource-iam-preflight-1517.md): the
 four GCP application workload identities -- ``portal``, ``workers``,
 ``ctf-scheduler``, and ``provisioner`` -- must not receive project-level Secret
 Manager payload/admin roles or Cloud Storage object-admin roles. Static runtime
-access is bound on each named secret or bucket instead; the only project-level
-secret/storage grants permitted are the two dynamic-secret residuals tracked in
-#1586 and enumerated in ``ALLOWLIST`` below.
+access is bound on each named secret or bucket instead. Dynamic range secrets
+use the completed #1586/#2083 boundary: create-only permission in one
+deployment-scoped project, condition-scoped lifecycle permission, and a narrow
+participant-read condition for the portal.
 
 The guard fails closed on every shape that attaches a forbidden role to a
 workload identity at project scope:
@@ -18,12 +19,10 @@ workload identity at project scope:
   role is read out of the map, so renaming the resource does not bypass it);
 * an authoritative ``google_project_iam_policy`` binding block;
 * a project-scoped ``google_project_iam_custom_role`` whose ``permissions`` grant
-  equivalent secret payload/lifecycle or object-mutation access.
+  equivalent access outside the exact validated dynamic-secret boundary.
 
-Legitimate different principals (the range-Vertex SA, the GKE node SA,
-CI/bootstrap identities) are not workload identities and are not matched. The two
-``ALLOWLIST`` residuals carry an expiry so the exception cannot outlive the #1586
-boundary silently.
+Legitimate different principals (the range-Vertex SA, the GKE node SA, and
+CI/bootstrap identities) are not workload identities and are not matched.
 
 The ``range_host`` / ``range_host_pool`` identities are handled separately (#1644):
 they are attached to participant-controllable range guests, so ANY project-level
@@ -35,7 +34,6 @@ are left alone. Host artifacts reach these guests through short-lived signed URL
 
 from __future__ import annotations
 
-import datetime
 import re
 import sys
 from dataclasses import dataclass
@@ -99,34 +97,68 @@ _FORBIDDEN_PERMISSION_WILDCARD_PREFIXES = ("secretmanager.", "storage.objects.")
 _RANGE_HOST_MEMBER_RE = re.compile(r"google_service_account\.range_host(?:_pool)?\b")
 
 
-@dataclass(frozen=True)
-class _Residual:
-    """A documented, expiring exception for one (workload, role) grant."""
+_ALLOWED_DYNAMIC_BINDINGS = frozenset(
+    {
+        "portal_dynamic_secret_accessor",
+        "portal_legacy_dynamic_secret_accessor",
+        "provisioner_dynamic_secret_create",
+        "provisioner_dynamic_secret_lifecycle",
+        "provisioner_legacy_dynamic_secret_lifecycle",
+    }
+)
 
-    reason: str
-    expires_on: datetime.date
+_DYNAMIC_LIFECYCLE_PERMISSIONS = frozenset(
+    {
+        "secretmanager.secrets.delete",
+        "secretmanager.secrets.get",
+        "secretmanager.secrets.getIamPolicy",
+        "secretmanager.secrets.setIamPolicy",
+        "secretmanager.secrets.update",
+        "secretmanager.versions.access",
+        "secretmanager.versions.add",
+    }
+)
 
+_IAM_CONDITION_LOGICAL_OPERATOR_LIMIT = 12
+_LOGICAL_OPERATOR_RE = re.compile(r"&&|\|\||!(?!=)")
 
-# The only project-level secret/storage grants a workload identity may hold.
-# Both are the dynamic-secret residuals whose resource-scoped replacement is
-# designed in #1586; each expires so the guard forces a revisit.
-ALLOWLIST: dict[tuple[str, str], _Residual] = {
-    ("portal", "roles/secretmanager.secretAccessor"): _Residual(
-        reason=(
-            "portal reads per-range *-ssh / *-rdp-password guest credentials at "
-            "runtime; dynamic-secret naming convergence / dedicated project "
-            "tracked in #1586"
-        ),
-        expires_on=datetime.date(2027, 7, 11),
+_DYNAMIC_CONDITION_LOCALS = {
+    "dynamic_secret_project_is_dedicated": "var.dynamic_secret_project_id != var.project_id",
+    "canonical_secret_prefix": (
+        '"projects/${data.google_project.dynamic_secrets.number}/secrets/'
+        'shifter-${var.environment}-dynamic-"'
     ),
-    ("provisioner", "roles/secretmanager.admin"): _Residual(
-        reason=(
-            "provisioner create/version/access/delete of per-range dynamic "
-            "secrets + vertex-key setIamPolicy + operator GDC secret reads; "
-            "dedicated-project boundary tracked in #1586"
-        ),
-        expires_on=datetime.date(2027, 7, 11),
+    "canonical_participant_secret_prefix": (
+        '"${local.canonical_secret_prefix}participant-"'
     ),
+    "legacy_secret_prefixes": """[
+        "projects/${data.google_project.platform.number}/secrets/shifter-range-",
+        "projects/${data.google_project.platform.number}/secrets/shifter-${var.environment}-range-",
+        "projects/${data.google_project.platform.number}/secrets/shifter-${var.environment}-ngfw-user-",
+    ]""",
+    "legacy_secret_name_condition": """join(" || ", [
+        for prefix in local.legacy_secret_prefixes :
+        "resource.name.startsWith('${prefix}')"
+    ])""",
+    "legacy_raes_directory_name_condition": (
+        '"resource.name.extract(\'projects/${data.google_project.platform.number}/secrets/'
+        'shifter-range-{range_scope}-raes-domain-\') == \'\'"'
+    ),
+    "legacy_participant_secret_condition": """join(" || ", [
+        "(resource.name.startsWith('${local.legacy_secret_prefixes[0]}') && (resource.name.endsWith('-participant-ssh') || resource.name.endsWith('-rdp-password') || resource.name.endsWith('-profile') || ((${local.legacy_raes_directory_name_condition}) && (resource.name.endsWith('-account-password') || resource.name.endsWith('-account-publickey')))))",
+        "(resource.name.startsWith('${local.legacy_secret_prefixes[1]}') && (resource.name.endsWith('-ssh') || resource.name.endsWith('-rdp-password')))",
+        "(resource.name.startsWith('${local.legacy_secret_prefixes[2]}') && resource.name.endsWith('-ssh'))",
+    ])""",
+    "dynamic_lifecycle_condition": """local.dynamic_secret_project_is_dedicated ? (
+        "resource.type == 'secretmanager.googleapis.com/Secret' && resource.name.startsWith('${local.canonical_secret_prefix}')"
+    ) : (
+        "resource.type == 'secretmanager.googleapis.com/Secret' && (${local.legacy_secret_name_condition})"
+    )""",
+    "portal_dynamic_read_condition": """local.dynamic_secret_project_is_dedicated ? (
+        "resource.type == 'secretmanager.googleapis.com/Secret' && resource.name.startsWith('${local.canonical_participant_secret_prefix}')"
+    ) : (
+        "resource.type == 'secretmanager.googleapis.com/Secret' && (${local.legacy_participant_secret_condition})"
+    )""",
 }
 
 _PROJECT_IAM_MEMBER_RE = re.compile(
@@ -135,7 +167,9 @@ _PROJECT_IAM_MEMBER_RE = re.compile(
 _CUSTOM_ROLE_RE = re.compile(
     r'^\s*resource\s+"google_project_iam_custom_role"\s+"([^"]+)"\s*\{'
 )
-_WORKLOAD_MEMBER_RE = re.compile(r'google_service_account\.workload\[\s*"([\w-]+)"\s*\]')
+_WORKLOAD_MEMBER_RE = re.compile(
+    r'google_service_account\.workload\[\s*"([\w-]+)"\s*\]'
+)
 _LITERAL_ROLE_RE = re.compile(r'\brole\s*=\s*"(roles/[^"]+)"')
 _FOR_EACH_LOCAL_MAP_RE = re.compile(r"for\s+\w+\s*,\s*\w+\s+in\s+local\.(\w+)\b")
 _CUSTOM_ROLE_REF_RE = re.compile(
@@ -215,29 +249,14 @@ def _permission_is_forbidden(permission: str) -> bool:
 def _residual_violation(
     path: Path, line: int, workload: str, role: str, shape: str
 ) -> Violation | None:
-    """Return a Violation for a forbidden (workload, role) grant, or None if allowlisted.
-
-    An allowlisted-but-expired residual is reported so the exception cannot
-    outlive its #1586 review date.
-    """
-    residual = ALLOWLIST.get((workload, role))
-    if residual is None:
-        return Violation(
-            path,
-            line,
-            f"{shape} grants project-level {role} to the {workload} workload "
-            "identity. Bind it on the named secret/bucket instead "
-            "(ADR-008-R7); only the #1586 dynamic-secret residuals are allowed.",
-        )
-    if datetime.date.today() > residual.expires_on:
-        return Violation(
-            path,
-            line,
-            f"{shape} grants project-level {role} to {workload} under an "
-            f"ALLOWLIST residual that expired on {residual.expires_on.isoformat()}. "
-            "Resolve #1586 or renew the exception.",
-        )
-    return None
+    """Return a violation for a generic project-scoped forbidden grant."""
+    return Violation(
+        path,
+        line,
+        f"{shape} grants project-level {role} to the {workload} workload "
+        "identity. Bind static access on the named resource or use the exact "
+        "validated dynamic-secret boundary (ADR-008-R7/#2083).",
+    )
 
 
 def _binds_workload_identity(body: str) -> bool:
@@ -308,10 +327,34 @@ def _collect_roles_after(text: str, start: int) -> list[str]:
     return re.findall(r'"(roles/[^"]+)"', segment)
 
 
+def _literal_string_list_assignment(body: str, key: str) -> set[str] | None:
+    """Return every literal in one ``key = [...]`` assignment, or None."""
+    match = re.search(
+        rf"^\s*{re.escape(key)}\s*=\s*\[",
+        body,
+        flags=re.MULTILINE,
+    )
+    if match is None:
+        return None
+    depth = 1
+    cursor = match.end()
+    while cursor < len(body) and depth > 0:
+        if body[cursor] == "[":
+            depth += 1
+        elif body[cursor] == "]":
+            depth -= 1
+        cursor += 1
+    if depth != 0:
+        return None
+    return set(re.findall(r'"([^"]+)"', body[match.end() : cursor - 1]))
+
+
 def _check_literal_members(path: Path, lines: list[str]) -> list[Violation]:
     """Flag literal member/binding resources granting a forbidden role to a workload."""
     violations: list[Violation] = []
-    for _name, line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+    for name, line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+        if name in _ALLOWED_DYNAMIC_BINDINGS:
+            continue
         role_match = _LITERAL_ROLE_RE.search(body)
         if not role_match or role_match.group(1) not in FORBIDDEN_ROLES:
             continue
@@ -378,7 +421,9 @@ def _check_custom_role_bindings(path: Path, lines: list[str]) -> list[Violation]
     if not forbidden_roles:
         return []
     violations: list[Violation] = []
-    for _name, line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+    for name, line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+        if name in _ALLOWED_DYNAMIC_BINDINGS:
+            continue
         ref_match = _CUSTOM_ROLE_REF_RE.search(body)
         if not ref_match or ref_match.group(1) not in forbidden_roles:
             continue
@@ -407,7 +452,9 @@ def _collect_locals_text(files: dict[Path, list[str]]) -> str:
     for lines in files.values():
         blocks.extend(
             body
-            for _n, _l, body in _extract_resource_blocks(lines, re.compile(r"^(locals)\s*\{"))
+            for _n, _l, body in _extract_resource_blocks(
+                lines, re.compile(r"^(locals)\s*\{")
+            )
         )
     return "\n".join(blocks)
 
@@ -504,7 +551,9 @@ def _forbidden_range_host_custom_roles(lines: list[str]) -> set[str]:
     return forbidden
 
 
-def _check_range_host_custom_role_bindings(path: Path, lines: list[str]) -> list[Violation]:
+def _check_range_host_custom_role_bindings(
+    path: Path, lines: list[str]
+) -> list[Violation]:
     """Flag range-host bindings of a project-scoped custom role with storage perms."""
     forbidden_roles = _forbidden_range_host_custom_roles(lines)
     if not forbidden_roles:
@@ -526,11 +575,316 @@ def _check_range_host_custom_role_bindings(path: Path, lines: list[str]) -> list
     return violations
 
 
+def _has_exact_assignment(body: str, key: str, expected: str) -> bool:
+    """Return true only when ``key`` has one one-line assignment to ``expected``."""
+    values = re.findall(
+        rf"^\s*{re.escape(key)}\s*=\s*(.*?)\s*$", body, flags=re.MULTILINE
+    )
+    return values == [expected]
+
+
+def _normalize_hcl_expression(expression: str) -> str:
+    """Collapse formatting whitespace while retaining every HCL token."""
+    return " ".join(expression.split())
+
+
+def _delimiter_delta(expression: str) -> int:
+    """Return the net bracket depth for one HCL expression fragment."""
+    return sum(expression.count(char) for char in "([{") - sum(
+        expression.count(char) for char in ")]}"
+    )
+
+
+def _extract_condition_local_assignments(
+    files: dict[Path, list[str]],
+) -> dict[str, list[tuple[Path, int, str]]]:
+    """Parse the closed condition-local expressions from every ``locals`` block."""
+    assignments = {name: [] for name in _DYNAMIC_CONDITION_LOCALS}
+    locals_header = re.compile(r"^\s*locals\s*\{")
+    assignment = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
+    for path, lines in files.items():
+        index = 0
+        while index < len(lines):
+            if not locals_header.match(lines[index]):
+                index += 1
+                continue
+            block_depth = _brace_delta(lines[index])
+            index += 1
+            while index < len(lines) and block_depth > 0:
+                line = lines[index]
+                if block_depth == 1 and (match := assignment.match(line)):
+                    name, first_fragment = match.groups()
+                    if name in assignments:
+                        start_line = index + 1
+                        fragments = [first_fragment]
+                        expression_depth = _delimiter_delta(first_fragment)
+                        while expression_depth > 0 and index + 1 < len(lines):
+                            index += 1
+                            fragments.append(lines[index].strip())
+                            expression_depth += _delimiter_delta(lines[index])
+                        assignments[name].append(
+                            (path, start_line, "\n".join(fragments))
+                        )
+                        index += 1
+                        continue
+                block_depth += _brace_delta(line)
+                index += 1
+    return assignments
+
+
+def _condition_local_violations(
+    files: dict[Path, list[str]], fallback_path: Path
+) -> list[Violation]:
+    """Require the exact inputs and compositions for the #2083 IAM conditions."""
+    violations: list[Violation] = []
+    assignments = _extract_condition_local_assignments(files)
+    for name, expected in _DYNAMIC_CONDITION_LOCALS.items():
+        found = assignments[name]
+        if len(found) != 1:
+            violations.append(
+                Violation(
+                    fallback_path,
+                    1,
+                    f"#2083 dynamic-secret boundary requires exactly one condition local {name}; found {len(found)}",
+                )
+            )
+            continue
+        path, line, actual = found[0]
+        if _normalize_hcl_expression(actual) != _normalize_hcl_expression(expected):
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"#2083 dynamic-secret condition local {name} differs from the closed definition",
+                )
+            )
+    participant = assignments["legacy_participant_secret_condition"]
+    raes_exclusion = assignments["legacy_raes_directory_name_condition"]
+    if len(participant) == 1 and len(raes_exclusion) == 1:
+        path, line, participant_expression = participant[0]
+        _raes_path, _raes_line, raes_expression = raes_exclusion[0]
+        # The HCL join delimiter appears once in source but expands between all
+        # list elements. The portal binding also contributes its resource.type
+        # conjunction, while the interpolated RAES classifier may contribute
+        # operators of its own.
+        clause_count = participant_expression.count(
+            '"(resource.name.startsWith'
+        )
+        operator_count = (
+            len(_LOGICAL_OPERATOR_RE.findall(participant_expression))
+            + max(0, clause_count - 2)
+            + len(_LOGICAL_OPERATOR_RE.findall(raes_expression))
+            + 1
+        )
+        if operator_count > _IAM_CONDITION_LOGICAL_OPERATOR_LIMIT:
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    "#2083 legacy portal IAM condition expands to "
+                    f"{operator_count} logical operators; Google permits at most "
+                    f"{_IAM_CONDITION_LOGICAL_OPERATOR_LIMIT}",
+                )
+            )
+    return violations
+
+
+def _dynamic_boundary_errors(name: str, body: str) -> list[str]:
+    """Validate one named #2083 boundary binding against its exact shape."""
+    specs = {
+        "provisioner_dynamic_secret_create": (
+            "var.dynamic_secret_project_id",
+            "provisioner",
+            "google_project_iam_custom_role.dynamic_secret_creator.id",
+            None,
+        ),
+        "provisioner_dynamic_secret_lifecycle": (
+            "var.dynamic_secret_project_id",
+            "provisioner",
+            "google_project_iam_custom_role.dynamic_secret_lifecycle.id",
+            "local.dynamic_lifecycle_condition",
+        ),
+        "portal_dynamic_secret_accessor": (
+            "var.dynamic_secret_project_id",
+            "portal",
+            '"roles/secretmanager.secretAccessor"',
+            "local.portal_dynamic_read_condition",
+        ),
+        "provisioner_legacy_dynamic_secret_lifecycle": (
+            "var.project_id",
+            "provisioner",
+            "google_project_iam_custom_role.legacy_dynamic_secret_lifecycle[0].id",
+            "\"resource.type == 'secretmanager.googleapis.com/Secret' && (${local.legacy_secret_name_condition})\"",
+        ),
+        "portal_legacy_dynamic_secret_accessor": (
+            "var.project_id",
+            "portal",
+            '"roles/secretmanager.secretAccessor"',
+            "\"resource.type == 'secretmanager.googleapis.com/Secret' && (${local.legacy_participant_secret_condition})\"",
+        ),
+    }
+    project, workload, role, condition = specs[name]
+    errors: list[str] = []
+    if not body.lstrip().startswith('resource "google_project_iam_member"'):
+        errors.append("must use additive google_project_iam_member")
+    if not _has_exact_assignment(body, "project", project):
+        errors.append(f"project must be {project}")
+    expected_member = (
+        f'"serviceAccount:${{google_service_account.workload["{workload}"].email}}"'
+    )
+    if not _has_exact_assignment(body, "member", expected_member):
+        errors.append(f"member must be the {workload} workload identity")
+    if not _has_exact_assignment(body, "role", role):
+        errors.append(f"role must be {role}")
+    if re.search(r"^\s*members\s*=", body, flags=re.MULTILINE) or "for_each" in body:
+        errors.append("must not add members or expand with for_each")
+    expected_count = "local.dynamic_secret_project_is_dedicated ? 1 : 0"
+    if name in {
+        "portal_legacy_dynamic_secret_accessor",
+        "provisioner_legacy_dynamic_secret_lifecycle",
+    }:
+        if not _has_exact_assignment(body, "count", expected_count):
+            errors.append("legacy binding must exist only while projects differ")
+    elif re.search(r"^\s*count\s*=", body, flags=re.MULTILINE):
+        errors.append("dedicated binding must not be conditional")
+    if condition is None:
+        if "condition {" in body:
+            errors.append("create-only parent grant must be unconditioned")
+    else:
+        if body.count("condition {") != 1 or not _has_exact_assignment(
+            body, "expression", condition
+        ):
+            errors.append(f"condition expression must be exactly {condition}")
+    return errors
+
+
+def _check_dynamic_resource_scope(files: dict[Path, list[str]]) -> list[Violation]:
+    """Allow only the exact create/lifecycle/read graph designed by #1586/#2083."""
+    violations: list[Violation] = []
+    combined = "\n".join("\n".join(lines) for lines in files.values())
+    if not files:
+        return violations
+    fallback_path = next(iter(files))
+    binding_occurrences: dict[str, int] = {
+        name: 0 for name in _ALLOWED_DYNAMIC_BINDINGS
+    }
+    custom_role_occurrences = {
+        "dynamic_secret_creator": 0,
+        "dynamic_secret_lifecycle": 0,
+        "legacy_dynamic_secret_lifecycle": 0,
+    }
+
+    for path, lines in files.items():
+        for name, line, body in _extract_resource_blocks(lines, _PROJECT_IAM_MEMBER_RE):
+            if name not in _ALLOWED_DYNAMIC_BINDINGS:
+                continue
+            binding_occurrences[name] += 1
+            for error in _dynamic_boundary_errors(name, body):
+                violations.append(
+                    Violation(
+                        path,
+                        line,
+                        f"invalid #2083 dynamic-secret binding {name}: {error}",
+                    )
+                )
+
+        custom_roles = {
+            name: (line, body)
+            for name, line, body in _extract_resource_blocks(lines, _CUSTOM_ROLE_RE)
+        }
+        for name in custom_role_occurrences:
+            custom_role_occurrences[name] += int(name in custom_roles)
+        creator = custom_roles.get("dynamic_secret_creator")
+        if creator is not None:
+            line, body = creator
+            permissions = _literal_string_list_assignment(body, "permissions")
+            if permissions != {
+                "secretmanager.secrets.create"
+            } or not _has_exact_assignment(
+                body, "project", "var.dynamic_secret_project_id"
+            ):
+                violations.append(
+                    Violation(
+                        path,
+                        line,
+                        "dynamic_secret_creator must contain only secretmanager.secrets.create in var.dynamic_secret_project_id",
+                    )
+                )
+        lifecycle = custom_roles.get("dynamic_secret_lifecycle")
+        if lifecycle is not None:
+            line, body = lifecycle
+            permissions = _literal_string_list_assignment(body, "permissions")
+            if (
+                permissions != _DYNAMIC_LIFECYCLE_PERMISSIONS
+                or not _has_exact_assignment(
+                    body, "project", "var.dynamic_secret_project_id"
+                )
+            ):
+                violations.append(
+                    Violation(
+                        path,
+                        line,
+                        "dynamic_secret_lifecycle permissions/project differ from the closed #2083 set",
+                    )
+                )
+        legacy = custom_roles.get("legacy_dynamic_secret_lifecycle")
+        if legacy is not None:
+            line, body = legacy
+            if not _has_exact_assignment(
+                body, "project", "var.project_id"
+            ) or not _has_exact_assignment(
+                body,
+                "permissions",
+                "google_project_iam_custom_role.dynamic_secret_lifecycle.permissions",
+            ):
+                violations.append(
+                    Violation(
+                        path,
+                        line,
+                        "legacy_dynamic_secret_lifecycle must reuse the closed lifecycle set in var.project_id",
+                    )
+                )
+
+    boundary_present = any(
+        name in combined for name in _ALLOWED_DYNAMIC_BINDINGS
+    ) or any(name in combined for name in custom_role_occurrences)
+    if boundary_present:
+        for name, count in {**binding_occurrences, **custom_role_occurrences}.items():
+            if count != 1:
+                violations.append(
+                    Violation(
+                        fallback_path,
+                        1,
+                        f"#2083 dynamic-secret boundary requires exactly one {name} resource; found {count}",
+                    )
+                )
+        required_tokens = (
+            "resource.type == 'secretmanager.googleapis.com/Secret'",
+            "canonical_secret_prefix",
+            "canonical_participant_secret_prefix",
+            "legacy_secret_name_condition",
+            "legacy_raes_directory_name_condition",
+            "legacy_participant_secret_condition",
+        )
+        for token in required_tokens:
+            if token not in combined:
+                violations.append(
+                    Violation(
+                        fallback_path,
+                        1,
+                        f"#2083 dynamic-secret boundary is missing required condition token {token}",
+                    )
+                )
+        violations.extend(_condition_local_violations(files, fallback_path))
+    return violations
+
+
 def check_paths(paths: list[Path]) -> list[Violation]:
     """Return every ADR-008-R7 violation across a set of module Terraform files."""
     files = {p: p.read_text().splitlines() for p in paths if p.suffix == ".tf"}
     locals_text = _collect_locals_text(files)
     violations: list[Violation] = []
+    violations.extend(_check_dynamic_resource_scope(files))
     for path, lines in files.items():
         violations.extend(_check_literal_members(path, lines))
         violations.extend(_check_map_driven_members(path, lines, locals_text))

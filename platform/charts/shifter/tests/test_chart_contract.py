@@ -38,9 +38,10 @@ AWS_DEV_WAF_ACL_ARN = (
 # selector variables from the shared runtime ConfigMap.
 # Regenerated for #28 after adding the warm-pool reconciler worker Deployment.
 # Regenerated for #2098 after adding the CTF communication delivery-worker Deployment.
+# Regenerated for #2083 after admitting the deployment-scoped dynamic-secret project id.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "1ece5300b3a49e803dca2d13d40319d658d0d9c0acaee137a00c44388644cd05",
-    "gcp-prod": "539a654cf0c915a656c0cbe940d6ed6d4c7c7584c4587231f095cc4cf22bc5d2",
+    "gcp-dev": "3354afa2f74b40183b927287a0a307a81b3a58fa117084611fa45e2a7a3ed23e",
+    "gcp-prod": "66fdc5a40b6984c47f81a838ebc44dc9d06340235d42508a7120d9c3a634ae3e",
 }
 
 

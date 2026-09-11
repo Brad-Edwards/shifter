@@ -99,12 +99,14 @@ set -euo pipefail
 RANGE_ID="{{ range_id }}"
 VERTEX_PROJECT_ID="{{ vertex_project_id }}"
 VERTEX_REGION="{{ vertex_region }}"
+VERTEX_SECRET_PROJECT_ID="{{ vertex_secret_project_id }}"
+VERTEX_SECRET_ID="{{ vertex_secret_id }}"
 ANTHROPIC_MODEL="{{ anthropic_model }}"
 ANTHROPIC_SMALL_FAST_MODEL="{{ anthropic_small_fast_model }}"
-SECRET_ID="shifter-range-${RANGE_ID}-vertex-key"
 
-if [[ -z "$VERTEX_PROJECT_ID" || -z "$VERTEX_REGION" ]]; then
-  echo "polaris kali vertex shard: vertex_project_id and vertex_region are required" >&2
+if [[ -z "$VERTEX_PROJECT_ID" || -z "$VERTEX_REGION" ||
+      -z "$VERTEX_SECRET_PROJECT_ID" || -z "$VERTEX_SECRET_ID" ]]; then
+  echo "polaris kali vertex shard: Vertex API and secret location context are required" >&2
   exit 2
 fi
 
@@ -118,29 +120,29 @@ fi
 # secretAccessor) and inject it into a14-kali as a key file. No key material in
 # argv/logs.
 KEY_FILE="$(mktemp)"
+ERRF="$(mktemp)"
 chmod 600 "$KEY_FILE"
-# The per-range secret lives in the VM's own (range-cell) project. Resolve it
-# explicitly from the metadata server and pass --project: this step runs as root
-# (via sudo) and gcloud in that context does not reliably pick up a default
-# project, and — unlike the tarball fetch, which carries a gs:// URL — this
-# command has nothing else to infer the project from, so an unset project made
-# the access fail with an error that looked like a permission problem.
-META_URL="http://metadata.google.internal/computeMetadata/v1/project/project-id"
-PROJ="$(curl -s -H 'Metadata-Flavor: Google' "$META_URL")"
-ERRF=/tmp/vertex-secret-err
-if ! gcloud secrets versions access latest --secret="$SECRET_ID" --project="$PROJ" >"$KEY_FILE" 2>"$ERRF"; then
-  echo "polaris kali vertex shard: could not read Vertex key secret $SECRET_ID in project $PROJ" >&2
-  cat "$ERRF" >&2 || true
+cleanup_vertex_key() {
+  shred -u "$KEY_FILE" 2>/dev/null || rm -f "$KEY_FILE"
+  rm -f "$ERRF"
+}
+trap cleanup_vertex_key EXIT
+if ! gcloud secrets versions access latest \
+    --secret="$VERTEX_SECRET_ID" \
+    --project="$VERTEX_SECRET_PROJECT_ID" >"$KEY_FILE" 2>"$ERRF"; then
+  echo "polaris kali vertex shard: could not read the scoped Vertex credential" >&2
   rm -f "$KEY_FILE" "$ERRF"
   exit 2
 fi
+rm -f "$ERRF"
 docker exec a14-kali mkdir -p /etc/vertex
 docker cp "$KEY_FILE" a14-kali:/etc/vertex/key.json
 # Own the key by the kali user (the agent runs as kali, not root) so
 # GOOGLE_APPLICATION_CREDENTIALS is readable; keep it private to that user.
 docker exec a14-kali chown kali:kali /etc/vertex /etc/vertex/key.json
 docker exec a14-kali chmod 600 /etc/vertex/key.json
-shred -u "$KEY_FILE" 2>/dev/null || rm -f "$KEY_FILE"
+cleanup_vertex_key
+trap - EXIT
 
 # 3. Point Claude Code at Vertex using the injected key (ADC via key file, not
 # the metadata server).

@@ -140,7 +140,6 @@ def render_gcp_platform_runtime_env(
     bootstrap_env_values: dict[str, str] | None = None,
 ) -> str:
     """Render the static, project-aware runtime env contract for the GKE control plane."""
-    gdc_vm_image_secret = f"projects/{config.project_id}/secrets/{config.gdc_vm_image_gcs_secret_id}"
     bootstrap_values = load_bootstrap_env_values() if bootstrap_env_values is None else bootstrap_env_values
     bootstrap_staff_emails = _merge_csv_env_values(
         [bootstrap_values.get("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "")],
@@ -173,14 +172,12 @@ def render_gcp_platform_runtime_env(
         "ENGINE_TASK_SERVICE_ACCOUNT_NAME=provisioner",
         "ENGINE_TASK_IMAGE_PULL_POLICY=Always",
         "GDC_VM_STORAGE_CLASS=local-shared",
-        f"GDC_VM_IMAGE_GCS_SECRET_ID={gdc_vm_image_secret}",
         "# Palo Alto VM-Series on GDC VM Runtime. These are required before creating",
         "# a GCP/GDC NGFW; values are intentionally explicit because this is not a",
         "# generic firewall path.",
         "GDC_VMSERIES_IMAGE_URL=",
         "GDC_VMSERIES_BOOTSTRAP_BUCKET=",
         "GDC_VMSERIES_STORAGE_CLASS=local-shared",
-        f"GDC_VMSERIES_IMAGE_GCS_SECRET_ID={gdc_vm_image_secret}",
         "GDC_VMSERIES_NAMESPACE_PREFIX=ngfw",
         "GDC_VMSERIES_MGMT_NETWORK_NAME=pod-network",
         "GDC_VMSERIES_MGMT_IP_CIDR=",
@@ -191,7 +188,6 @@ def render_gcp_platform_runtime_env(
         "GDC_VMSERIES_MEMORY=8Gi",
         "GDC_VMSERIES_DISK_SIZE_GIB=81",
         "GDC_VMSERIES_BOOTSTRAP_DISK_SIZE_GIB=1",
-        "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID=",
         "# Guest access defaults for VM Runtime assets.",
         *_sample_guest_access_defaults(),
         "# VM Runtime boot images, exported by the packer-gcp pipeline to the GDC",

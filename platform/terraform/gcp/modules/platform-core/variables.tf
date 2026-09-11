@@ -3,6 +3,17 @@ variable "project_id" {
   type        = string
 }
 
+variable "dynamic_secret_project_id" {
+  description = "Pre-existing deployment-scoped project for dynamic range secrets. May equal project_id only during staged migration."
+  type        = string
+}
+
+variable "provisioner_static_secret_refs" {
+  description = "Closed runtime-key map of exact operator-created GDC/Vertex Secret Manager resources outside the dynamic boundary."
+  type        = map(string)
+  default     = {}
+}
+
 variable "environment" {
   description = "Environment name."
   type        = string

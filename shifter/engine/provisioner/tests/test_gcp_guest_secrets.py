@@ -1,17 +1,26 @@
 """Tests for deterministic RAES authored-account credential secrets (#1560)."""
 
+import hashlib
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+import gcp_dynamic_secrets
 import gcp_guest_secrets
+
+
+@pytest.fixture(autouse=True)
+def _explicit_dynamic_secret_project(monkeypatch):
+    """Exercise the supported same-project migration posture explicitly."""
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "project-1")
 
 
 def test_participant_ssh_secret_is_distinct_from_host_management_secret(monkeypatch):
     secret_ids: list[str] = []
 
-    def read_or_create(secret_id, _payload_factory):
+    def read_or_create(secret_id, _payload_factory, canonical_secret_id=None):
         secret_ids.append(secret_id)
         return f"projects/p/secrets/{secret_id}", "PRIVATE"
 
@@ -27,6 +36,112 @@ def test_participant_ssh_secret_is_distinct_from_host_management_secret(monkeypa
     assert secret_ids[1].endswith("-participant-ssh")
 
 
+@pytest.mark.parametrize(
+    ("ensure_name", "args", "credential_class", "scope"),
+    [
+        (
+            "ensure_ssh_secret",
+            (7, {"uuid": "member-a"}),
+            gcp_dynamic_secrets.DynamicSecretClass.GCE_HOST_SSH,
+            "range-7-member-a",
+        ),
+        (
+            "ensure_participant_ssh_secret",
+            (7, {"uuid": "member-a"}),
+            gcp_dynamic_secrets.DynamicSecretClass.GCE_PARTICIPANT_SSH,
+            "range-7-member-a",
+        ),
+        (
+            "ensure_rdp_password_secret",
+            (7, {"uuid": "member-a"}),
+            gcp_dynamic_secrets.DynamicSecretClass.GCE_RDP_PASSWORD,
+            "range-7-member-a",
+        ),
+    ],
+)
+def test_gce_secret_writers_pass_the_expected_canonical_class(
+    monkeypatch,
+    ensure_name: str,
+    args: tuple[object, ...],
+    credential_class: gcp_dynamic_secrets.DynamicSecretClass,
+    scope: str,
+) -> None:
+    captured: dict[str, str | None] = {}
+
+    def read_or_create(_secret_id, _payload_factory, canonical_id=None):
+        captured["canonical_id"] = canonical_id
+        return "projects/p/secrets/value", "PRIVATE"
+
+    monkeypatch.setattr(gcp_guest_secrets, "_read_or_create_secret", read_or_create)
+    monkeypatch.setattr(gcp_guest_secrets, "derive_ssh_public_key", lambda private: f"public:{private}")
+
+    getattr(gcp_guest_secrets, ensure_name)(*args)
+
+    assert captured["canonical_id"] == gcp_dynamic_secrets.canonical_secret_id(
+        credential_class=credential_class,
+        scope=scope,
+    )
+
+
+@pytest.mark.parametrize(
+    ("ensure_name", "args", "credential_class", "scope"),
+    [
+        (
+            "ensure_raes_account_password_secret",
+            (7, "node.web#1", "Alice", "strong"),
+            gcp_dynamic_secrets.DynamicSecretClass.RAES_ACCOUNT_PASSWORD,
+            f"range-7-node.web#1-{hashlib.sha256(b'Alice').hexdigest()[:40]}",
+        ),
+        (
+            "ensure_raes_account_public_key_secret",
+            (7, "node.web#1", "Alice"),
+            gcp_dynamic_secrets.DynamicSecretClass.RAES_ACCOUNT_PUBLIC_KEY,
+            f"range-7-node.web#1-{hashlib.sha256(b'Alice').hexdigest()[:40]}",
+        ),
+        (
+            "ensure_raes_domain_dsrm_secret",
+            (7, "corp"),
+            gcp_dynamic_secrets.DynamicSecretClass.RAES_DOMAIN_DSRM_PASSWORD,
+            f"range-7-domain-{hashlib.sha256(b'corp\x00dsrm').hexdigest()[:40]}",
+        ),
+        (
+            "ensure_raes_domain_authority_secret",
+            (7, "corp", "strong"),
+            gcp_dynamic_secrets.DynamicSecretClass.RAES_DOMAIN_AUTHORITY_PASSWORD,
+            f"range-7-domain-{hashlib.sha256(b'corp\x00authority').hexdigest()[:40]}",
+        ),
+        (
+            "ensure_raes_domain_account_password_secret",
+            (7, "corp", "provision.account.web-service", "strong"),
+            gcp_dynamic_secrets.DynamicSecretClass.RAES_DOMAIN_ACCOUNT_PASSWORD,
+            f"range-7-domain-{hashlib.sha256(b'corp\x00provision.account.web-service').hexdigest()[:40]}",
+        ),
+    ],
+)
+def test_raes_secret_writers_pass_the_expected_canonical_class(
+    monkeypatch,
+    ensure_name: str,
+    args: tuple[object, ...],
+    credential_class: gcp_dynamic_secrets.DynamicSecretClass,
+    scope: str,
+) -> None:
+    captured: dict[str, str | None] = {}
+
+    def read_or_create(_secret_id, _payload_factory, canonical_id=None):
+        captured["canonical_id"] = canonical_id
+        return "projects/p/secrets/value", "PRIVATE"
+
+    monkeypatch.setattr(gcp_guest_secrets, "_read_or_create_secret", read_or_create)
+    monkeypatch.setattr(gcp_guest_secrets, "derive_ssh_public_key", lambda private: f"public:{private}")
+
+    getattr(gcp_guest_secrets, ensure_name)(*args)
+
+    assert captured["canonical_id"] == gcp_dynamic_secrets.canonical_secret_id(
+        credential_class=credential_class,
+        scope=scope,
+    )
+
+
 @pytest.mark.parametrize(("strength", "expected_length"), [("weak", 12), ("medium", 18), ("strong", 24)])
 def test_raes_account_password_strength_drives_generation(monkeypatch, strength: str, expected_length: int):
     generated_lengths: list[int] = []
@@ -39,7 +154,10 @@ def test_raes_account_password_strength_drives_generation(monkeypatch, strength:
     monkeypatch.setattr(
         gcp_guest_secrets,
         "_read_or_create_secret",
-        lambda secret_id, payload_factory: (f"projects/p/secrets/{secret_id}", payload_factory()),
+        lambda secret_id, payload_factory, canonical_secret_id=None: (
+            f"projects/p/secrets/{secret_id}",
+            payload_factory(),
+        ),
     )
 
     secret_ref, password = gcp_guest_secrets.ensure_raes_account_password_secret(7, "node.web#1", "Alice", strength)
@@ -63,7 +181,7 @@ def test_raes_account_password_rejects_unknown_strength_before_secret_access(mon
 def test_raes_account_public_key_stores_private_half_and_returns_public(monkeypatch):
     captured: dict[str, str] = {}
 
-    def read_or_create(secret_id, payload_factory):
+    def read_or_create(secret_id, payload_factory, canonical_secret_id=None):
         captured["secret_id"] = secret_id
         captured["payload"] = payload_factory()
         return f"projects/p/secrets/{secret_id}", captured["payload"]
@@ -128,7 +246,7 @@ def test_domain_password_secrets_reuse_read_or_create(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def read_or_create(secret_id, payload_factory):
+    def read_or_create(secret_id, payload_factory, canonical_secret_id=None):
         captured["secret_id"] = secret_id
         captured["value"] = payload_factory()
         return f"projects/p/secrets/{secret_id}", captured["value"]
@@ -166,6 +284,7 @@ def test_read_or_create_uses_concurrent_winner_instead_of_rotating_secret(monkey
         access_secret_version=MagicMock(
             side_effect=[NotFound(), SimpleNamespace(payload=SimpleNamespace(data=b"WINNER"))]
         ),
+        get_secret=MagicMock(side_effect=NotFound()),
         create_secret=MagicMock(side_effect=AlreadyExists()),
         add_secret_version=MagicMock(),
     )
@@ -194,13 +313,14 @@ def test_read_or_create_waits_for_concurrent_winner_version(monkeypatch):
                 SimpleNamespace(payload=SimpleNamespace(data=b"WINNER")),
             ]
         ),
+        get_secret=MagicMock(side_effect=NotFound()),
         create_secret=MagicMock(side_effect=AlreadyExists()),
         add_secret_version=MagicMock(),
     )
     exceptions = SimpleNamespace(NotFound=NotFound, AlreadyExists=AlreadyExists)
     sleep = MagicMock()
     monkeypatch.setattr(gcp_guest_secrets, "_secret_client", lambda: (client, exceptions, "project-1"))
-    monkeypatch.setattr(gcp_guest_secrets.time, "sleep", sleep)
+    monkeypatch.setattr(gcp_dynamic_secrets.time, "sleep", sleep)
 
     _secret_ref, value = gcp_guest_secrets._read_or_create_secret("secret-id", lambda: "LOSER")
 

@@ -3,6 +3,40 @@ variable "project_id" {
   type        = string
 }
 
+variable "dynamic_secret_project_id" {
+  description = "Pre-existing deployment-scoped GCP project that owns all provisioner-created range secrets. May equal project_id only during staged migration."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.dynamic_secret_project_id)) > 0
+    error_message = "dynamic_secret_project_id must identify the deployment's range-secret project."
+  }
+}
+
+variable "provisioner_static_secret_refs" {
+  description = "Closed runtime-key map of exact Secret Manager resources for operator-created GDC/Vertex inputs the provisioner reads."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for id in values(var.provisioner_static_secret_refs) : can(regex("^projects/[^/]+/secrets/[^/]+$", id))
+    ])
+    error_message = "Every provisioner_static_secret_refs value must be a full projects/<project>/secrets/<id> resource ID."
+  }
+
+  validation {
+    condition = length(setsubtract(toset(keys(var.provisioner_static_secret_refs)), toset([
+      "GDC_ACCESS_SECRET_ID",
+      "GDC_VM_IMAGE_GCS_SECRET_ID",
+      "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+      "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+      "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
+    ]))) == 0
+    error_message = "provisioner_static_secret_refs contains an unsupported runtime key."
+  }
+}
+
 variable "environment" {
   description = "Environment name."
   type        = string

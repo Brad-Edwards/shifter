@@ -3,6 +3,16 @@ output "network_name" {
   value       = module.platform_core.network_name
 }
 
+output "dynamic_secret_project_id" {
+  description = "Deployment-scoped project that owns provisioner-created range secrets."
+  value       = module.platform_core.dynamic_secret_project_id
+}
+
+output "provisioner_static_secret_refs" {
+  description = "Exact operator-created GDC/Vertex secret references published to the provisioner runtime."
+  value       = module.platform_core.provisioner_static_secret_refs
+}
+
 output "range_network_name" {
   description = "Name of the dedicated GCP range VPC."
   value       = module.platform_core.range_network_name

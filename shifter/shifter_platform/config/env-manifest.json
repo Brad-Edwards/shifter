@@ -319,6 +319,11 @@
     },
     {
       "default": null,
+      "name": "GCP_DYNAMIC_SECRET_PROJECT_ID",
+      "source_file": "config/_cloud.py"
+    },
+    {
+      "default": null,
       "name": "GCP_PROJECT_ID",
       "source_file": "config/_cloud.py"
     },

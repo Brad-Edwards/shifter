@@ -170,6 +170,7 @@ jobs:
         working-directory: scripts/bootstrap
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
           GCP_PUBLIC_HOSTNAME: ${{ secrets.GCP_PUBLIC_HOSTNAME }}
           GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
           GCP_MASTER_AUTHORIZED_CIDRS: ${{ secrets.GCP_MASTER_AUTHORIZED_CIDRS }}

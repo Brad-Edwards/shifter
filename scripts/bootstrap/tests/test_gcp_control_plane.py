@@ -84,6 +84,12 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "redis": f"projects/{project_id}/secrets/shifter-gcp-dev-redis",
             }
         },
+        "dynamic_secret_project_id": {"value": f"{project_id}-range-secrets"},
+        "provisioner_static_secret_refs": {
+            "value": {
+                "GDC_VM_IMAGE_GCS_SECRET_ID": (f"projects/{project_id}/secrets/shifter-gcp-dev-gdc-vm-image-gcs"),
+            }
+        },
         "identity_platform_api_key": {"value": "identity-platform-api-key"},
         "identity_platform_project_id": {"value": project_id},
         "identity_allowed_email_domain": {"value": "paloaltonetworks.com"},
@@ -2182,6 +2188,16 @@ class TestGcpBootstrapIdentityPlatform:
         assert "CortexSavesTheDay!" not in rendered
         assert "kali:kali" not in rendered
         assert "ubuntu:ubuntu" not in rendered
+
+    def test_render_gcp_platform_runtime_env_leaves_static_secret_refs_to_terraform_outputs(self):
+        """Static secret refs come only from the Terraform IAM/runtime declaration map."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+
+        rendered = deploy.render_gcp_platform_runtime_env(config, bootstrap_env_values={})
+
+        assert "GDC_VM_IMAGE_GCS_SECRET_ID" not in rendered
+        assert "GDC_VMSERIES_IMAGE_GCS_SECRET_ID" not in rendered
+        assert "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID" not in rendered
 
     def test_render_gcp_platform_runtime_env_wires_guest_image_urls_from_bucket(self):
         """Guest boot images resolve to the packer-gcp export bucket per environment."""

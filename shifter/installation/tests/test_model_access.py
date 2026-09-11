@@ -104,7 +104,12 @@ def _catalog() -> dict:
 def _with_model_access(base: dict, model_access: dict) -> dict:
     settings = dict(base.get("settings", {}))
     if base["backend"] == "gcp":
-        settings = {"project_id": "acme-shifter", "region": "us-central1", **settings}
+        settings = {
+            "project_id": "acme-shifter",
+            "region": "us-central1",
+            "dynamic_secret_project_id": "acme-range-secrets",
+            **settings,
+        }
     result = {**base, "settings": {**settings, SETTINGS_KEY: model_access}}
     return result
 

@@ -317,8 +317,9 @@ def _provision_range_resources(
     shared-vpc mode the pre-existing platform-peered VPC is reused and only the
     per-range subnets/firewalls/instances are created here.
     """
+    vertex_secret_ref: str | None = None
     if config.vertex_service_account_email:
-        vertex_ops.ensure(
+        vertex_secret_ref = vertex_ops.ensure(
             plan["range_id"],
             config.vertex_service_account_email,
             plan["project_id"],
@@ -353,6 +354,7 @@ def _provision_range_resources(
                     host_public_key=host_public_key,
                 ),
                 config,
+                vertex_secret_ref=vertex_secret_ref,
             )
         )
     return instance_outputs
