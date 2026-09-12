@@ -82,7 +82,7 @@ CTF_COMMUNICATION_DOCUMENTATION_CLASSES = frozenset(
         "api-client",
     }
 )
-CTF_RANGE_INGRESS_CREDENTIAL_FIELD = "credential"
+CTF_RANGE_INGRESS_SHOW_ONCE_FIELD = "credential"
 
 DEDICATED_CUSTOMER_AUTHORITY_SCOPES = frozenset(
     {
@@ -234,7 +234,7 @@ def _validate_ctf_ingress_content_delivery(
         fixed={
             "trust": "compromised",
             "authentication": "dedicated-generation-fenced-range-trigger",
-            CTF_RANGE_INGRESS_CREDENTIAL_FIELD: "opaque-show-once-revocable",
+            CTF_RANGE_INGRESS_SHOW_ONCE_FIELD: "opaque-show-once-revocable",
             "binding": "issuer-deployment-audience-expiry-current-generation",
             "replay_fence": "database-unique-occurrence",
             "rate_limit": "shared-fail-closed",
