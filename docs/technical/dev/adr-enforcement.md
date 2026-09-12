@@ -175,7 +175,9 @@ The first slice intentionally stays small:
   The registry check keeps contract support, specialized ADR contracts, and
   dispatch in separate modules. This preserves the closed contract surface
   while keeping each validator independently reviewable and within the static
-  analysis limits enforced for guardrail code.
+  analysis limits enforced for guardrail code. Validator helpers carry concise
+  docstrings, and the documentation check remains below the enforced file-size
+  limit so SonarCloud can keep analyzing guardrail changes on every pull request.
 
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.

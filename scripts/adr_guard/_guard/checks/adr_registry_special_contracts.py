@@ -181,6 +181,7 @@ ACCESSIBILITY_STRING_SET_SECTIONS = {
 def _contract_key_errors(
     contract: dict[str, object], adr_id: str, expected_keys: set[str]
 ) -> list[str]:
+    """Report an interface contract whose top-level keys differ from its schema."""
     actual_keys = set(contract)
     if actual_keys == expected_keys:
         return []
@@ -190,6 +191,7 @@ def _contract_key_errors(
 
 
 def _validate_ctf_sections(contract: dict[str, object], prefix: str) -> list[str]:
+    """Validate the scope, immutable intent, and RAES CTF communication sections."""
     errors = validate_closed_mapping(
         contract.get("scope"),
         f"{prefix}.scope",
@@ -228,6 +230,7 @@ def _validate_ctf_sections(contract: dict[str, object], prefix: str) -> list[str
 def _validate_ctf_ingress_content_delivery(
     contract: dict[str, object], prefix: str
 ) -> list[str]:
+    """Validate CTF range ingress, content controls, and delivery semantics."""
     errors = validate_closed_mapping(
         contract.get("range_ingress"),
         f"{prefix}.range_ingress",
