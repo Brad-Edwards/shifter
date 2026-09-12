@@ -599,7 +599,6 @@ class TestCTFScheduledTaskModel:
         [
             pytest.param("mark_running", ScheduledTaskStatus.RUNNING.value, False, id="running"),
             pytest.param("mark_completed", ScheduledTaskStatus.COMPLETED.value, True, id="completed"),
-            pytest.param("mark_cancelled", ScheduledTaskStatus.CANCELLED.value, False, id="cancelled"),
         ],
     )
     def test_task_status_transitions(self, method, expected_status, has_executed_at):

@@ -290,6 +290,7 @@ class ScheduledTaskType(StrEnum):
     EVENT_START = "event_start"
     EVENT_END = "event_end"
     RELEASE_CHALLENGE = "release_challenge"
+    RELEASE_COMMUNICATION = "release_communication"
 
     def __str__(self) -> str:
         """Return the string value for database storage."""
