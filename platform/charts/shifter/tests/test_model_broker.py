@@ -226,16 +226,16 @@ def test_direct_helm_transport_rejects_invalid_network_or_shared_tls(
 
 
 @pytest.mark.parametrize(
-    "mutation,message",
+    "mutation,error_details",
     [
-        ("missing", "enabled model broker requires control_env"),
-        ("digest", "model control environment must bind the mounted catalog digest"),
-        ("path", "modelBroker.control_env.MODEL_ACCESS_CATALOG_PATH"),
-        ("unknown", "Additional property DB_PASSWORD is not allowed"),
-        ("disabled_catalog", "enabled model access requires an enabled catalog"),
+        ("missing", ("enabled model broker requires control_env",)),
+        ("digest", ("model control environment must bind the mounted catalog digest",)),
+        ("path", ("MODEL_ACCESS_CATALOG_PATH", "/etc/shifter/model-access/catalog.json")),
+        ("unknown", ("DB_PASSWORD", "not allowed")),
+        ("disabled_catalog", ("enabled model access requires an enabled catalog",)),
     ],
 )
-def test_control_environment_rejects_unbound_catalog(tmp_path, mutation, message):
+def test_control_environment_rejects_unbound_catalog(tmp_path, mutation, error_details):
     values = enabled_values()
     env = values["modelBroker"]["control_env"]
     if mutation == "missing":
@@ -250,4 +250,5 @@ def test_control_environment_rejects_unbound_catalog(tmp_path, mutation, message
         env["MODEL_ACCESS_ENABLED"] = "true"
     result = render(tmp_path, values)
     assert result.returncode != 0
-    assert message in result.stderr
+    for detail in error_details:
+        assert detail in result.stderr
