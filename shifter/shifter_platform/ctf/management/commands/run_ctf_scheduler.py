@@ -213,7 +213,7 @@ class Command(BaseCommand):
             logger.exception("Task %s failed: %s", task.pk, exc)
             task.retry_or_fail_if_claimed("Task execution failed; see server logs for details.", token)
 
-    def _settle(self, task: CTFScheduledTask, token: UUID, result: Any) -> None:
+    def _settle(self, task: CTFScheduledTask, token: UUID, result: object) -> None:
         """Apply the fenced terminal transition implied by a handler ``result``."""
         if isinstance(result, dict) and result.get("interrupted"):
             logger.info("Task %s interrupted; requeuing for resume", task.pk)

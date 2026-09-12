@@ -201,7 +201,8 @@ def release_campaign(
     """
     actor = admission if admission is not None else AdmissionActor(user_id=actor_user_id, token_id=actor_token_id)
     assert_source_realizable(campaign.trigger_spec["kind"])
-    requested_revision = revision  # raw caller request, before default-latest resolution
+    # raw caller request, before default-latest resolution
+    requested_revision = revision
     key = _idempotency_key(campaign.id, occurrence_key, range_generation_ref)
     now = timezone.now()
 
@@ -309,6 +310,30 @@ RELEASE_OUTCOME_NOT_DUE = "not_due"
 RELEASE_OUTCOME_NOOP = "noop"
 
 
+def _classify_due(intent: CommunicationIntent, now: datetime, allow_early: bool) -> str | None:
+    """Classify a locked scheduled intent's due-time disposition.
+
+    Returns a terminal ``RELEASE_OUTCOME_*`` when no materialization should happen
+    (already released, not schedulable work, not yet due, or past the grace window),
+    or ``None`` when the caller should proceed to materialize the audience.
+    """
+    if intent.status == IntentStatus.RELEASED.value:
+        outcome: str | None = RELEASE_OUTCOME_RELEASED
+    elif intent.status != IntentStatus.SCHEDULED.value:
+        outcome = RELEASE_OUTCOME_NOOP  # cancelled / fenced / already expired
+    elif intent.due_at is not None and not allow_early and now < intent.due_at:
+        outcome = RELEASE_OUTCOME_NOT_DUE
+    elif (
+        intent.due_at is not None
+        and not allow_early
+        and now > intent.due_at + timedelta(minutes=settings.CTF_COMMUNICATION_RELEASE_GRACE_MINUTES)
+    ):
+        outcome = RELEASE_OUTCOME_EXPIRED
+    else:
+        outcome = None
+    return outcome
+
+
 def release_due_declaration(
     intent: CommunicationIntent,
     *,
@@ -342,22 +367,14 @@ def release_due_declaration(
         locked_campaign = CommunicationCampaign.objects.select_for_update().get(pk=campaign.pk)
         locked_intent = CommunicationIntent.objects.select_for_update().get(pk=intent.pk)
 
-        if locked_intent.status == IntentStatus.RELEASED.value:
-            return RELEASE_OUTCOME_RELEASED
-        if locked_intent.status != IntentStatus.SCHEDULED.value:
-            return RELEASE_OUTCOME_NOOP  # cancelled / fenced / already expired
-
-        due_at = locked_intent.due_at
-        if due_at is not None and not allow_early:
-            if now < due_at:
-                return RELEASE_OUTCOME_NOT_DUE
-            grace = timedelta(minutes=settings.CTF_COMMUNICATION_RELEASE_GRACE_MINUTES)
-            if now > due_at + grace:
+        disposition = _classify_due(locked_intent, now, allow_early)
+        if disposition is not None:
+            if disposition == RELEASE_OUTCOME_EXPIRED:
                 CommunicationIntent.objects.filter(pk=locked_intent.pk).update(
                     status=IntentStatus.EXPIRED.value, updated_at=now
                 )
                 logger.info("Scheduled communication intent %s expired past its grace window", locked_intent.id)
-                return RELEASE_OUTCOME_EXPIRED
+            return disposition
 
         _assert_release_allowed(locked_campaign, target_events)
         recipients = resolve_recipients(set(target_event_ids), locked_campaign.audience_spec)

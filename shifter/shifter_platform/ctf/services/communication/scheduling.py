@@ -26,7 +26,7 @@ from django.utils import timezone
 from ctf.enums import ScheduledTaskStatus, ScheduledTaskType
 from ctf.enums_communication import CampaignStatus, IntentStatus
 from ctf.exceptions import CTFCommunicationError
-from ctf.models import CommunicationCampaign, CommunicationIntent, CTFEvent, CTFScheduledTask
+from ctf.models import CommunicationCampaign, CommunicationIntent, CTFEvent, CTFScheduledTask, MessageRevision
 from ctf.services.communication.admission import (
     AdmissionActor,
     assert_occurrence_ready,
@@ -72,7 +72,7 @@ def schedule_declaration(
     due_at: datetime,
     occurrence_key: str,
     actor: AdmissionActor,
-    revision: Any = None,
+    revision: MessageRevision | None = None,
     range_generation_ref: str = "",
 ) -> CommunicationIntent:
     """Commit a future communication declaration and its release task together.
@@ -83,7 +83,8 @@ def schedule_declaration(
     creating a second one or a second task.
     """
     assert_source_realizable(campaign.trigger_spec["kind"])
-    requested_revision = revision  # raw caller request, before default-latest resolution
+    # raw caller request, before default-latest resolution
+    requested_revision = revision
     key = _idempotency_key(campaign.id, occurrence_key, range_generation_ref)
     now = timezone.now()
     target_event_ids = list(campaign.target_events.values_list("id", flat=True))
@@ -171,24 +172,29 @@ def run_release_communication_task(task: CTFScheduledTask) -> dict[str, Any]:
     try:
         outcome = release_due_declaration(intent, actor=actor)
     except CTFCommunicationError as exc:
-        if exc.code in RETRYABLE_ADMISSION_CODES:
-            # Transient backpressure: reschedule a bounded retry rather than
-            # discarding the occurrence. The grace window still caps total lateness
-            # (release_due_declaration EXPIRES it once past grace).
-            logger.info("Scheduled communication %s hit transient backpressure (%s); retrying", intent.id, exc.code)
-            return {
-                "reschedule_for": timezone.now() + timedelta(seconds=_BACKPRESSURE_RETRY_SECONDS),
-                "outcome": "backpressure_retry",
-            }
-        # Permanent denial (authority revoked, audience over budget, ...): the
-        # occurrence can never be admitted, so record a terminal no-work outcome
-        # instead of leaving it SCHEDULED with a completed task.
-        _expire_unadmittable(intent, exc.code)
-        return {"outcome": "denied"}
+        return _denied_result(intent, exc)
 
+    result: dict[str, Any] = {"outcome": outcome}
     if outcome == RELEASE_OUTCOME_NOT_DUE and intent.due_at is not None:
-        return {"reschedule_for": intent.due_at, "outcome": outcome}
-    return {"outcome": outcome}
+        result["reschedule_for"] = intent.due_at
+    return result
+
+
+def _denied_result(intent: CommunicationIntent, exc: CTFCommunicationError) -> dict[str, Any]:
+    """Map an admission denial at due time to a scheduler result.
+
+    Transient backpressure reschedules a bounded retry (the grace window still caps
+    total lateness); a permanent denial records a terminal no-work outcome instead
+    of leaving the intent SCHEDULED with a completed task.
+    """
+    if exc.code in RETRYABLE_ADMISSION_CODES:
+        logger.info("Scheduled communication %s hit transient backpressure (%s); retrying", intent.id, exc.code)
+        return {
+            "reschedule_for": timezone.now() + timedelta(seconds=_BACKPRESSURE_RETRY_SECONDS),
+            "outcome": "backpressure_retry",
+        }
+    _expire_unadmittable(intent, exc.code)
+    return {"outcome": "denied"}
 
 
 def _expire_unadmittable(intent: CommunicationIntent, code: str) -> None:

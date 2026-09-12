@@ -74,13 +74,10 @@ def test_schedule_due_time_must_match_the_trigger(organizer_user, ctf_event):
         organizer_user, ctf_event, trigger_spec={"kind": "absolute_time", "due_at": trigger_due.isoformat()}
     )
 
+    mismatched_due = trigger_due + timezone.timedelta(hours=1)  # diverges from the authored trigger
+    actor = AdmissionActor(user_id=organizer_user.id)
     with pytest.raises(CTFCommunicationError):
-        schedule_declaration(
-            campaign,
-            due_at=trigger_due + timezone.timedelta(hours=1),  # diverges from the authored trigger
-            occurrence_key="occ",
-            actor=AdmissionActor(user_id=organizer_user.id),
-        )
+        schedule_declaration(campaign, due_at=mismatched_due, occurrence_key="occ", actor=actor)
     assert not CommunicationIntent.objects.filter(campaign=campaign).exists()
 
 
@@ -90,8 +87,9 @@ def test_event_lifecycle_immediate_release_requires_the_milestone(organizer_user
     campaign = _campaign(organizer_user, ctf_event, trigger_spec={"kind": "event_lifecycle", "event_status": "active"})
 
     # The event has not reached 'active': the milestone has not occurred.
+    system_actor = AdmissionActor(system=True)
     with pytest.raises(CTFCommunicationError):
-        release_campaign(campaign, occurrence_key="occ", admission=AdmissionActor(system=True))
+        release_campaign(campaign, occurrence_key="occ", admission=system_actor)
     assert not CommunicationIntent.objects.filter(campaign=campaign).exists()
 
     # Once the milestone is reached, the system release is admitted.
@@ -102,13 +100,10 @@ def test_event_lifecycle_immediate_release_requires_the_milestone(organizer_user
 
 def test_event_lifecycle_is_not_clock_schedulable(organizer_user, ctf_event):
     campaign = _campaign(organizer_user, ctf_event, trigger_spec={"kind": "event_lifecycle", "event_status": "active"})
+    due = timezone.now() + timezone.timedelta(hours=1)
+    system_actor = AdmissionActor(system=True)
     with pytest.raises(CTFCommunicationError):
-        schedule_declaration(
-            campaign,
-            due_at=timezone.now() + timezone.timedelta(hours=1),
-            occurrence_key="occ",
-            actor=AdmissionActor(system=True),
-        )
+        schedule_declaration(campaign, due_at=due, occurrence_key="occ", actor=system_actor)
 
 
 # --- Replay meaning (Fix 4) ---------------------------------------------------
@@ -134,14 +129,9 @@ def test_conflicting_schedule_replay_is_rejected(organizer_user, ctf_event):
     revised = revise_message(campaign, subject="New", body="Changed")
 
     # Same occurrence key, different explicit revision -> conflicting meaning, rejected.
+    actor = AdmissionActor(user_id=organizer_user.id)
     with pytest.raises(CTFCommunicationError):
-        schedule_declaration(
-            campaign,
-            due_at=due,
-            occurrence_key="occ",
-            actor=AdmissionActor(user_id=organizer_user.id),
-            revision=revised,
-        )
+        schedule_declaration(campaign, due_at=due, occurrence_key="occ", actor=actor, revision=revised)
     # The original declaration is unchanged (still the first revision, one intent).
     assert CommunicationIntent.objects.filter(campaign=campaign).count() == 1
     intent = CommunicationIntent.objects.get(campaign=campaign)

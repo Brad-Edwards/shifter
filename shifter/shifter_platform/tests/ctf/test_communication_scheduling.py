@@ -118,8 +118,9 @@ def test_due_release_revalidates_and_denies_a_revoked_actor(organizer_user, ctf_
 
     User.objects.filter(pk=organizer_user.id).update(is_active=False)  # authority revoked before due
 
+    actor = AdmissionActor(user_id=organizer_user.id)
     with pytest.raises(CTFCommunicationError):
-        release_due_declaration(intent, actor=AdmissionActor(user_id=organizer_user.id))
+        release_due_declaration(intent, actor=actor)
     assert CommunicationIntent.objects.get(pk=intent.pk).status == IntentStatus.SCHEDULED.value
     assert not RecipientSnapshot.objects.filter(intent=intent).exists()
 
@@ -169,8 +170,9 @@ def test_early_release_before_due_requires_the_grant(organizer_user, ctf_event):
     _campaign, intent = _scheduled(organizer_user, ctf_event, due_at=due)
 
     # Without the explicit early-release grant, an early release is denied.
+    ungranted_actor = AdmissionActor(user_id=organizer_user.id)
     with pytest.raises(CTFCommunicationError):
-        request_early_release(intent, actor=AdmissionActor(user_id=organizer_user.id))
+        request_early_release(intent, actor=ungranted_actor)
     assert CommunicationIntent.objects.get(pk=intent.pk).status == IntentStatus.SCHEDULED.value
 
     # With the grant, an authorized organizer run-now releases before the due time.

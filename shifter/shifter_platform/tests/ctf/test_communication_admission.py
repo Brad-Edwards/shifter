@@ -75,8 +75,9 @@ def test_release_is_fail_closed_for_token_authored_declarations(organizer_user, 
 
     # The exact ctf:communication scope surface is slice 3; any token-authored
     # release is denied here rather than substituting another scope.
+    token_actor = AdmissionActor(token_id=4321)
     with pytest.raises(CTFCommunicationError):
-        release_campaign(campaign, occurrence_key="occ", admission=AdmissionActor(token_id=4321))
+        release_campaign(campaign, occurrence_key="occ", admission=token_actor)
     assert not CommunicationIntent.objects.filter(campaign=campaign).exists()
 
 
@@ -94,6 +95,7 @@ def test_release_requires_an_explicit_actor(organizer_user, ctf_event):
 
     # No user, no token, no declared system authority: a missing actor is never
     # implicit system authority.
+    no_actor = AdmissionActor()
     with pytest.raises(CTFCommunicationError):
-        release_campaign(campaign, occurrence_key="occ", admission=AdmissionActor())
+        release_campaign(campaign, occurrence_key="occ", admission=no_actor)
     assert not CommunicationIntent.objects.filter(campaign=campaign).exists()

@@ -74,13 +74,10 @@ def test_release_is_fail_closed_for_unsupported_sources(organizer_user, ctf_even
 def test_schedule_is_fail_closed_for_unsupported_sources(organizer_user, ctf_event):
     campaign = _campaign(organizer_user, ctf_event, trigger_spec={"kind": "range_signal", "declaration_ref": "d"})
 
+    due = timezone.now() + timezone.timedelta(hours=1)
+    actor = AdmissionActor(user_id=organizer_user.id)
     with pytest.raises(CTFCommunicationError):
-        schedule_declaration(
-            campaign,
-            due_at=timezone.now() + timezone.timedelta(hours=1),
-            occurrence_key="occ",
-            actor=AdmissionActor(user_id=organizer_user.id),
-        )
+        schedule_declaration(campaign, due_at=due, occurrence_key="occ", actor=actor)
     assert not CommunicationIntent.objects.filter(campaign=campaign).exists()
 
 

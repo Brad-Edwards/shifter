@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from django.contrib.auth import get_user_model
 
@@ -25,6 +26,11 @@ from ctf.enums import EventCapability
 from ctf.enums_communication import TriggerKind
 from ctf.exceptions import CTFCommunicationError
 from ctf.services.authorization import resolve_event_authority
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
+    from ctf.models import CommunicationCampaign, CTFEvent
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +62,14 @@ def assert_source_realizable(trigger_kind: str) -> None:
         raise CTFCommunicationError("Unknown communication trigger source", code="CTF_COMMUNICATION_SOURCE_UNKNOWN")
 
 
-def _parse_trigger_due(trigger: dict) -> datetime:
+def _parse_trigger_due(trigger: dict[str, Any]) -> datetime:
     """Parse a trigger's already-normalized UTC ``due_at`` into an aware datetime."""
     return datetime.fromisoformat(trigger["due_at"])
 
 
 def assert_occurrence_ready(
-    campaign,
-    target_events,
+    campaign: CommunicationCampaign,
+    target_events: list[CTFEvent],
     *,
     now: datetime,
     immediate: bool,
@@ -84,7 +90,8 @@ def assert_occurrence_ready(
     trigger = campaign.trigger_spec
     kind = trigger.get("kind")
     if kind == TriggerKind.MANUAL.value:
-        return  # the occurrence is the manual action itself
+        # the occurrence is the manual action itself
+        return
     if kind == TriggerKind.ABSOLUTE_TIME.value:
         trigger_due = _parse_trigger_due(trigger)
         if immediate:
@@ -111,7 +118,6 @@ def assert_occurrence_ready(
                 "The event-lifecycle milestone has not occurred on every target event",
                 code="CTF_COMMUNICATION_MILESTONE_NOT_REACHED",
             )
-        return
     # Closed kinds are already rejected by assert_source_realizable.
 
 
@@ -141,7 +147,7 @@ class AdmissionActor:
     allow_early_release: bool = False
 
 
-def _live_actor(user_id: int):
+def _live_actor(user_id: int) -> User:
     """Return the active user row for ``user_id`` or deny (revoked/inactive/absent)."""
     user = get_user_model().objects.filter(pk=user_id, is_active=True).first()
     if user is None:
@@ -149,7 +155,7 @@ def _live_actor(user_id: int):
     return user
 
 
-def reauthorize(campaign, target_events, actor: AdmissionActor) -> None:
+def reauthorize(campaign: CommunicationCampaign, target_events: list[CTFEvent], actor: AdmissionActor) -> None:
     """Re-check live authority for ``actor`` inside the locked admission transaction.
 
     ``target_events`` and ``campaign`` are already row-locked by the caller, and
