@@ -233,12 +233,16 @@ def render_range_cell_plan(
     vpn_gateway_pool_slot: int | None = None,
     range_host_pool_slot: int | None = None,
     egress_mode: str = "status-quo",
+    model_broker: dict[str, object] | None = None,
 ) -> RangeCellPlan:
     """Render the deterministic GCE resources for one range cell.
 
     ``vpn_gateway_pool_slot`` is the range's reserved gateway SA pool slot
     (ADR-008-R7), threaded to the OpenVPN gateway plan; ``None`` for ranges
     without an OpenVPN capability.
+
+    ``model_broker`` is an explicitly admitted capability, never inferred from
+    installation enablement. Its VIP is bound to ``config.model_broker_vip``.
     """
     validated_request = validate_gcp_vm_range_cell_request(variables)
     operation = validated_request["operation"]
@@ -317,6 +321,7 @@ def render_range_cell_plan(
             instance_plans=instance_plans,
             include_optional_cleanup=not require_images,
             egress_mode=egress_mode,
+            model_broker=model_broker,
         ),
     }
     if vpn_gateway is not None:

@@ -308,6 +308,7 @@ def instance_resource(
             }
         ],
         "deletion_protection": False,
+        "can_ip_forward": False,
     }
     if profile.source_machine_image:
         # The machine image supplies every captured disk. Network, metadata,

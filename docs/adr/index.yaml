@@ -3762,6 +3762,9 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/059-range-model-access-broker.md",
+      "docs/architecture/model-access/gcp-packaging.md",
+      "scripts/check_tf_gcp_iam_resource_scope/test_model_broker_scope.py",
+      "platform/charts/shifter/tests/test_model_broker.py",
       "docs/architecture/model-access/index.md",
       "docs/architecture/model-access/architecture.md",
       "docs/architecture/model-access/security.md",
@@ -3829,6 +3832,7 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/061-model-access-operations-qualification.md",
+      "docs/ops/model-access-gcp-probes.md",
       "docs/ops/model-access.md",
       "docs/architecture/model-access/security.md",
       "docs/architecture/model-access/delivery.md"

@@ -74,6 +74,8 @@ def build_raes_range_cell_plan(
     config: GCERangeCellConfig | None = None,
     access_bindings: Sequence[RealizedAccessBinding] = (),
     egress_mode: str = "status-quo",
+    *,
+    model_broker: dict[str, object] | None = None,
 ) -> RangeCellPlan:
     """Render the deterministic GCE range-cell plan for a parsed RAES plan.
 
@@ -84,6 +86,9 @@ def build_raes_range_cell_plan(
     joined to this plan by ``raes_access.join_participant_access``. They are the
     only source of a node's participant channels: authored services, ACLs, OS
     family, image, and account existence never synthesize one.
+
+    ``model_broker`` is separately admitted and bound to the deployment VIP;
+    neither scenario authorship nor installation enablement grants it.
     """
     resolved_config = config or load_gce_range_cell_config()
     network_name, network_link, manage_network = _network_placement(resolved_config, range_id)
@@ -132,6 +137,7 @@ def build_raes_range_cell_plan(
             raes_plan,
             resolved_config,
             egress_mode,
+            model_broker,
         ),
     }
     # A non-`none` range owns an explicit Cloud Router + NAT scoped to its subnets;
@@ -151,6 +157,7 @@ def _all_firewalls(
     raes_plan: RaesPlan,
     config: GCERangeCellConfig,
     egress_mode: str = "status-quo",
+    model_broker: dict[str, object] | None = None,
 ) -> list[FirewallPlan]:
     """Base range firewalls (reused, neutral) plus authored node ACL and service firewalls.
 
@@ -164,6 +171,7 @@ def _all_firewalls(
         config,
         instance_plans=instance_plans,
         egress_mode=egress_mode,
+        model_broker=model_broker,
     )
     cidr_lookup = acl_cidr_lookup(raes_plan.networks)
     # Validate the range-scoped service source set once, up front, only when needed --

@@ -5,6 +5,8 @@ from __future__ import annotations
 import ipaddress
 import os
 
+from shared.model_access.network import broker_egress_destination
+
 from config import GCERangeCellConfig
 from gcp_range_cell_naming import _network_tag, _short_resource_name
 from gcp_range_cell_types import FirewallPlan, InstancePlan, OpenVpnGatewayPlan, SubnetPlan
@@ -373,6 +375,7 @@ def build_firewall_plan(
     instance_plans: list[InstancePlan] | None = None,
     include_optional_cleanup: bool = False,
     egress_mode: str = "status-quo",
+    model_broker: dict[str, object] | None = None,
 ) -> list[FirewallPlan]:
     """Render the firewall plan for internal range traffic and management.
 
@@ -385,11 +388,31 @@ def build_firewall_plan(
     ``deny-all`` keeps a routed path behind the firewall deny). Firewall denial is
     defense in depth; it is not, by itself, the ``none`` no-NAT guarantee.
     """
+    broker_destination = None
+    if model_broker is not None:
+        broker_destination = broker_egress_destination(
+            model_broker,
+            expected_vip=config.model_broker_vip,
+            egress_mode=egress_mode,
+        )
+        bypass = os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}
+        unsafe_clients = any(
+            instance.get("can_ip_forward")
+            or instance.get("attach_service_account")
+            or instance.get("service_account_email")
+            for instance in (instance_plans or [])
+        )
+        if bypass or config.private_google_access or unsafe_clients or vpn_gateway is not None:
+            raise RuntimeError("model broker clients require source-preserving keyless isolated egress")
     if os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}:
         return []
     deny_general_egress = (egress_mode or "status-quo").strip().lower() in {"none", "deny-all"}
     range_tag = _network_tag(range_id)
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
+    if broker_destination is not None and any(
+        ipaddress.ip_network(broker_destination).overlaps(ipaddress.ip_network(cidr)) for cidr in subnet_cidrs
+    ):
+        raise RuntimeError("model broker VIP must not overlap an intra-range egress destination")
     portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)
     access_network_cidrs = _validated_boundary_cidrs("access_network_cidrs", config.access_network_cidrs)
     _reject_overlapping_boundaries(access_network_cidrs, portal_network_cidrs)
@@ -425,6 +448,17 @@ def build_firewall_plan(
     )
     if vpn_gateway is not None:
         firewalls.extend(_vpn_gateway_rules(range_id, vpn_gateway, portal_network_cidrs))
+    if broker_destination is not None:
+        firewalls.append(
+            {
+                "name": _short_resource_name("shifter-r", range_id, "egress-model-broker"),
+                "direction": "EGRESS",
+                "priority": 900,
+                "target_tags": [range_tag],
+                "destination_ranges": [broker_destination],
+                "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
+            }
+        )
     return firewalls
 
 

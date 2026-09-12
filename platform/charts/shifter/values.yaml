@@ -332,3 +332,20 @@ edge:
       enabled: false
       certificateName: platform-managed-cert
       frontendConfigName: platform-frontend-config
+
+# M06 packages the M05 process contract; enable only with qualified listener images.
+modelBroker:
+  enabled: false
+  hostname: ""
+  vip: ""
+  admitted_subnets: []
+  global_access: false
+  tls_secret_name: ""
+  control_tls_secret_name: ""
+  trust_configmap_name: ""
+  gsa: ""
+  region: ""
+  control_env: {}
+  catalog_json: ""
+  catalog_digest: ""
+  identities_json: ""

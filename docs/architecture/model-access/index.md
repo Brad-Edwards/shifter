@@ -19,6 +19,9 @@ deployment ranges. Shared resources do not require shared participant tokens.
 | [Architecture and contracts](architecture.md) | Ownership, configuration, allocation, API, persistence, protocol, lifecycle, and user flows. |
 | [Configurable sharing](sharing.md) | Which ranges share which resources, membership modes, overlapping policies, pooled accounting and management examples. |
 | [Security design](security.md) | Threats, identities, network/IAM boundaries, credential lifecycle, privacy, and negative tests. |
+| [GCP deployment package](gcp-packaging.md) | Disabled M06 identity, TLS, network, runtime and deployment-lane resources. |
+| [GCP packaging preflight](gcp-packaging-preflight-2123.md) | M06 repository integration gates for runtime isolation, IAM, egress, TLS and deployment evidence. |
+| [GCP operator probes](../../ops/model-access-gcp-probes.md) | Project onboarding, effective IAM, source-preservation and TLS qualification cases. |
 | [Operations design](../../ops/model-access.md) | Deployment, sizing, objectives, migration, failure recovery, cost, and release evidence. |
 | [Implementation issues and dependencies](delivery.md) | Coding-sized work, milestones, hard blockers, and completion criteria. |
 | [Example v1 policy](example-policy.v1.json) | Complete disabled, non-secret catalog with its canonical digest. |

@@ -59,6 +59,7 @@ class GCERangeCellConfig:
     # per-range-subnet model) so the provisioner can reach guests. Empty in
     # ``vpc-per-range`` mode, where each range mints its own VPC.
     network_id: str = ""
+    model_broker_vip: str = ""
     service_account_email: str = ""
     # OAuth scope for a range host's attached service account. Use
     # cloud-platform and let the host SA's IAM roles be the real access control

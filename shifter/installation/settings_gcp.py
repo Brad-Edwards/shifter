@@ -27,7 +27,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .gcp_model_broker import GcpModelBrokerSettings
 
 # GCP project id grammar: 6-30 characters, starting with a lowercase letter, then lowercase
 # letters, digits, and hyphens, and not ending in a hyphen. This is Google's documented
@@ -106,6 +108,15 @@ class GcpBackendSettings(BaseModel):
         pattern=_GCP_REGION_PATTERN,
         description="Lowercase GCP region/location token (letters, digits, and internal hyphens), e.g. 'us-central1'.",
     )
+
+    model_broker: GcpModelBrokerSettings = Field(default_factory=GcpModelBrokerSettings)
+
+    @model_validator(mode="after")
+    def validate_model_projects(self) -> GcpBackendSettings:
+        """Keep invocation-only projects outside platform and range-secret authority."""
+        if {self.project_id, self.range_resource_project_id} & self.model_broker.model_projects.keys():
+            raise ValueError("model projects must be dedicated outside platform and dynamic-secret projects")
+        return self
 
     @classmethod
     def from_root_settings(cls, settings: Mapping[str, object]) -> GcpBackendSettings:
