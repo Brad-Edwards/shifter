@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from cms.models import App, Credential, Instance, Request
-    from cms.scenarios.hydrator import NGFWRegistration
+    from cms.services._ngfw_hydration import NGFWRegistration
     from shared.schemas.app import NGFWAppContext, NGFWAppRef
 
 logger = logging.getLogger(__name__)
@@ -246,7 +246,7 @@ def _hydrate_and_dispatch_ngfw(
     registration: NGFWRegistration,
 ) -> None:
     """Hydrate the NGFW spec, persist for audit, dispatch the engine, and write the audit-log row."""
-    from cms.scenarios.hydrator import hydrate_ngfw
+    from cms.services._ngfw_hydration import hydrate_ngfw
     from engine.services import create_ngfw as engine_create_ngfw
     from shared.schemas import RequestSpec
 
@@ -330,7 +330,7 @@ def create_ngfw(
         safe_log_value(registration_method),
     )
 
-    from cms.scenarios.hydrator import NGFWRegistration
+    from cms.services._ngfw_hydration import NGFWRegistration
 
     request_id, request, instance, app = _provision_ngfw_request_records(user, name)
     try:

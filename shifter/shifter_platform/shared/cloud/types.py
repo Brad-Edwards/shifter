@@ -91,7 +91,16 @@ class ObjectStorage(Protocol):
         key: str,
         content_type: str,
         expires_in: int,
-    ) -> str: ...
+        content_length: int | None = None,
+    ) -> str:
+        """Presign a single-object PUT.
+
+        When ``content_length`` is given the adapter binds the exact byte length
+        into its signed request where the provider reliably enforces it, so an
+        oversized transfer fails at the storage layer. This is defense in depth
+        only; it never replaces the server-side finalization size check.
+        """
+        ...
 
     def generate_presigned_download_url(
         self,

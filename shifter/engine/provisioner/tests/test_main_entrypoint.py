@@ -40,6 +40,7 @@ def _install_entrypoint_fakes(monkeypatch) -> dict[str, Recorder]:
         "run_range_resume": Recorder(),
         "run_raes_range_provision": Recorder(),
         "run_raes_range_destroy": Recorder(),
+        "run_raes_range_activate": Recorder(),
     }
     _install_module(monkeypatch, "logging_config", configure_logging=calls["configure_logging"])
     _install_module(monkeypatch, "ngfw_runtime_ops", run_ngfw_operation=calls["run_ngfw_operation"])
@@ -56,8 +57,19 @@ def _install_entrypoint_fakes(monkeypatch) -> dict[str, Recorder]:
         "raes_range_ops",
         run_raes_range_provision=calls["run_raes_range_provision"],
         run_raes_range_destroy=calls["run_raes_range_destroy"],
+        run_raes_range_activate=calls["run_raes_range_activate"],
     )
     return calls
+
+
+def test_raes_activate_dispatches_activation(monkeypatch) -> None:
+    calls = _install_entrypoint_fakes(monkeypatch)
+
+    _run_main(monkeypatch, "raes-range", "activate", "--request-id", "req-warm")
+
+    assert calls["run_raes_range_activate"].calls == [(("req-warm",), {"operation_id": None})]
+    assert calls["run_raes_range_provision"].calls == []
+    assert calls["run_raes_range_destroy"].calls == []
 
 
 def _run_main(monkeypatch, *argv: str) -> None:

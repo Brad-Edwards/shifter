@@ -24,12 +24,7 @@ _MAX_REPORTED_GAPS = 3
 
 
 def _verify_scenario_exists(scenario_id: str, *, user_id: int) -> None:
-    """Confirm the scenario exists in the unified catalog before metadata changes.
-
-    Uses the catalog projection (not the legacy YAML/DB detail lookup) so the
-    access overlay can be toggled for RAES package-backed entries as well as
-    legacy YAML defaults and DB customs.
-    """
+    """Confirm the RAES source exists before metadata changes."""
     if get_catalog_entry(scenario_id) is None:
         logger.error(
             "update_metadata: scenario not found, scenario_id=%s, user_id=%s",
@@ -101,7 +96,7 @@ def update_metadata(
     enabled: bool | None = None,
     staff_only: bool | None = None,
 ) -> ScenarioMetadata:
-    """Update metadata for a YAML default or DB-backed custom scenario."""
+    """Update availability metadata for a RAES package source."""
     validate_user(user, "update_metadata")
     logger.debug(
         "update_metadata called for user_id=%s, scenario_id=%s",

@@ -28,6 +28,11 @@ Consequently, collection queries remain `user_id = actor` **and**
 retain the owner/source/state checks and authorize the row's persisted binding.
 Do not replace either side with a workspace-only filter.
 
+That is the product range-access rule, not a prohibition on a separately
+authorized administrative projection. ADR-046-R14 and the #1944 range-scope
+administration preflight later accept one narrow, staff-session scope-only
+exception. It grants no range use or lifecycle authority.
+
 The #1325 migrations already implement the compatibility migration:
 `workspaces.0002`, `cms.0038`-`0040`, and `engine.0040`-`0042` create personal
 workspaces, backfill all three projections, prove ownership consistency, and
@@ -279,7 +284,8 @@ scenario contracts, or branch separately in cyberscript and RAES.
   `settings.range_egress` contract.
 - Mid-session terminal/Guacamole revocation or already-downloaded VPN
   credential revocation.
-- A public range rehome API or implicit rehome on membership removal.
+- A public range rehome API or implicit rehome on membership removal, except
+  the separately authorized scope-only command accepted by ADR-046-R14.
 - Moving workspace authorization into Engine, workers, the provisioner, cloud
   adapters, Terraform, or guest operating systems.
 - A new range schema, status vocabulary, request ID, exception family, audit

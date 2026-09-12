@@ -275,7 +275,7 @@ export function ParticipantDetailPage() {
               <Detail label="Solved" value={participant.solved_count} />
               <Detail label="Attempts" value={participant.attempt_count} />
               <Detail label="Registered" value={formatDateTime(participant.registered_at)} />
-              <Detail label="Invited" value={formatDateTime(participant.invited_at)} />
+              <Detail label="Login info sent" value={formatDateTime(participant.login_info_sent_at)} />
               <Detail label="Last active" value={formatDateTime(participant.last_active_at)} />
             </dl>
           </CardContent>

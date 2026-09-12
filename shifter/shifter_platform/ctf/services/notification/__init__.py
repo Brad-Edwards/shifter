@@ -31,7 +31,7 @@ from ._organizer import (
 )
 from ._participant import (
     send_credentials,
-    send_invitations,
+    send_login_info,
     send_reminder,
 )
 from ._scheduled import (
@@ -75,7 +75,7 @@ __all__ = (
     "send_cleanup_warning",
     "send_credentials",
     "send_event_results",
-    "send_invitations",
+    "send_login_info",
     "send_range_ready",
     "send_reminder",
 )

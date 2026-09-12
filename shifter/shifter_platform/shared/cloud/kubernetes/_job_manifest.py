@@ -200,6 +200,16 @@ def _build_job(
 
     if profile.service_account_name:
         pod_spec_kwargs["service_account_name"] = profile.service_account_name
+    if profile.node_selector:
+        # Provider-injected node placement (#1711): pins the launched Job onto a
+        # dedicated node pool so its pod IP comes from that pool's dedicated pod
+        # range (the range VPC scopes management ingress to it).
+        pod_spec_kwargs["node_selector"] = dict(profile.node_selector)
+    if profile.tolerations:
+        pod_spec_kwargs["tolerations"] = [
+            _api_call(client, "V1Toleration", key=key, operator=operator, value=value, effect=effect)
+            for (key, operator, value, effect) in profile.tolerations
+        ]
     pod_spec = _api_call(client, "V1PodSpec", **pod_spec_kwargs)
 
     metadata_kwargs: dict[str, Any] = {

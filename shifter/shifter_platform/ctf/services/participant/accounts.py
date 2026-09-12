@@ -19,7 +19,7 @@ from django.views.decorators.debug import sensitive_variables
 
 from ctf.enums import ParticipantStatus
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
-from ctf.models import CTFEvent, CTFParticipant
+from ctf.models import CTFEvent, CTFParticipant, CTFTeam
 from ctf.services.range import request_event_provisioning
 from management.services import configure_temporary_ctf_account
 from shared.auth import CTF_PARTICIPANT_GROUP
@@ -143,6 +143,40 @@ def _event_for_account_creation(event_id: UUID, count: int) -> tuple[CTFEvent, i
 
 
 @sensitive_variables("password")
+def provision_participant_seat(
+    event: CTFEvent,
+    *,
+    email: str,
+    name: str,
+    team: CTFTeam | None = None,
+) -> CTFParticipant:
+    """Create a fresh isolated account and its ``registered`` participation in one step.
+
+    This is the single seam every organizer creation path (single add, CSV
+    import, generated seats) converges on. Provisioning is immediate: the
+    participation is ``registered`` with a linked isolated account the moment it
+    exists — there is no transient ``INVITED`` hop and no invitation awaiting
+    acceptance. The caller owns the surrounding ``transaction.atomic()`` block,
+    the event/team capacity locks and uniqueness checks, and the single
+    post-commit :func:`request_event_provisioning` enqueue.
+    """
+    password = _password_for_new_participant(event)
+    user = _new_user(password, generate_participant_username)
+    group, _ = Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)
+    user.groups.set([group])
+    configure_temporary_ctf_account(user, event.pk)
+    return CTFParticipant.objects.create(
+        event=event,
+        user=user,
+        email=email,
+        name=name,
+        team=team,
+        status=ParticipantStatus.REGISTERED.value,
+        registered_at=timezone.now(),
+    )
+
+
+@sensitive_variables("password")
 def create_participant_accounts(
     event_id: UUID,
     *,
@@ -156,42 +190,15 @@ def create_participant_accounts(
     created: list[CTFParticipant] = []
     with transaction.atomic():
         event, active_count = _event_for_account_creation(event_id, count)
-        group, _ = Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)
-        now = timezone.now()
         for index in range(count):
-            password = _password_for_new_participant(event)
-            user = _new_user(password, generate_participant_username)
-            user.groups.set([group])
-            configure_temporary_ctf_account(user, event.pk)
-            participant = CTFParticipant.objects.create(
-                event=event,
-                user=user,
+            participant = provision_participant_seat(
+                event,
                 email=email.strip().lower() if count == 1 else "",
                 name=display_name.strip() or f"Participant {active_count + index + 1}",
-                status=ParticipantStatus.REGISTERED.value,
-                registered_at=now,
             )
             created.append(participant)
         transaction.on_commit(lambda: request_event_provisioning(event.pk, source="participant_accounts"))
     return created
-
-
-@sensitive_variables("password")
-def attach_isolated_account(participant: CTFParticipant) -> CTFParticipant:
-    """Attach a fresh marked account to an existing unlinked participant."""
-    if participant.user_id is not None:
-        raise CTFValidationError("Participant already has an account", code="CTF_ACCOUNT_EXISTS")
-    password = _password_for_new_participant(participant.event)
-    user = _new_user(password, generate_participant_username)
-    group, _ = Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)
-    user.groups.set([group])
-    configure_temporary_ctf_account(user, participant.event_id)
-    participant.user = user
-    participant.status = ParticipantStatus.REGISTERED.value
-    participant.registered_at = timezone.now()
-    participant.save(update_fields=["user", "status", "registered_at", "updated_at"])
-    transaction.on_commit(lambda: request_event_provisioning(participant.event_id, source="participant_accounts"))
-    return participant
 
 
 def _locked_rename_target(participant_id: UUID) -> CTFParticipant:

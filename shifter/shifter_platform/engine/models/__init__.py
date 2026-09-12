@@ -46,6 +46,7 @@ from ._raes import (
 from ._range import Range
 from ._request import App, Instance, Instantiation, Request
 from ._subnet import Subnet, SubnetAllocation
+from ._warm_pool import WarmRangeGeneration
 
 __all__ = [
     "App",
@@ -72,4 +73,5 @@ __all__ = [
     "Request",
     "Subnet",
     "SubnetAllocation",
+    "WarmRangeGeneration",
 ]

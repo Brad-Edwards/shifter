@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from executors.base import Executor
+from executors.base import CommandExecutor
 from executors.factory import GuestExecutionContext, build_guest_execution_context
 from orchestrators.setup_orchestrator import SetupOrchestrator
 from plans.raes_composition_verification import RaesCompositionVerificationPlan
@@ -21,7 +21,7 @@ class RaesCompositionVerificationOps:
     """Injectable guest execution and orchestration operations."""
 
     execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context
-    orchestrator_factory: Callable[[Executor], SetupOrchestrator] = SetupOrchestrator
+    orchestrator_factory: Callable[[CommandExecutor], SetupOrchestrator] = SetupOrchestrator
 
 
 def _platform(node: RaesPlanNode) -> str:

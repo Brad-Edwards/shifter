@@ -249,7 +249,6 @@ class TestLiveFlagRepair:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         flag_obj = add_flag(
             challenge.pk,
@@ -267,7 +266,6 @@ class TestLiveFlagRepair:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         flag_obj = add_flag(
             challenge.pk,
@@ -291,7 +289,6 @@ class TestLiveFlagRepair:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         flag_obj = add_flag(
             challenge.pk,
@@ -326,7 +323,6 @@ class TestLiveFlagRepair:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         with pytest.raises(CTFStateError):
             update_challenge(
@@ -346,7 +342,6 @@ class TestLiveFlagRepair:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         update_challenge(
             challenge.pk,
@@ -366,7 +361,6 @@ class TestLiveFlagRepair:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         from ctf.enums import ChallengeVisibility
 
@@ -385,7 +379,6 @@ class TestLiveFlagRepair:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         update_challenge(
             challenge.pk,
@@ -403,7 +396,6 @@ class TestLiveFlagRepair:
             category=ChallengeCategory.WEB.value,
             points=100,
             difficulty=ChallengeDifficulty.EASY.value,
-            flag_hash="placeholder",
         )
         flag_obj = add_flag(
             challenge.pk,

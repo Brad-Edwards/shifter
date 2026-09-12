@@ -16,6 +16,29 @@ from shared.messages.payloads import RangeStatusUpdatedPayload
 
 logger = logging.getLogger(__name__)
 
+#: Terminal range states that free a workspace concurrent-range quota reservation.
+#: DESTROYING and CMS soft delete do NOT release: provider resources may still be
+#: live until convergence (ADR-046-R10).
+_QUOTA_RELEASING_STATUSES = frozenset({ResourceStatus.DESTROYED.value, ResourceStatus.FAILED.value})
+
+
+def _release_concurrent_range_quota(instance: RangeInstance) -> None:
+    """Idempotently release the instance's concurrent-range reservation, if any.
+
+    A no-op for ranges with no workspace binding, no CMS request, or no matching
+    open reservation (legacy or non-workspace ranges), so redelivery of a terminal
+    status event and the ``reconcile_range_events`` backstop converge on exactly
+    one release.
+    """
+    from workspaces.services import release_workspace_concurrent_range
+
+    workspace_id = getattr(instance, "workspace_id", None)
+    request = getattr(instance, "request", None)
+    correlation_key = getattr(request, "request_id", None)
+    if workspace_id is None or correlation_key is None:
+        return
+    release_workspace_concurrent_range(workspace_id, correlation_key)
+
 
 def _lookup_range_instance(request_id, range_id, *, include_deleted=False):
     """Resolve a `RangeInstance` from request_id (new pattern) or range_id (legacy).
@@ -80,6 +103,10 @@ def apply_range_status(
     try:
         with transaction.atomic():
             instance.save(update_fields=save_fields)
+            if new_status in _QUOTA_RELEASING_STATUSES:
+                # Release inside the same atomic unit as the status write so a
+                # redelivered terminal event re-runs the whole convergent step.
+                _release_concurrent_range_quota(instance)
             notify_ctf_range_status(instance.pk, new_status, previous_status)
     except Exception:
         # Transient DB/broker failure on the save or a bridge effect. The

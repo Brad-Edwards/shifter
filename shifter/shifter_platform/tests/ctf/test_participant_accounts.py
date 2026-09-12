@@ -13,14 +13,16 @@ from django.test import RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 
+from ctf.enums import ParticipantStatus
 from ctf.exceptions import CTFValidationError
 from ctf.services.participant.accounts import (
     create_participant_accounts,
     purge_expired_participant_accounts,
     rename_participant_username,
 )
+from ctf.services.participant.bulk_import import bulk_import_participants
 from ctf.services.participant.credentials import reset_participant_credentials
-from ctf.services.participant.lifecycle import invite_participant
+from ctf.services.participant.lifecycle import add_participant
 from ctf.services.participant.moderation import disqualify_participant
 from management.services import get_user_profile
 
@@ -317,7 +319,7 @@ def test_single_invite_accepts_no_email_and_creates_isolated_account(ctf_event, 
         lambda *, user=None: "Generated-Invite-Password-42",
     )
 
-    participant = invite_participant(ctf_event.id, "", "Walk-in")
+    participant = add_participant(ctf_event.id, "", "Walk-in")
 
     assert participant.email == ""
     assert participant.user is not None
@@ -325,14 +327,71 @@ def test_single_invite_accepts_no_email_and_creates_isolated_account(ctf_event, 
     assert participant.user.check_password("Generated-Invite-Password-42")
 
 
+class TestImmediateSeatProvisioning:
+    """#535 / CTF-006: organizer creation provisions a registered seat with no transient INVITED hop."""
+
+    @staticmethod
+    def _stub_provisioning(monkeypatch):
+        monkeypatch.setattr(
+            "ctf.services.participant.accounts.request_event_provisioning",
+            lambda *_a, **_kw: None,
+        )
+
+    def test_single_add_lands_registered_with_account(self, ctf_event, monkeypatch):
+        """A single organizer add returns a registered participation with a linked isolated account."""
+        self._stub_provisioning(monkeypatch)
+
+        participant = add_participant(ctf_event.id, "solo@example.test", "Solo")
+
+        assert participant.status == ParticipantStatus.REGISTERED.value
+        assert participant.user is not None
+        assert participant.registered_at is not None
+        # Provisioned, not invited: login-info delivery does not happen at creation.
+        assert participant.login_info_sent_at is None
+
+    def test_bulk_import_lands_registered_with_accounts(self, ctf_event, monkeypatch):
+        """Every CSV-imported row is provisioned and registered, never left invited."""
+        self._stub_provisioning(monkeypatch)
+
+        result = bulk_import_participants(ctf_event.id, "Ann,ann@example.test\nBob,bob@example.test")
+
+        assert len(result["created"]) == 2
+        for participant in result["created"]:
+            assert participant.status == ParticipantStatus.REGISTERED.value
+            assert participant.user is not None
+            assert participant.registered_at is not None
+
+    def test_generated_seats_land_registered_with_accounts(self, ctf_event, monkeypatch):
+        """Count-provisioned seats are registered with isolated accounts."""
+        self._stub_provisioning(monkeypatch)
+
+        created = create_participant_accounts(ctf_event.id, count=3)
+
+        assert len(created) == 3
+        for participant in created:
+            assert participant.status == ParticipantStatus.REGISTERED.value
+            assert participant.user is not None
+
+    def test_every_organizer_path_lands_registered(self, ctf_event, monkeypatch):
+        """Every organizer creation path yields a registered participation and no other status."""
+        self._stub_provisioning(monkeypatch)
+
+        add_participant(ctf_event.id, "a@example.test", "A")
+        bulk_import_participants(ctf_event.id, "B,b@example.test")
+        create_participant_accounts(ctf_event.id, count=1)
+
+        statuses = set(ctf_event.participants.values_list("status", flat=True))
+        assert statuses == {ParticipantStatus.REGISTERED.value}
+
+
 def test_delivery_email_unique_per_event_not_global(ctf_event, ctf_event_active, monkeypatch):
     """CTF-601: one email per event; email still isn't a global identity key."""
     monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
 
-    first = invite_participant(ctf_event.id, "shared@example.test", "First")
+    first = add_participant(ctf_event.id, "shared@example.test", "First")
     with pytest.raises(CTFValidationError):
-        invite_participant(ctf_event.id, "shared@example.test", "Second")
-    other_event = invite_participant(ctf_event_active.id, "shared@example.test", "Elsewhere")
+        add_participant(ctf_event.id, "shared@example.test", "Second")
+    other_event = add_participant(ctf_event_active.id, "shared@example.test", "Elsewhere")
 
     assert first.user_id != other_event.user_id
 
@@ -431,40 +490,3 @@ def test_ctf_login_allows_event_users_behind_shared_source(client, settings):
 
     assert response.status_code == 429
     assert response["Retry-After"] == "300"
-
-
-def test_organizer_can_render_and_generate_participant_batch(
-    authenticated_organizer_client,
-    ctf_event,
-    monkeypatch,
-):
-    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-    url = reverse("ctf:admin_participant_batch", kwargs={"event_id": ctf_event.id})
-
-    get_response = authenticated_organizer_client.get(url)
-    post_response = authenticated_organizer_client.post(url, {"count": 2})
-
-    assert get_response.status_code == 200
-    assert post_response.status_code == 302
-    assert ctf_event.participants.filter(user__profile__is_ctf_account=True).count() == 2
-
-
-def test_organizer_can_rename_and_attach_delivery_email(authenticated_organizer_client, ctf_event, monkeypatch):
-    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
-    participant = create_participant_accounts(ctf_event.id, count=1)[0]
-
-    rename_response = authenticated_organizer_client.post(
-        reverse("ctf:admin_participant_rename", kwargs={"participant_id": participant.id}),
-        {"username": "range-renamed-seat"},
-    )
-    email_response = authenticated_organizer_client.post(
-        reverse("ctf:admin_participant_email", kwargs={"participant_id": participant.id}),
-        {"email": "Delivery@Example.test"},
-    )
-
-    participant.refresh_from_db()
-    participant.user.refresh_from_db()
-    assert rename_response.status_code == 302
-    assert email_response.status_code == 302
-    assert participant.user.username == "range-renamed-seat"
-    assert participant.email == "delivery@example.test"

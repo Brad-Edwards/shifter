@@ -16,6 +16,18 @@ securityContext:
     type: {{ .Values.security.pod.seccompProfile }}
 {{- end }}
 
+{{- define "shifter.accessNodePlacement" -}}
+{{- if .Values.capabilities.gcpAccessNodePool }}
+nodeSelector:
+  node-restriction.kubernetes.io/shifter-pool: access
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: access
+    effect: NoSchedule
+{{- end }}
+{{- end }}
+
 {{- define "shifter.podAntiAffinity" -}}
 affinity:
   podAntiAffinity:

@@ -14,9 +14,7 @@ from django.contrib.auth import get_user_model
 from django.db.models.base import ModelState
 from django.utils import timezone
 
-import cms.scenarios.hydrator as _hydrator
-from cms.models import AgentConfig, Credential, CredentialType, OperatingSystem, Scenario
-from cms.scenarios.registry import load_scenario_template as _GENUINE_LOAD_SCENARIO
+from cms.models import AgentConfig, Credential, CredentialType, OperatingSystem, RaesPackageSource
 
 User = get_user_model()
 
@@ -24,32 +22,6 @@ User = get_user_model()
 # -----------------------------------------------------------------------------
 # Behavior-test fixtures: real scenario hydration against the test DB
 # -----------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _restore_real_scenario_loader():
-    """Guard the scenario loader binding against cross-suite mock leakage.
-
-    Legacy mock-coupled cms suites patch ``cms.scenarios.hydrator.load_scenario``.
-    Under pytest-xdist that patched binding can leak into a worker that later
-    runs the behavior tests, which drive real scenario hydration. Rebind it to
-    the genuine loader (captured at import, before any patch is active) so each
-    test starts from real state.
-    """
-    _hydrator.load_scenario = _GENUINE_LOAD_SCENARIO
-    yield
-
-
-# A scenario whose victim resolves to a Windows agent (xdr_agent=True), so
-# create_range hydrates cleanly with a single Windows AgentConfig and no cloud.
-HYDRATABLE_DEFINITION: dict[str, Any] = {
-    "instances": [
-        {"name": "Attacker", "role": "attacker", "os_type": "kali", "xdr_agent": False},
-        {"name": "Target", "role": "victim", "os_type": "windows", "xdr_agent": True},
-    ],
-    "subnets": [{"name": "core", "instances": ["Attacker", "Target"]}],
-    "ngfw": False,
-}
 
 
 @pytest.fixture
@@ -81,20 +53,37 @@ def make_agent(db, windows_os) -> Callable[..., AgentConfig]:
 
 
 @pytest.fixture
-def hydratable_scenario(db) -> Scenario:
-    """A DB custom scenario that hydrates with a single Windows agent."""
+def hydratable_scenario(db, monkeypatch) -> RaesPackageSource:
+    """A conformance-passed RAES source with dispatch held at the cloud seam."""
     staff = User.objects.create_user(
         username="cms-scenario-author@example.com",
         email="cms-scenario-author@example.com",
         is_staff=True,
     )
-    return Scenario.objects.create(
+    monkeypatch.setattr("engine.services._raes_range.start_raes_range_provisioning", lambda *_a, **_kw: None)
+
+    def dispatch(request_id, user, _source, backend_admission, workspace_id, egress_mode):
+        from engine.services import create_raes_range
+
+        create_raes_range(
+            request_id=request_id,
+            user_id=user.id,
+            compiled_plan={"kind": "raes_provisioning_plan", "raes_version": "2.0", "resources": {}},
+            backend_admission=backend_admission,
+            workspace_id=workspace_id,
+            egress_mode=egress_mode,
+        )
+
+    monkeypatch.setattr("cms.services._raes_range_create._dispatch_raes_package", dispatch)
+    return RaesPackageSource.objects.create(
         scenario_id="cms-behavior-test",
-        name="CMS Behavior Test Range",
-        description="Hydratable scenario for cms behavior tests.",
-        definition=HYDRATABLE_DEFINITION,
-        created_by=staff,
-        updated_by=staff,
+        contract_kind="raes",
+        contract_profile="shifter",
+        package_ref="tests/packs/cms-behavior-test",
+        package_version="1.0.0",
+        package_digest="sha256:" + "a" * 64,
+        conformance_status="passed",
+        registered_by=staff,
     )
 
 

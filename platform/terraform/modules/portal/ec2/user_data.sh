@@ -279,18 +279,6 @@ validate_ctf_content_location() {
   fi
 }
 
-# validate_slug_pairs accepts empty (the preserved-legacy posture) or a
-# comma-separated list of public=source slug pairs, matching the Django settings
-# parser. It rejects anything that could inject into the docker -e argument.
-validate_slug_pairs() {
-  local name="$1"
-  local value="$2"
-  if [[ -n "$value" && ! "$value" =~ ^[A-Za-z0-9_-]+=[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+=[A-Za-z0-9_-]+)*$ ]]; then
-    echo "Invalid $name: expected comma-separated public=source slug pairs"
-    exit 1
-  fi
-}
-
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -378,16 +366,6 @@ PORTAL_CAPACITY_METRICS_ENABLED=$(get_param "$PS_PREFIX/portal-capacity-metrics-
 PORTAL_WORKER_SOFT_CONCURRENCY=$(get_param "$PS_PREFIX/portal-worker-soft-concurrency" 2>/dev/null || echo "")
 validate_bool "PORTAL_CAPACITY_METRICS_ENABLED" "$PORTAL_CAPACITY_METRICS_ENABLED"
 validate_positive_int "PORTAL_WORKER_SOFT_CONCURRENCY" "$PORTAL_WORKER_SOFT_CONCURRENCY"
-
-# RAES default cutover (#1310, ADR-031-R6): capability gate + source-route
-# selector, non-secret, delivered fleet-uniform into COMMON_ENV so every
-# container sees one value. The native flag defaults to false when absent; the
-# route param is absent in the preserved-legacy posture and resolves to "" here.
-# Validated (same boolean/slug-pair grammar as the app) before the docker argv.
-SHIFTER_RAES_NATIVE_PROVISIONING=$(get_param "$PS_PREFIX/shifter-raes-native-provisioning" 2>/dev/null || echo "false")
-SHIFTER_RAES_CATALOG_CUTOVERS=$(get_param "$PS_PREFIX/shifter-raes-catalog-cutovers" 2>/dev/null || echo "")
-validate_bool "SHIFTER_RAES_NATIVE_PROVISIONING" "$SHIFTER_RAES_NATIVE_PROVISIONING"
-validate_slug_pairs "SHIFTER_RAES_CATALOG_CUTOVERS" "$SHIFTER_RAES_CATALOG_CUTOVERS"
 
 IMAGE=$(image_ref "$ECR_REGISTRY" "$ECR_REPOSITORY" "$IMAGE_DIGEST" "$IMAGE_TAG")
 echo "Deploying image: $IMAGE"
@@ -495,12 +473,6 @@ fi
 if [[ -n "$TERMINAL_MAX_SESSIONS_PER_USER" ]]; then
   COMMON_ENV="$COMMON_ENV -e TERMINAL_MAX_SESSIONS_PER_USER=$TERMINAL_MAX_SESSIONS_PER_USER"
 fi
-if [[ -n "$SHIFTER_RAES_NATIVE_PROVISIONING" ]]; then
-  COMMON_ENV="$COMMON_ENV -e SHIFTER_RAES_NATIVE_PROVISIONING=$SHIFTER_RAES_NATIVE_PROVISIONING"
-fi
-if [[ -n "$SHIFTER_RAES_CATALOG_CUTOVERS" ]]; then
-  COMMON_ENV="$COMMON_ENV -e SHIFTER_RAES_CATALOG_CUTOVERS=$SHIFTER_RAES_CATALOG_CUTOVERS"
-fi
 if [[ -n "$TERMINAL_IDLE_TIMEOUT_SECONDS" ]]; then
   COMMON_ENV="$COMMON_ENV -e TERMINAL_IDLE_TIMEOUT_SECONDS=$TERMINAL_IDLE_TIMEOUT_SECONDS"
 fi
@@ -548,10 +520,10 @@ echo "Stopping existing containers..."
 # Docker stop timeout exceeds the Gunicorn graceful-timeout (30s) so long-lived
 # terminal/WebSocket connections drain before SIGKILL (issue #931). Sized below
 # the ASG termination drain window.
-docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
+docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler ctf-communication-worker guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
 # Force-remove so a redeploy is idempotent (matches scripts/portal-deploy/deploy_portal.sh,
 # #1127); the docker stop above already does the graceful drain (#931).
-docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
+docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler worker-provisioner-launcher worker-operation-result-applier ctf-scheduler ctf-communication-worker guacamole-bootstrap-prune raes-operation-record-prune 2>/dev/null || true
 
 echo "Starting portal..."
 eval docker run -d --name portal --restart unless-stopped -p 8000:8000 $COMMON_ENV "$IMAGE"
@@ -562,6 +534,7 @@ WORKER_CMS_HEALTH="--health-cmd='find /tmp/worker-cms-heartbeat -mmin -2 | grep 
 WORKER_ENGINE_HEALTH="--health-cmd='find /tmp/worker-engine-heartbeat -mmin -2 | grep -q .'"
 WORKER_MC_HEALTH="--health-cmd='find /tmp/worker-mc-heartbeat -mmin -2 | grep -q .'"
 CTF_SCHEDULER_HEALTH="--health-cmd='find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q .'"
+CTF_COMMUNICATION_WORKER_HEALTH="--health-cmd='find /tmp/ctf-communication-worker-heartbeat -mmin -2 | grep -q .'"
 GUAC_PRUNE_HEALTH="--health-cmd='find /tmp/guacamole-bootstrap-prune-heartbeat -mmin -2 | grep -q .'"
 RAES_PRUNE_HEALTH="--health-cmd='find /tmp/raes-operation-record-prune-heartbeat -mmin -2 | grep -q .'"
 OUTBOX_DRAINER_HEALTH="--health-cmd='find /tmp/worker-outbox-drainer-heartbeat -mmin -2 | grep -q .'"
@@ -576,6 +549,7 @@ eval docker run -d --name worker-reconciler --restart unless-stopped $WORKER_HEA
 eval docker run -d --name worker-provisioner-launcher --restart unless-stopped $WORKER_HEALTH_BASE "$PROVISIONER_LAUNCHER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py drain_provisioner_launch_outbox --loop --interval 10
 eval docker run -d --name worker-operation-result-applier --restart unless-stopped $WORKER_HEALTH_BASE "$OP_RESULT_APPLIER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py apply_operation_results --loop --interval 10
 eval docker run -d --name ctf-scheduler --restart unless-stopped $WORKER_HEALTH_BASE "$CTF_SCHEDULER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_ctf_scheduler
+eval docker run -d --name ctf-communication-worker --restart unless-stopped $WORKER_HEALTH_BASE "$CTF_COMMUNICATION_WORKER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py drain_ctf_communication_deliveries --loop --interval 10
 eval docker run -d --name guacamole-bootstrap-prune --restart unless-stopped $WORKER_HEALTH_BASE "$GUAC_PRUNE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_guacamole_bootstrap_prune
 eval docker run -d --name raes-operation-record-prune --restart unless-stopped $WORKER_HEALTH_BASE "$RAES_PRUNE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_raes_operation_record_prune
 

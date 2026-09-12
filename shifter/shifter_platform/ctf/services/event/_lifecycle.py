@@ -304,6 +304,11 @@ def pause_event(event: CTFEvent) -> bool:
 def resume_event(event: CTFEvent) -> bool:
     """Resume a paused event (transition back to active).
 
+    Every path back to ACTIVE must re-enforce managed-content hydration
+    readiness under the event lock (issue #1971): resuming is an activation and
+    a paused event whose configured content has drifted or been revised must not
+    silently score against stale flags. Restore/refresh the content first.
+
     Args:
         event: The CTFEvent to resume.
 
@@ -312,15 +317,25 @@ def resume_event(event: CTFEvent) -> bool:
     """
     logger.info("Resuming CTF event %s", event.id)
 
-    try:
-        _transition_event(event, EventStatus.ACTIVE)
-    except CTFStateError:
-        logger.warning(
-            "Cannot resume event %s: not in paused state (current: %s)",
-            event.id,
-            event.status,
-        )
-        return False
+    from ctf.models import CTFEvent
+    from ctf.services.content_hydration import assert_event_content_hydration_ready
+
+    with transaction.atomic():
+        locked_event = CTFEvent.objects.select_for_update().get(pk=event.pk)
+        if locked_event.status != EventStatus.PAUSED.value:
+            logger.warning(
+                "Cannot resume event %s: not in paused state (current: %s)",
+                locked_event.id,
+                locked_event.status,
+            )
+            return False
+
+        try:
+            assert_event_content_hydration_ready(locked_event)
+            _transition_event(locked_event, EventStatus.ACTIVE)
+        except CTFStateError:
+            return False
+        event.status = locked_event.status
 
     logger.info("Resumed CTF event %s", event.id)
     return True
@@ -382,3 +397,47 @@ def _transition_event(event: CTFEvent, target: EventStatus) -> None:
 
     event.status = target.value
     event.save(update_fields=["status", "updated_at"])
+
+
+# Interactive organizer lifecycle actions -> transition functions. The
+# background scheduler reaches the transition functions directly as a trusted
+# system actor; the organizer endpoint routes through
+# ``apply_event_lifecycle_transition`` so the event policy is asserted at the
+# service boundary too (#1922 review).
+_INTERACTIVE_LIFECYCLE_ACTIONS = {
+    "open_registration": open_registration,
+    "activate": activate_event,
+    "pause": pause_event,
+    "resume": resume_event,
+    "end": complete_event,
+    "cancel": cancel_event,
+}
+
+
+def apply_event_lifecycle_transition(event: CTFEvent, action: str, *, actor_id: int | None = None) -> bool:
+    """Apply one interactive lifecycle transition, asserting the ``lifecycle`` capability.
+
+    Args:
+        event: The event to transition.
+        action: One of the interactive lifecycle action names.
+        actor_id: Interactive caller; when supplied the ``lifecycle`` capability
+            is asserted at the service boundary (defense in depth, #1922).
+
+    Returns:
+        True if the transition succeeded, False if refused by the state machine.
+
+    Raises:
+        CTFValidationError: If ``action`` is not a known interactive action.
+        CTFPermissionError: If ``actor_id`` lacks the ``lifecycle`` capability.
+    """
+    from ctf.exceptions import CTFValidationError
+
+    if actor_id is not None:
+        from ctf.enums import EventCapability
+        from ctf.services.authorization import assert_event_capability
+
+        assert_event_capability(actor_id, event, EventCapability.LIFECYCLE)
+    transition = _INTERACTIVE_LIFECYCLE_ACTIONS.get(action)
+    if transition is None:
+        raise CTFValidationError("Unknown lifecycle action", details={"action": action})
+    return transition(event)

@@ -18,7 +18,8 @@ from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
-    from django.contrib.auth.models import User
+    from django.contrib.auth.base_user import AbstractBaseUser
+    from django.contrib.auth.models import AnonymousUser, User
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ def is_ctf_participant_only(user) -> bool:
     """
     # The immutable account-origin marker is deny-authoritative: privilege
     # drift must never make a temporary account appear to be a platform user.
-    if getattr(getattr(user, "profile", None), "is_ctf_account", False) is True:
+    if is_temporary_ctf_account(user):
         return True
     if not user.is_active:
         return False
@@ -94,6 +95,11 @@ def is_ctf_participant_only(user) -> bool:
     if not has_ctf_role:
         return False
     return THREAT_RESEARCH_GROUP not in user_groups
+
+
+def is_temporary_ctf_account(user: AbstractBaseUser | AnonymousUser) -> bool:
+    """Return whether the immutable account-origin marker denotes a temporary CTF account."""
+    return getattr(getattr(user, "profile", None), "is_ctf_account", False) is True
 
 
 def can_edit_cms_authoring(user) -> bool:

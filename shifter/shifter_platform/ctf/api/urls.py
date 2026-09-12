@@ -42,6 +42,11 @@ urlpatterns = [
         organizer.ForceDeleteEventView.as_view(),
         name="api_force_delete_event",
     ),
+    path(
+        "events/<uuid:event_id>/content/refresh/",
+        organizer.EventContentRefreshView.as_view(),
+        name="api_event_content_refresh",
+    ),
     path("scenarios/", organizer.ScenarioListView.as_view(), name="api_scenarios"),
     path(
         "events/<uuid:event_id>/challenges/",
@@ -94,7 +99,7 @@ urlpatterns = [
     ),
     path(
         "participants/<uuid:participant_id>/resend-invite/",
-        organizer.ParticipantResendInviteView.as_view(),
+        organizer.ParticipantResendLoginInfoView.as_view(),
         name="api_participant_resend_invite",
     ),
     path(
@@ -207,6 +212,11 @@ urlpatterns = [
         organizer.EventStaffMemberView.as_view(),
         name="api_event_staff_member",
     ),
+    path(
+        "events/<uuid:event_id>/transfer-ownership/",
+        organizer.EventOwnershipTransferView.as_view(),
+        name="api_event_transfer_ownership",
+    ),
     path("range/status/", organizer.ParticipantRangeStatusView.as_view(), name="api_range_status"),
     path("range/access/", organizer.ParticipantRangeAccessView.as_view(), name="api_range_access"),
     path(
@@ -293,7 +303,7 @@ urlpatterns = [
     ),
     path(
         "events/<uuid:event_id>/invitations/send/",
-        organizer.SendInvitationsView.as_view(),
+        organizer.SendLoginInfoView.as_view(),
         name="api_send_invitations",
     ),
     path(

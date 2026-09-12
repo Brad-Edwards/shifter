@@ -28,9 +28,9 @@ from .credentials import (
     reset_participant_password,
 )
 from .lifecycle import (
+    add_participant,
     delete_participant,
-    invite_participant,
-    resend_invite,
+    resend_login_info,
 )
 from .moderation import (
     ban_participant,
@@ -56,6 +56,7 @@ from .queries import (
 
 __all__ = [
     "ParticipantPasswordIssuance",
+    "add_participant",
     "assert_participant_can_compete",
     "authenticate_ctf_participant",
     "ban_participant",
@@ -67,7 +68,6 @@ __all__ = [
     "get_participant",
     "get_participant_by_user",
     "get_viewing_participant_by_user",
-    "invite_participant",
     "is_active_participant",
     "is_viewing_participant",
     "list_participants_for_event",
@@ -75,7 +75,7 @@ __all__ = [
     "rename_own_participant_username",
     "rename_participant_username",
     "requalify_participant",
-    "resend_invite",
+    "resend_login_info",
     "reset_participant_credentials",
     "reset_participant_password",
     "set_participant_hidden",

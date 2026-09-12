@@ -23,6 +23,7 @@ class AuditAction(models.TextChoices):
     CREATE = "create", "Create"
     UPDATE = "update", "Update"
     DELETE = "delete", "Delete"
+    ARCHIVE = "archive", "Archive"
     RESTORE = "restore", "Restore"
     CLOSE = "close", "Close"
     REOPEN = "reopen", "Reopen"
@@ -48,6 +49,15 @@ class AuditAction(models.TextChoices):
     RECOVER = "recover", "Recover"
     SPARE_PROVISION = "spare_provision", "Spare Provision"
     CAPACITY_ASSESS = "capacity_assess", "Capacity Assess"
+    # Tenant quota enforcement (PLAT-239)
+    QUOTA_APPLIED = "quota_applied", "Quota Applied"
+    # Warm pool (#28): closed vocabulary for pool lifecycle and claim events so
+    # pool operations, claims, fallbacks, and cleanup are audited and observable.
+    WARM_PREPARE = "warm_prepare", "Warm Prepare"
+    WARM_CLAIM = "warm_claim", "Warm Claim"
+    WARM_FALLBACK = "warm_fallback", "Warm Fallback"
+    WARM_ACTIVATE = "warm_activate", "Warm Activate"
+    WARM_RETIRE = "warm_retire", "Warm Retire"
 
 
 class AuditEntityType(models.TextChoices):
@@ -66,6 +76,11 @@ class AuditEntityType(models.TextChoices):
     SCENARIO = "scenario", "Scenario"
     SCRIPT = "script", "Script"
     WORKSPACE_MEMBERSHIP = "workspace_membership", "Workspace Membership"
+    WORKSPACE_INVITATION = "workspace_invitation", "Workspace Invitation"
+    WORKSPACE = "workspace", "Workspace"
+    ORGANIZATION = "organization", "Organization"
+    # ADR-051, #2048: scoped CTF communications (campaigns, intents, deliveries).
+    COMMUNICATION = "communication", "Communication"
 
 
 class AuditActorType(models.TextChoices):

@@ -19,6 +19,9 @@ Submodule layout:
 * ``rating``       — ``CTFChallengeRating``.
 * ``hint``         — ``CTFHint``, ``CTFHintUsage``.
 * ``notification`` — ``CTFNotification``, ``CTFEmailTemplate``, ``CTFScheduledTask``.
+* ``communication``— ``CommunicationCampaign``, ``CommunicationTargetEvent``,
+  ``MessageRevision``, ``CommunicationIntent``, ``RecipientSnapshot``,
+  ``DeliveryAttempt``, ``ParticipantReceipt`` (ADR-051, #2048).
 * ``recovery``     — ``CTFRangeRecovery``.
 * ``spare_range``  — ``CTFSpareRange``.
 """
@@ -34,8 +37,18 @@ from django.utils import timezone
 
 from ._base import CTFBaseModel, SoftDeleteManager
 from .challenge import CTFChallenge
+from .communication import (
+    CommunicationCampaign,
+    CommunicationIntent,
+    CommunicationTargetEvent,
+    DeliveryAttempt,
+    MessageRevision,
+    ParticipantReceipt,
+    RecipientSnapshot,
+)
 from .content_hydration import CTFContentHydrationReceipt
-from .event import CTFEvent, CTFEventPage, CTFEventStaff
+from .event import CTFEvent, CTFEventStaff
+from .event_page import CTFEventPage
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
 from .notification import CTFEmailTemplate, CTFNotification, CTFScheduledTask, CTFWebhook
@@ -77,6 +90,13 @@ __all__ = [
     "CTFTeam",
     "CTFTopic",
     "CTFWebhook",
+    "CommunicationCampaign",
+    "CommunicationIntent",
+    "CommunicationTargetEvent",
+    "DeliveryAttempt",
+    "MessageRevision",
+    "ParticipantReceipt",
+    "RecipientSnapshot",
     "SoftDeleteManager",
     "timezone",
 ]

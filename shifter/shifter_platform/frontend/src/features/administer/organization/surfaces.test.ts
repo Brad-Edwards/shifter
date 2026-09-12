@@ -44,15 +44,29 @@ describe("resolveSelectedWorkspace", () => {
 
 describe("surfaceEnabled", () => {
   const membership = WORKSPACE_SURFACES.find((s) => s.key === "membership")!;
+  const invitations = WORKSPACE_SURFACES.find((s) => s.key === "invitations")!;
 
   it("enables an ungated surface regardless of capabilities", () => {
-    const invitations = WORKSPACE_SURFACES.find((s) => s.key === "invitations")!;
-    expect(surfaceEnabled(invitations, ctx({ capabilities: [] }))).toBe(true);
+    const users = WORKSPACE_SURFACES.find((s) => s.key === "users")!;
+    expect(surfaceEnabled(users, ctx({ capabilities: [] }))).toBe(true);
   });
 
-  it("gates a capability-bound surface on the advertised operation", () => {
+  it("gates a capability-bound surface on any advertised operation", () => {
+    // Roster access (owner/admin) enables it.
     expect(surfaceEnabled(membership, ctx({ capabilities: ["read_members"] }))).toBe(true);
+    // Self-service leave (every member) also enables it — a member lacks read_members.
+    expect(surfaceEnabled(membership, ctx({ capabilities: ["read_self_membership", "leave_workspace"] }))).toBe(true);
+    // Neither the roster nor the self-service capability → disabled.
     expect(surfaceEnabled(membership, ctx({ capabilities: ["read_self_membership"] }))).toBe(false);
     expect(surfaceEnabled(membership, null)).toBe(false);
+    expect(surfaceEnabled(invitations, ctx({ capabilities: ["read_invitations"] }))).toBe(true);
+    expect(surfaceEnabled(invitations, ctx({ capabilities: ["read_members"] }))).toBe(false);
+  });
+
+  it("gates range scoping on the owner/admin scope-admin capability", () => {
+    const rangeScoping = WORKSPACE_SURFACES.find((s) => s.key === "range-scoping")!;
+    expect(surfaceEnabled(rangeScoping, ctx({ capabilities: ["list_range_scope_bindings"] }))).toBe(true);
+    expect(surfaceEnabled(rangeScoping, ctx({ capabilities: ["read_members"] }))).toBe(false);
+    expect(surfaceEnabled(rangeScoping, null)).toBe(false);
   });
 });

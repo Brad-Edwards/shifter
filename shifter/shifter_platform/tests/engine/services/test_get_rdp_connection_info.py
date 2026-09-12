@@ -66,6 +66,44 @@ class TestGetRdpConnectionInfo:
         assert result["rdp_username"] == expected_username
         assert result["rdp_password"] == "UniquePerInstanceP4ss!"
 
+    def test_returns_realized_sftp_root_directory(self, settings, user):
+        from engine.services import get_rdp_connection_info
+
+        settings.CLOUD_PROVIDER = "aws"
+        instance = {
+            "uuid": "with-root",
+            "role": "victim",
+            "os_type": "kali",
+            "cloud_provider": "aws",
+            "private_ip": "10.0.0.10",
+            "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:1:secret:shifter/dev/range/1/victim-rdp",
+            "sftp_root_directory": "/home/kali",
+        }
+        _active_range(user, instance)
+        with boto3_secrets(make_secrets_client(value="P4ss!")):
+            result = get_rdp_connection_info(user, instance["uuid"])
+
+        assert result["sftp_root_directory"] == "/home/kali"
+
+    def test_returns_none_sftp_root_when_not_realized(self, settings, user):
+        """A realized instance with no root fails closed to None, never an os_type guess (#375)."""
+        from engine.services import get_rdp_connection_info
+
+        settings.CLOUD_PROVIDER = "aws"
+        instance = {
+            "uuid": "no-root",
+            "role": "victim",
+            "os_type": "kali",
+            "cloud_provider": "aws",
+            "private_ip": "10.0.0.10",
+            "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:1:secret:shifter/dev/range/1/victim-rdp",
+        }
+        _active_range(user, instance)
+        with boto3_secrets(make_secrets_client(value="P4ss!")):
+            result = get_rdp_connection_info(user, instance["uuid"])
+
+        assert result["sftp_root_directory"] is None
+
     def test_non_dc_reads_secret_ref_from_provider_metadata(self, settings, user):
         from engine.services import get_rdp_connection_info
 

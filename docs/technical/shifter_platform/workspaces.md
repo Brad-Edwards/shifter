@@ -25,9 +25,10 @@ network boundary.
 
 | Model | Purpose |
 |-------|---------|
-| `Organization` | Tenancy grouping that owns workspaces |
+| `Organization` | Tenancy grouping that owns workspaces; carries the editable profile (`name`, `description`, `support_email`, `support_url`) |
 | `Workspace` | Scope that holds members and owns range scope; belongs to exactly one organization |
 | `WorkspaceMembership` | One user's role in one workspace |
+| `OrganizationMembership` | One user's organization-level role (ADR-048); the persisted organization authority seam |
 
 Invariants enforced in the database:
 
@@ -35,7 +36,9 @@ Invariants enforced in the database:
 - a workspace name is unique within its organization;
 - a user has at most one membership per workspace;
 - membership role is one of `owner`, `admin`, or `member`;
-- a user has at most one *personal* workspace (`personal_for_user` is unique).
+- a user has at most one *personal* workspace (`personal_for_user` is unique);
+- a user has at most one organization membership per organization, and its role
+  is the closed `OrganizationRole` vocabulary (initially `admin`).
 
 Both `Organization` and `Workspace` carry an internal integer primary key and an
 immutable public `uuid`. Internal orchestration and the integer
@@ -63,6 +66,8 @@ import `workspaces.models`, and they must not hold a ForeignKey to a workspace
 | `change_workspace_member_role(...)` | Change a role under the owner boundary |
 | `remove_workspace_member(...)` | Remove another member while retaining an owner |
 | `leave_workspace(...)` | Remove the actor's own non-personal membership |
+| `get_organization_profile(actor, organization_uuid)` | Return the organization profile projection, authorized by org-admin membership or superuser (ADR-048) |
+| `update_organization_profile(actor, organization_uuid, changes, *, audit)` | Atomically apply a partial profile update under the same authority, strict-audited |
 
 Authorization functions return a frozen `WorkspaceAuthorization` (workspace
 ID, public UUID, organization ID, role) and never an ORM instance. Membership
@@ -90,9 +95,18 @@ act on their own workspace-bound resources, subject to the existing range
 owner, source, lifecycle, CTF, and remote-access checks. Owners and admins can
 manage the roster, but only owners can grant or revoke ownership.
 
-This iteration has no `OrganizationMembership`, organization-wide role, or
-`org_admin` override. Organization-level authority needs a separate accepted
-model instead of being copied onto workspace membership rows.
+Organization-level authority is a **separate** accepted model (ADR-048), not a
+workspace role. `OrganizationMembership` holds an org-scoped `admin` role and is
+the only source of organization authority; it is never derived from a workspace
+role, Django staff/groups or model permissions, provider claims, API-token
+scopes, or cloud roles (ADR-046-R8/R12). A Django `is_superuser` is the sole
+platform-operator override—able to read/update any organization, audited
+distinctly—while `is_staff` alone grants nothing. Each personal organization
+seeds its personal-workspace owner as its bootstrap admin (at
+`resolve_personal_workspace` creation and by the #1939 backfill), after which
+authority is read from the persisted membership. See
+[`org-workspace-admin-console.md`](./org-workspace-admin-console.md) for the
+organization profile API and settings surface.
 
 The DRF routes are mounted below `/api/v1/workspaces/{workspace_uuid}/`. Reads
 require the exact `workspaces:membership:read` API-token scope and changes

@@ -9,16 +9,14 @@ domain validation (provider, natural key, disk size, soft disable) stays in the
 service. The provisioner resolves these rows read-only at realization and is not
 touched here (CQRS: the platform writes, the provisioner reads).
 
-The whole surface is inert unless ``SHIFTER_RAES_NATIVE_PROVISIONING`` is on:
-every endpoint 404s with the flag off, so registry management ships behind the
-same gate as native provisioning and never becomes a separate launch toggle.
+The surface is always available to authorized CMS readers/authors because RAES
+is the platform's only provisioning authority.
 """
 
 from __future__ import annotations
 
 import logging
 
-from django.conf import settings
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.permissions import BasePermission
@@ -38,8 +36,6 @@ from shared.api.errors import api_error_response
 from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
-
-_UNAVAILABLE = "RAES image registry management is not available"
 
 
 class RaesImageMappingViewSerializer(serializers.Serializer):
@@ -112,21 +108,6 @@ class RaesImageMappingListQuerySerializer(serializers.Serializer):
     include_disabled = serializers.BooleanField(required=False, default=True)
 
 
-def _unavailable(request: Request) -> Response:
-    """Return the shared 404 envelope when native provisioning is disabled."""
-    return api_error_response(
-        code="not_found",
-        message=_UNAVAILABLE,
-        status_code=status.HTTP_404_NOT_FOUND,
-        request=request,
-    )
-
-
-def _native_provisioning_enabled() -> bool:
-    """Return whether the RAES native-provisioning gate is on for this tenant."""
-    return bool(getattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", False))
-
-
 def _domain_error(request: Request, exc: RaesImageMappingError) -> Response:
     """Render an RAES registry domain-validation error as the shared 400 envelope."""
     return api_error_response(
@@ -154,8 +135,6 @@ class RaesImageMappingListCreateView(APIView):
     )
     def get(self, request: Request) -> Response:
         """Return registry rows as allowlisted DTOs (disabled rows included by default)."""
-        if not _native_provisioning_enabled():
-            return _unavailable(request)
         query = RaesImageMappingListQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         try:
@@ -170,8 +149,6 @@ class RaesImageMappingListCreateView(APIView):
     @extend_schema(request=RaesImageMappingRegisterSerializer, responses=RaesImageMappingViewSerializer)
     def post(self, request: Request) -> Response:
         """Register (create or update) a mapping through the single validated write path."""
-        if not _native_provisioning_enabled():
-            return _unavailable(request)
         body = RaesImageMappingRegisterSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         data = body.validated_data
@@ -214,8 +191,6 @@ class RaesImageMappingDisableView(APIView):
     @extend_schema(request=RaesImageMappingDisableSerializer, responses=RaesImageMappingViewSerializer)
     def post(self, request: Request) -> Response:
         """Disable an existing mapping without deleting it (preserves audit)."""
-        if not _native_provisioning_enabled():
-            return _unavailable(request)
         body = RaesImageMappingDisableSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         data = body.validated_data

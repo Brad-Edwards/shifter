@@ -1,9 +1,7 @@
 """Workspace scope resolution for the CMS launch boundary (#1325, ADR-046-R3).
 
-One place decides which workspace a launch belongs to. Both launch paths -- the
-cyberscript ``create_range`` and the RAES-native ``create_raes_native_range`` --
-call this, so scope is never resolved in a view, a serializer, or the
-provisioner.
+One place decides which workspace a launch belongs to. The RAES launch boundary
+calls this so scope is never resolved in a view, serializer, or provisioner.
 """
 
 from __future__ import annotations
@@ -45,8 +43,7 @@ def resolve_launch_workspace(user: User, workspace_uuid: str | uuid.UUID | None 
     ``workspace_id`` is only ever produced by the workspaces service, so an HTTP
     caller cannot select a workspace it may not see (ADR-046-R9).
 
-    Both launch families (cyberscript ``create_range`` and RAES-native
-    ``create_raes_native_range``) call this, so scope is never resolved in a view,
+    The RAES launch boundary calls this, so scope is never resolved in a view,
     serializer, provisioner, or CTF bridge. The returned scalar is reauthorized
     under the workspace mutex at reservation time by
     :func:`reauthorize_launch_workspace_locked`.
@@ -87,18 +84,66 @@ def reauthorize_launch_workspace_locked(user: User, workspace_id: int) -> None:
         raise WorkspaceLaunchDenied(_LAUNCH_SCOPE_DENIED) from exc
 
 
+def resolve_effective_egress_mode(workspace_id: int) -> str:
+    """Resolve the effective range egress mode for a launch scope (PLAT-238, ADR-017-R5).
+
+    Combines the workspace's stored selector with the deployment baseline into one
+    closed :class:`~installation.range_egress.RangeEgressMode` value to pin on the
+    Engine range:
+
+    * A workspace selecting ``none`` is an explicit zero-egress override -> ``none``.
+    * A workspace selecting ``status-quo`` inherits the deployment baseline; the
+      provider realizes the baseline exactly as it does today. (The concrete
+      baseline mode is bound into CMS by the configuration layer; until then
+      ``status-quo`` is carried through verbatim and the provider applies the
+      deployment baseline, so a deployment-wide ``none`` still reaches a
+      ``status-quo`` workspace's ranges.)
+
+    An empty allowlist, a false feature flag, or a missing provider resource is
+    never interpreted as zero egress (preflight gotcha): only an explicit ``none``
+    selection resolves to ``none`` here.
+    """
+    from installation.range_egress import RangeEgressMode
+
+    from workspaces.services import workspace_egress_policy
+
+    selector = workspace_egress_policy(workspace_id)
+    if selector == RangeEgressMode.NONE.value:
+        return RangeEgressMode.NONE.value
+    return RangeEgressMode.STATUS_QUO.value
+
+
 @dataclass(frozen=True, slots=True)
 class WorkspaceLaunchAdmission:
     """The bounded verdict returned by the one workspace launch-admission seam.
 
     Scalars only. ``correlation_key`` is the stable per-launch request/draw key a
     future durable per-workspace quota would key its idempotent reservation on;
-    the initial policy carries it without consuming it.
+    the initial policy carries it without consuming it. ``effective_egress_mode``
+    is the preliminary workspace egress decision (PLAT-238); the authoritative
+    value is re-resolved under the workspace mutex in
+    :func:`resolve_effective_egress_mode_locked` at reservation time, because the
+    pre-reservation admission read is racy (a concurrent policy change could land
+    between admission and reservation).
     """
 
     workspace_id: int
     correlation_key: str
+    effective_egress_mode: str
     admitted: bool = True
+
+
+def resolve_effective_egress_mode_locked(workspace_id: int) -> str:
+    """Authoritatively resolve the effective egress mode under the workspace mutex.
+
+    Called inside the atomic CMS reservation while the workspace row lock is held
+    (alongside :func:`reauthorize_launch_workspace_locked`), so the pinned decision
+    reflects the policy as of the reservation, not a stale pre-reservation read. The
+    resolution logic is identical to :func:`resolve_effective_egress_mode`; the
+    distinction is purely that this call happens under the lock and its result is
+    the value pinned on the Engine range and delivered to the provisioner.
+    """
+    return resolve_effective_egress_mode(workspace_id)
 
 
 def admit_workspace_launch(
@@ -135,6 +180,7 @@ def admit_workspace_launch(
     return WorkspaceLaunchAdmission(
         workspace_id=workspace_id,
         correlation_key=str(correlation_key),
+        effective_egress_mode=resolve_effective_egress_mode(workspace_id),
         admitted=True,
     )
 

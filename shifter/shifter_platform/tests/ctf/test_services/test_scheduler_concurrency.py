@@ -28,7 +28,7 @@ def _make_unregistered_participant(event, idx):
         user=None,
         email=f"sched-hb-{idx}@test.com",
         name=f"Heartbeat Participant {idx}",
-        status=ParticipantStatus.INVITED.value,
+        status=ParticipantStatus.REGISTERED.value,
     )
 
 

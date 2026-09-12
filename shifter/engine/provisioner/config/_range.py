@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from cyberscript.enums import ResourceStatus
+from shared.enums import ResourceStatus
 
 from log_redact import safe_log_fingerprint
 
@@ -270,7 +270,7 @@ def get_range_from_db(range_id: int) -> dict[str, Any]:
             raise ValueError(f"Range {range_id} not found")
 
         user_id = row[1]
-        from cyberscript.persisted_envelope import unwrap_persisted_spec
+        from shared.persisted_envelope import unwrap_persisted_spec
 
         range_config = unwrap_persisted_spec(row[3] or {})
 

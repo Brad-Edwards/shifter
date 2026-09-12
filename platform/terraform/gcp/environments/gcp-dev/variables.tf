@@ -3,6 +3,40 @@ variable "project_id" {
   type        = string
 }
 
+variable "dynamic_secret_project_id" {
+  description = "Pre-existing deployment-scoped GCP project that owns all provisioner-created range secrets. May equal project_id only during staged migration."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.dynamic_secret_project_id)) > 0
+    error_message = "dynamic_secret_project_id must identify the deployment's range-secret project."
+  }
+}
+
+variable "provisioner_static_secret_refs" {
+  description = "Closed runtime-key map of exact Secret Manager resources for operator-created GDC/Vertex inputs the provisioner reads."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for id in values(var.provisioner_static_secret_refs) : can(regex("^projects/[^/]+/secrets/[^/]+$", id))
+    ])
+    error_message = "Every provisioner_static_secret_refs value must be a full projects/<project>/secrets/<id> resource ID."
+  }
+
+  validation {
+    condition = length(setsubtract(toset(keys(var.provisioner_static_secret_refs)), toset([
+      "GDC_ACCESS_SECRET_ID",
+      "GDC_VM_IMAGE_GCS_SECRET_ID",
+      "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+      "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+      "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
+    ]))) == 0
+    error_message = "provisioner_static_secret_refs contains an unsupported runtime key."
+  }
+}
+
 variable "environment" {
   description = "Environment name."
   type        = string
@@ -80,6 +114,12 @@ variable "provisioner_machine_type" {
   default     = "n2-standard-8"
 }
 
+variable "access_machine_type" {
+  description = "Machine type for the exclusive access node pool that hosts portal + guacd (#1711)."
+  type        = string
+  default     = "e2-standard-4"
+}
+
 variable "web_node_count" {
   description = "Desired size for the web node pool."
   type        = number
@@ -94,6 +134,12 @@ variable "worker_node_count" {
 
 variable "provisioner_node_count" {
   description = "Desired size for the provisioner node pool."
+  type        = number
+  default     = 1
+}
+
+variable "access_node_count" {
+  description = "Desired size for the exclusive access node pool that hosts portal + guacd (#1711)."
   type        = number
   default     = 1
 }
@@ -264,6 +310,12 @@ variable "range_egress_allowed_cidrs" {
   default     = []
 }
 
+variable "range_network_zones" {
+  description = "#2029 multi-region range placement: the RANGE_NETWORK_ZONES zone pool the provisioner places range cells with, as a list. Range NAT coverage is derived from these zones' regions so it cannot diverge from the pool. Empty keeps single-region behaviour."
+  type        = list(string)
+  default     = []
+}
+
 variable "raes_package_bucket_name" {
   description = "Optional GCS bucket holding object-backed RAES package archives (#1567). Grants the portal read-only access; set it (with SHIFTER_RAES_PACKAGE_BUCKET on the app) to enable object-backed RAES packages. Empty disables the binding."
   type        = string
@@ -276,22 +328,10 @@ variable "ctf_content_bucket_name" {
   default     = ""
 }
 
-variable "enable_cicd_github_oidc" {
-  description = "Create the GitHub Actions -> GCP Workload Identity federation (pool, provider, packer build SA). Default true. Set false for tenants whose org blocks the GitHub OIDC issuer (constraints on iam.workloadIdentityPoolProviders) or that do not use GitHub Actions CI; the platform itself does not depend on it (#1723)."
-  type        = bool
-  default     = true
-}
-
-variable "github_org" {
-  description = "GitHub organization allowed to federate into the packer build service account."
-  type        = string
-  default     = "Brad-Edwards"
-}
-
-variable "github_repo" {
-  description = "GitHub repository allowed to federate into the packer build service account."
-  type        = string
-  default     = "shifter"
+variable "gdc_vm_runtime_image_readers" {
+  description = "Service accounts granted read on the GDC VM image bucket (GDC VM Runtime image-pull identity). Empty on the default GCE range backend, which never creates the GDC substrate SA; set to the baremetal-gcr SA only for a GDC deployment (--range-backend gdc), which is what creates that SA. A hardcoded baremetal-gcr entry breaks a fresh GCE apply because the SA does not exist (ADR: GDC plumbing must not be selected by default). Mirrors the optional-empty vmseries_bootstrap_bucket_name pattern."
+  type        = list(string)
+  default     = []
 }
 
 # ------------------------------------------------------------------------------

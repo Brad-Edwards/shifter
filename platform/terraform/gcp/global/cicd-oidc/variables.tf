@@ -1,0 +1,58 @@
+variable "project_id" {
+  description = "GCP project that hosts the Workload Identity pool and packer build service account."
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment name (e.g. gcp-dev)."
+  type        = string
+  default     = "gcp-dev"
+}
+
+variable "region" {
+  description = "Default provider region."
+  type        = string
+  default     = "us-central1"
+}
+
+variable "github_org" {
+  description = "GitHub organization that owns the repository allowed to federate."
+  type        = string
+  default     = "Brad-Edwards"
+}
+
+variable "github_repo" {
+  description = "GitHub repository allowed to federate into the build service account."
+  type        = string
+  default     = "shifter"
+}
+
+variable "allowed_workflow_refs" {
+  description = "GitHub refs whose OIDC tokens are accepted by the WIF provider (ADR-037-R7). Defaults to the protected integration branches."
+  type        = list(string)
+  default     = ["refs/heads/dev", "refs/heads/main"]
+}
+
+variable "promotion_reader_service_account_email" {
+  description = "Prod promote SA email granted read-only access to images when this is the source-project root."
+  type        = string
+  default     = ""
+}
+
+variable "build_read_bucket_names" {
+  description = "Existing GCS input buckets readable by the Packer build identity."
+  type        = set(string)
+  default     = []
+}
+
+variable "terraform_state_bucket_name" {
+  description = "Existing GCS backend bucket receiving deploy/destroy access; defaults to <project>-terraform-state."
+  type        = string
+  default     = ""
+}
+
+variable "platform_external_bucket_names" {
+  description = "Existing RAES/CTF content buckets whose workload IAM is managed by platform-core."
+  type        = set(string)
+  default     = []
+}

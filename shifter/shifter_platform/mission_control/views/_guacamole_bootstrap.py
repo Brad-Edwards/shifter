@@ -14,6 +14,7 @@ from django.views.decorators.http import require_GET
 
 from mission_control.guacamole_bootstrap import consume_ready_url
 from mission_control.models import GuacamoleBootstrapRequest
+from shared.errors import classify_user_message
 
 from ._common import _get_user
 
@@ -151,7 +152,10 @@ def _status_response(bootstrap: GuacamoleBootstrapRequest) -> JsonResponse:
             payload["error"] = "Guacamole session link is no longer available"
             status_code = 410
     elif bootstrap.status == GuacamoleBootstrapRequest.Status.FAILED:
-        payload["error"] = bootstrap.error_message or "Guacamole session bootstrap failed"
+        payload["error"] = classify_user_message(
+            bootstrap.error_message,
+            default="Guacamole session bootstrap failed",
+        )
         status_code = bootstrap.error_status_code
     else:
         retry_after = True

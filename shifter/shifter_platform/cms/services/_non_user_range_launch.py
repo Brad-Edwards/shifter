@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 
 from cms.exceptions import CMSError
 from cms.services._raes_range_create import dispatch_range_launch
-from cms.services._range_create import LaunchOptions
+from cms.services._range_launch_common import LaunchOptions
 from shared.range_instantiation_policy import POLICY_DENIAL_CODE, InstantiationPurpose
 
 if TYPE_CHECKING:
@@ -106,7 +106,7 @@ def create_non_user_range(
 ) -> RangeContext:
     """Launch a range under a declared non-user mode, after the operator gate.
 
-    Routes through the same RAES/cyberscript dispatch, active-range admission,
+    Routes through the same RAES dispatch, active-range admission,
     Engine persistence, and provisioner path as a normal launch -- only the
     minted instantiation purpose differs, which is what lets the retained
     GDC/Kubernetes plumbing be selected (ADR-030-R3).
@@ -120,6 +120,7 @@ def create_non_user_range(
     """
     from shared.enums import RangeSource
 
+    del agents_by_os
     _assert_operator_authority(user)
     declared = _validated_workflow(workflow)
     purpose = _WORKFLOW_PURPOSES[declared]
@@ -132,7 +133,6 @@ def create_non_user_range(
     return dispatch_range_launch(
         user,
         scenario,
-        agents_by_os or {},
         range_source=RangeSource.MISSION_CONTROL,
         instantiation_purpose=purpose,
         options=LaunchOptions(ngfw_enabled=ngfw_enabled),

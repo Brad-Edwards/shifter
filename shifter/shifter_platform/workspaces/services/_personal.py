@@ -15,8 +15,13 @@ from typing import TYPE_CHECKING
 
 from django.db import transaction
 
-from workspaces.models import Organization, Workspace, WorkspaceMembership
-from workspaces.roles import WorkspaceRole
+from workspaces.models import (
+    Organization,
+    OrganizationMembership,
+    Workspace,
+    WorkspaceMembership,
+)
+from workspaces.roles import OrganizationRole, WorkspaceRole
 
 from ._authorization import (
     WorkspaceAuthorization,
@@ -88,6 +93,14 @@ def resolve_personal_workspace(user: User) -> WorkspaceAuthorization:
                 workspace=workspace,
                 user=user,
                 role=WorkspaceRole.OWNER.value,
+            )
+            # The personal organization's bootstrap admin is its owner (ADR-048).
+            # Persisted here so organization authority is read from the membership
+            # row, never re-inferred from the workspace role at authorization time.
+            OrganizationMembership.objects.create(
+                organization=organization,
+                user=user,
+                role=OrganizationRole.ADMIN.value,
             )
     except Exception:
         # A concurrent caller may have won the unique personal_for_user race.

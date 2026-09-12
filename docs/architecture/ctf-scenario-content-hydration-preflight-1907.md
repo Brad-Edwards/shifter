@@ -4,6 +4,11 @@ Requirement: CTF-1405. Issue: GitHub #1907.
 
 Status: pre-implementation guidance.
 
+Revision note: GitHub #1971 intentionally supersedes this note's "new event
+only" policy for an explicit, policy-checked refresh of the same managed event;
+see `ctf-active-content-refresh-preflight-1971.md`. The #1971 note does not
+change runtime behavior by itself.
+
 This note fixes the boundaries and cross-cutting obligations for native CTF
 event-content hydration. It is not an implementation plan and does not change
 runtime behavior. ADR-024 and ADR-034 already govern the relevant catalog,

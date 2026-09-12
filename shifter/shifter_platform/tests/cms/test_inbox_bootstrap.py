@@ -1,10 +1,10 @@
-"""In-box catalog bootstrap through the uniform ingestion path (#1578, ADR-034).
+"""In-box bootstrap seed through the uniform ingestion path (#1578, ADR-034).
 
-The in-box catalog is loaded through the SAME ``register_pack`` service an
-operator uses — there is no privileged code path. There are no conformant default
-packs yet, so the shipped manifest is empty; these tests prove the mechanism
-end-to-end with a temporary manifest and confirm the shipped manifest stays a
-valid, empty declaration.
+The in-box seed is loaded through the SAME ``register_pack`` service an
+operator uses — there is no privileged code path. The shipped manifest declares
+the in-box seed; these tests prove the mechanism end-to-end with a
+temporary manifest and confirm the shipped manifest parses to the expected
+declaration.
 """
 
 from __future__ import annotations
@@ -66,9 +66,9 @@ class TestShippedManifest:
         packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
         assert isinstance(packs, list)
 
-    def test_shipped_manifest_is_empty_no_default_packs_yet(self):
-        # No conformant default scenario packs ship yet (program #1584).
-        assert load_inbox_manifest(SHIPPED_INBOX_MANIFEST) == []
+    def test_shipped_manifest_contains_the_smoke_linux_pack(self):
+        packs = load_inbox_manifest(SHIPPED_INBOX_MANIFEST)
+        assert [pack.scenario_id for pack in packs] == ["smoke-linux"]
 
 
 class TestRegisterInboxPacks:
@@ -170,12 +170,20 @@ class TestRegisterInboxPacks:
 
 
 class TestBootstrapCommand:
-    def test_command_runs_against_shipped_empty_manifest(self, admin_actor):
+    def test_command_registers_and_promotes_the_shipped_smoke_linux_pack(self, admin_actor, monkeypatch):
+        from django.conf import settings
         from django.core.management import call_command
 
-        # The shipped manifest is empty today: the command is a clean no-op.
+        # The shipped pack lives under shifter_platform/ so it bakes into the
+        # container image at /app, where RAES_PACKAGE_ROOT defaults. In a source
+        # checkout RAES_PACKAGE_ROOT defaults to the repo root, so point it at the
+        # shifter_platform root (manifest parents[3]) where the pack resolves.
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(SHIPPED_INBOX_MANIFEST.parents[3]))
         call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
-        assert RaesPackageSource.objects.count() == 0
+        source = RaesPackageSource.objects.get(scenario_id="smoke-linux")
+        assert source.conformance_status == RaesPackageSource.ConformanceStatus.PASSED
+        assert source.conformance_report_ref == "release://cms/scenarios/inbox_packs/smoke-linux@0.1.0"
+        assert get_catalog_entry("smoke-linux")["launchable"] is True
 
     def test_command_errors_on_unknown_actor(self, db):
         from django.core.management import CommandError, call_command

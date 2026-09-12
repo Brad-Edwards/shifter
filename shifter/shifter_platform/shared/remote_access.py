@@ -85,6 +85,32 @@ class TerminalConnection(Protocol):
         ...
 
 
+class TerminalConnectionFactory(Protocol):
+    """Constructs a fresh :class:`TerminalConnection` from authorized facts.
+
+    The injection seam for interactive terminal access (issue #993). It is
+    handed the already-authorized, already-resolved connection facts and returns
+    a not-yet-connected :class:`TerminalConnection`. Production supplies a real
+    SSH transport; a consumer test supplies a fake without patching the SSH
+    library or bypassing the workspace/runtime authorization that runs before
+    the factory is invoked. This types the constructor callable beside the one
+    behavioral protocol; it does not duplicate that contract.
+    """
+
+    def __call__(
+        self,
+        *,
+        host: str,
+        port: int,
+        username: str,
+        private_key: str,
+        host_public_key: str,
+        session_id: str | None,
+    ) -> TerminalConnection:
+        """Return a fresh terminal connection for the authorized target."""
+        ...
+
+
 class OpenVpnBindingError(ValueError):
     """A remote-access binding or resolved profile violated its closed shape."""
 

@@ -209,6 +209,9 @@ class TestSoftDelete:
         profile = UserProfile.objects.get(user=target)
         assert profile.deleted_at is not None
         assert User.objects.filter(pk=target.id).exists()  # soft delete, not a row delete
+        # Soft deletion must also block authentication (PLAT-236, #1943).
+        target.refresh_from_db()
+        assert target.is_active is False
 
         row = AuditLog.objects.filter(
             entity_type=AuditEntityType.USER, entity_id=target.id, action=AuditAction.DELETE

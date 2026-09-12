@@ -30,7 +30,7 @@ import ipaddress
 from dataclasses import dataclass
 from uuid import UUID
 
-from cyberscript.exceptions import ValidationError as SubnetCoordinationError
+from shared.exceptions import ValidationError as SubnetCoordinationError
 
 __all__ = [
     "ACCEPTED_COORDINATION_VERSIONS",

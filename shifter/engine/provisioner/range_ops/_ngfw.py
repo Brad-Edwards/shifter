@@ -112,6 +112,19 @@ def get_range_ngfw_info(request_id: str) -> dict | None:
     return result
 
 
+def _require_aws_ngfw_cascade(ngfw_info: dict[str, Any]) -> None:
+    """Fail closed when an attached NGFW is not the AWS EC2 cascade this path drives.
+
+    The range pause/resume NGFW cascade stops/starts an EC2 instance. A range that
+    ever attaches a non-AWS (e.g. GCP VM-Series) NGFW has no ``ec2_instance_id``;
+    rather than silently driving the AWS executor with a missing id, fail closed
+    with a clear diagnostic (ADR-039 honest-failure). GCP ranges do not attach an
+    NGFW through this FK today, so this cannot fire on the current GCP paths.
+    """
+    if not ngfw_info.get("ec2_instance_id"):
+        raise RuntimeError("Range NGFW cascade requires an AWS EC2 NGFW; the attached NGFW has no ec2_instance_id")
+
+
 def should_pause_ngfw(ngfw_instance_id: int, exclude_range_id: int) -> bool:
     """Check if NGFW should be paused (no other ranges READY or RESUMING).
 
@@ -252,6 +265,9 @@ def pause_ngfw_for_range(request_id: str, *, ref: OperationRef | None = None) ->
     if not should_pause_ngfw(ngfw_info["ngfw_instance_id"], ngfw_info["range_id"]):
         logger.info("pause_ngfw_for_range: other ranges need NGFW, skipping")
         return
+
+    # Fail closed before mutation if the attached NGFW is not the AWS EC2 cascade.
+    _require_aws_ngfw_cascade(ngfw_info)
 
     # Report the cascade transition; the applier owns the write and the event.
     _report_cascade(_pkg, ngfw_info, STATUS_PAUSING, ref=ref, operation="pause")
@@ -412,6 +428,9 @@ def ensure_ngfw_running(request_id: str, *, ref: OperationRef | None = None) -> 
         return
     if status == STATUS_FAILED:
         raise RuntimeError("NGFW is in failed state, cannot resume range")
+    # Fail closed before any mutation/wait if the attached NGFW is not the AWS EC2
+    # cascade this path drives (it needs the ec2_instance_id below).
+    _require_aws_ngfw_cascade(ngfw_info)
     if status == STATUS_RESUMING:
         logger.info("ensure_ngfw_running: NGFW is resuming, waiting...")
         # Fall through; AWSExecutor.wait_for_running will block.

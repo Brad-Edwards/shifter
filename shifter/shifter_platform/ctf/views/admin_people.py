@@ -67,7 +67,6 @@ def admin_participant_list(request: HttpRequest, event_id: UUID) -> HttpResponse
     # Calculate statistics
     all_participants = list_participants_for_event(event_id)
     total_count = all_participants.count()
-    invited_count = all_participants.filter(status=ParticipantStatus.INVITED.value).count()
     registered_count = all_participants.filter(
         status__in=[
             ParticipantStatus.REGISTERED.value,
@@ -85,7 +84,6 @@ def admin_participant_list(request: HttpRequest, event_id: UUID) -> HttpResponse
         "status_filter": status_filter,
         "status_choices": status_choices,
         "total_count": total_count,
-        "invited_count": invited_count,
         "registered_count": registered_count,
     }
 
@@ -219,7 +217,7 @@ def admin_participant_add(request: HttpRequest, event_id: UUID) -> HttpResponse:
 
     from ctf.exceptions import CTFNotFoundError, CTFValidationError
     from ctf.forms import CTFParticipantForm
-    from ctf.services import get_event, invite_participant
+    from ctf.services import add_participant, get_event
 
     try:
         event = get_event(event_id)
@@ -234,7 +232,7 @@ def admin_participant_add(request: HttpRequest, event_id: UUID) -> HttpResponse:
         form = CTFParticipantForm(request.POST, event=event)
         if form.is_valid():
             try:
-                participant = invite_participant(
+                participant = add_participant(
                     event_id=event_id,
                     email=form.cleaned_data["email"],
                     name=form.cleaned_data["name"],

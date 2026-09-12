@@ -55,19 +55,11 @@ class TestStartNgfwEcsTask:
     def test_returns_none_when_cluster_missing(self, aws_ecs_unconfigured, settings, ecs_client):
         from engine.ecs import _start_ngfw_ecs_task
 
+        # #1826: the provisioner dispatches as a Kubernetes Job, so the config
+        # gate needs only the namespace + image; an image without a namespace is
+        # incomplete and dispatch is a no-op.
         settings.ENGINE_TASK_DEFINITION = "test-taskdef"
-        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-1,subnet-2"
 
-        make_authorized_ngfw(TEST_REQUEST_ID, status="provisioning")
-        assert _start_ngfw_ecs_task(request_id=TEST_REQUEST_ID, command=["ngfw", "provision"]) is None
-        assert not ProvisionerLaunchIntent.objects.exists()
-        ecs_client.run_task.assert_not_called()
-
-    def test_returns_none_when_subnet_ids_whitespace(self, aws_ecs_configured, settings, ecs_client):
-        from engine.ecs import _start_ngfw_ecs_task
-
-        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "   ,   ,   "
         make_authorized_ngfw(TEST_REQUEST_ID, status="provisioning")
         assert _start_ngfw_ecs_task(request_id=TEST_REQUEST_ID, command=["ngfw", "provision"]) is None
         assert not ProvisionerLaunchIntent.objects.exists()

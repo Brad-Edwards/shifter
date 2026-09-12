@@ -20,8 +20,21 @@ output "oidc_provider_arn" {
 }
 
 output "workload_role_arns" {
-  description = "IAM role ARN keyed by process-specific workload identity."
-  value       = { for name, role in aws_iam_role.workload : name => role.arn }
+  description = "IAM role ARN keyed by process-specific workload identity, including the dedicated cluster-autoscaler role."
+  value = merge(
+    { for name, role in aws_iam_role.workload : name => role.arn },
+    { "cluster-autoscaler" = aws_iam_role.cluster_autoscaler.arn },
+  )
+}
+
+output "workload_role_names" {
+  description = "IAM role name keyed by process-specific workload identity (for downstream policy attachment)."
+  value       = { for name, role in aws_iam_role.workload : name => role.name }
+}
+
+output "workload_role_ids" {
+  description = "IAM role id keyed by process-specific workload identity (for downstream inline-policy attachment)."
+  value       = { for name, role in aws_iam_role.workload : name => role.id }
 }
 
 output "workload_identity_subjects" {

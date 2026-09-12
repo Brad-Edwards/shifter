@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from cyberscript.enums import ResourceStatus
+from shared.enums import ResourceStatus
 
 
 @pytest.mark.parametrize(

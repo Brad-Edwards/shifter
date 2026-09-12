@@ -471,21 +471,25 @@ class TestRangeNetworkEnv:
                 source_image="projects/debian-cloud/global/images/family/debian-12",
                 machine_type="e2-standard-2",
                 disk_size_gb=50,
+                sftp_root_directory="/home/ubuntu",
             ),
             kali=GCERangeImageProfile(
                 source_image="projects/kali/global/images/kali",
                 machine_type="e2-standard-4",
                 disk_size_gb=80,
+                sftp_root_directory="/home/kali",
             ),
             windows=GCERangeImageProfile(
                 source_image="",
                 machine_type="e2-standard-4",
                 disk_size_gb=100,
+                sftp_root_directory="/C:/Users/Administrator/Downloads",
             ),
             dc=GCERangeImageProfile(
                 source_image="projects/windows-cloud/global/images/family/windows-2022",
                 machine_type="e2-standard-4",
                 disk_size_gb=100,
+                sftp_root_directory="/C:/Users/Administrator/Downloads",
             ),
             portal_network_cidrs=("10.40.0.0/20",),
             egress_allow_cidrs=("10.60.0.0/16",),
@@ -1116,26 +1120,66 @@ class TestRangeNetworkEnv:
         assert config == GDCVMRuntimeConfig(
             storage_class_name="local-shared",
             image_gcs_secret_id="projects/test/secrets/shifter-gcp-dev-gdc-vm-image-gcs",
-            kali=GDCVMRuntimeProfile(source_url="gs://images/kali.qcow2", vcpus=4, memory="8Gi", disk_size_gib=40),
+            kali=GDCVMRuntimeProfile(
+                source_url="gs://images/kali.qcow2",
+                vcpus=4,
+                memory="8Gi",
+                disk_size_gib=40,
+                sftp_root_directory="/home/kali",
+            ),
             ubuntu=GDCVMRuntimeProfile(
                 source_url="https://example.com/ubuntu.img",
                 vcpus=1,
                 memory="2Gi",
                 disk_size_gib=20,
+                sftp_root_directory="/home/ubuntu",
             ),
             windows=GDCVMRuntimeProfile(
                 source_url="gs://images/windows.qcow2",
                 vcpus=2,
                 memory="8Gi",
                 disk_size_gib=64,
+                sftp_root_directory="/C:/Users/Administrator/Downloads",
             ),
             dc=GDCVMRuntimeProfile(
                 source_url="docker://registry.example.com/dc-image:latest",
                 vcpus=2,
                 memory="8Gi",
                 disk_size_gib=64,
+                sftp_root_directory="/C:/Users/Administrator/Downloads",
             ),
         )
+
+    def test_load_gdc_vmruntime_config_reads_sftp_root_env_override(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
+                "GDC_UBUNTU_IMAGE_URL": "https://example.com/ubuntu.img",
+                "GDC_UBUNTU_SFTP_ROOT_DIRECTORY": "/home/operator",
+            },
+            clear=True,
+        )
+
+        config = load_gdc_vmruntime_config()
+
+        assert config.ubuntu.sftp_root_directory == "/home/operator"
+
+    def test_load_gdc_vmruntime_config_rejects_invalid_sftp_root_env(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
+                "GDC_UBUNTU_IMAGE_URL": "https://example.com/ubuntu.img",
+                "GDC_UBUNTU_SFTP_ROOT_DIRECTORY": "relative/path",
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError):
+            load_gdc_vmruntime_config()
 
     def test_gdc_vmruntime_config_requires_matching_profile_when_selected(self, mocker):
         mocker.patch.dict(
@@ -1675,3 +1719,110 @@ class TestResolveCloudProvider:
         mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"}, clear=True)
 
         assert resolve_cloud_provider() == "gcp"
+
+
+class TestGceSftpRootDirectory:
+    """Per-image SFTP root threading through GCE image profiles (#375)."""
+
+    def _env(self, extra: dict[str, str]) -> dict[str, str]:
+        base = {
+            "CLOUD_PROVIDER": "gcp",
+            "GCP_RANGE_BACKEND": "gce",
+            "GCP_PROJECT_ID": "test-project",
+            "GCP_REGION": "us-central1",
+            "RANGE_NETWORK_ZONE": "us-central1-b",
+            "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+            "GCP_RANGE_LINUX_IMAGE": "projects/debian-cloud/global/images/family/debian-12",
+            "GCP_RANGE_KALI_IMAGE": "projects/kali/global/images/kali",
+            "GCP_RANGE_WINDOWS_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
+            "GCP_RANGE_DC_IMAGE": "projects/windows-cloud/global/images/family/windows-2022-dc",
+            "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+        }
+        base.update(extra)
+        return base
+
+    def test_seeds_default_sftp_roots_per_class(self, mocker):
+        from config import load_gce_range_cell_config
+
+        mocker.patch.dict(os.environ, self._env({}), clear=True)
+        config = load_gce_range_cell_config()
+
+        assert config.linux.sftp_root_directory == "/home/ubuntu"
+        assert config.kali.sftp_root_directory == "/home/kali"
+        assert config.windows.sftp_root_directory == "/C:/Users/Administrator/Downloads"
+        assert config.dc.sftp_root_directory == "/C:/Users/Administrator/Downloads"
+
+    def test_reads_sftp_root_env_override(self, mocker):
+        from config import load_gce_range_cell_config
+
+        mocker.patch.dict(
+            os.environ,
+            self._env({"GCP_RANGE_KALI_SFTP_ROOT_DIRECTORY": "/home/hacker"}),
+            clear=True,
+        )
+        config = load_gce_range_cell_config()
+
+        assert config.kali.sftp_root_directory == "/home/hacker"
+
+    def test_rejects_invalid_sftp_root_env(self, mocker):
+        from config import load_gce_range_cell_config
+
+        mocker.patch.dict(
+            os.environ,
+            self._env({"GCP_RANGE_KALI_SFTP_ROOT_DIRECTORY": "../etc"}),
+            clear=True,
+        )
+        with pytest.raises(RuntimeError):
+            load_gce_range_cell_config()
+
+    def test_get_profile_requested_type_preserves_sftp_root(self):
+        kali = GCERangeImageProfile(
+            source_image="projects/kali/global/images/kali",
+            machine_type="e2-standard-2",
+            disk_size_gb=40,
+            sftp_root_directory="/home/kali",
+        )
+        config = GCERangeCellConfig(
+            project_id="test-project",
+            region="us-central1",
+            zone="us-central1-b",
+            network_mode="vpc-per-range",
+            kali=kali,
+        )
+
+        override = config.get_profile(role="attacker", os_type="kali", requested_type="n2-standard-4")
+        assert override.machine_type == "n2-standard-4"
+        assert override.sftp_root_directory == "/home/kali"
+
+    def test_image_key_profile_parses_sftp_root(self, mocker):
+        mapping = {
+            "kali": {
+                "polaris-vm": {
+                    "source_image": "projects/test/global/images/family/shifter-polaris-vm",
+                    "machine_type": "e2-standard-8",
+                    "disk_size_gb": 210,
+                    "disk_type": "pd-balanced",
+                    "bootstrap_capability": "polaris-docker-host",
+                    "sftp_root_directory": "/home/polaris",
+                }
+            }
+        }
+        from config import load_gce_range_cell_config
+
+        mocker.patch.dict(
+            os.environ,
+            self._env({"GCP_RANGE_IMAGE_KEY_PROFILES_JSON": json.dumps(mapping)}),
+            clear=True,
+        )
+        config = load_gce_range_cell_config()
+
+        assert config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm").sftp_root_directory == (
+            "/home/polaris"
+        )
+
+    def test_fingerprint_changes_with_sftp_root(self):
+        from config import gce_image_profile_fingerprint
+
+        base = GCERangeImageProfile(source_image="projects/x/global/images/kali")
+        rooted = GCERangeImageProfile(source_image="projects/x/global/images/kali", sftp_root_directory="/home/kali")
+        assert gce_image_profile_fingerprint(base) != gce_image_profile_fingerprint(rooted)

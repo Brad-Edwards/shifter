@@ -49,6 +49,7 @@ const AGENTS: AgentListResponse = {
       agent_type_display: "XDR",
     },
   ],
+  max_file_size_bytes: 2048 * 1024 * 1024,
 };
 
 function mockOptions() {

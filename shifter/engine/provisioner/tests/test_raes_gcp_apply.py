@@ -92,6 +92,7 @@ def _clients(*, exists: bool = False, instance_insert_error: Exception | None = 
         else:
             svc.insert.return_value = SimpleNamespace(name="op")
         svc.delete.return_value = SimpleNamespace(name="op")
+        svc.patch.return_value = SimpleNamespace(name="op")
         return svc
 
     op_service = MagicMock()
@@ -101,6 +102,7 @@ def _clients(*, exists: bool = False, instance_insert_error: Exception | None = 
         subnetworks=service(),
         firewalls=service(),
         addresses=service(),
+        routers=service(),
         instances=service(instance_insert_error),
         global_operations=op_service,
         region_operations=op_service,
@@ -255,6 +257,17 @@ class TestApply:
         assert secret_mocks.ensure_ssh.call_count == 2
         assert len(output["instances"]) == 2
         assert set(output["subnets"]) == {"lan"}
+        # A status-quo range owns a Cloud Router+NAT for its egress (PLAT-238).
+        assert clients.routers.insert.called
+
+    def test_zero_egress_range_provisions_no_router_nat(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        apply_raes_range_cell(
+            "req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops, egress_mode="none")
+        )
+        # A none range carries no NAT path at all: no range-owned router is created.
+        assert not clients.routers.insert.called
 
     def test_ssh_secret_keyed_on_raes_instance_not_scenario(self):
         clients = _clients()
@@ -892,6 +905,9 @@ class TestDestroy:
         assert clients.firewalls.delete.called
         assert clients.subnetworks.delete.call_count == 1
         assert clients.networks.delete.called  # vpc-per-range owns the VPC
+        # The range-owned Cloud Router+NAT is torn down (PLAT-238); leaving it was
+        # a live resource leak before this fix.
+        assert clients.routers.delete.called
         assert secret_mocks.delete_ssh.call_count == 2
 
     def test_shared_vpc_destroy_keeps_network(self):

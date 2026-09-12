@@ -45,8 +45,10 @@ _SOURCE_MODULES = (
     "_guard.checks.boundary_mock",
     "_guard.checks.complexity",
     "_guard.checks.cloud_identifiers",
+    "_guard.checks.accessibility_baseline",
     "_guard.checks.published_contract",
     "_guard.checks.quality_ownership",
+    "_guard.checks.eks_cross_stack_sourcing",
     "_guard._registry",
     "_guard._cli",
 )
@@ -75,12 +77,14 @@ for _module_name in _SOURCE_MODULES:
 # Expose the check submodules themselves (e.g. ``adr_guard.boundary_mock``),
 # which several tests reference directly rather than through a member symbol.
 from _guard.checks import (  # noqa: E402
+    accessibility_baseline,
     adr_registry,
     boundary_mock,
     cloud_identifiers,
     complexity,
     deploy_workflow,
     documentation,
+    eks_cross_stack_sourcing,
     k8s_security,
     layer_imports,
     mcp_policy,
@@ -90,12 +94,14 @@ from _guard.checks import (  # noqa: E402
 )
 
 _SUBMODULES = (
+    "accessibility_baseline",
     "adr_registry",
     "boundary_mock",
     "cloud_identifiers",
     "complexity",
     "deploy_workflow",
     "documentation",
+    "eks_cross_stack_sourcing",
     "k8s_security",
     "layer_imports",
     "mcp_policy",

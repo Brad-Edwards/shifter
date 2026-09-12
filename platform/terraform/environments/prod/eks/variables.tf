@@ -9,24 +9,31 @@ variable "deployment_role_arn" {
   type        = string
 }
 
-variable "load_balancer_controller_policy_arn" {
-  description = "Environment-scoped IAM policy for the AWS Load Balancer Controller."
-  type        = string
-}
-
 variable "domain_name" {
   description = "Public deployment hostname."
   type        = string
 }
 
-variable "ingress_source_cidrs" {
+variable "edge_client_cidrs" {
   description = "Validated public source CIDRs allowed to reach HTTPS ingress."
   type        = list(string)
 
   validation {
-    condition     = length(var.ingress_source_cidrs) > 0
+    condition     = length(var.edge_client_cidrs) > 0
     error_message = "At least one explicit ingress source CIDR is required."
   }
+}
+
+variable "addon_versions" {
+  description = "Reviewed EKS add-on versions compatible with kubernetes_version."
+  type = object({
+    vpc_cni           = string
+    ebs_csi           = string
+    efs_csi           = string
+    coredns           = string
+    kube_proxy        = string
+    secrets_store_csi = string
+  })
 }
 
 variable "provider_api_cidrs" {
@@ -48,10 +55,11 @@ variable "runtime_env" {
     condition = alltrue([
       for key in [
         "AWS_REGION",
-        "ENGINE_TASK_CLUSTER",
-        "ENGINE_TASK_DEFINITION",
-        "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID",
-        "ENGINE_TASK_NETWORK_SUBNET_IDS",
+        # ENGINE_TASK_* ECS coordinates are retired (#1826): the provisioner
+        # dispatches as a Kubernetes Job. ENGINE_TASK_NAMESPACE and
+        # ENGINE_TASK_SERVICE_ACCOUNT_NAME come from the chart; ENGINE_TASK_IMAGE
+        # from the renderer; the range/portal provisioner env is assembled by
+        # module.eks_provisioner_env, not supplied here.
         "OIDC_AUTH_DOMAIN",
         "OIDC_ISSUER_URL",
         "OIDC_RP_CLIENT_ID",
@@ -68,6 +76,24 @@ variable "runtime_env" {
     ])
     error_message = "runtime_env must contain every canonical AWS platform runtime binding."
   }
+}
+
+variable "db_name" {
+  description = "Portal control-plane database name the provisioner Job connects to (IAM auth)."
+  type        = string
+  default     = "shifter"
+}
+
+variable "dc_domain_name" {
+  description = "Prebaked Windows DC domain name for the provisioner env (empty when no Windows DC scenario is deployed)."
+  type        = string
+  default     = ""
+}
+
+variable "provisioner_extra_env" {
+  description = "Additional non-secret provisioner env (e.g. AWS_POLARIS_AGENT_* for AWS Polaris deployments)."
+  type        = map(string)
+  default     = {}
 }
 
 variable "ctf_content_bucket_arn" {

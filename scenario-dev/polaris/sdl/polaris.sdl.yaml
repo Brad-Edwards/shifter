@@ -1,0 +1,180 @@
+name: polaris
+description: >
+  Operation NORTHSTORM against the fictional Boreas Systems enterprise. The
+  canonical topology contains the public, corporate, research, SCADA, and
+  isolated controller segments used by the Polaris participant journey.
+
+nodes:
+  shared_net: {type: Switch}
+  corporate_net: {type: Switch}
+  lab_net: {type: Switch}
+  scada_net: {type: Switch}
+  bunker_ot_net: {type: Switch}
+  splice_link: {type: Switch}
+
+  a0_boreas_web:
+    type: VM
+    os: linux
+    os_version: Alpine 3.19
+    source: {name: polaris-boreas-web, version: "1.0"}
+    resources: {ram: 512 mib, cpu: 1}
+    services: [{port: 80, name: boreas-http}, {port: 53, protocol: udp, name: boreas-dns}]
+  dns_boreas:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-bind-sidecar, version: "1.0"}
+    resources: {ram: 512 mib, cpu: 1}
+    services: [{port: 53, protocol: udp, name: internal-dns}]
+  a1_mail:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-mail, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 25, name: smtp}, {port: 143, name: imap}, {port: 80, name: webmail}]
+  a2_dc01:
+    type: VM
+    os: windows
+    os_version: Server 2022
+    source: {name: polaris-windows-ad-dc, version: "1.0"}
+    resources: {ram: 4 gib, cpu: 2}
+    services: [{port: 53, protocol: udp, name: ad-dns}, {port: 88, name: kerberos}, {port: 389, name: ldap}, {port: 445, name: smb}]
+  a3_intranet:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-intranet, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 80, name: intranet-http}]
+  a4_fileshare:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-samba, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 445, name: smb}]
+  a5_scada_gw:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-scada-gw, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 8080, name: hmi-http}, {port: 502, name: modbus}]
+  a6_eng_ws01:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-workstation, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 22, name: ssh}]
+  a7_git:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-gitea, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 3000, name: gitea-http}]
+  a8_research_db:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-postgres, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 5432, name: postgres}]
+  a9_splice_landing:
+    type: VM
+    os: linux
+    os_version: Alpine 3.19
+    source: {name: polaris-splice-landing, version: "1.0"}
+    resources: {ram: 512 mib, cpu: 1}
+    services: [{port: 22, name: ssh}]
+  a10_tail_ctrl:
+    type: VM
+    os: linux
+    os_version: Alpine 3.19
+    source: {name: polaris-pymodbus-plc, version: "1.0"}
+    resources: {ram: 512 mib, cpu: 1}
+    services: [{port: 502, name: modbus}]
+  a11_leg_ctrl:
+    type: VM
+    os: linux
+    os_version: Alpine 3.19
+    source: {name: polaris-pymodbus-plc, version: "1.0"}
+    resources: {ram: 512 mib, cpu: 1}
+    services: [{port: 502, name: modbus}]
+  a12_arms_ctrl:
+    type: VM
+    os: linux
+    os_version: Alpine 3.19
+    source: {name: polaris-pymodbus-plc, version: "1.0"}
+    resources: {ram: 512 mib, cpu: 1}
+    services: [{port: 502, name: modbus}]
+  a13_brain_main:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-brain-controller, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 9100, name: brain-protocol}]
+  a14_kali:
+    type: VM
+    os: linux
+    os_version: Kali Rolling
+    source: {name: polaris-boreas-kali, version: "1.0"}
+    resources: {ram: 4 gib, cpu: 2}
+    services: [{port: 22, name: ssh}, {port: 3389, name: rdp}]
+  a15_ops_eng01:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-workstation, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 22, name: ssh}, {port: 80, name: ops-telemetry}]
+  a16_research_analyst01:
+    type: VM
+    os: linux
+    os_version: Debian 12
+    source: {name: polaris-boreas-workstation, version: "1.0"}
+    resources: {ram: 1 gib, cpu: 1}
+    services: [{port: 22, name: ssh}]
+
+infrastructure:
+  shared_net: {count: 1, properties: {cidr: 172.20.0.0/24, gateway: 172.20.0.1}}
+  corporate_net: {count: 1, properties: {cidr: 172.20.10.0/24, gateway: 172.20.10.1}}
+  lab_net: {count: 1, properties: {cidr: 172.20.30.0/24, gateway: 172.20.30.1}}
+  scada_net: {count: 1, properties: {cidr: 172.20.40.0/24, gateway: 172.20.40.1}}
+  bunker_ot_net: {count: 1, properties: {cidr: 172.20.50.0/24, gateway: 172.20.50.1}}
+  splice_link: {count: 1, properties: {cidr: 172.20.60.0/24, gateway: 172.20.60.1}}
+  a0_boreas_web: {count: 1, links: [shared_net], properties: [{shared_net: 172.20.0.10}]}
+  dns_boreas: {count: 1, links: [shared_net, corporate_net, lab_net], properties: [{shared_net: 172.20.0.2}, {corporate_net: 172.20.10.2}, {lab_net: 172.20.30.2}]}
+  a1_mail: {count: 1, links: [corporate_net], properties: [{corporate_net: 172.20.10.20}]}
+  a2_dc01: {count: 1, links: [corporate_net], properties: [{corporate_net: 172.20.10.11}]}
+  a3_intranet: {count: 1, links: [corporate_net], properties: [{corporate_net: 172.20.10.30}]}
+  a4_fileshare: {count: 1, links: [corporate_net], properties: [{corporate_net: 172.20.10.40}]}
+  a5_scada_gw: {count: 1, links: [scada_net], properties: [{scada_net: 172.20.40.30}]}
+  a6_eng_ws01: {count: 1, links: [lab_net], properties: [{lab_net: 172.20.30.50}]}
+  a7_git: {count: 1, links: [shared_net, lab_net], properties: [{shared_net: 172.20.0.20}, {lab_net: 172.20.30.20}]}
+  a8_research_db: {count: 1, links: [lab_net], properties: [{lab_net: 172.20.30.60}]}
+  a9_splice_landing: {count: 1, links: [bunker_ot_net, splice_link], properties: [{bunker_ot_net: 172.20.50.10}, {splice_link: 172.20.60.10}]}
+  a10_tail_ctrl: {count: 1, links: [bunker_ot_net], properties: [{bunker_ot_net: 172.20.50.20}]}
+  a11_leg_ctrl: {count: 1, links: [bunker_ot_net], properties: [{bunker_ot_net: 172.20.50.30}]}
+  a12_arms_ctrl: {count: 1, links: [bunker_ot_net], properties: [{bunker_ot_net: 172.20.50.40}]}
+  a13_brain_main: {count: 1, links: [bunker_ot_net], properties: [{bunker_ot_net: 172.20.50.50}]}
+  a14_kali: {count: 1, links: [shared_net, corporate_net], properties: [{shared_net: 172.20.0.14}, {corporate_net: 172.20.10.14}]}
+  a15_ops_eng01: {count: 1, links: [corporate_net, scada_net], properties: [{corporate_net: 172.20.10.50}, {scada_net: 172.20.40.20}]}
+  a16_research_analyst01: {count: 1, links: [corporate_net, lab_net], properties: [{corporate_net: 172.20.10.60}, {lab_net: 172.20.30.5}]}
+
+accounts:
+  participant:
+    username: kali
+    node: a14_kali
+    auth_method: publickey
+  domain_administrator:
+    username: Administrator
+    node: a2_dc01
+    auth_method: password
+  operator:
+    username: operator
+    node: a15_ops_eng01
+    auth_method: publickey

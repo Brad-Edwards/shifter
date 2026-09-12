@@ -94,6 +94,18 @@ class UserProfile(models.Model):
             "auto-revoked. Empty when the user is not a tracked organizer."
         ),
     )
+    suspended_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Temporary-suspension discriminator (issue #1943). When set, the "
+            "account is suspended: authentication is blocked (User.is_active is "
+            "held False) while assignments and owned resources are retained. It "
+            "distinguishes a reversible security hold from a plain deactivation "
+            "and from soft deletion; User.is_active remains the sole "
+            "authentication-enforcement bit."
+        ),
+    )
     deleted_at = models.DateTimeField(null=True, blank=True)
     anonymized_at = models.DateTimeField(null=True, blank=True)
 

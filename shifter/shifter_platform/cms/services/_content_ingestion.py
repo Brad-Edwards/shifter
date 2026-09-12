@@ -12,8 +12,7 @@ The boundary:
   (entitlement is resolved out-of-band, per ADR-034);
 - **validates the incoming pack as foreign input** (``cms.scenarios.pack_validation``)
   so broken / malformed / non-conformant content is rejected fail-closed;
-- **fails closed on shadowing and duplicates**, preserving the registry's
-  no-shadow posture (ADR-024) so a pack cannot mask an active legacy scenario;
+- **fails closed on duplicate RAES identities**;
 - **keeps object-backed packs non-launchable** until #1567 supplies a
   containment-checked object resolver (an object row may not be registered
   conformance-``passed``, which is what would make it launchable);
@@ -23,7 +22,7 @@ The boundary:
 
 Every caller — the in-box bootstrap, the operator management command, and the
 DRF authoring endpoint — uses :func:`register_pack`; there is no privileged code
-path for the in-box catalog.
+path for the in-box seed.
 """
 
 from __future__ import annotations
@@ -38,7 +37,6 @@ from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
 from cms.models import RaesPackageSource
-from cms.scenarios.legacy_ids import ScenarioIdCollisionError, ensure_scenario_id_available
 from cms.scenarios.pack_validation import (
     PackDigestError,
     PackValidationError,
@@ -126,15 +124,11 @@ def register_pack(
 
     Raises:
         TypeError / django PermissionDenied: from the authorization gate.
-        CMSError: on legacy-id shadowing, duplicate id, an invalid pack, a
+        CMSError: on a duplicate id, an invalid pack, a
             scenario_id that does not match the pack's validated identity, or an
             invalid reference record.
     """
     validate_cms_authoring_user(user, "register_pack")
-    try:
-        ensure_scenario_id_available(request.scenario_id, registering="pack")
-    except ScenarioIdCollisionError as exc:
-        raise CMSError(str(exc)) from exc
     existing = RaesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
     if existing is not None:
         return _reuse_existing(existing, request, idempotent=idempotent)

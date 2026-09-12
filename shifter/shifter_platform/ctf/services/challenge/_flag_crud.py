@@ -2,9 +2,8 @@
 
 Also houses the flag-modifiability policy (``_is_flag_modifiable``), the
 payload-to-``flag_hash`` translation shared by add/update
-(``_flag_hash_for_payload``), the legacy-flag-hash computation used by
-challenge create (``_compute_legacy_flag_hash``), and the live-event edit
-guard applied by challenge update (``_reject_non_flag_live_edits``).
+(``_flag_hash_for_payload``), and the live-event edit guard applied by
+challenge update (``_reject_non_flag_live_edits``).
 """
 
 from __future__ import annotations
@@ -15,9 +14,10 @@ from uuid import UUID
 
 from django.db import transaction
 
+from ctf.enums import EventCapability
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag
-from ctf.services.authorization import assert_actor_owns_event as _assert_actor_owns_event
+from ctf.services.authorization import assert_event_capability as _assert_event_capability
 from shared.log_sanitize import safe_log_value
 
 from ._flag_verify import _validate_programmable_config, hash_flag, validate_http_flag_config
@@ -151,7 +151,7 @@ def add_flag(
             details={"challenge_id": str(challenge_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(challenge.event):
         raise CTFStateError(
@@ -227,7 +227,7 @@ def update_flag(
         ) from None
 
     challenge = flag_obj.challenge
-    _assert_actor_owns_event(actor_id, challenge.event)
+    _assert_event_capability(actor_id, challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(challenge.event):
         raise CTFStateError(
@@ -305,7 +305,7 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
             details={"flag_id": str(flag_id)},
         ) from None
 
-    _assert_actor_owns_event(actor_id, flag_obj.challenge.event)
+    _assert_event_capability(actor_id, flag_obj.challenge.event, EventCapability.CHALLENGES)
 
     if not _is_flag_modifiable(flag_obj.challenge.event):
         raise CTFStateError(
@@ -335,27 +335,3 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
 
         flag_obj.delete(soft=True)
     logger.info("Removed flag %s", safe_log_value(flag_id))
-
-
-def _compute_legacy_flag_hash(data: dict[str, Any], flags_list: list | None) -> None:
-    """Populate `data['flag_hash']` from either `data['flag']` or the first
-    entry in `flags_list`. Mutates `data` in place. Caller has already
-    validated that one of them is present.
-    """
-    if "flag" in data:
-        plaintext_flag = data.pop("flag")
-        data["flag_hash"] = hash_flag(plaintext_flag)
-        return
-    if not flags_list:
-        return
-    first_flag = flags_list[0]
-    first_type = first_flag.get("flag_type", "static")
-    if first_type == "static":
-        data["flag_hash"] = hash_flag(
-            first_flag["flag"],
-            case_sensitive=first_flag.get("case_sensitive", True),
-        )
-    elif first_type in ("programmable", "http"):
-        data["flag_hash"] = first_type
-    else:
-        data["flag_hash"] = "multi-flag"

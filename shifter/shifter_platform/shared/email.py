@@ -20,7 +20,7 @@ import atexit
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from shared.log_sanitize import safe_log_value
+from shared.log_sanitize import safe_log_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ def send_email(
         msg.send()
         return True
     except Exception:
-        logger.exception("Failed to send email to %s", safe_log_value(recipient))
+        logger.exception("Failed to send email recipient=%s", safe_log_fingerprint(recipient))
         return False
 
 

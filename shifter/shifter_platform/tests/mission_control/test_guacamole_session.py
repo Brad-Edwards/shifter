@@ -88,6 +88,48 @@ class TestLaunchSucceeds:
         assert _consume(launch, user).startswith("https://guac.example.com/#/client/")
 
 
+class _FakeGuacClient:
+    """A fake ``GuacamoleClient`` capturing the SSH request DTO it is handed."""
+
+    def __init__(self) -> None:
+        self.ssh_requests: list[object] = []
+
+    def create_rdp_url(self, req):  # pragma: no cover - SSH path only here
+        raise AssertionError("RDP not expected")
+
+    def create_ssh_url(self, req) -> str:
+        self.ssh_requests.append(req)
+        return "https://fake/#/client/xyz?token=faketoken"
+
+
+class TestLaunchWithInjectedClient:
+    def test_injected_client_substitutes_at_the_service_edge(self, user, range_ssh_instance, secrets_boundary):
+        """A fake client mints the URL; no settings binding or urllib is reached.
+
+        The real Engine resolution still runs (real READY range, real SSH-key
+        fetch over the boto3 boundary), so the injection does not bypass runtime
+        authorization — only the Guacamole transport is faked (issue #993).
+        """
+        _rng, instance = range_ssh_instance(user)
+        fake = _FakeGuacClient()
+
+        with secrets_boundary():
+            launch = launch_guacamole_session(
+                user=user,
+                protocol=_PROTOCOL.RANGE_SSH,
+                target_id=instance["uuid"],
+                guacamole_client=fake,
+            )
+
+        assert launch.status == GuacamoleBootstrapRequest.Status.SUCCEEDED
+        assert _consume(launch, user) == "https://fake/#/client/xyz?token=faketoken"
+        # The DTO carries the facts the real engine resolution produced.
+        req = fake.ssh_requests[0]
+        assert req.hostname == "10.50.1.10"
+        assert req.ssh_username == "ubuntu"
+        assert req.username == "guac-svc@example.com"
+
+
 class TestLaunchSynchronousFailures:
     def test_missing_signing_secret_fails_closed_with_503(self, user, settings):
         settings.GUACAMOLE_JSON_AUTH_SECRET = ""

@@ -2,8 +2,7 @@
  * TanStack Query hooks for the RAES image registry API (#1566). Caching,
  * invalidation, and retry policy live here; components call these hooks and never
  * fetch directly. The SPA uses the canonical `/api/v1/cms/` DRF routes only, which
- * delegate to the single validated `engine.services` write path. The whole
- * surface is gated by SHIFTER_RAES_NATIVE_PROVISIONING server-side (404 when off).
+ * delegate to the single validated `engine.services` write path.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 

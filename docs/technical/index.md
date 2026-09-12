@@ -5,6 +5,8 @@ Platform architecture, infrastructure, and development documentation.
 ## Architecture
 
 - [Architecture Overview](architecture) - Platform structure and design decisions
+- [Per-range model-access design](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/index.md) - Proposed architecture, security, operations, ADRs, and implementation backlog for #681
+- [Model-access contracts](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/architecture.md) - Proposed ownership, allocation, accounting, protocol, and lifecycle contracts
 
 ## Platform Domains
 

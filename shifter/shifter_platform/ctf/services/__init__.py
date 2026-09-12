@@ -56,6 +56,7 @@ from ctf.services.content_hydration import (
     assert_event_content_hydration_ready,
     hydrate_event_ctf_content,
 )
+from ctf.services.content_refresh import ContentRefreshResult, refresh_event_ctf_content
 from ctf.services.content_resolution import resolve_scenario_ctf_content
 from ctf.services.dashboard import active_event_summary
 from ctf.services.event import (
@@ -71,7 +72,6 @@ from ctf.services.event import (
     get_event,
     get_event_stats,
     get_organizer_events,
-    list_events_for_organizer,
     open_registration,
     pause_event,
     resume_event,
@@ -90,6 +90,7 @@ from ctf.services.hint import (
 )
 from ctf.services.participant import (
     ParticipantPasswordIssuance,
+    add_participant,
     authenticate_ctf_participant,
     ban_participant,
     bulk_import_participants,
@@ -97,10 +98,9 @@ from ctf.services.participant import (
     disqualify_participant,
     get_participant,
     get_participant_by_user,
-    invite_participant,
     list_participants_for_event,
     requalify_participant,
-    resend_invite,
+    resend_login_info,
     reset_participant_password,
     set_participant_hidden,
     set_participant_role,
@@ -132,12 +132,14 @@ from ctf.services.submission import (
 )
 
 __all__ = [
+    "ContentRefreshResult",
     "ParticipantPasswordIssuance",
     "activate_event",
     "active_event_summary",
     "add_challenge_file",
     "add_flag",
     "add_hint",
+    "add_participant",
     "add_prerequisite",
     "archive_event",
     "assert_event_content_hydration_ready",
@@ -193,14 +195,13 @@ __all__ = [
     "grant_award",
     "hash_flag",
     "hydrate_event_ctf_content",
-    "invite_participant",
     "list_brackets",
     "list_challenges_for_event",
-    "list_events_for_organizer",
     "list_participants_for_event",
     "open_registration",
     "pause_event",
     "provision_participant_range",
+    "refresh_event_ctf_content",
     "remove_challenge_file",
     "remove_flag",
     "remove_hint",
@@ -208,7 +209,7 @@ __all__ = [
     "remove_prerequisite",
     "requalify_participant",
     "request_event_provisioning",
-    "resend_invite",
+    "resend_login_info",
     "reset_participant_password",
     "resolve_scenario_ctf_content",
     "resume_event",

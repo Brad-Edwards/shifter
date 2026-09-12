@@ -2,11 +2,11 @@
 
 Drives the real view → real ``engine.services.get_ssh_connection_info`` (against
 a real READY ``Range`` with a provisioned instance) → real
-``mission_control.guacamole.create_guacamole_ssh_url``. Only the cloud/network
-boundaries are mocked: the boto3 Secrets Manager client that yields the SSH key
-(``secrets_boundary``) and the urllib Guacamole token POST (``guac_exchange``),
-instead of patching ``engine.services.get_ssh_connection_info`` /
-``mission_control.guacamole.create_guacamole_ssh_url``.
+``mission_control.guacamole.JsonAuthGuacamoleClient.create_ssh_url``. Only the
+cloud/network boundaries are mocked: the boto3 Secrets Manager client that yields
+the SSH key (``secrets_boundary``) and the urllib Guacamole token POST
+(``guac_exchange``), instead of patching ``engine.services.get_ssh_connection_info``
+/ the Guacamole client.
 """
 
 import json

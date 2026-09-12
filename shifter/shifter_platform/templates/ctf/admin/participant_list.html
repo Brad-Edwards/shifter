@@ -51,14 +51,6 @@
         </div>
         <div class="card stat-card">
             <div class="stat-value">
-                {{ invited_count }}
-            </div>
-            <div class="stat-label">
-                {% trans "Invited (Pending)" %}
-            </div>
-        </div>
-        <div class="card stat-card">
-            <div class="stat-value">
                 {{ registered_count }}
             </div>
             <div class="stat-label">
@@ -146,10 +138,7 @@
                                 {% if participant.user %}{{ participant.user.username }}{% else %}-{% endif %}
                             </td>
                             <td>
-                                {% if participant.status == 'invited' %}
-                                    <span class="status status-provisioning"><span class="status-dot"></span>
-                                    {% trans "Invited" %}</span>
-                                {% elif participant.status == 'registered' %}
+                                {% if participant.status == 'registered' %}
                                     <span class="status status-paused"><span class="status-dot"></span>
                                     {% trans "Registered" %}</span>
                                 {% elif participant.status == 'active' %}

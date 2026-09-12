@@ -2,7 +2,9 @@
 
 Leaf of the ``_gce`` family: owns the ``GCERangeImageProfile`` contract, the
 Compute Engine reference/name grammars, and every profile validation rule.
-Depends only on the ``_env`` leaf, so both ``_gce`` and ``_gce_image_keys`` can
+Depends on the ``_env`` leaf and the dependency-light ``shared.sftp_root``
+validator (so the SFTP root is shape-checked at config load with the same helper
+the closed RAES result parser uses), so both ``_gce`` and ``_gce_image_keys`` can
 build on it without a cycle.
 """
 
@@ -11,6 +13,8 @@ import json
 import os
 import re
 from dataclasses import asdict, dataclass
+
+from shared.sftp_root import SftpRootError, normalize_sftp_root_directory
 
 from ._env import _get_int_env
 
@@ -45,6 +49,10 @@ class GCERangeImageProfile:
     host_ssh_username: str = ""
     host_ssh_port: int = 22
     allow_public_web_egress: bool = False
+    # Non-secret guest-visible Guacamole SFTP root for this image (#375). Empty
+    # means the image declared none; the connection layer then omits the SFTP
+    # directory rather than guessing one from ``os_type``.
+    sftp_root_directory: str = ""
 
 
 def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
@@ -72,6 +80,7 @@ _GCE_PROFILE_OPTIONAL_FIELDS = frozenset(
         "host_ssh_username",
         "host_ssh_port",
         "allow_public_web_egress",
+        "sftp_root_directory",
     }
 )
 _GCE_PROFILE_FIELDS = _GCE_PROFILE_REQUIRED_FIELDS | _GCE_PROFILE_OPTIONAL_FIELDS
@@ -212,11 +221,22 @@ def _validate_gce_profile_domain(prefix: str, profile: GCERangeImageProfile) -> 
         raise RuntimeError(f"{prefix}.domain_netbios_name exceeds the 15-character NetBIOS-name limit")
 
 
+def _validate_gce_profile_sftp_root(prefix: str, profile: GCERangeImageProfile) -> None:
+    """Reject a malformed SFTP root before it can reach the realized instance."""
+    if not profile.sftp_root_directory:
+        return
+    try:
+        normalize_sftp_root_directory(profile.sftp_root_directory)
+    except SftpRootError as exc:
+        raise RuntimeError(f"{prefix}.sftp_root_directory is invalid: {exc}") from exc
+
+
 def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, min_disk_size_gb: int) -> None:
     """Fail fast on any malformed field of one resolved GCE range guest profile."""
     _validate_gce_profile_source(prefix, profile, min_disk_size_gb=min_disk_size_gb)
     _validate_gce_profile_domain(prefix, profile)
     _validate_preconfigured_machine_profile(prefix, profile)
+    _validate_gce_profile_sftp_root(prefix, profile)
 
 
 def _load_gce_range_profile(
@@ -225,6 +245,7 @@ def _load_gce_range_profile(
     default_machine_type: str,
     default_disk_size_gb: int,
     min_disk_size_gb: int,
+    default_sftp_root_directory: str = "",
 ) -> GCERangeImageProfile:
     """Load one GCE range guest image/sizing profile."""
     profile = GCERangeImageProfile(
@@ -232,6 +253,7 @@ def _load_gce_range_profile(
         machine_type=os.environ.get(f"{prefix}_MACHINE_TYPE", default_machine_type).strip() or default_machine_type,
         disk_size_gb=_get_int_env(f"{prefix}_DISK_SIZE_GB", default_disk_size_gb),
         disk_type=os.environ.get(f"{prefix}_DISK_TYPE", "pd-balanced").strip() or "pd-balanced",
+        sftp_root_directory=os.environ.get(f"{prefix}_SFTP_ROOT_DIRECTORY", default_sftp_root_directory).strip(),
     )
     _validate_gce_range_profile(prefix, profile, min_disk_size_gb=min_disk_size_gb)
     return profile

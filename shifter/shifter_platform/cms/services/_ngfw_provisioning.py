@@ -2,7 +2,7 @@
 
 The Request / Instance / App rows that own an NGFW provisioning. Kept in its own
 module so ``cms.services._ngfws`` stays within its size budget, mirroring the
-existing ``_range_backend_admission`` / ``_range_create_validation`` splits.
+the existing ``_range_backend_admission`` split.
 """
 
 from __future__ import annotations

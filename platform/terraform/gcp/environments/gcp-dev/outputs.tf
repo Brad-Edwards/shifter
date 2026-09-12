@@ -3,6 +3,16 @@ output "network_name" {
   value       = module.platform_core.network_name
 }
 
+output "dynamic_secret_project_id" {
+  description = "Deployment-scoped project that owns provisioner-created range secrets."
+  value       = module.platform_core.dynamic_secret_project_id
+}
+
+output "provisioner_static_secret_refs" {
+  description = "Exact operator-created GDC/Vertex secret references published to the provisioner runtime."
+  value       = module.platform_core.provisioner_static_secret_refs
+}
+
 output "range_network_name" {
   description = "Name of the dedicated GCP range VPC."
   value       = module.platform_core.range_network_name
@@ -24,13 +34,23 @@ output "range_network_region" {
 }
 
 output "portal_network_cidrs" {
-  description = "Portal-side CIDRs that need connectivity into the range VPC."
+  description = "Provisioner/management-source CIDRs (provisioner pod range) for per-range host-management ingress and the OpenVPN health probe (#1711)."
   value       = module.platform_core.portal_network_cidrs
+}
+
+output "access_network_cidrs" {
+  description = "Access-workload source CIDRs (access pod range) for per-range participant SSH/RDP ingress; portal + guacd only (#1711, ADR-039-R9)."
+  value       = module.platform_core.access_network_cidrs
 }
 
 output "gke_services_cidr" {
   description = "GKE service CIDR used by in-cluster clients to reach Kubernetes service IPs."
   value       = module.platform_core.gke_services_cidr
+}
+
+output "gke_master_ipv4_cidr" {
+  description = "GKE control-plane (master) CIDR. Under Dataplane V2 (Cilium), egress to the Kubernetes API is enforced on the translated control-plane endpoint, not the services-CIDR ClusterIP, so in-cluster API clients must allow this range."
+  value       = module.platform_core.gke_master_ipv4_cidr
 }
 
 output "gke_pods_cidr" {
@@ -169,15 +189,11 @@ output "workload_service_accounts" {
   value       = module.platform_core.workload_service_accounts
 }
 
-output "packer_workload_identity_provider" {
-  description = "GitHub OIDC provider resource name; set as the GCP_WORKLOAD_IDENTITY_PROVIDER GitHub secret. Null when enable_cicd_github_oidc = false."
-  value       = one(module.cicd_github_oidc[*].workload_identity_provider)
-}
-
-output "packer_build_service_account_email" {
-  description = "Packer build service account email; set as the GCP_SERVICE_ACCOUNT GitHub secret. Null when enable_cicd_github_oidc = false."
-  value       = one(module.cicd_github_oidc[*].packer_build_service_account_email)
-}
+# The GitHub OIDC provider + packer build service account (the CI auth identity)
+# are outputs of the foundational root platform/terraform/gcp/global/cicd-oidc,
+# not this platform root -- so a platform destroy never removes them. Read
+# Read GCP_WORKLOAD_IDENTITY_PROVIDER and the explicit build/validate/deploy/
+# destroy service-account values from that root's outputs.
 
 output "range_host_service_account_email" {
   description = "GCE range host SA email for hosts that need cloud APIs; set GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL for a same-project range cell."

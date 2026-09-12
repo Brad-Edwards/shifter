@@ -452,6 +452,46 @@ def test_admission_environment_allowlists_match_task_runner_forwarding_contract(
     assert set(ast.literal_eval(_policy_variable(policy, "allowedSecretEnv"))) == set(sensitive)
 
 
+def _load_helm_documents_aws() -> list[dict[str, Any]]:
+    helm = shutil.which("helm")
+    if helm is None:
+        pytest.skip("helm is required to validate rendered chart manifests")
+
+    rendered = subprocess.run(  # noqa: S603
+        [
+            helm,
+            "template",
+            "shifter",
+            str(CHART_DIR),
+            "-f",
+            str(CHART_DIR / "values-aws-dev.yaml"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return _load_yaml_documents(rendered.stdout)
+
+
+def test_aws_admission_policy_binds_aws_task_runner_and_env_contract() -> None:
+    """#1826: the AWS (EKS) render binds the fail-closed provisioner admission policy
+    to the AWS task-runner label and the AWS-derived env allowlist (never a copy of
+    the GCP contract). The allowlist stays in lockstep with the platform task
+    runner's AWS forwarding list."""
+    from engine.ecs import _AWS_PROVISIONER_ENV_KEYS
+    from shared.cloud.sensitive_env import split_env
+
+    policy = _policy(_load_helm_documents_aws())
+    sensitive, plain = split_env(dict.fromkeys(_AWS_PROVISIONER_ENV_KEYS, "test-value"))
+
+    assert set(ast.literal_eval(_policy_variable(policy, "allowedLiteralEnv"))) == set(plain)
+    assert set(ast.literal_eval(_policy_variable(policy, "allowedSecretEnv"))) == set(sensitive)
+
+    expressions = _policy_expressions(policy)
+    assert "shifter.dev/task-runner'] == 'aws'" in expressions
+    assert "shifter.dev/task-runner'] == 'gcp'" not in expressions
+
+
 def test_helm_admission_principal_tracks_launcher_identity_values() -> None:
     helm = shutil.which("helm")
     if helm is None:

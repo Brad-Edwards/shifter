@@ -71,7 +71,6 @@ def draft_challenge(ctf_event_draft):
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="placeholder",
     )
 
 

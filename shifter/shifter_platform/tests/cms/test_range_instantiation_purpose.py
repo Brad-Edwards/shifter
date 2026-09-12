@@ -1,8 +1,7 @@
 """Trusted instantiation-purpose seam at the CMS launch boundary (issue #1354, ADR-030).
 
 The generic product facades are permanently live-fire: they take no
-instantiation-purpose argument, so no in-process caller can escalate a normal
-launch onto the retained GDC substrate. The only path to a non-user purpose is
+instantiation-purpose argument. The only path to a non-user purpose is
 ``create_non_user_range``, which mints it from a declared workflow *after* its
 own operator-authority gate. CTF creation can never obtain one.
 """
@@ -155,13 +154,13 @@ class TestOperatorGateOnTheDedicatedEntryPoint:
             (NonUserWorkflow.IMAGE_VALIDATION, InstantiationPurpose.OPERATOR_VALIDATION),
         ],
     )
-    def test_an_operator_launch_binds_the_retained_backend(
+    def test_an_operator_launch_binds_the_raes_backend(
         self, settings, operator, make_agent, hydratable_scenario, workflow, expected_purpose
     ):
         from engine.models import Range as EngineRange
 
         agent = make_agent(operator)
-        with _gcp(settings, "gdc"):
+        with _gcp(settings, "gce"):
             create_non_user_range(
                 operator,
                 hydratable_scenario.scenario_id,
@@ -169,7 +168,7 @@ class TestOperatorGateOnTheDedicatedEntryPoint:
                 workflow=workflow,
             )
         engine_range = EngineRange.objects.get(user_id=operator.id)
-        assert engine_range.range_backend == "gdc"
+        assert engine_range.range_backend == "gce"
         assert engine_range.instantiation_purpose == expected_purpose.value
 
 

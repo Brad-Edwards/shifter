@@ -14,8 +14,8 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
-from workspaces.models import Organization, Workspace, WorkspaceMembership
-from workspaces.roles import WorkspaceRole
+from workspaces.models import Organization, OrganizationMembership, Workspace, WorkspaceMembership
+from workspaces.roles import OrganizationRole, WorkspaceRole
 
 pytestmark = pytest.mark.django_db
 
@@ -56,6 +56,80 @@ def test_organization_public_uuid_is_unique():
     first = _organization("First")
     with pytest.raises(IntegrityError), transaction.atomic():
         Organization.objects.create(name="Second", uuid=first.uuid)
+
+
+def test_organization_profile_fields_default_to_empty_unset_values():
+    organization = _organization()
+
+    # ``description``/``support_email``/``support_url`` are optional profile
+    # fields (PLAT-232); empty string is the canonical "unset" value, not NULL.
+    reloaded = Organization.objects.get(pk=organization.pk)
+    assert reloaded.description == ""
+    assert reloaded.support_email == ""
+    assert reloaded.support_url == ""
+
+
+def test_organization_profile_fields_round_trip():
+    organization = Organization.objects.create(
+        name="Research Lab",
+        description="A tenancy grouping for the research team.",
+        support_email="help@example.com",
+        support_url="https://example.com/support",
+    )
+
+    reloaded = Organization.objects.get(pk=organization.pk)
+    assert reloaded.description == "A tenancy grouping for the research team."
+    assert reloaded.support_email == "help@example.com"
+    assert reloaded.support_url == "https://example.com/support"
+
+
+# ---------------------------------------------------------------------------
+# OrganizationMembership (ADR-048: organization administrator authority)
+# ---------------------------------------------------------------------------
+
+
+def test_organization_membership_is_unique_per_organization_and_user():
+    organization = _organization()
+    user = _user()
+    OrganizationMembership.objects.create(organization=organization, user=user, role=OrganizationRole.ADMIN)
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        OrganizationMembership.objects.create(organization=organization, user=user, role=OrganizationRole.ADMIN)
+
+
+def test_organization_membership_role_is_a_closed_vocabulary():
+    membership = OrganizationMembership(organization=_organization(), user=_user(), role="superuser")
+
+    with pytest.raises(ValidationError, match="role"):
+        membership.full_clean()
+
+
+def test_organization_membership_role_is_enforced_by_the_database():
+    organization = _organization()
+    user = _user()
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        OrganizationMembership.objects.create(organization=organization, user=user, role="superuser")
+
+
+def test_a_user_may_administer_several_organizations():
+    user = _user()
+    first = _organization("First")
+    second = _organization("Second")
+    OrganizationMembership.objects.create(organization=first, user=user, role=OrganizationRole.ADMIN)
+    OrganizationMembership.objects.create(organization=second, user=user, role=OrganizationRole.ADMIN)
+
+    assert OrganizationMembership.objects.filter(user=user).count() == 2
+
+
+def test_deleting_an_organization_removes_its_admin_memberships():
+    organization = _organization()
+    user = _user()
+    OrganizationMembership.objects.create(organization=organization, user=user, role=OrganizationRole.ADMIN)
+
+    organization.delete()
+
+    assert not OrganizationMembership.objects.filter(user=user).exists()
 
 
 # ---------------------------------------------------------------------------

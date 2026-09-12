@@ -376,6 +376,16 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
     )
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
     gdc_parser.add_argument("--yes", action="store_true", help=HELP_YES)
+    gdc_parser.add_argument(
+        "--allow-missing-range-images",
+        action="store_true",
+        help=(
+            "Proceed even if the GCE range guest images are not yet baked or the required range-cell "
+            "variables are unset (a deliberate platform-first bring-up). By default gdc-bootstrap fails "
+            "closed on these preconditions so a fresh project does not deploy a range-incapable control "
+            "plane; see scripts/bootstrap/README.md 'Fresh GCP Account Order'."
+        ),
+    )
 
 
 def _add_eks_subparsers(subparsers: argparse._SubParsersAction) -> None:
@@ -620,7 +630,11 @@ def _handle_full(args: argparse.Namespace) -> None:
 
 def _handle_gdc_bootstrap(args: argparse.Namespace) -> None:
     """Bootstrap the configured GDC VM Runtime control plane."""
-    gdc_bootstrap_cluster(_build_gdc_bootstrap_config(args), dry_run=args.dry_run)
+    gdc_bootstrap_cluster(
+        _build_gdc_bootstrap_config(args),
+        dry_run=args.dry_run,
+        allow_missing_range_images=args.allow_missing_range_images,
+    )
 
 
 _COMMAND_HANDLERS = {

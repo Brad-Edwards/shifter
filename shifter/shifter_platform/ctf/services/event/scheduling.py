@@ -185,15 +185,34 @@ def list_event_tasks(event_id: UUID) -> QuerySet[CTFScheduledTask]:
     )
 
 
-def run_task_now(event_id: UUID, task_id: UUID) -> CTFScheduledTask:
+def _assert_lifecycle_actor(event_id: UUID, actor_id: int | None) -> None:
+    """Assert the interactive ``actor_id`` holds the lifecycle capability (#1922).
+
+    Interactive scheduler-control commands pass ``actor_id`` so the event policy
+    is enforced at the service boundary as well as the view; the trusted
+    background scheduler runs the same commands as a system actor and omits it.
+    """
+    if actor_id is None:
+        return
+    from ctf.enums import EventCapability
+    from ctf.services.authorization import assert_event_capability
+    from ctf.services.event import get_event
+
+    assert_event_capability(actor_id, get_event(event_id), EventCapability.LIFECYCLE)
+
+
+def run_task_now(event_id: UUID, task_id: UUID, *, actor_id: int | None = None) -> CTFScheduledTask:
     """Make a pending task due immediately (#526 manual trigger).
 
     The scheduler's normal claim path executes it on the next poll, so manual
     runs get exactly the same locking, retry, and logging as automatic ones.
+    An interactive caller passes ``actor_id`` so the ``lifecycle`` capability is
+    asserted at the service boundary (defense in depth, #1922).
     """
     from ctf.enums import ScheduledTaskStatus
     from ctf.exceptions import CTFNotFoundError, CTFStateError
 
+    _assert_lifecycle_actor(event_id, actor_id)
     task = CTFScheduledTask.objects.filter(pk=task_id, event_id=event_id, deleted_at__isnull=True).first()
     if task is None:
         raise CTFNotFoundError("Scheduled task not found", details={"task_id": str(task_id)})
@@ -232,13 +251,16 @@ def has_pending_cleanup_task(event_id: UUID) -> bool:
     ).exists()
 
 
-def defer_event_cleanup(event_id: UUID, hours: int) -> int:
+def defer_event_cleanup(event_id: UUID, hours: int, *, actor_id: int | None = None) -> int:
     """Push the pending automated cleanup (and its warning) back by `hours` (CTF-1003).
 
-    Returns the number of tasks moved; raises when no cleanup is pending.
+    Returns the number of tasks moved; raises when no cleanup is pending. An
+    interactive caller passes ``actor_id`` to assert the ``lifecycle`` capability
+    at the service boundary (#1922).
     """
     from ctf.exceptions import CTFStateError, CTFValidationError
 
+    _assert_lifecycle_actor(event_id, actor_id)
     if not 1 <= hours <= 168:
         raise CTFValidationError(
             "Deferral must be between 1 and 168 hours",
@@ -255,14 +277,17 @@ def defer_event_cleanup(event_id: UUID, hours: int) -> int:
     return len(tasks)
 
 
-def cancel_event_cleanup(event_id: UUID) -> int:
+def cancel_event_cleanup(event_id: UUID, *, actor_id: int | None = None) -> int:
     """Cancel the pending automated cleanup (and its warning) (CTF-1003).
 
     Ranges then live until the organizer destroys them or force-deletes the
-    event. Returns the number of tasks cancelled; raises when none pend.
+    event. Returns the number of tasks cancelled; raises when none pend. An
+    interactive caller passes ``actor_id`` to assert the ``lifecycle`` capability
+    at the service boundary (#1922).
     """
     from ctf.exceptions import CTFStateError
 
+    _assert_lifecycle_actor(event_id, actor_id)
     tasks = list(_pending_cleanup_tasks(event_id))
     if not tasks:
         raise CTFStateError("No pending cleanup to cancel", details={"event_id": str(event_id)})

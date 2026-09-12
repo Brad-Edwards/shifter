@@ -9,7 +9,21 @@ This directory holds the machine-readable part of ADR enforcement.
 
 The files use JSON syntax with a `.yaml` extension so they stay human-readable while remaining parseable by the standard library.
 
+ADR-058 records the [participant-control realization design](../architecture/raes-participant-control-realization-envelope-1967.md)
+under GEN-2005. It is design policy, not a new executable interface contract.
+Existing registry, guardrail and import checks validate structure; they do not
+prove the runtime guarantees. Mechanism implementation and real-boundary
+evidence are required before support is advertised.
+
 ## Runtime Enforcement
+
+Proposed ADR-059, ADR-060 and ADR-061 record the
+[#681 model-access design](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/index.md): a
+deployment-owned broker, Engine-owned allocation and mandatory budgets,
+and evidence-based revocation/operation. Their registry entries are proposed
+design policy. Existing import and registry checks validate structure; they
+do not prove the future broker, accounting, cloud isolation or release claims.
+Implementation and qualification ownership is explicit in the linked backlog.
 
 The enforcement entrypoint is:
 
@@ -26,6 +40,26 @@ python3 scripts/adr_guard/adr_guard.py --checks layer-imports guardrail-docs --a
 Current mechanisms:
 
 - `scripts/adr_guard/adr_guard.py`: repo-native policy runner
+- `adr-registry` typed interface contracts: accepted ADRs whose closed shape is
+  itself an executable invariant must retain their registered contract kind and
+  exact fields. ADR-032 uses `raes-plan-accessor-boundary/v1` to pin the
+  serialized-plan ownership split, RAES-free provisioner, fail-closed access,
+  canonical naming identity, exact-pin compatibility evidence, and #2082
+  delivery boundary. ADR-054 uses `dedicated-customer-authority/v1` to pin the
+  one-customer deployment claim, independent authority scopes, #2048 activation
+  conditions, infrastructure owners, fail-closed outage posture, and required
+  evidence classes. ADR-055 uses `accessibility-enforcement/v1` to pin the WCAG
+  target, incumbent axe/Playwright toolchain, execution cadence, coverage
+  inventory, non-growing finding baseline, manual-audit evidence, central
+  waiver policy, and scanner security posture. These structural checks do not
+  claim that runtime, cloud, browser, or audit evidence has run; those tests
+  remain mandatory at their owning boundary.
+- `lilrae-identity-boundary`: ADR-024-R6 terminology enforcement. Current
+  architecture prose treats LilRAE and APTL as one identity across a rename,
+  treats TechVault only as a scenario pack, and requires retired TechVault
+  implementation notes to carry a historical boundary while preserving exact
+  commands, paths, symbols, image keys, workflow names, release history, and
+  external `aptl:*` locators.
 - `scripts/adr_guard/boundary_mock_baseline.json`: current legacy
   first-party internal mock-patch counts for ADR-019. Counts may shrink
   as tests move to behavioral assertions, but new or increased internal

@@ -93,21 +93,6 @@ updates:
           - "patch"
 
   - package-ecosystem: "uv"
-    directory: "/shifter/cyberscript"
-    target-branch: "dev"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    groups:
-      python-minor-and-patch:
-        update-types:
-          - "minor"
-          - "patch"
-
-  - package-ecosystem: "uv"
     directory: "/shifter/packer"
     target-branch: "dev"
     commit-message:
@@ -184,6 +169,66 @@ updates:
 
   - package-ecosystem: "uv"
     directory: "/scripts/check_rds_pending_modifications"
+    target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "uv"
+    directory: "/scripts/assert_portal_inspection"
+    target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "uv"
+    directory: "/scripts/handle_sd_replacement"
+    target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "uv"
+    directory: "/uat/event-load-harness"
+    target-branch: "dev"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "uv"
+    directory: "/uat/range-functional-smoke"
     target-branch: "dev"
     commit-message:
       prefix: "chore"

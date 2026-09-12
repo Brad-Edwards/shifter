@@ -36,18 +36,28 @@ inherit `CTFBaseModel` with a `SoftDeleteManager` (soft delete by default).
 | Model | Purpose |
 |-------|---------|
 | `CTFEvent` | Competition: window, scenario, capacity, team mode, throttles, scoreboard policy, cleanup policy |
-| `CTFChallenge` | Scored task: category, points, difficulty, hashed flag, release time, prerequisite, target instance/port, tags/topics |
-| `CTFFlag` | One or more flags per challenge; stored as a hash with type, case sensitivity, and validator config |
+| `CTFChallenge` | Scored task: category, points, difficulty, release time, prerequisite, target instance/port, tags/topics |
+| `CTFFlag` | The sole source of flag truth: one or more flags per challenge, each stored as a hash (static), pattern (regex), or sentinel (programmable/http) with type, case sensitivity, and validator config |
 | `CTFTopic`, `CTFChallengeTag`, `CTFChallengeFile`, `CTFChallengePrerequisite` | Challenge taxonomy, attachments, and unlock graph |
 | `CTFBracket`, `CTFTeam`, `CTFParticipant` | Cohorts, teams, and per-user participation |
 | `CTFSubmission`, `CTFAward` | Flag attempts (correctness, points, attempt number, source IP) and manual point awards |
 | `CTFChallengeRating` | Participant difficulty ratings |
 | `CTFHint`, `CTFHintUsage` | Optional, point-reducing hints and usage tracking |
-| `CTFNotification`, `CTFEmailTemplate`, `CTFScheduledTask` | Announcements, reminder templates, and scheduled work |
+| `CTFNotification`, `CTFEmailTemplate`, `CTFScheduledTask` | Announcements, reminder templates, and scheduled work (legacy aggregate evidence; see Scoped communications) |
 | `CTFContentHydrationReceipt` | Digest, object-identity fingerprints, bounded counts, and pristine/drifted state for scenario-managed event content |
+| `CommunicationCampaign`, `CommunicationTargetEvent`, `MessageRevision`, `CommunicationIntent`, `RecipientSnapshot`, `DeliveryAttempt`, `ParticipantReceipt` | Scoped communications domain (ADR-051): workspace-confined campaigns, immutable content, normalized release occurrences, server-resolved recipients, per-transport delivery commands, and read/acknowledgement state |
 
-Flags are persisted only as hashes (`flag_hash`); plaintext is never stored after
-challenge creation, and submission checking compares against the hash.
+`CTFEvent` carries an immutable scalar `workspace_id` tenancy boundary (ADR-051):
+it is resolved once at creation from an authorized workspace or the creator's
+personal workspace, existing events are backfilled, and it is never a cross-layer
+foreign key. This is the scope a communication campaign is confined to.
+
+Flag material is persisted only as `CTFFlag` rows (static flags as hashes, regex as
+patterns, programmable/HTTP as validator config), never on the challenge itself.
+Plaintext is never stored after flag creation, and submission checking compares
+against the `CTFFlag` records. A single plaintext `flag` on challenge create/update
+is normalized into one static `CTFFlag`; a challenge with no flag rows is
+unverifiable (every submission is rejected).
 
 ## Services
 
@@ -60,6 +70,8 @@ Business logic lives under `ctf.services` (views stay thin):
   fallback (`get_scoreboard`, `calculate_score`, ranks, stats, timeline, and the
   `recompute_*` maintenance helpers).
 - `authorization`, `audit`: access checks and audit trail.
+- `communication/`: the scoped-communications domain (see below): `audience`,
+  `campaigns`, `release`, `lifecycle`, `retention`.
 
 ### Scenario content hydration
 
@@ -162,6 +174,55 @@ to its own server secret; the shared range-host identity cannot read VPN secrets
 See [the provider-neutral range substrate](../../architecture/provider-neutral-range-substrate)
 for the ADR-039 contract and [the issue 1695 architecture preflight](../../architecture/ctf-openvpn-participant-access-preflight-1695)
 for the threat model and containment decisions.
+
+### Scoped communications (ADR-051)
+
+`ctf.services.communication` owns the durable domain for scoped communications,
+detailed in the [communications preflight](../../architecture/ctf-communications-raes-inject-preflight-2047).
+This is the domain-model slice (issue #2048) of the umbrella capability; the
+transport workers, HTTP endpoints, range-trigger ingress, and browser renderer
+are later slices.
+
+- A `CommunicationCampaign` is bound to exactly one immutable workspace and may
+  target one or more events, but only events that share that workspace and admit
+  the author's notification capability. `create_campaign` is the confinement gate:
+  it authorizes active workspace membership through `workspaces.services`
+  (`USE_CTF_COMMUNICATIONS`, the one sanctioned CTF to `workspaces.services` edge)
+  and re-authorizes every target event. Workspace membership never grants event or
+  recipient authority, and a missing or unauthorized target returns one opaque
+  denial.
+- Message content is validated at authoring time against the versioned
+  `ctf-communication-markdown/v1` profile in `ctf.communication_contracts`
+  (bounded subject and body, no raw HTML, no executable URL schemes, and an
+  `https` link-host allowlist). Editing content creates a new immutable
+  `MessageRevision`; a persisted revision is frozen.
+- `resolve_recipients` is the single closed audience resolver over the
+  `AudienceKind` selector (one participant, a set, teams, one event, or an
+  explicit multi-event union). It reaches event-scoped `CTFParticipant` rows
+  through the shared `viewing_participant_q` predicate and stores public UUIDs
+  only, never an email address or ORM predicate.
+- `release_campaign` resolves the audience and, in one transaction, writes the
+  immutable `CommunicationIntent`, deterministic per-recipient `RecipientSnapshot`
+  rows and `ParticipantReceipt` state, the initial per-transport `DeliveryAttempt`
+  commands, and a strict `shared.audit` `COMMUNICATION` event. Release is
+  idempotent on the intent identity, and per-recipient uniqueness means a retry
+  can never grow the audience. A recipient's delivery coordinate is stored with
+  `shared.field_encryption`, never as authority.
+- Lifecycle transitions (`cancel_campaign`, `on_participant_removed`,
+  `on_event_cancelled`, `on_range_replaced`) stop only not-yet-claimed delivery
+  commands and fence scheduled work; an accepted send is never recalled and the
+  immutable snapshot identity survives as bounded evidence with its coordinate
+  erased. `purge_expired_communications` (management command
+  `prune_ctf_communications`) physically deletes content and coordinates after
+  `CTF_COMMUNICATION_RETENTION_DAYS`, rather than leaving a restorable soft-deleted
+  row.
+
+Compatibility boundary: `CTFNotification`, scheduled announcements, the shared
+`WebSocketNotification` transport, participant announcement reads, and
+`CTFEmailTemplate` stay live and factual. This slice does not run a second
+delivery writer or a destructive legacy transform; that cutover ships with the
+transport slice that has the new writer. Legacy callers migrate onto the single
+audience resolver without a second long-lived notification model.
 
 ## Scheduled Work
 

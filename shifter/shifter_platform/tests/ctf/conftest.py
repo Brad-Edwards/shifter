@@ -27,6 +27,7 @@ from ctf.models import (
     CTFBracket,
     CTFChallenge,
     CTFEvent,
+    CTFFlag,
     CTFParticipant,
     CTFScheduledTask,
     CTFSubmission,
@@ -63,6 +64,9 @@ def make_ctf_event(**overrides) -> CTFEvent:
         "id": uuid4(),
         "name": "Test CTF Event",
         "created_by_id": 1,
+        # Synthetic tenancy scope for in-memory (unsaved) events (ADR-051, #2048).
+        # DB-backed fixtures resolve a real personal workspace instead.
+        "workspace_id": 1,
         "status": EventStatus.REGISTRATION.value,
         "event_start": now + timedelta(days=1),
         "event_end": now + timedelta(days=1, hours=8),
@@ -74,6 +78,18 @@ def make_ctf_event(**overrides) -> CTFEvent:
     }
     defaults.update(overrides)
     return CTFEvent(**defaults)
+
+
+def personal_workspace_id(user) -> int:
+    """Resolve (creating if needed) a user's personal workspace id (ADR-051, #2048).
+
+    CTF events carry an immutable scalar ``workspace_id``; DB-backed event
+    fixtures use their organizer's personal workspace so campaign/confinement
+    tests see a real tenant the organizer belongs to.
+    """
+    import workspaces.services as workspace_services
+
+    return workspace_services.resolve_personal_workspace(user).workspace_id
 
 
 def make_challenge(event=None, **overrides) -> CTFChallenge:
@@ -88,7 +104,6 @@ def make_challenge(event=None, **overrides) -> CTFChallenge:
         "category": ChallengeCategory.WEB.value,
         "points": 100,
         "difficulty": ChallengeDifficulty.EASY.value,
-        "flag_hash": "$2b$12$test_hash_placeholder",
         "flag_format": "FLAG{...}",
         "release_time": None,
         "order": 0,
@@ -266,6 +281,7 @@ def ctf_event(db, organizer_user) -> CTFEvent:
         name="Test CTF Event",
         description="A test CTF event for unit testing",
         created_by=organizer_user,
+        workspace_id=personal_workspace_id(organizer_user),
         status=EventStatus.REGISTRATION.value,
         event_start=timezone.now() + timedelta(days=1),
         event_end=timezone.now() + timedelta(days=1, hours=8),
@@ -284,6 +300,7 @@ def ctf_event_draft(db, organizer_user) -> CTFEvent:
         name="Draft CTF Event",
         description="A draft event",
         created_by=organizer_user,
+        workspace_id=personal_workspace_id(organizer_user),
         status=EventStatus.DRAFT.value,
         event_start=timezone.now() + timedelta(days=7),
         event_end=timezone.now() + timedelta(days=7, hours=8),
@@ -299,6 +316,7 @@ def ctf_event_active(db, organizer_user) -> CTFEvent:
         name="Active CTF Event",
         description="An active event",
         created_by=organizer_user,
+        workspace_id=personal_workspace_id(organizer_user),
         status=EventStatus.ACTIVE.value,
         event_start=timezone.now() - timedelta(hours=1),
         event_end=timezone.now() + timedelta(hours=7),
@@ -314,6 +332,7 @@ def ctf_event_team(db, organizer_user) -> CTFEvent:
         name="Team CTF Event",
         description="A team-based event",
         created_by=organizer_user,
+        workspace_id=personal_workspace_id(organizer_user),
         status=EventStatus.REGISTRATION.value,
         event_start=timezone.now() + timedelta(days=1),
         event_end=timezone.now() + timedelta(days=1, hours=8),
@@ -329,19 +348,35 @@ def ctf_event_team(db, organizer_user) -> CTFEvent:
 # -----------------------------------------------------------------------------
 
 
+def _add_static_flag(challenge: CTFChallenge, flag: str = "FLAG{test}", *, order: int = 0) -> CTFFlag:
+    """Attach one static CTFFlag to a challenge (CTFFlag is the flag source of
+    truth; #532)."""
+    from ctf.services.challenge import hash_flag
+
+    return CTFFlag.objects.create(
+        challenge=challenge,
+        flag_hash=hash_flag(flag),
+        flag_type="static",
+        case_sensitive=True,
+        order=order,
+    )
+
+
 @pytest.fixture
 def ctf_challenge(db, ctf_event) -> CTFChallenge:
-    """Create a basic challenge."""
-    return CTFChallenge.objects.create(
+    """Create a basic challenge with one static flag (CTFFlag is the source of
+    truth; #532)."""
+    challenge = CTFChallenge.objects.create(
         event=ctf_event,
         name="Test Challenge",
         description="Find the flag in the source code",
         category=ChallengeCategory.WEB.value,
         points=100,
         difficulty=ChallengeDifficulty.EASY.value,
-        flag_hash="$2b$12$test_hash_placeholder",
         flag_format="FLAG{...}",
     )
+    _add_static_flag(challenge, "FLAG{test}")
+    return challenge
 
 
 @pytest.fixture
@@ -354,7 +389,6 @@ def ctf_challenge_with_hint(db, ctf_event) -> CTFChallenge:
         category=ChallengeCategory.CRYPTO.value,
         points=200,
         difficulty=ChallengeDifficulty.MEDIUM.value,
-        flag_hash="$2b$12$another_hash_placeholder",
         hint="Look at the cipher mode",
         hint_penalty=25,
     )
@@ -370,7 +404,6 @@ def ctf_challenge_delayed(db, ctf_event) -> CTFChallenge:
         category=ChallengeCategory.PWN.value,
         points=300,
         difficulty=ChallengeDifficulty.HARD.value,
-        flag_hash="$2b$12$delayed_hash_placeholder",
         release_time=ctf_event.event_start + timedelta(hours=2),
     )
 
@@ -408,14 +441,14 @@ def ctf_participant(db, ctf_event, participant_user) -> CTFParticipant:
 
 
 @pytest.fixture
-def ctf_participant_invited(db, ctf_event) -> CTFParticipant:
-    """Create an invited (not yet registered) participant."""
+def ctf_participant_no_account(db, ctf_event) -> CTFParticipant:
+    """Create a participant row with no linked isolated account (``user`` is None)."""
     return CTFParticipant.objects.create(
         event=ctf_event,
-        email="invited@test.com",
-        name="Invited Participant",
-        status=ParticipantStatus.INVITED.value,
-        invited_at=timezone.now(),
+        email="no-account@test.com",
+        name="No Account Participant",
+        status=ParticipantStatus.REGISTERED.value,
+        login_info_sent_at=timezone.now(),
     )
 
 

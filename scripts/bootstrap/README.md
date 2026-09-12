@@ -129,9 +129,43 @@ Deployment section of
 `docs/technical/dev/setup.md`.
 
 1. Create the GCP project and enable the required APIs.
-2. Configure Workload Identity Federation for GitHub Actions (pool, provider,
-   service account) and set the `GCP_SERVICE_ACCOUNT` and
-   `GCP_WORKLOAD_IDENTITY_PROVIDER` GitHub secrets.
+2. Apply the foundational OIDC/WIF identity root
+   (`platform/terraform/gcp/global/cicd-oidc`) to create the GitHub Actions
+   Workload Identity pool/provider and purpose-scoped CI service accounts. Apply
+   the `gcp-dev` profile in the dev project; repeat with `environment=proof` in
+   the proof project and `environment=prod` in the prod project when those image
+   lanes are used. Each project keeps its own state bucket/prefix. Then set each
+   purpose Environment's explicit service-account secret and
+   `GCP_WORKLOAD_IDENTITY_PROVIDER` from the applicable profile outputs. This root has its own state prefix, separate from the
+   platform root, so a `gcp-dev-destroy` never removes the credentials CI
+   authenticates as (it mirrors the `global/github-runner` containment):
+
+   ```bash
+   cd platform/terraform/gcp/global/cicd-oidc
+   terraform init -backend-config="bucket=<project-id>-terraform-state" -backend-config="prefix=cicd-oidc"
+   terraform apply -var="project_id=<dev-project-id>" -var="environment=gcp-dev" \
+     -var='build_read_bucket_names=["<polaris-stack-bucket>"]' \
+     -var='platform_external_bucket_names=["<raes-package-bucket>","<ctf-content-bucket>"]'
+   terraform output -raw workload_identity_provider          # GCP_WORKLOAD_IDENTITY_PROVIDER
+   terraform output -raw packer_build_service_account_email     # GCP_PACKER_BUILD_SERVICE_ACCOUNT
+   terraform output -raw packer_validate_service_account_email  # GCP_PACKER_VALIDATE_SERVICE_ACCOUNT
+   terraform output -raw release_scan_service_account_email     # GCP_RELEASE_SCAN_SERVICE_ACCOUNT
+   terraform output -raw deploy_service_account_email           # GCP_DEPLOY_SERVICE_ACCOUNT
+   terraform output -raw destroy_service_account_email          # GCP_DESTROY_SERVICE_ACCOUNT
+   terraform output -raw release_evidence_bucket_name           # private raw evidence store
+
+   # In the prod project's separately initialized root/state:
+   terraform apply -var="project_id=<prod-project-id>" -var="environment=prod"
+   terraform output -raw packer_promote_service_account_email   # GCP_PACKER_PROMOTE_SERVICE_ACCOUNT
+   ```
+   Omit empty optional bucket entries. The external bucket set must exactly
+   cover any non-empty `raes_package_bucket_name` and
+   `ctf_content_bucket_name` used by platform-core so deploy/destroy can manage
+   workload IAM on those exact resources without project-wide Storage Admin.
+   Use `environment=proof` for the proof image lane and publish only its build
+   and validate outputs. Existing installations follow the staged, state-address
+   preserving cutover in `docs/dev/deploy-secrets.md` rather than applying the
+   strict identity split from the shared CI principal.
 3. Configure the GCP deployment secrets and variables in
    `docs/dev/deploy-secrets.md` (the `gcp-dev` section), including
    `SHIFTER_CONFIG_GCP_DEV` and the GCE range-cell variables.

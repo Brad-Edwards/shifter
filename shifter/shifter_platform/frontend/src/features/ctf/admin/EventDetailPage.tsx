@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
+import { EventContentCard } from "./EventContentCard";
 import { EventLifecycleCard } from "./EventLifecycleCard";
 import { EventStaffCard } from "./EventStaffCard";
 import { EventPagesCard } from "./EventPagesCard";
@@ -218,10 +219,24 @@ export function EventDetailPage() {
         }
       />
 
+      {event.access_source === "platform_admin" ? (
+        <Alert className="mb-4">
+          <AlertTitle>Acting as platform administrator</AlertTitle>
+          <AlertDescription>
+            You are not the owner of this event ({event.owner.display_name}). Changes you make here use
+            platform-administration authority and are audited.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="space-y-6">
         <EventLifecycleCard event={event} />
         <EventOverview event={event} />
-        <EventStaffCard eventId={event.id} />
+        <EventContentCard event={event} />
+        <EventStaffCard
+          eventId={event.id}
+          canManage={event.access_source === "owner" || event.access_source === "platform_admin"}
+        />
         <EventWebhooksCard eventId={event.id} />
         <EventPagesCard eventId={event.id} />
         <EventLinks eventId={event.id} />

@@ -141,11 +141,50 @@ To publish a revision:
 
 1. Publish a new immutable object under a new digest key.
 2. Update the deployment reference and restart the portal.
-3. Create a new event for the revised content.
+3. Either create a new event, or refresh an existing managed event to the new
+   revision (see below).
 
-Do not repoint an event that has already been hydrated. Its scenario is
-immutable, and a receipt whose digest no longer matches deployment
-configuration is not activation-ready.
+## Refresh an event to the configured revision
+
+An organizer may reconcile a managed event to the currently configured,
+digest-pinned revision of its own scenario in place, without tearing the event
+down. This corrects a stale challenge title or flag while preserving challenge
+identity and every historical scoring row (submissions, hint usage, ratings).
+It is an explicit, owner-only content operation, never an automatic sync.
+
+- Endpoint: `POST /api/v1/ctf/events/<event_id>/content/refresh/` with body
+  `{"expected_current_digest": "sha256:<64 hex>"}`. The organizer supplies only
+  the digest they currently see as an optimistic concurrency fence; the
+  server-configured bundle is the target. No object key, URL, bundle body,
+  flag, validator configuration, or target digest is caller-controlled. The
+  event detail projection exposes the current digest and drift state under
+  `managed_content` for the organizer UI.
+- Matching is by `(event_id, source_id)`. Matched challenges keep their UUID, so
+  submissions, ratings, attachments, and score history stay attached.
+- `DRAFT` and `REGISTRATION` events (no scoring ledger yet) may reconcile the
+  complete managed graph, including challenge additions/removals and
+  hint/prerequisite changes. A refresh is refused if participant history already
+  exists.
+- `ACTIVE` and `PAUSED` events may refresh only presentation and verification
+  fields, including challenge title/content and the complete flag/validator set.
+  A revision that adds/removes/renames a `source_id`, changes hints or
+  prerequisites, or changes `points`, `minimum_points`, `decay_function`,
+  `decay_solve_count`, or `max_attempts` is rejected atomically. Pausing does
+  not make those changes safe; create a new event instead.
+- `ENDED`, `CANCELLED`, and `ARCHIVED` content is historical evidence and is not
+  refreshable.
+- Existing submissions and hint usage are never revalidated, rewritten, or
+  rescored. A refresh changes only which proof future attempts accept.
+- On success the receipt is updated to the target evidence and returns to
+  `PRISTINE`; an explicit refresh can therefore also restore drifted managed
+  content from its configured bundle. The audit stream records a
+  `ctf_content_refresh` event with the previous and target digests, bounded
+  counts, and changed-field categories, never content values.
+
+Every path back to `ACTIVE`, including resuming a paused event, re-enforces
+managed-content hydration readiness under the event lock, so a paused event
+whose configured content has been revised cannot silently resume against stale
+flags: restore or refresh it first.
 
 ## Failure codes
 
@@ -160,8 +199,11 @@ codes distinguish the main operator actions:
 | `CTF_CONTENT_DIGEST_MISMATCH` | Recompute the digest over the uploaded bytes. |
 | `CTF_CONTENT_INVALID` | Validate the bundle contract and native flag policy. |
 | `CTF_CONTENT_SCENARIO_MISMATCH` | Align the reference, bundle, and scenario IDs. |
-| `CTF_CONTENT_DRIFT` | Create a fresh event; do not overwrite managed state. |
-| `CTF_CONTENT_NOT_READY` | Restore the configured reference or create a fresh event. |
+| `CTF_CONTENT_DRIFT` | Refresh or create a fresh event; do not overwrite managed state. |
+| `CTF_CONTENT_NOT_READY` | Restore the configured reference, refresh, or create a fresh event. |
+| `CTF_CONTENT_REFRESH_CONFLICT` | Reload the event; the revision changed under you. |
+| `CTF_CONTENT_REFRESH_UNSAFE` | Live refresh cannot change scoring/structure; create a new event. |
+| `CTF_CONTENT_REFRESH_STATE` | Event state or history does not permit a refresh. |
 
 Object keys, validator configuration, flag material, and provider exception
 text are not included in public errors or audit records.

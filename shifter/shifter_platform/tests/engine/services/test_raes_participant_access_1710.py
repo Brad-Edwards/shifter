@@ -41,7 +41,7 @@ def _binding(target=_NODE, channel="ssh", account="provision.account.analyst"):
     return ParticipantAccessBinding(target_address=target, channel=channel, account_address=account)
 
 
-def _member(channels=("ssh",), uuid=f"{_NODE}#0", usernames=None):
+def _member(channels=("ssh",), uuid=f"{_NODE}#0", usernames=None, sftp_root_directory=None):
     member = {
         "uuid": uuid,
         "name": "web",
@@ -56,6 +56,8 @@ def _member(channels=("ssh",), uuid=f"{_NODE}#0", usernames=None):
         member["ssh_key_secret_arn"] = "projects/p/secrets/ssh"
     if "rdp" in channels:
         member["rdp_password_secret_arn"] = "projects/p/secrets/rdp"
+    if sftp_root_directory is not None:
+        member["sftp_root_directory"] = sftp_root_directory
     return member
 
 
@@ -187,6 +189,37 @@ class TestRealizedProjection:
         assert instance["ssh_key_secret_arn"] == "projects/p/secrets/ssh"
         # Realized state and lifecycle move together, in one generation.
         assert fx.range.status == ResourceStatus.READY.value
+
+    def test_ready_projects_the_realized_sftp_root_directory(self):
+        """A realized member's SFTP root is persisted for the connection layer (#375)."""
+        fx = _Fixture()
+        fx.seed(ResultStep.RAES_TERMINAL_READY, _ready([_member(sftp_root_directory="/home/kali")]))
+
+        apply_pending_operation_results()
+
+        fx.range.refresh_from_db()
+        assert fx.range.provisioned_instances[0]["sftp_root_directory"] == "/home/kali"
+
+    def test_ready_omits_sftp_root_directory_when_absent(self):
+        """No declared root persists no key rather than an empty guess (#375)."""
+        fx = _Fixture()
+        fx.seed(ResultStep.RAES_TERMINAL_READY, _ready([_member()]))
+
+        apply_pending_operation_results()
+
+        fx.range.refresh_from_db()
+        assert "sftp_root_directory" not in fx.range.provisioned_instances[0]
+
+    def test_malformed_sftp_root_directory_is_rejected(self):
+        """A traversal root fails the closed transport parse and never applies (#375)."""
+        fx = _Fixture()
+        row = fx.seed(ResultStep.RAES_TERMINAL_READY, _ready([_member(sftp_root_directory="/home/../etc")]))
+
+        apply_pending_operation_results()
+
+        fx.range.refresh_from_db()
+        assert _disposition(row) != OperationResultDisposition.APPLIED
+        assert not fx.range.provisioned_instances
 
     def test_realized_access_beyond_the_declaration_is_rejected(self):
         """A member claiming an undeclared endpoint must not become authorizable."""

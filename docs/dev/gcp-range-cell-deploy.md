@@ -137,6 +137,22 @@ minimum for a live range is: `RANGE_NETWORK_ZONE`, `GCP_RANGE_LINUX_IMAGE`,
 `GCP_RANGE_DC_IMAGE`, and `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`. Polaris also
 needs `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL`.
 
+The deployment `shifter.yaml` must also set
+`settings.dynamic_secret_project_id` to the pre-existing, deployment-only
+range-secret project. This is distinct from `GCP_RANGE_CELL_PROJECT_ID` (Compute
+resources), `GCP_RANGE_VERTEX_PROJECT_ID` (Vertex API/quota), and the project in
+an optional full `GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID` reference. Equal values
+in a small deployment do not merge those ownership concepts. New guest,
+RAES/GDC, Vertex, VM-Series, and VPN secrets use canonical deployment- and
+audience-prefixed names in that project; persisted full references remain the
+authority for bootstrap and portal access.
+
+When GDC access/image inputs or a shared Vertex source are enabled, declare the
+full versionless refs under `settings.provisioner_static_secret_refs`. Do not add
+a broad Secret Manager role to compensate for a missing entry. The migration,
+permission-probe, quota, audit-cost, and revocation procedure is documented in
+[`platform/terraform/gcp/README.md`](../../platform/terraform/gcp/README.md#deployment-scoped-range-secret-project).
+
 `GCP_RANGE_CELL_PROJECT_ID` defaults to the project parsed from the range VPC
 self-link, so the range backend targets the real range project even when the
 control-plane `GCP_PROJECT_ID` is a deploy-overlay placeholder.

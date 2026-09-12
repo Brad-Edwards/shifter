@@ -7,10 +7,12 @@ its Request correlation id -- the pattern CMS and the CTF recovery bridge use
 
 from __future__ import annotations
 
+import enum
 import logging
 from typing import TYPE_CHECKING
 
 from shared.enums import ResourceStatus
+from shared.log_sanitize import safe_log_value
 
 from ._common import EngineError, _persist_task_arn
 
@@ -27,6 +29,37 @@ logger = logging.getLogger(__name__)
 
 class RangeOwnershipTransferBlocked(EngineError):
     """An active participant credential prevents safe in-place ownership transfer."""
+
+
+class RangeProjectionIntegrityError(EngineError):
+    """More than one Engine range correlates to a single provisioning request.
+
+    A request/range correlation is one-to-one, so a duplicate projection is an
+    integrity failure the compare-and-set rebind refuses to guess through rather
+    than update an arbitrary or every matching row.
+    """
+
+
+class RangeWorkspaceRebindOutcome(enum.Enum):
+    """Result of an expected-source compare-and-set workspace rebind.
+
+    The Engine half never resolves or authorizes a workspace (ADR-046-R1); it
+    only moves its own scalar projection when the persisted binding matches the
+    source the CMS owner expects, so a concurrent move or pre-existing drift is
+    reported rather than silently overwritten (last-writer-wins tenant drift).
+    """
+
+    UPDATED = "updated"
+    """The Engine range carried ``expected_workspace_id`` and now carries the new one."""
+
+    UNCHANGED = "unchanged"
+    """The Engine range already carried ``new_workspace_id`` (authorized idempotent no-op)."""
+
+    NOT_FOUND = "not_found"
+    """No Engine range correlates to the request."""
+
+    SOURCE_MISMATCH = "source_mismatch"
+    """The Engine range carried neither the expected source nor the target (drift/concurrency)."""
 
 
 def range_owner_reassignment_available_by_request(request_id: UUID) -> bool:
@@ -153,30 +186,84 @@ def _cancellation_already_settled(range_obj: Range, request_id: UUID) -> bool | 
     return False
 
 
-def rebind_range_workspace_by_request(request_id: UUID, workspace_id: int) -> bool:
-    """Move the Engine range for ``request_id`` into ``workspace_id`` (#1325).
+def rebind_range_workspace_by_request(
+    request_id: UUID,
+    *,
+    expected_workspace_id: int,
+    new_workspace_id: int,
+) -> RangeWorkspaceRebindOutcome:
+    """Compare-and-set the Engine range's workspace scope for ``request_id`` (#1325, #1944).
 
-    The Engine half of the explicit rehoming operation in ADR-046-R3. CMS owns
-    the decision -- it authorizes the move and updates its own two projections --
-    and calls this so the Engine range's scope moves with them instead of being
-    left pointing at the previous tenant. Engine still never resolves or
-    authorizes a workspace itself (ADR-046-R1).
+    The Engine half of a range workspace move. CMS owns the decision -- it
+    authorizes the move (ADR-046-R1) and updates its own two projections -- and
+    calls this so the Engine range's scope moves with them instead of being left
+    pointing at the previous tenant. The write is an expected-source
+    compare-and-set rather than an unconditional bulk update: it moves the range
+    only when the persisted binding is ``expected_workspace_id``, so a concurrent
+    move or pre-existing projection drift is reported (``SOURCE_MISMATCH``)
+    instead of silently overwritten. A range already at ``new_workspace_id`` is
+    an authorized idempotent no-op (``UNCHANGED``).
+
+    Must be called inside the caller's transaction: it takes a row lock via
+    ``select_for_update`` so the compare and the set are atomic against
+    concurrent rebinds.
 
     Returns:
-        True if a range existed for ``request_id`` and now carries the binding.
+        The :class:`RangeWorkspaceRebindOutcome` describing what happened.
+
+    Raises:
+        RangeProjectionIntegrityError: If more than one Engine range correlates
+            to ``request_id`` (a one-to-one invariant violation).
     """
     from engine.models import Range
 
-    updated = Range.objects.filter(request__request_id=request_id).update(workspace_id=workspace_id)
-    if not updated:
-        logger.warning("rebind_range_workspace_by_request: no range for request_id=%s", request_id)
-        return False
-    logger.info(
-        "rebind_range_workspace_by_request: request_id=%s rebound to workspace_id=%s",
-        request_id,
-        workspace_id,
-    )
-    return True
+    # Sanitize the request-derived correlation id before it reaches any log sink
+    # (CodeQL py/log-injection); the internal workspace ints are not user text.
+    logged_request_id = safe_log_value(request_id)
+
+    ranges = list(Range.objects.select_for_update().filter(request__request_id=request_id))
+    if not ranges:
+        logger.warning("rebind_range_workspace_by_request: no range for request_id=%s", logged_request_id)
+        return RangeWorkspaceRebindOutcome.NOT_FOUND
+    if len(ranges) > 1:
+        logger.error(
+            "rebind_range_workspace_by_request: expected one engine range for request_id=%s, found %s",
+            logged_request_id,
+            len(ranges),
+        )
+        raise RangeProjectionIntegrityError(
+            f"expected one engine range for request_id={request_id}, found {len(ranges)}"
+        )
+
+    # Single outcome variable + one terminal return keeps the branch count within
+    # the cognitive-return limit (Sonar S1142) while preserving each CAS result.
+    range_obj = ranges[0]
+    if range_obj.workspace_id == new_workspace_id:
+        logger.info(
+            "rebind_range_workspace_by_request: request_id=%s already at workspace_id=%s (no-op)",
+            logged_request_id,
+            new_workspace_id,
+        )
+        outcome = RangeWorkspaceRebindOutcome.UNCHANGED
+    elif range_obj.workspace_id != expected_workspace_id:
+        logger.warning(
+            "rebind_range_workspace_by_request: source mismatch request_id=%s expected=%s actual=%s",
+            logged_request_id,
+            expected_workspace_id,
+            range_obj.workspace_id,
+        )
+        outcome = RangeWorkspaceRebindOutcome.SOURCE_MISMATCH
+    else:
+        range_obj.workspace_id = new_workspace_id
+        range_obj.save(update_fields=["workspace_id"])
+        logger.info(
+            "rebind_range_workspace_by_request: request_id=%s rebound workspace_id %s -> %s",
+            logged_request_id,
+            expected_workspace_id,
+            new_workspace_id,
+        )
+        outcome = RangeWorkspaceRebindOutcome.UPDATED
+    return outcome
 
 
 def reassign_range_owner_by_request(request_id: UUID, new_user: User) -> bool:

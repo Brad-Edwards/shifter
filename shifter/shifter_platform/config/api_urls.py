@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from config.api_administer import AdministerGrantOrganizerView
+from config.api_administer import AdministerGrantOrganizerView, AdministerTransferOwnershipView
 from config.api_bootstrap import BootstrapView
 from config.api_dashboard import DashboardSummaryView
 
@@ -28,6 +28,13 @@ urlpatterns = [
         "administer/users/<int:pk>/grant-organizer/",
         AdministerGrantOrganizerView.as_view(),
         name="administer-grant-organizer",
+    ),
+    # Cross-domain offboarding ownership transfer (ranges + workspaces, PLAT-236).
+    # Composition-root command registered ahead of the include, like grant-organizer.
+    path(
+        "administer/users/<int:pk>/transfer-ownership/",
+        AdministerTransferOwnershipView.as_view(),
+        name="administer-transfer-ownership",
     ),
     path("administer/", include("management.api.urls")),
     path("", include("shared.api.urls")),

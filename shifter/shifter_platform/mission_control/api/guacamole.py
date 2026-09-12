@@ -34,6 +34,7 @@ from mission_control.views._guacamole_bootstrap import (
 )
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api.schema import ApiErrorSerializer, LegacyErrorSerializer
+from shared.errors import classify_user_message
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -224,7 +225,7 @@ def _launch_response(*, user: User, protocol: str, target_id: str) -> JsonRespon
     try:
         launch = launch_guacamole_session(user=user, protocol=protocol, target_id=target_id)
     except BootstrapFailure as exc:
-        return JsonResponse({"error": str(exc)}, status=exc.status_code)
+        return JsonResponse({"error": exc.user_message}, status=exc.status_code)
     except BootstrapQueueFull:
         response = JsonResponse({"error": "Guacamole session service is busy. Try again shortly."}, status=503)
         response["Retry-After"] = "1"
@@ -268,7 +269,10 @@ def _status_response(bootstrap: GuacamoleBootstrapRequest) -> JsonResponse:
             payload["error"] = "Guacamole session link is no longer available"
             status_code = 410
     elif bootstrap.status == GuacamoleBootstrapRequest.Status.FAILED:
-        payload["error"] = bootstrap.error_message or "Guacamole session bootstrap failed"
+        payload["error"] = classify_user_message(
+            bootstrap.error_message,
+            default="Guacamole session bootstrap failed",
+        )
         status_code = bootstrap.error_status_code
     else:
         retry_after = True

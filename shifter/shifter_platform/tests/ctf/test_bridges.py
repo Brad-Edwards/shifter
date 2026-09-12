@@ -31,22 +31,7 @@ def _make_raes(user, scenario_id, **overrides):
 
 
 class TestCmsListScenariosLaunchability:
-    def test_excludes_non_launchable_raes_but_keeps_legacy(self, user):
-        # No runtime adapter is wired, so all RAES entries are review-only and
-        # excluded from CTF event selection; legacy scenarios remain selectable.
-        _make_raes(user, "polaris-ok", conformance_status="passed")
-        _make_raes(user, "polaris-pending", conformance_status="pending")
-
-        ids = {sid for sid, _ in bridges.cms_list_scenarios(user)}
-
-        assert "basic" in ids  # legacy YAML default stays selectable
-        assert "polaris-ok" not in ids  # review-only until an adapter exists
-        assert "polaris-pending" not in ids  # non-launchable RAES entry excluded
-
-    def test_includes_launchable_raes_with_adapter(self, user, monkeypatch):
-        from django.conf import settings
-
-        monkeypatch.setattr(settings, "RAES_NATIVE_PROVISIONING_ENABLED", True)
+    def test_includes_only_launchable_raes_sources(self, user):
         _make_raes(user, "polaris-ok", conformance_status="passed")
         _make_raes(user, "polaris-pending", conformance_status="pending")
 

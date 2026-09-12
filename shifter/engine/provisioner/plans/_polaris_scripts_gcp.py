@@ -19,33 +19,45 @@ GCP_AGENT_COMPOSE_BLOCK = (
 )
 
 
-# GCE twin of FETCH_POLARIS_TESTS_SCRIPT. Pulls the tests/ tree from a GCS
-# bucket instead of S3. The range host VM authenticates with its attached
-# service account via Application Default Credentials (metadata server), so no
-# explicit keys are handled. `gcloud storage` is preferred with a `gsutil`
-# fallback; both ship on the polaris-vm GCE image.
+# GCE twin of FETCH_POLARIS_TESTS_SCRIPT. Pulls the tests/ tree from a
+# provisioner-minted, short-lived, generation-bound V4 signed download URL
+# (agent_assets.get_polaris_tests_presigned_url) instead of using the range-host
+# SA's ADC. The range host is participant-controllable, so it holds NO Cloud
+# Storage identity: a project-level objectViewer let a rooted guest read across
+# tenants (#1644). `curl -sSfL` keeps the URL out of step stdout; nothing here
+# handles credentials or reaches the metadata server.
 FETCH_POLARIS_TESTS_SCRIPT_GCS = """#!/bin/bash
 set -euo pipefail
 
-BUCKET="{{ polaris_tests_bucket }}"
-KEY="{{ polaris_tests_key }}"
+PRESIGNED_URL="{{ polaris_tests_url }}"
 DEST_ROOT="/opt/polaris/scenario-dev/polaris"
 TARBALL="/tmp/polaris-tests.tar.gz"
+# The signed URL is minted before the guest channel opens and expires after
+# 900s (agent_assets._POLARIS_TESTS_URL_EXPIRY_SECONDS); the polaris_fetch_tests
+# SetupStep caps this whole script at 120s. Keep the total connect+transfer+
+# backoff budget well inside both so a retry never operates on an already-expired
+# capability: 3 attempts * 30s max-time + (5s + 10s) backoff = ~105s worst case.
+max_retries=3
+retry_delay_seconds=5
 
 mkdir -p "$DEST_ROOT"
 
-# ADC via the VM service account; no explicit credentials handled here.
-if command -v gcloud >/dev/null 2>&1; then
-  gcloud storage cp "gs://$BUCKET/$KEY" "$TARBALL"
-elif command -v gsutil >/dev/null 2>&1; then
-  gsutil cp "gs://$BUCKET/$KEY" "$TARBALL"
-else
-  echo "polaris tests fetch: neither gcloud nor gsutil is installed on the range host" >&2
-  exit 1
-fi
+last_error=""
+for attempt in $(seq 1 "$max_retries"); do
+  if curl -sSfL --connect-timeout 15 --max-time 30 -o "$TARBALL" "$PRESIGNED_URL"; then
+    break
+  fi
+  last_error="curl failed on attempt $attempt"
+  if [[ "$attempt" -lt "$max_retries" ]]; then
+    delay=$((retry_delay_seconds * (2 ** (attempt - 1))))
+    echo "polaris tests fetch: download attempt $attempt failed, retrying in ${delay}s" >&2
+    rm -f "$TARBALL"
+    sleep "$delay"
+  fi
+done
 
 if [[ ! -s "$TARBALL" ]]; then
-  echo "polaris tests fetch: downloaded tarball is empty" >&2
+  echo "polaris tests fetch: tarball was not downloaded (${last_error:-empty file})" >&2
   exit 1
 fi
 
@@ -87,12 +99,14 @@ set -euo pipefail
 RANGE_ID="{{ range_id }}"
 VERTEX_PROJECT_ID="{{ vertex_project_id }}"
 VERTEX_REGION="{{ vertex_region }}"
+VERTEX_SECRET_PROJECT_ID="{{ vertex_secret_project_id }}"
+VERTEX_SECRET_ID="{{ vertex_secret_id }}"
 ANTHROPIC_MODEL="{{ anthropic_model }}"
 ANTHROPIC_SMALL_FAST_MODEL="{{ anthropic_small_fast_model }}"
-SECRET_ID="shifter-range-${RANGE_ID}-vertex-key"
 
-if [[ -z "$VERTEX_PROJECT_ID" || -z "$VERTEX_REGION" ]]; then
-  echo "polaris kali vertex shard: vertex_project_id and vertex_region are required" >&2
+if [[ -z "$VERTEX_PROJECT_ID" || -z "$VERTEX_REGION" ||
+      -z "$VERTEX_SECRET_PROJECT_ID" || -z "$VERTEX_SECRET_ID" ]]; then
+  echo "polaris kali vertex shard: Vertex API and secret location context are required" >&2
   exit 2
 fi
 
@@ -106,29 +120,29 @@ fi
 # secretAccessor) and inject it into a14-kali as a key file. No key material in
 # argv/logs.
 KEY_FILE="$(mktemp)"
+ERRF="$(mktemp)"
 chmod 600 "$KEY_FILE"
-# The per-range secret lives in the VM's own (range-cell) project. Resolve it
-# explicitly from the metadata server and pass --project: this step runs as root
-# (via sudo) and gcloud in that context does not reliably pick up a default
-# project, and — unlike the tarball fetch, which carries a gs:// URL — this
-# command has nothing else to infer the project from, so an unset project made
-# the access fail with an error that looked like a permission problem.
-META_URL="http://metadata.google.internal/computeMetadata/v1/project/project-id"
-PROJ="$(curl -s -H 'Metadata-Flavor: Google' "$META_URL")"
-ERRF=/tmp/vertex-secret-err
-if ! gcloud secrets versions access latest --secret="$SECRET_ID" --project="$PROJ" >"$KEY_FILE" 2>"$ERRF"; then
-  echo "polaris kali vertex shard: could not read Vertex key secret $SECRET_ID in project $PROJ" >&2
-  cat "$ERRF" >&2 || true
+cleanup_vertex_key() {
+  shred -u "$KEY_FILE" 2>/dev/null || rm -f "$KEY_FILE"
+  rm -f "$ERRF"
+}
+trap cleanup_vertex_key EXIT
+if ! gcloud secrets versions access latest \
+    --secret="$VERTEX_SECRET_ID" \
+    --project="$VERTEX_SECRET_PROJECT_ID" >"$KEY_FILE" 2>"$ERRF"; then
+  echo "polaris kali vertex shard: could not read the scoped Vertex credential" >&2
   rm -f "$KEY_FILE" "$ERRF"
   exit 2
 fi
+rm -f "$ERRF"
 docker exec a14-kali mkdir -p /etc/vertex
 docker cp "$KEY_FILE" a14-kali:/etc/vertex/key.json
 # Own the key by the kali user (the agent runs as kali, not root) so
 # GOOGLE_APPLICATION_CREDENTIALS is readable; keep it private to that user.
 docker exec a14-kali chown kali:kali /etc/vertex /etc/vertex/key.json
 docker exec a14-kali chmod 600 /etc/vertex/key.json
-shred -u "$KEY_FILE" 2>/dev/null || rm -f "$KEY_FILE"
+cleanup_vertex_key
+trap - EXIT
 
 # 3. Point Claude Code at Vertex using the injected key (ADC via key file, not
 # the metadata server).

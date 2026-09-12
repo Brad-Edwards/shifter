@@ -6,7 +6,8 @@
 # state prefix separate from the gcp-dev platform root, so the platform destroy
 # workflow never removes the runner; the runner is re-creatable by
 # `deploy.py runners --cloud gcp` (the real deploy mechanism lives in the repo,
-# not the tenant -- preserving ADR-033's intent; see the ADR-033-R2 amendment).
+# not the tenant -- preserving ADR-053's intent; see the ADR-053-R3 amendment,
+# carried from ADR-033-R2).
 #
 # The instance is private-only (no external IP), Shielded, OS Login-only, in a
 # dedicated custom VPC reachable for registration over IAP alone. The startup

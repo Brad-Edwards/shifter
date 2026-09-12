@@ -77,11 +77,18 @@ class GCPObjectStorage:
         bucket: str,
         key: str,
         expires_in: int = 3600,
+        *,
+        object_version: str | None = None,
     ) -> str:
         logger.debug("generate_presigned_download_url: bucket=%s key=%s", bucket, key)
         try:
             client = self._get_client()
-            blob = client.bucket(bucket).blob(key)
+            # A GCS object version is its numeric generation. Binding the blob to it
+            # makes the V4 signature cover the ``generation`` query param, so the URL
+            # authorizes only that exact immutable version (defeats an object swap
+            # after signing).
+            generation = int(object_version) if object_version is not None else None
+            blob = client.bucket(bucket).blob(key, generation=generation)
             return blob.generate_signed_url(
                 version="v4",
                 expiration=timedelta(seconds=expires_in),

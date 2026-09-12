@@ -1,7 +1,8 @@
 """GCE (Compute Engine) live-fire range-cell backend configuration.
 
 Depends on the ``_env`` leaf, the ``_gcp_backend`` leaf, ``_range`` (for
-``get_range_availability_zone``), and its own ``_gce_profile`` /
+``get_range_availability_zone``), the dependency-light ``shared.sftp_root``
+defaults (for the per-class SFTP root seed), and its own ``_gce_profile`` /
 ``_gce_image_keys`` leaves. The guest image profile contract and its validation
 live in ``_gce_profile``; the keyed image-profile map parser lives in
 ``_gce_image_keys``. Both are re-exported here so the module's public surface is
@@ -11,6 +12,8 @@ unchanged.
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+
+from shared.sftp_root import DEFAULT_SFTP_ROOT_BY_OS
 
 from ._env import _get_bool_env, _get_int_env, _parse_csv_env
 from ._gce_image_keys import _load_gce_image_key_profiles
@@ -170,6 +173,7 @@ class GCERangeCellConfig:
                 host_ssh_username=profile.host_ssh_username,
                 host_ssh_port=profile.host_ssh_port,
                 allow_public_web_egress=profile.allow_public_web_egress,
+                sftp_root_directory=profile.sftp_root_directory,
             )
         return profile
 
@@ -237,6 +241,7 @@ def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellCon
             default_disk_size_gb=50,
             # debian-12 base is ~10 GB; the Docker host default is 50 GB.
             min_disk_size_gb=10,
+            default_sftp_root_directory=DEFAULT_SFTP_ROOT_BY_OS["ubuntu"],
         ),
         kali=_load_gce_range_profile(
             "GCP_RANGE_KALI",
@@ -244,6 +249,7 @@ def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellCon
             default_disk_size_gb=80,
             # Kali (converted debian base + tools / polaris stack) needs headroom.
             min_disk_size_gb=30,
+            default_sftp_root_directory=DEFAULT_SFTP_ROOT_BY_OS["kali"],
         ),
         windows=_load_gce_range_profile(
             "GCP_RANGE_WINDOWS",
@@ -254,12 +260,14 @@ def load_gce_range_cell_config(*, backend: str | None = None) -> GCERangeCellCon
             # GCP_RANGE_WINDOWS_DISK_SIZE_GB for a larger image.
             default_disk_size_gb=100,
             min_disk_size_gb=100,
+            default_sftp_root_directory=DEFAULT_SFTP_ROOT_BY_OS["windows"],
         ),
         dc=_load_gce_range_profile(
             "GCP_RANGE_DC",
             default_machine_type="e2-standard-4",
             default_disk_size_gb=100,
             min_disk_size_gb=100,
+            default_sftp_root_directory=DEFAULT_SFTP_ROOT_BY_OS["windows"],
         ),
         image_key_profiles=_load_gce_image_key_profiles(),
         portal_network_cidrs=_parse_csv_env(

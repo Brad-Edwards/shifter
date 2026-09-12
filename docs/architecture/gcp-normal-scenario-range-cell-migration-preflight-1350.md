@@ -1,5 +1,12 @@
 # Normal GCP Scenario Range-Cell Migration Preflight
 
+> **Historical boundary (issue #2062, 2026-08-19):** TechVault is a
+> scenario pack. APTL is the former name of LilRAE. The bespoke Shifter
+> implementation described here was retired by the RAES hard cut. Exact
+> historical commands, paths, symbols, image keys, and workflow names below
+> remain factual evidence; they are not current product or integration
+> boundaries.
+
 Issue: GitHub #1350, "Migrate normal GCP user ranges to VM range cells."
 
 Status: requirement-free pre-implementation architecture guidance. The issue

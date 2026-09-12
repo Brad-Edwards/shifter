@@ -951,6 +951,7 @@ jobs:
       AWS_REGION: us-east-2
       ENVIRONMENT: ${{ inputs.environment }}
       PORTAL_IMAGE_DIGEST: ${{ needs.build.outputs.image_digest }}
+      ENGINE_IMAGE_DIGEST: ${{ inputs.engine_image_digest }}
       SHIFTER_CONFIG_DEV: ${{ secrets.SHIFTER_CONFIG_DEV_RANGE }}
       SHIFTER_CONFIG_PROOF: ${{ secrets.SHIFTER_CONFIG_PROOF_RANGE }}
       SHIFTER_CONFIG_PROD: ${{ secrets.SHIFTER_CONFIG_PROD_RANGE }}
@@ -1048,6 +1049,7 @@ jobs:
           GUACD_REPOSITORY: ${{ inputs.environment == 'prod' && 'shifter-guacd' || format('shifter-{0}-guacd', inputs.environment) }}
           GUACAMOLE_CLIENT_REPOSITORY: ${{ inputs.environment == 'prod' && 'shifter-guacamole-client' || format('shifter-{0}-guacamole-client', inputs.environment) }}
           PORTAL_REPOSITORY: ${{ inputs.environment == 'prod' && 'shifter-portal' || format('shifter-{0}-portal', inputs.environment) }}
+          PROVISIONER_REPOSITORY: shifter-${{ inputs.environment }}-pulumi-provisioner
         run: |
           set -euo pipefail
           case "$ENVIRONMENT" in
@@ -1063,6 +1065,10 @@ jobs:
           printf '%s' "$ROOT_CONFIG" > "${RUNNER_TEMP}/shifter.yaml"
 
           account_id="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ ! "$ENGINE_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The EKS deployment requires the upstream engine provisioner digest"
+            exit 1
+          fi
           guacd_digest="$(aws ecr describe-images --repository-name "$GUACD_REPOSITORY" \
             --image-ids imageTag=1.5.5-r1 --query 'imageDetails[0].imageDigest' --output text)"
           client_digest="$(aws ecr describe-images --repository-name "$GUACAMOLE_CLIENT_REPOSITORY" \
@@ -1071,7 +1077,8 @@ jobs:
             --arg platform "${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PORTAL_REPOSITORY}@${PORTAL_IMAGE_DIGEST}" \
             --arg guacd "${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/${GUACD_REPOSITORY}@${guacd_digest}" \
             --arg client "${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/${GUACAMOLE_CLIENT_REPOSITORY}@${client_digest}" \
-            '{platform:$platform,guacd:$guacd,guacamoleClient:$client}' \
+            --arg provisioner "${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROVISIONER_REPOSITORY}@${ENGINE_IMAGE_DIGEST}" \
+            '{platform:$platform,guacd:$guacd,guacamoleClient:$client,provisioner:$provisioner}' \
             > "${RUNNER_TEMP}/images.json"
 
       - name: Deploy through the canonical AWS bundle entrypoint

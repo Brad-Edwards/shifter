@@ -12,6 +12,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from shared.operation_results import ResultStep
+from shared.range_lifecycle_capability import (
+    LIFECYCLE_UNSUPPORTED_REASON_CODE,
+    range_pause_resume_capability,
+)
 
 from events import (
     STATUS_PAUSED,
@@ -23,7 +27,25 @@ from plans.range_pause import RangePausePlan
 from plans.range_resume import RangeResumePlan
 from provisioner_db_appends import OperationRef, append_operation_step_result
 
+# Classification lives in a sibling module so orchestration stays small; re-import
+# here so ``range_ops.<name>`` re-exports and existing patch targets resolve.
+from ._classify import (
+    _GCP_RANGE_LIFECYCLE_NOT_IMPLEMENTED,
+    _build_aws_lifecycle_entry,
+    _build_range_lifecycle_entry,
+    get_range_instance_ids,
+)
+
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "UnsupportedRangeLifecycleError",
+    "_build_aws_lifecycle_entry",
+    "_build_range_lifecycle_entry",
+    "get_range_instance_ids",
+    "run_range_pause",
+    "run_range_resume",
+]
 
 # ADR-043 phase 4 (#1836): the Engine applier is the authoritative writer for
 # this family. The provisioner reports closed, per-step results instead of
@@ -47,6 +69,22 @@ _TERMINAL_STATUS_BY_OPERATION = {
     "pause": STATUS_PAUSED,
     "resume": STATUS_READY,
 }
+
+# Map the range lifecycle operation onto the per-guest power verb the GCP
+# substrate adapters expose (kubectl virt / Compute Engine start/stop).
+_POWER_VERB_BY_OPERATION = {
+    "pause": "stop",
+    "resume": "start",
+}
+
+
+class UnsupportedRangeLifecycleError(RuntimeError):
+    """A range's realized asset mix cannot be losslessly paused/resumed (ADR-039).
+
+    Raised before any mutation so the operation fails closed with a classified
+    ``unsupported_capability`` reason rather than partially mutating or faking
+    success (issue #614).
+    """
 
 
 def _report_terminal_success(ref: OperationRef, operation: str) -> None:
@@ -75,125 +113,60 @@ def _report_terminal_failure(ref: OperationRef, operation: str, diagnostic: str)
     )
 
 
-_GCP_RANGE_LIFECYCLE_NOT_IMPLEMENTED = (
-    "GCP range pause/resume is not implemented yet. "
-    "Pod-backed assets do not preserve runtime state across pause/resume, "
-    "so the GCP lifecycle path is intentionally disabled until parity work is complete."
-)
+def _report_terminal_unsupported(ref: OperationRef, operation: str, reason: str) -> None:
+    """Report a terminal failure with the classified ``unsupported_capability`` code.
 
-
-# (cloud_provider, asset_type) -> operation_mode for non-AWS lifecycle targets.
-_GCP_OPERATION_MODES = {
-    ("gcp", "gce_vm"): "gce_vm",
-    ("gcp", "vm_runtime_vm"): "gdc_vm_runtime",
-    ("gcp", "scenario_pod"): "gdc_scenario_pod",
-}
-
-
-def _build_aws_lifecycle_entry(
-    entry: dict[str, object], state_dict: dict[str, object], uuid: object, role: str
-) -> dict[str, object] | None:
-    """Finalize an AWS lifecycle entry, or None when the instance lacks an aws_instance_id."""
-    aws_instance_id = state_dict.get("aws_instance_id")
-    if not aws_instance_id:
-        logger.warning(
-            "Instance %s (role=%s) missing aws_instance_id in state, skipping",
-            uuid,
-            role,
-        )
-        return None
-    entry["operation_mode"] = "aws"
-    entry["aws_instance_id"] = aws_instance_id
-    return entry
-
-
-def _build_range_lifecycle_entry(
-    request_id: str,
-    uuid: object,
-    state: object,
-    role: str,
-    name: str | None,
-) -> dict[str, object] | None:
-    """Build the lifecycle-operation entry for one instance, or None if it's an unmapped AWS asset."""
-    state_dict = state if isinstance(state, dict) else {}
-    cloud_provider = str(state_dict.get("cloud_provider", "aws")).strip().lower() or "aws"
-    asset_type = str(state_dict.get("asset_type", "vm_runtime_vm")).strip() or "vm_runtime_vm"
-    entry: dict[str, object] = {
-        "uuid": str(uuid),
-        "name": name or "",
-        "role": role,
-        "cloud_provider": cloud_provider,
-        "asset_type": asset_type,
-        "state": state_dict,
-    }
-
-    if cloud_provider == "aws":
-        return _build_aws_lifecycle_entry(entry, state_dict, uuid, role)
-
-    operation_mode = _GCP_OPERATION_MODES.get((cloud_provider, asset_type))
-    if operation_mode is None:
-        raise ValueError(
-            "Unsupported range lifecycle target "
-            f"for request {request_id}: cloud_provider={cloud_provider!r} asset_type={asset_type!r}"
-        )
-    entry["operation_mode"] = operation_mode
-    return entry
-
-
-def get_range_instance_ids(request_id: str) -> list[dict[str, Any]]:
-    """Get all range assets for pause/resume operations.
-
-    Queries engine_instance records for the given request and extracts
-    provider/runtime-specific lifecycle targets from the state JSON field.
-
-    Args:
-        request_id: UUID string of the Request.
-
-    Returns:
-        List of dicts describing how each asset should participate in
-        lifecycle operations.
-
-    Raises:
-        ValueError: If no instances are found or an instance cannot be mapped
-            onto a supported lifecycle mode.
+    Used when the range's asset mix is not losslessly pausable, so the Engine
+    applier records an honest reason instead of the generic cloud-failure code.
     """
-    logger.info("get_range_instance_ids: request_id=%s", request_id)
-
-    # Late-bound call to ``range_ops.get_db_connection`` so test patches
-    # applied at the package level still apply here.
-    import range_ops as _pkg
-
-    with _pkg.get_db_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT i.uuid, i.state, i.role, i.name
-            FROM engine_instance i
-            JOIN engine_request r ON i.request_id = r.id
-            WHERE r.request_id = %s
-              AND i.status IN (%s, %s)
-            """,
-            (request_id, STATUS_READY, STATUS_PAUSED),
-        )
-        rows = cur.fetchall()
-
-    if not rows:
-        raise ValueError(f"No instances found for request: {request_id}")
-
-    instances = []
-    for uuid, state, role, name in rows:
-        entry = _build_range_lifecycle_entry(request_id, uuid, state, role, name)
-        if entry is not None:
-            instances.append(entry)
-
-    if not instances:
-        raise ValueError(f"No lifecycle-managed assets found for request: {request_id}")
-
-    logger.info(
-        "get_range_instance_ids: found %d instances for request_id=%s",
-        len(instances),
-        request_id,
+    append_operation_step_result(
+        ref,
+        resource="range",
+        operation=operation,
+        step=ResultStep.RANGE_TERMINAL_FAILED,
+        result_payload={"reason_code": LIFECYCLE_UNSUPPORTED_REASON_CODE, "diagnostic": reason[:512]},
     )
-    return instances
+
+
+def _assert_range_pause_resume_supported(backend: str | None, instances: list[dict[str, Any]]) -> None:
+    """Fail before any mutation when the range mix is not losslessly pausable.
+
+    Classifies every lifecycle-managed instance by its ``(cloud_provider,
+    asset_type)`` against the persisted ``range_backend`` binding through the
+    shared capability policy. An asset not admitted by the binding (a cross-adapter
+    mix or stale realized metadata) or a single ephemeral (scenario Pod) asset
+    makes the whole range unsupported so parity is maintained (ADR-039).
+    """
+    capability = range_pause_resume_capability(
+        backend,
+        ((instance.get("cloud_provider"), instance.get("asset_type")) for instance in instances),
+    )
+    if not capability.supported:
+        raise UnsupportedRangeLifecycleError(capability.reason)
+
+
+# GCP guest-power operation_modes handled by the provider-native power adapters.
+_GCP_POWER_MODES = frozenset({"gdc_vm_runtime", "gce_vm", "gdc_scenario_pod"})
+
+
+def _run_gcp_power_operation(mode: str, operation: str, instance: dict[str, Any]) -> None:
+    """Run a GCP guest power operation for one instance, raising on failure.
+
+    ``gdc_scenario_pod`` is defense in depth: the capability preflight fails a
+    range containing a pod-backed asset before any mutation, so this is not
+    reached on the happy path (deleting/recreating a Pod is not lossless pause).
+    """
+    if mode == "gdc_scenario_pod":
+        raise UnsupportedRangeLifecycleError(_GCP_RANGE_LIFECYCLE_NOT_IMPLEMENTED)
+    verb = _POWER_VERB_BY_OPERATION[operation]
+    if mode == "gdc_vm_runtime":
+        import gdc_vmruntime_assets
+
+        gdc_vmruntime_assets.run_power_operation(verb, instance["state"])
+    else:  # gce_vm
+        import gce_range_cell_power
+
+        gce_range_cell_power.run_power_operation(verb, instance["state"])
 
 
 def _execute_instance_operation(
@@ -220,14 +193,9 @@ def _execute_instance_operation(
     mode = instance["operation_mode"]
 
     try:
-        if mode == "gdc_vm_runtime":
-            raise NotImplementedError(_GCP_RANGE_LIFECYCLE_NOT_IMPLEMENTED)
-
-        if mode == "gdc_scenario_pod":
-            raise NotImplementedError(_GCP_RANGE_LIFECYCLE_NOT_IMPLEMENTED)
-
-        if mode == "gce_vm":
-            raise NotImplementedError("GCE range pause/resume is not implemented yet.")
+        if mode in _GCP_POWER_MODES:
+            _run_gcp_power_operation(mode, operation, instance)
+            return (uuid, True, None)
 
         if mode != "aws" or executor is None or orchestrator is None or plan is None:
             raise RuntimeError(f"Unsupported lifecycle execution mode {mode!r} for uuid={uuid}")
@@ -235,28 +203,16 @@ def _execute_instance_operation(
         aws_instance_id = instance["aws_instance_id"]
         context = plan.get_context(aws_instance_id)
         result = orchestrator.orchestrate(aws_instance_id, plan, context)
-
-        if result.success:
-            logger.info(
-                "Operation succeeded for instance %s (uuid=%s)",
-                aws_instance_id,
-                uuid,
-            )
-            return (uuid, True, None)
+        error_msg = None if result.success else f"Operation failed: {result.error}"
+        if error_msg:
+            logger.error("Operation failed for instance %s (uuid=%s): %s", aws_instance_id, uuid, result.error)
         else:
-            error_msg = f"Operation failed: {result.error}"
-            logger.error(
-                "Operation failed for instance %s (uuid=%s): %s",
-                aws_instance_id,
-                uuid,
-                result.error,
-            )
-            return (uuid, False, error_msg)
+            logger.info("Operation succeeded for instance %s (uuid=%s)", aws_instance_id, uuid)
+        return (uuid, bool(result.success), error_msg)
 
     except Exception as e:
-        error_msg = str(e)
         logger.exception("Exception during %s for uuid=%s mode=%s", operation, uuid, mode)
-        return (uuid, False, error_msg)
+        return (uuid, False, str(e))
 
 
 def run_range_pause(request_id: str, *, operation_id: str | None = None) -> None:
@@ -293,6 +249,17 @@ def run_range_pause(request_id: str, *, operation_id: str | None = None) -> None
 
     # Get all instances to pause
     instances = _pkg.get_range_instance_ids(request_id)
+
+    # Fail closed before any mutation when the realized asset mix cannot be
+    # losslessly paused (ADR-039). This is defense in depth behind the CMS
+    # pre-dispatch capability gate; it must run before executors are created or
+    # the NGFW cascade fires.
+    try:
+        _assert_range_pause_resume_supported(range_data.get("range_backend"), instances)
+    except UnsupportedRangeLifecycleError as exc:
+        logger.exception("run_range_pause: unsupported range mix request_id=%s", request_id)
+        _report_terminal_unsupported(ref, "pause", str(exc))
+        raise
 
     # Create AWS lifecycle helpers lazily; GCP-only ranges do not need them.
     has_aws_assets = any(instance["operation_mode"] == "aws" for instance in instances)
@@ -389,6 +356,17 @@ def run_range_resume(request_id: str, *, operation_id: str | None = None) -> Non
         logger.info("run_range_resume: range already ready, no-op request_id=%s", request_id)
         return
 
+    # Get all instances to resume, and fail closed before any mutation when the
+    # realized asset mix cannot be losslessly resumed (ADR-039). This runs before
+    # the NGFW cascade so an unsupported range never starts the shared NGFW.
+    instances = _pkg.get_range_instance_ids(request_id)
+    try:
+        _assert_range_pause_resume_supported(range_data.get("range_backend"), instances)
+    except UnsupportedRangeLifecycleError as exc:
+        logger.exception("run_range_resume: unsupported range mix request_id=%s", request_id)
+        _report_terminal_unsupported(ref, "resume", str(exc))
+        raise
+
     # Cascade: ensure NGFW is running before resuming range instances
     try:
         _pkg.ensure_ngfw_running(request_id, ref=ref)
@@ -398,9 +376,6 @@ def run_range_resume(request_id: str, *, operation_id: str | None = None) -> Non
         logger.exception("run_range_resume: %s request_id=%s", error_msg, request_id)
         _report_terminal_failure(ref, "resume", error_msg)
         raise RuntimeError(error_msg) from e
-
-    # Get all instances to resume
-    instances = _pkg.get_range_instance_ids(request_id)
 
     has_aws_assets = any(instance["operation_mode"] == "aws" for instance in instances)
     executor = _pkg.AWSExecutor() if has_aws_assets else None

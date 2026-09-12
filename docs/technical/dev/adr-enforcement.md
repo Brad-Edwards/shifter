@@ -4,6 +4,18 @@ Architecture rules in this repo are enforced by tooling, not just prose.
 
 ## What Exists
 
+The [model-access design for #681](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/index.md)
+adds proposed ADR-059 through ADR-061 and documentation coverage for the
+planned feature. Registry/import validation applies now. Runtime enforcement
+of broker authorization, atomic budgets, revocation and provider isolation
+must land with the owning implementation issues and their behavioral/cloud
+tests; a passing documentation check is not evidence of those guarantees.
+ADR-060-R3 also requires independently configurable sharing, explicit overlap
+and membership rules, deduplicated pool accounting and separately revocable
+range grants. The [sharing contract](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/sharing.md)
+is consumed by #2139/#2140 and the downstream implementation/evidence issues;
+it adds no waiver or claim of existing runtime enforcement.
+
 The current enforcement stack has six parts:
 
 1. `docs/adr/index.yaml`
@@ -139,7 +151,33 @@ Migration state (CI gate):
 The first slice intentionally stays small:
 
 - `adr-registry`
-  Validates the ADR registry and exception files.
+  Validates the ADR registry and exception files. It also validates the closed
+  typed interface contracts required by ADR-032, ADR-039, ADR-051, ADR-054, and
+  ADR-055. The `raes-plan-accessor-boundary/v1` contract pins the RAES-free
+  standalone consumer, ownership and validation boundaries, reject-before-
+  mutation posture, full canonical address fallback, exact-pin compatibility
+  evidence, and decision-only scope of #1937. The
+  `dedicated-customer-authority/v1` contract makes removal or weakening of
+  ADR-054's customer boundary, authority separation, event-migration gate,
+  infrastructure ownership, outage behavior, or evidence classes fail locally
+  and in CI. The `accessibility-enforcement/v1` contract likewise pins the
+  WCAG target, one axe/Playwright toolchain, every-PR/nightly/deployed cadence,
+  fail-closed surface inventory, exact finding ratchet, manual-audit evidence,
+  central waiver policy, and security boundary. This is structural enforcement
+  of accepted decisions, not a substitute for their runtime, migration, IAM,
+  network, browser, or manual-audit tests.
+
+  ADR-055's exact section values live in `ACCESSIBILITY_FIXED_SECTIONS`, with
+  closed string collections in `ACCESSIBILITY_STRING_SET_SECTIONS`. Extend the
+  contract table, registry entry, and mutation test together; do not add a new
+  branch of repeated per-section validation.
+
+  The registry check keeps contract support, specialized ADR contracts, and
+  dispatch in separate modules. This preserves the closed contract surface
+  while keeping each validator independently reviewable and within the static
+  analysis limits enforced for guardrail code. Validator helpers carry concise
+  docstrings, and the documentation check remains below the enforced file-size
+  limit so SonarCloud can keep analyzing guardrail changes on every pull request.
 
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
@@ -265,6 +303,27 @@ The first slice intentionally stays small:
   genuinely absent directory at the base (a real first publication) is distinguished
   from an unreadable tree and still passes.
 
+- `accessibility-baseline`
+  Enforces ADR-055-R4/R6: the browser-accessibility exact-finding baseline
+  (`shifter/shifter_platform/frontend/e2e/a11y/baseline.json`) may only shrink.
+  The committed fingerprint set must be a subset of the trusted base-branch
+  baseline; new fingerprints (baseline growth) fail unless covered by an
+  exact-fingerprint waiver in `docs/adr/exceptions.yaml` naming ADR-055 (an
+  optional `fingerprints:` list on the exception, validated by the central
+  exception schema, never overloading `paths`/`checks`). Each fingerprint is the
+  pipe-joined `surface|project|rule|wcag|target` key emitted by the a11y spec
+  (project is `chromium:<viewport>:<theme>`), so a waiver must quote that exact
+  string. Resolved findings (removed entries) always pass. Like `published-contract-snapshots-immutable` it
+  resolves the base ref from `GITHUB_BASE_REF` / `ADR_GUARD_BASE_REF` (falling
+  back to `origin/dev`/`origin/main`), fails **open** locally and **closed** under
+  `ADR_GUARD_SNAPSHOT_ENFORCE`, and treats an absent base baseline as a valid
+  first enrollment. A committed baseline that is not a JSON array of fingerprint
+  strings is rejected outright, and a base baseline that cannot be parsed is
+  treated as unverifiable (failing open or closed as above). The per-surface
+  exact-set comparison against the live scan and
+  the fail-closed surface reconciliation are enforced in the Playwright a11y specs
+  (`frontend/e2e/a11y/`), not this check.
+
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
 
@@ -294,7 +353,12 @@ The first slice intentionally stays small:
   change filter in `.github/workflows/deploy.yml` must stay scoped to
   Terraform-consumed platform files. Quality routing is separate and runs by
   exclusion: `.github/workflows/deploy.yml` must expose a `quality_relevant`
-  output that runs Quality unless the diff is ordinary docs-only. Guardrail
+  output that runs Quality unless the diff is ordinary docs-only. That output
+  also fails closed on an empty or undetermined changed-file set: an
+  `any_changed` classifier is false when the GitHub PR-files API returns zero
+  files (its eventual consistency can do this for a freshly created PR), and
+  `quality_relevant` ORs in `any_changed != 'true'` so an unclassifiable diff
+  runs Quality instead of silently bypassing it (#2024). Guardrail
   docs, including `.github/pull_request_template.md`,
   `.github/copilot-instructions.md`, `docs/adr/**`, and this ADR enforcement
   page, are explicitly quality-relevant so ADR guard validates them. PR Gate
@@ -542,6 +606,20 @@ The first slice intentionally stays small:
   explicit GCLB, Google API, private service, and in-cluster service
   ranges. Runs in the `ci` level and shares the Helm-rendered
   validation boundary with `k8s-deployment-security-context`.
+
+- `eks-cross-stack-sourcing`
+  Enforces ADR-044-R6 against the AWS EKS Terraform roots under
+  `platform/terraform/environments/*/eks/`. The EKS control plane
+  composes over the existing portal and range data plane and must
+  source cross-stack values (control-plane database, secrets KMS key,
+  agent bucket, range VPC/subnets/AMIs/instance roles) through native
+  AWS data sources and SSM Parameter Store. The check fails closed on
+  any `terraform_remote_state` data source in those roots, which would
+  couple the consumer to another stack's whole state file. Runs in both
+  the `fast` and `ci` levels. The AWS/GCP provisioner-env contract
+  parity that R6 also requires is proven by the platform test suite
+  (`tests/shared/cloud/test_aws_runtime_role_parity.py`), not this
+  structural guard.
 
 - `no-plaintext-secrets-in-tfvars`
   Architecture check that scans `*.tfvars` files committed under

@@ -29,7 +29,8 @@ def _make_mock_cursor(range_row, ngfw_row=None):
 # Range query columns: request_id, range_id, user_id, range_config, subnet_index,
 # status, range_backend, instantiation_purpose (#1666 ownership binding),
 # remote_access_capability (#1695 trusted OpenVPN activation contract),
-# vpn_gateway_pool_slot (ADR-008-R7 gateway SA pool).
+# vpn_gateway_pool_slot (ADR-008-R7 gateway SA pool), placement_zone (#2029
+# realized multi-region range-cell placement).
 _RANGE_ROW_WITH_NGFW = (
     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  # request_id
     201,  # range_id
@@ -41,6 +42,8 @@ _RANGE_ROW_WITH_NGFW = (
     None,  # instantiation_purpose
     None,  # remote_access_capability
     None,  # vpn_gateway_pool_slot
+    "status-quo",  # egress_mode (PLAT-238)
+    "",  # placement_zone (single-zone / pre-#2029)
 )
 
 _RANGE_ROW_NO_NGFW = (
@@ -54,6 +57,8 @@ _RANGE_ROW_NO_NGFW = (
     None,  # instantiation_purpose
     None,  # remote_access_capability
     None,  # vpn_gateway_pool_slot
+    "status-quo",  # egress_mode (PLAT-238)
+    "",  # placement_zone
 )
 
 
@@ -226,11 +231,55 @@ class TestGetRangeDataNGFWLookup:
             "teardown_at": "2026-07-20T12:00:00Z",
         }
         # Override remote_access_capability (index 8), preserving the trailing
-        # vpn_gateway_pool_slot column (index 9).
-        row = (*_RANGE_ROW_NO_NGFW[:8], capability, _RANGE_ROW_NO_NGFW[9])
+        # vpn_gateway_pool_slot (index 9), egress_mode (index 10), and
+        # placement_zone (index 11) columns.
+        row = (*_RANGE_ROW_NO_NGFW[:8], capability, *_RANGE_ROW_NO_NGFW[9:])
         mock_conn, _mock_cursor = _make_mock_cursor(row)
         monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
 
         result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
         assert result["remote_access_capability"] == capability
+
+    def test_preserves_placement_zone(self, monkeypatch):
+        """The realized multi-region placement zone (#2029) reaches the provisioner
+        unchanged. Guards the trailing-column (row[11]) mapping: an off-by-one
+        against egress_mode would silently mis-place/mis-destroy ranges."""
+        from provisioner_db import get_range_data_by_request_id
+
+        # Override placement_zone (index 11) with a non-default value.
+        row = (*_RANGE_ROW_NO_NGFW[:11], "us-east4-a")
+        mock_conn, _mock_cursor = _make_mock_cursor(row)
+        monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
+
+        result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+        assert result["placement_zone"] == "us-east4-a"
+
+
+class TestGetRangeDataEgressMode:
+    """The pinned range egress mode is read from the range row (PLAT-238)."""
+
+    def test_reads_the_pinned_egress_mode_from_the_row(self, monkeypatch):
+        from provisioner_db import get_range_data_by_request_id
+
+        # Override egress_mode (index 10) to a non-default value and prove it is
+        # surfaced; a mis-indexed or dropped column would leave this default.
+        row = (*_RANGE_ROW_NO_NGFW[:10], "none", _RANGE_ROW_NO_NGFW[11])
+        mock_conn, _mock_cursor = _make_mock_cursor(row)
+        monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
+
+        result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+        assert result["egress_mode"] == "none"
+
+    def test_null_egress_mode_falls_back_to_status_quo(self, monkeypatch):
+        from provisioner_db import get_range_data_by_request_id
+
+        row = (*_RANGE_ROW_NO_NGFW[:10], None, _RANGE_ROW_NO_NGFW[11])
+        mock_conn, _mock_cursor = _make_mock_cursor(row)
+        monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
+
+        result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+        assert result["egress_mode"] == "status-quo"

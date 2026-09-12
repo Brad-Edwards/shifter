@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from executors.base import Executor
+from executors.base import CommandExecutor
 from executors.factory import GuestExecutionContext, build_guest_execution_context
 from gcp_guest_secrets import (
     delete_raes_domain_account_secret,
@@ -52,7 +52,7 @@ class RaesDirectorySecretOps:
     delete_authority: Callable[[int, str], None]
     delete_account: Callable[[int, str, str], None]
     execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context
-    orchestrator_factory: Callable[[Executor], SetupOrchestrator] = SetupOrchestrator
+    orchestrator_factory: Callable[[CommandExecutor], SetupOrchestrator] = SetupOrchestrator
 
 
 @dataclass(frozen=True)

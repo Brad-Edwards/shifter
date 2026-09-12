@@ -1,8 +1,4 @@
-"""GCP range-backend admission gate (ADR-030 / #1348), returning its result (#1666).
-
-The single service-level admission check shared by the cyberscript and RAES
-create paths. Extracted from ``_range_create`` so that module stays within its
-size budget; re-exported there for existing importers.
+"""GCP range-backend admission gate for the RAES launch path.
 
 Issue #1354 generalized the gate from "always live-fire" to a trusted
 instantiation purpose. The generic product facade still defaults to live-fire; a
@@ -61,10 +57,9 @@ def assert_backend_admitted(
 ) -> BackendAdmission | None:
     """Reject a range launch on a backend not admitted for ``purpose`` (ADR-030).
 
-    Shared by ``create_range`` and ``create_raes_native_range`` -- and therefore
-    every product path (Mission Control, CTF participant/batch/spare/recovery,
-    RAES, management commands, and direct service callers) that funnels through
-    them. It runs before the DB reservation, Engine persistence, dispatch, subnet
+    Used by every product path (Mission Control, CTF participant/batch/spare/
+    recovery, management commands, and direct service callers) that funnels
+    through the RAES launch facade. It runs before DB reservation, dispatch, subnet
     allocation, or any cloud mutation, and is a no-op for non-GCP providers.
 
     ``purpose`` is trusted workflow authority supplied by the calling server path,
@@ -107,27 +102,3 @@ def assert_backend_admitted(
     # the SAME evaluated value (never a second env read, which could race a
     # selector flip -- #1666 / preflight).
     return admission
-
-
-def _openvpn_backend_admitted(backend_admission: BackendAdmission | None) -> bool:
-    """Return whether the selected realization path implements OpenVPN v1.
-
-    This is the trusted backend-capability admission seam for product launch
-    code.  AWS and the admitted GCE range-cell backend implement the existing
-    OpenVPN conformance contract.  Local provisioners and any other provider or
-    backend remain capability-false even when they are otherwise allowed to
-    launch a range.
-    """
-    from django.conf import settings
-
-    if str(getattr(settings, "LOCAL_PROVISIONER", "")).strip():
-        return False
-    provider = str(getattr(settings, "CLOUD_PROVIDER", "")).strip().lower()
-    if provider == "aws":
-        return True
-    return bool(
-        provider == "gcp"
-        and backend_admission is not None
-        and backend_admission.admitted
-        and backend_admission.backend == "gce"
-    )

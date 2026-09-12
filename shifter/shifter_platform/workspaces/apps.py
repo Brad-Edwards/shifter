@@ -9,3 +9,8 @@ class WorkspacesConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "workspaces"
     verbose_name = "Workspaces"
+
+    def ready(self) -> None:
+        from workspaces.invitation_adapter import register_workspace_invitation_acceptor
+
+        register_workspace_invitation_acceptor()

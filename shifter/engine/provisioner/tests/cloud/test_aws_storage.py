@@ -33,6 +33,30 @@ def _precondition_error(op: str = "GetObject") -> ClientError:
     )
 
 
+class TestPresignedDownloadUrl:
+    def test_binds_opaque_version_id_when_supplied(self):
+        # S3 VersionId values are opaque strings; the neutral object_version
+        # selector must carry them through verbatim (not coerce to/from int).
+        storage = AWSObjectStorage()
+        fake_client = MagicMock()
+        fake_client.generate_presigned_url.return_value = "https://s3.example/get"
+        opaque = "3HL4kqtJvjVBH40Nrjfkd.MdT5.rEjx"
+        with patch("boto3.client", return_value=fake_client):
+            url = storage.generate_presigned_download_url("b", "k", 600, object_version=opaque)
+        assert url == "https://s3.example/get"
+        params = fake_client.generate_presigned_url.call_args.kwargs["Params"]
+        assert params["VersionId"] == opaque
+
+    def test_no_version_id_without_object_version(self):
+        storage = AWSObjectStorage()
+        fake_client = MagicMock()
+        fake_client.generate_presigned_url.return_value = "https://s3.example/get"
+        with patch("boto3.client", return_value=fake_client):
+            storage.generate_presigned_download_url("b", "k", 600)
+        params = fake_client.generate_presigned_url.call_args.kwargs["Params"]
+        assert "VersionId" not in params
+
+
 class TestHeadObjectIdentity:
     def test_returns_content_length_and_unquoted_etag(self):
         storage = AWSObjectStorage()

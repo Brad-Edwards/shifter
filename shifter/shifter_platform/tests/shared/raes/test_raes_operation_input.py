@@ -139,6 +139,36 @@ class TestImageLookupKey:
         # means a silently missing image at realization.
         assert plan_image_lookup_keys(_plan()) == ("kali", "windows")
 
+    def test_plan_keys_extract_name_from_mapping_source(self):
+        # The real compiled/serialized RAES plan stores a node's source as a
+        # mapping ({name, build, version, artifact_requirement}), not a bare
+        # string. The Engine must scope the registry projection by the source
+        # NAME (e.g. "kali"), not fall back to os_family, or a source-bearing
+        # GCE range resolves no image (empty image_candidates at realization).
+        plan = {
+            "resources": {
+                "node.attacker": {
+                    "address": "node.attacker",
+                    "resource_type": "node",
+                    "payload": {
+                        "name": "attacker",
+                        "os_family": "linux",
+                        "spec": {
+                            "node": {
+                                "source": {
+                                    "name": "kali",
+                                    "build": None,
+                                    "version": "*",
+                                    "artifact_requirement": None,
+                                }
+                            }
+                        },
+                    },
+                }
+            }
+        }
+        assert plan_image_lookup_keys(plan) == ("kali",)
+
     def test_plan_keys_ignore_non_node_resources_and_are_deduped(self):
         plan = _plan()
         plan["resources"]["node.web2"] = {
@@ -275,3 +305,30 @@ class TestFailsClosed:
             _built(legacy_range_id=0)
         with pytest.raises(RaesOperationInputError):
             _built(legacy_range_id=True)
+
+
+class TestEgressMode:
+    """Pinned effective egress posture rides the operation input (PLAT-238, ADR-017-R5)."""
+
+    def test_round_trips_the_pinned_mode(self):
+        parsed = parse_raes_operation_input(_built(egress_mode="none"))
+        assert parsed.egress_mode == "none"
+
+    def test_default_when_builder_omits_the_mode(self):
+        # The builder default is the compatibility posture.
+        parsed = parse_raes_operation_input(_built())
+        assert parsed.egress_mode == "status-quo"
+
+    def test_absent_key_resolves_to_status_quo_not_an_error(self):
+        # An older queued input minted before this deploy carries no key; absence
+        # is the pre-feature behaviour (inherit baseline), never a silent weakening.
+        payload = _built(egress_mode="none")
+        del payload["egress_mode"]
+        parsed = parse_raes_operation_input(payload)
+        assert parsed.egress_mode == "status-quo"
+
+    def test_unknown_mode_fails_closed_at_the_wire(self):
+        payload = _built()
+        payload["egress_mode"] = "wide-open"
+        with pytest.raises(RaesOperationInputError):
+            parse_raes_operation_input(payload)

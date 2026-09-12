@@ -25,6 +25,7 @@ spec:
           type: {{ .Values.security.pod.seccompProfile }}
       automountServiceAccountToken: false
       serviceAccountName: {{ .Values.serviceAccounts.workers.name }}
+      {{- include "shifter.accessNodePlacement" . | nindent 6 }}
       {{- include "shifter.podAntiAffinity" (dict "component" "guacd") | nindent 6 }}
       containers:
         - name: guacd

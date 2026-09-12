@@ -24,11 +24,24 @@ class ComputeCollectionClient(Protocol):
         """Delete one resource and return a Compute operation."""
 
 
+class FirewallsCollectionClient(ComputeCollectionClient, Protocol):
+    """Firewall operations additionally used to reconcile existing rules (#1711)."""
+
+    def patch(self, **kwargs: object) -> object:
+        """Converge one existing firewall rule to a new body and return an operation."""
+
+
 class ComputeInstancesClient(ComputeCollectionClient, Protocol):
     """Compute instance operations additionally used by range lifecycle."""
 
     def set_disk_auto_delete(self, **kwargs: object) -> object:
         """Set one attached disk's instance-deletion behavior."""
+
+    def stop(self, **kwargs: object) -> object:
+        """Stop one running instance and return a Compute operation (range pause)."""
+
+    def start(self, **kwargs: object) -> object:
+        """Start one stopped instance and return a Compute operation (range resume)."""
 
 
 class OperationWaitClient(Protocol):
@@ -50,8 +63,9 @@ class GCEClients:
 
     networks: ComputeCollectionClient
     subnetworks: ComputeCollectionClient
-    firewalls: ComputeCollectionClient
+    firewalls: FirewallsCollectionClient
     addresses: ComputeCollectionClient
+    routers: ComputeCollectionClient
     instances: ComputeInstancesClient
     global_operations: OperationWaitClient
     region_operations: OperationWaitClient
@@ -68,6 +82,7 @@ def _build_clients() -> GCEClients:
         subnetworks=compute.SubnetworksClient(),
         firewalls=compute.FirewallsClient(),
         addresses=compute.AddressesClient(),
+        routers=compute.RoutersClient(),
         instances=compute.InstancesClient(),
         global_operations=compute.GlobalOperationsClient(),
         region_operations=compute.RegionOperationsClient(),

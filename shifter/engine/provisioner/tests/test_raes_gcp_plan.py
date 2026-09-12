@@ -209,6 +209,38 @@ class TestFirewalls:
         if web_rules:
             assert web_rules[0]["allowed"] == [{"IPProtocol": "tcp", "ports": ["80", "443"]}]
 
+    def test_zero_egress_overrides_a_web_permitting_profile(self):
+        """A pinned `none` range opens no public-web egress lane, even if the profile would."""
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/kali-1",
+            allow_public_web_egress=True,
+        )
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(profile),
+            _config(),
+            egress_mode="none",
+        )
+        names = {fw["name"] for fw in plan["firewalls"]}
+        # The default egress-deny stays; the public-web lane is suppressed.
+        assert any("egress-deny" in name for name in names)
+        assert "shifter-r-7-egress-web" not in names
+
+    def test_deny_all_also_suppresses_the_web_egress_lane(self):
+        """deny-all forbids general egress too; a web-permitting profile must not leak."""
+        profile = GCERangeImageProfile(
+            source_image="projects/x/global/images/kali-1",
+            allow_public_web_egress=True,
+        )
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(profile), _config(), egress_mode="deny-all"
+        )
+        names = {fw["name"] for fw in plan["firewalls"]}
+        assert any("egress-deny" in name for name in names)
+        assert "shifter-r-7-egress-web" not in names
+
     def test_authored_acls_realized_as_node_firewalls(self):
         acl = RaesPlanAcl(
             name="ssh", action="accept", direction="in", protocol="tcp", ports=(22,), from_net="net.a", to_net=None
@@ -349,3 +381,24 @@ class TestParticipantAccess:
         instance = plan["instances"][0]
         assert instance["ssh_username"] == RESERVED_MANAGEMENT_LOGIN
         assert instance["participant_access_usernames"]["ssh"] != RESERVED_MANAGEMENT_LOGIN
+
+
+class TestRangeOwnedNat:
+    """A non-`none` range owns a Cloud Router+NAT; a `none` range has none (PLAT-238)."""
+
+    def test_status_quo_range_gets_a_router_nat_scoped_to_its_subnets(self):
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), egress_mode="status-quo"
+        )
+        router_nat = plan.get("router_nat")
+        assert router_nat is not None
+        assert router_nat["router_name"] == "shifter-r-7-nat-router"
+        expected = [subnet["self_link"] for subnet in plan["subnets"]]
+        assert router_nat["subnetwork_self_links"] == expected
+        assert expected  # the range has at least one subnet to NAT
+
+    def test_none_range_has_no_router_nat(self):
+        plan = build_raes_range_cell_plan(
+            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), egress_mode="none"
+        )
+        assert "router_nat" not in plan

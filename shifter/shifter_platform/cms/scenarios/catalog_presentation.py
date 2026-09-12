@@ -5,8 +5,8 @@ metadata through the CMS API and the scenario editor, without adding an RAES
 authoring editor.
 
 This is a bounded projection *over* :mod:`cms.scenarios.registry` — it does not
-duplicate the catalog, access model, or launchability rules. Legacy YAML/DB
-entries are presented as-is; RAES entries gain a nested ``raes`` block carrying
+duplicate the catalog, access model, or launchability rules. RAES entries gain a
+nested ``raes`` block carrying
 package-source identity, digests, conformance status/report ref, and a *bounded*
 provenance summary. It never carries raw RAES SDL, imported module bodies,
 generated content, flags, credentials, presigned URLs, provider payloads, or
@@ -17,6 +17,7 @@ See ``docs/adr/index.yaml``.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from cms.scenarios.registry import get_catalog_entry, list_all_scenarios
@@ -46,7 +47,7 @@ PROVENANCE_SUMMARY_KEYS: tuple[str, ...] = (
 
 
 def scenario_source(scenario_type: str, is_default: bool) -> str:
-    """Classify a scenario's source: builtin | custom | raes | ctf.
+    """Classify a scenario's source for the read-only presentation.
 
     Single server-owned source of truth for the source classification. Both the
     catalog projection (this module) and the scenario-editor detail projection
@@ -86,7 +87,7 @@ def list_catalog_presentations(user: User | None = None) -> list[dict[str, Any]]
     return [_to_presentation(entry, sources) for entry in entries]
 
 
-def _is_raes(entry: dict[str, Any]) -> bool:
+def _is_raes(entry: Mapping[str, Any]) -> bool:
     """Return True when a catalog projection entry is an RAES package-backed row."""
     return entry.get("scenario_type") == RAES_SCENARIO_TYPE
 
@@ -100,7 +101,7 @@ def _raes_source_map(scenario_ids: list[str]) -> dict[str, RaesPackageSource]:
     return {source.scenario_id: source for source in RaesPackageSource.objects.filter(scenario_id__in=scenario_ids)}
 
 
-def _to_presentation(entry: dict[str, Any], raes_sources: dict[str, RaesPackageSource]) -> dict[str, Any]:
+def _to_presentation(entry: Mapping[str, Any], raes_sources: dict[str, RaesPackageSource]) -> dict[str, Any]:
     """Build the presentation DTO for one catalog entry, attaching the RAES block when present."""
     presentation = _base_presentation(entry)
     if _is_raes(entry):
@@ -110,7 +111,7 @@ def _to_presentation(entry: dict[str, Any], raes_sources: dict[str, RaesPackageS
     return presentation
 
 
-def _base_presentation(entry: dict[str, Any]) -> dict[str, Any]:
+def _base_presentation(entry: Mapping[str, Any]) -> dict[str, Any]:
     """Build the source-agnostic base DTO (identity, access overlay, launchability, empty raes)."""
     scenario_type = entry.get("scenario_type", "demo")
     is_default = entry.get("is_default", False)

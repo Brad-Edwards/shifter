@@ -4,10 +4,8 @@
 # shared is freely importable by all layers (contracts layer).
 # No model imports, no internal submodule imports, no __init__.py shortcuts.
 #
-# Direct cyberscript imports: only `shared` may import `cyberscript` (enforced
-# by scripts/check_layer_imports/check_layer_imports.py and adr_guard). All other
-# layers must consume cyberscript contracts through shared shims. New non-DSL
-# contracts belong in shared natively; cyberscript is for scenario DSL only.
+# CyberScript is retired. Any direct import is a violation, including from
+# `shared`; retained Shifter-owned contracts live natively under `shared`.
 #
 # Any import not matching this config is a violation.
 
@@ -84,6 +82,11 @@ allowed:
     - shared
     - cms.services
     - management.services
+    # ADR-051 (#2048): CTF confines a communication campaign to a workspace and
+    # resolves an event's tenancy scope through the public tenancy facade. This is
+    # the one sanctioned CTF -> workspaces edge; CTF never imports workspaces.models
+    # or holds a cross-layer workspace ForeignKey (it carries scalar workspace_id).
+    - workspaces.services
 
   # Composition root: wires public domain service facades and the ASGI/routing
   # + operational-metrics surfaces. Enumerated narrowly — it must not import

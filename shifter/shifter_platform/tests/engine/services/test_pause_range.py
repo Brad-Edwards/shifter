@@ -13,8 +13,9 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 
-from engine import create_range, pause_range
+from engine import pause_range
 from engine.models import Range
+from engine.services import create_raes_range
 from shared.schemas import InstanceSpec, RangeSpec, RequestSpec, SubnetSpec
 
 # Opaque #1325 workspace scope binding. engine.services requires one on every
@@ -68,6 +69,16 @@ def _request_spec(user_id):
                 ],
             )
         ],
+    )
+
+
+def create_range(spec, *, workspace_id):
+    """Persist through the authoritative RAES engine seam."""
+    return create_raes_range(
+        request_id=spec.request_id,
+        user_id=spec.user_id,
+        compiled_plan={"kind": "raes_provisioning_plan", "raes_version": "2.0", "resources": {}},
+        workspace_id=workspace_id,
     )
 
 

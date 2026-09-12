@@ -23,6 +23,8 @@ from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFEvent
 from shared.log_sanitize import safe_log_value
 
+from ._validation import validate_content_scenario_access, validate_scoring_mode
+from ._workspace import resolve_event_workspace_id
 from .scheduling import _reschedule_event_tasks, _reschedule_live_event_schedule
 
 if TYPE_CHECKING:
@@ -66,49 +68,6 @@ _EVENT_MUTABLE_FIELDS = frozenset(
 )
 
 
-def _validate_scoring_mode(event_data: dict[str, Any]) -> None:
-    """Reject an unknown ``scoring_mode`` with a controlled 400.
-
-    The model field constrains choices, but the JSON API path bypasses form
-    validation, so validate here to surface a `CTFValidationError` (400) rather
-    than persisting an invalid value that would later fall back to standard.
-    """
-    from ctf.enums import ScoringMode
-    from ctf.extensions import registered_scoring_modes
-
-    if "scoring_mode" not in event_data:
-        return
-    if event_data["scoring_mode"] in registered_scoring_modes():
-        return
-    try:
-        ScoringMode(event_data["scoring_mode"])
-    except ValueError:
-        raise CTFValidationError(
-            "Invalid scoring mode",
-            code="CTF_INVALID_SCORING_MODE",
-            details={
-                "scoring_mode": event_data["scoring_mode"],
-                "valid_modes": [m.value for m in ScoringMode],
-            },
-        ) from None
-
-
-def _validate_content_scenario_access(user: User, scenario_id: str) -> None:
-    """Authorize configured content through the existing CTF launch catalog."""
-    from django.conf import settings
-
-    if settings.CTF_CONTENT_REFERENCES.get(scenario_id) is None:
-        return
-
-    from ctf.bridges import cms_list_scenarios
-
-    if scenario_id not in {available_id for available_id, _name in cms_list_scenarios(user)}:
-        raise CTFValidationError(
-            "Scenario is not available for CTF event creation.",
-            code="CTF_SCENARIO_NOT_AVAILABLE",
-        )
-
-
 def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     """Create a new CTF event.
 
@@ -142,13 +101,14 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
             code="CTF_INVALID_DATES",
         )
 
-    _validate_scoring_mode(event_data)
+    validate_scoring_mode(event_data)
 
     # Filter to allowed fields only — prevent mass assignment of status,
     # created_by, id, timestamps, etc.
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
     scenario_id = str(safe_data.get("scenario_id", CTFEvent._meta.get_field("scenario_id").default))
-    _validate_content_scenario_access(user, scenario_id)
+    validate_content_scenario_access(user, scenario_id)
+    workspace_id = resolve_event_workspace_id(user, event_data)
     from ctf.services.content_resolution import resolve_scenario_ctf_content
 
     resolved_content = resolve_scenario_ctf_content(scenario_id)
@@ -156,6 +116,7 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     with transaction.atomic():
         event = CTFEvent.objects.create(
             created_by=user,
+            workspace_id=workspace_id,
             status=EventStatus.DRAFT.value,
             **safe_data,
         )
@@ -226,12 +187,13 @@ def _reject_team_config_changes_after_start(event: CTFEvent, event_data: dict[st
         )
 
 
-def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
+def update_event(event_id: UUID, event_data: dict[str, Any], *, actor_id: int | None = None) -> CTFEvent:
     """Update an existing CTF event.
 
     Args:
         event_id: UUID of the event to update.
         event_data: Dictionary containing fields to update.
+        actor_id: When supplied, the service asserts the ``config`` capability (#1922).
 
     Returns:
         The updated CTFEvent instance.
@@ -251,6 +213,12 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
             details={"event_id": str(event_id)},
         ) from None
 
+    if actor_id is not None:
+        from ctf.enums import EventCapability
+        from ctf.services.authorization import assert_event_capability
+
+        assert_event_capability(actor_id, event, EventCapability.CONFIG)
+
     _reject_team_config_changes_after_start(event, event_data)
 
     # Check if event is modifiable
@@ -263,7 +231,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     new_start = event_data.get("event_start", event.event_start)
     new_end = event_data.get("event_end", event.event_end)
     _validate_event_time_range(new_start, new_end)
-    _validate_scoring_mode(event_data)
+    validate_scoring_mode(event_data)
 
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
     if "scenario_id" in safe_data and safe_data["scenario_id"] != event.scenario_id:
@@ -296,11 +264,12 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     return event
 
 
-def delete_event(event_id: UUID) -> None:
+def delete_event(event_id: UUID, *, actor_id: int | None = None) -> None:
     """Soft-delete a CTF event.
 
     Args:
         event_id: UUID of the event to delete.
+        actor_id: When supplied, the service asserts the ``delete`` capability (#1922).
 
     Raises:
         CTFNotFoundError: If event doesn't exist.
@@ -316,6 +285,12 @@ def delete_event(event_id: UUID) -> None:
             f"Event {event_id} not found",
             details={"event_id": str(event_id)},
         ) from None
+
+    if actor_id is not None:
+        from ctf.enums import EventCapability
+        from ctf.services.authorization import assert_event_capability
+
+        assert_event_capability(actor_id, event, EventCapability.DELETE)
 
     with transaction.atomic():
         # Cancel any scheduled tasks
@@ -351,9 +326,11 @@ def force_delete_event(
         CTFNotFoundError: If event doesn't exist.
         CTFValidationError: If confirmation_name doesn't match.
     """
+    from ctf.enums import EventCapability
     from ctf.models import CTFChallengeFile, CTFParticipant
     from ctf.s3 import delete_challenge_file
     from ctf.services import event as _e
+    from ctf.services.authorization import assert_event_capability
     from ctf.services.range.lifecycle import _destroy_single_range
 
     # Use all_objects so force delete works on soft-deleted events too
@@ -364,6 +341,12 @@ def force_delete_event(
             f"Event {event_id} not found",
             details={"event_id": str(event_id)},
         ) from None
+
+    # Service-layer authorization (defense in depth, #1922): the owner, a full
+    # co-organizer, or the platform-admin override may force-delete; moderators/
+    # judges cannot. The view checks this too, but internal callers must not
+    # bypass it.
+    assert_event_capability(actor.pk, event, EventCapability.DELETE)
 
     if confirmation_name != event.name:
         raise CTFValidationError(
@@ -464,12 +447,12 @@ def event_pk_if_exists(event_id: UUID) -> UUID | None:
 
 
 def list_events_for_organizer(user: User) -> QuerySet[CTFEvent]:
-    """List CTF events created by an organizer.
+    """List the CTF events ``user`` may administer (authority-aware).
 
-    Args:
-        user: The organizer user.
-
-    Returns:
-        QuerySet of CTFEvent instances.
+    Delegates to :func:`ctf.services.event._queries.resolve_administrable_events`
+    so this export and ``get_organizer_events`` never become two divergent
+    global-access policies (ADR-052-R3).
     """
-    return CTFEvent.objects.filter(created_by=user).order_by("-event_start")
+    from ctf.services.event._queries import resolve_administrable_events
+
+    return resolve_administrable_events(user)

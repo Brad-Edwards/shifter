@@ -179,6 +179,9 @@ OIDC_EXEMPT_URLS = [
     "/ctf/change-password/",
     # CTF help page
     "/ctf/help/",
+    # Exact invitation fragment exchange endpoints; no wildcard exemptions.
+    "/workspace-invitations/accept/",
+    "/workspace-invitations/stage/",
 ]
 
 # Session cookie lifetime — makes Django's 14-day default explicit. Temporary

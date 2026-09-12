@@ -14,7 +14,7 @@ from shared.range_cells import (
 )
 
 from range_terraform_runner import apply_range
-from terraform_vars import build_range_variables
+from terraform_vars import RangeVariableContext, build_range_variables
 
 
 def _envelope(payload: dict[str, object]) -> dict[str, object]:
@@ -121,7 +121,7 @@ def test_different_scenario_compositions_cross_the_same_outer_contract(scenario_
             42,
             7,
             runtime_spec,
-            scenario_artifact=artifact,
+            RangeVariableContext(scenario_artifact=artifact),
         )
 
     assert set(request) == {

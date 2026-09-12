@@ -2,6 +2,17 @@ variable "project_id" {
   type = string
 }
 
+variable "dynamic_secret_project_id" {
+  type        = string
+  description = "Deployment-scoped project that owns provisioner-created range secrets."
+}
+
+variable "provisioner_static_secret_ids" {
+  type        = set(string)
+  default     = []
+  description = "Exact operator-created Secret Manager resources read by the provisioner outside the dynamic boundary."
+}
+
 variable "environment" {
   type = string
 }
@@ -78,4 +89,17 @@ variable "ctf_content_bucket_name" {
   type        = string
   default     = ""
   description = "Optional private GCS bucket holding digest-pinned native CTF content bundles. Grants the portal read-only access. Empty disables the binding."
+}
+
+variable "deploy_service_account_email" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    Email of the CI deploy service account (the purpose-scoped WIF SA in
+    global/cicd-oidc) that runs `terraform apply` for this stack. Granted
+    resource-scoped roles/iam.serviceAccountUser on the GKE node SA so it can
+    create the node pools that run as that node SA (actAs). Scoped, not project-
+    wide, to satisfy CKV_GCP_41. Empty disables the binding (e.g. when the stack
+    is applied by an operator identity that already holds broad actAs).
+  EOT
 }
