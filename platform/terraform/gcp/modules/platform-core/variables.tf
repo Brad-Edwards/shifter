@@ -35,6 +35,12 @@ variable "artifact_registry_location" {
   type        = string
 }
 
+variable "release_scan_service_account_email" {
+  description = "Purpose-scoped CI identity granted read-only access to exact release images."
+  type        = string
+  default     = ""
+}
+
 variable "gke_release_channel" {
   description = "GKE release channel."
   type        = string

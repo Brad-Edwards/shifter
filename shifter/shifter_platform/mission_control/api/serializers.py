@@ -402,7 +402,7 @@ class CredentialCreateSerializer(serializers.Serializer):
 
     def validate_credential_type(self, value: str) -> str:
         if value not in ("scm", "deployment_profile"):
-            raise serializers.ValidationError(f"Invalid credential type: {value}")
+            raise serializers.ValidationError("Invalid credential type.")
         return value
 
 

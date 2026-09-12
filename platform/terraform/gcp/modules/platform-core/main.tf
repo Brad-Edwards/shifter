@@ -224,13 +224,14 @@ module "portal_gcs" {
 module "portal_artifact_registry" {
   source = "../portal/artifact-registry"
 
-  project_id                 = var.project_id
-  artifact_registry_location = var.artifact_registry_location
-  name_prefix                = local.name_prefix
-  common_labels              = local.common_labels
-  artifact_repositories      = local.artifact_repositories
-  environment                = var.environment
-  project_number             = module.project_services.project_number
+  project_id                         = var.project_id
+  artifact_registry_location         = var.artifact_registry_location
+  name_prefix                        = local.name_prefix
+  common_labels                      = local.common_labels
+  artifact_repositories              = local.artifact_repositories
+  environment                        = var.environment
+  project_number                     = module.project_services.project_number
+  release_scan_service_account_email = var.release_scan_service_account_email
 
   depends_on = [module.project_services]
 }

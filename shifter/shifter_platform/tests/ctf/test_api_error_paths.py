@@ -450,7 +450,7 @@ class TestApiParticipantErrorPaths:
             resp = authenticated_organizer_client.post(url, data={"file": upload})
         assert resp.status_code in (403, 400)
 
-    def test_file_download_participant(
+    def test_file_download_unavailable_participant_is_forbidden(
         self,
         authenticated_participant_client: Client,
         ctf_participant: CTFParticipant,
@@ -470,8 +470,9 @@ class TestApiParticipantErrorPaths:
         )
         with patch("ctf.services.attachment.get_download_url", return_value=("https://x/f", "f.txt")):
             resp = _json(authenticated_participant_client, "get", "api_file_download", kwargs={"file_id": cf.id})
-        # Participant of the event: allowed when the challenge is available, else 403.
-        assert resp.status_code in (200, 403)
+        # The fixture event has not started, so its challenge is deterministically
+        # unavailable even to a registered participant.
+        assert resp.status_code == 403
 
     def test_participant_detail_not_found(self, authenticated_organizer_client: Client):
         resp = _json(

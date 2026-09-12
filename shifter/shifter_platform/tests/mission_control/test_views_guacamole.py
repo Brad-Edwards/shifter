@@ -47,6 +47,16 @@ def user(db):
 
 
 @pytest.fixture
+def other_user(db):
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.create_user(
+        username="other-guac-user@example.com",
+        email="other-guac-user@example.com",
+    )
+
+
+@pytest.fixture
 def mock_user():
     """A no-DB user input for the bootstrap status/open views (no engine calls)."""
     user = MagicMock()
@@ -161,7 +171,24 @@ class TestGuacamoleBootstrapStatus:
         response = _get_status(rf, mock_user, bootstrap.id)
 
         assert response.status_code == 503
-        assert _json(response)["error"] == "Guacamole unavailable"
+        assert _json(response)["error"] == "Service is unavailable"
+
+    def test_failed_bootstrap_does_not_echo_unclassified_saved_error(self, rf, mock_user):
+        from mission_control.models import GuacamoleBootstrapRequest
+
+        secret = "backend trace containing token=not-for-clients"
+        bootstrap = self._bootstrap(
+            mock_user,
+            status=GuacamoleBootstrapRequest.Status.FAILED,
+            error_message=secret,
+            error_status_code=503,
+        )
+
+        response = _get_status(rf, mock_user, bootstrap.id)
+
+        assert response.status_code == 503
+        assert secret not in response.content.decode()
+        assert _json(response)["error"] == "Guacamole session bootstrap failed"
 
     def test_marks_pending_bootstrap_expired(self, rf, mock_user):
         from datetime import timedelta
@@ -305,6 +332,19 @@ class TestGuacamoleRDPURL:
         status = _get_status(rf, user, _json(response)["request_id"])
         assert status.status_code == 400
 
+    def test_rejects_instance_owned_by_another_user(self, rf, user, other_user, guac_configured, range_rdp_instance):
+        from mission_control.api.views import guacamole_rdp_url
+
+        _rng, instance = range_rdp_instance(other_user, os_type="windows")
+        request = _post(rf, "/mc/guac/rdp/", {"instance_uuid": instance["uuid"]}, user)
+
+        response = guacamole_rdp_url(request)
+
+        assert response.status_code == 202
+        status = _get_status(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
+        assert _json(status)["error"] == "Resource not found"
+
     def test_returns_bootstrap_status_url_on_success(
         self, rf, user, guac_configured, range_rdp_instance, secrets_boundary, guac_exchange
     ):
@@ -405,6 +445,19 @@ class TestGuacamoleSSHURL:
         assert response.status_code == 202
         status = _get_status(rf, user, _json(response)["request_id"])
         assert status.status_code == 400
+
+    def test_rejects_instance_owned_by_another_user(self, rf, user, other_user, guac_configured, range_ssh_instance):
+        from mission_control.api.views import guacamole_ssh_url
+
+        _rng, instance = range_ssh_instance(other_user)
+        request = _post(rf, "/mc/guac/ssh/", {"instance_uuid": instance["uuid"]}, user)
+
+        response = guacamole_ssh_url(request)
+
+        assert response.status_code == 202
+        status = _get_status(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
+        assert _json(status)["error"] == "Resource not found"
 
     def test_returns_500_when_secrets_manager_fails(
         self, rf, user, guac_configured, range_ssh_instance, secrets_boundary, secrets_client_factory

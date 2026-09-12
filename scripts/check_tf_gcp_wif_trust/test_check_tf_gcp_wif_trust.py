@@ -19,6 +19,7 @@ locals {
     build    = ["repo:Brad-Edwards/shifter:environment:gcp-build-dev"]
     validate = ["repo:Brad-Edwards/shifter:environment:gcp-validate-dev"]
     promote  = ["repo:Brad-Edwards/shifter:environment:gcp-promote-prod"]
+    release_scan = ["repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev"]
     deploy   = ["repo:Brad-Edwards/shifter:environment:gcp-dev"]
     destroy  = ["repo:Brad-Edwards/shifter:environment:gcp-dev-destroy"]
   }
@@ -32,12 +33,13 @@ locals {
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
-  attribute_condition = "assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')"
+  attribute_condition = "assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')"
 }
 
 resource "google_service_account" "packer_build" { account_id = "build" }
 resource "google_service_account" "validate" { account_id = "validate" }
 resource "google_service_account" "promote" { account_id = "promote" }
+resource "google_service_account" "release_scan" { account_id = "scan" }
 resource "google_service_account" "deploy" { account_id = "deploy" }
 resource "google_service_account" "destroy" { account_id = "destroy" }
 
@@ -56,6 +58,12 @@ resource "google_service_account_iam_member" "validate_wif" {
 resource "google_service_account_iam_member" "promote_wif" {
   for_each           = local.purpose_subject_principals.promote
   service_account_id = google_service_account.promote.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = each.value
+}
+resource "google_service_account_iam_member" "release_scan_wif" {
+  for_each           = local.purpose_subject_principals.release_scan
+  service_account_id = google_service_account.release_scan.name
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
@@ -83,8 +91,14 @@ variable "build_roles" { default = ["roles/compute.instanceAdmin.v1", "roles/clo
 variable "validate_roles" { default = ["roles/compute.instanceAdmin.v1", "roles/iap.tunnelResourceAccessor"] }
 variable "validate_permissions" { default = ["compute.images.get", "compute.images.setLabels"] }
 variable "promote_permissions" { default = ["compute.images.create", "compute.images.deprecate", "compute.images.get"] }
-variable "deploy_roles" { default = ["roles/compute.admin", "roles/storage.admin"] }
-variable "destroy_roles" { default = ["roles/compute.admin", "roles/storage.admin"] }
+variable "deploy_roles" {
+  description = "Roles for the deployment lifecycle identity."
+  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]
+}
+variable "destroy_roles" {
+  description = "A deliberately different description for teardown."
+  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]
+}
 """
 
 # Repository-only condition + repository-wide principalSet + surviving waiver.
@@ -140,8 +154,8 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
 
     def test_profile_conditional_static_conditions_pass(self) -> None:
         conditional = GOOD_MODULE.replace(
-            '  attribute_condition = "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-promote-prod\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy\')"',
-            '  attribute_condition = var.environment == "gcp-dev" ? "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy\')" : var.environment == "proof" ? "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-proof\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-proof\')" : "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-promote-prod\'"',
+            "  attribute_condition = \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\"",
+            "  attribute_condition = var.environment == \"gcp-dev\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\" : var.environment == \"proof\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-proof' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-proof')\" : \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod'\"",
         )
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(Path(tmp), "main.tf", conditional)
@@ -149,8 +163,8 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
 
     def test_one_weakened_profile_condition_is_rejected(self) -> None:
         conditional = GOOD_MODULE.replace(
-            '  attribute_condition = "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-promote-prod\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy\')"',
-            '  attribute_condition = var.environment == "gcp-dev" ? "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy\')" : var.environment == "proof" ? "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-proof\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-proof\')" : "assertion.repository == \'Brad-Edwards/shifter\' && assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-promote-prod\'"',
+            "  attribute_condition = \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\"",
+            "  attribute_condition = var.environment == \"gcp-dev\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\" : var.environment == \"proof\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-proof' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-proof')\" : \"assertion.repository == 'Brad-Edwards/shifter' && assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod'\"",
         )
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(Path(tmp), "main.tf", conditional)
@@ -168,11 +182,34 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
         self.assertTrue(any("exact protected assertion.ref" in reason for reason in reasons))
         self.assertFalse(any("literal assertion.sub" in reason for reason in reasons))
 
+    def test_missing_static_attribute_condition_is_rejected(self) -> None:
+        unguarded = GOOD_MODULE.replace(
+            "  attribute_condition = ",
+            "  dynamic_condition = ",
+            1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", unguarded)
+            reasons = [violation.reason for violation in check_file(tf)]
+        self.assertTrue(any("must define static attribute_condition strings" in reason for reason in reasons))
+
+    def test_condition_without_repository_scope_is_rejected(self) -> None:
+        missing_repository = GOOD_MODULE.replace(
+            "assertion.repository == 'Brad-Edwards/shifter' && ",
+            "",
+            1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", missing_repository)
+            reasons = [violation.reason for violation in check_file(tf)]
+        self.assertTrue(any("assertion.repository" in reason for reason in reasons))
+
     def test_missing_assertion_sub_clause_is_rejected(self) -> None:
         missing_sub = GOOD_MODULE.replace(
             " && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || "
             "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || "
             "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || "
+            "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || "
             "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || "
             "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')",
             "",
@@ -185,8 +222,8 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
 
     def test_profile_arm_with_wrong_exact_subject_set_is_rejected(self) -> None:
         conditional = GOOD_MODULE.replace(
-            '  attribute_condition = "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-promote-prod\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy\')"',
-            '  attribute_condition = var.environment == "gcp-dev" ? "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy\')" : var.environment == "proof" ? "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-build-proof\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-validate-proof\')" : "assertion.repository == \'Brad-Edwards/shifter\' && (${local.ref_condition}) && (assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-promote-prod\' || assertion.sub == \'repo:Brad-Edwards/shifter:environment:gcp-dev\')"',
+            "  attribute_condition = \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\"",
+            "  attribute_condition = var.environment == \"gcp-dev\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\" : var.environment == \"proof\" ? \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-proof' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-proof')\" : \"assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev')\"",
         )
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(Path(tmp), "main.tf", conditional)
@@ -215,9 +252,7 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(Path(tmp), "main.tf", drift)
             reasons = [v.reason for v in check_file(tf)]
-        self.assertTrue(
-            any("must equal local.purpose_subjects" in r for r in reasons)
-        )
+        self.assertTrue(any("must equal local.purpose_subjects" in r for r in reasons))
 
     def test_unpaired_gcp_dev_ref_is_rejected(self) -> None:
         widened = GOOD_MODULE.replace(
@@ -299,7 +334,7 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(Path(tmp), "main.tf", legacy)
             reasons = [violation.reason for violation in check_file(tf)]
-        self.assertTrue(any("five purpose-specific" in reason for reason in reasons))
+        self.assertTrue(any("six purpose-specific" in reason for reason in reasons))
 
     def test_cross_purpose_wif_binding_is_rejected(self) -> None:
         crossed = GOOD_MODULE.replace(
@@ -341,6 +376,93 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
             reasons = [v.reason for v in check_file(tf)]
         self.assertTrue(any("promote permission set" in reason for reason in reasons))
 
+    def test_deploy_and_destroy_cannot_share_one_broad_role_variable(self) -> None:
+        shared = GOOD_MODULE.replace(
+            """variable "deploy_roles" {
+  description = "Roles for the deployment lifecycle identity."
+  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]
+}
+variable "destroy_roles" {
+  description = "A deliberately different description for teardown."
+  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]
+}""",
+            'variable "platform_roles" { default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"] }\n'
+            'resource "google_project_iam_member" "deploy_roles" { for_each = toset(var.platform_roles) }\n'
+            'resource "google_project_iam_member" "destroy_roles" { for_each = toset(var.platform_roles) }',
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", shared)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("separate deploy_roles and destroy_roles" in reason for reason in reasons))
+
+    def test_deploy_and_destroy_role_sets_must_be_independently_derived(self) -> None:
+        identical = GOOD_MODULE.replace(
+            'default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]',
+            'default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]',
+            1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", identical)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("independently derived" in reason for reason in reasons))
+
+    def test_destroy_role_set_cannot_manage_project_services(self) -> None:
+        broad = GOOD_MODULE.replace(
+            'default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]',
+            'default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]',
+            1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", broad)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("must not enable or disable project services" in reason for reason in reasons))
+
+    def test_missing_both_lifecycle_role_variables_is_rejected(self) -> None:
+        missing = GOOD_MODULE.replace(
+            """variable "deploy_roles" {
+  description = "Roles for the deployment lifecycle identity."
+  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]
+}
+variable "destroy_roles" {
+  description = "A deliberately different description for teardown."
+  default = ["roles/compute.networkAdmin", "roles/compute.securityAdmin"]
+}""",
+            "",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", missing)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("separate deploy_roles and destroy_roles" in reason for reason in reasons))
+
+    def test_lifecycle_roles_cannot_mutate_release_images_or_evidence(self) -> None:
+        for purpose, broad_role in (
+            ("deploy", "roles/compute.admin"),
+            ("destroy", "roles/storage.admin"),
+        ):
+            with self.subTest(purpose=purpose, broad_role=broad_role):
+                narrow = (
+                    '["roles/compute.networkAdmin", "roles/compute.securityAdmin", "roles/serviceusage.serviceUsageAdmin"]'
+                    if purpose == "deploy"
+                    else '["roles/compute.networkAdmin", "roles/compute.securityAdmin"]'
+                )
+                broad = GOOD_MODULE.replace(narrow, f'["{broad_role}"]', 1)
+                with tempfile.TemporaryDirectory() as tmp:
+                    tf = _write(Path(tmp), "main.tf", broad)
+                    reasons = [v.reason for v in check_file(tf)]
+                self.assertTrue(any("release-evidence-bypassing broad roles" in reason for reason in reasons))
+
+    def test_split_module_resolves_lifecycle_role_variables_across_files(self) -> None:
+        main_body, separator, variables_body = GOOD_MODULE.partition('variable "build_roles"')
+        self.assertTrue(separator)
+        with tempfile.TemporaryDirectory() as tmp:
+            module_dir = Path(tmp) / "cicd-oidc-identity"
+            module_dir.mkdir()
+            main = _write(module_dir, "main.tf", main_body)
+            variables = _write(module_dir, "variables.tf", separator + variables_body)
+
+            self.assertEqual(check_file(main), [])
+            self.assertEqual(check_file(variables), [])
+
     def test_build_roles_cannot_have_project_wide_storage_admin(self) -> None:
         broad = GOOD_MODULE.replace(
             'variable "build_roles" { default = ["roles/compute.instanceAdmin.v1", "roles/cloudbuild.builds.editor"] }',
@@ -350,6 +472,22 @@ class CheckTfGcpWifTrustTest(unittest.TestCase):
             tf = _write(Path(tmp), "main.tf", broad)
             reasons = [v.reason for v in check_file(tf)]
         self.assertTrue(any("build role set" in reason for reason in reasons))
+
+    def test_release_scan_cannot_have_a_project_wide_role(self) -> None:
+        broad = (
+            GOOD_MODULE
+            + """
+        resource "google_project_iam_member" "release_scan_reader" {
+          project = "example"
+          role    = "roles/artifactregistry.reader"
+          member  = "serviceAccount:${google_service_account.release_scan.email}"
+        }
+        """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", broad)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("no project-wide IAM role" in reason for reason in reasons))
 
     def test_non_tf_inputs_are_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

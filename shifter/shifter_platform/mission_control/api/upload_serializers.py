@@ -38,8 +38,7 @@ class UploadInitiateSerializer(serializers.Serializer):
         if isinstance(file_size, bool) or not isinstance(file_size, int) or file_size <= 0:
             raise serializers.ValidationError("Valid file size is required")
         if agent_type not in AGENT_TYPE_CHOICES:
-            choices = ", ".join(AGENT_TYPE_CHOICES)
-            raise serializers.ValidationError(f"Invalid agent type. Must be one of: {choices}")
+            raise serializers.ValidationError("Invalid agent type.")
 
         attrs["agent_type"] = agent_type
         return attrs

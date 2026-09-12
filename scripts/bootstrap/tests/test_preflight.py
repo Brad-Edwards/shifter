@@ -20,6 +20,7 @@ GCP_CI_ENV = {
     "GCP_PUBLIC_HOSTNAME": "gcp.example.test",
     "GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN": "example.test",
     "GCP_DEPLOY_SERVICE_ACCOUNT": "deploy@prod-ksqdkj.iam.gserviceaccount.com",
+    "GCP_RELEASE_SCAN_SERVICE_ACCOUNT": "scan@prod-ksqdkj.iam.gserviceaccount.com",
     "GCP_WORKLOAD_IDENTITY_PROVIDER": "projects/1/locations/global/workloadIdentityPools/p/providers/gh",
     "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@example.test",
     "GCP_BOOTSTRAP_ADMIN_PASSWORD": "Galvatron7!!!",
@@ -96,6 +97,13 @@ class TestRunPreflightGcpCi:
         report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
         assert not report.ok
         assert any("GCP_DEPLOY_SERVICE_ACCOUNT" in check.message for check in report.failures)
+
+    def test_missing_release_scan_identity_fails(self):
+        env = dict(GCP_CI_ENV)
+        del env["GCP_RELEASE_SCAN_SERVICE_ACCOUNT"]
+        report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
+        assert not report.ok
+        assert any("GCP_RELEASE_SCAN_SERVICE_ACCOUNT" in check.message for check in report.failures)
 
     def test_missing_operator_creds_fail_without_optout(self):
         env = dict(GCP_CI_ENV)
@@ -349,8 +357,12 @@ class TestConfigEntrypoint:
 
 class TestFacade:
     def test_deploy_reexports_run_preflight(self):
-        assert callable(deploy.run_preflight)
-        assert callable(deploy.preflight_gate)
+        expected = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=dict(GCP_CI_ENV))
+        actual = deploy.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=dict(GCP_CI_ENV))
+
+        assert actual == expected
+        assert deploy.run_preflight._facade_original is preflight.run_preflight
+        assert deploy.preflight_gate._facade_original is preflight.preflight_gate
 
 
 # --- Parity with docs/dev/deploy-secrets.md -----------------------------------

@@ -18,6 +18,11 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "region" {
+  description = "Region for the private release-evidence bucket."
+  type        = string
+}
+
 variable "github_org" {
   description = "GitHub organization that owns the repository allowed to federate."
   type        = string
@@ -83,6 +88,7 @@ variable "validate_permissions" {
     "compute.images.useReadOnly",
     "compute.instances.create",
     "compute.instances.delete",
+    "compute.instances.attachDisk",
     "compute.instances.get",
     "compute.instances.reset",
     "compute.instances.setTags",
@@ -116,12 +122,12 @@ variable "promote_permissions" {
   ]
 }
 
-variable "platform_roles" {
-  description = "Existing platform-core lifecycle roles assigned separately to deploy and destroy."
+variable "deploy_roles" {
+  description = "Platform-core roles granted only to the deploy identity."
   type        = list(string)
   default = [
-    "roles/compute.admin",
-    "roles/storage.admin",
+    "roles/compute.networkAdmin",
+    "roles/compute.securityAdmin",
     "roles/gkehub.editor",
     "roles/gkehub.gatewayEditor",
     "roles/gkehub.viewer",
@@ -139,6 +145,63 @@ variable "platform_roles" {
     "roles/monitoring.editor",
     "roles/iam.serviceAccountAdmin",
     "roles/resourcemanager.projectIamAdmin",
+  ]
+}
+
+variable "destroy_roles" {
+  description = "Platform-core teardown roles granted only to the destroy identity."
+  type        = list(string)
+  default = [
+    "roles/compute.networkAdmin",
+    "roles/compute.securityAdmin",
+    "roles/gkehub.editor",
+    "roles/gkehub.gatewayEditor",
+    "roles/gkehub.viewer",
+    "roles/container.admin",
+    "roles/servicenetworking.networksAdmin",
+    "roles/dns.admin",
+    "roles/cloudsql.admin",
+    "roles/redis.admin",
+    "roles/pubsub.admin",
+    "roles/secretmanager.admin",
+    "roles/cloudkms.admin",
+    "roles/artifactregistry.admin",
+    "roles/identityplatform.admin",
+    "roles/monitoring.editor",
+    "roles/iam.serviceAccountAdmin",
+    "roles/resourcemanager.projectIamAdmin",
+  ]
+}
+
+variable "deploy_storage_permissions" {
+  description = "Storage permissions for Terraform-managed platform buckets, bound only to their deterministic resource names."
+  type        = list(string)
+  default = [
+    "storage.buckets.create",
+    "storage.buckets.delete",
+    "storage.buckets.get",
+    "storage.buckets.getIamPolicy",
+    "storage.buckets.setIamPolicy",
+    "storage.buckets.update",
+    "storage.objects.create",
+    "storage.objects.delete",
+    "storage.objects.get",
+    "storage.objects.list",
+    "storage.objects.update",
+  ]
+}
+
+variable "destroy_storage_permissions" {
+  description = "Storage permissions needed to tear down Terraform-managed platform buckets, bound only to their deterministic resource names."
+  type        = list(string)
+  default = [
+    "storage.buckets.delete",
+    "storage.buckets.get",
+    "storage.buckets.getIamPolicy",
+    "storage.buckets.setIamPolicy",
+    "storage.objects.delete",
+    "storage.objects.get",
+    "storage.objects.list",
   ]
 }
 
@@ -160,4 +223,18 @@ variable "terraform_state_bucket_name" {
   description = "Existing GCS backend bucket receiving resource-scoped deploy/destroy access; defaults to <project>-terraform-state."
   type        = string
   default     = ""
+}
+
+variable "platform_external_bucket_names" {
+  description = "Existing content buckets whose IAM memberships are managed by platform-core; each receives exact bucket-level lifecycle IAM administration."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for name in var.platform_external_bucket_names :
+      length(trimspace(name)) > 0 && lower(name) != lower("${var.project_id}-release-evidence")
+    ])
+    error_message = "platform_external_bucket_names must contain non-empty names and must not include this identity root's release-evidence bucket."
+  }
 }
