@@ -13,7 +13,7 @@ state.
 ## Delivered scope (first PR)
 
 Issue #247 carries two threads: the least-privilege scope-down analyzed below,
-and the follow-up comment's durable fix — a CI drift-check for the out-of-band
+and the follow-up comment's durable fix: a CI drift-check for the out-of-band
 `global/iam` stack. The maintainer selected the **drift-check** for the first
 PR: `.github/workflows/iam-drift-check.yml` runs `terraform plan
 -detailed-exitcode` against `global/iam` on push to a protected branch and fails

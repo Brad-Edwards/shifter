@@ -79,10 +79,10 @@ def _trigger_events(on: object) -> set[str]:
     """Return the set of event names in the workflow's ``on:`` trigger."""
     if isinstance(on, str):
         return {on}
-    if isinstance(on, list):
+    # Iterating a list yields its items; iterating a dict yields its keys - both
+    # are the event names.
+    if isinstance(on, (list, dict)):
         return {str(item) for item in on}
-    if isinstance(on, dict):
-        return {str(key) for key in on}
     return set()
 
 
@@ -141,11 +141,11 @@ def _line_is_real_plan(line: str) -> bool:
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return False
-    if not _PLAN_RE.search(line):
-        return False
-    if "-detailed-exitcode" not in line:
-        return False
-    return not any(tok in line for tok in _SWALLOW_TOKENS)
+    return (
+        bool(_PLAN_RE.search(line))
+        and "-detailed-exitcode" in line
+        and not any(tok in line for tok in _SWALLOW_TOKENS)
+    )
 
 
 def _run_swallows_exit(run_body: str) -> bool:
@@ -169,15 +169,11 @@ def _job_default_working_dir(job: dict[str, object]) -> str:
 
 def _step_is_designated_drift_plan(step: dict[str, object], job_wd: str) -> bool:
     """True when this step is a valid, global/iam-scoped, non-swallowed drift plan."""
-    if _truthy(step.get("continue-on-error")):
-        return False
     run = step.get("run")
-    if not isinstance(run, str):
+    if _truthy(step.get("continue-on-error")) or not isinstance(run, str):
         return False
     plan_lines = [line for line in run.splitlines() if _line_is_real_plan(line)]
-    if not plan_lines:
-        return False
-    if _run_swallows_exit(run):
+    if not plan_lines or _run_swallows_exit(run):
         return False
     step_wd = step.get("working-directory")
     effective_wd = step_wd if isinstance(step_wd, str) else job_wd
