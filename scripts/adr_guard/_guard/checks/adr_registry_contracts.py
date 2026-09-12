@@ -122,6 +122,7 @@ def validate_raes_plan_accessor_boundary_contract(
 def _validate_range_substrate_contract(
     contract: dict[str, object], adr_id: str
 ) -> list[str]:
+    """Validate the generic range-substrate interface contract."""
     errors = validate_exact_string_members(
         contract.get("operations"),
         RANGE_SUBSTRATE_OPERATIONS,

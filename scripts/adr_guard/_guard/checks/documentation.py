@@ -32,10 +32,6 @@ GUARDRAIL_FILES = {
     ".tflint.hcl",
     ".gitleaks.toml",
     ".kube-linter.yaml",
-    # Repo-root runtime config seeded by #777 (mcp_ops policy). Changes
-    # here can weaken capability classes, profile gating, env defaults,
-    # audit redaction, or prod-confirm policy without touching code, so
-    # ADR enforcement watches the file.
     ".shifter.yaml",
     ".cursor/cli.json",
 }
@@ -61,7 +57,6 @@ def _is_docs_file(path: str) -> bool:
 
 def check_guardrail_docs(repo_root: Path, files: list[str] | None) -> list[Violation]:
     """Require documentation updates when guardrails change."""
-    # decided entirely from the changed-file set; no repo tree read is needed
     del repo_root
     paths = files or []
     touched_guardrails = [path for path in paths if _is_guardrail_file(path)]
@@ -412,6 +407,7 @@ def _adr024_registry_prose(repo_root: Path) -> str | None:
 
 
 def _read_lilrae_candidate(repo_root: Path, rel: str) -> str | None:
+    """Read a candidate document, deriving ADR-024 prose from the registry."""
     if rel == ADR_INDEX_PATH:
         return _adr024_registry_prose(repo_root)
     try:
@@ -421,6 +417,7 @@ def _read_lilrae_candidate(repo_root: Path, rel: str) -> str | None:
 
 
 def _identity_boundary_message(rel: str, text: str) -> str | None:
+    """Return the first prohibited LilRAE/APTL/TechVault identity claim."""
     if (
         rel == "CHANGELOG.md"
         or rel.startswith("changelog.d/")
@@ -449,6 +446,7 @@ def _identity_boundary_message(rel: str, text: str) -> str | None:
 
 
 def _rename_continuity_message(rel: str, text: str) -> str | None:
+    """Return a continuity error for current prose that omits the rename."""
     if (
         rel in _LILRAE_CURRENT_PROSE_FILES
         and "APTL" in text
@@ -461,6 +459,7 @@ def _rename_continuity_message(rel: str, text: str) -> str | None:
 
 
 def _retired_techvault_message(rel: str, text: str) -> str | None:
+    """Return an error when retired TechVault evidence lacks its boundary note."""
     if rel not in _RETIRED_TECHVAULT_DOCS:
         return None
     normalized = re.sub(r"\s+", " ", re.sub(r"(?m)^>\s?", "", text))
