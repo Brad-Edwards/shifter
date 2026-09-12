@@ -230,6 +230,12 @@ def _gcp_secret_checks() -> list[SecretCheck]:
             f"Set GCP_DEPLOY_SERVICE_ACCOUNT (see {_DOCS}).",
         ),
         SecretCheck(
+            "GCP_RELEASE_SCAN_SERVICE_ACCOUNT",
+            "Exact-release scan service account",
+            True,
+            f"Set GCP_RELEASE_SCAN_SERVICE_ACCOUNT (see {_DOCS}).",
+        ),
+        SecretCheck(
             "GCP_WORKLOAD_IDENTITY_PROVIDER",
             "Workload identity provider",
             True,

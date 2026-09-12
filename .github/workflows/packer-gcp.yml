@@ -150,6 +150,7 @@ jobs:
             echo "PKR_VAR_subnetwork=${GCP_PACKER_SUBNETWORK}"
             echo "PKR_VAR_service_account_email=${BUILDER_SA}"
             echo "PKR_VAR_image_prefix=shifter"
+            echo "PKR_VAR_source_revision=${GITHUB_SHA}"
             echo "PKR_VAR_machine_type=${MACHINE_TYPE}"
             echo "PKR_VAR_use_internal_ip=${GCP_PACKER_USE_INTERNAL_IP}"
             echo "PKR_VAR_polaris_stack_bucket=${GCP_POLARIS_STACK_BUCKET}"
@@ -202,7 +203,10 @@ jobs:
 
       - name: Build GCE image
         working-directory: shifter/packer/gcp
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
+          set -euo pipefail
           VARFILE=""
           if [ "${IMAGE_TYPE}" = "dc-prebaked" ]; then
             VARFILE="-var-file=dc-profiles/${DC_PROFILE}.pkrvars.hcl"
@@ -210,16 +214,75 @@ jobs:
           # shellcheck disable=SC2086
           packer build -color=false -only="googlecompute.${IMAGE_TYPE}" ${VARFILE} .
           IMAGE_NAME=$(jq -r '.builds[-1].artifact_id' "${IMAGE_TYPE}-manifest.json")
-          IMAGE_FAMILY="${IMAGE_NAME%-*}"
+          IMAGE_ID="$(gcloud compute images describe "${IMAGE_NAME}" \
+            --project="${GCP_PROJECT_ID}" --format='value(id)')"
+          IMAGE_FAMILY="$(gcloud compute images describe "${IMAGE_NAME}" \
+            --project="${GCP_PROJECT_ID}" --format='value(family)')"
+          IMAGE_SOURCE_REVISION="$(gcloud compute images describe "${IMAGE_NAME}" \
+            --project="${GCP_PROJECT_ID}" --format='value(labels.source-revision)')"
+          if ! printf '%s' "${IMAGE_ID}" | grep -qE '^[0-9]+$'; then
+            echo "::error::Built image has no valid server-assigned numeric ID."
+            exit 1
+          fi
+          if [ "${IMAGE_SOURCE_REVISION}" != "${GITHUB_SHA}" ]; then
+            echo "::error::Built image source-revision label does not match the dispatched commit."
+            exit 1
+          fi
+          {
+            echo "BUILT_IMAGE_NAME=${IMAGE_NAME}"
+            echo "BUILT_IMAGE_ID=${IMAGE_ID}"
+            echo "BUILT_IMAGE_FAMILY=${IMAGE_FAMILY}"
+          } >> "${GITHUB_ENV}"
           {
             echo "## ${{ inputs.environment }} GCE Image Build Complete"
             echo "- **Type:** ${IMAGE_TYPE}"
             echo "- **Environment:** ${{ inputs.environment }}"
-            echo "- **Image:** \`${IMAGE_NAME}\`"
+            echo "- **Image:** \`${IMAGE_NAME}\` (ID \`${IMAGE_ID}\`)"
             echo "- **Family:** \`${IMAGE_FAMILY}\` (consumers resolve newest in family)"
             echo ""
             echo "**Next step:** Verify in ${{ inputs.environment }} before promoting to prod."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Store immutable build-source evidence
+        working-directory: shifter/packer/gcp
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          evidence="${RUNNER_TEMP}/gce-build-evidence.json"
+          jq -n \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg workflow ".github/workflows/packer-gcp.yml" \
+            --arg source_ref "${GITHUB_REF}" \
+            --arg source_revision "${GITHUB_SHA}" \
+            --arg image_name "${BUILT_IMAGE_NAME}" \
+            --argjson image_id "${BUILT_IMAGE_ID}" \
+            --arg image_family "${BUILT_IMAGE_FAMILY}" \
+            --arg image_type "${IMAGE_TYPE}" \
+            --arg environment "${{ inputs.environment }}" \
+            --argjson build_run "${GITHUB_RUN_ID}" \
+            --argjson build_run_attempt "${GITHUB_RUN_ATTEMPT}" \
+            '{
+              schema_version: 1,
+              repository: $repository,
+              workflow: $workflow,
+              source_ref: $source_ref,
+              source_revision: $source_revision,
+              image_name: $image_name,
+              image_id: $image_id,
+              image_family: $image_family,
+              image_type: $image_type,
+              environment: $environment,
+              build_run: $build_run,
+              build_run_attempt: $build_run_attempt
+            }' > "${evidence}"
+          if ! gcloud storage cp --quiet "${evidence}" \
+            "gs://${GCP_PROJECT_ID}-release-evidence/packer-builds/${BUILT_IMAGE_ID}/build-evidence.json" \
+            >/dev/null 2>&1; then
+            echo "::error::Failed to store immutable build-source evidence."
+            exit 1
+          fi
 
       # The packer build publishes a GCE image (the AWS-AMI analog). The GDC VM
       # Runtime cannot consume a GCE image family directly - it imports a disk
@@ -283,3 +346,7 @@ jobs:
         with:
           name: ${{ inputs.image_type }}-gce-manifest
           path: shifter/packer/gcp/${{ inputs.image_type }}-manifest.json
+
+      - name: Remove local build-source evidence
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/gce-build-evidence.json"

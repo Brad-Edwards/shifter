@@ -144,17 +144,24 @@ Deployment section of
    cd platform/terraform/gcp/global/cicd-oidc
    terraform init -backend-config="bucket=<project-id>-terraform-state" -backend-config="prefix=cicd-oidc"
    terraform apply -var="project_id=<dev-project-id>" -var="environment=gcp-dev" \
-     -var='build_read_bucket_names=["<polaris-stack-bucket>"]'
+     -var='build_read_bucket_names=["<polaris-stack-bucket>"]' \
+     -var='platform_external_bucket_names=["<raes-package-bucket>","<ctf-content-bucket>"]'
    terraform output -raw workload_identity_provider          # GCP_WORKLOAD_IDENTITY_PROVIDER
    terraform output -raw packer_build_service_account_email     # GCP_PACKER_BUILD_SERVICE_ACCOUNT
    terraform output -raw packer_validate_service_account_email  # GCP_PACKER_VALIDATE_SERVICE_ACCOUNT
+   terraform output -raw release_scan_service_account_email     # GCP_RELEASE_SCAN_SERVICE_ACCOUNT
    terraform output -raw deploy_service_account_email           # GCP_DEPLOY_SERVICE_ACCOUNT
    terraform output -raw destroy_service_account_email          # GCP_DESTROY_SERVICE_ACCOUNT
+   terraform output -raw release_evidence_bucket_name           # private raw evidence store
 
    # In the prod project's separately initialized root/state:
    terraform apply -var="project_id=<prod-project-id>" -var="environment=prod"
    terraform output -raw packer_promote_service_account_email   # GCP_PACKER_PROMOTE_SERVICE_ACCOUNT
    ```
+   Omit empty optional bucket entries. The external bucket set must exactly
+   cover any non-empty `raes_package_bucket_name` and
+   `ctf_content_bucket_name` used by platform-core so deploy/destroy can manage
+   workload IAM on those exact resources without project-wide Storage Admin.
    Use `environment=proof` for the proof image lane and publish only its build
    and validate outputs. Existing installations follow the staged, state-address
    preserving cutover in `docs/dev/deploy-secrets.md` rather than applying the

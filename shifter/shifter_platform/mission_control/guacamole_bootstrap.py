@@ -16,7 +16,8 @@ from django.db import close_old_connections, transaction
 from django.utils import timezone
 
 from mission_control.models import GuacamoleBootstrapRequest
-from shared.log_sanitize import safe_log_value
+from shared.errors import classify_user_message
+from shared.log_sanitize import safe_log_fingerprint, safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,13 @@ class BootstrapFailure(Exception):
     def __init__(self, message: str, *, status_code: int = 500) -> None:
         super().__init__(message)
         self.status_code = _normalise_status_code(status_code)
+        # Select from authored messages before anything is persisted or reaches
+        # an API response. Exact established messages are retained by the
+        # classifier; an unexpected caller-provided value becomes generic.
+        self.user_message = classify_user_message(
+            message,
+            default="Guacamole session bootstrap failed",
+        )
 
 
 def _normalise_status_code(status_code: int) -> int:
@@ -142,10 +150,14 @@ def _run_bootstrap(request_id: UUID, build_url: Callable[[], str], slots: Bounde
         try:
             result_url = build_url()
         except BootstrapFailure as exc:
-            _finish_failure(bootstrap, started, str(exc), exc.status_code)
+            _finish_failure(bootstrap, started, exc.user_message, exc.status_code)
             return
-        except Exception:
-            logger.exception("Guacamole bootstrap failed: request_id=%s", request_id)
+        except Exception as exc:
+            logger.error(
+                "Guacamole bootstrap failed: request_id=%s reason=%s",
+                safe_log_value(request_id),
+                safe_log_fingerprint(exc),
+            )
             _finish_failure(bootstrap, started, "Guacamole session bootstrap failed", 500)
             return
 

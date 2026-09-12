@@ -84,6 +84,11 @@ resource "google_storage_bucket" "gdc_vm_images" {
   versioning {
     enabled = true
   }
+
+  logging {
+    log_bucket        = var.access_log_bucket_name
+    log_object_prefix = "gdc-vm-images-access/"
+  }
 }
 
 # The packer build/export workflow writes exported disk images here.

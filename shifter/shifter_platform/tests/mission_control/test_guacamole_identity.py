@@ -9,6 +9,8 @@ range box.
 
 from __future__ import annotations
 
+import logging
+
 from django.contrib.auth import get_user_model
 
 from mission_control._guacamole_session_builders import _build_rdp_url, guacamole_identity
@@ -77,7 +79,7 @@ def test_rdp_url_build_uses_nonblank_identity_for_email_less_account(monkeypatch
     assert url.startswith("https://example/guacamole/#/client/")
 
 
-def test_rdp_url_build_leaves_kali_security_on_negotiate(monkeypatch):
+def test_rdp_url_build_leaves_kali_security_on_negotiate(monkeypatch, caplog):
     """Kali must negotiate, not pin TLS.
 
     The range's Kali guest answers every X.224 negotiation request — TLS,
@@ -94,9 +96,16 @@ def test_rdp_url_build_leaves_kali_security_on_negotiate(monkeypatch):
     )
     client = _CapturingGuacClient()
 
-    _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_client=client)
+    builder_logger = logging.getLogger("mission_control._guacamole_session_builders")
+    builder_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.INFO, logger=builder_logger.name):
+            _build_rdp_url(user=user, instance_uuid="inst-uuid", guac_client=client)
+    finally:
+        builder_logger.removeHandler(caplog.handler)
 
     assert client.rdp_request.security == "any"
+    assert user.email not in caplog.text
 
 
 def test_rdp_url_build_leaves_windows_security_on_negotiate(monkeypatch):

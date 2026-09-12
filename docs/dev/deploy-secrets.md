@@ -156,6 +156,7 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN` | secret | yes | Identity Platform beforeCreate allow-list; the bootstrap operator must end with `@<this>` for sign-in to succeed. |
 | `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal containing only connected RFC1918 networks. Use `[]` for the normal Connect Gateway path; public operator egress CIDRs are invalid for the private endpoint. |
 | `GCP_DEPLOY_SERVICE_ACCOUNT` | secret | yes | Purpose-scoped WIF service account for deploy and post-deploy smoke. |
+| `GCP_RELEASE_SCAN_SERVICE_ACCOUNT` | secret | yes | Purpose-scoped WIF service account for the isolated exact-digest image scan. Store it only in `gcp-release-scan-dev`; it has repository-scoped Artifact Registry read and create-only access under the private bucket's `release-scans/` prefix, but no deployment or runtime-secret authority. |
 | `GCP_DESTROY_SERVICE_ACCOUNT` | secret | destroy | Purpose-scoped WIF service account for `gcp-dev-destroy.yml`. Store it only in `gcp-dev-destroy`. |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | yes | Workload identity provider resource id. |
 | `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | yes | First Identity Platform operator, elevated in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set to deliberately skip operator creation (the skip is logged). |
@@ -195,6 +196,17 @@ not in GitHub variables or the generated ConfigMap. Configure the private
 bucket through the GCP Terraform input and follow the
 [native CTF scenario-content runbook](ctf-scenario-content.md).
 
+The foundational identity root also creates `<project>-release-evidence` with
+public access prevention, uniform access, versioning, and an intentionally
+locked 90-day retention policy. Locking is irreversible; confirm the project
+and retention period in the reviewed Terraform plan before applying. Objects
+age out after 365 days. IAM conditions separate every evidence class by object
+prefix: build creates `packer-builds/` source-binding records; validation reads
+only those build records and creates `packer-validation/` records;
+release-scan creates `release-scans/`; deploy creates `deployments/`; and
+promotion reads only `packer-validation/`. Public Actions artifacts contain
+only redacted verdicts with opaque locators and digests.
+
 For local GCP bootstrap, `scripts/bootstrap/deploy.py` validates the bootstrap
 operator email against the Terraform output `identity_allowed_email_domain`.
 When Terraform outputs are not available yet, it uses
@@ -207,7 +219,7 @@ The `cicd-oidc-identity` module federates GitHub Actions into GCP with an
 admits only this repository, an exact protected `assertion.ref`
 (`refs/heads/dev` / `refs/heads/main`, plus `refs/heads/gcp-dev` only when
 paired with the exact `gcp-dev` Environment subject), and an allow-listed `assertion.sub`.
-Build, validate, promote, deploy, and destroy SAs are each bound only to their
+Build, validate, promote, release-scan, deploy, and destroy SAs are each bound only to their
 pairwise-disjoint purpose subjects (never a repository-wide `principalSet`). Applying the Terraform text is
 not the whole cutover - the live activation is a **fail-closed operator step with
 readback**:
@@ -220,7 +232,8 @@ readback**:
 2. **Create and protect the purpose Environments.** An `environment:` subject
    does not carry the source branch. Configure `gcp-build-dev`,
    `gcp-build-proof`, `gcp-validate-dev`, `gcp-validate-proof`,
-   `gcp-promote-prod`, existing `gcp-dev`, and `gcp-dev-destroy` with the
+   `gcp-promote-prod`, `gcp-release-scan-dev`, existing `gcp-dev`, and
+   `gcp-dev-destroy` with the
    applicable protected-branch policy and approval posture before adding any
    secrets. Keep project/config secrets and variables aligned with their logical
    dev, proof, or prod Environment; do not broaden them to repository scope.
@@ -229,7 +242,11 @@ readback**:
    the shared CI SA whose roles the final plan removes. For each root, first use
    a reviewed targeted plan/apply for only the new role-binding resource:
    `promote_role` in prod, `validate_roles` in proof, and `validate_roles`,
-   `deploy_roles`, and `destroy_roles` in gcp-dev. Terraform includes their new
+   `deploy_roles`, and `destroy_roles` in gcp-dev. The release-scan identity has
+   no project-wide roles: platform-core grants it reader only on the four image
+   repositories, while the foundational root grants create-only evidence
+   writes under `release-scans/`. Build, validation, deploy, and promotion use
+   their separately conditioned evidence prefixes described above. Terraform includes the new
    SA/custom-role dependencies but leaves the existing provider,
    `packer_build_wif`, and `packer_build_roles` untouched. Apply prod first to
    obtain `packer_promote_service_account_email`; pass that value as
@@ -239,7 +256,8 @@ readback**:
    steady-state apply; this is the one-time cutover seam.
 4. **Write explicit secrets with no shared fallback.** Set
    `GCP_PACKER_BUILD_SERVICE_ACCOUNT`, `GCP_PACKER_VALIDATE_SERVICE_ACCOUNT`,
-   `GCP_PACKER_PROMOTE_SERVICE_ACCOUNT`, `GCP_DEPLOY_SERVICE_ACCOUNT`, and
+   `GCP_PACKER_PROMOTE_SERVICE_ACCOUNT`, `GCP_RELEASE_SCAN_SERVICE_ACCOUNT`,
+   `GCP_DEPLOY_SERVICE_ACCOUNT`, and
    `GCP_DESTROY_SERVICE_ACCOUNT` only in their matching Environments. Set the
    profile's `GCP_WORKLOAD_IDENTITY_PROVIDER` alongside each purpose secret.
    At this point the new secrets are intentionally unusable because the live
@@ -266,8 +284,17 @@ readback**:
    reviewed prior revision. There is no wildcard/shared runtime fallback.
 
 The `check-tf-gcp-wif-trust` guard reconciles the provider union with the
-purpose map, rejects overlapping SA subjects and broad validate/promote grants,
-and inventories all five callers.
+purpose map, rejects overlapping SA subjects and broad validate/promote or
+deploy/destroy image/evidence grants, rejects project-wide release-scan grants,
+and inventories all six callers. Deploy/destroy compute access uses the
+network/security administration roles; their storage custom roles are
+condition-bound to the deterministic platform assets, audit-log, and GDC-image
+buckets rather than granted project-wide Storage Admin. The state bucket is
+included automatically. Any non-empty `raes_package_bucket_name` or
+`ctf_content_bucket_name` must also be passed to the foundational identity root
+through `platform_external_bucket_names`; it grants bucket-level IAM
+administration to each exact resource so platform-core can maintain its
+workload bindings.
 
 ## GCP Packer image builds
 
@@ -284,8 +311,8 @@ profile's `GCP_WORKLOAD_IDENTITY_PROVIDER`, plus the following:
 | `GCP_PACKER_ZONE` | variable | no | Build zone. Defaults to `${GCP_REGION}-a`. |
 | `GCP_PACKER_NETWORK` | variable | no | Builder VPC network. Default `default`. |
 | `GCP_PACKER_SUBNETWORK` | variable | no | Builder subnetwork. Default `default`. |
-| `GCP_PACKER_BUILD_SERVICE_ACCOUNT` | secret | build | WIF caller and the only SA used by the Packer VM, Cloud Build export, and export worker. |
-| `GCP_PACKER_VALIDATE_SERVICE_ACCOUNT` | secret | validate | WIF caller for no-SA disposable validation VMs and evidence labels. |
+| `GCP_PACKER_BUILD_SERVICE_ACCOUNT` | secret | build | WIF caller and the only SA used by the Packer VM, Cloud Build export, and export worker. It alone creates immutable `packer-builds/<numeric-image-id>/build-evidence.json` source bindings. |
+| `GCP_PACKER_VALIDATE_SERVICE_ACCOUNT` | secret | validate | WIF caller for no-SA disposable validation VMs, a separate credentialless SBOM scanner, candidate-derived read-only disks, and evidence labels. It reads only build records and creates only validation records in the retained evidence bucket. |
 | `GCP_PACKER_PROMOTE_SERVICE_ACCOUNT` | secret | promote | WIF caller for read-only dev candidate access and prod image mutation. |
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
@@ -305,9 +332,23 @@ per run and injects it via `PKR_VAR_*`; the pre-promoted `dc-prebaked` build als
 generates a per-run DSRM password (`PKR_VAR_dc_dsrm_password`). Nothing is
 committed.
 
-Promotion downloads the validation run's evidence artifact and binds it to the
-candidate, protected run, revision, source project, family, and image type
-before copying to prod.
+Validation first downloads the immutable build-produced record at the exact
+numeric candidate image ID and rejects any mismatch in repository, protected
+ref, source revision, name, ID, family, image type, or environment. It collects
+the guest SBOM on a separate credentialless Ubuntu scanner from a
+candidate-derived disk attached read-only and mounted `ro,nosuid,nodev,noexec`;
+the candidate never executes the scanner or writes its output.
+
+Promotion first downloads the exact redacted verdict artifact ID recorded on
+the candidate and verifies that GitHub reports the expected artifact name,
+successful protected validation run, and unexpired state. The verdict's opaque
+candidate-binding digest covers the project, name, numeric image ID, family,
+type, source revision, and full private-evidence digest. Promotion then
+downloads that immutable private evidence and guest SBOM from the source
+project's retained evidence bucket and verifies all bindings, including the
+external collection boundary and scanner image identity, before copying to
+prod. The Actions artifact contains only the redacted verdict; raw validation
+and SBOM data remain private.
 
 ## AWS portal (`dev` / `prod`)
 

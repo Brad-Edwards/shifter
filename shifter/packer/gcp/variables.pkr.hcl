@@ -36,6 +36,16 @@ variable "image_prefix" {
   description = "Prefix for image names and image families (e.g. shifter)"
 }
 
+variable "source_revision" {
+  type        = string
+  description = "Full protected-branch Git commit SHA baked into the immutable GCE image labels"
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.source_revision))
+    error_message = "Source revision must be a full 40-character lowercase Git commit SHA."
+  }
+}
+
 variable "machine_type" {
   type        = string
   description = "Builder VM machine type (e.g. e2-standard-2)"

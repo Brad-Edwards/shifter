@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 
 from shared.audit import AuditAction, AuditEntityType, AuditEvent, audit_log
+from shared.log_sanitize import safe_log_fingerprint
 from workspaces.models import Workspace, WorkspaceMembership
 from workspaces.roles import WorkspaceOperation, WorkspaceRole, role_permits
 
@@ -374,7 +375,7 @@ def change_workspace_member_role(
             "workspace membership role changed workspace_id=%s user_id=%s role=%s",
             workspace.pk,
             target.user_id,
-            role_value,
+            safe_log_fingerprint(role_value),
         )
         return _projection(target)
 

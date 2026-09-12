@@ -1235,8 +1235,7 @@ class TestGdcControlPlaneHelmChart:
     def test_chart_renders_restricted_security_contexts_and_numeric_runtime_ids(self, tmp_path):
         """The chart must render restricted-compatible workloads with pinned runtime IDs."""
         helm = shutil.which("helm")
-        if helm is None:
-            pytest.skip("helm is required for chart render validation")
+        assert helm is not None, "helm is required for security-relevant chart render validation"
 
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
         outputs = _sample_gcp_control_plane_outputs(config.project_id)
@@ -1318,8 +1317,7 @@ class TestGdcControlPlaneHelmChart:
         out of band by the deploy bootstrap and consumed by reference only.
         """
         helm = shutil.which("helm")
-        if helm is None:
-            pytest.skip("helm is required for chart render validation")
+        assert helm is not None, "helm is required for security-relevant chart render validation"
 
         # Adversarial override: a caller tries to smuggle secrets through values.
         values = {
@@ -2459,6 +2457,7 @@ class TestGceRangePreconditions:
     _FULL_ENV: ClassVar[dict[str, str]] = {
         "GCP_PACKER_BUILD_SERVICE_ACCOUNT": "build@prod-x.iam.gserviceaccount.com",
         "GCP_PACKER_VALIDATE_SERVICE_ACCOUNT": "validate@prod-x.iam.gserviceaccount.com",
+        "GCP_RELEASE_SCAN_SERVICE_ACCOUNT": "scan@prod-x.iam.gserviceaccount.com",
         "GCP_DEPLOY_SERVICE_ACCOUNT": "deploy@prod-x.iam.gserviceaccount.com",
         "GCP_DESTROY_SERVICE_ACCOUNT": "destroy@prod-x.iam.gserviceaccount.com",
         "GCP_WORKLOAD_IDENTITY_PROVIDER": "projects/1/locations/global/workloadIdentityPools/p/providers/gh",
@@ -2472,10 +2471,16 @@ class TestGceRangePreconditions:
     def _config():
         return deploy.GDCBootstrapConfig(project_id="prod-x", cluster_id="cluster1", range_backend="gce")
 
-    def test_all_present_passes(self):
-        gcp_control_plane.check_gce_range_preconditions(
-            self._config(), env=dict(self._FULL_ENV), image_exists=lambda *_: True
-        )
+    def test_all_present_passes(self, capsys):
+        checked: list[tuple[str, str, str]] = []
+
+        def _exists(project: str, kind: str, name: str) -> bool:
+            checked.append((project, kind, name))
+            return True
+
+        gcp_control_plane.check_gce_range_preconditions(self._config(), env=dict(self._FULL_ENV), image_exists=_exists)
+        assert len(checked) == 2
+        assert "GCE range preconditions satisfied" in capsys.readouterr().out
 
     def test_missing_required_var_fails(self):
         config = self._config()
@@ -2492,13 +2497,17 @@ class TestGceRangePreconditions:
             gcp_control_plane.check_gce_range_preconditions(config, env=env, image_exists=lambda *_: False)
         assert exc.value.code == 1
 
-    def test_allow_flag_downgrades_failures_to_warning(self):
+    def test_allow_flag_downgrades_failures_to_warning(self, capsys):
         env = dict(self._FULL_ENV)
         del env["GCP_RANGE_DC_IMAGE"]
         # Missing var AND a missing image, but the opt-out lets a platform-first bring-up proceed.
         gcp_control_plane.check_gce_range_preconditions(
             self._config(), allow_missing_range_images=True, env=env, image_exists=lambda *_: False
         )
+        output = capsys.readouterr().out
+        assert "GCP_RANGE_DC_IMAGE" in output
+        assert "Range guest image not baked" in output
+        assert "Proceeding despite the range prerequisites" in output
 
     def test_missing_wif_is_warning_only(self, capsys):
         env = {k: v for k, v in self._FULL_ENV.items() if k not in ("GCP_PACKER_VALIDATE_SERVICE_ACCOUNT",)}

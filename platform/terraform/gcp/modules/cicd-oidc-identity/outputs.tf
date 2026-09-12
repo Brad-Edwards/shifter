@@ -23,6 +23,16 @@ output "deploy_service_account_email" {
   value       = try(google_service_account.deploy[0].email, null)
 }
 
+output "release_scan_service_account_email" {
+  description = "Exact-release scanner identity (GCP_RELEASE_SCAN_SERVICE_ACCOUNT); null outside gcp-dev."
+  value       = try(google_service_account.release_scan[0].email, null)
+}
+
+output "release_evidence_bucket_name" {
+  description = "Private access-controlled GCS bucket for raw validation, scan, and deployment evidence."
+  value       = google_storage_bucket.release_evidence.name
+}
+
 output "destroy_service_account_email" {
   description = "Platform destroy identity (GCP_DESTROY_SERVICE_ACCOUNT); null outside gcp-dev."
   value       = try(google_service_account.destroy[0].email, null)

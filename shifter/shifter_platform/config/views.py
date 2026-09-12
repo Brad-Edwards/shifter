@@ -20,6 +20,7 @@ from shared.audit import (
     get_client_ip,
 )
 from shared.errors import classify_user_message
+from shared.log_sanitize import safe_log_fingerprint
 
 # SonarCloud S1192: extracted duplicated string literals.
 DASHBOARD_URL = "mission_control:dashboard"
@@ -117,11 +118,14 @@ def identity_platform_session(request):
     try:
         user = identity_platform_auth.login_with_identity_token(request, id_token)
     except identity_platform_auth.IdentityPlatformAuthError as exc:
-        # Log the full detail server-side; return only the fixed-vocabulary code
-        # plus a classified, non-tainted message so upstream exception text
-        # (e.g. an Identity Platform API response body) cannot leak to the caller
-        # (CodeQL py/stack-trace-exposure).
-        logger.exception("identity_platform_session: authentication failed (code=%s)", exc.code)
+        # Retain only a fixed code and an opaque correlation fingerprint. The
+        # provider response can contain confidential request context, so it is
+        # neither logged nor returned to the caller.
+        logger.warning(
+            "identity_platform_session: authentication failed code=%s reason=%s",
+            exc.code,
+            safe_log_fingerprint(exc),
+        )
         return JsonResponse(
             {"error": exc.code, "message": classify_user_message(str(exc), default="Authentication failed")},
             status=403,
@@ -149,7 +153,10 @@ def dashboard_router(request):
     continuation = pop_post_login_continuation(request)
     if continuation is not None:
         return HttpResponseRedirect(continuation)
-    logger.debug("Routing %s to the platform SPA dashboard", request.user.email)
+    logger.debug(
+        "Routing user=%s to the platform SPA dashboard",
+        safe_log_fingerprint(request.user.email),
+    )
     return HttpResponseRedirect(reverse("home"))
 
 
@@ -189,11 +196,11 @@ def logout_view(request):
             from django.utils.module_loading import import_string
 
             redirect_url = import_string(logout_url_method)(request)
-        logger.debug("OIDC logout for %s", email)
+        logger.debug("OIDC logout for user=%s", safe_log_fingerprint(email))
     elif "IdentityPlatformBackend" in backend:
-        logger.debug("Identity Platform logout for %s", email)
+        logger.debug("Identity Platform logout for user=%s", safe_log_fingerprint(email))
     else:
-        logger.debug("Session logout for %s", email)
+        logger.debug("Session logout for user=%s", safe_log_fingerprint(email))
 
     logout(request)
     if "IdentityPlatformBackend" in backend:

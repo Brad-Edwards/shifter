@@ -42,6 +42,8 @@ Shifter currently has hard dependencies on AWS services (S3, ECS, SSM, RDS, etc.
 - CONSTRAINS → ADR `ADR-005` (Cloud expansion must preserve provider seams and AWS continuity)
 - IMPLEMENTS → CODE_FILE `shifter/packer/gcp/ubuntu.pkr.hcl` (GCE guest-image Packer builders (googlecompute) - the GCP image-bake side of cloud-provider deployability (PLAT-001.10))
 - IMPLEMENTS → CONFIG `.github/workflows/packer-gcp.yml` (GCP GCE image build CI (ubuntu-latest + Workload Identity Federation); promote via packer-gcp-promote.yml (PLAT-001.10))
+- IMPLEMENTS → CONFIG `.github/workflows/packer-gcp-validate.yml` (Protected exact-image validation and guest-SBOM evidence)
+- IMPLEMENTS → CONFIG `.github/workflows/packer-gcp-promote.yml` (Evidence-bound GCE image promotion)
 - IMPLEMENTS → CODE_FILE `mcp/ops/index.js` (MCP ops GCP image tools build_gce_image / promote_gce_image (infra_mutation), parallel to build_ami / promote_ami (PLAT-001.10))
 - TESTS → TEST `shifter/packer/tests/test_packer_gcp.py` (GCE Packer template tests (builder type, sysprep, AWS-unaffected guard, live packer validate) (PLAT-001.10))
 - TESTS → TEST `mcp/ops/tool-surface.test.js` (MCP ops tool-surface tests covering build_gce_image / promote_gce_image registration (PLAT-001.10))

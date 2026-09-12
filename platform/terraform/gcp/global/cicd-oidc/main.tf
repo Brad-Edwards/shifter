@@ -34,6 +34,7 @@ module "cicd_oidc_identity" {
   source = "../../modules/cicd-oidc-identity"
 
   project_id                             = var.project_id
+  region                                 = var.region
   environment                            = var.environment
   name_prefix                            = "shifter-${var.environment}"
   github_org                             = var.github_org
@@ -42,4 +43,5 @@ module "cicd_oidc_identity" {
   build_read_bucket_names                = var.build_read_bucket_names
   promotion_reader_service_account_email = var.promotion_reader_service_account_email
   terraform_state_bucket_name            = var.terraform_state_bucket_name
+  platform_external_bucket_names         = var.platform_external_bucket_names
 }

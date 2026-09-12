@@ -17,6 +17,10 @@ resource "random_password" "guacamole_db_password" {
 }
 
 resource "google_sql_database_instance" "platform" {
+  # checkov:skip=CKV_GCP_6:Reviewed false positive: ssl_mode=ENCRYPTED_ONLY rejects plaintext connections; Checkov 3.2 does not recognize the provider's replacement for require_ssl. See ADR-004-R11 exception (#2084).
+  # checkov:skip=CKV_GCP_79:The supported PostgreSQL major is a release/migration decision; silently changing the module default to Checkov's moving "latest" target can trigger a destructive major upgrade. See ADR-004-R11 exception (#2084).
+  # checkov:skip=CKV_GCP_109:Error-statement logging can capture participant data and credentials embedded in failed queries. Error severity and pgaudit logging remain enabled. See ADR-004-R11 exception (#2084).
+  # checkov:skip=CKV_GCP_111:Statement-level logging can capture participant data and credentials embedded in queries. Connection, error, duration, lock-wait, and pgaudit logging remain enabled. See ADR-004-R11 exception (#2084).
   name                = "${var.name_prefix}-pg"
   project             = var.project_id
   region              = var.region
@@ -43,6 +47,41 @@ resource "google_sql_database_instance" "platform" {
 
     database_flags {
       name  = "log_connections"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_checkpoints"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_disconnections"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_duration"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_hostname"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_lock_waits"
+      value = "on"
+    }
+
+    database_flags {
+      name  = "log_min_messages"
+      value = "error"
+    }
+
+    database_flags {
+      name  = "cloudsql.enable_pgaudit"
       value = "on"
     }
 

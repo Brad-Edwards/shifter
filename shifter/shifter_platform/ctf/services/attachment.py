@@ -33,7 +33,7 @@ from ctf.s3 import (
     generate_download_url,
     upload_challenge_file,
 )
-from shared.log_sanitize import safe_log_value
+from shared.log_sanitize import safe_log_fingerprint
 
 if TYPE_CHECKING:
     pass
@@ -70,14 +70,14 @@ def _run_text_stream_validation(
         # CTFValidationError so the API contract matches the bounded
         # rejection path above.
         logger.warning(
-            "add_challenge_file: streaming text inspection rejected challenge=%s ext=%s actor=%s reason=%s",
-            challenge_id,
-            ext,
-            actor_id,
-            exc,
+            "add_challenge_file: streaming text inspection rejected challenge=%s extension=%s actor=%s reason=%s",
+            safe_log_fingerprint(challenge_id),
+            safe_log_fingerprint(ext),
+            safe_log_fingerprint(actor_id),
+            safe_log_fingerprint(exc),
         )
         raise CTFValidationError(
-            f"File content inspection failed: {exc}",
+            "File content inspection failed",
             details={"filename": filename, "extension": ext},
         ) from exc
     finally:
@@ -165,14 +165,14 @@ def add_challenge_file(
         inspect_attachment_header(header, ext)
     except CTFInspectionError as exc:
         logger.warning(
-            "add_challenge_file: header inspection failed challenge=%s ext=%s actor=%s reason=%s",
-            challenge_id,
-            ext,
-            actor_id,
-            exc,
+            "add_challenge_file: header inspection failed challenge=%s extension=%s actor=%s reason=%s",
+            safe_log_fingerprint(challenge_id),
+            safe_log_fingerprint(ext),
+            safe_log_fingerprint(actor_id),
+            safe_log_fingerprint(exc),
         )
         raise CTFValidationError(
-            f"File content inspection failed: {exc}",
+            "File content inspection failed",
             details={"filename": filename, "extension": ext},
         ) from exc
 
@@ -219,7 +219,7 @@ def add_challenge_file(
             )
         except CTFFileError as e:
             raise CTFValidationError(
-                f"File upload failed: {e}",
+                "File upload failed",
                 details={"filename": filename},
             ) from e
 
@@ -284,8 +284,8 @@ def remove_challenge_file(file_id: UUID, *, actor_id: int) -> None:
             delete_challenge_file(challenge_file.s3_key)
         except CTFFileError:
             logger.warning(
-                "Failed to delete S3 object %s, proceeding with soft delete",
-                safe_log_value(challenge_file.s3_key),
+                "Failed to delete object=%s; proceeding with soft delete",
+                safe_log_fingerprint(challenge_file.s3_key),
             )
 
         challenge_file.delete(soft=True)
@@ -328,7 +328,7 @@ def get_download_url(file_id: UUID) -> tuple[str, str]:
         url = generate_download_url(challenge_file.s3_key, challenge_file.filename)
     except CTFFileError as e:
         raise CTFNotFoundError(
-            f"Failed to generate download URL: {e}",
+            "Failed to generate download URL",
             details={"file_id": str(file_id)},
         ) from e
 

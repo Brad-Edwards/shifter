@@ -46,7 +46,7 @@ from mission_control._guacamole_session_builders import (
 )
 from mission_control.guacamole_bootstrap import BootstrapFailure, BootstrapQueueFull, enqueue_guacamole_bootstrap
 from mission_control.models import GuacamoleBootstrapRequest
-from shared.log_sanitize import safe_log_value
+from shared.log_sanitize import safe_log_fingerprint, safe_log_value
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -162,7 +162,7 @@ def launch_guacamole_session(
     if protocol == GuacamoleBootstrapRequest.Protocol.NGFW_SSH:
         logger.info(
             "Guacamole SSH bootstrap queued for NGFW: user=%s ngfw_uuid=%s",
-            safe_log_value(user.email),
+            safe_log_fingerprint(user.email),
             safe_log_value(target_id),
         )
     build_url = _worker_build_callable(
@@ -183,7 +183,7 @@ def launch_guacamole_session(
         # to a 503 + Retry-After). Only non-secret kind/target/user identifiers.
         logger.warning(
             "Guacamole bootstrap worker capacity exhausted: user=%s protocol=%s target_id=%s",
-            safe_log_value(user.email),
+            safe_log_fingerprint(user.email),
             safe_log_value(protocol),
             safe_log_value(target_id),
         )

@@ -93,6 +93,11 @@ output "assets_bucket_name" {
   value       = module.portal_gcs.assets_bucket_name
 }
 
+output "audit_logs_bucket_name" {
+  description = "Terminal GCS access-log sink for deployment-owned buckets."
+  value       = module.portal_gcs.audit_logs_bucket_name
+}
+
 output "terraform_state_bucket_name" {
   description = "Expected GCS bucket name for provisioner Terraform state."
   value       = "${var.project_id}-terraform-state"
