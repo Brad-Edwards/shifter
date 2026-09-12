@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_WORKERS = 4
 _DEFAULT_TTL_SECONDS = 300
 _DEFAULT_PRUNE_BATCH_SIZE = 500
+_GENERIC_BOOTSTRAP_FAILURE = "Guacamole session bootstrap failed"
 
 _slot_limit: int | None = None
 _slots: BoundedSemaphore | None = None
@@ -45,7 +46,7 @@ class BootstrapFailure(Exception):
         # classifier; an unexpected caller-provided value becomes generic.
         self.user_message = classify_user_message(
             message,
-            default="Guacamole session bootstrap failed",
+            default=_GENERIC_BOOTSTRAP_FAILURE,
         )
 
 
@@ -59,7 +60,7 @@ def _normalise_status_code(status_code: int) -> int:
 def _clean_error_message(message: str) -> str:
     """Return a bounded single-line error string for polling clients."""
     cleaned = message.replace("\r", " ").replace("\n", " ").strip()
-    return cleaned[:500] or "Guacamole session bootstrap failed"
+    return cleaned[:500] or _GENERIC_BOOTSTRAP_FAILURE
 
 
 def _ttl_seconds() -> int:
@@ -153,12 +154,16 @@ def _run_bootstrap(request_id: UUID, build_url: Callable[[], str], slots: Bounde
             _finish_failure(bootstrap, started, exc.user_message, exc.status_code)
             return
         except Exception as exc:
-            logger.error(
+            # Keep the original exception text out of logs: Guacamole failures
+            # can contain credential-bearing upstream values. ``exc_info=False``
+            # preserves the sanitized fingerprint without appending that text.
+            logger.exception(
                 "Guacamole bootstrap failed: request_id=%s reason=%s",
                 safe_log_value(request_id),
                 safe_log_fingerprint(exc),
+                exc_info=False,
             )
-            _finish_failure(bootstrap, started, "Guacamole session bootstrap failed", 500)
+            _finish_failure(bootstrap, started, _GENERIC_BOOTSTRAP_FAILURE, 500)
             return
 
         if bootstrap.is_expired:

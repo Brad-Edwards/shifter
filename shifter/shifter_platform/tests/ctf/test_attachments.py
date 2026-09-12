@@ -227,10 +227,11 @@ class TestAddChallengeFile:
 
     def test_non_owner_cannot_upload(self, challenge, second_organizer_user, mock_s3):
         """An organizer cannot add files to another organizer's event."""
+        upload = _make_file()
         with pytest.raises(CTFPermissionError):
             add_challenge_file(
                 challenge.id,
-                _make_file(),
+                upload,
                 "foreign.txt",
                 actor_id=second_organizer_user.id,
             )

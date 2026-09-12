@@ -202,11 +202,14 @@ def _resolve_ngfw_ssh(user: User, app_id: str) -> _SSHConn:
         )
         raise BootstrapFailure("Permission denied", status_code=400) from e
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Unexpected error getting NGFW SSH connection: user=%s ngfw_uuid=%s reason=%s",
             safe_log_fingerprint(user.email),
             safe_log_value(app_id),
             safe_log_fingerprint(e),
+            # Never append the original exception text; upstream connection
+            # failures can carry credential-bearing values.
+            exc_info=False,
         )
         raise BootstrapFailure(_INTERNAL_SERVER_ERROR, status_code=500) from e
 
@@ -241,10 +244,11 @@ def _generate_ngfw_ssh_url(
         )
         raise BootstrapFailure("Failed to generate SSH URL", status_code=500) from e
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Unexpected error generating NGFW SSH URL: ngfw_uuid=%s reason=%s",
             safe_log_value(app_id),
             safe_log_fingerprint(e),
+            exc_info=False,
         )
         raise BootstrapFailure(_INTERNAL_SERVER_ERROR, status_code=500) from e
 
@@ -292,11 +296,14 @@ def _resolve_range_ssh(user: User, instance_uuid: str) -> dict[str, Any]:
         )
         raise BootstrapFailure("Permission denied", status_code=400) from e
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Unexpected error getting range SSH connection: user=%s instance_uuid=%s reason=%s",
             safe_log_fingerprint(user.email),
             safe_log_value(instance_uuid),
             safe_log_fingerprint(e),
+            # Never append the original exception text; range connection data
+            # may contain private keys or passwords.
+            exc_info=False,
         )
         raise BootstrapFailure(_INTERNAL_SERVER_ERROR, status_code=500) from e
 
@@ -331,10 +338,11 @@ def _generate_range_ssh_url(
         )
         raise BootstrapFailure("Failed to generate SSH URL", status_code=500) from e
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Unexpected error generating range SSH URL: instance_uuid=%s reason=%s",
             safe_log_value(instance_uuid),
             safe_log_fingerprint(e),
+            exc_info=False,
         )
         raise BootstrapFailure(_INTERNAL_SERVER_ERROR, status_code=500) from e
 

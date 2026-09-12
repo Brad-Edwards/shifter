@@ -3,6 +3,8 @@
 # validation run and that run's exact private evidence objects (ADR-004-R23).
 set -euo pipefail
 
+readonly SHA256_VALUE_PROGRAM='{print $1}'
+
 for name in SRC_IMAGE SRC_IMAGE_ID SRC_PROJECT IMAGE_FAMILY IMAGE_TYPE VALIDATED_RUN \
   VALIDATED_RUN_ATTEMPT VALIDATED_VERDICT_ID VALIDATED_EVIDENCE_SHA \
   VALIDATED_REVISION EXPECTED_REPOSITORY EVIDENCE_FILE GUEST_SBOM_FILE \
@@ -23,7 +25,7 @@ done
   || { echo "::error::VALIDATED_REVISION must be a full commit SHA" >&2; exit 1; }
 [[ "${VALIDATED_EVIDENCE_SHA}" =~ ^[0-9a-f]{63}$ ]] \
   || { echo "::error::VALIDATED_EVIDENCE_SHA must be a 63-character digest prefix" >&2; exit 1; }
-actual_evidence_sha="$(sha256sum "${EVIDENCE_FILE}" | awk '{print $1}')"
+actual_evidence_sha="$(sha256sum "${EVIDENCE_FILE}" | awk "${SHA256_VALUE_PROGRAM}")"
 [[ "${actual_evidence_sha:0:63}" == "${VALIDATED_EVIDENCE_SHA}" ]] \
   || { echo "::error::private validation evidence digest mismatch" >&2; exit 1; }
 
@@ -60,7 +62,7 @@ expect_json "${VERDICT_FILE}" '.image_type' "${IMAGE_TYPE}" "verdict image type"
 expect_json "${VERDICT_FILE}" '.result' "passed" "verdict result"
 expect_json "${VERDICT_FILE}" '.evidence_sha256' "${actual_evidence_sha}" "verdict evidence digest"
 evidence_prefix="packer-validation/${SRC_IMAGE_ID}/${VALIDATED_RUN}/${VALIDATED_RUN_ATTEMPT}"
-expected_locator="$(printf '%s' "${evidence_prefix}" | sha256sum | awk '{print $1}')"
+expected_locator="$(printf '%s' "${evidence_prefix}" | sha256sum | awk "${SHA256_VALUE_PROGRAM}")"
 expect_json "${VERDICT_FILE}" '.evidence_locator' "${expected_locator}" "verdict evidence locator"
 candidate_binding_sha="$(
   jq -cnS \
@@ -72,7 +74,7 @@ candidate_binding_sha="$(
     --arg source_revision "${VALIDATED_REVISION}" \
     --arg evidence_sha256 "${actual_evidence_sha}" \
     '{candidate_project: $candidate_project, candidate_image: $candidate_image, candidate_image_id: $candidate_image_id, image_family: $image_family, image_type: $image_type, source_revision: $source_revision, evidence_sha256: $evidence_sha256}' \
-    | sha256sum | awk '{print $1}'
+    | sha256sum | awk "${SHA256_VALUE_PROGRAM}"
 )"
 expect_json "${VERDICT_FILE}" '.candidate_binding_sha256' "${candidate_binding_sha}" "verdict candidate binding"
 
@@ -102,7 +104,7 @@ guest_sbom_sha256="$(jq -er '.guest_sbom_sha256' "${EVIDENCE_FILE}")" \
   || { echo "::error::guest SBOM digest is missing" >&2; exit 1; }
 [[ "${guest_sbom_sha256}" =~ ^[0-9a-f]{64}$ ]] \
   || { echo "::error::guest SBOM digest is malformed" >&2; exit 1; }
-actual_guest_sbom_sha256="$(sha256sum "${GUEST_SBOM_FILE}" | awk '{print $1}')"
+actual_guest_sbom_sha256="$(sha256sum "${GUEST_SBOM_FILE}" | awk "${SHA256_VALUE_PROGRAM}")"
 [[ "${actual_guest_sbom_sha256}" == "${guest_sbom_sha256}" ]] \
   || { echo "::error::guest SBOM digest mismatch" >&2; exit 1; }
 jq -e '.spdxVersion | startswith("SPDX-")' "${GUEST_SBOM_FILE}" >/dev/null \

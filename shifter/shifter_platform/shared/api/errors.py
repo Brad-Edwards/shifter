@@ -9,6 +9,8 @@ from rest_framework.views import exception_handler as drf_exception_handler
 
 from shared.errors import classify_user_message, safe_user_message
 
+_REQUIRED_FIELD_MESSAGE = "This field is required."
+
 _STATUS_MESSAGES = {
     status.HTTP_400_BAD_REQUEST: "Invalid request",
     status.HTTP_401_UNAUTHORIZED: "Authentication failed",
@@ -24,7 +26,7 @@ _VALIDATION_DETAIL_MESSAGES = {
     "max_length": "Value is too long.",
     "min_length": "Value is too short.",
     "null": "This field may not be null.",
-    "required": "This field is required.",
+    "required": _REQUIRED_FIELD_MESSAGE,
 }
 
 _VALIDATION_DETAIL_TEXT_MESSAGES = {
@@ -36,7 +38,7 @@ _VALIDATION_DETAIL_TEXT_MESSAGES = {
     "Invalid credential type.": "Invalid credential type.",
     "Provide at least one of 'enabled' or 'staff_only'.": "Provide at least one of 'enabled' or 'staff_only'.",
     "Request body must be a JSON object": "Request body must be a JSON object",
-    "This field is required.": "This field is required.",
+    _REQUIRED_FIELD_MESSAGE: _REQUIRED_FIELD_MESSAGE,
     "This field is required for set mode.": "This field is required for set mode.",
     "Unknown event status.": "Unknown event status.",
     "Unknown field.": "Unknown field.",
