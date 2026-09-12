@@ -172,6 +172,11 @@ The first slice intentionally stays small:
   contract table, registry entry, and mutation test together; do not add a new
   branch of repeated per-section validation.
 
+  The registry check keeps contract support, specialized ADR contracts, and
+  dispatch in separate modules. This preserves the closed contract surface
+  while keeping each validator independently reviewable and within the static
+  analysis limits enforced for guardrail code.
+
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
