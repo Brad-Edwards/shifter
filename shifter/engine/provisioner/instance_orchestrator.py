@@ -23,6 +23,7 @@ from instance_setup import (
     _set_attacker_container_password_after_bootstrap,
 )
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
+from plans.base import DynamicPlan
 from plans.preconfigured_machine_host import PreconfiguredMachineHostPlan
 from polaris_bootstrap import _run_polaris_range_bootstrap
 
@@ -39,23 +40,42 @@ def _run_preconfigured_machine_host_setup(inst: dict[str, Any], inst_id: str) ->
     try:
         execution.wait_for_ready(timeout_seconds=300)
         plan = PreconfiguredMachineHostPlan()
+        context = plan.get_context(inst)
+        boot_plan = DynamicPlan(
+            "preconfigured_machine_host_boot_liveness",
+            [plan.steps[0]],
+            context,
+        )
         result = SetupOrchestrator(executor=execution.executor).orchestrate(
             execution.target,
-            plan,
-            plan.get_context(inst),
+            boot_plan,
+            context,
             document_name=execution.document_name,
         )
         if not result.success:
-            raise SetupError(f"Preconfigured range host {inst_id} failed readiness: {result.error}")
+            raise SetupError(f"Preconfigured range host {inst_id} failed boot liveness: {result.error}")
+        _set_attacker_container_password_after_bootstrap(
+            instance_data=inst,
+            instance_id=inst_id,
+            container_name=str(inst["gcp_participant_container_name"]),
+            ssh_user=str(inst["gcp_participant_username"]),
+            required=True,
+        )
+        participant_plan = DynamicPlan(
+            "preconfigured_machine_host_participant_readiness",
+            [plan.steps[1]],
+            context,
+        )
+        result = SetupOrchestrator(executor=execution.executor).orchestrate(
+            execution.target,
+            participant_plan,
+            context,
+            document_name=execution.document_name,
+        )
+        if not result.success:
+            raise SetupError(f"Preconfigured range host {inst_id} failed participant readiness: {result.error}")
     finally:
         execution.close()
-    _set_attacker_container_password_after_bootstrap(
-        instance_data=inst,
-        instance_id=inst_id,
-        container_name=str(inst["gcp_participant_container_name"]),
-        ssh_user=str(inst["ssh_username"]),
-        required=True,
-    )
 
 
 def _build_uuid_to_config(range_spec: dict[str, Any]) -> dict[str, dict[str, Any]]:

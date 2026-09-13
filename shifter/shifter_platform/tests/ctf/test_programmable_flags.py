@@ -300,6 +300,23 @@ class TestHTTPFlagVerification:
 
         assert result is False
 
+    @pytest.mark.parametrize("verdict", ['"true"', "1", "{}", "[]", "null"])
+    def test_validate_http_rejects_truthy_non_boolean_verdicts(self, verdict):
+        """Only the literal JSON Boolean true is an accepting verdict."""
+        patcher, _ = _patch_http_response(status=200, body=f'{{"valid": {verdict}}}'.encode())
+        with _patch_dns("8.8.8.8"), patcher:
+            result = validate_http("signed-receipt", {"url": "https://example.com/check"}, "challenge-1")
+
+        assert result is False
+
+    def test_validate_http_rejects_ambiguous_extra_verdict_members(self):
+        """The callback response is the closed object {"valid": true}."""
+        patcher, _ = _patch_http_response(status=200, body=b'{"valid": true, "success": true}')
+        with _patch_dns("8.8.8.8"), patcher:
+            result = validate_http("signed-receipt", {"url": "https://example.com/check"}, "challenge-1")
+
+        assert result is False
+
     def test_validate_http_non_200(self):
         """HTTP validator returns False on non-200 status."""
         patcher, _ = _patch_http_response(status=500, body=b"")
