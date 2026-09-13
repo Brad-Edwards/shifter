@@ -290,6 +290,31 @@ def test_named_collection_members_have_canonical_set_semantics():
         SharingSelector(kind=SelectorKind.NAMED_COLLECTION, members=(without_spares, without_spares))
 
 
+def test_named_collection_enforces_aggregate_id_bound():
+    half = SharingSelector(kind=SelectorKind.SELECTED_RANGES, ids=tuple(f"range-{i}" for i in range(500)))
+    other_half = SharingSelector(kind=SelectorKind.USER, ids=tuple(f"user-{i}" for i in range(500)))
+    at_limit = SharingSelector(kind=SelectorKind.NAMED_COLLECTION, members=(half, other_half))
+    assert len(at_limit.members) == 2
+
+    over = SharingSelector(kind=SelectorKind.USER, ids=tuple(f"user-{i}" for i in range(501)))
+    with pytest.raises(ValidationError):
+        SharingSelector(kind=SelectorKind.NAMED_COLLECTION, members=(half, over))
+
+
+def test_include_spares_only_valid_for_ctf_selectors():
+    for kind in (SelectorKind.CTF_EVENT, SelectorKind.CTF_COHORT, SelectorKind.CTF_TEAM):
+        assert SharingSelector(kind=kind, ids=("x",), include_spares=True).include_spares is True
+    for kind in (
+        SelectorKind.SELECTED_RANGES,
+        SelectorKind.USER,
+        SelectorKind.AUTH_GROUP,
+        SelectorKind.WORKSPACE,
+        SelectorKind.ORGANIZATION,
+    ):
+        with pytest.raises(ValidationError):
+            SharingSelector(kind=kind, ids=("x",), include_spares=True)
+
+
 def test_shared_only_pool_and_all_ranges_binding_are_closed_and_digest_bound():
     payload = _catalog_payload()
     binding = {

@@ -86,7 +86,7 @@ Rules and behavior:
 - All fields are optional; omitted fields use the defaults above, so an omitted
   block keeps the historical 30 / 30 / 365 behavior.
 - `initial_days` must be positive and no greater than `maximum_days`;
-  `extension_days` must be positive. `extension_days` may exceed `maximum_days` —
+  `extension_days` must be positive. `extension_days` may exceed `maximum_days`;
   an extension is always bounded by the range's remaining lifetime. Invalid
   combinations fail configuration validation at install time, not at range launch.
 - **New ranges only.** Durations are snapshotted onto each range generation when it
@@ -96,7 +96,7 @@ Rules and behavior:
   their ceilings.
 - **`extensions_enabled: false`** is a live switch that denies further extensions
   across all Mission Control ranges after the deployment rolls out. It does not
-  shorten any deadline and does not stop automatic cleanup — expired ranges are
+  shorten any deadline and does not stop automatic cleanup; expired ranges are
   still destroyed. Use it to stop new extensions without orphaning ranges. Setting
   `initial_days` equal to `maximum_days` only prevents extensions for new ranges and
   is not a substitute for the switch.
