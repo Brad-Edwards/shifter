@@ -40,8 +40,8 @@ AWS_DEV_WAF_ACL_ARN = (
 # Regenerated for #2098 after adding the CTF communication delivery-worker Deployment.
 # Regenerated for #2083 after admitting the deployment-scoped dynamic-secret project id.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "3354afa2f74b40183b927287a0a307a81b3a58fa117084611fa45e2a7a3ed23e",
-    "gcp-prod": "66fdc5a40b6984c47f81a838ebc44dc9d06340235d42508a7120d9c3a634ae3e",
+    "gcp-dev": "06b2f394efcea40996f8ee60d671ba1c4b34ef77aee24c7023b80e07bcb8e9d9",
+    "gcp-prod": "83781433b31c7bbdc816e3804a1534972a08f669a60b363475065913513fe433",
 }
 
 
@@ -102,9 +102,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         for profile, values_file in VALUES_FILES.items():
             with self.subTest(profile=profile):
                 _, documents = _render(values_file)
-                for document in documents:
-                    if document.get("kind") != "Deployment":
-                        continue
+                deployments = [
+                    doc for doc in documents if doc.get("kind") == "Deployment"
+                ]
+                self.assertTrue(deployments, f"{profile}: no Deployments rendered")
+                for document in deployments:
                     pod_template = document["spec"]["template"]
                     containers = pod_template["spec"]["containers"]
                     for container in containers:
@@ -343,9 +345,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                 identities = {_identity(document) for document in documents}
                 self.assertIn(("NetworkPolicy", "default-deny-platform"), identities)
                 self.assertIn(("NetworkPolicy", "default-deny-jobs"), identities)
-                for document in documents:
-                    if document.get("kind") != "Deployment":
-                        continue
+                deployments = [
+                    doc for doc in documents if doc.get("kind") == "Deployment"
+                ]
+                self.assertTrue(deployments, f"{profile}: no Deployments rendered")
+                for document in deployments:
                     pod_spec = document["spec"]["template"]["spec"]
                     self.assertEqual(
                         pod_spec["securityContext"]["seccompProfile"]["type"],

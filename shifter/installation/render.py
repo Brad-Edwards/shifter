@@ -35,6 +35,8 @@ consumer from the range-egress bridge above.
 
 from __future__ import annotations
 
+import json
+
 from . import warm_pool
 from .errors import ConfigIssue, InstallationConfigError
 from .range_egress import SETTINGS_KEY, RangeEgressMode, RangeEgressPolicy, aws_runtime_egress_mode
@@ -96,6 +98,8 @@ def render_tfvars(config: RootConfig) -> str:
         rendered += f'dynamic_secret_project_id = "{dynamic_project}"\n'
         static_refs = gcp_settings.provisioner_static_resource_refs
         rendered += _hcl_string_map("provisioner_static_secret_refs", dict(static_refs))
+        broker = gcp_settings.model_broker.model_dump(mode="json")
+        rendered += "model_broker = " + json.dumps(broker, separators=(",", ":"), sort_keys=True) + "\n"
     return _HEADER + rendered
 
 

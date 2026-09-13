@@ -82,3 +82,16 @@ is not parity evidence. Delivery and proof owners are listed in the
 
 Registry checks validate documentation structure and existing import rules.
 They do not prove this proposed runtime boundary.
+
+The [M06 GCP packaging preflight](../architecture/model-access/gcp-packaging-preflight-2123.md)
+records the repository integration gates for broker-only runtime inventory,
+effective NetworkPolicy isolation, exact-target IAM, explicit range egress
+and the real deployment/provenance path. These apply this decision without
+adopting its runtime status or claiming deployed enforcement.
+
+The M06 range-spec and RAES plan builders consume an explicitly admitted broker
+capability and bind it to the deployment VIP before rendering firewalls.
+Their integration tests verify the exact exception and incompatible-posture
+rejections. M08 owns production enrollment and operation projection; M05 owns
+the listener call to the transport-peer binding contract. Installing the
+package alone establishes neither enrollment nor peer authentication.

@@ -619,8 +619,12 @@ def render_gcp_helm_values(
     image_tag: str,
     image_identities: dict[str, str] | None = None,
     bootstrap_operator_email: str | None = None,
+    model_access_catalog_json: str = "",
+    model_access_env: str = "",
 ) -> dict[str, object]:
     """Render non-secret Helm values for the Shifter release from Terraform outputs."""
+    from installation.gcp_model_broker import project_model_broker
+
     pinned_image_tag = validate_image_tag(image_tag)
     service_accounts = _get_output_value(outputs, "workload_service_accounts")
     public_hostname = str(_get_output_value(outputs, "public_hostname")).strip()
@@ -644,6 +648,11 @@ def render_gcp_helm_values(
 
     return {
         "releaseNamespace": "shifter-system",
+        "modelBroker": project_model_broker(
+            outputs.get("model_broker", {}).get("value"),
+            catalog_json=model_access_catalog_json,
+            model_access_env=model_access_env,
+        ),
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
         # Reference only: the guacamole-runtime Kubernetes Secret is synced out
@@ -1366,12 +1375,21 @@ def stage_gcp_control_plane_values(
     bootstrap_operator_email: str | None = None,
 ) -> Path:
     """Stage the generated Helm values file for the Shifter release."""
+    from installation.gcp_model_broker import validate_model_broker_readback
+    from installation.loader import load_root_config
+    from installation.render import render_model_access_catalog, render_model_access_env
+
+    root_config = load_root_config(resolve_shifter_config_path(config, get_repo_root()))
+    validate_model_broker_readback(outputs.get("model_broker", {}).get("value"), root_config)
+    catalog_json = render_model_access_catalog(root_config)
     values = render_gcp_helm_values(
         config,
         outputs,
         image_tag=image_tag,
         image_identities=image_identities,
         bootstrap_operator_email=bootstrap_operator_email,
+        model_access_catalog_json=catalog_json,
+        model_access_env=render_model_access_env(root_config),
     )
     values_path = staging_root / "shifter.values.generated.json"
     values_path.write_text(json.dumps(values, indent=2, sort_keys=True))

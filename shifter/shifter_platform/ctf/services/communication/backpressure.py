@@ -114,6 +114,13 @@ def _serialize_admission() -> None:
         cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [_ADVISORY_LOCK_NAMESPACE, _GLOBAL_ADMISSION_KEY])
 
 
+# Admission-denial codes that are transient (clearing the rate window or draining
+# the backlog recovers the occurrence). Every other admission/authorization denial
+# is permanent for this occurrence. Callers that run at due time use this to retry
+# transient pressure within the grace window instead of discarding the occurrence.
+RETRYABLE_ADMISSION_CODES = frozenset({"CTF_COMMUNICATION_RATE_LIMITED", "CTF_COMMUNICATION_BACKLOG_FULL"})
+
+
 def enforce_admission(request: AdmissionRequest) -> None:
     """Enforce fan-out, rate, and durable outstanding-work budgets, fail-closed.
 

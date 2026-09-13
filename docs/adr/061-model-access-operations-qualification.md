@@ -68,3 +68,27 @@ state that minted short-lived credentials survive key deletion; revocation
 can require disabling the principal. The implementation must measure the
 effective window for its actual credentials and policies. No universal
 provider revocation latency is asserted here.
+
+## M06 deployment enforcement
+
+The [GCP package](../architecture/model-access/gcp-packaging.md) supplies
+disabled Helm resources and chart-derived Actions artifacts, digest-bound
+release verification, drain settings and versioned TLS references. The GCP
+script quality lane installs the same pinned Helm binary to test the actual
+compatibility renderer. The
+[operator probes](../ops/model-access-gcp-probes.md) distinguish local structural
+checks from the live IAM, LB/CNI and rotation evidence required by M10.
+Neither infrastructure provisioning nor a passing health probe qualifies
+model admission. The ADR remains proposed pending runtime qualification.
+
+M06 review hardening binds control rollouts to the applied runtime ConfigMap,
+protects both authorization-path deployments with disruption budgets, and
+limits mounted ConfigMap payloads to 96 KiB before deployment. The combined
+Actions manifest excludes the broker from all incumbent platform egress
+policies regardless of generated resource names; dedicated policy owns DNS.
+
+Self-review additionally binds both deploy adapters to current root readback,
+preserves the Actions Engine worker's runtime references on the control
+process, restarts control after secret synchronization, and uses foreground
+deletion to complete pod drain before withdrawing broker policy. Direct Helm
+input rejects non-private or malformed IPv4 coordinates and shared TLS names.

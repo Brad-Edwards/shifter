@@ -155,13 +155,18 @@ class IntentStatus(StrEnum):
     An intent is immutable once RELEASED. SCHEDULED is a timed intent awaiting
     its due occurrence; CANCELLED stops not-yet-claimed work; FENCED marks an
     intent whose range generation was replaced or whose event was cancelled, so
-    it can never materialize new work.
+    it can never materialize new work; EXPIRED is a durable no-work terminal
+    outcome for a scheduled intent that will never materialize an audience —
+    picked up past its lateness/grace window, or permanently un-admittable at due
+    time (e.g. authority revoked or audience over budget) — distinct from FENCED
+    (#2099).
     """
 
     SCHEDULED = "scheduled"
     RELEASED = "released"
     CANCELLED = "cancelled"
     FENCED = "fenced"
+    EXPIRED = "expired"
 
     def __str__(self) -> str:
         """Return the string value for database storage."""

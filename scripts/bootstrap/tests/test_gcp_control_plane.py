@@ -2532,3 +2532,40 @@ class TestGceRangePreconditions:
         assert parse("projects/p/global/images/my-image-v1", "d") == ("p", "image", "my-image-v1")
         assert parse("family/shifter-kali", "d") == ("d", "family", "shifter-kali")
         assert parse("shifter-dc", "d") == ("d", "family", "shifter-dc")
+
+
+def test_staging_rejects_missing_broker_readback_before_render(tmp_path):
+    """Local bootstrap must not silently deploy disabled from stale Terraform output."""
+    import yaml
+
+    root_path = tmp_path / "shifter.yaml"
+    root_path.write_text(
+        yaml.safe_dump(
+            {
+                "backend": "gcp",
+                "deployment": {"name": "shifter", "domain": "shifter.example.test"},
+                "secrets": {"django_secret_key": "prompt"},
+                "settings": {
+                    "project_id": "platform-example",
+                    "dynamic_secret_project_id": "secrets-example",
+                    "region": "us-central1",
+                    "model_broker": {
+                        "enabled": True,
+                        "hostname": "models.example.test",
+                        "vip": "10.40.0.25",
+                        "admitted_subnets": ["10.50.1.0/24"],
+                        "tls_secret_name": "broker-tls-v1",
+                        "control_tls_secret_name": "control-tls-v1",
+                        "trust_configmap_name": "model-ca-v1",
+                        "model_projects": {"models-example": "model-invoke"},
+                    },
+                },
+            }
+        )
+    )
+    config = deploy.GDCBootstrapConfig(project_id="platform-example", shifter_config_path=str(root_path))
+    with pytest.raises(ValueError, match="missing applied Terraform output"):
+        gcp_control_plane.stage_gcp_control_plane_values(
+            config, {}, tmp_path, image_tag=PINNED_IMAGE_TAG, image_identities={}
+        )
+    assert not (tmp_path / "shifter.values.generated.json").exists()

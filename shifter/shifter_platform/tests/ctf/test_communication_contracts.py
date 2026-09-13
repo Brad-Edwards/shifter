@@ -227,6 +227,41 @@ def test_trigger_rejects_unknown_kind_and_extra_keys():
         validate_trigger_spec({"kind": "webhook"})
 
 
+def test_absolute_time_normalizes_to_utc():
+    # A timezone-aware instant is accepted and normalized to a canonical UTC form,
+    # so downstream due-time comparison never depends on the caller's offset (#2099).
+    result = validate_trigger_spec({"kind": "absolute_time", "due_at": "2026-10-01T05:00:00+05:00"})
+    assert result["due_at"] == "2026-10-01T00:00:00+00:00"
+
+
+def test_absolute_time_rejects_naive_and_malformed_due_at():
+    # A naive datetime is ambiguous (no offset); reject rather than guess a zone.
+    with pytest.raises(CTFCommunicationError):
+        validate_trigger_spec({"kind": "absolute_time", "due_at": "2026-10-01T00:00:00"})
+    with pytest.raises(CTFCommunicationError):
+        validate_trigger_spec({"kind": "absolute_time", "due_at": "not-a-timestamp"})
+
+
+def test_event_lifecycle_requires_a_known_event_status():
+    assert validate_trigger_spec({"kind": "event_lifecycle", "event_status": "active"})["event_status"] == "active"
+    with pytest.raises(CTFCommunicationError):
+        validate_trigger_spec({"kind": "event_lifecycle", "event_status": "bogus_status"})
+
+
+def test_trigger_reference_refs_are_length_bounded():
+    over = "x" * 300
+    with pytest.raises(CTFCommunicationError):
+        validate_trigger_spec({"kind": "range_signal", "declaration_ref": over})
+    with pytest.raises(CTFCommunicationError):
+        validate_trigger_spec({"kind": "raes_occurrence", "declaration_ref": "d1", "occurrence_ref": over})
+
+
+def test_audience_rejects_an_oversized_id_list():
+    too_many = [str(uuid4()) for _ in range(5001)]
+    with pytest.raises(CTFCommunicationError):
+        validate_audience_spec({"kind": "participant_set", "participant_ids": too_many})
+
+
 # ---------------------------------------------------------------------------
 # Channels
 # ---------------------------------------------------------------------------

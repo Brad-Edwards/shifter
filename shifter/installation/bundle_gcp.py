@@ -30,6 +30,7 @@ from .contract import (
     RequiredTool,
     ValidationCheck,
 )
+from .gcp_model_broker import BROKER_RUNTIME_ENV_KEYS
 from .settings_gcp import GcpBackendSettings
 
 # The GCP generated runtime env is authored by the GCP backend runtime-env renderer and its
@@ -140,6 +141,19 @@ def _gcp_generated_outputs() -> tuple[GeneratedOutput, ...]:
     required = sorted(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS)
     optional = sorted(runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
     return (
+        *(
+            GeneratedOutput(
+                name=name,
+                kind=OutputKind.RUNTIME_ENV,
+                owner="canonical model broker Helm projection",
+                source="validated deployment transport and mounted catalog identity",
+                destination=OutputDestination.RUNTIME_ENV,
+                sensitivity=OutputSensitivity.PUBLIC,
+                process_roles=(ProcessRole.MODEL_BROKER,),
+                description="Broker-only configuration or mounted-file path; never a credential value.",
+            )
+            for name in sorted(BROKER_RUNTIME_ENV_KEYS)
+        ),
         *(_gcp_runtime_output(name, optional=False) for name in required),
         *(_gcp_runtime_output(name, optional=True) for name in optional),
     )
