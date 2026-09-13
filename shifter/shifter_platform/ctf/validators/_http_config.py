@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import ParseResult
 
 from ._ssrf import _safe_parse_url, is_blocked_url
 
@@ -82,7 +83,7 @@ def _normalize_headers(value: object) -> dict[str, str]:
     return normalized
 
 
-def _parsed_url_is_canonical_https(parsed: Any) -> bool:
+def _parsed_url_is_canonical_https(parsed: ParseResult) -> bool:
     """Return whether a parsed URL keeps HTTPS and contains no userinfo."""
     return parsed.scheme == "https" and parsed.username is None and parsed.password is None
 
