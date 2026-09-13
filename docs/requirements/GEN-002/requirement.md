@@ -65,3 +65,7 @@ The repo now has guardrail enforcement in ADR registry, adr_guard, CI, hooks, an
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2084` (GCP exact-release security gate reconciliation)
 - IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/documentation.py` (`lilrae-identity-boundary` check enforcing ADR-024-R6 identity and scenario-pack terminology)
 - TESTS → TEST `scripts/adr_guard/tests/test_adr_guard.py` (LilraeIdentityBoundaryTests for rename continuity, TechVault role, false pairing, and historical evidence boundaries)
+- IMPLEMENTS → CONFIG `.github/workflows/iam-drift-check.yml` (Out-of-band global/iam CI drift-check gating on `terraform plan -detailed-exitcode` (ADR-004-R26, #247))
+- IMPLEMENTS → CODE_FILE `scripts/adr_guard/_guard/checks/_deploy_workflow_iam_drift.py` (`global-iam-drift-check` guard pinning the global/iam drift-check workflow (ADR-004-R26, #247))
+- TESTS → TEST `scripts/adr_guard/tests/test_global_iam_drift.py` (global/iam drift-check guard regression tests (#247))
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#247` (Audit and scope down OIDC IAM permissions)
