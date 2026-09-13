@@ -163,6 +163,8 @@ def add_flag(
     case_sensitive = flag_data.get("case_sensitive", True)
     order = flag_data.get("order", 0)
     validator_config = flag_data.get("validator_config")
+    if flag_type == "http":
+        validator_config = validate_http_flag_config(validator_config)
     stored_value = _flag_hash_for_payload(
         flag_type,
         flag_data,
@@ -239,6 +241,8 @@ def update_flag(
     case_sensitive = flag_data.get("case_sensitive", flag_obj.case_sensitive)
     order = flag_data.get("order", flag_obj.order)
     validator_config = flag_data.get("validator_config", flag_obj.validator_config)
+    if flag_type == "http":
+        validator_config = validate_http_flag_config(validator_config)
     stored_value = _flag_hash_for_payload(
         flag_type,
         flag_data,

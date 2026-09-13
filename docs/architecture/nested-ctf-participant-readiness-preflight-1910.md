@@ -51,6 +51,44 @@ background workflow, controller, or database truth.
 | HTTP validator security | `ctf.validators._http` and `_ssrf`: HTTPS-only, all-address validation, pinned connection with original SNI/Host, no redirects, bounded timeout/body, reserved-header ownership, and fail-closed Boolean results. |
 | Errors and observability | `RangeCellContractError`, existing provisioner `RuntimeError` / `CloudError` / `SetupError` mapping, CTF's `CTFValidationError`, `shared.api.errors`, `shared.log_sanitize`, provisioner `log_redact`, and existing request/range/operation correlation. Add bounded reason codes, not another exception hierarchy or raw provider/guest failures. |
 
+## Baseline hazards that remain open
+
+Focused parts of this umbrella already exist and must not be mistaken for the
+composed acceptance boundary. The legacy Terraform path runs the fixed
+participant canary before its `READY` write. The RAES GCE path can resolve the
+same `GCERangeImageProfile`, but currently returns after content/composition
+verification and publishes terminal readiness without invoking that canary. A
+preconfigured-machine-host profile must therefore either be rejected on that
+route or pass the same fixed, image-owned participant contract at the RAES
+realization boundary. Composition verification is not an equivalent proof.
+
+HTTP flag configuration also has one current three-way drift: interactive flag
+writes validate only URL/timeout, native content bundles separately enforce a
+closed/bounded method and header shape, and runtime silently coerces invalid
+methods/timeouts while dropping reserved headers. The shared strict
+validator/normalizer below must replace that divergence; a value rejected on one
+write surface must not become a different request on another.
+
+The submission input and persistence boundary is part of receipt correctness.
+`CTFSubmission.submitted_flag` is limited to 500 characters, while the current
+participant serializer does not impose that limit and HTTP verification runs
+before insert. A receipt that cannot be stored must be rejected before any
+external call. The published receipt size must fit the incumbent submission
+contract unless a separately reviewed persistence migration changes it. The
+normal submission row remains the only receipt audit persistence; do not copy
+receipt bytes into a second table, lifecycle evidence, or logs. If the provider
+classifies a signed receipt as a replayable credential, its plaintext retention
+in that incumbent field requires an explicit data-handling decision before
+enablement.
+
+Existing deployed test surfaces cover opposite halves of the proof. The
+post-deploy range smoke performs a fresh CMS/Engine allocation and teardown but
+only probes base-image TCP connectivity; `uat/range-functional-smoke` exercises
+participant terminal/Guacamole behavior against a retained range and never owns
+its lifecycle. Neither alone is #1910 fresh participant-readiness evidence, and
+their safety/ownership conventions must be preserved when collecting the
+composed proof.
+
 ## Participant start-state contract
 
 The extensibility seam is the existing machine profile, selected by
@@ -166,6 +204,13 @@ rejection. Unknown protocol versions or members fail at write/hydration time;
 runtime still revalidates and fails closed for old or damaged rows. Do not add
 arbitrary request templates, JSONPath/verdict expressions, callback code, or a
 parallel receipt schema.
+
+GET remains a compatibility option only for the default legacy protocol. A
+receipt-bearing protocol must require POST so the signed receipt never enters a
+query string, access log, proxy cache key, or referrer surface. Do not put an
+authentication secret in the validator URL. If the proof service needs service
+authentication, use the separately authenticated service seam rather than an
+organizer-authored URL credential or participant-visible lab CA.
 
 The proof callback is pure verification. A consuming or one-shot remote redeem
 performed before Shifter's database transaction would create an unrecoverable
