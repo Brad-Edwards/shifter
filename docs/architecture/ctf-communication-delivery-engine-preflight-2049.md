@@ -1,17 +1,17 @@
 # CTF Durable Communication Delivery Engine Preflight
 
-Date: 2026-09-05. Repository baseline: `27fbc13cf`.
+Date: 2026-09-12. Repository baseline: `613f365ac`.
 
 Scope: issue #2049; CTF-008, CTF-010, CTF-012. This is architecture guidance,
 not an implementation plan or a claim that the engine ships today.
 
-The immediate implementation target is #2098, slice 1 of #2049. For that slice,
-only the delivery-command/lease engine, durable in-app availability, reference-only
+The immediate implementation target is #2099, slice 2 of #2049. Slice 1's
+delivery-command/lease engine, durable in-app availability, reference-only
 WebSocket acceleration, adapter contract, worker observability, and worker runtime
-wiring are in scope. Scheduler/source admission belongs to slice 2 (CTF-010), and
-REST/token scopes plus legacy cutover belong to slice 3 (CTF-012). The later-slice
-constraints in this note protect those boundaries; they are not permission for
-#2098 to implement them early.
+are now incumbents to extend, not designs to replace. This slice owns source
+normalization, admission, due-time processing, lifecycle fencing, and correctness
+of the existing CTF scheduler. REST endpoints, the public API-token scope surface,
+and legacy cutover remain slice 3 (CTF-012); email transport remains #1525.
 
 This note specializes [ADR-051's communications decision](ctf-communications-raes-inject-preflight-2047.md)
 for execution after #2048. Its ownership, content, RAES, workload-ingress,
@@ -37,8 +37,8 @@ root. These are current implementation gaps, not new alternative contracts.
 | `ctf/services/communication/release.py` | Already commits intent, recipient snapshots, receipts, delivery commands, and strict audit together. Reuse this transaction boundary. It does **not** reauthorize a live user/token/workspace, enforce due time, validate a current range generation, or populate source/correlation evidence. Its optional actor IDs are attribution inputs, not authentication. Admission must own those checks for every caller, including replay. |
 | Release locking | `_assert_release_allowed()` locks only rows already matching `CANCELLED`; it does not lock live target events despite the release comment. Lock all relevant live targets before checking state, in a documented deterministic order shared with lifecycle operations. Campaign locking alone cannot serialize event cancellation or participant removal. |
 | `ctf/services/communication/lifecycle.py` | Campaign cancellation has a campaign lock; participant removal and range fencing lack a shared release/claim mutex. The hooks have no production callers outside this package at this baseline. Wire them through the owning event/participant/range lifecycle services, including soft deletion, account purge, teardown, and replacement; direct hook tests do not establish lifecycle coverage. |
-| `ctf/models/communication.py`, `ctf/enums_communication.py` | `DeliveryAttempt` is actually one durable command per `(snapshot, channel)`, with a retry counter, not one immutable row per attempt. It has no lease owner/expiry, attempt fence, observed-result time, or recovery protocol. Preserve command uniqueness while adding the required execution evidence; do not create a parallel outbox with competing status. |
-| In-app materialization | Release currently creates a receipt for every snapshot and queues an attempt for every selected channel, including `in_app`. A queued in-app row cannot be the availability gate: selected in-app availability is committed with the snapshot/receipt. Reconcile those existing rows and preserve explicit email-only selection; receipt existence alone must not expose an email-only item. |
+| `ctf/models/communication.py`, `ctf/enums_communication.py` | `DeliveryAttempt` is one durable command per `(snapshot, channel)`, not one immutable row per physical attempt. Slice 1 added claim tokens, lease expiry, attempt/observation times, retry budgets, and stale-worker settlement fencing. Reuse that engine and its current pre-I/O eligibility fence; slice 2 extends live source/workspace/event/range authorization through admission rather than adding another outbox, lease model, or competing status. |
+| In-app materialization | Release now creates a receipt only when `in_app` is selected and queues one command for every selected channel. That committed snapshot/receipt remains the availability gate; the in-app command is only the reference wake-up accelerator. Preserve explicit email-only selection and this truthful separation when scheduled release enters the same path. |
 | `ctf/communication_contracts.py` | Reuse its closed audience/trigger/channel/content validators and `canonical_digest`. Trigger values currently receive only non-empty-string checks; UUID lists lack maximum cardinality. Add semantic UTC/status/reference/type and size bounds here, not a separate validator per source. Markdown regex checks are not proof of the complete safe-document profile. |
 | Model persistence | `CTFBaseModel.save()` runs `full_clean`; `bulk_create` and queryset updates bypass it. Only `MessageRevision` uses `ImmutableFieldsMixin`, and that does not freeze its campaign association. Campaign scope/targets, released intent fields, and snapshot identity are not made immutable by their docstrings. Enforce them through the canonical services, existing mixin where appropriate, and database constraints; audit every bulk-write path. |
 | `ctf/management/commands/run_ctf_scheduler.py` | Reuse the one-shot registry, handlers, claims, heartbeat, and shutdown conventions. The stale sweep marks tasks `FAILED`, rather than requeuing as its header claims. Completion is not fenced by claim identity and can overwrite a handler's cancelled status. Communication recovery must address these paths at the scheduler owner. The default 30-second polling interval is not a precision guarantee. |
@@ -47,8 +47,74 @@ root. These are current implementation gaps, not new alternative contracts.
 | Server-owned cleanup | `cms.services.expire_due_ranges` and `cms/management/commands/reconcile_range_events.py` enforce persisted range leases; legacy `CLEANUP_RANGES` dispatch invokes the global bounded lease sweep. `defer_event_cleanup` / `cancel_event_cleanup` currently change scheduler rows only. Neither changes `expires_at`, so a deferred/cancelled task does not promise postponed/prevented destruction. |
 | Organizer task controls | `ctf/api/organizer/lifecycle.py` admits task listing/run-now with event scopes and `LIFECYCLE` authority, and returns `task.error_message` directly. A communication task must not become an alternate path around exact communication scopes, per-target `NOTIFICATIONS` authority, due-time policy, or bounded public failure reasons. |
 | `shared/email.py` | Synchronous `send_email` returns `True` after `msg.send()` without inspecting its count; `False` conflates all failures. Console output is not external delivery. Full exception logging can expose provider data. #1525 must supply truthful, bounded, redacted adapter outcomes; this engine cannot manufacture them from that boolean or `send_email_async`. |
-| `ctf/services/notification/realtime.py` | Reuse event topic authorization and shared transport, but not the current publish helper unchanged: it injects event content, defaults to a broad audience, and passes the CTF event UUID as the shared replay `event_id`. Shared uniqueness uses recipient/topic/event identity, so distinct communications can collapse. Use a stable communication occurrence/snapshot identity and explicit snapshot-derived recipients for reference-only wake-ups. |
-| Activation and compatibility | Migrations `0051_backfill_ctfevent_workspace` and `0052_communication_models`, the CTF-to-workspaces service edge, and `USE_CTF_COMMUNICATIONS` active-workspace policy now exist. Earlier preflight text describing them as absent is historical. Communication token scopes, transport workers, and the legacy notification/scheduler cutover are still missing. Do not infer deployed migration completion from source presence. |
+| `ctf/services/notification/realtime.py` | Slice 1 added `publish_communication_wakeup` and the in-app adapter, using stable snapshot identity and one explicit recipient for reference-only wake-ups. Reuse that narrow path. The older event-content/broad-audience publisher is not a communication admission or delivery seam. |
+| Activation and compatibility | Migrations `0051_backfill_ctfevent_workspace` and `0052_communication_models`, the CTF-to-workspaces service edge, `USE_CTF_COMMUNICATIONS`, the delivery worker, and its deployment surfaces now exist. Earlier preflight text describing them as absent is historical. Exact communication token scopes and the legacy notification/scheduler cutover are still missing. Do not infer deployed migration completion from source presence. |
+
+## Slice 2 Activation Guardrails (#2099)
+
+This slice has one architectural seam: each trusted source normalizes a bounded
+declaration or occurrence, then calls the existing communication service's one
+admission transaction. Manual, event-lifecycle, absolute-time, supported RAES
+shared/script-time, and generation-bound range signals differ only in how they
+prove source authority and form occurrence evidence. They do not own release,
+audience resolution, idempotency, fan-out, delivery, or retry policy. Scheduler
+handlers carry typed identifiers and reload authoritative rows; free-form task
+metadata, caller-supplied origin/actor/token/scope, and event routing anchors are
+never privilege evidence.
+
+Admission must linearize live authority with its durable commit. Reuse the API
+token row's owner/revocation/expiry checks, the event authority resolver,
+`USE_CTF_COMMUNICATIONS`, and the workspace-row mutex pattern in
+`authorize_launch_workspace_locked`; promote or generalize owner-owned helpers
+when needed instead of importing tenancy/token models into CTF or copying their
+policy. Within the CTF aggregate, lock all target events in stable primary-key
+order before campaign/revision/declaration rows, and make event, participant,
+account-purge, and communication lifecycle paths use the same event-first order.
+The current campaign-then-event release comment is not the contract. Revalidate
+actor/profile/token, workspace membership/state, every event, affected
+participation, declaration fence, and range generation inside the transaction;
+recheck effect-relevant fences immediately before each delivery retry.
+
+`shared.api_tokens.scopes` has no communication scope at this baseline, while
+the public scope surface is explicitly slice 3. Slice 2 must neither invent a
+private scope string nor substitute `ctf:event:write`. Token-authored declarations
+remain fail-closed until the canonical exact communication write scope exists;
+the due-time path may be built to consume that closed policy without exposing a
+new REST or scope-registration surface here. Human/session admission still needs
+the live actor, active bound workspace, and `NOTIFICATIONS` authority on every
+target event. A missing actor or token is never implicit system authority.
+
+Use the existing `CommunicationIntent` as the scheduled declaration/occurrence
+ledger and its `due_at`, occurrence, source/generation evidence, and
+`policy_revision` as immutable authored meaning. `CTFScheduledTask.scheduled_for`
+is only the mutable next execution index because retry/resume overwrite it.
+Scheduling the declaration and its task must be one recoverable commit; release
+materializes the audience only when due. Define one closed lateness/expiry policy
+with an explicit durable no-work/expired outcome; do not call expiry `FENCED`, and
+do not treat scheduler completion as release or channel delivery. Run-now either
+passes the same communication authority and explicit early-release policy or is
+unavailable for communication tasks.
+
+Fix scheduler correctness at `CTFScheduledTask`/`TASK_HANDLERS`: a claim needs a
+unique completion fence or an equivalent conditional transition, stale recovery
+requeues eligible work rather than terminally failing it, and shutdown must not
+strand unexecuted members of a preclaimed batch. A handler-cancelled or superseded
+task cannot be overwritten as completed. Bound claims to executable capacity,
+and keep provisioning/provider work out of the timing transaction. Repeated ticks,
+restarts, clock adjustments, run-now, and stale recovery all re-enter the same
+intent admission/fence path and therefore collapse or reject on full meaning.
+
+Wire lifecycle fencing from the services that own the durable mutation, inside
+the same transaction or through durable reconciliable handoff. Cover event cancel
+and soft/force delete, participant removal and account purge, range teardown and
+replacement, and scheduler rescheduling. Do not use model signals, browser polling,
+or `on_commit` alone as workflow truth. CMS keeps lease expiry and range lifecycle
+ownership; CTF consumes only a frozen scalar generation/authority projection from
+the public CMS service plus `ctf.bridges`. A range-instance identifier is not a
+generation fence. `shared.raes` remains the only RAES interpreter; because its
+current runtime target is provisioning-only, unsupported Inject/time realization
+stays closed rather than being approximated as an absolute timestamp or mirrored
+in a CTF schema.
 
 ## Execution Contract
 
@@ -204,12 +270,12 @@ CTF scheduler is unavailable; pending-task cancellation is not a range control.
 
 | Layer the design passes through | Required reuse and satisfaction |
 | --- | --- |
-| HTTP identity and authorization | `config`'s CTF account middleware, canonical DRF session/API-token authentication, `shared.api.principals.active_actor_user`, CSRF, `ctf.api._base`, `ctf.services.authorization.resolve_event_authority`, and `workspaces.services.authorize_bound_workspace(..., USE_CTF_COMMUNICATIONS)`. Preserve owner/staff/platform-admin distinctions (including the existing co-organizer role); use the authority-returning resolver for strict root-override audit. Add exact `ctf:communication:read/write` to `shared.api_tokens.scopes` and use its machine-readable `require_scope` permission. Token authentication does not make `request.user` the actor automatically. Participant receipts remain session-bound and parent-scoped. |
+| HTTP identity and authorization | `config`'s CTF account middleware, canonical DRF session/API-token authentication, `shared.api.principals.active_actor_user`, CSRF, `ctf.api._base`, `ctf.services.authorization.resolve_event_authority`, and `workspaces.services.authorize_bound_workspace(..., USE_CTF_COMMUNICATIONS)`. Preserve owner/staff/platform-admin distinctions (including the existing co-organizer role); use the authority-returning resolver for strict root-override audit. Slice 3 adds exact `ctf:communication:read/write` to `shared.api_tokens.scopes` and uses its machine-readable `require_scope` permission; slice 2 does not substitute an older scope. Token authentication does not make `request.user` the actor automatically. Participant receipts remain session-bound and parent-scoped. |
 | Range workload admission | ADR-051's workload boundary and `shared.raes` remain authoritative. Prove issuer/audience/expiry and exact deployment, range operation generation, participation, event, workspace, scenario/package, and allowlisted declaration/occurrence before normalizing. A status signal's range instance ID alone is not that proof. Neither a guest clock, participant session, API token, outbound webhook HMAC, nor client-supplied origin substitutes for workload authority. This slice consumes validated projections; absent realization/ingress capability stays closed. |
 | Parsing, shape and content validation | Explicit serializers delegate semantic rules to `ctf.communication_contracts`; do not use writable model serializers or free-form metadata. Enforce byte/depth/list/reference bounds and reject unknown/duplicate keys before normalized dicts lose evidence. `ctf.content_bundle._reject_duplicate_pairs` is the incumbent parser pattern, not a reusable communication schema. Handle malformed field types as bounded domain rejection, not uncaught `TypeError`. Keep content/profile/digest and allowed-host checks; render through the existing safe-content/Markdown and email-wrapper boundaries, with no raw HTML, template execution, URL fetching, or CSP relaxation. |
 | Persistence and lifecycle | Reuse `CTFBaseModel`, `ImmutableFieldsMixin`, the #2048 models, migrations, constraints, `transaction.atomic`, and communication services. Prove snapshot-event-campaign confinement, revision ownership, `DeliveryAttempt.intent == snapshot.intent`, and immutable policy even on bulk paths. Lock authoring revision changes against release as well as cancellation. Use default soft-delete filtering for visibility but explicit retained evidence for recovery/uniqueness. |
 | Secrets and host exposure | `shared.field_encryption.EncryptedStringField` owns coordinates; decryption/key failure denies only the dependent channel effect with a bounded reason. Build a minimal, immutable adapter command per channel: the in-app adapter receives stable snapshot/event/user references and must never decrypt or receive the email coordinate; only the future email adapter may decrypt that coordinate immediately before its bounded call. `entrypoint.sh`/`entrypoint-lib.sh` hydrate existing `APP_SECRET_ID` and `EMAIL_API_KEY_SECRET_ID` references from provider stores, with `FIELD_ENCRYPTION_KEY` and email keys kept private to the process. Pass references, never secret values, in argv, ConfigMaps, Helm values, Terraform, task metadata, diagnostics, or shell interpolation. Reuse stdin/private-file secret handling and avoid shell tracing/env dumps. If a job adapter is involved, satisfy `shared.cloud.sensitive_env.split_env`; `EMAIL_API_KEY` does not match its current sensitive-name/suffix rules and must never pass as a literal job env value. No new credential is needed for the ledger worker. |
-| Error envelopes, audit and logging | Reuse `CTFCommunicationError`/`CTFError`, canonical CTF-to-DRF mapping, `shared.api.errors`, and fixed authored errors. `safe_user_message` only strips/truncates; `error.details` normalization does not redact arbitrary values or field names. Never return raw provider/model/parser errors. #2098 adds no public HTTP error surface: its management-command stderr/logs, persisted bounded reason classes, heartbeat probe, and metrics must likewise omit bodies, coordinates, provider text, tracebacks, and database errors; health reports liveness/readiness classes rather than command detail. Extend `ctf.services.audit.audit_communication_release` and `shared.audit` with bounded source/authority/token-record/correlation evidence, strict in the admission transaction. Carry that non-secret correlation into worker outcomes. `config.logging.ECSFormatter` emits only allowlisted extra fields; arbitrary extras silently disappear. Reuse `shared.log_sanitize` for safe identifiers, but its process-local fingerprints are not durable correlation. Audit/logging defaults and `logger.exception` are not PII redaction; inspect nested exception text from model validation, scheduler, email, and middleware too. |
+| Error envelopes, audit and logging | Reuse `CTFCommunicationError`/`CTFError`, canonical CTF-to-DRF mapping, `shared.api.errors`, and fixed authored errors. `safe_user_message` only strips/truncates; `error.details` normalization does not redact arbitrary values or field names. Never return raw provider/model/parser errors. Slice 2 adds no public HTTP error surface: its management-command stderr/logs, persisted bounded reason classes, heartbeat probe, and metrics must likewise omit bodies, coordinates, provider text, tracebacks, and database errors; health reports liveness/readiness classes rather than command detail. Extend `ctf.services.audit.audit_communication_release` and `shared.audit` with bounded source/authority/token-record/correlation evidence, strict in the admission transaction. Carry that non-secret correlation into worker outcomes. `config.logging.ECSFormatter` emits only allowlisted extra fields; arbitrary extras silently disappear. Reuse `shared.log_sanitize` for safe identifiers, but its process-local fingerprints are not durable correlation. Audit/logging defaults and `logger.exception` are not PII redaction; inspect nested exception text from model validation, scheduler, email, and middleware too. |
 | WebSocket and browser | Preserve `AllowedHostsOriginValidator` → `AuthMiddlewareStack` → `CTFAccountWebSocketBoundary` → `SharedNotificationConsumer` topic authorization. Temporary accounts currently cannot use `/ws/notifications/`; admit only that exact route after live participation/password-change checks, never a `/ws/` bypass. Reuse `shared.notifications`, its payload handler, group naming, replay bounds, and existing enablement flag. Project only authorized message references; reconnect/poll fetches the durable inbox and deduplicates by stable snapshot/message ID. Revalidate participant authority on fetch/read/ack even for an already open socket. |
 | Admission bounds and observability | Reuse `shared.rate_limit.consume_fixed_window` and the fail-closed 429/Retry-After versus 503 posture in `mission_control.api.rate_limit`. Enforce actor, range-generation, event, workspace, and global budgets in shared storage, plus audience size, outstanding-work, and in-flight limits. A rate counter alone does not bound durable backlog; database reservations/counts require serialization. `workspaces.services` quotas already own range/seat resources: do not misuse those resources as message budgets or duplicate their membership policy. Fair bounded worker batches must prevent one event monopolizing delivery. Reuse the provider-aware metric publication pattern of `shared.warm_pool.metrics` / `config.capacity_metrics`, without importing config from CTF. Report oldest-due age, backlog, admission denials, retries/exhaustion, lease recovery, latency, and channel degradation. Metrics use closed source/channel/reason/scope-class labels, never recipient IDs/PII or unbounded workspace/event/range IDs; bounded IDs belong in authorized audit evidence. Metrics outages cannot change delivery truth. |
 
@@ -260,8 +326,9 @@ validate flags and settings consistently. `CTF_SCHEDULER_STALE_TASK_MINUTES` is
 read through `_env_int` but absent from `_EXPLICIT_BINDINGS` and the generated
 manifest at this baseline; do not copy that configuration gap to new knobs.
 
-At this baseline the two `SHIFTER_CTF_COMMUNICATION_*` settings appear in the
-generated settings manifest but have no matching deployment bindings in
+At this baseline the `SHIFTER_CTF_COMMUNICATION_*` settings appear in the
+generated settings manifest and slice 1 worker surfaces, but the policy values
+have no matching first-class deployment bindings in
 `platform/`, bootstrap/render scripts, or installation inventories. Settings
 acceptance alone is not deployment configurability. Shared email can explicitly
 select a console backend; durable external email must report that as unavailable,
@@ -285,8 +352,9 @@ is transport wiring, not permission to add a communication extension registry.
 Implementation evidence must extend `tests/ctf/test_communication_*`, scheduler
 tests, worker/outbox tests, and `tests/platform/test_ctf_scheduler_startup.py`.
 Use the root `Makefile` PostgreSQL/Redis lanes and the real connection/barrier
-pattern in `tests/workspaces/test_quota_concurrency_postgres.py`; the existing
-mostly sequential communication tests do not prove races. Exercise simultaneous
+patterns in `tests/workspaces/test_quota_concurrency_postgres.py` and
+`tests/ctf/test_communication_delivery_postgres.py`; the existing delivery lease
+tests do not prove admission/lifecycle/scheduler races. Exercise simultaneous
 release/revision/cancel/remove/teardown/claim, stale-worker writes, crashes at
 commit/claim/provider-result boundaries, audit failure rollback, conflicting
 replay, due-time revocation/clock races, fair bounded load, and mixed channel

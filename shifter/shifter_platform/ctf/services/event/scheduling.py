@@ -99,7 +99,7 @@ def _reschedule_live_event_schedule(event: CTFEvent) -> None:
         task_type=ScheduledTaskType.EVENT_END.value,
         status=ScheduledTaskStatus.PENDING.value,
     ):
-        task.mark_cancelled()
+        task.cancel_if_active()
 
     CTFScheduledTask.objects.create(
         event=event,
@@ -112,7 +112,7 @@ def _reschedule_live_event_schedule(event: CTFEvent) -> None:
         task_type__in=[ScheduledTaskType.CLEANUP_RANGES.value, ScheduledTaskType.CLEANUP_WARNING.value],
         status=ScheduledTaskStatus.PENDING.value,
     ):
-        task.mark_cancelled()
+        task.cancel_if_active()
 
     if event.auto_cleanup:
         cleanup_time = event.get_cleanup_time()
@@ -171,8 +171,10 @@ def _cancel_event_tasks(event: CTFEvent) -> None:
 
     cancelled_count = 0
     for task in pending_tasks:
-        task.mark_cancelled()
-        cancelled_count += 1
+        # Conditional transition: a task claimed (or completed) between the read
+        # above and here is not blindly overwritten (#2099 claim-fence contract).
+        if task.cancel_if_active():
+            cancelled_count += 1
 
     if cancelled_count:
         logger.info("Cancelled %d scheduled tasks for event %s", cancelled_count, event.id)
@@ -201,18 +203,26 @@ def _assert_lifecycle_actor(event_id: UUID, actor_id: int | None) -> None:
     assert_event_capability(actor_id, get_event(event_id), EventCapability.LIFECYCLE)
 
 
-def run_task_now(event_id: UUID, task_id: UUID, *, actor_id: int | None = None) -> CTFScheduledTask:
+def run_task_now(
+    event_id: UUID, task_id: UUID, *, actor_id: int | None = None, actor_token_id: int | None = None
+) -> CTFScheduledTask:
     """Make a pending task due immediately (#526 manual trigger).
 
     The scheduler's normal claim path executes it on the next poll, so manual
     runs get exactly the same locking, retry, and logging as automatic ones.
     An interactive caller passes ``actor_id`` so the ``lifecycle`` capability is
     asserted at the service boundary (defense in depth, #1922).
+
+    A RELEASE_COMMUNICATION task is special: running it now is an *early release*
+    before the authored due time, so it must not be a plain make-due (which would
+    silently reinterpret the absolute instant). It routes through the communication
+    admission owner's authorized early-release path, which re-checks per-target
+    notification authority for ``actor_id`` (#2099); a bare lifecycle capability
+    never substitutes for that.
     """
     from ctf.enums import ScheduledTaskStatus
     from ctf.exceptions import CTFNotFoundError, CTFStateError
 
-    _assert_lifecycle_actor(event_id, actor_id)
     task = CTFScheduledTask.objects.filter(pk=task_id, event_id=event_id, deleted_at__isnull=True).first()
     if task is None:
         raise CTFNotFoundError("Scheduled task not found", details={"task_id": str(task_id)})
@@ -221,10 +231,52 @@ def run_task_now(event_id: UUID, task_id: UUID, *, actor_id: int | None = None) 
             "Only pending tasks can be run now",
             details={"task_id": str(task_id), "status": task.status},
         )
+    if task.task_type == ScheduledTaskType.RELEASE_COMMUNICATION.value:
+        _run_communication_task_now(task, actor_id, actor_token_id)
+        return task
+
+    _assert_lifecycle_actor(event_id, actor_id)
     task.scheduled_for = timezone.now()
     task.save(update_fields=["scheduled_for", "updated_at"])
     logger.info("Task %s (%s) made due now for event %s", task.pk, task.task_type, safe_log_value(event_id))
     return task
+
+
+def _run_communication_task_now(task: CTFScheduledTask, actor_id: int | None, actor_token_id: int | None) -> None:
+    """Perform an authorized early release for a RELEASE_COMMUNICATION run-now.
+
+    Requires a live interactive actor; the communication admission owner re-checks
+    that actor's per-target notification authority and the explicit early-release
+    grant, then releases the scheduled declaration before its due time and settles
+    the now-obsolete task.
+
+    The authenticating token identity is threaded through unchanged: a
+    token-authenticated request carries ``actor_token_id``, so the admission owner
+    denies it (token-authored communication is fail-closed until the exact scope
+    ships), never letting the token's owner identity enter the session-only
+    early-release path (#2099 security).
+    """
+    from ctf.enums import ScheduledTaskStatus
+    from ctf.exceptions import CTFNotFoundError, CTFStateError
+    from ctf.models import CommunicationIntent
+    from ctf.services.communication import AdmissionActor, request_early_release
+
+    if actor_id is None and actor_token_id is None:
+        raise CTFStateError("Communication run-now requires an authorized actor", details={"task_id": str(task.pk)})
+    intent_id = (task.metadata or {}).get("intent_id")
+    intent = CommunicationIntent.objects.filter(pk=intent_id).first() if intent_id else None
+    if intent is None:
+        raise CTFNotFoundError("Scheduled communication not found", details={"task_id": str(task.pk)})
+
+    request_early_release(
+        intent, actor=AdmissionActor(user_id=actor_id, token_id=actor_token_id, allow_early_release=True)
+    )
+    # The declaration is released out of band; settle the pending task so the poller
+    # does not later re-run it (release is idempotent, so this is a tidy-up).
+    CTFScheduledTask.objects.filter(pk=task.pk, status=ScheduledTaskStatus.PENDING.value).update(
+        status=ScheduledTaskStatus.COMPLETED.value, executed_at=timezone.now(), updated_at=timezone.now()
+    )
+    logger.info("Communication task %s early-released now by actor %s", task.pk, actor_id)
 
 
 def _pending_cleanup_tasks(event_id: UUID) -> QuerySet[CTFScheduledTask]:
@@ -292,6 +344,6 @@ def cancel_event_cleanup(event_id: UUID, *, actor_id: int | None = None) -> int:
     if not tasks:
         raise CTFStateError("No pending cleanup to cancel", details={"event_id": str(event_id)})
     for task in tasks:
-        task.mark_cancelled()
+        task.cancel_if_active()
     logger.info("Cancelled automated cleanup for event %s (%d tasks)", safe_log_value(event_id), len(tasks))
     return len(tasks)

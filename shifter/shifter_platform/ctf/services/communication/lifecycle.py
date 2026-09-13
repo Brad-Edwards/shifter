@@ -74,6 +74,11 @@ def on_participant_removed(participant: CTFParticipant) -> int:
     """
     now = timezone.now()
     with transaction.atomic():
+        # Take the participant's event lock first (the canonical event-first order
+        # shared with release), so a concurrent release that also locks that event
+        # cannot resolve and materialize this participant into new snapshots after
+        # this fence runs. The caller commits the removal and this fence together.
+        CTFEvent.objects.select_for_update().filter(pk=participant.event_id).first()
         snapshots = RecipientSnapshot.objects.filter(participant_public_id=participant.id)
         cancelled = _cancel_unclaimed(Q(snapshot__in=snapshots), now)
         snapshots.update(delivery_coordinate="", updated_at=now)
