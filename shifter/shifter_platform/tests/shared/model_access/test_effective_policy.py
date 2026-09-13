@@ -370,8 +370,9 @@ def test_result_is_deterministic_under_input_reordering():
 def test_foreign_deployment_binding_is_rejected():
     pool = _pool("pool-a", spend=("acct-a",))
     foreign = _binding("b-foreign", facets=(SharingFacet.SPEND,), pool_id="pool-a", deployment_id=_OTHER_DEPLOYMENT)
+    match = _match(foreign, pool)
     with pytest.raises(ContractError) as exc:
-        _compile((_match(foreign, pool),))
+        _compile((match,))
     assert exc.value.code == "policy.foreign_deployment"
 
 

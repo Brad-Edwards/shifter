@@ -69,6 +69,7 @@ from ._range_by_request import (
 )
 from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
 from ._sharing import (
+    MembershipEvidence,
     SharingError,
     drain_sharing_binding,
     get_or_create_allocation_group,
@@ -122,6 +123,7 @@ __all__ = (
     "EventCapacitySignal",
     "GuestProbeError",
     "GuestProbeRequest",
+    "MembershipEvidence",
     "RaesImageMappingError",
     "RaesImageMappingOptions",
     "RaesImageMappingView",

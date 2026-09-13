@@ -28,7 +28,7 @@ Precedence (see ``docs/architecture/model-access/sharing.md``):
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -212,7 +212,11 @@ def _capacity_refs(pool: SharingPool) -> tuple[str, ...]:
     return (pool.capacity_account_ref,) if pool.capacity_account_ref is not None else ()
 
 
-def _facet_accounts(matches, facet, extract) -> tuple[str, ...]:
+def _facet_accounts(
+    matches: Sequence[BindingMatch],
+    facet: SharingFacet,
+    extract: Callable[[SharingPool], Sequence[str]],
+) -> tuple[str, ...]:
     """Union the distinct account references contributed for one facet."""
     accounts: set[str] = set()
     for match in matches:
@@ -221,7 +225,7 @@ def _facet_accounts(matches, facet, extract) -> tuple[str, ...]:
     return tuple(sorted(accounts))
 
 
-def _resolve_provider_pool(matches, conflicts: list[PolicyConflict]) -> str | None:
+def _resolve_provider_pool(matches: Sequence[BindingMatch], conflicts: list[PolicyConflict]) -> str | None:
     """Priority-resolve the single provider pool that supplies the subject."""
     candidates: list[tuple[int, str]] = []
     for match in matches:
@@ -234,7 +238,9 @@ def _resolve_provider_pool(matches, conflicts: list[PolicyConflict]) -> str | No
     return value
 
 
-def _resolve_alias_routings(matches, conflicts: list[PolicyConflict]) -> tuple[AliasRouting, ...]:
+def _resolve_alias_routings(
+    matches: Sequence[BindingMatch], conflicts: list[PolicyConflict]
+) -> tuple[AliasRouting, ...]:
     """Priority-resolve the full per-alias routing choice (affinity + pool + revision).
 
     The choice value is the whole ``(affinity, pool, routing_revision)`` tuple, so
@@ -245,9 +251,9 @@ def _resolve_alias_routings(matches, conflicts: list[PolicyConflict]) -> tuple[A
     per_alias: dict[str, list[tuple[int, tuple[AssignmentAffinity, str, int]]]] = {}
     for match in matches:
         if SharingFacet.ROUTING in match.binding.facets:
-            for affinity in match.pool.alias_affinities:
-                choice = (affinity.affinity, match.pool.sharing_pool_id, match.pool.routing_revision)
-                per_alias.setdefault(affinity.logical_alias, []).append((match.binding.priority, choice))
+            for alias_affinity in match.pool.alias_affinities:
+                choice = (alias_affinity.affinity, match.pool.sharing_pool_id, match.pool.routing_revision)
+                per_alias.setdefault(alias_affinity.logical_alias, []).append((match.binding.priority, choice))
     resolved: list[AliasRouting] = []
     for alias in sorted(per_alias):
         value, conflicted = _resolve_single(per_alias[alias])
@@ -279,24 +285,32 @@ def _resolve_single[Choice](candidates: Sequence[tuple[int, Choice]]) -> tuple[C
     return None, True
 
 
-def _fold_profiles(matches, conflicts: list[PolicyConflict]) -> EffectiveProfile | None:
+def _fold_profiles(matches: Sequence[BindingMatch], conflicts: list[PolicyConflict]) -> EffectiveProfile | None:
     """Intersect every shared profile's allowlists and tighten every ceiling."""
-    profiles = [
-        (match.binding.priority, match.profile) for match in matches if SharingFacet.PROFILE in match.binding.facets
-    ]
-    if not profiles:
+    members: list[tuple[int, ModelProfile]] = []
+    for match in matches:
+        profile = match.profile
+        if SharingFacet.PROFILE in match.binding.facets and profile is not None:
+            members.append((match.binding.priority, profile))
+    if not members:
         return None
+    return _fold_valid_profiles(members, conflicts)
 
-    profile_id, conflicted = _resolve_single([(priority, profile.profile_id) for priority, profile in profiles])
+
+def _fold_valid_profiles(
+    members: list[tuple[int, ModelProfile]], conflicts: list[PolicyConflict]
+) -> EffectiveProfile | None:
+    """Resolve the common profile id and fold the intersected, tightened profile."""
+    profile_id, conflicted = _resolve_single([(priority, profile.profile_id) for priority, profile in members])
     if conflicted or profile_id is None:
         conflicts.append(PolicyConflict(code="policy.profile_conflict", facet=SharingFacet.PROFILE))
         return None
 
-    members = [profile for _, profile in profiles]
-    capabilities = _intersect(profile.capabilities for profile in members)
-    data_regions = _intersect(profile.data_regions for profile in members)
-    strategies = _intersect(profile.allowed_strategies for profile in members)
-    limits = _fold_limits(members, conflicts)
+    profiles = [profile for _, profile in members]
+    capabilities = _intersect(profile.capabilities for profile in profiles)
+    data_regions = _intersect(profile.data_regions for profile in profiles)
+    strategies = _intersect(profile.allowed_strategies for profile in profiles)
+    limits = _fold_limits(profiles, conflicts)
     if not capabilities or not data_regions or not strategies or limits is None:
         conflicts.append(PolicyConflict(code="policy.empty_intersection", facet=SharingFacet.PROFILE))
         return None
@@ -311,7 +325,7 @@ def _fold_profiles(matches, conflicts: list[PolicyConflict]) -> EffectiveProfile
     )
 
 
-def _intersect(collections) -> set:
+def _intersect[T](collections: Iterable[Iterable[T]]) -> set[T]:
     """Intersect an iterable of collections into a single set (empty if none)."""
     sets = [set(collection) for collection in collections]
     if not sets:

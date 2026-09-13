@@ -62,18 +62,22 @@ class SharingSelector(ClosedModel):
             if self.ids or self.members:
                 raise ValueError("all_ranges has no ids, members, or spares flag")
         elif self.kind is SelectorKind.NAMED_COLLECTION:
-            if self.ids or not self.members:
-                raise ValueError("named_collection requires members and no ids")
-            if any(member.kind is SelectorKind.NAMED_COLLECTION for member in self.members):
-                raise ValueError("named collections cannot be recursively nested")
-            member_keys = tuple((member.kind.value, member.ids, member.include_spares) for member in self.members)
-            if len(member_keys) != len(set(member_keys)):
-                raise ValueError("named collection members must be unique")
-            if sum(len(member.ids) for member in self.members) > _MAX_SELECTOR_IDS:
-                raise ValueError("named collection exceeds the aggregate selector ID limit")
+            self._validate_named_collection()
         elif self.members or not self.ids:
             raise ValueError("atomic selectors require ids and no members")
         return self
+
+    def _validate_named_collection(self) -> None:
+        """Enforce the closed shape and aggregate bounds of a named union selector."""
+        if self.ids or not self.members:
+            raise ValueError("named_collection requires members and no ids")
+        if any(member.kind is SelectorKind.NAMED_COLLECTION for member in self.members):
+            raise ValueError("named collections cannot be recursively nested")
+        member_keys = tuple((member.kind.value, member.ids, member.include_spares) for member in self.members)
+        if len(member_keys) != len(set(member_keys)):
+            raise ValueError("named collection members must be unique")
+        if sum(len(member.ids) for member in self.members) > _MAX_SELECTOR_IDS:
+            raise ValueError("named collection exceeds the aggregate selector ID limit")
 
 
 class AliasAffinity(ClosedModel):

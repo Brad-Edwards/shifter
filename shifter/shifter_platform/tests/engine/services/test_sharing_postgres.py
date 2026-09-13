@@ -193,17 +193,21 @@ def _membership(
     fresh=True,
     revision=1,
 ):
+    from engine.services import MembershipEvidence
+
     now = timezone.now()
     deadline = now + (timedelta(hours=1) if fresh else timedelta(hours=-1))
     return svc["membership"](
         deployment_id=deployment,
         sharing_binding_id=binding_id,
         selector_digest=selector_digest,
-        membership_revision=revision,
-        state="allowed",
-        member_refs=list(members),
-        observed_at=now - timedelta(minutes=1),
-        freshness_deadline=deadline,
+        evidence=MembershipEvidence(
+            membership_revision=revision,
+            state="allowed",
+            member_refs=list(members),
+            observed_at=now - timedelta(minutes=1),
+            freshness_deadline=deadline,
+        ),
     )
 
 
@@ -268,11 +272,13 @@ def test_publish_enforces_optimistic_revision_fence():
     catalog = _catalog()
     _publish(svc, catalog, _binding_dto(), _pool_dto(), expected=0)
 
+    bumped = _binding_dto(priority=5)
+    pool = _pool_dto()
     with pytest.raises(svc["SharingError"]) as exc:
-        _publish(svc, catalog, _binding_dto(priority=5), _pool_dto(), expected=0)
+        _publish(svc, catalog, bumped, pool, expected=0)
     assert exc.value.code == "sharing.revision_conflict"
 
-    second = _publish(svc, catalog, _binding_dto(priority=5), _pool_dto(), expected=1)
+    second = _publish(svc, catalog, bumped, pool, expected=1)
     assert second.definition_revision == 2
 
 
@@ -282,22 +288,26 @@ def test_publish_requires_fresh_revision_matched_membership_evidence():
 
     # Missing evidence denies (finding 2: a restriction must never publish without
     # membership the resolver can later prove applies).
+    binding = _binding_dto()
+    pool = _pool_dto()
     with pytest.raises(svc["SharingError"]) as missing:
-        _publish(svc, catalog, _binding_dto(), _pool_dto(), membership=False)
+        _publish(svc, catalog, binding, pool, membership=False)
     assert missing.value.code == "sharing.membership_evidence_required"
 
     # Stale evidence denies.
     _membership(svc, "binding-a", fresh=False)
     with pytest.raises(svc["SharingError"]) as stale:
-        _publish(svc, catalog, _binding_dto(), _pool_dto(), membership=False)
+        _publish(svc, catalog, binding, pool, membership=False)
     assert stale.value.code == "sharing.membership_evidence_required"
 
 
 def test_publish_rejects_unknown_catalog_reference():
     svc = _services()
     catalog = _catalog()
+    ghost = _binding_dto(profile_id="ghost")
+    pool = _pool_dto()
     with pytest.raises(svc["SharingError"]) as exc:
-        _publish(svc, catalog, _binding_dto(profile_id="ghost"), _pool_dto())
+        _publish(svc, catalog, ghost, pool)
     assert exc.value.code.startswith("sharing.")
 
 
@@ -305,8 +315,9 @@ def test_publish_rejects_foreign_deployment_binding():
     svc = _services()
     catalog = _catalog()
     foreign = _binding_dto(deployment_id=_OTHER_DEPLOYMENT)
+    pool = _pool_dto()
     with pytest.raises(svc["SharingError"]) as exc:
-        _publish(svc, catalog, foreign, _pool_dto())
+        _publish(svc, catalog, foreign, pool)
     assert exc.value.code == "sharing.foreign_deployment"
 
 
@@ -326,10 +337,10 @@ def test_routing_revision_bump_preserves_stable_account_ids():
     assert pool.spend_account_refs == ["acct-shared"]
 
     # Changing a financial account identity on an existing pool is refused.
+    conflicting = _binding_dto(priority=2)
+    changed_accounts = _pool_dto(routing_revision=3, spend=("acct-different",))
     with pytest.raises(svc["SharingError"]) as exc:
-        _publish(
-            svc, catalog, _binding_dto(priority=2), _pool_dto(routing_revision=3, spend=("acct-different",)), expected=2
-        )
+        _publish(svc, catalog, conflicting, changed_accounts, expected=2)
     assert exc.value.code == "sharing.account_identity_changed"
 
 
@@ -342,14 +353,10 @@ def test_routing_content_change_under_same_revision_is_rejected():
 
     # Same routing revision, different affinity content: a routing revision must
     # identify a stable routing choice (finding 5).
+    reused_revision = _binding_dto(priority=1)
+    changed_affinity = _pool_dto(routing_revision=1, alias_affinities=(("coding-main", "per_user"),))
     with pytest.raises(svc["SharingError"]) as exc:
-        _publish(
-            svc,
-            catalog,
-            _binding_dto(priority=1),
-            _pool_dto(routing_revision=1, alias_affinities=(("coding-main", "per_user"),)),
-            expected=1,
-        )
+        _publish(svc, catalog, reused_revision, changed_affinity, expected=1)
     assert exc.value.code == "sharing.routing_content_changed"
 
     from engine.models import SharingPoolRecord
@@ -363,11 +370,13 @@ def test_empty_snapshot_requires_explicit_acknowledgement():
     catalog = _catalog()
     _membership(svc, "binding-a", members=())
 
+    snapshot = _binding_dto(mode="snapshot")
+    pool = _pool_dto()
     with pytest.raises(svc["SharingError"]) as exc:
-        _publish(svc, catalog, _binding_dto(mode="snapshot"), _pool_dto(), membership=False)
+        _publish(svc, catalog, snapshot, pool, membership=False)
     assert exc.value.code == "sharing.empty_snapshot_unacknowledged"
 
-    acked = _publish(svc, catalog, _binding_dto(mode="snapshot"), _pool_dto(), membership=False, ack=True)
+    acked = _publish(svc, catalog, snapshot, pool, membership=False, ack=True)
     assert acked.empty_snapshot_ack is True
 
 
@@ -571,8 +580,9 @@ def test_membership_evidence_is_bound_to_the_published_selector():
     # Editing the selector to a different range cannot reuse the first selector's
     # evidence (finding: evidence is bound to the exact published selector).
     binding_r2 = _binding_dto("binding-a", selector={"kind": "selected_ranges", "ids": ["r-2"]}, priority=1)
+    pool = _pool_dto()
     with pytest.raises(svc["SharingError"]) as exc:
-        _publish(svc, catalog, binding_r2, _pool_dto(), expected=1, membership=False)
+        _publish(svc, catalog, binding_r2, pool, expected=1, membership=False)
     assert exc.value.code == "sharing.membership_evidence_required"
 
 
@@ -651,8 +661,9 @@ def test_validate_sharing_binding_accepts_resolvable_and_rejects_missing_pool_fa
     catalog = _catalog()
     # A capacity facet with no capacity account on the pool is an incomplete definition.
     bad = _binding_dto(facets=(SharingFacet.CAPACITY,))
+    pool = _pool_dto()
     with pytest.raises(svc["SharingError"]):
-        svc["validate"](deployment_id=_DEPLOYMENT, catalog=catalog, binding=bad, pool=_pool_dto())
+        svc["validate"](deployment_id=_DEPLOYMENT, catalog=catalog, binding=bad, pool=pool)
 
     good = _binding_dto(facets=(SharingFacet.SPEND,))
     svc["validate"](deployment_id=_DEPLOYMENT, catalog=catalog, binding=good, pool=_pool_dto())

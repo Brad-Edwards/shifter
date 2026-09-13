@@ -33,6 +33,7 @@ from django.utils import timezone
 _ACTIVE = "active"
 _TOMBSTONED = "tombstoned"
 _BINDING_STATES = ((_ACTIVE, "active"), (_TOMBSTONED, "tombstoned"))
+_DEPLOYMENT_HELP = "Owning deployment; every lookup is deployment-scoped"
 
 
 class SharingPoolRecord(models.Model):
@@ -44,7 +45,7 @@ class SharingPoolRecord(models.Model):
     rewrites an account reference (that would silently move money).
     """
 
-    deployment_id = models.UUIDField(db_index=True, help_text="Owning deployment; every lookup is deployment-scoped")
+    deployment_id = models.UUIDField(db_index=True, help_text=_DEPLOYMENT_HELP)
     sharing_pool_id = models.CharField(max_length=128, help_text="Stable logical pool identity within the deployment")
     routing_revision = models.PositiveIntegerField(help_text="Current allocation-affinity/routing revision of the pool")
     provider_pool_ref = models.CharField(
@@ -119,7 +120,7 @@ class SharingPoolRevision(models.Model):
 class SharingBindingRecord(models.Model):
     """Stable Engine-owned binding identity pointing at its latest published revision."""
 
-    deployment_id = models.UUIDField(db_index=True, help_text="Owning deployment; every lookup is deployment-scoped")
+    deployment_id = models.UUIDField(db_index=True, help_text=_DEPLOYMENT_HELP)
     sharing_binding_id = models.CharField(
         max_length=128, help_text="Stable logical binding identity within the deployment"
     )
@@ -234,7 +235,7 @@ class MembershipProjection(models.Model):
     a request can detect a bulk invalidation without a usable stale-grant window.
     """
 
-    deployment_id = models.UUIDField(db_index=True, help_text="Owning deployment; every lookup is deployment-scoped")
+    deployment_id = models.UUIDField(db_index=True, help_text=_DEPLOYMENT_HELP)
     sharing_binding_id = models.CharField(max_length=128, help_text="Binding whose selector this projection resolves")
     selector_digest = models.CharField(
         max_length=71,
@@ -283,7 +284,7 @@ class AllocationGroup(models.Model):
     allocation *execution* itself belongs to #2120.
     """
 
-    deployment_id = models.UUIDField(db_index=True, help_text="Owning deployment; every lookup is deployment-scoped")
+    deployment_id = models.UUIDField(db_index=True, help_text=_DEPLOYMENT_HELP)
     sharing_pool_id = models.CharField(max_length=128, help_text="Pool the allocation group belongs to")
     routing_revision = models.PositiveIntegerField(help_text="Pool routing revision this group is pinned to")
     affinity = models.CharField(max_length=16, help_text="per_user | per_pool")
