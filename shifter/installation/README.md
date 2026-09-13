@@ -52,6 +52,17 @@ validated the same way for every backend and is not part of a backend's own sett
 canonical v1 schema and bundled canonical semantic validator, then normalized before
 rendering. It remains disabled until its runtime consumers are deployed.
 
+### GCP model broker package
+
+`settings.model_broker` defaults to `{enabled: false}`. Enabling requires the
+complete private transport and dedicated model-project inventory described in
+[the deployment package](../../docs/architecture/model-access/gcp-packaging.md).
+The installer validates the closed block and projects applied Terraform output
+into the canonical chart. TLS values stay in separately managed versioned
+Secrets. The broker receives its own runtime role and mounted catalog, without
+portal/worker secrets. M06 supplies infrastructure; executable, admission and
+live qualification milestones must land before enablement.
+
 ## Config File
 
 Start from one of the checked examples:

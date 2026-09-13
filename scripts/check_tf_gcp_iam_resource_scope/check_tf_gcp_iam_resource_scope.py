@@ -141,8 +141,8 @@ _DYNAMIC_CONDITION_LOCALS = {
         "resource.name.startsWith('${prefix}')"
     ])""",
     "legacy_raes_directory_name_condition": (
-        '"resource.name.extract(\'projects/${data.google_project.platform.number}/secrets/'
-        'shifter-range-{range_scope}-raes-domain-\') == \'\'"'
+        "\"resource.name.extract('projects/${data.google_project.platform.number}/secrets/"
+        "shifter-range-{range_scope}-raes-domain-') == ''\""
     ),
     "legacy_participant_secret_condition": """join(" || ", [
         "(resource.name.startsWith('${local.legacy_secret_prefixes[0]}') && (resource.name.endsWith('-participant-ssh') || resource.name.endsWith('-rdp-password') || resource.name.endsWith('-profile') || ((${local.legacy_raes_directory_name_condition}) && (resource.name.endsWith('-account-password') || resource.name.endsWith('-account-publickey')))))",
@@ -667,9 +667,7 @@ def _condition_local_violations(
         # list elements. The portal binding also contributes its resource.type
         # conjunction, while the interpolated RAES classifier may contribute
         # operators of its own.
-        clause_count = participant_expression.count(
-            '"(resource.name.startsWith'
-        )
+        clause_count = participant_expression.count('"(resource.name.startsWith')
         operator_count = (
             len(_LOGICAL_OPERATOR_RE.findall(participant_expression))
             + max(0, clause_count - 2)
@@ -879,6 +877,74 @@ def _check_dynamic_resource_scope(files: dict[Path, list[str]]) -> list[Violatio
     return violations
 
 
+def _check_model_broker_scope(path: Path, lines: list[str]) -> list[Violation]:
+    """Model identities have a closed resource/permission matrix (ADR-059)."""
+    violations: list[Violation] = []
+    header = re.compile(r'^\s*resource\s+"[^"\n]+"\s+"([^"\n]+)"\s*\{')
+    allowed = {
+        "google_service_account_iam_member": (
+            {
+                "service_account_id": "google_service_account.model_invocation[each.key].name",
+                "role": "google_project_iam_custom_role.model_token[each.key].name",
+                "member": '"serviceAccount:${google_service_account.model_broker[0].email}"',
+            },
+            {
+                "service_account_id": "google_service_account.model_broker[0].name",
+                "role": '"roles/iam.workloadIdentityUser"',
+                "member": '"serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/model-broker]"',
+            },
+        ),
+        "google_project_iam_member": (
+            {
+                "project": "each.key",
+                "role": "google_project_iam_custom_role.model_invoke[each.key].name",
+                "member": '"serviceAccount:${google_service_account.model_invocation[each.key].email}"',
+            },
+        ),
+    }
+    role_permissions = {
+        "model_token": {"iam.serviceAccounts.getAccessToken"},
+        "model_invoke": {"aiplatform.endpoints.predict"},
+    }
+    for name, line, body in _extract_resource_blocks(lines, header):
+        resource_type = re.search(r'resource\s+"([^"\n]+)"', body).group(1)
+        if (
+            resource_type == "google_project_iam_custom_role"
+            and name in role_permissions
+        ):
+            if (
+                _literal_string_list_assignment(body, "permissions")
+                != role_permissions[name]
+            ):
+                violations.append(
+                    Violation(
+                        path, line, "model custom role exceeds its exact permission set"
+                    )
+                )
+        if not re.search(
+            r"google_service_account\.model_(?:broker|invocation)\b", body
+        ):
+            continue
+        if resource_type == "google_service_account":
+            continue
+        candidates = allowed.get(resource_type, ())
+        if not any(
+            all(
+                _has_exact_assignment(body, key, value)
+                for key, value in candidate.items()
+            )
+            for candidate in candidates
+        ):
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    "model identity grant is outside the exact broker/shard IAM matrix",
+                )
+            )
+    return violations
+
+
 def check_paths(paths: list[Path]) -> list[Violation]:
     """Return every ADR-008-R7 violation across a set of module Terraform files."""
     files = {p: p.read_text().splitlines() for p in paths if p.suffix == ".tf"}
@@ -886,6 +952,7 @@ def check_paths(paths: list[Path]) -> list[Violation]:
     violations: list[Violation] = []
     violations.extend(_check_dynamic_resource_scope(files))
     for path, lines in files.items():
+        violations.extend(_check_model_broker_scope(path, lines))
         violations.extend(_check_literal_members(path, lines))
         violations.extend(_check_map_driven_members(path, lines, locals_text))
         violations.extend(_check_policy_bindings(path, "\n".join(lines)))

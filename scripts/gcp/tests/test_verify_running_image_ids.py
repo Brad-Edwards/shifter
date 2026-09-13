@@ -280,3 +280,31 @@ def test_expected_image_parser_rejects_mutable_or_malformed_references(value: st
 
     with pytest.raises(ValueError, match="name=repository@sha256"):
         module.parse_expected_images([value])
+
+
+def test_optional_broker_requires_explicit_release_enablement_and_both_components():
+    module = _load_module()
+    pods = _valid_pods(module)
+    for component in ("model-broker", "model-access-control"):
+        image = _EXPECTED["portal"]
+        container = _container(component, image["root"], image["digest"])
+        pods["items"].append(
+            {
+                "metadata": {
+                    "name": component + "-123",
+                    "labels": {"app.kubernetes.io/part-of": "shifter", "app.kubernetes.io/component": component},
+                },
+                "spec": {"containers": [{"name": component, "image": container["image"]}]},
+                "status": {"containerStatuses": [container]},
+            }
+        )
+    with pytest.raises(ValueError, match="unexpected"):
+        module.build_evidence(pods, _EXPECTED, source_sha=_SHA)
+    assert (
+        len(module.build_evidence(pods, _EXPECTED, source_sha=_SHA, model_broker_enabled=True)["running_containers"])
+        == 17
+    )
+    pods["items"].pop()
+    with pytest.raises(ValueError, match="missing release components"):
+        module.build_evidence(pods, _EXPECTED, source_sha=_SHA, model_broker_enabled=True)
+    assert {"model-broker", "model-access-control"} <= set(module.release_deployments(model_broker_enabled=True))

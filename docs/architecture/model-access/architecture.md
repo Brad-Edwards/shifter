@@ -544,3 +544,12 @@ conflicting retry, 413 too large, 429 local rate/budget/concurrency exhaustion,
 503 unavailable admission/provider and 504 deadline. Do not disclose whether
 an inaccessible foreign range exists. After SSE headers, emit a bounded
 protocol error and terminate instead of pretending a final success.
+
+### M06 deployment package
+
+The [GCP packaging implementation](gcp-packaging.md) defines the disabled
+infrastructure/process contract supplied by #2123. Its chart and root-config
+projection do not implement M05 authentication/streaming or M08 enrollment,
+and do not mark any grant active. Their consumers must use the exact
+broker-only inventory and the explicit admitted egress seam; setting a global
+broker VIP never enrolls a range.

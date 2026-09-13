@@ -47,3 +47,35 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - TESTS → TEST `shifter/shifter_platform/tests/config/test_model_access_settings.py`
 - TESTS → TEST `shifter/installation/tests/test_model_access.py`
 - TESTS → TEST `scripts/gcp/tests/test_render_runtime_env.py`
+
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#2123` (M06 disabled GCP broker deployment package)
+- IMPLEMENTS → CODE `shifter/installation/gcp_model_broker.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/runtime.py`
+- IMPLEMENTS → CODE `shifter/shifter_platform/shared/model_access/network.py`
+- IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_firewall.py`
+- IMPLEMENTS → CODE `scripts/gcp/render_model_broker.py`
+- IMPLEMENTS → CODE `scripts/gcp/probe_model_broker.py`
+- IMPLEMENTS → CODE `scripts/gcp/verify_running_image_ids.py`
+- IMPLEMENTS → CODE `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py`
+- IMPLEMENTS → CONFIG `platform/terraform/gcp/modules/portal/iam/model_broker.tf`
+- IMPLEMENTS → CONFIG `platform/terraform/gcp/modules/platform-core/model_broker.tf`
+- IMPLEMENTS → CONFIG `platform/charts/shifter/templates/model-broker.yaml`
+- IMPLEMENTS → CONFIG `platform/charts/shifter/templates/model-broker-network.yaml`
+- IMPLEMENTS → CONFIG `platform/charts/shifter/templates/model-access-control.yaml`
+- IMPLEMENTS → CONFIG `.github/workflows/_gcp-dev.yml`
+- IMPLEMENTS → DOCUMENTATION `docs/architecture/model-access/gcp-packaging.md`
+- IMPLEMENTS → DOCUMENTATION `docs/ops/model-access-gcp-probes.md`
+- TESTS → TEST `shifter/installation/tests/test_gcp_model_broker.py`
+- TESTS → TEST `shifter/installation/tests/test_broker_runtime.py`
+- TESTS → TEST `shifter/engine/provisioner/tests/test_model_broker_egress.py`
+- TESTS → TEST `platform/charts/shifter/tests/test_model_broker.py`
+- TESTS → TEST `scripts/check_tf_gcp_iam_resource_scope/test_model_broker_scope.py`
+- TESTS → TEST `scripts/gcp/tests/test_render_model_broker.py`
+- TESTS → TEST `scripts/gcp/tests/test_probe_model_broker.py`
+- TESTS → TEST `scripts/gcp/tests/test_verify_running_image_ids.py`
+- TESTS → TEST `scripts/bootstrap/tests/test_gcp_model_broker_catalog.py`
+- IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_plan.py`
+- IMPLEMENTS → CODE `shifter/engine/provisioner/raes_gcp_plan.py`
+- IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_types.py`
+- IMPLEMENTS → CODE `shifter/engine/provisioner/raes_gcp_apply.py`
+- IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_model_broker.py`
