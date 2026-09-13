@@ -603,17 +603,23 @@ def _runner_var_flags(ctx: TeardownContext, stack_dir: str) -> tuple[str, ...]:
     """
     if ctx.dry_run:
         info("github-runner: network vars are resolved from applied state at execution time.")
-        return ()
-    addresses = state_addresses(ctx, stack_dir)
+        flags: list[str] = []
+    else:
+        flags = _applied_runner_network_flags(ctx, stack_dir, state_addresses(ctx, stack_dir))
+    return tuple(flags)
+
+
+def _applied_runner_network_flags(ctx: TeardownContext, stack_dir: str, addresses: list[str]) -> list[str]:
+    """Return the destroy -var flags reproducing the runner network in ``addresses``."""
     if any(addr.startswith(_RUNNER_NETWORK_MARKER) for addr in addresses):
-        return ("-var=create_runner_network=true",)
+        return ["-var=create_runner_network=true"]
     if any(addr.startswith(_RUNNER_DEFAULT_SUBNETS_MARKER) for addr in addresses):
-        return ("-var=allow_default_vpc=true",)
+        return ["-var=allow_default_vpc=true"]
     vpc_id = _single_state_attr(ctx, stack_dir, addresses, _RUNNER_SG_ADDRESS, _VPC_ID_ATTR_RE, "vpc_id")
     subnet_id = _single_state_attr(ctx, stack_dir, addresses, _RUNNER_INSTANCE_ADDRESS, _SUBNET_ID_ATTR_RE, "subnet_id")
-    flags = (f"-var=vpc_id={vpc_id}", f"-var=subnet_id={subnet_id}")
+    flags = [f"-var=vpc_id={vpc_id}", f"-var=subnet_id={subnet_id}"]
     if vpc_id in _state_default_vpc_ids(ctx, stack_dir, addresses):
-        return ("-var=allow_default_vpc=true", *flags)
+        flags.insert(0, "-var=allow_default_vpc=true")
     return flags
 
 

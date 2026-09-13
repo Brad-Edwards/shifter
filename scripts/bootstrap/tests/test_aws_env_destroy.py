@@ -422,8 +422,9 @@ def test_runner_unresolvable_external_network_fails_closed(tmp_path, monkeypatch
     fake = _fake(state=state, state_show=show)
     _wire(monkeypatch, fake)
 
+    ctx = _ctx(tmp_path)
     with pytest.raises(aed.TeardownError, match=match):
-        aed.teardown(_ctx(tmp_path))
+        aed.teardown(ctx)
 
     # Fails before the runner destroy and, crucially, before global/iam, so the
     # deploy role survives for a re-dispatch.
