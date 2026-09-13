@@ -25,6 +25,7 @@ reference; withdrawal tombstones a binding rather than removing it.
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import uuid4
 
 from django.db import models
@@ -268,7 +269,7 @@ class MembershipProjection(models.Model):
     def __str__(self) -> str:
         return f"{self.sharing_binding_id} {self.state}@m{self.membership_revision}/f{self.fence_revision}"
 
-    def is_fresh(self, now=None) -> bool:
+    def is_fresh(self, now: datetime | None = None) -> bool:
         """Whether the projection is authoritative right now: allowed and unexpired."""
         moment = now or timezone.now()
         return self.state == "allowed" and self.observed_at <= moment <= self.freshness_deadline

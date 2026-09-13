@@ -47,7 +47,7 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - IMPLEMENTS → CODE `scripts/bootstrap/aws_eks.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_contract.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_effective_policy.py`
-- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_sharing_postgres.py`
+- TESTS → TEST `shifter/shifter_platform/tests/engine/services/test_sharing.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_allocation.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_provider.py`
 - TESTS → TEST `shifter/shifter_platform/tests/shared/model_access/test_schema_publication.py`

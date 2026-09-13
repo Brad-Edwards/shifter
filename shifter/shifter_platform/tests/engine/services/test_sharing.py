@@ -1,10 +1,11 @@
 """Engine-owned sharing binding persistence, facades, and fencing (PLAT-202, M19).
 
-Real-PostgreSQL semantics lane: exercises immutable published revisions with a
-pinned catalog and profile, optimistic revision fencing, membership-evidence
-requirements and freshness, frozen snapshot membership, effective intervals,
-withdrawal tombstoning and stable allocation-group identity against a live
-database with actual constraints, not an in-memory stand-in.
+Exercises immutable published revisions with a pinned catalog and profile,
+optimistic revision fencing, membership-evidence requirements and freshness,
+frozen snapshot membership, effective intervals, withdrawal tombstoning and
+stable allocation-group identity through a real database. These run in the
+SQLite coverage lane and again on real PostgreSQL in the semantics lane, so the
+constraint/fencing behavior is proven against actual PostgreSQL.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from shared.model_access import compute_digest, seal_catalog, seal_sharing_bindi
 from shared.model_access.core_models import SelectorKind, SharingFacet
 from shared.model_access.sharing_models import SharingSelector
 
-pytestmark = [pytest.mark.postgres, pytest.mark.django_db(transaction=True)]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 _DEPLOYMENT = UUID("11111111-1111-4111-8111-111111111111")
 _OTHER_DEPLOYMENT = UUID("22222222-2222-4222-8222-222222222222")
