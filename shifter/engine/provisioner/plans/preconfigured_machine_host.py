@@ -24,6 +24,25 @@ echo "FATAL: preconfigured range host readiness timed out" >&2
 exit 1
 """
 
+PARTICIPANT_READINESS_EXECUTABLE = "/usr/local/libexec/shifter-participant-readiness"
+
+_VERIFY_PARTICIPANT_READINESS_SCRIPT = rf"""#!/bin/bash
+set -euo pipefail
+container="{{{{ participant_container_name }}}}"
+participant_user="{{{{ participant_user }}}}"
+contract="{{{{ participant_readiness_contract }}}}"
+manifest_sha256="{{{{ participant_readiness_manifest_sha256 }}}}"
+
+if ! docker exec --user "${{participant_user}}" "${{container}}" \
+    {PARTICIPANT_READINESS_EXECUTABLE} \
+    --contract "${{contract}}" \
+    --manifest-sha256 "${{manifest_sha256}}" >/dev/null 2>&1; then
+    echo "participant-readiness: canary-failed" >&2
+    exit 1
+fi
+echo "participant-readiness: passed"
+"""
+
 
 class PreconfiguredMachineHostPlan:
     """Wait for the image-owned nested workload and participant RDP endpoint."""
@@ -34,14 +53,25 @@ class PreconfiguredMachineHostPlan:
             name="wait_for_preconfigured_machine_host",
             script=_WAIT_FOR_READY_SCRIPT,
             timeout_seconds=930,
-        )
+        ),
+        SetupStep(
+            name="verify_participant_readiness",
+            script=_VERIFY_PARTICIPANT_READINESS_SCRIPT,
+            timeout_seconds=180,
+            is_verification=True,
+        ),
     ]
     verify_step: ClassVar[SetupStep | None] = None
 
     @staticmethod
     def get_context(instance: Mapping[str, object]) -> dict[str, object]:
         """Return the validated profile-selected container name."""
-        return {"participant_container_name": instance["gcp_participant_container_name"]}
+        return {
+            "participant_container_name": instance["gcp_participant_container_name"],
+            "participant_user": instance["gcp_participant_username"],
+            "participant_readiness_contract": instance["gcp_participant_readiness_contract"],
+            "participant_readiness_manifest_sha256": instance["gcp_participant_readiness_manifest_sha256"],
+        }
 
 
-__all__ = ["PreconfiguredMachineHostPlan"]
+__all__ = ["PARTICIPANT_READINESS_EXECUTABLE", "PreconfiguredMachineHostPlan"]

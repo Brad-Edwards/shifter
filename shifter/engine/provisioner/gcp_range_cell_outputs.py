@@ -26,6 +26,9 @@ def _machine_image_output(instance: InstancePlan) -> ResourceDict:
     return {
         "gcp_source_machine_image": instance["profile"].source_machine_image,
         "gcp_participant_container_name": instance["profile"].participant_container_name,
+        "gcp_participant_username": instance["profile"].participant_username,
+        "gcp_participant_readiness_contract": instance["profile"].participant_readiness_contract,
+        "gcp_participant_readiness_manifest_sha256": instance["profile"].participant_readiness_manifest_sha256,
         # The participant desktop is inside the nested host, while port 22 is
         # reserved for key-only host management. Guacamole must not try to use
         # the desktop password for SFTP against that outer host.
