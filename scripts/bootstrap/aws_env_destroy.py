@@ -86,11 +86,27 @@ _ARN_ATTR_RE = re.compile(r'^\s*arn\s*=\s*"([^"]+)"', re.MULTILINE)
 # ECR accepts at most 100 image ids per batch-delete-image call.
 _ECR_BATCH_SIZE = 100
 
-# A state address under this module means the runner was applied with a
-# dedicated managed VPC (create_runner_network=true); otherwise it used the
-# account default VPC (allow_default_vpc=true). Destroy must reproduce the
-# applied topology so the runner root's config graph evaluates.
+# Runner placement is resolved from positive evidence in the runner root's own
+# state, never inferred from absence (ADR-004-R20, #1437). A state address under
+# the managed module means create_runner_network=true was applied. The
+# default-subnet discovery data source exists in state only when the
+# allow_default_vpc opt-in was applied without an explicit subnet. With neither,
+# an explicit vpc_id/subnet_id was applied, and the IDs are read back from the
+# security group and instance attributes. That VPC is the default-VPC exception
+# (applied with an explicit subnet_id) exactly when it appears in the default VPC
+# IDs recorded by the unconditional data.aws_vpcs.default lookup, because the
+# root's precondition admits the default VPC only under allow_default_vpc.
+# Destroy must reproduce the applied topology so the runner root's config graph
+# evaluates.
 _RUNNER_NETWORK_MARKER = "module.runner_network"
+_RUNNER_DEFAULT_SUBNETS_MARKER = "data.aws_subnets.default"
+_RUNNER_DEFAULT_VPCS_ADDRESS = "data.aws_vpcs.default"
+_RUNNER_SG_ADDRESS = "aws_security_group.runner"
+_RUNNER_INSTANCE_ADDRESS = "aws_instance.runner"
+_VPC_ID_ATTR_RE = re.compile(r'^\s*vpc_id\s*=\s*"(vpc-[0-9a-z]+)"', re.MULTILINE)
+_SUBNET_ID_ATTR_RE = re.compile(r'^\s*subnet_id\s*=\s*"(subnet-[0-9a-z]+)"', re.MULTILINE)
+_IDS_LIST_ATTR_RE = re.compile(r"^\s*ids\s*=\s*\[(.*?)\]", re.MULTILINE | re.DOTALL)
+_QUOTED_VPC_ID_RE = re.compile(r'"(vpc-[0-9a-z]+)"')
 
 # The teardown override sorts lexically AFTER `local.auto.tfvars`, so Terraform
 # (which loads `*.auto.tfvars` in filename order and lets the last value win)
@@ -187,8 +203,8 @@ def _layers(env: str, state_bucket: str) -> tuple[Layer, ...]:
         Layer("range", "environments/{env}/range"),
         Layer("core", "environments/{env}", empty_s3=True, empty_ecr=True),
         # The runner root's network vars are resolved from its own state at
-        # destroy time (create_runner_network vs allow_default_vpc), so destroy
-        # reproduces the applied topology rather than a fixed guess.
+        # destroy time (managed, default opt-in, or explicit external), so
+        # destroy reproduces the applied topology rather than a fixed guess.
         Layer("github-runner", "global/github-runner", topology_from_state=True),
         Layer("iam", "global/iam", var_flags=(f"-var=environment={env}",)),
     )
@@ -578,13 +594,80 @@ def _empty_ecr_repo(ctx: TeardownContext, repo: str) -> None:
 def _runner_var_flags(ctx: TeardownContext, stack_dir: str) -> tuple[str, ...]:
     """Resolve the runner root's network vars from its applied state.
 
-    A managed VPC (module.runner_network) in state means create_runner_network
-    was applied; otherwise the account default VPC was used. Reproducing the
-    applied topology keeps the runner destroy graph evaluable.
+    Each applied topology is resolved from positive state evidence (see
+    _RUNNER_NETWORK_MARKER): managed network, default-VPC opt-in with discovery,
+    or an explicit vpc_id/subnet_id read back from state, which retains the
+    default-VPC opt-in when that VPC is the recorded default VPC. Reproducing the
+    applied topology keeps the runner destroy graph evaluable; an explicit network
+    that cannot be resolved unambiguously fails closed.
     """
-    if any(_RUNNER_NETWORK_MARKER in addr for addr in state_addresses(ctx, stack_dir)):
+    if ctx.dry_run:
+        info("github-runner: network vars are resolved from applied state at execution time.")
+        return ()
+    addresses = state_addresses(ctx, stack_dir)
+    if any(addr.startswith(_RUNNER_NETWORK_MARKER) for addr in addresses):
         return ("-var=create_runner_network=true",)
-    return ("-var=allow_default_vpc=true",)
+    if any(addr.startswith(_RUNNER_DEFAULT_SUBNETS_MARKER) for addr in addresses):
+        return ("-var=allow_default_vpc=true",)
+    vpc_id = _single_state_attr(ctx, stack_dir, addresses, _RUNNER_SG_ADDRESS, _VPC_ID_ATTR_RE, "vpc_id")
+    subnet_id = _single_state_attr(ctx, stack_dir, addresses, _RUNNER_INSTANCE_ADDRESS, _SUBNET_ID_ATTR_RE, "subnet_id")
+    flags = (f"-var=vpc_id={vpc_id}", f"-var=subnet_id={subnet_id}")
+    if vpc_id in _state_default_vpc_ids(ctx, stack_dir, addresses):
+        return ("-var=allow_default_vpc=true", *flags)
+    return flags
+
+
+def _state_default_vpc_ids(ctx: TeardownContext, stack_dir: str, addresses: list[str]) -> set[str]:
+    """Return the account default VPC IDs recorded by the runner root at apply.
+
+    Fails closed when the lookup is absent or unreadable: without it, default-VPC
+    placement with an explicit subnet cannot be distinguished from an external
+    network.
+    """
+    shown = None
+    if _RUNNER_DEFAULT_VPCS_ADDRESS in addresses:
+        shown = _terraform(
+            ctx, stack_dir, "state", "show", "-no-color", _RUNNER_DEFAULT_VPCS_ADDRESS, check=False, capture=True
+        )
+    match = _IDS_LIST_ATTR_RE.search(shown.stdout) if shown is not None and shown.returncode == 0 else None
+    if match is None:
+        raise TeardownError(
+            f"github-runner: cannot read the recorded default VPC IDs from {_RUNNER_DEFAULT_VPCS_ADDRESS} in state, "
+            "so default VPC placement cannot be ruled out; destroy the runner root manually with the applied "
+            "-var=vpc_id=... -var=subnet_id=... (and -var=allow_default_vpc=true if it is the default VPC)"
+        )
+    return set(_QUOTED_VPC_ID_RE.findall(match.group(1)))
+
+
+def _single_state_attr(
+    ctx: TeardownContext,
+    stack_dir: str,
+    addresses: list[str],
+    resource: str,
+    pattern: re.Pattern[str],
+    attr: str,
+) -> str:
+    """Return the one value of ``attr`` across every state instance of ``resource``.
+
+    Fails closed when no instance is in state, any instance lacks the attribute,
+    or instances disagree: an external runner network is never guessed.
+    """
+    instances = [a for a in addresses if a == resource or a.startswith(f"{resource}[")]
+    values: set[str] = set()
+    for addr in instances:
+        shown = _terraform(ctx, stack_dir, "state", "show", "-no-color", addr, check=False, capture=True)
+        found = pattern.findall(shown.stdout) if shown is not None and shown.returncode == 0 else []
+        if not found:
+            values.clear()
+            break
+        values.update(found)
+    if len(values) != 1:
+        raise TeardownError(
+            f"github-runner: cannot resolve the applied external network {attr} from {resource} in state "
+            "(missing, unreadable, or ambiguous); destroy the runner root manually with explicit "
+            "-var=vpc_id=... -var=subnet_id=..."
+        )
+    return values.pop()
 
 
 def _run_pre_destroy(ctx: TeardownContext, layer: Layer, stack_dir: str, var_flags: tuple[str, ...]) -> None:

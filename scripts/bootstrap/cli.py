@@ -296,8 +296,8 @@ def _add_runners_subparser(subparsers: argparse._SubParsersAction) -> None:
         "--use-existing-network",
         action="store_true",
         help=(
-            "Do not provision a dedicated runner network; use the vpc_id/subnet_id or "
-            "allow_default_vpc opt-in already configured in the runner tfvars."
+            "Do not provision the standard dedicated runner network; use an existing compliant "
+            "network's vpc_id/subnet_id from a gitignored local.auto.tfvars in the runner root."
         ),
     )
     runners_parser.add_argument(

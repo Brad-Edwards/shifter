@@ -38,6 +38,9 @@ profiles:
 # Execution roots: the provisioner stages/executes the two `modules/{range,ngfw}`
 # directories, so despite the name they are runtime roots (each declares a
 # backend and owns a lockfile). Polaris is a real root without a remote backend.
+# A root may declare an optional `test` (relative to `path`): a credential-free
+# `terraform test` suite run with the root's own toolchain against its committed
+# lockfile, for behavior that lives in the root rather than a reusable module.
 roots:
   - id: aws-dev-core
     path: platform/terraform/environments/dev
@@ -150,10 +153,12 @@ roots:
     toolchain: aws-1.13.3
     providers:
       - registry.terraform.io/hashicorp/aws
+  # Carries a credential-free placement contract test (issue #1437).
   - id: aws-global-github-runner
     path: platform/terraform/global/github-runner
     owner: "@Brad-Edwards"
     toolchain: aws-1.13.3
+    test: tests/placement.tftest.hcl
     providers:
       - registry.terraform.io/hashicorp/aws
   - id: aws-global-dev-box

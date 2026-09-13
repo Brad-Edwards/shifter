@@ -440,11 +440,13 @@ bootstrap commands below so their confirmation prompts proceed without a termina
    provision **and** auto-register the self-hosted runners (issue #1433). It
    provisions a dedicated, ADR-004-R20-compliant runner VPC by default, applies
    the runner root, and registers each runner over SSM (per-runner single-use
-   token, never persisted). Pass `--use-existing-network` to reuse a
-   non-default `vpc_id`/`subnet_id` (a dedicated runner VPC or the portal VPC
-   private tier) or the `allow_default_vpc` opt-in instead; do not use the
-   account default VPC without that opt-in, and do not commit live VPC/subnet IDs
-   to tracked placeholder tfvars. AWS deploy workflows use `runs-on: self-hosted`.
+   token, never persisted). The dedicated runner VPC is the standard placement
+   (ADR-004-R20, #1437), selected by the tracked runner tfvars. Pass
+   `--use-existing-network` only to place runners in an existing compliant
+   network, such as the portal VPC private tier, whose `vpc_id`/`subnet_id` you
+   keep in a gitignored `local.auto.tfvars`. Never commit live VPC/subnet IDs.
+   The account default VPC isn't a supported placement: `allow_default_vpc` is a
+   documented exception only. AWS deploy workflows use `runs-on: self-hosted`.
 3. Ensure `/shifter/ami/{kali,ubuntu,windows,dc}` exists in SSM Parameter
    Store before portal Terraform plans/applies. The Packer workflow updates
    these parameters after AMI builds; in a moved account, set the builder-network

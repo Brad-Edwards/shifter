@@ -55,6 +55,7 @@ class FakeAws:
         destroy_failures: dict[str, int] | None = None,
         keep_state: tuple[str, ...] = (),
         state_list_fail: tuple[str, ...] = (),
+        state_show: dict[str, str] | None = None,
     ) -> None:
         self.state = {k: list(v) for k, v in state.items()}
         self.s3_state_buckets = s3_state_buckets or {}
@@ -74,6 +75,8 @@ class FakeAws:
         self.destroy_failures = dict(destroy_failures or {})
         self.keep_state = set(keep_state)
         self.state_list_fail = set(state_list_fail)
+        # Raw `terraform state show` output per address (runner network attrs).
+        self.state_show = state_show or {}
         self.calls: list[list[str]] = []
         self.last_verify_filters: list[str] = []
 
@@ -100,6 +103,8 @@ class FakeAws:
             return _ns(0)
         if sub == "state" and cmd[3] == "show":
             addr = cmd[-1]
+            if addr in self.state_show:
+                return _ns(0, self.state_show[addr])
             if addr in self.s3_state_buckets:
                 return _ns(0, f'  bucket = "{self.s3_state_buckets[addr]}"\n')
             if addr in self.ecr_repo_names:
@@ -218,7 +223,7 @@ def _full_state() -> dict[str, list[str]]:
             "module.ecr.aws_ecr_repository.portal",
             "module.engine_state.aws_s3_bucket.engine_state",
         ],
-        "global/github-runner": ["aws_instance.runner"],
+        "global/github-runner": ["aws_instance.runner", "data.aws_subnets.default[0]"],
         "global/iam": ["aws_iam_role.github_actions"],
     }
 
@@ -277,7 +282,7 @@ def test_happy_path_orders_layers_and_runs_pre_destroy_handling(tmp_path, monkey
     )[0]
     assert "-var=terraform_state_bucket=shifter-proof-infra-uuid" in portal
     assert "-lock-timeout=5m" in portal
-    # No managed runner VPC in state -> destroy reproduces the default-VPC shape.
+    # data.aws_subnets.default in state -> the default-VPC opt-in was applied.
     runner = fake.find(lambda c: c[0] == "terraform" and c[2] == "destroy" and _stack_of(c) == "global/github-runner")[
         0
     ]
@@ -299,6 +304,131 @@ def test_runner_uses_managed_vpc_var_when_network_module_in_state(tmp_path, monk
     ]
     assert "-var=create_runner_network=true" in runner
     assert "-var=allow_default_vpc=true" not in runner
+
+
+def test_runner_managed_vpc_wins_over_stale_default_subnet_discovery(tmp_path, monkeypatch, sweep_ok):
+    """A managed network in state resolves managed even if discovery also ran."""
+    state = _full_state()
+    state["global/github-runner"] = [
+        "module.runner_network[0].aws_vpc.this",
+        "data.aws_subnets.default[0]",
+        "aws_instance.runner",
+    ]
+    fake = _fake(state=state)
+    _wire(monkeypatch, fake)
+
+    aed.teardown(_ctx(tmp_path))
+
+    runner = fake.find(lambda c: c[0] == "terraform" and c[2] == "destroy" and _stack_of(c) == "global/github-runner")[
+        0
+    ]
+    assert "-var=create_runner_network=true" in runner
+    assert "-var=allow_default_vpc=true" not in runner
+
+
+_EXTERNAL_RUNNER_STATE = [
+    "data.aws_vpcs.default",
+    "aws_security_group.runner",
+    "aws_instance.runner[0]",
+    "aws_instance.runner[1]",
+]
+
+
+def _default_vpcs_show(*ids: str) -> str:
+    """`terraform state show data.aws_vpcs.default` output recording ``ids``."""
+    listed = "".join(f'        "{i}",\n' for i in ids)
+    return f'data "aws_vpcs" "default" {{\n    id  = "us-east-2"\n    ids = [\n{listed}    ]\n}}\n'
+
+
+_EXTERNAL_RUNNER_SHOW = {
+    "data.aws_vpcs.default": _default_vpcs_show("vpc-zzzzzzzzzzzzzzzzz"),
+    "aws_security_group.runner": '    vpc_id = "vpc-xxxxxxxxxxxxxxxxx"\n',
+    "aws_instance.runner[0]": '    subnet_id = "subnet-xxxxxxxxxxxxxxxxx"\n',
+    "aws_instance.runner[1]": '    subnet_id = "subnet-xxxxxxxxxxxxxxxxx"\n',
+}
+
+
+@pytest.mark.parametrize(
+    ("default_vpcs", "expect_default_exception"),
+    [
+        # Applied VPC is not the account default VPC: an explicit external network.
+        (_default_vpcs_show("vpc-zzzzzzzzzzzzzzzzz"), False),
+        # Account had no default VPC at apply time.
+        (_default_vpcs_show(), False),
+        # Applied VPC IS the recorded default VPC: the precondition only admits that
+        # under allow_default_vpc, so the exception was applied with an explicit
+        # subnet_id (which skips discovery) and destroy must retain the opt-in.
+        (_default_vpcs_show("vpc-xxxxxxxxxxxxxxxxx"), True),
+    ],
+)
+def test_runner_explicit_network_reproduced_from_state(
+    tmp_path, monkeypatch, sweep_ok, default_vpcs, expect_default_exception
+):
+    """Neither marker means an explicit vpc_id/subnet_id was applied.
+
+    Absence of the managed module or discovery is not evidence of the topology,
+    so the destroy reproduces the applied network from the security group's and
+    instances' own state attributes, and asserts the ADR-004-R20 exception only
+    when that VPC is the default VPC recorded in state.
+    """
+    state = _full_state()
+    state["global/github-runner"] = list(_EXTERNAL_RUNNER_STATE)
+    fake = _fake(state=state, state_show={**_EXTERNAL_RUNNER_SHOW, "data.aws_vpcs.default": default_vpcs})
+    _wire(monkeypatch, fake)
+
+    aed.teardown(_ctx(tmp_path))
+
+    runner = fake.find(lambda c: c[0] == "terraform" and c[2] == "destroy" and _stack_of(c) == "global/github-runner")[
+        0
+    ]
+    assert "-var=vpc_id=vpc-xxxxxxxxxxxxxxxxx" in runner
+    assert "-var=subnet_id=subnet-xxxxxxxxxxxxxxxxx" in runner
+    assert ("-var=allow_default_vpc=true" in runner) is expect_default_exception
+    assert "-var=create_runner_network=true" not in runner
+
+
+@pytest.mark.parametrize(
+    ("state_addrs", "show", "match"),
+    [
+        # Security group gone or carrying no vpc_id: the VPC cannot be evidenced.
+        (
+            ["aws_instance.runner[0]"],
+            {"aws_instance.runner[0]": '    subnet_id = "subnet-xxxxxxxxxxxxxxxxx"\n'},
+            "vpc_id",
+        ),
+        # No runner instance left in state: the subnet cannot be evidenced.
+        (
+            ["aws_security_group.runner"],
+            {"aws_security_group.runner": '    vpc_id = "vpc-xxxxxxxxxxxxxxxxx"\n'},
+            "subnet_id",
+        ),
+        # Instances disagree on subnet: ambiguous, never pick one.
+        (
+            _EXTERNAL_RUNNER_STATE,
+            {**_EXTERNAL_RUNNER_SHOW, "aws_instance.runner[1]": '    subnet_id = "subnet-yyyyyyyyyyyyyyyyy"\n'},
+            "subnet_id",
+        ),
+        # Default-VPC lookup absent from state: default placement cannot be ruled out.
+        (
+            _EXTERNAL_RUNNER_STATE[1:],
+            _EXTERNAL_RUNNER_SHOW,
+            "default VPC",
+        ),
+    ],
+)
+def test_runner_unresolvable_external_network_fails_closed(tmp_path, monkeypatch, sweep_ok, state_addrs, show, match):
+    state = _full_state()
+    state["global/github-runner"] = list(state_addrs)
+    fake = _fake(state=state, state_show=show)
+    _wire(monkeypatch, fake)
+
+    with pytest.raises(aed.TeardownError, match=match):
+        aed.teardown(_ctx(tmp_path))
+
+    # Fails before the runner destroy and, crucially, before global/iam, so the
+    # deploy role survives for a re-dispatch.
+    assert "global/github-runner" not in fake.destroys()
+    assert "global/iam" not in fake.destroys()
 
 
 def test_protection_lift_targets_only_ownership_verified_rds(tmp_path, monkeypatch, sweep_ok):
