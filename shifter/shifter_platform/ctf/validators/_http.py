@@ -29,6 +29,12 @@ from uuid import UUID
 
 from shared.log_sanitize import safe_log
 
+from ._http_config import (
+    DEFAULT_HTTP_TIMEOUT,
+    MAX_HTTP_TIMEOUT,
+    HTTPValidatorConfigError,
+    normalize_http_validator_config,
+)
 from ._ssrf import (
     _BLOCKED_HOSTNAMES,
     _BlockedDestinationError,
@@ -38,10 +44,6 @@ from ._ssrf import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Maximum timeout for HTTP validators (seconds)
-MAX_HTTP_TIMEOUT = 30
-DEFAULT_HTTP_TIMEOUT = 10
 
 # Maximum response body to read from a validator endpoint (bytes).
 # Caps memory/CPU exposure to an arbitrary attacker-controlled response.
@@ -393,7 +395,16 @@ def validate_http(
     timeout, TLS error, transport error, non-JSON or oversized body,
     invalid JSON).
     """
-    parsed_tuple = _validate_and_parse_config_url(config, challenge_id)
+    try:
+        canonical_config = normalize_http_validator_config(config, check_destination=False)
+    except HTTPValidatorConfigError:
+        logger.warning(
+            "HTTP validator configuration is invalid for challenge %s",
+            safe_log(challenge_id),
+        )
+        return False
+
+    parsed_tuple = _validate_and_parse_config_url(canonical_config, challenge_id)
     if parsed_tuple is None:
         return False
     parsed, hostname, port = parsed_tuple
@@ -402,9 +413,9 @@ def validate_http(
     if not pinned_ips:
         return False
 
-    timeout = _coerce_timeout(config.get("timeout", DEFAULT_HTTP_TIMEOUT))
-    method = _coerce_method(config.get("method", "POST"))
-    headers = _coerce_headers(config.get("headers", {}))
+    timeout = canonical_config["timeout"]
+    method = canonical_config["method"]
+    headers = canonical_config["headers"]
     payload = {"flag": submitted_flag, "challenge_id": str(challenge_id)}
     request_path, body, headers = _build_request(parsed, method, payload, headers)
 
