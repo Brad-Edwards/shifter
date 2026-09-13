@@ -623,6 +623,11 @@
       "source_file": "config/_ctf_communication_settings.py"
     },
     {
+      "default": "20",
+      "name": "SHIFTER_CTF_COMMUNICATION_RELEASE_GRACE_MINUTES",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
       "default": "str(_DEFAULT_RETENTION_DAYS)",
       "name": "SHIFTER_CTF_COMMUNICATION_RETENTION_DAYS",
       "source_file": "config/_ctf_communication_settings.py"

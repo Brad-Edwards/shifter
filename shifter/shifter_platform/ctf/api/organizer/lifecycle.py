@@ -126,11 +126,17 @@ class TaskRunNowView(APIView):
         """Reschedule the task to now; the scheduler executes it on its next poll."""
         from ctf.exceptions import CTFNotFoundError, CTFStateError
         from ctf.services.event.scheduling import run_task_now
+        from shared.api_tokens.models import ApiToken
 
         try:
             _resolve_owned_event(request, event_id, capability=EventCapability.LIFECYCLE)
+            # Preserve the authentication mode across the controller->service call so a
+            # token-authenticated run-now cannot enter the session-only communication
+            # early-release path; the admission owner denies a token actor (#2099).
+            auth = getattr(request, "auth", None)
+            actor_token_id = auth.pk if isinstance(auth, ApiToken) else None
             try:
-                task = run_task_now(event_id, task_id, actor_id=_actor(request).pk)
+                task = run_task_now(event_id, task_id, actor_id=_actor(request).pk, actor_token_id=actor_token_id)
             except CTFNotFoundError:
                 _raise_not_found("Scheduled task not found.")
             except CTFStateError:
