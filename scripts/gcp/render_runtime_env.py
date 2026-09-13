@@ -275,6 +275,34 @@ def _model_access_runtime_values() -> dict[str, str]:
     }
 
 
+def _mission_control_lease_runtime_values() -> dict[str, str]:
+    """Pass through the validated Mission Control lease policy JSON (issue #27).
+
+    The policy is validated and rendered from ``shifter.yaml`` by
+    ``installation.render.render_mission_control_lease_env`` and exported into this
+    render process's environment by the deploy pipeline (mirroring how the model-access
+    and warm-pool env lines are injected). This producer re-serializes it to canonical
+    compact JSON without rebuilding the policy parser (the shared validator already ran).
+    An absent value is omitted so the Django runtime applies the canonical 30/30/365
+    defaults; a malformed value fails closed rather than shipping an unvalidated policy.
+    """
+    raw = os.environ.get("MISSION_CONTROL_LEASE_POLICY_JSON")
+    if raw is None:
+        # Truly unset -> omit so the Django runtime applies the canonical defaults.
+        return {}
+    stripped = raw.strip()
+    if not stripped:
+        # Present but blank is a broken deployment substitution, not an omission.
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON is present but blank")
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON must be a JSON object")
+    return {"MISSION_CONTROL_LEASE_POLICY_JSON": json.dumps(parsed, separators=(",", ":"), sort_keys=True)}
+
+
 def _validated_engine_digest(engine_image_digest: str) -> str:
     """Require an immutable ``sha256:<64 hex>`` provisioner image digest.
 
@@ -509,6 +537,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     values.update(_optional_gce_range_values())
     values.update(_ctf_content_runtime_values(outputs))
     values.update(_model_access_runtime_values())
+    values.update(_mission_control_lease_runtime_values())
     # These references originate in the same validated shifter.yaml map that
     # drives per-secret Terraform IAM. Apply them last so a process-local env
     # override cannot decouple runtime lookup from its exact IAM grant.

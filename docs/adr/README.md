@@ -17,6 +17,12 @@ evidence are required before support is advertised.
 
 ## Runtime Enforcement
 
+ADR-011-R9 records the [configurable range lease preflight for #27](../architecture/configurable-range-leases-preflight-27.md).
+It binds installation/runtime policy ownership, generation snapshots, extension
+admission and reuse of canonical cleanup. Registry checks validate this guidance;
+configuration, migration, concurrency, warm-claim and deployment behavior still
+require implementation evidence. No runtime check or exception is added here.
+
 Proposed ADR-059, ADR-060 and ADR-061 record the
 [#681 model-access design](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/index.md): a
 deployment-owned broker, Engine-owned allocation and mandatory budgets,

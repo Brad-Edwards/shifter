@@ -621,6 +621,7 @@ def render_gcp_helm_values(
     bootstrap_operator_email: str | None = None,
     model_access_catalog_json: str = "",
     model_access_env: str = "",
+    mission_control_lease_env: str = "",
 ) -> dict[str, object]:
     """Render non-secret Helm values for the Shifter release from Terraform outputs."""
     from installation.gcp_model_broker import project_model_broker
@@ -635,6 +636,12 @@ def render_gcp_helm_values(
         image_tag=pinned_image_tag,
         bootstrap_operator_email=bootstrap_operator_email,
     )
+    # Mission Control lease policy (#27): derived from the validated root config and
+    # merged into the runtime env so a configured policy (including extensions_enabled:
+    # false) reaches the platform-runtime ConfigMap rather than defaulting. The value is
+    # authoritative here, independent of this render process's environment.
+    if mission_control_lease_env:
+        runtime_env.update(parse_env_contract(mission_control_lease_env))
     edge_policy_name = str(_get_output_value(outputs, "cloud_armor_security_policy_name")).strip()
     # The range-provisioning Jobs reach the GDC range cluster apiserver through
     # the internal TCP load balancer on the peered range VPC. Allow egress to
@@ -1377,7 +1384,11 @@ def stage_gcp_control_plane_values(
     """Stage the generated Helm values file for the Shifter release."""
     from installation.gcp_model_broker import validate_model_broker_readback
     from installation.loader import load_root_config
-    from installation.render import render_model_access_catalog, render_model_access_env
+    from installation.render import (
+        render_mission_control_lease_env,
+        render_model_access_catalog,
+        render_model_access_env,
+    )
 
     root_config = load_root_config(resolve_shifter_config_path(config, get_repo_root()))
     validate_model_broker_readback(outputs.get("model_broker", {}).get("value"), root_config)
@@ -1390,6 +1401,7 @@ def stage_gcp_control_plane_values(
         bootstrap_operator_email=bootstrap_operator_email,
         model_access_catalog_json=catalog_json,
         model_access_env=render_model_access_env(root_config),
+        mission_control_lease_env=render_mission_control_lease_env(root_config),
     )
     values_path = staging_root / "shifter.values.generated.json"
     values_path.write_text(json.dumps(values, indent=2, sort_keys=True))

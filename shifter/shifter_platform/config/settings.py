@@ -270,6 +270,10 @@ from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
 # Split into config/_database_settings.py to keep this module under the S104
 # 500-line cap; the IAM-auth DB path lives there (issue #159).
 from config._database_settings import *  # noqa: E402  # NOSONAR
+
+# #27: deployment-owned Mission Control lease policy (parsed/validated by
+# shared.mission_control_lease); canonical 30/30/365 defaults when unset.
+from config._mission_control_lease_settings import *  # noqa: E402  # NOSONAR
 from config._model_access_settings import *  # noqa: E402  # NOSONAR
 from config._raes_settings import *  # noqa: E402  # NOSONAR
 

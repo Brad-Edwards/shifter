@@ -1044,6 +1044,44 @@ class TestGdcControlPlaneHelmValues:
             "rangeAccessPorts": [22, 3389],
         }
 
+    def test_forwards_mission_control_lease_policy_from_root_config(self):
+        """A configured lease policy reaches the runtime env from root config, without
+        pre-seeding this render process's environment (issue #27)."""
+        import json
+
+        from installation.render import render_mission_control_lease_env
+        from installation.schema import RootConfig
+
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        root = RootConfig.model_validate(
+            {
+                "backend": "gcp",
+                "deployment": {"name": "shifter", "domain": "portal.example.test"},
+                "secrets": {"django_secret_key": "prompt"},
+                "settings": {
+                    "mission_control_leases": {
+                        "initial_days": 7,
+                        "extension_days": 3,
+                        "maximum_days": 90,
+                        "extensions_enabled": False,
+                    }
+                },
+            }
+        )
+        values = deploy.render_gcp_helm_values(
+            config,
+            outputs,
+            image_tag=PINNED_IMAGE_TAG,
+            mission_control_lease_env=render_mission_control_lease_env(root),
+        )
+        assert json.loads(values["runtimeEnv"]["MISSION_CONTROL_LEASE_POLICY_JSON"]) == {
+            "initial_days": 7,
+            "extension_days": 3,
+            "maximum_days": 90,
+            "extensions_enabled": False,
+        }
+
     def test_range_cluster_api_cidrs_from_control_plane_endpoint(self):
         """The range-cluster egress allowlist mirrors the configured control-plane endpoint."""
         config = deploy.GDCBootstrapConfig(
@@ -2569,3 +2607,46 @@ def test_staging_rejects_missing_broker_readback_before_render(tmp_path):
             config, {}, tmp_path, image_tag=PINNED_IMAGE_TAG, image_identities={}
         )
     assert not (tmp_path / "shifter.values.generated.json").exists()
+
+
+def test_staging_writes_configured_lease_policy_into_generated_values(tmp_path):
+    """The real deploy call site wires the root lease policy into the rendered values (#27)."""
+    import json
+
+    import yaml
+
+    root_path = tmp_path / "shifter.yaml"
+    root_path.write_text(
+        yaml.safe_dump(
+            {
+                "backend": "gcp",
+                "deployment": {"name": "shifter", "domain": "portal.example.test"},
+                "secrets": {"django_secret_key": "prompt"},
+                "settings": {
+                    "project_id": "prod-rwctxzl6shxk",
+                    "dynamic_secret_project_id": "secrets-example",
+                    "region": "us-central1",
+                    "mission_control_leases": {
+                        "initial_days": 7,
+                        "extension_days": 3,
+                        "maximum_days": 90,
+                        "extensions_enabled": False,
+                    },
+                },
+            }
+        )
+    )
+    config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", shifter_config_path=str(root_path))
+    outputs = _sample_gcp_control_plane_outputs(config.project_id)
+
+    values_path = gcp_control_plane.stage_gcp_control_plane_values(
+        config, outputs, tmp_path, image_tag=PINNED_IMAGE_TAG, image_identities=None
+    )
+
+    values = json.loads(values_path.read_text())
+    assert json.loads(values["runtimeEnv"]["MISSION_CONTROL_LEASE_POLICY_JSON"]) == {
+        "initial_days": 7,
+        "extension_days": 3,
+        "maximum_days": 90,
+        "extensions_enabled": False,
+    }

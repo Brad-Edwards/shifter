@@ -330,6 +330,45 @@ def test_render_env_rejects_incomplete_model_access_projection(monkeypatch):
         module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
 
 
+def test_render_env_omits_mission_control_lease_when_unset():
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+    # Absent -> omitted so the Django runtime applies the canonical defaults.
+    assert "MISSION_CONTROL_LEASE_POLICY_JSON" not in rendered
+
+
+def test_render_env_passes_through_configured_mission_control_lease(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv(
+        "MISSION_CONTROL_LEASE_POLICY_JSON",
+        '{"initial_days": 7, "extension_days": 3, "maximum_days": 90, "extensions_enabled": false}',
+    )
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+    line = next(row for row in rendered.splitlines() if row.startswith("MISSION_CONTROL_LEASE_POLICY_JSON="))
+    assert json.loads(line.split("=", 1)[1]) == {
+        "initial_days": 7,
+        "extension_days": 3,
+        "maximum_days": 90,
+        "extensions_enabled": False,
+    }
+
+
+def test_render_env_rejects_malformed_mission_control_lease(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("MISSION_CONTROL_LEASE_POLICY_JSON", "{not json")
+    with pytest.raises(ValueError, match="MISSION_CONTROL_LEASE_POLICY_JSON"):
+        module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_render_env_rejects_present_but_blank_mission_control_lease(monkeypatch, value):
+    # Present but blank is a broken substitution, distinct from an unset variable.
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("MISSION_CONTROL_LEASE_POLICY_JSON", value)
+    with pytest.raises(ValueError, match="present but blank"):
+        module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+
+
 def test_render_env_keys_match_runtime_inventory(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
@@ -339,6 +378,10 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
 
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
+    monkeypatch.setenv(
+        "MISSION_CONTROL_LEASE_POLICY_JSON",
+        '{"initial_days":7,"extension_days":3,"maximum_days":90,"extensions_enabled":false}',
+    )
     _seed_gce_range_env(monkeypatch)
     outputs = _outputs(
         identity_allowed_emails=["alice@example.com", "bob@example.com"],
