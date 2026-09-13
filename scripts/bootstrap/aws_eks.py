@@ -24,7 +24,10 @@ if str(_SHIFTER_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SHIFTER_PACKAGE_ROOT))
 
 from installation.loader import load_root_config  # noqa: E402
-from installation.render import render_model_access_env  # noqa: E402
+from installation.render import (  # noqa: E402
+    render_mission_control_lease_env,
+    render_model_access_env,
+)
 from installation.runtime_inventory import (  # noqa: E402
     AWS_EKS_REQUIRED_RUNTIME_ENV_KEYS,
     AWS_RENDERER_OWNED_RUNTIME_ENV_KEYS,
@@ -206,6 +209,10 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
     for line in render_model_access_env(config).splitlines():
         key, value = line.split("=", 1)
         model_access_env[key] = value
+    mission_control_lease_env = {}
+    for line in render_mission_control_lease_env(config).splitlines():
+        key, value = line.split("=", 1)
+        mission_control_lease_env[key] = value
     return {
         **dict(raw),
         "AUTH_PROVIDER": "oidc",
@@ -214,6 +221,7 @@ def _runtime_env(config: RootConfig, outputs: Mapping[str, object]) -> dict[str,
         "DJANGO_CSRF_TRUSTED_ORIGINS": f"https://{domain}",
         "ENVIRONMENT": _runtime_environment(config.deployment.profile),
         **model_access_env,
+        **mission_control_lease_env,
         "SITE_URL": f"https://{domain}",
     }
 

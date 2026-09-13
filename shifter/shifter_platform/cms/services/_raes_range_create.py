@@ -339,6 +339,7 @@ def _create_raes_native_range_impl(
             range_spec=None,
             expires_at=lease.expires_at,
             maximum_expires_at=lease.maximum_expires_at,
+            extension_days=lease.extension_days,
         )
 
     from uuid import uuid4
@@ -374,6 +375,7 @@ def _create_raes_native_range_impl(
             workspace_id=workspace_id,
             egress_mode=resolve_effective_egress_mode(workspace_id),
             request_id=request_id,
+            lease=lease,
         )
     )
     if claimed_request_id is not None:

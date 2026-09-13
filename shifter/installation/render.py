@@ -223,3 +223,28 @@ def render_model_access_env(config: RootConfig) -> str:
         f"MODEL_ACCESS_CATALOG_PATH={model_access.DEFAULT_CATALOG_PATH}\n"
         f"MODEL_ACCESS_CATALOG_DIGEST={digest}\n"
     )
+
+
+def render_mission_control_lease_env(config: RootConfig) -> str:
+    """Render the validated ``settings.mission_control_leases`` policy as a runtime env line.
+
+    Emits a single ``MISSION_CONTROL_LEASE_POLICY_JSON=<compact json>`` line consumed by
+    the AWS and GCP runtime producers and delivered into the ``platform-runtime`` ConfigMap
+    (issue #27, ADR-011-R9). An omitted block renders the canonical 30/30/365 defaults, so a
+    missing block boots backward-compatibly rather than dropping a configured policy. Like
+    ``render_model_access_env`` this emits exactly one ``KEY=VALUE`` line (no header comment),
+    because the producers split each rendered line on ``=``.
+    """
+    from shared.mission_control_lease import MissionControlLeasePolicy, dump_policy_json
+
+    from . import mission_control_lease
+
+    settings = config.settings
+    if mission_control_lease.SETTINGS_KEY not in settings:
+        # Truly absent -> canonical defaults. An explicit null / non-mapping block is
+        # rejected by the loader's shared-block validation before render, so a present
+        # value here is the normalized policy mapping (never None), not an omission.
+        policy = MissionControlLeasePolicy()
+    else:
+        policy = MissionControlLeasePolicy.model_validate(dict(settings[mission_control_lease.SETTINGS_KEY]))
+    return f"MISSION_CONTROL_LEASE_POLICY_JSON={dump_policy_json(policy)}\n"

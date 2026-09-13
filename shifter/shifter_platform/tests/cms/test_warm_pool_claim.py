@@ -14,11 +14,14 @@ claim path:
 
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.utils import timezone
 
+from cms.services._range_lease import RangeLease
 from cms.services._warm_pool_claim import WarmClaimRequest, attempt_warm_claim
 from shared.enums import RangeSource
 from shared.range_instantiation_policy import InstantiationPurpose
@@ -31,7 +34,12 @@ _ENABLED_GCE = load_policy_json(
 )
 
 
-def _request(backend: str, scenario: str, *, user=None) -> WarmClaimRequest:
+def _lease(*, initial_days: int = 30, maximum_days: int = 365, extension_days: int = 30) -> RangeLease:
+    now = timezone.now()
+    return RangeLease(now + timedelta(days=initial_days), now + timedelta(days=maximum_days), extension_days)
+
+
+def _request(backend: str, scenario: str, *, user=None, lease: RangeLease | None = None) -> WarmClaimRequest:
     return WarmClaimRequest(
         user=user,
         scenario=scenario,
@@ -43,6 +51,7 @@ def _request(backend: str, scenario: str, *, user=None) -> WarmClaimRequest:
         workspace_id=1,
         egress_mode="status-quo",
         request_id=uuid4(),
+        lease=lease or _lease(),
     )
 
 
@@ -106,14 +115,32 @@ class TestClaimOrchestration:
             lambda **kwargs: generation,
         )
 
-    def test_hit_rehomes_and_enqueues(self, monkeypatch):
-        user = SimpleNamespace(id=99)
+    def _unleased_system_range(self, user):
+        from cms.models import RangeInstance, Request
+        from shared.enums import ResourceStatus
+
+        request = Request.objects.create(workspace_id=1, request_id=uuid4(), request_type="raes-range", user=user)
+        return RangeInstance.objects.create(
+            workspace_id=1,
+            request=request,
+            scenario_id="polaris",
+            user_id=user.id,
+            range_source=RangeSource.MISSION_CONTROL.value,
+            status=ResourceStatus.PROVISIONING.value,
+        )
+
+    def test_hit_rehomes_enqueues_and_first_assigns_the_user_lease(self, monkeypatch):
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create_user(username="warm-claimant@example.com")
+        system_row = self._unleased_system_range(user)
+        assert system_row.maximum_expires_at is None  # warm-prepared rows are unleased
         claimed_request_id = uuid4()
         generation = SimpleNamespace(request_id=claimed_request_id, uuid=uuid4(), bucket_id="gce-polaris")
         self._patch_claim(monkeypatch, generation)
         monkeypatch.setattr(
             "cms.services._warm_pool_claim._system_range_instance_for",
-            lambda request_id: SimpleNamespace(pk=4242),
+            lambda request_id: system_row,
         )
         rehomed: list = []
         monkeypatch.setattr(
@@ -121,13 +148,49 @@ class TestClaimOrchestration:
             lambda pk, new_user, *, rehome=False: rehomed.append((pk, new_user, rehome)),
         )
 
-        result = attempt_warm_claim(_request("gce", "polaris", user=user))
+        lease = _lease(initial_days=7, maximum_days=90, extension_days=3)
+        result = attempt_warm_claim(_request("gce", "polaris", user=user, lease=lease))
 
         assert result == claimed_request_id
-        assert rehomed == [(4242, user, True)]
+        assert rehomed == [(system_row.pk, user, True)]
         assert self.enqueued == [claimed_request_id]
-        assert self.outcomes
         assert self.outcomes[-1]["outcome"] == "hit"
+        # The warm hit now carries automatic-expiry bounds and the generation increment.
+        system_row.refresh_from_db()
+        assert system_row.expires_at == lease.expires_at
+        assert system_row.maximum_expires_at == lease.maximum_expires_at
+        assert system_row.extension_days == 3
+
+    def test_hit_does_not_reset_an_already_leased_generation(self, monkeypatch):
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create_user(username="warm-preleased@example.com")
+        system_row = self._unleased_system_range(user)
+        # Simulate a row that already carries a lease (e.g. a handover that is not an
+        # unleased warm row); rehoming must not reset its ceiling.
+        existing_expires = timezone.now() + timedelta(days=2)
+        existing_maximum = timezone.now() + timedelta(days=2)
+        system_row.expires_at = existing_expires
+        system_row.maximum_expires_at = existing_maximum
+        system_row.extension_days = 0
+        system_row.save(update_fields=["expires_at", "maximum_expires_at", "extension_days"])
+        generation = SimpleNamespace(request_id=uuid4(), uuid=uuid4(), bucket_id="gce-polaris")
+        self._patch_claim(monkeypatch, generation)
+        monkeypatch.setattr(
+            "cms.services._warm_pool_claim._system_range_instance_for",
+            lambda request_id: system_row,
+        )
+        monkeypatch.setattr(
+            "cms.services._range_reassign.reassign_range_owner",
+            lambda pk, new_user, *, rehome=False: None,
+        )
+
+        attempt_warm_claim(_request("gce", "polaris", user=user, lease=_lease(maximum_days=365)))
+
+        system_row.refresh_from_db()
+        assert system_row.expires_at == existing_expires
+        assert system_row.maximum_expires_at == existing_maximum
+        assert system_row.extension_days == 0
 
     def test_miss_cold_falls_back(self, monkeypatch):
         self._patch_claim(monkeypatch, None)
