@@ -88,6 +88,18 @@ def _add_render_parsers(subcommands: argparse._SubParsersAction) -> None:
     )
     _add_config_path_argument(render_warm_pool)
     _add_output_argument(render_warm_pool, "env line")
+    render_mission_control_lease = subcommands.add_parser(
+        "render-mission-control-lease-env",
+        help="Render settings.mission_control_leases into the MISSION_CONTROL_LEASE_POLICY_JSON env line (#27).",
+        description=(
+            "Render the validated settings.mission_control_leases policy from shifter.yaml into the "
+            "MISSION_CONTROL_LEASE_POLICY_JSON runtime env line the deploy pipeline injects into the "
+            "platform-runtime ConfigMap, so a configured lease policy reaches Mission Control rather "
+            "than booting the canonical 30/30/365 defaults."
+        ),
+    )
+    _add_config_path_argument(render_mission_control_lease)
+    _add_output_argument(render_mission_control_lease, "env line")
     render_model_catalog = subcommands.add_parser(
         "render-model-access-catalog",
         help="Render settings.model_access.catalog as a dedicated mounted JSON artifact.",

@@ -40,10 +40,13 @@ bounded backend-owned map established by #1761.
 - After create and on reconcile, set `autoDelete=true` on every attached disk.
   Destroy performs the same convergence before deleting the instance, so
   machine-image data disks cannot be orphaned.
-- Treat the image as owning its internal realization. Shifter waits for a fixed
-  volatile readiness marker, a running configured participant container, and a
-  host RDP listener; it then uses the existing secret-backed container password
-  plan. It does not run generic Linux bootstrap against the captured host.
+- Treat the image as owning its internal realization. The fixed volatile marker,
+  running configured participant container, and host RDP listener are boot-
+  liveness prerequisites only. Issue #1910 additionally requires the
+  profile-bound, image-owned participant canary in
+  `nested-ctf-participant-readiness-preflight-1910.md` before terminal readiness.
+  Shifter still uses the existing secret-backed container password plan and does
+  not run generic Linux bootstrap against the captured host.
 - Keep readiness bounded and fail the normal range operation when readiness or
   required participant credential setup fails.
 

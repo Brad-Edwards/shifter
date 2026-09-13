@@ -852,6 +852,23 @@ jobs:
             print(f"Rewrote {sa_fixes} service-account GSA projects")
           PY
 
+      - name: Render Mission Control lease policy from shifter.yaml
+        env:
+          SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}
+        run: |
+          # Project settings.mission_control_leases from shifter.yaml into the runtime
+          # env the next step generates, so a configured lease policy (including
+          # extensions_enabled: false) reaches the platform-runtime ConfigMap rather than
+          # silently defaulting (issue #27). An omitted block renders the canonical
+          # 30/30/365 defaults. render_runtime_env.py reads this from the process env.
+          if [ -z "${SHIFTER_CONFIG_GCP_DEV}" ]; then
+            echo "::error::Required secret SHIFTER_CONFIG_GCP_DEV is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          config="${RUNNER_TEMP}/shifter.yaml"
+          printf '%s\n' "${SHIFTER_CONFIG_GCP_DEV}" > "${config}"
+          uv run --project "${GITHUB_WORKSPACE}/shifter/installation" \
+            shifter-config render-mission-control-lease-env "${config}" >> "${GITHUB_ENV}"
       - name: Render generated runtime env
         env:
           # ENGINE_TASK_IMAGE is pinned to the verified provisioner @sha256

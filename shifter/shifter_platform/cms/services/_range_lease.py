@@ -16,6 +16,7 @@ from cms.models import RangeInstance
 from shared.audit import AuditAction, AuditActorType, AuditEntityType, AuditEvent
 from shared.enums import RangeSource, ResourceStatus
 from shared.log_sanitize import safe_log_id
+from shared.mission_control_lease import DEFAULT_EXTENSION_DAYS, MissionControlLeasePolicy
 from workspaces.services import WorkspaceOperation
 
 from ._range_workspace import authorize_range_workspace, authorized_range_workspace_ids
@@ -25,9 +26,36 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MISSION_CONTROL_INITIAL_DAYS = 30
-MISSION_CONTROL_EXTENSION_DAYS = 30
-MISSION_CONTROL_MAXIMUM_DAYS = 365
+
+def _effective_lease_policy() -> MissionControlLeasePolicy:
+    """Return the deployment's effective Mission Control lease policy.
+
+    Read lazily from Django settings so the CMS service layer never imports the
+    config composition root (avoids a cms->config import cycle) and tests can
+    override the policy with ``@override_settings`` or an injected ``policy``.
+    """
+    from django.conf import settings
+
+    return settings.MISSION_CONTROL_LEASE_POLICY
+
+
+def _extensions_enabled() -> bool:
+    """Whether the live deployment policy currently admits lease extensions.
+
+    This is a live admission switch: it applies to every Mission Control generation
+    after a rollout, independent of the per-generation duration snapshots.
+    """
+    return _effective_lease_policy().extensions_enabled
+
+
+def _generation_increment(instance: RangeInstance) -> int:
+    """Return the extension increment snapshotted on this generation.
+
+    A generation records the increment in force when its user lease was assigned, so
+    a later policy change never alters an existing generation's increment. Rows
+    migrated before the field existed fall back to the historical default.
+    """
+    return instance.extension_days if instance.extension_days is not None else DEFAULT_EXTENSION_DAYS
 
 
 class RangeLeaseNotFound(CMSError):
@@ -70,8 +98,14 @@ def build_range_lease(
     *,
     now: datetime | None = None,
     enforced_deadline: datetime | None = None,
+    policy: MissionControlLeasePolicy | None = None,
 ) -> RangeLease:
-    """Return the product-authoritative lease for a new range generation."""
+    """Return the product-authoritative lease for a new range generation.
+
+    Mission Control durations come from the deployment lease policy (defaulting to
+    the canonical 30/30/365) resolved once here and snapshotted onto the generation.
+    CTF ranges remain event-owned and ignore the Mission Control policy.
+    """
     current = now or timezone.now()
     if range_source is RangeSource.CTF:
         if enforced_deadline is None or enforced_deadline <= current:
@@ -79,10 +113,11 @@ def build_range_lease(
         return RangeLease(enforced_deadline, enforced_deadline, 0)
     if range_source is not RangeSource.MISSION_CONTROL:
         raise RangeLeaseConflict("Unsupported range source")
+    effective = policy or _effective_lease_policy()
     return RangeLease(
-        current + timedelta(days=MISSION_CONTROL_INITIAL_DAYS),
-        current + timedelta(days=MISSION_CONTROL_MAXIMUM_DAYS),
-        MISSION_CONTROL_EXTENSION_DAYS,
+        current + timedelta(days=effective.initial_days),
+        current + timedelta(days=effective.maximum_days),
+        effective.extension_days,
     )
 
 
@@ -92,6 +127,7 @@ def _projection(instance: RangeInstance) -> RangeLeaseProjection:
         raise RangeLeaseConflict("Range lease is unavailable")
     can_extend = (
         instance.range_source == RangeSource.MISSION_CONTROL.value
+        and _extensions_enabled()
         and instance.status
         not in {ResourceStatus.DESTROYING.value, ResourceStatus.DESTROYED.value, ResourceStatus.FAILED.value}
         and instance.expires_at > timezone.now()
@@ -100,7 +136,7 @@ def _projection(instance: RangeInstance) -> RangeLeaseProjection:
     return RangeLeaseProjection(
         expires_at=instance.expires_at,
         maximum_expires_at=instance.maximum_expires_at,
-        extension_days=MISSION_CONTROL_EXTENSION_DAYS,
+        extension_days=_generation_increment(instance),
         can_extend=can_extend,
     )
 
@@ -152,9 +188,11 @@ def extend_mission_control_range(user: User) -> RangeLeaseProjection:
             raise RangeLeaseConflict("Range lease has expired")
         if instance.expires_at >= instance.maximum_expires_at:
             raise RangeLeaseConflict("Range has reached its maximum lifetime")
+        if not _extensions_enabled():
+            raise RangeLeaseConflict("Range lease extensions are disabled")
         previous = instance.expires_at
         instance.expires_at = min(
-            instance.expires_at + timedelta(days=MISSION_CONTROL_EXTENSION_DAYS),
+            instance.expires_at + timedelta(days=_generation_increment(instance)),
             instance.maximum_expires_at,
         )
         instance.save(update_fields=["expires_at", "updated_at"])

@@ -1114,6 +1114,124 @@ class TestGdcProvisioning:
         setup.assert_not_called()
         preconfigured_setup.assert_called_once()
 
+    def test_preconfigured_machine_host_installs_credential_before_participant_canary(self, monkeypatch):
+        from instance_orchestrator import _run_preconfigured_machine_host_setup
+
+        events = []
+
+        class _Execution:
+            executor = MagicMock()
+            target = "10.50.2.3"
+            document_name = "AWS-RunShellScript"
+
+            def wait_for_ready(self, *, timeout_seconds):
+                assert timeout_seconds == 300
+                events.append("transport-ready")
+
+            def close(self):
+                events.append("closed")
+
+        class _Orchestrator:
+            def __init__(self, *, executor):
+                assert executor is not None
+
+            def orchestrate(self, _target, plan, _context, *, document_name):
+                assert document_name == "AWS-RunShellScript"
+                events.extend(step.name for step in plan.steps)
+                return SimpleNamespace(success=True, error=None)
+
+        monkeypatch.setattr("instance_orchestrator.build_guest_execution_context", lambda *args, **kwargs: _Execution())
+        monkeypatch.setattr("instance_orchestrator.SetupOrchestrator", _Orchestrator)
+        monkeypatch.setattr(
+            "instance_orchestrator._set_attacker_container_password_after_bootstrap",
+            lambda **kwargs: events.append("participant-credential"),
+        )
+
+        _run_preconfigured_machine_host_setup(
+            {
+                "os": "kali",
+                "role": "attacker",
+                "ssh_username": "operator",
+                "gcp_participant_container_name": "participant-desktop",
+                "gcp_participant_username": "operator",
+                "gcp_participant_readiness_contract": "participant-readiness/v1",
+                "gcp_participant_readiness_manifest_sha256": "a" * 64,
+            },
+            "gce-nested",
+        )
+
+        assert events == [
+            "transport-ready",
+            "wait_for_preconfigured_machine_host",
+            "participant-credential",
+            "verify_participant_readiness",
+            "closed",
+        ]
+
+    @pytest.mark.parametrize(
+        ("orchestration_results", "error_match", "expected_credential_calls"),
+        [
+            ([False], "failed boot liveness", 0),
+            ([True, False], "failed participant readiness", 1),
+        ],
+    )
+    def test_preconfigured_machine_host_readiness_failures_fail_closed(
+        self,
+        monkeypatch,
+        orchestration_results,
+        error_match,
+        expected_credential_calls,
+    ):
+        from instance_orchestrator import _run_preconfigured_machine_host_setup
+        from orchestrators.setup_orchestrator import SetupError
+
+        results = iter(orchestration_results)
+        closed = MagicMock()
+        install_credential = MagicMock()
+
+        class _Execution:
+            executor = MagicMock()
+            target = "10.50.2.3"
+            document_name = "AWS-RunShellScript"
+
+            def wait_for_ready(self, *, timeout_seconds):
+                assert timeout_seconds == 300
+
+            def close(self):
+                closed()
+
+        class _Orchestrator:
+            def __init__(self, *, executor):
+                assert executor is not None
+
+            def orchestrate(self, _target, _plan, _context, *, document_name):
+                assert document_name == "AWS-RunShellScript"
+                return SimpleNamespace(success=next(results), error="canary failed")
+
+        monkeypatch.setattr("instance_orchestrator.build_guest_execution_context", lambda *args, **kwargs: _Execution())
+        monkeypatch.setattr("instance_orchestrator.SetupOrchestrator", _Orchestrator)
+        monkeypatch.setattr(
+            "instance_orchestrator._set_attacker_container_password_after_bootstrap",
+            install_credential,
+        )
+
+        with pytest.raises(SetupError, match=error_match):
+            _run_preconfigured_machine_host_setup(
+                {
+                    "os": "kali",
+                    "role": "attacker",
+                    "ssh_username": "operator",
+                    "gcp_participant_container_name": "participant-desktop",
+                    "gcp_participant_username": "operator",
+                    "gcp_participant_readiness_contract": "participant-readiness/v1",
+                    "gcp_participant_readiness_manifest_sha256": "a" * 64,
+                },
+                "gce-nested",
+            )
+
+        assert install_credential.call_count == expected_credential_calls
+        closed.assert_called_once_with()
+
     def test_polaris_bootstrap_gcp_routes_ssh_and_uses_gcp_plan(self, monkeypatch, caplog):
         """GCP polaris bootstrap uses the routed executor and a gcp plan. No IMDS mutation exists anywhere (#1377)."""
         import logging

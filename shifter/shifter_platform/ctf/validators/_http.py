@@ -234,7 +234,7 @@ def _parse_response(resp: http.client.HTTPResponse, challenge_id: UUID) -> bool:
     data = _read_response_body(resp, challenge_id)
     if data is None:
         return False
-    return bool(data.get("valid", False))
+    return len(data) == 1 and data.get("valid") is True
 
 
 def _try_one_address(
