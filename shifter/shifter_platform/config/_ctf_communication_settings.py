@@ -31,6 +31,7 @@ __all__ = [
     "CTF_COMMUNICATION_RATE_PER_ACTOR",
     "CTF_COMMUNICATION_RATE_PER_WORKSPACE",
     "CTF_COMMUNICATION_RATE_WINDOW_SECONDS",
+    "CTF_COMMUNICATION_RELEASE_GRACE_MINUTES",
     "CTF_COMMUNICATION_RETENTION_DAYS",
     "CTF_COMMUNICATION_TRANSPORT_TIMEOUT_SECONDS",
     "CTF_COMMUNICATION_WORKER_BATCH_SIZE",
@@ -153,6 +154,15 @@ CTF_COMMUNICATION_MAX_OUTSTANDING_PER_WORKSPACE = _parse_int(
 CTF_COMMUNICATION_MAX_OUTSTANDING_GLOBAL = _parse_int(
     "SHIFTER_CTF_COMMUNICATION_MAX_OUTSTANDING_GLOBAL", 500000, 1, 1000000000
 )
+
+# --- Scheduler due-time / lateness policy (#2099) ------------------------------
+# The bounded grace window (minutes) a scheduled communication may still be
+# released after its authored due time (backlog, restart, clock skew). Picked up
+# within the window -> released; past it -> the intent is EXPIRED (a durable
+# no-work outcome), never delivered late as though it were on time. 0 means strict
+# due-only. Absolute due time and this lateness bound are kept distinct from the
+# delivery worker's retry deadlines.
+CTF_COMMUNICATION_RELEASE_GRACE_MINUTES = _parse_int("SHIFTER_CTF_COMMUNICATION_RELEASE_GRACE_MINUTES", 20, 0, 10080)
 
 # --- Metrics -------------------------------------------------------------------
 CTF_COMMUNICATION_METRICS_NAMESPACE = _parse_metrics_namespace(
