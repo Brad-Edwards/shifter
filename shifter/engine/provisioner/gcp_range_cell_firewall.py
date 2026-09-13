@@ -9,7 +9,14 @@ from shared.model_access.network import broker_egress_destination
 
 from config import GCERangeCellConfig
 from gcp_range_cell_naming import _network_tag, _short_resource_name
-from gcp_range_cell_types import FirewallPlan, InstancePlan, OpenVpnGatewayPlan, SubnetPlan
+from gcp_range_cell_types import (
+    DEFAULT_GCE_EGRESS_POLICY,
+    FirewallPlan,
+    GceEgressPolicy,
+    InstancePlan,
+    OpenVpnGatewayPlan,
+    SubnetPlan,
+)
 
 # private.googleapis.com VIP range. Private Google Access on the range subnet,
 # the range VPC's private-googleapis DNS zone, and a route for this /30 (all in
@@ -366,6 +373,46 @@ def _vpn_gateway_rules(
     ]
 
 
+def _admitted_broker_destination(
+    policy: GceEgressPolicy,
+    config: GCERangeCellConfig,
+    subnet_plans: list[SubnetPlan],
+    instances: list[InstancePlan],
+    vpn_gateway: OpenVpnGatewayPlan | None,
+    bypass: bool,
+) -> str | None:
+    """Validate the exact endpoint and every client bypass before rendering."""
+    if policy.model_broker is None:
+        return None
+    destination = broker_egress_destination(
+        policy.model_broker,
+        expected_vip=config.model_broker_vip,
+        egress_mode=policy.mode,
+    )
+    unsafe_clients = any(
+        any(instance.get(key) for key in ("can_ip_forward", "attach_service_account", "service_account_email"))
+        for instance in instances
+    )
+    if any((bypass, config.private_google_access, unsafe_clients, vpn_gateway is not None)):
+        raise RuntimeError("model broker clients require source-preserving keyless isolated egress")
+    if any(ipaddress.ip_network(destination).overlaps(ipaddress.ip_network(subnet["cidr"])) for subnet in subnet_plans):
+        raise RuntimeError("model broker VIP must not overlap an intra-range egress destination")
+    return destination
+
+
+def _public_web_egress(
+    deny_general_egress: bool,
+    instances: list[InstancePlan],
+    include_optional_cleanup: bool,
+    denied_networks: list[ipaddress.IPv4Network],
+) -> tuple[bool, list[str]]:
+    """Resolve the existing web lane while retaining the denied-network complement."""
+    enabled = not deny_general_egress and (
+        include_optional_cleanup or any(instance["profile"].allow_public_web_egress for instance in instances)
+    )
+    return enabled, _ipv4_complement(denied_networks) if enabled else []
+
+
 def build_firewall_plan(
     range_id: int,
     subnet_plans: list[SubnetPlan],
@@ -374,12 +421,11 @@ def build_firewall_plan(
     *,
     instance_plans: list[InstancePlan] | None = None,
     include_optional_cleanup: bool = False,
-    egress_mode: str = "status-quo",
-    model_broker: dict[str, object] | None = None,
+    egress_policy: GceEgressPolicy = DEFAULT_GCE_EGRESS_POLICY,
 ) -> list[FirewallPlan]:
     """Render the firewall plan for internal range traffic and management.
 
-    ``egress_mode`` is the effective posture pinned on the range (PLAT-238). Both
+    ``egress_policy.mode`` is the posture pinned on the range (PLAT-238). Both
     ``none`` (ADR-026 zero egress) and ``deny-all`` forbid general outbound egress:
     each forces the public-web-egress lane off and drops any configured allow-CIDR
     lane, so only the default egress-deny (and intra-range + Private Google Access
@@ -388,31 +434,20 @@ def build_firewall_plan(
     ``deny-all`` keeps a routed path behind the firewall deny). Firewall denial is
     defense in depth; it is not, by itself, the ``none`` no-NAT guarantee.
     """
-    broker_destination = None
-    if model_broker is not None:
-        broker_destination = broker_egress_destination(
-            model_broker,
-            expected_vip=config.model_broker_vip,
-            egress_mode=egress_mode,
-        )
-        bypass = os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}
-        unsafe_clients = any(
-            instance.get("can_ip_forward")
-            or instance.get("attach_service_account")
-            or instance.get("service_account_email")
-            for instance in (instance_plans or [])
-        )
-        if bypass or config.private_google_access or unsafe_clients or vpn_gateway is not None:
-            raise RuntimeError("model broker clients require source-preserving keyless isolated egress")
-    if os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}:
+    bypass = os.environ.get("GCP_RANGE_PREPROVISIONED_FIREWALLS", "").strip().lower() in {"1", "true", "yes"}
+    broker_destination = _admitted_broker_destination(
+        egress_policy,
+        config,
+        subnet_plans,
+        instance_plans or [],
+        vpn_gateway,
+        bypass,
+    )
+    if bypass:
         return []
-    deny_general_egress = (egress_mode or "status-quo").strip().lower() in {"none", "deny-all"}
+    deny_general_egress = (egress_policy.mode or "status-quo").strip().lower() in {"none", "deny-all"}
     range_tag = _network_tag(range_id)
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
-    if broker_destination is not None and any(
-        ipaddress.ip_network(broker_destination).overlaps(ipaddress.ip_network(cidr)) for cidr in subnet_cidrs
-    ):
-        raise RuntimeError("model broker VIP must not overlap an intra-range egress destination")
     portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)
     access_network_cidrs = _validated_boundary_cidrs("access_network_cidrs", config.access_network_cidrs)
     _reject_overlapping_boundaries(access_network_cidrs, portal_network_cidrs)
@@ -428,11 +463,12 @@ def build_firewall_plan(
     # destination.
     denied_networks = _denied_egress_networks(config)
     _reject_denied_egress_overlap(egress_allow_cidrs, denied_networks)
-    allow_public_web_egress = not deny_general_egress and (
-        include_optional_cleanup
-        or any(instance["profile"].allow_public_web_egress for instance in (instance_plans or []))
+    allow_public_web_egress, public_web_destinations = _public_web_egress(
+        deny_general_egress,
+        instance_plans or [],
+        include_optional_cleanup,
+        denied_networks,
     )
-    public_web_destinations = _ipv4_complement(denied_networks) if allow_public_web_egress else []
     firewalls = _subnet_ingress_rules(range_id, subnet_plans)
     firewalls.extend(_boundary_ingress_rules(range_id, range_tag, access_network_cidrs, portal_network_cidrs, config))
     firewalls.extend(

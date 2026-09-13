@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import GCERangeCellConfig, GCERangeImageProfile
+from gcp_range_cell_types import GceEgressPolicy
 from raes_access import RealizedAccessBinding
 from raes_gcp_firewall import node_tag
 from raes_gcp_plan import RaesGcePlanError, build_raes_range_cell_plan
@@ -221,7 +222,7 @@ class TestFirewalls:
             _plan((_node(),), (_network(),)),
             _resolver(profile),
             _config(),
-            egress_mode="none",
+            egress_policy=GceEgressPolicy(mode="none"),
         )
         names = {fw["name"] for fw in plan["firewalls"]}
         # The default egress-deny stays; the public-web lane is suppressed.
@@ -235,7 +236,12 @@ class TestFirewalls:
             allow_public_web_egress=True,
         )
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(profile), _config(), egress_mode="deny-all"
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(profile),
+            _config(),
+            egress_policy=GceEgressPolicy(mode="deny-all"),
         )
         names = {fw["name"] for fw in plan["firewalls"]}
         assert any("egress-deny" in name for name in names)
@@ -388,7 +394,12 @@ class TestRangeOwnedNat:
 
     def test_status_quo_range_gets_a_router_nat_scoped_to_its_subnets(self):
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), egress_mode="status-quo"
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(),
+            egress_policy=GceEgressPolicy(mode="status-quo"),
         )
         router_nat = plan.get("router_nat")
         assert router_nat is not None
@@ -399,6 +410,11 @@ class TestRangeOwnedNat:
 
     def test_none_range_has_no_router_nat(self):
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), egress_mode="none"
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(),
+            egress_policy=GceEgressPolicy(mode="none"),
         )
         assert "router_nat" not in plan

@@ -68,8 +68,9 @@ def test_enabled_broker_roundtrips_through_canonical_terraform_render(write_conf
 )
 def test_invalid_broker_intent_is_rejected_before_render(write_config, field, value):
     broker = {**broker_settings(), field: value}
+    path = write_config(root_config(broker))
     with pytest.raises(InstallationConfigError):
-        load_root_config(write_config(root_config(broker)))
+        load_root_config(path)
 
 
 def test_disabled_defaults_need_no_identity_or_listener(write_config):

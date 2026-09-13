@@ -76,3 +76,5 @@ Scenarios increasingly assume agentic tooling inside participant ranges (for exa
 - TESTS → TEST `scripts/bootstrap/tests/test_gcp_model_broker_catalog.py`
 - IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_plan.py`
 - IMPLEMENTS → CODE `shifter/engine/provisioner/raes_gcp_plan.py`
+- IMPLEMENTS → CODE `shifter/engine/provisioner/gcp_range_cell_types.py`
+- IMPLEMENTS → CODE `shifter/engine/provisioner/raes_gcp_apply.py`

@@ -114,8 +114,9 @@ compares it with the deployment-configured VIP, and rejects strict `none`,
 forwarding/SA-bearing clients, Private Google Access, VPN and preprovisioned
 firewall bypass. It preserves default/peer/management denies and opens only
 the exact /32 on 443. Both `render_range_cell_plan` and
-`build_raes_range_cell_plan` accept that explicit capability and pass it to the
-firewall consumer; integration tests inspect their resulting rules and reject
+`build_raes_range_cell_plan` accept a `GceEgressPolicy` containing the existing
+egress mode and the explicit broker capability, then pass it to the firewall
+consumer; integration tests inspect their resulting rules and reject
 strict zero egress, a mismatched VIP and Private Google Access.
 
 M06 does not enroll production ranges: the operation runners supply no broker

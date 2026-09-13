@@ -7,7 +7,13 @@ from collections.abc import Mapping
 
 from shared.model_access.catalog import ContractError
 
-_PRIVATE = tuple(ipaddress.IPv4Network(cidr) for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+# RFC 1918 address-space boundaries, not deployment endpoints. S1313 review:
+# these protocol constants must remain fixed to reject other special-use space.
+RFC1918_IPV4_NETWORKS = (
+    ipaddress.IPv4Network("10.0.0.0/8"),  # NOSONAR(S1313)
+    ipaddress.IPv4Network("172.16.0.0/12"),  # NOSONAR(S1313)
+    ipaddress.IPv4Network("192.168.0.0/16"),  # NOSONAR(S1313)
+)
 
 
 def broker_egress_destination(value: object, *, expected_vip: str, egress_mode: str) -> str:
@@ -24,7 +30,7 @@ def broker_egress_destination(value: object, *, expected_vip: str, egress_mode: 
         address = ipaddress.IPv4Address(expected_vip)
     except (ValueError, TypeError) as exc:
         raise ContractError("network.invalid_broker_vip") from exc
-    if not any(address in network for network in _PRIVATE):
+    if not any(address in network for network in RFC1918_IPV4_NETWORKS):
         raise ContractError("network.invalid_broker_vip")
     return f"{address}/32"
 
@@ -40,4 +46,4 @@ def peer_matches_binding(transport_peer: str, admitted_subnet: str) -> bool:
         network = ipaddress.IPv4Network(admitted_subnet, strict=True)
     except (ValueError, TypeError):
         return False
-    return any(network.subnet_of(private) for private in _PRIVATE) and peer in network
+    return any(network.subnet_of(private) for private in RFC1918_IPV4_NETWORKS) and peer in network

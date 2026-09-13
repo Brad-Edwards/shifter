@@ -6,6 +6,7 @@ import ipaddress
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from shared.model_access.network import RFC1918_IPV4_NETWORKS
 
 if TYPE_CHECKING:
     from .schema import RootConfig
@@ -14,7 +15,6 @@ ProjectId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")]
 AccountId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")]
 ResourceName = Annotated[str, Field(pattern=r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$|^$")]
 Hostname = Annotated[str, Field(pattern=r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^$", max_length=253)]
-_PRIVATE_NETWORKS = tuple(ipaddress.ip_network(cidr) for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 # A conservative budget below both ConfigMap's 1 MiB and client-side apply's
 # 256 KiB annotation limit, including JSON escaping and fixed metadata.
 MAX_BROKER_CONFIGMAP_PAYLOAD_BYTES = 96 * 1024
@@ -77,11 +77,11 @@ class GcpModelBrokerSettings(BaseModel):
         ):
             raise ValueError("enabled broker requires complete transport and model-project inventory")
         address = ipaddress.IPv4Address(self.vip)
-        if not any(address in network for network in _PRIVATE_NETWORKS):
+        if not any(address in network for network in RFC1918_IPV4_NETWORKS):
             raise ValueError("broker VIP must be a private IPv4 address")
         networks = [ipaddress.IPv4Network(value, strict=True) for value in self.admitted_subnets]
         for index, network in enumerate(networks):
-            if not any(network.subnet_of(private) for private in _PRIVATE_NETWORKS):
+            if not any(network.subnet_of(private) for private in RFC1918_IPV4_NETWORKS):
                 raise ValueError("admitted subnets must be private IPv4 networks")
             if address in network or any(network.overlaps(other) for other in networks[:index]):
                 raise ValueError("admitted subnets must be disjoint from each other and the broker VIP")
@@ -127,30 +127,19 @@ def validate_model_broker_readback(output: object, config: RootConfig) -> None:
         raise ValueError("broker Terraform readback belongs to a different platform project or region")
 
 
-def project_model_broker(output: object, *, catalog_json: str = "", model_access_env: str = "") -> dict[str, object]:
-    """Validate Terraform readback and produce the sole broker Helm projection."""
-    import json
-    import re
-
-    from shared.model_access import load_catalog_json
-    from shared.model_access.runtime import MAX_MODEL_ACCESS_CATALOG_BYTES
-
-    from .model_access import DEFAULT_CATALOG_PATH
-
-    if output is None:
-        return {"enabled": False}
-    if not isinstance(output, dict):
-        raise ValueError("invalid model broker deployment output")
+def _broker_output_settings(output: dict[str, object]) -> GcpModelBrokerSettings:
+    """Reject unexpected readback fields before extracting deployment settings."""
     settings_keys = set(GcpModelBrokerSettings.model_fields)
     if set(output) - settings_keys - {"gsa", "model_identities", "region"}:
         raise ValueError("unknown model broker deployment output")
-    settings = GcpModelBrokerSettings.model_validate(
-        {key: value for key, value in output.items() if key in settings_keys}
-    )
-    if not settings.enabled:
-        if output.get("gsa") or output.get("model_identities"):
-            raise ValueError("disabled broker cannot retain invocation identity")
-        return {"enabled": False}
+    return GcpModelBrokerSettings.model_validate({key: value for key, value in output.items() if key in settings_keys})
+
+
+def _broker_identity_inventory(output: dict[str, object], settings: GcpModelBrokerSettings) -> dict[str, str]:
+    """Bind runtime identity inventory to the exact configured model projects."""
+    import json
+    import re
+
     gsa = output.get("gsa", "")
     if not isinstance(gsa, str) or not re.fullmatch(
         r"[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com", gsa
@@ -162,13 +151,35 @@ def project_model_broker(output: object, *, catalog_json: str = "", model_access
     if output.get("model_identities") != identities:
         raise ValueError("model identity output does not match the approved project inventory")
     region = output.get("region", "")
-    if not isinstance(region, str) or not re.fullmatch(r"[a-z]+-[a-z]+[0-9]+", region):
+    if not isinstance(region, str) or not re.fullmatch(r"[a-z]+-[a-z]+\d+", region, flags=re.ASCII):
         raise ValueError("broker requires a regional deployment")
+    return {
+        "gsa": gsa,
+        "region": region,
+        "identities_json": json.dumps(
+            {"contract_version": "model-broker-identities/v1", "gsa": gsa, "model_identities": identities},
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+    }
+
+
+def _broker_catalog_projection(catalog_json: str, model_access_env: str) -> dict[str, object]:
+    """Normalize the bounded mounted catalog and bind its control environment."""
+    import json
+
+    from shared.model_access import load_catalog_json
+    from shared.model_access.runtime import MAX_MODEL_ACCESS_CATALOG_BYTES
+
+    from .model_access import DEFAULT_CATALOG_PATH
+
     if len(catalog_json.encode("utf-8")) > MAX_MODEL_ACCESS_CATALOG_BYTES:
         raise ValueError("broker catalog exceeds the maximum size")
     catalog = load_catalog_json(catalog_json)
-
-    control_env = dict(line.split("=", 1) for line in model_access_env.splitlines())
+    control_env = {}
+    for line in model_access_env.splitlines():
+        key, value = line.split("=", 1)
+        control_env[key] = value
     expected_env = {
         "MODEL_ACCESS_ENABLED": control_env.get("MODEL_ACCESS_ENABLED"),
         "MODEL_ACCESS_CATALOG_PATH": DEFAULT_CATALOG_PATH,
@@ -178,20 +189,26 @@ def project_model_broker(output: object, *, catalog_json: str = "", model_access
         raise ValueError("control requires the canonical model-access environment bound to its catalog")
     if control_env["MODEL_ACCESS_ENABLED"] == "true" and not catalog.enabled:
         raise ValueError("enabled model access requires an enabled catalog")
+    return {
+        "control_env": control_env,
+        "catalog_json": json.dumps(catalog.model_dump(mode="json"), separators=(",", ":"), sort_keys=True),
+        "catalog_digest": catalog.digest,
+    }
+
+
+def project_model_broker(output: object, *, catalog_json: str = "", model_access_env: str = "") -> dict[str, object]:
+    """Validate Terraform readback and produce the sole broker Helm projection."""
+    if output is None:
+        return {"enabled": False}
+    if not isinstance(output, dict):
+        raise ValueError("invalid model broker deployment output")
+    settings = _broker_output_settings(output)
+    if not settings.enabled:
+        if output.get("gsa") or output.get("model_identities"):
+            raise ValueError("disabled broker cannot retain invocation identity")
+        return {"enabled": False}
     result = settings.model_dump(mode="json", exclude={"model_projects"})
-    result.update(
-        {
-            "control_env": control_env,
-            "gsa": gsa,
-            "region": region,
-            "catalog_json": json.dumps(catalog.model_dump(mode="json"), separators=(",", ":"), sort_keys=True),
-            "catalog_digest": catalog.digest,
-            "identities_json": json.dumps(
-                {"contract_version": "model-broker-identities/v1", "gsa": gsa, "model_identities": identities},
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-        }
-    )
+    result.update(_broker_identity_inventory(output, settings))
+    result.update(_broker_catalog_projection(catalog_json, model_access_env))
     validate_broker_configmap_payload(result["catalog_json"], result["identities_json"])
     return result
