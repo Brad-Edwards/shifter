@@ -1073,7 +1073,9 @@ class TestGdcControlPlaneHelmValues:
             config,
             outputs,
             image_tag=PINNED_IMAGE_TAG,
-            mission_control_lease_env=render_mission_control_lease_env(root),
+            render_artifacts=deploy.GcpRenderArtifacts(
+                mission_control_lease_env=render_mission_control_lease_env(root)
+            ),
         )
         assert json.loads(values["runtimeEnv"]["MISSION_CONTROL_LEASE_POLICY_JSON"]) == {
             "initial_days": 7,

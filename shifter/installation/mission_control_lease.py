@@ -44,31 +44,29 @@ def validate_settings_block(settings: Mapping[str, Any]) -> tuple[dict[str, Any]
     """
     normalized = dict(settings)
     issues: list[ConfigIssue] = []
-    if SETTINGS_KEY not in settings:
-        return normalized, issues
-    raw = settings[SETTINGS_KEY]
-    if raw is None:
-        issues.append(
-            ConfigIssue(
-                f"settings.{SETTINGS_KEY}",
-                "must not be null; omit the block entirely to use the default lease policy",
+    if SETTINGS_KEY in settings:
+        raw = settings[SETTINGS_KEY]
+        if raw is None:
+            issues.append(
+                ConfigIssue(
+                    f"settings.{SETTINGS_KEY}",
+                    "must not be null; omit the block entirely to use the default lease policy",
+                )
             )
-        )
-        return normalized, issues
-    if not isinstance(raw, Mapping):
-        issues.append(
-            ConfigIssue(
-                f"settings.{SETTINGS_KEY}",
-                "must be a mapping of initial_days/extension_days/maximum_days/extensions_enabled; "
-                f"got {type(raw).__name__}",
+        elif not isinstance(raw, Mapping):
+            issues.append(
+                ConfigIssue(
+                    f"settings.{SETTINGS_KEY}",
+                    "must be a mapping of initial_days/extension_days/maximum_days/extensions_enabled; "
+                    f"got {type(raw).__name__}",
+                )
             )
-        )
-        return normalized, issues
-    try:
-        policy = MissionControlLeasePolicy.model_validate(dict(raw))
-        normalized[SETTINGS_KEY] = policy.model_dump(mode="json")
-    except ValidationError as exc:
-        issues = _issues_from_pydantic_error(exc)
+        else:
+            try:
+                policy = MissionControlLeasePolicy.model_validate(dict(raw))
+                normalized[SETTINGS_KEY] = policy.model_dump(mode="json")
+            except ValidationError as exc:
+                issues = _issues_from_pydantic_error(exc)
     return normalized, issues
 
 

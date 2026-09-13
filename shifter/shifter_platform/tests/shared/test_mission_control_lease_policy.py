@@ -54,8 +54,9 @@ def test_present_but_blank_json_is_rejected(raw: str) -> None:
 
 
 def test_initial_may_not_exceed_maximum() -> None:
+    payload = _json(initial_days=100, maximum_days=30)
     with pytest.raises(MissionControlLeasePolicyError):
-        load_policy_json(_json(initial_days=100, maximum_days=30))
+        load_policy_json(payload)
 
 
 def test_initial_equal_to_maximum_is_valid() -> None:
@@ -72,16 +73,18 @@ def test_extension_greater_than_maximum_is_valid() -> None:
 @pytest.mark.parametrize("field", ["initial_days", "extension_days", "maximum_days"])
 @pytest.mark.parametrize("value", [0, -1])
 def test_nonpositive_durations_rejected(field: str, value: int) -> None:
+    payload = _json(**{field: value})
     with pytest.raises(MissionControlLeasePolicyError):
-        load_policy_json(_json(**{field: value}))
+        load_policy_json(payload)
 
 
 @pytest.mark.parametrize("field", ["initial_days", "extension_days", "maximum_days"])
 def test_duration_above_max_is_rejected(field: str) -> None:
     # Pair with maximum_days=MAX so an over-max initial/extension trips the field's own
     # upper bound, not the initial<=maximum cross-field rule (which would confound it).
+    payload = _json(**{"maximum_days": MAX_LEASE_DAYS, field: MAX_LEASE_DAYS + 1})
     with pytest.raises(MissionControlLeasePolicyError):
-        load_policy_json(_json(**{"maximum_days": MAX_LEASE_DAYS, field: MAX_LEASE_DAYS + 1}))
+        load_policy_json(payload)
 
 
 @pytest.mark.parametrize("field", ["initial_days", "extension_days", "maximum_days"])
@@ -91,33 +94,38 @@ def test_max_boundary_is_accepted_and_preserved(field: str) -> None:
 
 
 def test_unknown_fields_rejected() -> None:
+    payload = _json(initial_days=30, bogus=1)
     with pytest.raises(MissionControlLeasePolicyError):
-        load_policy_json(_json(initial_days=30, bogus=1))
+        load_policy_json(payload)
 
 
 @pytest.mark.parametrize("field", ["initial_days", "extension_days", "maximum_days"])
 def test_explicit_null_rejected(field: str) -> None:
+    payload = _json(**{field: None})
     with pytest.raises(MissionControlLeasePolicyError):
-        load_policy_json(_json(**{field: None}))
+        load_policy_json(payload)
 
 
 @pytest.mark.parametrize("field", ["initial_days", "extension_days", "maximum_days"])
 def test_boolean_in_integer_field_rejected(field: str) -> None:
+    payload = _json(**{field: True})
     with pytest.raises(MissionControlLeasePolicyError):
-        load_policy_json(_json(**{field: True}))
+        load_policy_json(payload)
 
 
 @pytest.mark.parametrize("field", ["initial_days", "extension_days", "maximum_days"])
 @pytest.mark.parametrize("value", ["30", 30.5])
 def test_string_or_fractional_duration_rejected(field: str, value: object) -> None:
+    payload = _json(**{field: value})
     with pytest.raises(MissionControlLeasePolicyError):
-        load_policy_json(_json(**{field: value}))
+        load_policy_json(payload)
 
 
 @pytest.mark.parametrize("value", [1, 0, "true"])
 def test_non_boolean_switch_rejected(value: object) -> None:
+    payload = _json(extensions_enabled=value)
     with pytest.raises(MissionControlLeasePolicyError):
-        load_policy_json(_json(extensions_enabled=value))
+        load_policy_json(payload)
 
 
 def test_malformed_json_rejected() -> None:

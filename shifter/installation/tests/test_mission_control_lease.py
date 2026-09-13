@@ -101,8 +101,9 @@ class TestLoaderIntegration:
         assert config.settings[SETTINGS_KEY] == {**CANONICAL_DEFAULTS, "initial_days": 7, "maximum_days": 90}
 
     def test_invalid_policy_raises_aggregated(self, gcp_config, write_config):
+        cfg_path = write_config(_with_leases(gcp_config, {"initial_days": 100, "maximum_days": 30}))
         with pytest.raises(InstallationConfigError) as exc:
-            load_root_config(write_config(_with_leases(gcp_config, {"initial_days": 100, "maximum_days": 30})))
+            load_root_config(cfg_path)
         assert any(SETTINGS_KEY in issue.path for issue in exc.value.issues)
 
     def test_absent_block_stays_absent(self, gcp_config, write_config):
@@ -118,8 +119,9 @@ class TestLoaderIntegration:
             "secrets": {"django_secret_key": "prompt"},
             "settings": {**_GCP_REQUIRED_SETTINGS, SETTINGS_KEY: {"initial_days": 100, "maximum_days": 30}},
         }
+        cfg_path = write_config(config)
         with pytest.raises(InstallationConfigError) as exc:
-            load_root_config(write_config(config))
+            load_root_config(cfg_path)
         paths = [issue.path for issue in exc.value.issues]
         assert any("deployment.name" in path for path in paths)
         assert any(SETTINGS_KEY in path for path in paths)

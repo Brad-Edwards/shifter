@@ -12,6 +12,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from urllib import error as urllib_error
@@ -612,6 +613,20 @@ def _helm_network_policy_values(
     }
 
 
+@dataclass(frozen=True)
+class GcpRenderArtifacts:
+    """Installation-render artifacts threaded from validated root config into Helm values.
+
+    Grouped so ``render_gcp_helm_values`` stays within the parameter budget (S107): the
+    model-access catalog/env feed the model broker, and the Mission Control lease policy
+    env (#27) merges into the runtime ConfigMap.
+    """
+
+    model_access_catalog_json: str = ""
+    model_access_env: str = ""
+    mission_control_lease_env: str = ""
+
+
 def render_gcp_helm_values(
     config: GDCBootstrapConfig,
     outputs: dict[str, dict[str, object]],
@@ -619,13 +634,12 @@ def render_gcp_helm_values(
     image_tag: str,
     image_identities: dict[str, str] | None = None,
     bootstrap_operator_email: str | None = None,
-    model_access_catalog_json: str = "",
-    model_access_env: str = "",
-    mission_control_lease_env: str = "",
+    render_artifacts: "GcpRenderArtifacts | None" = None,
 ) -> dict[str, object]:
     """Render non-secret Helm values for the Shifter release from Terraform outputs."""
     from installation.gcp_model_broker import project_model_broker
 
+    artifacts = render_artifacts or GcpRenderArtifacts()
     pinned_image_tag = validate_image_tag(image_tag)
     service_accounts = _get_output_value(outputs, "workload_service_accounts")
     public_hostname = str(_get_output_value(outputs, "public_hostname")).strip()
@@ -640,8 +654,8 @@ def render_gcp_helm_values(
     # merged into the runtime env so a configured policy (including extensions_enabled:
     # false) reaches the platform-runtime ConfigMap rather than defaulting. The value is
     # authoritative here, independent of this render process's environment.
-    if mission_control_lease_env:
-        runtime_env.update(parse_env_contract(mission_control_lease_env))
+    if artifacts.mission_control_lease_env:
+        runtime_env.update(parse_env_contract(artifacts.mission_control_lease_env))
     edge_policy_name = str(_get_output_value(outputs, "cloud_armor_security_policy_name")).strip()
     # The range-provisioning Jobs reach the GDC range cluster apiserver through
     # the internal TCP load balancer on the peered range VPC. Allow egress to
@@ -657,8 +671,8 @@ def render_gcp_helm_values(
         "releaseNamespace": "shifter-system",
         "modelBroker": project_model_broker(
             outputs.get("model_broker", {}).get("value"),
-            catalog_json=model_access_catalog_json,
-            model_access_env=model_access_env,
+            catalog_json=artifacts.model_access_catalog_json,
+            model_access_env=artifacts.model_access_env,
         ),
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
@@ -1399,9 +1413,11 @@ def stage_gcp_control_plane_values(
         image_tag=image_tag,
         image_identities=image_identities,
         bootstrap_operator_email=bootstrap_operator_email,
-        model_access_catalog_json=catalog_json,
-        model_access_env=render_model_access_env(root_config),
-        mission_control_lease_env=render_mission_control_lease_env(root_config),
+        render_artifacts=GcpRenderArtifacts(
+            model_access_catalog_json=catalog_json,
+            model_access_env=render_model_access_env(root_config),
+            mission_control_lease_env=render_mission_control_lease_env(root_config),
+        ),
     )
     values_path = staging_root / "shifter.values.generated.json"
     values_path.write_text(json.dumps(values, indent=2, sort_keys=True))
