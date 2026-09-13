@@ -45,10 +45,19 @@ from ._raes import (
 )
 from ._range import Range
 from ._request import App, Instance, Instantiation, Request
+from ._sharing import (
+    AllocationGroup,
+    MembershipProjection,
+    SharingBindingRecord,
+    SharingBindingRevision,
+    SharingPoolRecord,
+    SharingPoolRevision,
+)
 from ._subnet import Subnet, SubnetAllocation
 from ._warm_pool import WarmRangeGeneration
 
 __all__ = [
+    "AllocationGroup",
     "App",
     "CapacityAssessment",
     "CapacityDeclaration",
@@ -57,6 +66,7 @@ __all__ = [
     "Instance",
     "Instantiation",
     "InterruptState",
+    "MembershipProjection",
     "OperationInput",
     "OperationResultDisposition",
     "OperationResultInbox",
@@ -71,6 +81,10 @@ __all__ = [
     "Range",
     "RangeEventOutbox",
     "Request",
+    "SharingBindingRecord",
+    "SharingBindingRevision",
+    "SharingPoolRecord",
+    "SharingPoolRevision",
     "Subnet",
     "SubnetAllocation",
     "WarmRangeGeneration",

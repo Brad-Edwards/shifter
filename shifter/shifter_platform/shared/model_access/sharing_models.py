@@ -22,6 +22,15 @@ from shared.model_access.core_models import (
     _require_unique,
 )
 
+# The 1,000-ID bound is aggregate across the complete selector definition, not
+# per atomic member (a named union of 32 members must not smuggle 32,000 IDs).
+# The per-field ``max_length`` above still bounds any single atomic selector.
+_MAX_SELECTOR_IDS = 1000
+# ``include_spares`` is meaningful only where the owning CTF adapter defines
+# spare membership; every other selector kind rejects it rather than silently
+# ignoring an operator's request for a semantics it does not have.
+_SPARE_CAPABLE_KINDS = frozenset({SelectorKind.CTF_EVENT, SelectorKind.CTF_COHORT, SelectorKind.CTF_TEAM})
+
 
 class SharingSelector(ClosedModel):
     """Type for SharingSelector."""
@@ -47,8 +56,10 @@ class SharingSelector(ClosedModel):
     def _closed_shape(self) -> SharingSelector:
         """Operation for closed shape."""
         _require_unique(self.ids, "selector.ids")
+        if self.include_spares and self.kind not in _SPARE_CAPABLE_KINDS:
+            raise ValueError("include_spares is valid only for CTF event, cohort, or team selectors")
         if self.kind is SelectorKind.ALL_RANGES:
-            if self.ids or self.members or self.include_spares:
+            if self.ids or self.members:
                 raise ValueError("all_ranges has no ids, members, or spares flag")
         elif self.kind is SelectorKind.NAMED_COLLECTION:
             if self.ids or not self.members:
@@ -58,6 +69,8 @@ class SharingSelector(ClosedModel):
             member_keys = tuple((member.kind.value, member.ids, member.include_spares) for member in self.members)
             if len(member_keys) != len(set(member_keys)):
                 raise ValueError("named collection members must be unique")
+            if sum(len(member.ids) for member in self.members) > _MAX_SELECTOR_IDS:
+                raise ValueError("named collection exceeds the aggregate selector ID limit")
         elif self.members or not self.ids:
             raise ValueError("atomic selectors require ids and no members")
         return self
