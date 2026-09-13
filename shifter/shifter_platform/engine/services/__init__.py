@@ -68,6 +68,16 @@ from ._range_by_request import (
     rebind_range_workspace_by_request,
 )
 from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
+from ._sharing import (
+    MembershipEvidence,
+    SharingError,
+    drain_sharing_binding,
+    get_or_create_allocation_group,
+    preview_effective_policy,
+    publish_membership_projection,
+    publish_sharing_binding,
+    validate_sharing_binding,
+)
 from ._subnet_coordination import (
     read_subnet_reservation,
     release_subnet_reservation,
@@ -113,6 +123,7 @@ __all__ = (
     "EventCapacitySignal",
     "GuestProbeError",
     "GuestProbeRequest",
+    "MembershipEvidence",
     "RaesImageMappingError",
     "RaesImageMappingOptions",
     "RaesImageMappingView",
@@ -124,6 +135,7 @@ __all__ = (
     "RangeWorkspaceRebindOutcome",
     "SSHConnection",
     "SecretsError",
+    "SharingError",
     "VpnProfileConflict",
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
@@ -147,6 +159,7 @@ __all__ = (
     "destroy_range",
     "destroy_range_by_request",
     "disable_raes_image_mapping",
+    "drain_sharing_binding",
     "enqueue_range_activation",
     "evaluate_operation_result",
     "finalize_retiring_generations",
@@ -154,6 +167,7 @@ __all__ = (
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
     "get_openvpn_profile",
+    "get_or_create_allocation_group",
     "get_owned_instance_request_ref",
     "get_range_membership",
     "get_range_pause_resume_capability",
@@ -169,7 +183,10 @@ __all__ = (
     "list_backend_artifacts",
     "list_raes_image_mappings",
     "pause_range",
+    "preview_effective_policy",
     "project_raes_operation_status",
+    "publish_membership_projection",
+    "publish_sharing_binding",
     "range_owner_reassignment_available_by_request",
     "read_subnet_reservation",
     "ready_generations",
@@ -195,5 +212,6 @@ __all__ = (
     "total_active_generation_count",
     "transaction",
     "upsert_raes_image_mapping",
+    "validate_sharing_binding",
     "warm_capacity_scope_ref",
 )

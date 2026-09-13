@@ -62,6 +62,19 @@ Use four typed inputs, with schema/version and content digest:
    deployment ranges. Select independently which profile, provider identity,
    model assignment, capacity and spend/rate/concurrency resources to share.
 
+The mounted deployment catalog is the closed inventory and portable authoring
+boundary for profiles, shards, pools and binding definitions; it is not a
+second live policy database. Engine-owned published collection, pool and
+binding revisions are the sole runtime authority. A definition sourced from
+installation configuration must pass the same authorized, revision-fenced
+publication transaction as an API-authored definition before it can affect a
+range. Runtime resolution must not merge file-backed bindings with database
+bindings or let a catalog reload activate, withdraw or reinterpret a binding
+implicitly. Every published revision pins the exact catalog digest against
+which its profile, alias, provider-pool and account references were validated;
+a replacement catalog requires explicit validation and publication rather than
+same-name rebinding.
+
 Only deployment operators may add shards, provider identity references,
 regions, model/feature aliases, prices or maxima. Scenario authors and event
 organizers cannot widen that inventory. Effective sets are intersections;
