@@ -109,7 +109,8 @@ source authority. GCE instance requests explicitly disable IP forwarding.
 OpenVPN forwarding gateways are not qualified model clients.
 
 `broker_egress_destination` defines `model-broker-egress/v1` with exact `vip`
-and `port: 443`. The GCE firewall consumer requires that capability explicitly,
+and `port: 443`. The GCE firewall consumer delegates capability validation to
+`gcp_range_cell_model_broker`. It requires that capability explicitly,
 compares it with the deployment-configured VIP, and rejects strict `none`,
 forwarding/SA-bearing clients, Private Google Access, VPN and preprovisioned
 firewall bypass. It preserves default/peer/management denies and opens only
