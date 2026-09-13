@@ -181,15 +181,12 @@ class TestInstances:
             participant_readiness_manifest_sha256="a" * 64,
             host_ssh_username="operator",
         )
+        plan = _plan((_node(),), (_network(),))
+        resolver = _resolver(profile)
+        config = _config()
 
         with pytest.raises(RaesGcePlanError, match="participant readiness"):
-            build_raes_range_cell_plan(
-                "req-1",
-                7,
-                _plan((_node(),), (_network(),)),
-                _resolver(profile),
-                _config(),
-            )
+            build_raes_range_cell_plan("req-1", 7, plan, resolver, config)
 
 
 class TestPlacementErrors:

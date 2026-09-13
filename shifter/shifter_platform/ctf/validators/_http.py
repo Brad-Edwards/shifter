@@ -395,6 +395,7 @@ def validate_http(
     timeout, TLS error, transport error, non-JSON or oversized body,
     invalid JSON).
     """
+    is_valid = False
     try:
         canonical_config = normalize_http_validator_config(config, check_destination=False)
     except HTTPValidatorConfigError:
@@ -402,31 +403,26 @@ def validate_http(
             "HTTP validator configuration is invalid for challenge %s",
             safe_log(challenge_id),
         )
-        return False
-
-    parsed_tuple = _validate_and_parse_config_url(canonical_config, challenge_id)
-    if parsed_tuple is None:
-        return False
-    parsed, hostname, port = parsed_tuple
-
-    pinned_ips = _resolve_target(hostname, port, challenge_id)
-    if not pinned_ips:
-        return False
-
-    timeout = canonical_config["timeout"]
-    method = canonical_config["method"]
-    headers = canonical_config["headers"]
-    payload = {"flag": submitted_flag, "challenge_id": str(challenge_id)}
-    request_path, body, headers = _build_request(parsed, method, payload, headers)
-
-    return _send_validation_request(
-        hostname=hostname,
-        pinned_ips=pinned_ips,
-        port=port,
-        timeout=timeout,
-        method=method,
-        request_path=request_path,
-        body=body,
-        headers=headers,
-        challenge_id=challenge_id,
-    )
+    else:
+        parsed_tuple = _validate_and_parse_config_url(canonical_config, challenge_id)
+        if parsed_tuple is not None:
+            parsed, hostname, port = parsed_tuple
+            pinned_ips = _resolve_target(hostname, port, challenge_id)
+            if pinned_ips:
+                timeout = canonical_config["timeout"]
+                method = canonical_config["method"]
+                headers = canonical_config["headers"]
+                payload = {"flag": submitted_flag, "challenge_id": str(challenge_id)}
+                request_path, body, headers = _build_request(parsed, method, payload, headers)
+                is_valid = _send_validation_request(
+                    hostname=hostname,
+                    pinned_ips=pinned_ips,
+                    port=port,
+                    timeout=timeout,
+                    method=method,
+                    request_path=request_path,
+                    body=body,
+                    headers=headers,
+                    challenge_id=challenge_id,
+                )
+    return is_valid
