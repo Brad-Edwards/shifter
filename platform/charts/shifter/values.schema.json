@@ -29,6 +29,79 @@
     "edge"
   ],
   "properties": {
+    "modelBroker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "global_access": {
+          "type": "boolean"
+        },
+        "hostname": {
+          "type": "string",
+          "pattern": "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$|^$"
+        },
+        "vip": {
+          "type": "string",
+          "pattern": "^(10\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])|172\\.(1[6-9]|2[0-9]|3[01])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])|192\\.168\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$|^$"
+        },
+        "tls_secret_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$|^$"
+        },
+        "control_tls_secret_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$|^$"
+        },
+        "trust_configmap_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$|^$"
+        },
+        "gsa": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$|^$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z]+-[a-z]+[0-9]+$|^$"
+        },
+        "control_env": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "MODEL_ACCESS_ENABLED": {"enum": ["true", "false"]},
+            "MODEL_ACCESS_CATALOG_PATH": {"const": "/etc/shifter/model-access/catalog.json"},
+            "MODEL_ACCESS_CATALOG_DIGEST": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          },
+          "if": {"minProperties": 1},
+          "then": {"required": ["MODEL_ACCESS_ENABLED", "MODEL_ACCESS_CATALOG_PATH", "MODEL_ACCESS_CATALOG_DIGEST"]}
+        },
+        "catalog_json": {
+          "type": "string"
+        },
+        "catalog_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$|^$"
+        },
+        "admitted_subnets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(10\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])/(8|9|[12][0-9]|3[0-2])|172\\.(1[6-9]|2[0-9]|3[01])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])/(1[2-9]|2[0-9]|3[0-2])|192\\.168\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])/(1[6-9]|2[0-9]|3[0-2]))$"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "identities_json": {
+          "type": "string"
+        }
+      }
+    },
     "releaseNamespace": { "$ref": "#/$defs/dnsLabel" },
     "provider": {
       "type": "object",
