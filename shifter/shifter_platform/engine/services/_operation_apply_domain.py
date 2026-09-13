@@ -273,6 +273,10 @@ def _apply_range_terminal(range_obj: Range, payload: dict[str, Any], request_id:
     if new_status == ResourceStatus.PAUSED.value:
         extra["paused_at"] = timezone.now()
     previous = _save_status(range_obj, new_status, extra)
+    if new_status in {ResourceStatus.DESTROYED.value, ResourceStatus.FAILED.value}:
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(range_obj)
     _audit(AuditEntityType.RANGE, range_obj.id, new_status, request_id=request_id, previous={"status": previous})
     _enqueue_range_status_event(range_obj, new_status, "")
     return f"range -> {new_status}"
@@ -294,6 +298,9 @@ def _apply_failure(target: Range | Instance, payload: dict[str, Any], request_id
     target.save(update_fields=update_fields)
 
     if is_range:
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(cast("Range", target))
         _audit(
             AuditEntityType.RANGE,
             target.id,

@@ -12,11 +12,15 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from ctf.exceptions import CTFValidationError
 from ctf.models import CTFChallenge, CTFFlag
+
+if TYPE_CHECKING:
+    from shared.receipt_validation import ReceiptSubmissionContext, ReceiptValidationContext, VerifiedReceiptEvidence
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +134,17 @@ def _verify_regex_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
     return safe_fullmatch(flag_obj.flag_hash, submitted_flag, case_sensitive=flag_obj.case_sensitive)
 
 
-def _verify_programmable_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict[str, Any]) -> bool:
+def _verify_programmable_flag(
+    flag_obj: CTFFlag,
+    submitted_flag: str,
+    config: dict[str, Any],
+    *,
+    server_context: ReceiptSubmissionContext | None,
+    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None,
+    sensitive_submission_collector: Callable[[], None] | None,
+) -> bool:
     """Verify a submitted flag against a programmable validator CTFFlag."""
-    from ctf.validators import get_validator
+    from ctf.validators import get_validator, validator_supports_server_context
 
     validator_name = config.get("validator_name", "")
     validator_func = get_validator(validator_name)
@@ -140,20 +152,68 @@ def _verify_programmable_flag(flag_obj: CTFFlag, submitted_flag: str, config: di
         logger.error("Unknown validator %r for flag %s", validator_name, flag_obj.id)
         return False
     try:
-        return validator_func(submitted_flag, config.get("params", {}))
-    except Exception as e:
-        logger.exception("Validator %r error for flag %s: %s", validator_name, flag_obj.id, e)
+        if validator_supports_server_context(validator_name):
+            if sensitive_submission_collector is not None:
+                sensitive_submission_collector()
+            receipt_context = _resolve_registered_receipt_context(server_context, config.get("receipt"))
+            if receipt_context is None:
+                return False
+            contextual = cast("Callable[[str, dict[str, Any], ReceiptValidationContext], object]", validator_func)
+            return _accept_registered_evidence(
+                contextual(submitted_flag, config.get("params", {}), receipt_context),
+                receipt_context,
+                evidence_collector,
+            )
+        legacy = cast("Callable[[str, dict[str, Any]], bool]", validator_func)
+        return legacy(submitted_flag, config.get("params", {}))
+    except Exception:
+        if validator_supports_server_context(validator_name):
+            logger.warning("Context-capable validator failed closed for flag %s", flag_obj.id)
+        else:
+            logger.exception("Validator %r failed for flag %s", validator_name, flag_obj.id)
         return False
 
 
-def _verify_http_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict[str, Any]) -> bool:
+def _verify_http_flag(
+    flag_obj: CTFFlag,
+    submitted_flag: str,
+    config: dict[str, Any],
+    *,
+    server_context: ReceiptSubmissionContext | None,
+    receipt_submission: str,
+    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None,
+    sensitive_submission_collector: Callable[[], None] | None,
+) -> bool:
     """Verify a submitted flag against an HTTP validator CTFFlag."""
-    from ctf.validators import validate_http
+    from ctf.validators import get_receipt_profile, validate_http, validate_receipt
 
     try:
+        if "protocol" in config:
+            if sensitive_submission_collector is not None:
+                sensitive_submission_collector()
+            from ctf.services.challenge._receipt_context import resolve_receipt_validation_context
+            from ctf.validators import normalize_http_validator_config
+
+            canonical = normalize_http_validator_config(config, check_destination=False)
+            if canonical.get("protocol") != "receipt-v1" or server_context is None:
+                return False
+            profile = get_receipt_profile(canonical["profile_id"])
+            if profile is None:
+                return False
+            receipt_context = resolve_receipt_validation_context(
+                server_context,
+                profile_id=canonical["profile_id"],
+                objective_id=canonical["objective_id"],
+            )
+            evidence = validate_receipt(receipt_submission, profile, receipt_context)
+            if evidence is not None and evidence_collector is not None:
+                evidence_collector(evidence)
+            return evidence is not None
         return validate_http(submitted_flag, config, flag_obj.challenge_id)
-    except Exception as e:
-        logger.exception("HTTP validator error for flag %s: %s", flag_obj.id, e)
+    except Exception:
+        # Receipt/provider exceptions may carry URLs, claims, or credentials.
+        # Preserve correlation by flag id and expose no nested exception text.
+        logger.warning("HTTP validator failed closed for flag %s", flag_obj.id)
         return False
 
 
@@ -164,15 +224,46 @@ def _verify_static_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
     return _verify_hash(value, flag_obj.flag_hash, flag_obj.id)
 
 
-def _verify_programmable_or_http_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
+def _verify_programmable_or_http_flag(
+    flag_obj: CTFFlag,
+    submitted_flag: str,
+    *,
+    server_context: ReceiptSubmissionContext | None,
+    receipt_submission: str,
+    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None,
+    sensitive_submission_collector: Callable[[], None] | None,
+) -> bool:
     """Verify a submitted flag against a programmable or HTTP validator CTFFlag."""
     config = flag_obj.validator_config or {}
     if flag_obj.flag_type == "programmable":
-        return _verify_programmable_flag(flag_obj, submitted_flag, config)
-    return _verify_http_flag(flag_obj, submitted_flag, config)
+        return _verify_programmable_flag(
+            flag_obj,
+            submitted_flag,
+            config,
+            server_context=server_context,
+            evidence_collector=evidence_collector,
+            sensitive_submission_collector=sensitive_submission_collector,
+        )
+    return _verify_http_flag(
+        flag_obj,
+        submitted_flag,
+        config,
+        server_context=server_context,
+        receipt_submission=receipt_submission,
+        evidence_collector=evidence_collector,
+        sensitive_submission_collector=sensitive_submission_collector,
+    )
 
 
-def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
+def verify_single_flag(
+    flag_obj: CTFFlag,
+    submitted_flag: str,
+    *,
+    server_context: ReceiptSubmissionContext | None = None,
+    receipt_submission: str | None = None,
+    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None = None,
+    sensitive_submission_collector: Callable[[], None] | None = None,
+) -> bool:
     """Verify a submitted flag against a single CTFFlag record.
 
     Args:
@@ -183,21 +274,55 @@ def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
         True if the flag matches.
     """
     # CTF-1401: extension-registered validators win over built-in dispatch.
-    from ctf.extensions import get_flag_validator
+    from ctf.extensions import flag_validator_supports_server_context, get_flag_validator
 
     custom = get_flag_validator(flag_obj.flag_type)
     if custom is not None:
-        is_valid = bool(custom(flag_obj, submitted_flag))
+        try:
+            if flag_validator_supports_server_context(flag_obj.flag_type):
+                if sensitive_submission_collector is not None:
+                    sensitive_submission_collector()
+                receipt_context = _resolve_registered_receipt_context(server_context, flag_obj.validator_config)
+                if receipt_context is None:
+                    is_valid = False
+                else:
+                    contextual = cast("Callable[[CTFFlag, str, ReceiptValidationContext], object]", custom)
+                    is_valid = _accept_registered_evidence(
+                        contextual(flag_obj, submitted_flag, receipt_context),
+                        receipt_context,
+                        evidence_collector,
+                    )
+            else:
+                legacy = cast("Callable[[CTFFlag, str], bool]", custom)
+                is_valid = bool(legacy(flag_obj, submitted_flag))
+        except Exception:
+            logger.warning("Installed flag validator failed closed for flag %s", flag_obj.id)
+            is_valid = False
     elif flag_obj.flag_type == "regex":
         is_valid = _verify_regex_flag(flag_obj, submitted_flag)
     elif flag_obj.flag_type in ("programmable", "http"):
-        is_valid = _verify_programmable_or_http_flag(flag_obj, submitted_flag)
+        is_valid = _verify_programmable_or_http_flag(
+            flag_obj,
+            submitted_flag,
+            server_context=server_context,
+            receipt_submission=receipt_submission if receipt_submission is not None else submitted_flag,
+            evidence_collector=evidence_collector,
+            sensitive_submission_collector=sensitive_submission_collector,
+        )
     else:
         is_valid = _verify_static_flag(flag_obj, submitted_flag)
     return is_valid
 
 
-def verify_flag(challenge: CTFChallenge, submitted_flag: str) -> bool:
+def verify_flag(
+    challenge: CTFChallenge,
+    submitted_flag: str,
+    *,
+    server_context: ReceiptSubmissionContext | None = None,
+    receipt_submission: str | None = None,
+    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None = None,
+    sensitive_submission_collector: Callable[[], None] | None = None,
+) -> bool:
     """Verify a submitted flag against a challenge.
 
     ``CTFFlag`` rows are the sole source of flag truth (any-of semantics, #532).
@@ -219,7 +344,17 @@ def verify_flag(challenge: CTFChallenge, submitted_flag: str) -> bool:
             challenge.id,
         )
         return False
-    return any(verify_single_flag(flag_obj, submitted_flag) for flag_obj in flags)
+    return any(
+        verify_single_flag(
+            flag_obj,
+            submitted_flag,
+            server_context=server_context,
+            receipt_submission=receipt_submission,
+            evidence_collector=evidence_collector,
+            sensitive_submission_collector=sensitive_submission_collector,
+        )
+        for flag_obj in flags
+    )
 
 
 def _validate_programmable_config(validator_config: dict[str, Any] | None) -> None:
@@ -231,7 +366,7 @@ def _validate_programmable_config(validator_config: dict[str, Any] | None) -> No
     Raises:
         CTFValidationError: If configuration is invalid.
     """
-    from ctf.validators import get_validator
+    from ctf.validators import get_validator, normalize_http_validator_config, validator_supports_server_context
 
     if validator_config is None or not isinstance(validator_config, dict):
         raise CTFValidationError(
@@ -249,6 +384,62 @@ def _validate_programmable_config(validator_config: dict[str, Any] | None) -> No
             f"Unknown validator: {validator_name}",
             details={"validator_name": validator_name},
         )
+    context_capable = validator_supports_server_context(validator_name)
+    if not context_capable and "receipt" in validator_config:
+        raise CTFValidationError("validator_config.receipt requires a context-capable validator")
+    if context_capable:
+        if set(validator_config) - {"validator_name", "params", "receipt"}:
+            raise CTFValidationError("context-capable validator_config contains unknown fields")
+        if not isinstance(validator_config.get("params", {}), dict):
+            raise CTFValidationError("validator_config.params must be an object")
+        try:
+            normalize_http_validator_config(validator_config.get("receipt"))
+        except Exception as exc:
+            raise CTFValidationError("validator_config.receipt is invalid") from exc
+
+
+def _resolve_registered_receipt_context(
+    server_context: ReceiptSubmissionContext | None,
+    selection: object,
+) -> ReceiptValidationContext | None:
+    """Resolve a closed receipt selection for an explicitly capable callback."""
+    if server_context is None:
+        return None
+    from ctf.services.challenge._receipt_context import resolve_receipt_validation_context
+    from ctf.validators import normalize_http_validator_config
+
+    try:
+        canonical = normalize_http_validator_config(selection, check_destination=False)
+        if canonical.get("protocol") != "receipt-v1":
+            return None
+        return resolve_receipt_validation_context(
+            server_context,
+            profile_id=canonical["profile_id"],
+            objective_id=canonical["objective_id"],
+        )
+    except Exception:
+        return None
+
+
+def _accept_registered_evidence(
+    result: object,
+    context: ReceiptValidationContext,
+    evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None,
+) -> bool:
+    """Accept only exact, unexpired evidence from a context-capable callback."""
+    from django.utils import timezone
+
+    from shared.receipt_validation import VerifiedReceiptEvidence
+
+    if (
+        not isinstance(result, VerifiedReceiptEvidence)
+        or result.context != context
+        or result.expires_at <= timezone.now()
+    ):
+        return False
+    if evidence_collector is not None:
+        evidence_collector(result)
+    return True
 
 
 def _validate_http_config(validator_config: dict[str, Any] | None) -> dict[str, Any]:
