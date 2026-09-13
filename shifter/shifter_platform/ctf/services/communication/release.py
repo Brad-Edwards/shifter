@@ -320,7 +320,8 @@ def _classify_due(intent: CommunicationIntent, now: datetime, allow_early: bool)
     if intent.status == IntentStatus.RELEASED.value:
         outcome: str | None = RELEASE_OUTCOME_RELEASED
     elif intent.status != IntentStatus.SCHEDULED.value:
-        outcome = RELEASE_OUTCOME_NOOP  # cancelled / fenced / already expired
+        # cancelled / fenced / already expired
+        outcome = RELEASE_OUTCOME_NOOP
     elif intent.due_at is not None and not allow_early and now < intent.due_at:
         outcome = RELEASE_OUTCOME_NOT_DUE
     elif (
