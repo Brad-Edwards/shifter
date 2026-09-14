@@ -1,6 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/api/bootstrap", () => ({ useBootstrap: vi.fn() }));
+
+import { useBootstrap } from "@/api/bootstrap";
+import { platformSettingsPath } from "@/features/administer/routes";
+import { STAFF_BOOTSTRAP } from "@/test/utils";
 
 import { router } from "./router";
+
+const mockUseBootstrap = vi.mocked(useBootstrap);
 
 interface RouteNode {
   readonly path?: string;
@@ -16,6 +27,13 @@ function collectPaths(routes: readonly RouteNode[]): string[] {
   }
   return out;
 }
+
+beforeEach(() => {
+  mockUseBootstrap.mockReset();
+  mockUseBootstrap.mockReturnValue({ data: STAFF_BOOTSTRAP, isLoading: false, error: null } as ReturnType<
+    typeof useBootstrap
+  >);
+});
 
 describe("router", () => {
   it("mounts a single root route hosting the workspace layout", () => {
@@ -59,5 +77,44 @@ describe("router", () => {
     expect(paths).toContain("workspaces/:workspaceUuid");
     // The dynamic per-workspace surfaces are generated from WORKSPACE_SURFACES.
     expect(paths).toContain("membership");
+  });
+
+  it("redirects the legacy Mission Control settings URL to the staff-owned page", async () => {
+    const memoryRouter = createMemoryRouter(router.routes, {
+      initialEntries: ["/mission-control/settings/"],
+    });
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RouterProvider router={memoryRouter} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Platform settings" })).toBeInTheDocument();
+    await waitFor(() => expect(memoryRouter.state.location.pathname).toBe(platformSettingsPath()));
+  });
+
+  it("preserves the staff gate when a non-staff user follows the legacy settings URL", async () => {
+    mockUseBootstrap.mockReturnValue({
+      data: {
+        ...STAFF_BOOTSTRAP,
+        principal: { ...STAFF_BOOTSTRAP.principal, is_staff: false },
+      },
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useBootstrap>);
+    const memoryRouter = createMemoryRouter(router.routes, {
+      initialEntries: ["/mission-control/settings/"],
+    });
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RouterProvider router={memoryRouter} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Access denied" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Platform settings" })).not.toBeInTheDocument();
+    await waitFor(() => expect(memoryRouter.state.location.pathname).toBe(platformSettingsPath()));
   });
 });

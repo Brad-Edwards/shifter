@@ -16,6 +16,7 @@ describe("PlatformSettingsPage", () => {
     render(<PlatformSettingsPage />);
     expect(screen.getByText("Managed by deployment")).toBeInTheDocument();
     expect(screen.getByText(/platform SPA and RAES provisioning path are the current product authorities/)).toBeInTheDocument();
+    expect(screen.getByText(/Personal account settings are not part of this platform configuration surface/)).toBeInTheDocument();
   });
 
   it("has no axe violations", async () => {
