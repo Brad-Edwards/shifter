@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID
 
 from django.contrib.auth.models import User
 from rest_framework.request import Request
@@ -19,6 +20,7 @@ from rest_framework.response import Response
 
 from cms.services import (
     RetryKeyConflict,
+    RetrySafeLaunchOutcome,
     bind_first_use_launch,
     get_range_by_request_id,
     resolve_retry_recovery,
@@ -63,7 +65,8 @@ class RetrySafeLaunchMixin:
             return self.bad_request(f"{self._RETRY_KEY_HEADER} must be at most {self._MAX_CALLER_KEY_LEN} characters.")
         return key
 
-    def _agents_selection(self, data: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _agents_selection(data: dict[str, Any]) -> dict[str, Any]:
         """Normalize the raw caller agent selection for the retry digest (not catalog-resolved)."""
         if "agents" in data:
             agents = cast(dict[str, int], data["agents"])
@@ -108,7 +111,7 @@ class RetrySafeLaunchMixin:
         user: User,
         scenario: str,
         agents_by_os: dict[str, int] | None,
-        workspace_uuid: Any,
+        workspace_uuid: str | UUID | None,
         caller_key: str,
         agents_selection: dict[str, Any],
     ) -> Response:
@@ -152,7 +155,8 @@ class RetrySafeLaunchMixin:
             )
         return self._bound_range_response(user, outcome, recovered=not outcome.created)
 
-    def _bound_range_response(self, user: User, outcome: Any, *, recovered: bool) -> Response:
+    @staticmethod
+    def _bound_range_response(user: User, outcome: RetrySafeLaunchOutcome, *, recovered: bool) -> Response:
         """Project the BOUND range (terminal-aware), never the caller's current active range."""
         try:
             range_ctx = get_range_by_request_id(user, outcome.request_id, include_terminal=True)

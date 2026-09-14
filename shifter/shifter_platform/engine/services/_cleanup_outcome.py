@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 if TYPE_CHECKING:
+    from engine.models import ProvisionerLaunchIntent
+
     from ._cleanup_verification import CleanupVerificationView
 
 __all__ = [
@@ -142,7 +144,9 @@ def _classify_cleanup(
     return _classify_without_verification(status, obligations)
 
 
-def _append_dispatch_obligations(cleanup: str, intent: Any, obligations: list[CleanupObligation]) -> None:
+def _append_dispatch_obligations(
+    cleanup: str, intent: ProvisionerLaunchIntent | None, obligations: list[CleanupObligation]
+) -> None:
     """Append dispatch/interrupt obligations when cleanup is neither N/A nor verified."""
     if cleanup in (CLEANUP_NOT_APPLICABLE, CLEANUP_VERIFIED_TERMINAL) or intent is None:
         return
