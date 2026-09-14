@@ -223,6 +223,9 @@ def create_raes_range(
         range_obj.status = Range.Status.FAILED
         range_obj.error_message = "Provisioning dispatch failed"
         range_obj.save(update_fields=["status", "error_message", "updated_at"])
+        from ._receipt import revoke_receipt_verifier
+
+        revoke_receipt_verifier(request_uuid)
         raise
     if task_ref:
         _persist_task_arn(range_obj, "provision", task_ref)

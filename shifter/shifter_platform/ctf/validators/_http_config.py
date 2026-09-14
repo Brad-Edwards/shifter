@@ -14,6 +14,7 @@ MAX_HTTP_HEADERS = 16
 MAX_HTTP_URL_LENGTH = 2048
 
 _ALLOWED_CONFIG_KEYS = frozenset({"url", "method", "timeout", "headers"})
+_RECEIPT_CONFIG_KEYS = frozenset({"protocol", "profile_id", "objective_id"})
 _ALLOWED_METHODS = frozenset({"GET", "POST"})
 _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _INVALID_URL_ERROR = "validator_config.url is invalid"
@@ -119,6 +120,8 @@ def normalize_http_validator_config(
     """
     if not isinstance(value, dict):
         raise HTTPValidatorConfigError("validator_config is required for HTTP flags")
+    if "protocol" in value:
+        return _normalize_receipt_config(value)
     unknown_keys = set(value) - _ALLOWED_CONFIG_KEYS
     if unknown_keys:
         raise HTTPValidatorConfigError("validator_config contains unknown fields")
@@ -128,4 +131,24 @@ def normalize_http_validator_config(
         "method": _normalize_method(value.get("method", "POST")),
         "timeout": _normalize_timeout(value.get("timeout", DEFAULT_HTTP_TIMEOUT)),
         "headers": _normalize_headers(value.get("headers", {})),
+    }
+
+
+def _normalize_receipt_config(value: dict[str, Any]) -> dict[str, Any]:
+    """Validate the selection-only receipt-v1 organizer configuration."""
+    if set(value) != _RECEIPT_CONFIG_KEYS or value.get("protocol") != "receipt-v1":
+        raise HTTPValidatorConfigError("validator_config receipt protocol is invalid")
+    profile_id = value.get("profile_id")
+    objective_id = value.get("objective_id")
+    if not isinstance(profile_id, str) or not isinstance(objective_id, str):
+        raise HTTPValidatorConfigError("validator_config receipt profile and objective are required")
+    from ._receipt_profiles import get_receipt_profile
+
+    profile = get_receipt_profile(profile_id)
+    if profile is None or objective_id not in profile.permitted_objectives:
+        raise HTTPValidatorConfigError("validator_config receipt profile or objective is not available")
+    return {
+        "protocol": "receipt-v1",
+        "profile_id": profile_id,
+        "objective_id": objective_id,
     }

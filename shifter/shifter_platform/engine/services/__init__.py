@@ -84,6 +84,14 @@ from ._range_by_request import (
     rebind_range_workspace_by_request,
 )
 from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
+from ._receipt import (
+    ReceiptBindingUnavailable,
+    ReceiptRegistrationConflict,
+    confirm_receipt_verifier_binding,
+    project_receipt_verifier_binding,
+    register_receipt_verifier,
+    revoke_receipt_verifier,
+)
 from ._sharing import (
     MembershipEvidence,
     SharingError,
@@ -151,6 +159,8 @@ __all__ = (
     "RangeOwnershipTransferBlocked",
     "RangeProjectionIntegrityError",
     "RangeWorkspaceRebindOutcome",
+    "ReceiptBindingUnavailable",
+    "ReceiptRegistrationConflict",
     "SSHConnection",
     "SecretsError",
     "SharingError",
@@ -170,6 +180,7 @@ __all__ = (
     "cancel_range",
     "cancel_range_by_request",
     "claim_ready_generation",
+    "confirm_receipt_verifier_binding",
     "connect_ngfw_terminal",
     "connect_terminal",
     "create_ngfw",
@@ -208,6 +219,7 @@ __all__ = (
     "pause_range",
     "preview_effective_policy",
     "project_raes_operation_status",
+    "project_receipt_verifier_binding",
     "publish_membership_projection",
     "publish_sharing_binding",
     "range_owner_reassignment_available_by_request",
@@ -223,6 +235,7 @@ __all__ = (
     "record_raes_operation_status",
     "record_raes_runtime_snapshot",
     "recover_stalled_generations",
+    "register_receipt_verifier",
     "release_capacity_reservations",
     "release_range_capacity",
     "release_subnet_reservation",
@@ -235,6 +248,7 @@ __all__ = (
     "retire_removed_bucket_generations",
     "retry_artifact_preparation",
     "revoke_preparation_grant",
+    "revoke_receipt_verifier",
     "run_guest_probe",
     "set_preparation_adapter_state",
     "start_ngfw",

@@ -46,6 +46,14 @@ directory credentials.
 
 ## Runtime Enforcement
 
+ADR-062 records the [signed CTF receipt binding preflight for #1906](../architecture/ctf-signed-receipt-binding-preflight-1906.md).
+It fixes trusted context, protected signer/key registration, lifecycle fencing
+and atomic replay evidence while preserving existing validator contracts.
+The #1906 source implementation supplies runtime, registration, compatibility,
+replay and provider-conformance evidence. Registry and import checks validate
+design structure; fresh deployed two-generation evidence remains the #1910
+composition gate. This ADR adds no exception.
+
 ADR-011-R9 records the [configurable range lease preflight for #27](../architecture/configurable-range-leases-preflight-27.md).
 It binds installation/runtime policy ownership, generation snapshots, extension
 admission and reuse of canonical cleanup. Registry checks validate this guidance;

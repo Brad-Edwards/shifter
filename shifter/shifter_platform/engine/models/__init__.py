@@ -52,6 +52,7 @@ from ._raes import (
     RaesParticipantAccessBinding,
 )
 from ._range import Range
+from ._receipt import ReceiptVerifierRegistration
 from ._request import App, Instance, Instantiation, Request
 from ._sharing import (
     AllocationGroup,
@@ -94,6 +95,7 @@ __all__ = [
     "RaesParticipantAccessBinding",
     "Range",
     "RangeEventOutbox",
+    "ReceiptVerifierRegistration",
     "Request",
     "SharingBindingRecord",
     "SharingBindingRevision",

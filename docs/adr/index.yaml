@@ -3862,5 +3862,54 @@
       "docs/architecture/model-access/security.md",
       "docs/architecture/model-access/delivery.md"
     ]
+  },
+  {
+    "id": "ADR-062",
+    "title": "Signed CTF receipts bind trusted participant assignment and materialization identity",
+    "status": "accepted",
+    "scope": "ctf",
+    "decision": "Receipt-capable validators extend existing CTF dispatch through an explicitly versioned protocol and immutable server-resolved context. CTF owns participant/challenge authority and atomic scoring/replay evidence, CMS owns range assignment projections and leases, Engine owns generation-bound key registration and invalidation, and the protected proof provider owns signing and proof semantics. Signing material is inaccessible to the portal and participant-controlled hosts. Support is deployment opt-in through an installed profile and exact current-operation registration; fresh deployed composition evidence remains owned by #1910.",
+    "rules": [
+      {
+        "id": "ADR-062-R1",
+        "description": "The expected event, CTF participant, challenge, assigned range instance, materialization and assignment/registration epoch must be resolved through the authenticated CTF submission and CTF-to-CMS-to-Engine service boundaries. Deployment/audience and authorized profile selection are trusted platform policy, never participant input, receipt claims, organizer headers/query parameters or scenario fields. A closed protocol/context-capability seam preserves existing static, regex, programmable, installed-app and HTTP validator contracts; unsupported receipt protocols cannot downgrade to legacy verification.",
+        "checks": []
+      },
+      {
+        "id": "ADR-062-R2",
+        "description": "Receipt signing and registration authority stay outside participant control. Per-range symmetric keys are confined to protected signer and isolated verifier; asymmetric private keys remain with the signer and only authenticated registered public material reaches a local adapter. Registration binds issuer/key/algorithm/profile to exact deployment, range materialization and assignment epoch through existing Engine operation and provider-secret boundaries. Verifier requests authenticate the platform to a profile-owned endpoint with separate service identity. No signer key, arbitrary key URL, guest-host secret, reused user/model/VPN credential or organizer-selected destination for platform credentials is permitted.",
+        "checks": []
+      },
+      {
+        "id": "ADR-062-R3",
+        "description": "Pure verification occurs outside database locks; acceptance revalidates authority, binding, registration and validity deadline under a transaction fence shared with lifecycle writers before scoring. The current provisioner command operation_id is not assumed to be a stable materialization identity. Reset, reassignment including A-to-B-to-A, teardown, expiry and failed provisioning fence old epochs before new readiness; warm/spare handoff must enroll the actual participant. One-shot receipt consumption uses stable verified issuer-scoped identity and durable DB uniqueness in the same CTF submission transaction, surviving solve soft deletion for the validity horizon. Existing scoring, recovery, operation result and reconciliation workflows remain the owners; remote consuming verification and process-local replay truth are prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-062-R4",
+        "description": "One protocol-aware configuration policy must cover interactive writes, closed content-bundle hydration and runtime validation. Receipt transport retains DNS-pinned TLS/SSRF controls, authenticates the caller, bounds total work and payloads, rejects ambiguous verdicts, and minimizes participant data. Secret/env inventories, installation renderers, IAM, OS argv, errors, history disclosure, audit and observability must satisfy the canonical incumbents enumerated in the #1906 preflight. Advertised support requires exact provider contracts, negative/concurrency/compatibility tests and deployed key-lifecycle evidence. Existing registry checks enforce document structure only; this preflight adds no runtime checker or exception.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy"
+    ],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1906",
+      "docs/architecture/ctf-signed-receipt-binding-preflight-1906.md",
+      "docs/architecture/nested-ctf-participant-readiness-preflight-1910.md",
+      "docs/architecture/ctf-http-validator-dns-rebinding-preflight-1188.md",
+      "docs/architecture/gcp-range-cell-containment-threat-model.md",
+      "shifter/shifter_platform/ctf/services/submission.py",
+      "shifter/shifter_platform/ctf/services/challenge/_flag_verify.py",
+      "shifter/shifter_platform/ctf/validators",
+      "shifter/shifter_platform/ctf/extensions.py",
+      "shifter/shifter_platform/ctf/bridges.py",
+      "shifter/shifter_platform/engine/services/_receipt.py",
+      "shifter/shifter_platform/shared/receipt_validation.py",
+      "docs/dev/ctf-signed-receipt-validators.md",
+      "shifter/shifter_platform/engine/launch_intents.py"
+    ]
   }
 ]
