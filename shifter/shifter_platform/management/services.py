@@ -1,7 +1,4 @@
-"""Management service interface.
-
-Platform administration for Shifter platform.
-"""
+"""Management service interface for platform administration."""
 
 from __future__ import annotations
 
@@ -24,8 +21,19 @@ from shared.audit import (
 )
 from shared.constants import USER_CANNOT_BE_NONE
 from shared.log_sanitize import safe_log_fingerprint, safe_log_value
+from shared.model_access import AuthorityInvalidation, AuthorityState, OwnedReference
+from shared.model_access.authority_port import invalidate_authority, suppress_authority_invalidation_signals
 
+from . import model_access_authority as _model_access_authority
 from .models import ActivityLog, UserProfile
+
+ModelAccessGroupEligibilityView = _model_access_authority.ModelAccessGroupEligibilityView
+ModelAccessGroupScope = _model_access_authority.ModelAccessGroupScope
+ModelAccessIdentityAuthorityError = _model_access_authority.ModelAccessIdentityAuthorityError
+is_platform_operator = _model_access_authority.is_platform_operator
+resolve_model_access_group = _model_access_authority.resolve_model_access_group
+resolve_model_access_users = _model_access_authority.resolve_model_access_users
+set_model_access_group_eligibility = _model_access_authority.set_model_access_group_eligibility
 
 # SonarCloud S1192: extracted duplicated string literals.
 USER_PK_REQUIRED_MSG = "user must have a primary key"
@@ -161,7 +169,20 @@ def mark_user_deleted(
             # session or re-login. Converge them here.
             if user.is_active:
                 user.is_active = False
-                user.save(update_fields=["is_active"])
+                with suppress_authority_invalidation_signals():
+                    user.save(update_fields=["is_active"])
+
+            invalidate_authority(
+                AuthorityInvalidation(
+                    deployment_id=None,
+                    authority_refs=(
+                        OwnedReference(owner="management", reference=f"operator:{user.pk}"),
+                        OwnedReference(owner="management", reference=f"user:{user.pk}"),
+                    ),
+                    state=AuthorityState.REVOKED,
+                    reason="user-deleted",
+                )
+            )
 
             # Audit log user deletion inside the atomic boundary.
             audit_log(

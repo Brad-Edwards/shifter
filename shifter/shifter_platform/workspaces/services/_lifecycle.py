@@ -196,6 +196,13 @@ def create_workspace(
                 user=actor,
                 role=WorkspaceRole.OWNER.value,
             )
+            from ._model_access import invalidate_workspace_model_access
+
+            invalidate_workspace_model_access(
+                workspace,
+                reason="workspace-created",
+                include_organization=True,
+            )
             _write_audit(
                 workspace,
                 AuditAction.CREATE,
@@ -330,6 +337,13 @@ def archive_workspace(
             return _projection(workspace)
         workspace.archived_at = timezone.now()
         workspace.save(update_fields=["archived_at", "updated_at"])
+        from ._model_access import invalidate_workspace_model_access
+
+        invalidate_workspace_model_access(
+            workspace,
+            reason="workspace-archived",
+            include_organization=True,
+        )
         _write_audit(
             workspace,
             AuditAction.ARCHIVE,
@@ -362,6 +376,13 @@ def restore_workspace(
             return _projection(workspace)
         workspace.archived_at = None
         workspace.save(update_fields=["archived_at", "updated_at"])
+        from ._model_access import invalidate_workspace_model_access
+
+        invalidate_workspace_model_access(
+            workspace,
+            reason="workspace-restored",
+            include_organization=True,
+        )
         _write_audit(
             workspace,
             AuditAction.RESTORE,
@@ -416,6 +437,9 @@ def transfer_workspace_ownership(
             target.save(update_fields=["role", "updated_at"])
         actor_membership.role = WorkspaceRole.ADMIN.value
         actor_membership.save(update_fields=["role", "updated_at"])
+        from ._model_access import invalidate_workspace_model_access
+
+        invalidate_workspace_model_access(workspace, reason="workspace-owner-transferred")
         _write_audit(
             workspace,
             AuditAction.UPDATE,

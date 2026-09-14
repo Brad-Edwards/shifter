@@ -88,6 +88,11 @@ from ctf.services.hint import (
     update_hint,
     use_hint,
 )
+from ctf.services.model_access_sharing import (
+    ModelAccessSelectorError,
+    classify_model_access_selected_ranges,
+    resolve_model_access_selector,
+)
 from ctf.services.participant import (
     ParticipantPasswordIssuance,
     add_participant,
@@ -133,6 +138,7 @@ from ctf.services.submission import (
 
 __all__ = [
     "ContentRefreshResult",
+    "ModelAccessSelectorError",
     "ParticipantPasswordIssuance",
     "activate_event",
     "active_event_summary",
@@ -150,6 +156,7 @@ __all__ = [
     "calculate_score",
     "cancel_event",
     "check_prerequisites_met",
+    "classify_model_access_selected_ranges",
     "cleanup_event_ranges",
     "complete_event",
     "create_bracket",
@@ -211,6 +218,7 @@ __all__ = [
     "request_event_provisioning",
     "resend_login_info",
     "reset_participant_password",
+    "resolve_model_access_selector",
     "resolve_scenario_ctf_content",
     "resume_event",
     "revoke_award",

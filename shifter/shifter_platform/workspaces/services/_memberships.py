@@ -255,6 +255,9 @@ def _insert_workspace_membership(
 
     membership = WorkspaceMembership.objects.select_related("workspace", "user").get(pk=membership.pk)
     _write_audit(membership, AuditAction.CREATE, audit, new_state=_membership_state(membership))
+    from ._model_access import invalidate_workspace_model_access
+
+    invalidate_workspace_model_access(workspace, reason="workspace-member-added")
     logger.info(
         "workspace membership created workspace_id=%s user_id=%s role=%s",
         workspace.pk,
@@ -371,6 +374,9 @@ def change_workspace_member_role(
         target.save(update_fields=["role", "updated_at"])
         current = _membership_state(target)
         _write_audit(target, AuditAction.UPDATE, audit, previous_state=previous, new_state=current)
+        from ._model_access import invalidate_workspace_model_access
+
+        invalidate_workspace_model_access(workspace, reason="workspace-member-role-changed")
         logger.info(
             "workspace membership role changed workspace_id=%s user_id=%s role=%s",
             workspace.pk,
@@ -412,6 +418,9 @@ def remove_workspace_member(
         result = _projection(target)
         previous = _membership_state(target)
         _write_audit(target, AuditAction.DELETE, audit, previous_state=previous)
+        from ._model_access import invalidate_workspace_model_access
+
+        invalidate_workspace_model_access(workspace, reason="workspace-member-removed")
         target.delete()
         logger.info(
             "workspace membership removed workspace_id=%s user_id=%s",
@@ -439,6 +448,9 @@ def leave_workspace(
         result = _projection(actor_membership)
         previous = _membership_state(actor_membership)
         _write_audit(actor_membership, AuditAction.DELETE, audit, previous_state=previous)
+        from ._model_access import invalidate_workspace_model_access
+
+        invalidate_workspace_model_access(workspace, reason="workspace-member-left")
         actor_membership.delete()
         logger.info(
             "workspace membership left workspace_id=%s user_id=%s",

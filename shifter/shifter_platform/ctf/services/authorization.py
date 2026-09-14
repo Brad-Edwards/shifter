@@ -70,13 +70,9 @@ def is_ctf_platform_admin(user: Actor) -> bool:
     groups drift, so this predicate can never be satisfied by an event-scoped
     participant account that reaches ``/api/v1/ctf/`` through path admission.
     """
-    from shared.auth import is_temporary_ctf_account
+    from management.services import is_platform_operator
 
-    if user is None or not getattr(user, "is_authenticated", False):
-        return False
-    if not getattr(user, "is_active", False) or not getattr(user, "is_superuser", False):
-        return False
-    return not is_temporary_ctf_account(user)
+    return is_platform_operator(user)
 
 
 def _staff_capability_matches(actor_pk: int, event: CTFEvent, capability: Capability) -> bool:

@@ -36,6 +36,7 @@ from shared.model_access import (
     BindingMatch,
     EffectivePolicy,
     ModelAccessCatalog,
+    ModelAccessRangeView,
     OwnedReference,
     SharingBinding,
     SharingPool,
@@ -44,6 +45,12 @@ from shared.model_access import (
 )
 from shared.model_access.core_models import MembershipMode
 
+from ._sharing_authority import (
+    invalidate_sharing_authority,
+    project_selector_resolution,
+    publish_authority_fence,
+    publish_membership_projection,
+)
 from ._sharing_persistence import (
     _ACTIVE,
     _TOMBSTONED,
@@ -54,26 +61,35 @@ from ._sharing_persistence import (
     _as_ref,
     _audit,
     _frozen_snapshot,
-    _match_for_subject,
     _require_facet_reference,
     _require_membership_evidence,
+    _require_publisher_authority,
+    _require_spending_eligibility,
     _resolve_catalog_profile,
     _seal_with_publisher,
     _upsert_pool,
     _write_binding_record,
 )
+from ._sharing_ranges import resolve_model_access_range_page, resolve_model_access_range_views
+from ._sharing_resolution import _match_for_subject
 
 if TYPE_CHECKING:
-    from engine.models import MembershipProjection, SharingBindingRevision
+    from engine.models import SharingBindingRevision
 
 __all__ = [
     "MembershipEvidence",
+    "ModelAccessRangeView",
     "SharingError",
     "drain_sharing_binding",
     "get_or_create_allocation_group",
+    "invalidate_sharing_authority",
     "preview_effective_policy",
+    "project_selector_resolution",
+    "publish_authority_fence",
     "publish_membership_projection",
     "publish_sharing_binding",
+    "resolve_model_access_range_page",
+    "resolve_model_access_range_views",
     "validate_sharing_binding",
 ]
 
@@ -152,6 +168,19 @@ def publish_sharing_binding(
         projection = _require_membership_evidence(
             deployment_id, sealed.sharing_binding_id, selector_digest, sealed.membership_revision
         )
+        publisher_authorities = _require_publisher_authority(
+            deployment_id=deployment_id,
+            projection=projection,
+            binding=sealed,
+            publisher=publisher,
+            lock=False,
+        )
+        _require_spending_eligibility(
+            deployment_id=deployment_id,
+            projection=projection,
+            binding=sealed,
+            lock=False,
+        )
         frozen_members = _frozen_snapshot(projection, is_snapshot, empty_snapshot_ack)
 
         next_revision = current + 1
@@ -171,21 +200,23 @@ def publish_sharing_binding(
             effective_from=sealed.effective_from,
             effective_until=sealed.effective_until,
             observed_membership_revision=projection.membership_revision,
+            observed_assessment_count=projection.assessment_count,
+            observed_authority_revisions=projection.selector_authorities,
+            publisher_authority_revisions=[item.model_dump(mode="json") for item in publisher_authorities],
             publisher_owner=publisher.owner,
             publisher_reference=publisher.reference,
             empty_snapshot_ack=empty_snapshot_ack,
             state=_ACTIVE,
         )
-
-    _audit(
-        "sharing_publish",
-        entity_id=record.pk,
-        context=(
-            f"binding={sealed.sharing_binding_id} revision={next_revision} "
-            f"pool={sealed.sharing_pool_id} priority={sealed.priority} "
-            f"facets={','.join(facet.value for facet in sealed.facets)}"
-        ),
-    )
+        _audit(
+            "sharing_publish",
+            entity_id=record.pk,
+            context=(
+                f"binding={sealed.sharing_binding_id} revision={next_revision} "
+                f"pool={sealed.sharing_pool_id} priority={sealed.priority} "
+                f"facets={','.join(facet.value for facet in sealed.facets)}"
+            ),
+        )
     return revision
 
 
@@ -216,6 +247,24 @@ def drain_sharing_binding(
             raise SharingError("sharing.revision_conflict")
 
         prior = record.revisions.get(definition_revision=record.current_definition_revision)
+        projection = (
+            MembershipProjection.objects.select_for_update()
+            .filter(
+                deployment_id=deployment_id,
+                sharing_binding_id=sharing_binding_id,
+                selector_digest=prior.selector_digest,
+            )
+            .first()
+        )
+        if projection is None:
+            raise SharingError("sharing.publisher_authority_required")
+        binding = SharingBinding.model_validate(prior.definition)
+        publisher_authorities = _require_publisher_authority(
+            deployment_id=deployment_id,
+            projection=projection,
+            binding=binding,
+            publisher=publisher,
+        )
         next_revision = record.current_definition_revision + 1
         terminal = SharingBindingRevision.objects.create(
             binding=record,
@@ -232,6 +281,9 @@ def drain_sharing_binding(
             effective_from=prior.effective_from,
             effective_until=prior.effective_until,
             observed_membership_revision=prior.observed_membership_revision,
+            observed_assessment_count=prior.observed_assessment_count,
+            observed_authority_revisions=prior.observed_authority_revisions,
+            publisher_authority_revisions=[item.model_dump(mode="json") for item in publisher_authorities],
             publisher_owner=publisher.owner,
             publisher_reference=publisher.reference,
             empty_snapshot_ack=prior.empty_snapshot_ack,
@@ -248,49 +300,12 @@ def drain_sharing_binding(
         ):
             projection.fence_revision += 1
             projection.save(update_fields=["fence_revision", "updated_at"])
-
-    _audit("sharing_drain", entity_id=record.pk, context=f"binding={sharing_binding_id} revision={next_revision}")
-    return terminal
-
-
-def publish_membership_projection(
-    *,
-    deployment_id: UUID,
-    sharing_binding_id: str,
-    selector_digest: str,
-    evidence: MembershipEvidence,
-) -> MembershipProjection:
-    """Write an authoritative membership projection (the seam #2140 publishes through).
-
-    Keyed by ``selector_digest`` so evidence for a new selector version is a
-    distinct row and never clobbers the evidence the active definition resolves
-    against, even when a subsequent publication fails.
-    """
-    from engine.models import MembershipProjection
-
-    with transaction.atomic():
-        projection, _created = MembershipProjection.objects.select_for_update().update_or_create(
-            deployment_id=deployment_id,
-            sharing_binding_id=sharing_binding_id,
-            selector_digest=selector_digest,
-            defaults={
-                "membership_revision": evidence.membership_revision,
-                "state": evidence.state,
-                "member_refs": list(evidence.member_refs),
-                "observed_at": evidence.observed_at,
-                "freshness_deadline": evidence.freshness_deadline,
-            },
+        _audit(
+            "sharing_drain",
+            entity_id=record.pk,
+            context=f"binding={sharing_binding_id} revision={next_revision}",
         )
-
-    _audit(
-        "sharing_membership",
-        entity_id=projection.pk,
-        context=(
-            f"binding={sharing_binding_id} membership_revision={evidence.membership_revision} "
-            f"state={evidence.state} members={len(evidence.member_refs)}"
-        ),
-    )
-    return projection
+    return terminal
 
 
 def preview_effective_policy(
