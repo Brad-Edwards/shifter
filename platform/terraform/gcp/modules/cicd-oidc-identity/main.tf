@@ -2,12 +2,12 @@
 
 locals {
   image_environment    = var.environment == "gcp-dev" ? "dev" : var.environment
-  build_enabled        = contains(["gcp-dev", "proof"], var.environment)
-  validate_enabled     = contains(["gcp-dev", "proof"], var.environment)
+  build_enabled        = contains(["gcp-dev", "proof", "nazgul"], var.environment)
+  validate_enabled     = contains(["gcp-dev", "proof", "nazgul"], var.environment)
   promote_enabled      = var.environment == "prod"
-  release_scan_enabled = var.environment == "gcp-dev"
-  deploy_enabled       = var.environment == "gcp-dev"
-  destroy_enabled      = var.environment == "gcp-dev"
+  release_scan_enabled = contains(["gcp-dev", "nazgul"], var.environment)
+  deploy_enabled       = contains(["gcp-dev", "nazgul"], var.environment)
+  destroy_enabled      = contains(["gcp-dev", "nazgul"], var.environment)
 
   # Default GitHub Environment subjects do not include a workflow path. Each
   # purpose therefore has a distinct Environment and a pairwise-disjoint sub.
@@ -22,13 +22,13 @@ locals {
       "repo:${var.github_org}/${var.github_repo}:environment:gcp-promote-prod",
     ] : []
     release_scan = local.release_scan_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:gcp-release-scan-dev",
+      "repo:${var.github_org}/${var.github_repo}:environment:gcp-release-scan-${local.image_environment}",
     ] : []
     deploy = local.deploy_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:gcp-dev",
+      "repo:${var.github_org}/${var.github_repo}:environment:${var.environment}",
     ] : []
     destroy = local.destroy_enabled ? [
-      "repo:${var.github_org}/${var.github_repo}:environment:gcp-dev-destroy",
+      "repo:${var.github_org}/${var.github_repo}:environment:${var.environment}-destroy",
     ] : []
   }
   federated_subjects = toset(flatten(values(local.purpose_subjects)))
@@ -77,6 +77,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
   attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && ${
     var.environment == "gcp-dev" ? "((assertion.ref == 'refs/heads/gcp-dev' && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev') || ((${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-build-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-release-scan-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev-destroy')))" :
+    var.environment == "nazgul" ? "((assertion.ref == 'refs/heads/nazgul' && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:nazgul') || ((${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-build-nazgul' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-nazgul' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-release-scan-nazgul' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:nazgul' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:nazgul-destroy')))" :
     var.environment == "proof" ? "(${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-build-proof' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-validate-proof')" :
     "(${local.ref_condition}) && assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-promote-prod'"
   }"
@@ -109,21 +110,21 @@ resource "google_service_account" "deploy" {
   count        = local.deploy_enabled ? 1 : 0
   project      = var.project_id
   account_id   = "${replace(var.name_prefix, "-", "")}-deploy"
-  display_name = "Shifter gcp-dev platform deployer"
+  display_name = "Shifter ${var.environment} platform deployer"
 }
 
 resource "google_service_account" "release_scan" {
   count        = local.release_scan_enabled ? 1 : 0
   project      = var.project_id
   account_id   = "${replace(var.name_prefix, "-", "")}-scan"
-  display_name = "Shifter gcp-dev exact-release image scanner"
+  display_name = "Shifter ${var.environment} exact-release image scanner"
 }
 
 resource "google_service_account" "destroy" {
   count        = local.destroy_enabled ? 1 : 0
   project      = var.project_id
   account_id   = "${replace(var.name_prefix, "-", "")}-destroy"
-  display_name = "Shifter gcp-dev platform destroyer"
+  display_name = "Shifter ${var.environment} platform destroyer"
 }
 
 resource "google_service_account_iam_member" "packer_build_wif" {
