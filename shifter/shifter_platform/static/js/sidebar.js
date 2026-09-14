@@ -4,6 +4,7 @@
 
 // SonarCloud S1192: extracted duplicated string literals.
 const NAV_LOCK_CLASS = 'nav-lock';
+const NAV_MOUSE_LEAVE_CLASS = 'nav-mouse-leave';
 const ARIA_EXPANDED_ATTR = 'aria-expanded';
 const SUBMENU_OPEN_CLASS = 'is-open';
 
@@ -73,7 +74,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Expand on hover (if not locked)
     leftNav.addEventListener('mouseenter', function() {
-        document.body.classList.remove('nav-mouse-leave');
+        document.body.classList.remove(NAV_MOUSE_LEAVE_CLASS);
         if (!document.body.classList.contains(NAV_LOCK_CLASS)) {
             leftNav.classList.remove('minimized');
             // Re-open submenu if we have an active one
@@ -85,7 +86,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Collapse on mouse leave (if not locked)
     leftNav.addEventListener('mouseleave', function() {
-        document.body.classList.add('nav-mouse-leave');
+        document.body.classList.add(NAV_MOUSE_LEAVE_CLASS);
         if (!document.body.classList.contains(NAV_LOCK_CLASS)) {
             leftNav.classList.add('minimized');
             closeSubmenuPanel();
@@ -101,7 +102,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (willBeLocked) {
             document.body.classList.add(NAV_LOCK_CLASS);
-            document.body.classList.remove('nav-mouse-leave');
+            document.body.classList.remove(NAV_MOUSE_LEAVE_CLASS);
             leftNav.classList.remove('minimized');
             lockBtn.classList.add('active');
             lockBtn.setAttribute(ARIA_EXPANDED_ATTR, 'true');
@@ -120,7 +121,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initial state - start with mouse leave (unless locked)
     if (!isLocked) {
-        document.body.classList.add('nav-mouse-leave');
+        document.body.classList.add(NAV_MOUSE_LEAVE_CLASS);
     }
 
     // Open submenu panel when clicking a submenu trigger
@@ -161,7 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (willBeLocked) {
                 document.body.classList.add(NAV_LOCK_CLASS);
-                document.body.classList.remove('nav-mouse-leave');
+                document.body.classList.remove(NAV_MOUSE_LEAVE_CLASS);
                 leftNav.classList.remove('minimized');
                 lockBtn.classList.add('active');
                 submenuLockBtn.classList.add('active');

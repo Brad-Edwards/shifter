@@ -8,6 +8,9 @@
  * - Cancel/destroy actions
  */
 
+// SonarCloud S1192: extracted duplicated string literal.
+const CANCEL_RANGE_BTN_SELECTOR = '.cancel-range-btn';
+
 class DashboardManager {
     constructor(options) {
         this.csrfToken = options.csrfToken;
@@ -579,7 +582,7 @@ class DashboardManager {
             case 'pausing': {
                 this._renderProvisioningTile(tile, 'Pausing Range', 'Stopping instances...');
                 // Hide cancel button - pause cannot be cancelled
-                const pauseCancelBtn = tile.querySelector('.cancel-range-btn');
+                const pauseCancelBtn = tile.querySelector(CANCEL_RANGE_BTN_SELECTOR);
                 if (pauseCancelBtn) pauseCancelBtn.style.display = 'none';
                 break;
             }
@@ -587,7 +590,7 @@ class DashboardManager {
             case 'resuming': {
                 this._renderProvisioningTile(tile, 'Resuming Range', 'Starting instances...');
                 // Hide cancel button - resume cannot be cancelled
-                const resumeCancelBtn = tile.querySelector('.cancel-range-btn');
+                const resumeCancelBtn = tile.querySelector(CANCEL_RANGE_BTN_SELECTOR);
                 if (resumeCancelBtn) resumeCancelBtn.style.display = 'none';
                 break;
             }
@@ -630,7 +633,7 @@ class DashboardManager {
         if (statusText) statusText.textContent = message;
 
         // Bind cancel button
-        const cancelBtn = tile.querySelector('.cancel-range-btn');
+        const cancelBtn = tile.querySelector(CANCEL_RANGE_BTN_SELECTOR);
         if (cancelBtn) {
             cancelBtn.addEventListener('click', () => this.cancelRange());
         }

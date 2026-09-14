@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model, login
 from django.http import HttpRequest, HttpResponseForbidden, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.views.decorators.http import require_http_methods
 
 from config.organizer_authority import grant_local_organizer
 from config.user_type_sync import sync_user_type
@@ -144,6 +145,7 @@ def dev_login(request):
     return render(request, "dev_login.html")
 
 
+@require_http_methods(["GET", "POST"])
 def dev_logout(request):
     """Quick logout for development.
 

@@ -145,6 +145,7 @@ def legacy_oidc_authenticate(request):
     return HttpResponseRedirect(reverse("platform_login"))
 
 
+@require_http_methods(["GET", "HEAD"])
 @login_required
 def dashboard_router(request):
     """Route authenticated users to the role-aware SPA home/dashboard."""
