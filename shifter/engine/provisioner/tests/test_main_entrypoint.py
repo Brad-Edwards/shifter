@@ -5,7 +5,7 @@ from __future__ import annotations
 import runpy
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 PROVISIONER_ROOT = Path(__file__).resolve().parents[1]
@@ -13,11 +13,13 @@ sys.path.insert(0, str(PROVISIONER_ROOT))
 
 
 class Recorder:
-    def __init__(self) -> None:
+    def __init__(self, return_value: Any = None) -> None:
         self.calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+        self.return_value = return_value
 
-    def __call__(self, *args: Any, **kwargs: Any) -> None:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         self.calls.append((args, kwargs))
+        return self.return_value
 
     def assert_called_once_with(self, *args: Any, **kwargs: Any) -> None:
         assert self.calls == [(args, kwargs)]
@@ -38,6 +40,7 @@ def _install_entrypoint_fakes(monkeypatch) -> dict[str, Recorder]:
         "run_range_terraform": Recorder(),
         "run_range_pause": Recorder(),
         "run_range_resume": Recorder(),
+        "run_polaris_splice": Recorder(SimpleNamespace(status="healthy")),
         "run_raes_range_provision": Recorder(),
         "run_raes_range_destroy": Recorder(),
         "run_raes_range_activate": Recorder(),
@@ -58,6 +61,11 @@ def _install_entrypoint_fakes(monkeypatch) -> dict[str, Recorder]:
         run_raes_range_provision=calls["run_raes_range_provision"],
         run_raes_range_destroy=calls["run_raes_range_destroy"],
         run_raes_range_activate=calls["run_raes_range_activate"],
+    )
+    _install_module(
+        monkeypatch,
+        "polaris_splice_credentials",
+        run_request_polaris_splice_credential_operation=calls["run_polaris_splice"],
     )
     return calls
 
@@ -118,6 +126,22 @@ def test_range_resume_dispatches_range_ops(monkeypatch) -> None:
     _run_main(monkeypatch, "range", "resume", "--request-id", "req-4")
 
     calls["run_range_resume"].assert_called_once_with("req-4", operation_id=None)
+
+
+def test_range_splice_check_dispatches_read_only_health(monkeypatch) -> None:
+    calls = _install_entrypoint_fakes(monkeypatch)
+
+    _run_main(monkeypatch, "range", "splice-check", "--request-id", "req-5")
+
+    calls["run_polaris_splice"].assert_called_once_with("req-5", repair=False)
+
+
+def test_range_splice_repair_dispatches_explicit_mutation(monkeypatch) -> None:
+    calls = _install_entrypoint_fakes(monkeypatch)
+
+    _run_main(monkeypatch, "range", "splice-repair", "--request-id", "req-6")
+
+    calls["run_polaris_splice"].assert_called_once_with("req-6", repair=True)
 
 
 def test_range_pause_threads_operation_id_when_present(monkeypatch) -> None:

@@ -109,6 +109,7 @@ _AWS_AGENT_COMPOSE_TEMPLATE = (
     '\n      ANTHROPIC_SMALL_FAST_MODEL: "__SMALL_MODEL__"'
     '\n      AWS_CONFIG_FILE: "/run/shifter-agent/aws-config"'
     "\n    volumes:"
+    "\n      - /opt/polaris/libexec/polaris-splice-credential.py:/usr/local/libexec/polaris-splice-credential.py:ro"
     "\n      - /run/shifter-agent:/run/shifter-agent:ro"
     "\n      - /run/shifter-agent/claude-bedrock.sh:/etc/profile.d/claude-bedrock.sh:ro"
     "\n    extra_hosts:"

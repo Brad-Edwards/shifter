@@ -28,6 +28,13 @@ POLARIS_REQUIRE_STACK="${POLARIS_REQUIRE_STACK:-1}"
 POLARIS_STACK_START_TIMEOUT_SECONDS="${POLARIS_STACK_START_TIMEOUT_SECONDS:-300}"
 POLARIS_ROOT="${POLARIS_ROOT:-/opt/polaris/scenario-dev/polaris}"
 COMPOSE_DIR="${COMPOSE_DIR:-${POLARIS_ROOT}/build}"
+POLARIS_LIBEXEC_DIR="${POLARIS_LIBEXEC_DIR:-/opt/polaris/libexec}"
+POLARIS_SPLICE_HELPER_SOURCE="${POLARIS_SPLICE_HELPER_SOURCE:-/tmp/polaris-splice-credential.py}"
+POLARIS_SPLICE_HELPER="${POLARIS_LIBEXEC_DIR}/polaris-splice-credential.py"
+
+install -d -m 0755 "${POLARIS_LIBEXEC_DIR}"
+install -m 0755 "${POLARIS_SPLICE_HELPER_SOURCE}" "${POLARIS_SPLICE_HELPER}"
+rm -f "${POLARIS_SPLICE_HELPER_SOURCE}"
 
 if [[ ! "${POLARIS_STACK_START_TIMEOUT_SECONDS}" =~ ^[0-9]+$ ]]; then
   echo "polaris verify-stack: ERROR POLARIS_STACK_START_TIMEOUT_SECONDS must be a non-negative integer." >&2
@@ -81,6 +88,33 @@ fi
 
 echo "polaris verify-stack: validating and building compose stack in ${COMPOSE_DIR}"
 cd "${COMPOSE_DIR}"
+
+# Supply a throwaway bake-only pair and the reviewed entrypoint wrapper as a
+# separate Compose layer. Range bootstrap later replaces this with a per-range
+# pair in docker-compose.override.yml.
+SPLICE_KEY_DIR="$(mktemp -d)"
+chmod 0700 "${SPLICE_KEY_DIR}"
+ssh-keygen -q -t ed25519 -N "" -f "${SPLICE_KEY_DIR}/splice_relay"
+SPLICE_PRIVATE_KEY_B64="$(base64 -w0 < "${SPLICE_KEY_DIR}/splice_relay")"
+SPLICE_PUBLIC_KEY="$(cat "${SPLICE_KEY_DIR}/splice_relay.pub")"
+shred -u "${SPLICE_KEY_DIR}/splice_relay" "${SPLICE_KEY_DIR}/splice_relay.pub" 2>/dev/null \
+  || rm -f "${SPLICE_KEY_DIR}/splice_relay" "${SPLICE_KEY_DIR}/splice_relay.pub"
+rmdir "${SPLICE_KEY_DIR}"
+cat > docker-compose.splice-credential.yml <<COMPOSE_EOF
+services:
+  a9-splice:
+    environment:
+      A9_AUTHORIZED_KEY: "${SPLICE_PUBLIC_KEY}"
+  a14-kali:
+    environment:
+      KALI_SPLICE_PRIVATE_KEY_B64: "${SPLICE_PRIVATE_KEY_B64}"
+    volumes:
+      - ${POLARIS_SPLICE_HELPER}:/usr/local/libexec/polaris-splice-credential.py:ro
+    entrypoint:
+      - /usr/local/libexec/polaris-splice-credential.py
+      - entrypoint
+COMPOSE_EOF
+export COMPOSE_FILE="docker-compose.yml:docker-compose.splice-credential.yml"
 # Fail-closed: an invalid compose file, a failed build, or a failed pull is not
 # a promotable image (no `|| true`). --ignore-buildable skips images this stack
 # builds locally, so a pull failure is a real registry/auth error.
@@ -160,6 +194,13 @@ while :; do
   fi
   echo "polaris verify-stack: waiting for services to reach running:${notready}"
   sleep 15
+done
+
+"${POLARIS_SPLICE_HELPER}" host-check --container a14-kali
+for recreation in 1 2; do
+  docker compose up -d --force-recreate a14-kali
+  "${POLARIS_SPLICE_HELPER}" host-check --container a14-kali
+  echo "polaris verify-stack: a14-kali splice credential recreation ${recreation}/2 verified"
 done
 
 echo "polaris verify-stack: complete (mgmt sshd port ${HOST_MGMT_SSH_PORT}, ${#services[@]} services created and running)"

@@ -586,6 +586,14 @@ class TestScenarioBakeScripts:
         assert "POLARIS_TARBALL_S3_URI" in content
         assert "docker compose build" in content
         assert "docker compose up -d" in content
+        assert content.count("docker compose up -d --force-recreate a14-kali") == 1
+        assert "for recreation in 1 2" in content
+        assert "host-check --container a14-kali" in content
+
+    def test_polaris_template_uploads_the_reviewed_splice_helper(self):
+        content = (PACKER_DIR / "polaris-vm.pkr.hcl").read_text()
+        assert 'source      = "files/polaris-splice-credential.py"' in content
+        assert 'destination = "/tmp/polaris-splice-credential.py"' in content
 
     @staticmethod
     def _run_encryption_verify(tmp_path, ebs_count, enc_count):
