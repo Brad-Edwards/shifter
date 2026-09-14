@@ -2277,6 +2277,7 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1329",
       "docs/architecture/openapi-contract-publication-preflight-1329.md",
+      "docs/architecture/public-range-operations-preflight-2086.md",
       "docs/architecture/spa-cutover-architecture-1300.md",
       "shifter/shifter_platform/config/api_urls.py",
       "shifter/shifter_platform/config/_drf_settings.py",
@@ -2465,6 +2466,7 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/478",
       "docs/architecture/provisioner-persistence-boundary-preflight-478.md",
+      "docs/architecture/public-range-operations-preflight-2086.md",
       "docs/architecture/provisioner-subnet-coordination-preflight-1838.md",
       "docs/architecture/gcp-provisioner-launch-boundary-preflight-1518.md",
       "docs/architecture/range-event-delivery-preflight-476.md",
@@ -3813,6 +3815,59 @@
       "docs/ops/model-access.md",
       "docs/architecture/model-access/security.md",
       "docs/architecture/model-access/delivery.md"
+    ]
+  },
+  {
+    "id": "ADR-062",
+    "title": "Retry-safe public range operations and truthful cleanup outcomes",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Public clients drive range launch, status/results, cancellation, and cleanup through the versioned public API with a caller-supplied retry key, recovering a lost launch response without duplicating effects and without a client-owned execution generation. The public retry identity is (deployment, active actor, action, caller key): deployment scope is server-owned (the dedicated deployment's PostgreSQL isolation boundary, never a hostname/label/workspace UUID), the actor is resolved through shared.api.principals.active_actor_user, and no client selects the deployment scope. The retry key binds to an existing server-owned request/operation and its exact operation generation; there is no second execution ledger, generic idempotency service, or client-selected generation. Reuse anchors on ADR-040 (additive versioned public API), ADR-043 (the existing operation_id-generation operation state, immutable OperationInput, append-only result inbox, and Engine-sole applier), ADR-039 (provider-neutral convergent range operations with request-scoped idempotency semantics), and ADR-046/ADR-051 (organization/workspace tenancy and event/participant authority above range ownership). This adopts the public-operation portion of the #2080 review's proposed operable-lifecycle ADR; it does not overwrite or renumber the accepted ADR-057 (GCP east-west isolation / deferred service mesh) and does not adopt the proposal's broader release/restore qualification program. Design guidance and boundary inventory: docs/architecture/public-range-operations-preflight-2086.md.",
+    "rules": [
+      {
+        "id": "ADR-062-R1",
+        "description": "The public retry identity MUST be (deployment, active actor, action, caller key) with server-owned deployment scope resolved from the dedicated deployment's isolation boundary, never a hostname, ENVIRONMENT label, workspace UUID, or catalog deployment id, and no client-selectable scope. The actor MUST resolve through shared.api.principals.active_actor_user so a session and a user-owned token for the same actor share identity while each credential still passes its own live checks. The key MUST bind to an existing server-owned request/operation and retain its exact operation-generation association across subsequent pause/resume/destroy operations. A retry of an old action MUST NOT resolve to the range's newest generation or start another action. No second execution ledger, generic idempotency service, or client-owned/client-selected execution generation may be introduced; the binding is an admission/idempotency index over the existing owning records, distinct from the ADR-043 launch-retry, result-apply, range-event, and reconciliation workflows.",
+        "checks": []
+      },
+      {
+        "id": "ADR-062-R2",
+        "description": "Canonical immutable-intent binding MUST cover the validated action and target, actor and workspace scope, source/purpose/backend admission, effective egress and relevant lease policy, package/lock digests and producer/contract versions, the complete compiled plan, selected image/artifact/configuration references, and all delivery and participant-access bindings, composed from the existing RangeBindings/RaesInputBindings/operation_input_payload contracts. It MUST reuse shared.operation_envelope.canonical_payload_digest after validation under an intent-projection version distinct from the HTTP major, RAES producer, and worker-envelope versions, rejecting ambiguous duplicate JSON members, non-finite numbers, and invalid shapes before hashing and excluding transient timestamps, generated ids, dispatch attempts, provider observations, and secret values. Retained caller intent and the admitted immutable binding MUST be stored together so an unchanged replay recovers the original binding without recompiling against current inputs, while explicit changed selections or an internal replay supplying different compiled/bound intent conflict with a bounded error before any reservation or effect. Caller selections are included only if they affect the admitted operation; unsupported selections are rejected rather than silently ignored.",
+        "checks": []
+      },
+      {
+        "id": "ADR-062-R3",
+        "description": "PostgreSQL uniqueness and transactions MUST arbitrate concurrent first use of a retry key, including when no row yet exists to lock; a cache lookup or select_for_update on an absent row is insufficient and an insertion race MUST be resolved outside the failed savepoint before reading the winner. Same-key contenders converge on one binding; different-intent contenders receive a bounded conflict. Replay, status lookup, and cancel MUST reauthorize current authority (not original actor identity) through the existing bearer-first authentication, exact scopes, and cms/workspaces/ctf object-policy services, covering revoked actor, altered/rebound/archived workspace, concurrent replay, lost response, and inaccessible operation; inaccessible and unknown lookups MUST share opaque not-found behavior and lists MUST be filtered server-side. A replay MUST bypass new active-range, quota, and warm-claim effects without bypassing authorization or abuse limits (RangeLaunchRateThrottle, documented replay 429/503 and Retry-After). Reservations, immutable input, generation, durable launch intent, and audit intent MUST commit atomically or leave an explicitly recoverable state; no accepted row may leave its sole dispatch obligation in an on_commit callback.",
+        "checks": []
+      },
+      {
+        "id": "ADR-062-R4",
+        "description": "Status, results, cancellation, and cleanup MUST be published through the existing service projections and explicit DRF serializers as distinct facts: admitted (request/input/intent) is not observed readiness; dispatch/execution truth comes from ProvisionerLaunchStatus and provider task state; applied-result truth is owned by OperationResultInbox/ResultStep/the Engine applier; cancel intent is owned by request_provision_interrupt/InterruptState/launch_interrupt; cleanup-pending/unknown and retained residual obligations arise from incomplete cleanup, unavailable provider/secret/DB evidence, interrupt exhaustion, or missing terminal results; verified terminal cleanup requires successful owning lifecycle plus independent inventory/readback with scope and observation time. Timeout, DLQ, FAILED, or a missing Job MUST NOT be reported as proof of absence, and an unavailable or incomplete inventory MUST produce unknown, never an empty success. Cleanup/unknown values MUST NOT be added to ResourceStatus or RAES status enums merely to fit a public response; extend the owning native contract instead. Only authorized residual categories/counts, reasons, freshness, and permitted next actions are exposed; resource/credential locators and diagnostics remain protected. Cancel targets the admitted generation only, does not cancel a newer generation or guarantee provider abort, and once cleanup is owed, actor revocation MUST NOT orphan it: the trusted system lifecycle continues within persisted ownership while public access is reauthorized.",
+        "checks": []
+      },
+      {
+        "id": "ADR-062-R5",
+        "description": "Old-generation teardown MUST survive producer/configuration changes and pack retirement through a narrowly versioned, validated recovery read path with an explicit supported window, pinning enough non-secret ownership identity (provider/project, zone/region, network ownership, resource names/identifiers, dynamic-secret namespace and credential references, egress posture, plan/contract and relevant configuration/artifact versions) to recover the original resources; generated names alone, current registry entries, and current environment values are insufficient. It MUST reuse persisted placement/binding helpers and never reconstruct against a different configuration silently, never relabel stored plan bytes, never delete evidence to make a drain pass, and never require a retired pack or enabled image mapping merely to destroy an existing range, reconciling ADR-024/ADR-032/ADR-034 hard-cutover/drain rules with ADR-043-R7 retention. #1919 MUST be revalidated end to end through the CTF cancellation entry point (nested participant hosts and VPN gateways, dependency ordering, already-absent resources, partial cleanup); range/participant/generation/reservation linkage MUST be retained until terminal cleanup or an equally durable owned recovery link exists, logical admission quota MUST be distinguished from physical/event capacity, and reusable resource slots MUST NOT be released while unresolved resources can still own them. Retention pruning MUST NOT delete the sole retry or residual evidence for an unresolved operation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-062-R6",
+        "description": "The public surface MUST be additive within v1 per ADR-040 (new operations and optional inputs/response fields), regenerate openapi/v1.json and the generated frontend types deterministically, and reuse the shared sanitized error envelope, shf_ bearer scopes, session/CSRF, and PageNumberPagination; changed required inputs, status codes, auth, error semantics, or closed response unions require the ADR-040 versioning process. Caller keys, intent JSON, credentials, and environment maps MUST NOT enter process argv, logs, audit context, range error text, events, metric labels, or public error envelopes; only a restricted expiring keyed intent fingerprint for conflict detection is permitted. Evidence of implementation MUST include real-PostgreSQL contention tests on the make test-platform-postgres lane (preserving its fail-on-skip guard and provisioner effective-privilege tests) covering same-key insert races, different-intent contenders, workspace revocation/rebind, quota, and cancel/result races with committed-state checks; worker/provider-loss drills that kill launcher, provisioner, and applier at durable boundaries including after provider mutation but before result append; and live-boundary inventory/readback on a real deployment (mock-only deletion calls are insufficient) recording exact deployed commits/digests, environment, commands, observations, residual owner, and recovery outcome.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/2086",
+      "https://github.com/Brad-Edwards/shifter/issues/1919",
+      "docs/architecture/public-range-operations-preflight-2086.md",
+      "docs/features/retry-safe-range-operations.md",
+      "docs/technical/shifter_platform/retry-safe-range-operations.md",
+      "shifter/shifter_platform/engine/launch_intents.py",
+      "shifter/shifter_platform/engine/operation_inputs.py",
+      "shifter/shifter_platform/engine/models",
+      "shifter/shifter_platform/shared/operation_envelope.py",
+      "shifter/shifter_platform/mission_control/api"
     ]
   }
 ]

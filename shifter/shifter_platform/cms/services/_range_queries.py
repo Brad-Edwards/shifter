@@ -378,7 +378,7 @@ def has_ready_active_range(user: User, range_source: RangeSource | None = None) 
     return status == ResourceStatus.READY.value
 
 
-def get_range_by_request_id(user: User, request_id: str) -> RangeContext:
+def get_range_by_request_id(user: User, request_id: str, *, include_terminal: bool = False) -> RangeContext:
     """Get range by request_id (UUID string).
 
     Used by WebSocket consumers and views to look up range by request_id.
@@ -386,6 +386,11 @@ def get_range_by_request_id(user: User, request_id: str) -> RangeContext:
     Args:
         user: User requesting the range (ownership check)
         request_id: UUID string of the request
+        include_terminal: When True, read through ``all_objects`` so a soft-deleted
+            terminal (DESTROYED/FAILED) range the caller still owns is authorized
+            and projected instead of 404'd. The retry-safe replay and cleanup-
+            outcome surfaces need this to report on terminal operations
+            (#2086, ADR-062-R4); the default preserves the active-only behavior.
 
     Returns:
         RangeContext: Template-safe projection of the range
@@ -408,7 +413,8 @@ def get_range_by_request_id(user: User, request_id: str) -> RangeContext:
         safe_log_value(request_id),
     )
 
-    instance = RangeInstance.objects.filter(
+    manager = RangeInstance.all_objects if include_terminal else RangeInstance.objects
+    instance = manager.filter(
         request__request_id=request_id,
         user_id=user.id,
         workspace_id__in=authorized_range_workspace_ids(user, WorkspaceOperation.READ_RANGE),

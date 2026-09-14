@@ -32,7 +32,10 @@ from cms.exceptions import CMSError, RangeScopeAdminError, WorkspaceLaunchDenied
 from cms.models import AgentConfig, RangeInstance
 from cms.scenarios.images import project_scenario_images
 from cms.signals import range_status_changed as range_status_changed
+from engine.services import CleanupObligation as CleanupObligation
 from engine.services import EventCapacitySignal as EngineEventCapacitySignal
+from engine.services import RangeCleanupOutcome as RangeCleanupOutcome
+from engine.services import RetryKeyConflict as RetryKeyConflict
 from engine.services import admit_range_capacity as engine_admit_range_capacity
 from engine.services import assess_declared_event_capacity as engine_assess_declared_event_capacity
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
@@ -42,6 +45,7 @@ from engine.services import get_openvpn_profile as engine_get_openvpn_profile
 from engine.services import get_range_pause_resume_capability as engine_get_range_pause_resume_capability
 from engine.services import has_openvpn_profile as engine_has_openvpn_profile
 from engine.services import pause_range as engine_pause_range
+from engine.services import project_range_cleanup_outcome as project_range_cleanup_outcome
 from engine.services import (
     range_owner_reassignment_available_by_request as engine_range_owner_reassignment_available,
 )
@@ -136,6 +140,7 @@ from ._range_workspace_admin import (
     list_range_scope_bindings,
     rebind_range_workspace,
 )
+from ._retry_safe_launch import RetrySafeLaunchOutcome, bind_first_use_launch, resolve_retry_recovery
 from ._scenarios import (
     get_scenario,
     list_launchable_scenarios,
@@ -170,6 +175,7 @@ __all__ = (
     "AgentUploadSpec",
     "AuditEvent",
     "CMSError",
+    "CleanupObligation",
     "CtfOpenVpnProfileConflict",
     "CtfOpenVpnProfileNotFound",
     "CtfOpenVpnProfileUnavailable",
@@ -181,6 +187,7 @@ __all__ = (
     "OpenVpnProfileUnavailable",
     "OwnershipTransferSummary",
     "PackRegistrationRequest",
+    "RangeCleanupOutcome",
     "RangeInstance",
     "RangeLeaseConflict",
     "RangeLeaseNotFound",
@@ -188,12 +195,15 @@ __all__ = (
     "RangeScopeAdminError",
     "RangeScopeAuditContext",
     "RegisteredPack",
+    "RetryKeyConflict",
+    "RetrySafeLaunchOutcome",
     "WorkspaceLaunchDenied",
     "WorkspaceLaunchQuotaExceeded",
     "assets_create_agent",
     "assets_delete_agent",
     "attempt_warm_claim",
     "audit_log",
+    "bind_first_use_launch",
     "cancel_range",
     "cancel_range_by_request_id",
     "cancel_upload",
@@ -262,6 +272,7 @@ __all__ = (
     "max_agent_file_size_bytes",
     "pause_range",
     "pause_range_by_request_id",
+    "project_range_cleanup_outcome",
     "project_scenario_images",
     "range_owner_reassignment_available",
     "range_status_changed",
@@ -270,6 +281,7 @@ __all__ = (
     "reconcile_ctf_range_leases",
     "reconcile_warm_pool",
     "register_pack",
+    "resolve_retry_recovery",
     "resume_range",
     "resume_range_by_request_id",
     "transfer_user_ownership",

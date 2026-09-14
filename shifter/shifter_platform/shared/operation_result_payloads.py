@@ -318,7 +318,9 @@ def _parse_raes_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, 
     ``running`` result be recorded under a terminal step (or the reverse).
     """
     required = frozenset({"raes_status"})
-    unexpected = sorted(frozenset(payload) - (required | {"status_reason"}))
+    # ``cleanup_inventory`` (#2086, ADR-062-R4) is the optional scoped provider
+    # inventory/readback evidence carried by a terminal destroy result.
+    unexpected = sorted(frozenset(payload) - (required | {"status_reason", "cleanup_inventory"}))
     if unexpected:
         raise OperationResultError(f"{_PAYLOAD_FIELD} has unexpected field(s): {', '.join(unexpected)}")
     missing = sorted(required - frozenset(payload))
@@ -341,7 +343,41 @@ def _parse_raes_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, 
         if len(reason) > MAX_DIAGNOSTIC_CHARS:
             raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason exceeds {MAX_DIAGNOSTIC_CHARS} characters")
         parsed["status_reason"] = reason
+    if "cleanup_inventory" in payload:
+        parsed["cleanup_inventory"] = _parse_cleanup_inventory(payload["cleanup_inventory"])
     return parsed
+
+
+_CLEANUP_OUTCOMES = frozenset({"VERIFIED_ABSENT", "RESIDUALS_FOUND", "INCOMPLETE"})
+_CLEANUP_MAX_RESIDUAL_CATEGORIES = 32
+
+
+def _parse_cleanup_inventory(value: Any) -> dict[str, Any]:
+    """Validate the bounded provider inventory/readback evidence (#2086, ADR-062-R4)."""
+    if not isinstance(value, dict):
+        raise OperationResultError(f"{_PAYLOAD_FIELD} cleanup_inventory must be an object")
+    _require_exact_keys(
+        value, frozenset({"outcome", "residual_categories", "scope"}), f"{_PAYLOAD_FIELD} cleanup_inventory"
+    )
+    outcome = value["outcome"]
+    if outcome not in _CLEANUP_OUTCOMES:
+        raise OperationResultError(
+            f"{_PAYLOAD_FIELD} cleanup_inventory outcome must be one of: {', '.join(sorted(_CLEANUP_OUTCOMES))}"
+        )
+    residuals = value["residual_categories"]
+    if not isinstance(residuals, list) or len(residuals) > _CLEANUP_MAX_RESIDUAL_CATEGORIES:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} cleanup_inventory residual_categories must be a bounded list")
+    for index, entry in enumerate(residuals):
+        if not isinstance(entry, dict):
+            raise OperationResultError(
+                f"{_PAYLOAD_FIELD} cleanup_inventory residual_categories[{index}] must be an object"
+            )
+        _require_exact_keys(
+            entry, frozenset({"category", "count"}), f"{_PAYLOAD_FIELD} cleanup_inventory residual_categories[{index}]"
+        )
+    if not isinstance(value["scope"], dict):
+        raise OperationResultError(f"{_PAYLOAD_FIELD} cleanup_inventory scope must be an object")
+    return {"outcome": outcome, "residual_categories": residuals, "scope": value["scope"]}
 
 
 def _parse_raes_snapshot(payload: dict[str, Any], _spec_unused: StepSpec) -> dict[str, Any]:

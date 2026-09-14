@@ -6,6 +6,7 @@ Detailed guides for each Shifter feature.
 
 - [Agents](agents) - Upload and manage XDR/XSIAM installers
 - [Ranges](ranges) - Launch and manage demo environments
+- [Retry-safe range operations](retry-safe-range-operations) - Idempotent launch with a caller retry key and truthful cleanup outcomes
 - [Terminal](terminal) - Access range instances via SSH and RDP
 
 ## Events

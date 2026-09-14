@@ -297,7 +297,30 @@ def _apply_uncancelled_raes_result(
     if step is ResultStep.RAES_TERMINAL_READY:
         return _apply_terminal_ready(row, payload, range_obj)
 
+    if step is ResultStep.RAES_TERMINAL_DESTROYED:
+        # Record scoped provider inventory/readback evidence BEFORE the DESTROYED
+        # transition so verified_terminal, pruning, and CTF capacity release gate on
+        # it, not on the logical status (#2086, ADR-062-R4/R5). Same transaction.
+        _record_cleanup_inventory(row, payload)
+
     return _apply_observation(row, step, payload, range_obj)
+
+
+def _record_cleanup_inventory(row: OperationResultInbox, payload: dict[str, Any]) -> None:
+    """Record the terminal destroy's scoped inventory/readback evidence, if present."""
+    inventory = payload.get("cleanup_inventory")
+    if not isinstance(inventory, dict) or "outcome" not in inventory:
+        return
+    from ._cleanup_verification import record_cleanup_verification
+
+    record_cleanup_verification(
+        request_id=str(row.request_id),
+        operation_id=str(row.operation_id),
+        outcome=str(inventory["outcome"]),
+        scope=dict(inventory.get("scope") or {}),
+        residual_categories=list(inventory.get("residual_categories") or []),
+        observed_at=row.created_at,
+    )
 
 
 def _apply_terminal_ready(row: OperationResultInbox, payload: dict[str, Any], range_obj: Range) -> str:

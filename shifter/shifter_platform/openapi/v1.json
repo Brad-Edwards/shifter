@@ -9604,6 +9604,69 @@
         ]
       }
     },
+    "/api/v1/mission-control/range/{request_id}/cleanup-outcome/": {
+      "get": {
+        "operationId": "api_v1_mission_control_range_cleanup_outcome",
+        "description": "Return the cleanup outcome for the owned range's request_id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeCleanupOutcomeResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
     "/api/v1/mission-control/range/{request_id}/raes/operation-receipts/": {
       "get": {
         "operationId": "api_v1_mission_control_raes_operation_receipts_list",
@@ -10147,6 +10210,16 @@
       "post": {
         "operationId": "api_v1_mission_control_range_launch",
         "description": "Validate input and create a range for the authenticated actor.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional caller retry key (max 200 characters; leading/trailing whitespace trimmed, empty treated as absent). When supplied the launch is idempotent: a retry with the same key and the same launch selections recovers the original range instead of dispatching a duplicate; the same key with different selections returns 409."
+          }
+        ],
         "tags": [
           "mission-control"
         ],
@@ -13794,6 +13867,22 @@
         "type": "string",
         "description": "* `defer` - defer\n* `cancel` - cancel"
       },
+      "CleanupObligation": {
+        "type": "object",
+        "description": "One retained cleanup obligation (#2086, ADR-062-R4).",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ]
+      },
       "ConnectionUrl": {
         "type": "object",
         "description": "One entry from ``mission_control.utils.build_connection_urls``.",
@@ -15092,6 +15181,9 @@
           },
           "range": {
             "$ref": "#/components/schemas/RangePresentation"
+          },
+          "recovered": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -17880,6 +17972,56 @@
         "required": [
           "message",
           "redirect"
+        ]
+      },
+      "RangeCleanupOutcomeResponse": {
+        "type": "object",
+        "description": "Truthful range cleanup-outcome projection (#2086, ADR-062-R4).",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "operation_status": {
+            "type": "string"
+          },
+          "dispatch_status": {
+            "type": "string"
+          },
+          "cancel_state": {
+            "type": "string"
+          },
+          "cleanup": {
+            "type": "string"
+          },
+          "residual_obligations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CleanupObligation"
+            }
+          },
+          "verification_observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "verification_scope": {
+            "type": "object",
+            "additionalProperties": {},
+            "nullable": true
+          }
+        },
+        "required": [
+          "cancel_state",
+          "cleanup",
+          "dispatch_status",
+          "found",
+          "operation_status",
+          "request_id",
+          "residual_obligations"
         ]
       },
       "RangeHistory": {

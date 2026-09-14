@@ -30,7 +30,7 @@ from engine.models import (
 from engine.operation_inputs import operation_input_payload
 from shared.cloud import PROVISIONER_CONTAINER_NAME
 from shared.cloud.kubernetes.naming import build_idempotent_job_name
-from shared.operation_envelope import build_operation_envelope
+from shared.operation_envelope import build_operation_envelope, canonical_payload_digest
 
 # Public surface, including the dispatch-failure names re-exported from
 # ``launch_intents_failure`` (Sonar S104 split) so existing importers are unaffected.
@@ -385,6 +385,29 @@ def _materialize_operation_input(payload: dict[str, object], operation_id: UUID)
     )
 
 
+def _assert_stored_intent_matches(payload: dict[str, object], operation_id: UUID) -> None:
+    """Reject a re-enqueue whose composed intent differs from the immutable input.
+
+    The ``OperationInput`` is immutable per operation generation, but immutability
+    alone does not prove replay equivalence: reusing the stored input for a
+    re-enqueue whose compiled plan or bindings have since changed would silently
+    launch stale intent. Compose the current intent and compare its canonical
+    digest to the stored one, failing closed on a mismatch (ADR-062-R2). No stored
+    input (a legacy range) means there is nothing to compare.
+    """
+    stored = OperationInput.objects.filter(operation_id=operation_id).first()
+    if stored is None:
+        return
+    target = _lock_operation_target(payload)
+    request: Request | None = getattr(target, "request", None)
+    if request is None:
+        return
+    current = operation_input_payload(target, str(payload["resource"]), request, operation=str(payload["operation"]))
+    stored_payload = (stored.envelope or {}).get("payload") or {}
+    if canonical_payload_digest(current) != canonical_payload_digest(stored_payload):
+        raise ValueError("re-enqueue intent does not match the stored immutable operation intent")
+
+
 def enqueue_provisioner_launch(command: list[str]) -> str:
     """Persist one durable intent per authorized operation and return its UUID."""
     payload = validate_provisioner_command(command)
@@ -392,6 +415,7 @@ def enqueue_provisioner_launch(command: list[str]) -> str:
         operation_id = _operation_identity(payload)
         existing = ProvisionerLaunchIntent.objects.filter(operation_id=operation_id).first()
         if existing is not None:
+            _assert_stored_intent_matches(payload, operation_id)
             return str(existing.intent_id)
         canonical = f"{'|'.join(command)}|{operation_id}"
         idempotency_key = sha256(canonical.encode("utf-8")).hexdigest()

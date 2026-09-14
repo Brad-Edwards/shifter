@@ -33,10 +33,35 @@ from ._capacity_plan import (
     assess_event_capacity,
     release_capacity_reservations,
 )
+from ._cleanup_outcome import (
+    CLEANUP_NOT_APPLICABLE,
+    CLEANUP_PENDING,
+    CLEANUP_UNKNOWN,
+    CLEANUP_VERIFIED_TERMINAL,
+    CleanupObligation,
+    RangeCleanupOutcome,
+    project_range_cleanup_outcome,
+)
+from ._cleanup_verification import (
+    CleanupVerificationView,
+    is_cleanup_verified_absent,
+    latest_cleanup_verification,
+    record_cleanup_verification,
+)
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
+from ._public_operations import (
+    DEFAULT_RETRY_TTL_SECONDS,
+    MintedOperation,
+    RetryBindingResult,
+    RetryKeyConflict,
+    bind_public_operation,
+    lookup_public_operation,
+    operation_id_for_request,
+    prune_expired_retry_bindings,
+)
 from ._queries import get_authoritative_range_status, get_ranges_for_ngfw, get_user_ready_range_instances
 from ._raes_evidence import record_raes_operation_status, record_raes_runtime_snapshot
 from ._raes_image import (
@@ -108,20 +133,31 @@ from ._warm_pool import (
 )
 
 __all__ = (
+    "CLEANUP_NOT_APPLICABLE",
+    "CLEANUP_PENDING",
+    "CLEANUP_UNKNOWN",
+    "CLEANUP_VERIFIED_TERMINAL",
+    "DEFAULT_RETRY_TTL_SECONDS",
+    "CleanupObligation",
+    "CleanupVerificationView",
     "EngineError",
     "EventCapacityRequest",
     "EventCapacitySignal",
     "GuestProbeError",
     "GuestProbeRequest",
+    "MintedOperation",
     "RaesImageMappingError",
     "RaesImageMappingOptions",
     "RaesImageMappingView",
     "RaesRangeRef",
     "RangeBindings",
+    "RangeCleanupOutcome",
     "RangeMembership",
     "RangeOwnershipTransferBlocked",
     "RangeProjectionIntegrityError",
     "RangeWorkspaceRebindOutcome",
+    "RetryBindingResult",
+    "RetryKeyConflict",
     "SSHConnection",
     "SecretsError",
     "VpnProfileConflict",
@@ -134,6 +170,7 @@ __all__ = (
     "apply_pending_operation_results",
     "assess_declared_event_capacity",
     "assess_event_capacity",
+    "bind_public_operation",
     "bucket_state_counts",
     "cancel_range",
     "cancel_range_by_request",
@@ -165,11 +202,17 @@ __all__ = (
     "get_ssh_key",
     "get_user_ready_range_instances",
     "has_openvpn_profile",
+    "is_cleanup_verified_absent",
     "latest_capacity_declaration",
+    "latest_cleanup_verification",
     "list_backend_artifacts",
     "list_raes_image_mappings",
+    "lookup_public_operation",
+    "operation_id_for_request",
     "pause_range",
     "project_raes_operation_status",
+    "project_range_cleanup_outcome",
+    "prune_expired_retry_bindings",
     "range_owner_reassignment_available_by_request",
     "read_subnet_reservation",
     "ready_generations",
@@ -177,6 +220,7 @@ __all__ = (
     "rebind_range_workspace_by_request",
     "reconcile_capacity_budgets",
     "record_capacity_declaration",
+    "record_cleanup_verification",
     "record_raes_operation_status",
     "record_raes_runtime_snapshot",
     "recover_stalled_generations",
