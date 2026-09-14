@@ -428,8 +428,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       roots: ${{ steps.gen.outputs.roots }}
-      module_tests: ${{ steps.gen.outputs.module_tests }}
-      has_module_tests: ${{ steps.gen.outputs.has_module_tests }}
+      contract_tests: ${{ steps.gen.outputs.contract_tests }}
+      has_contract_tests: ${{ steps.gen.outputs.has_contract_tests }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -452,16 +452,16 @@ jobs:
           set -euo pipefail
           roots="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
             python3 scripts/check_tf_roots/check_tf_roots.py --matrix)"
-          module_tests="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
-            python3 scripts/check_tf_roots/check_tf_roots.py --module-tests)"
+          contract_tests="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --contract-tests)"
           {
             echo "roots=${roots}"
-            echo "module_tests=${module_tests}"
+            echo "contract_tests=${contract_tests}"
           } >> "$GITHUB_OUTPUT"
-          if [ "${module_tests}" = "[]" ]; then
-            echo "has_module_tests=false" >> "$GITHUB_OUTPUT"
+          if [ "${contract_tests}" = "[]" ]; then
+            echo "has_contract_tests=false" >> "$GITHUB_OUTPUT"
           else
-            echo "has_module_tests=true" >> "$GITHUB_OUTPUT"
+            echo "has_contract_tests=true" >> "$GITHUB_OUTPUT"
           fi
 
   terraform-validate:
@@ -513,27 +513,29 @@ jobs:
       - name: terraform validate
         run: terraform -chdir="${ROOT_PATH}" validate -no-color
 
-  # Reusable-module contract tests (issue #1528 AC3, rollout tracked in #1597).
-  # Only modules whose inventory `contract` ships an executable test appear in
-  # the matrix; when none do, the job is skipped.
-  terraform-module-contracts:
+  # Credential-free `terraform test` suites (issue #1528 AC3, rollout tracked
+  # in #1597; root tests added by #1437). The matrix carries every module whose
+  # inventory `contract` ships a test and every root that declares a `test`;
+  # when none do, the job is skipped.
+  terraform-contract-tests:
     permissions:
       contents: read
-    name: Contract test (${{ matrix.module.path }})
+    name: Contract test (${{ matrix.suite.path }})
     needs: [terraform-matrix]
-    if: ${{ needs.terraform-matrix.outputs.has_module_tests == 'true' }}
+    if: ${{ needs.terraform-matrix.outputs.has_contract_tests == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        module: ${{ fromJSON(needs.terraform-matrix.outputs.module_tests) }}
+        suite: ${{ fromJSON(needs.terraform-matrix.outputs.contract_tests) }}
     env:
       TF_IN_AUTOMATION: '1'
       AWS_EC2_METADATA_DISABLED: 'true'
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
-      # Pass the (inventory-validated, path-contained) matrix path as
-      # environment data rather than interpolating it into a shell script.
-      MODULE_PATH: ${{ matrix.module.path }}
+      # Pass the (inventory-validated, path-contained) matrix values as
+      # environment data rather than interpolating them into a shell script.
+      SUITE_PATH: ${{ matrix.suite.path }}
+      SUITE_KIND: ${{ matrix.suite.kind }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -542,19 +544,25 @@ jobs:
 
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
-          terraform_version: ${{ matrix.module.terraform_version }}
+          terraform_version: ${{ matrix.suite.terraform_version }}
           terraform_wrapper: false
 
-      # Reusable modules carry no lockfile, so init resolves providers fresh
-      # (not readonly). The contract test uses mock providers, so it needs no
-      # cloud credentials.
+      # Reusable modules carry no lockfile, so init resolves providers fresh.
+      # Roots own a committed lockfile, which init must honor read-only so the
+      # test runs the exact pinned providers. The suites use mock providers, so
+      # they need no cloud credentials.
       - name: terraform init (backendless)
-        run: >-
-          terraform -chdir="${MODULE_PATH}" init
-          -backend=false -input=false -no-color
+        run: |
+          set -euo pipefail
+          lockfile_args=()
+          if [ "${SUITE_KIND}" = "root" ]; then
+            lockfile_args=(-lockfile=readonly)
+          fi
+          terraform -chdir="${SUITE_PATH}" init \
+            -backend=false -input=false -no-color "${lockfile_args[@]}"
 
       - name: terraform test
-        run: terraform -chdir="${MODULE_PATH}" test -no-color
+        run: terraform -chdir="${SUITE_PATH}" test -no-color
 
   # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
   # shipped 38/39 challenges unsubmittable because flag-row reconciliation
@@ -1720,13 +1728,19 @@ jobs:
         working-directory: shifter/packer
         run: uv sync --group dev
 
-      # No ``--cov``: this package ships Packer HCL, not owned production Python
-      # (its ``tests/`` validate the HCL/config), so a Python coverage number
-      # would only measure tests covering themselves. It is not a Sonar coverage
-      # publisher (#1529 / REV1 Q6 -- do not manufacture a misleading percentage).
+      # The package now owns the preparation worker runtime as well as Packer
+      # HCL, so its Python tests publish the runtime's coverage to Sonar.
       - name: Run tests
         working-directory: shifter/packer
-        run: uv run pytest tests/
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-packer
+          path: shifter/packer/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
 
   bootstrap-tests:
     permissions:
@@ -1769,6 +1783,26 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install Helm to render the chart (hermetic, version-pinned, checksum-verified)
+        env:
+          HELM_VERSION: v3.15.4
+          # Reviewed, digest-pinned SHA-256 of helm-v3.15.4-linux-amd64.tar.gz.
+          # Pinned in reviewed repo content rather than fetched from get.helm.sh
+          # (the same mutable origin as the binary), so a compromised release
+          # bucket/CDN/publishing credential cannot supply a matching checksum
+          # for a tampered tarball. Bump both fields together on a Helm upgrade.
+          HELM_SHA256: 11400fecfc07fd6f034863e4e0c4c4445594673fd2a129e701fe41f31170cfa9
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/helm-bin"
+          curl -fsSL -o "${RUNNER_TEMP}/helm.tar.gz" \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  ${RUNNER_TEMP}/helm.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/helm.tar.gz" -C "${RUNNER_TEMP}" linux-amd64/helm
+          mv "${RUNNER_TEMP}/linux-amd64/helm" "${RUNNER_TEMP}/helm-bin/helm"
+          echo "${RUNNER_TEMP}/helm-bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/helm-bin/helm" version --short
 
       - name: Install dependencies
         working-directory: scripts/gcp
@@ -2212,9 +2246,8 @@ jobs:
           compact: true
           soft_fail: true
 
-  # Issue #708: advisory container/IaC and lockfile CVE signal. Exit code 0
-  # and artifact-only SARIF — findings do not block merge; gitleaks/bandit/
-  # checkov/Sonar remain the enforcement gates.
+  # Repository configuration remains advisory here. Exact release OCI digests
+  # are scanned as a blocking deploy gate in _gcp-dev.yml (#2084).
   security-trivy-advisory:
     permissions:
       contents: read
@@ -2271,7 +2304,7 @@ jobs:
   security-osv-advisory:
     permissions:
       contents: read
-    name: Security (osv-scanner advisory)
+    name: Security (osv-scanner)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -2292,28 +2325,41 @@ jobs:
           echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
           "${RUNNER_TEMP}/osv-scanner" --version
 
-      - name: Scan repo-root lockfiles (advisory)
+      - name: Scan every owned lockfile
         run: |
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/osv-results"
-          sarif_out="${RUNNER_TEMP}/osv-results/package-lock.sarif"
-          # Issue #708 scope: repo-root lockfiles (package-lock.json today).
-          if [ -f package-lock.json ]; then
-            osv-scanner scan source \
-              --lockfile=package-lock.json \
+          scan_status=0
+          lock_count=0
+          while IFS= read -r -d '' lockfile; do
+            lock_count=$((lock_count + 1))
+            slug=$(printf '%s' "${lockfile#./}" | tr '/.' '--')
+            sarif_out="${RUNNER_TEMP}/osv-results/${slug}.sarif"
+            if ! osv-scanner scan source \
+              --experimental-no-default-plugins \
+              --experimental-plugins lockfile \
+              --lockfile="${lockfile}" \
               --format sarif \
-              --output-file "${sarif_out}" \
-              ./ || true
+              --output-file "${sarif_out}"; then
+              scan_status=1
+            fi
+          done < <(
+            {
+              find . -name package-lock.json -not -path '*/node_modules/*' -print0
+              find . -name uv.lock -not -path '*/.venv/*' -print0
+            } | sort -z
+          )
+          if [ "${lock_count}" -eq 0 ]; then
+            echo "::error::No owned lockfiles were discovered"
+            exit 1
           fi
-          if [ ! -s "${sarif_out}" ]; then
-            # shellcheck disable=SC2016
-            SARIF_OUT="${sarif_out}" python3 -c 'import json, os, pathlib; pathlib.Path(os.environ["SARIF_OUT"]).write_text(json.dumps({"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[]}))'
-          fi
+          exit "${scan_status}"
 
       - name: Upload OSV-Scanner SARIF artifact
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: osv-scanner-advisory-sarif
+          name: osv-scanner-sarif
           path: ${{ runner.temp }}/osv-results/*.sarif
           if-no-files-found: error
           retention-days: 14
@@ -2425,6 +2471,7 @@ jobs:
       - shifter-platform-js-tests
       - shifter-platform-spa
       - shifter-engine-tests
+      - packer-tests
       - bootstrap-tests
       - check-layer-imports-tests
       - installation-tests
@@ -2473,6 +2520,14 @@ jobs:
         with:
           name: coverage-provisioner
           path: shifter/engine/provisioner
+      - name: Download packer coverage
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true')
+          && needs.packer-tests.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-packer
+          path: shifter/packer
       - name: Download bootstrap coverage
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true')
@@ -2546,12 +2601,11 @@ jobs:
           # from non-secret repository variables (the analysis token stays in
           # env: and never reaches argv). Sources, exclusions, suppressions, and
           # coverage report paths remain shared analysis configuration in the
-          # repo-root sonar-project.properties. On pull requests, wait for the
-          # SonarCloud quality gate so a failing new-code gate fails this job
-          # (and, via the Quality caller, the PR Gate check). Branch runs (push
-          # to dev) upload analysis without blocking on pre-existing debt.
+          # repo-root sonar-project.properties. Every canonical analysis waits
+          # for the quality-gate verdict: a successful upload is not evidence
+          # that the analyzed source passed the configured release gate (#2084).
           args: >-
             -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.scanner.skipJreProvisioning=true
-            ${{ github.event_name == 'pull_request' && '-Dsonar.qualitygate.wait=true' || '' }}
+            -Dsonar.qualitygate.wait=true

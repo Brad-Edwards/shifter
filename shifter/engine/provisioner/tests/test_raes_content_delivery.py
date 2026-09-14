@@ -71,7 +71,7 @@ def _feature(**kw) -> RaesPlanFeature:
 
 def _plan(*, content=(), features=(), nodes=None) -> RaesPlan:
     return RaesPlan(
-        raes_version="2.0.0",
+        raes_version="3.5.0",
         nodes=nodes or (_node(),),
         networks=(),
         content=content,
@@ -765,3 +765,26 @@ class TestDirectoryContentInstalledTreeDigest:
         # for directory content -- proven precisely in
         # test_raes_content_delivery_plan.py; here we only need confirmation
         # that realization got far enough to run both real guest steps.
+
+
+@pytest.mark.parametrize("success", [True, False])
+def test_warm_readback_checks_content_without_reinstalling(success, monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda *_args: None)
+    from dataclasses import replace
+
+    executor = _FakeExecutor(results=[_success("RAES_CONTENT_FILE_VERIFIED") if success else _failure("changed")])
+    ops, _, _ = _ops(executor=executor)
+    kwargs = {
+        "raes_plan": _plan(content=(_content(source_name="pkg", path="/opt/x.bin"),)),
+        "instance_outputs": [_output("node.web#0")],
+        "delivery_bindings": [_binding()],
+        "ops": replace(ops, verify_only=True),
+    }
+    if success:
+        realize_raes_content_delivery(**kwargs)
+    else:
+        with pytest.raises(RaesContentDeliveryError):
+            realize_raes_content_delivery(**kwargs)
+    assert executor.calls
+    assert all("RAES_CONTENT_FILE_INSTALLED" not in call["script"] for call in executor.calls)
+    assert all("RAES_CONTENT_FILE_VERIFIED" in call["script"] for call in executor.calls)

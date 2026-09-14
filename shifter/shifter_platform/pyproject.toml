@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Self-service cyber range platform"
 requires-python = ">=3.12"
 dependencies = [
-    "asyncssh>=2.23.0",
+    "asyncssh>=2.23.1",
     "bleach>=6.4.0",
     "boto3",
     "channels",
@@ -20,7 +20,7 @@ dependencies = [
     "django-encrypted-model-fields>=0.6.5",
     "django-health-check<5.0",
     "django-ses",
-    "djangorestframework",
+    "djangorestframework>=3.17.2",
     "drf-spectacular>=0.29.0",
     "drf-spectacular-sidecar>=2026.6.1",
     "firebase-admin",
@@ -53,15 +53,14 @@ dependencies = [
     # provisioner consumer accepts (raes_plan.SUPPORTED_RAES_VERSION, kept in
     # agreement by tests/shared/raes/test_plan_provisioner_parity.py); changing
     # it requires passing the RAES conformance gate.
-    # raes-env-packs 3.1.0 requires this exact RAES release.
-    "raes==2.0.0",
+    # raes-env-packs 5.2.0 requires this exact RAES release.
+    "raes==3.5.0",
     # RAES environment-pack contract and canonical content-digest implementation
-    # used by the uniform content-ingestion path (#1578, ADR-034). 3.1.0 adds the
-    # public environment-pack publication profile consumed by artifact-requirement
-    # resolution (#1580, env-packs #141); it still requires raes==2.0.0. Keep this
+    # used by the uniform content-ingestion path (#1578, ADR-034) and the public
+    # publication profile consumed by artifact resolution (#1580). Keep this
     # exact: its schemas, validator, digest profile, publication profile, and raes
     # dependency are one versioned consumer contract.
-    "raes-env-packs==3.1.0",
+    "raes-env-packs==5.2.0",
     "uvicorn-worker",
     # uvicorn's WebSocket protocol backend. Not imported directly: the
     # Gunicorn/Uvicorn ASGI workers (entrypoint.sh) need websockets (or wsproto)
@@ -276,6 +275,7 @@ constraint-dependencies = [
     "cryptography>=48.0.1",
     "pyopenssl>=26.0.0",
     "pyasn1>=0.6.4",
+    "sqlparse>=0.6.0",
     "ujson>=5.13.0",
     "cbor2>=5.9.0",
     "urllib3>=2.6.3",

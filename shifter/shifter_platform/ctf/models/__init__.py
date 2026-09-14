@@ -51,11 +51,12 @@ from .event import CTFEvent, CTFEventStaff
 from .event_page import CTFEventPage
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
-from .notification import CTFEmailTemplate, CTFNotification, CTFScheduledTask, CTFWebhook
+from .notification import CTFEmailTemplate, CTFNotification, CTFWebhook
 from .rating import CTFChallengeRating
 from .recovery import CTFRangeRecovery
+from .scheduled_task import CTFScheduledTask
 from .spare_range import CTFSpareRange
-from .submission import CTFAward, CTFSubmission
+from .submission import CTFAward, CTFReceiptConsumption, CTFSubmission
 from .taxonomy import (
     CTFChallengeFile,
     CTFChallengePrerequisite,
@@ -84,6 +85,7 @@ __all__ = [
     "CTFNotification",
     "CTFParticipant",
     "CTFRangeRecovery",
+    "CTFReceiptConsumption",
     "CTFScheduledTask",
     "CTFSpareRange",
     "CTFSubmission",

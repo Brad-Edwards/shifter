@@ -1,7 +1,7 @@
 {
   "schema_version": "associated-artifact-manifest/v1",
   "manifest_id": "smoke-linux-associated-artifacts",
-  "manifest_version": "0.1.0",
+  "manifest_version": "0.2.0",
   "canonicalization_profile": "associated-artifact-set/v1",
   "scope": "scenario",
   "parent_ref": {
@@ -19,9 +19,9 @@
       "uri": "raes-environment-pack:/docs/concepts.md",
       "checksum": {
         "algorithm": "sha256",
-        "value": "106c79b545f78c39f8e2fedc4e33ac479984bdc40d2eb6879a59479b28bf16dd"
+        "value": "032329a9ddb2a9e501682b92a6c0989b09a1ef06628869ea59a72740da769059"
       },
-      "size_bytes": 619,
+      "size_bytes": 613,
       "created_at": "2026-09-09T00:00:00Z",
       "source": "shifter",
       "satisfies_refs": [],
@@ -51,7 +51,7 @@
       "uri": "raes-environment-pack:/pack.yaml",
       "checksum": {
         "algorithm": "sha256",
-        "value": "08add2785e7bd7c2c4e66ade2fb8e152e886d21efb33b30b181ee7800061fed0"
+        "value": "152b7288f5b44ef7b6b86bc2fd7d51d097cd98f2f9faa3ee8a3442bb9740f569"
       },
       "size_bytes": 517,
       "created_at": "2026-09-09T00:00:00Z",
@@ -67,9 +67,9 @@
       "uri": "raes-environment-pack:/sdl/smoke-linux.sdl.yaml",
       "checksum": {
         "algorithm": "sha256",
-        "value": "f04f6735e53c16193b96e9742cec6ec5eaaeb068a8ded6eb68bbe3275cf505be"
+        "value": "ad44c970388998c82f440f0dd425fa69d90dd871ae1cac32d64fb4da1670b4b9"
       },
-      "size_bytes": 2065,
+      "size_bytes": 2432,
       "created_at": "2026-09-09T00:00:00Z",
       "source": "shifter",
       "satisfies_refs": [],
@@ -77,5 +77,5 @@
       "description": null
     }
   },
-  "set_digest": "sha256:c1a0d48f909a3e5decdf49f2cdcdd02b40685713494b87fec98652700b186310"
+  "set_digest": "sha256:b2285de5a8fb047f5aa50a14621f9f5492aa79647bc1bd1f5d992d2e59a8f482"
 }

@@ -50,3 +50,9 @@ variable "terraform_state_bucket_name" {
   type        = string
   default     = ""
 }
+
+variable "platform_external_bucket_names" {
+  description = "Existing RAES/CTF content buckets whose workload IAM is managed by platform-core."
+  type        = set(string)
+  default     = []
+}

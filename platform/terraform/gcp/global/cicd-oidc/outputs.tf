@@ -23,6 +23,16 @@ output "deploy_service_account_email" {
   value       = module.cicd_oidc_identity.deploy_service_account_email
 }
 
+output "release_scan_service_account_email" {
+  description = "Exact-release scanner service account email; set as GCP_RELEASE_SCAN_SERVICE_ACCOUNT."
+  value       = module.cicd_oidc_identity.release_scan_service_account_email
+}
+
+output "release_evidence_bucket_name" {
+  description = "Private GCS bucket that stores raw release evidence."
+  value       = module.cicd_oidc_identity.release_evidence_bucket_name
+}
+
 output "destroy_service_account_email" {
   description = "Platform destroy service account email; set as GCP_DESTROY_SERVICE_ACCOUNT."
   value       = module.cicd_oidc_identity.destroy_service_account_email

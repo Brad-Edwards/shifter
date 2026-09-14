@@ -198,7 +198,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         ],
       },
       { surface: "Terminal", routeName: "mission_control:terminal", audience: "both", purpose: "Access terminal sessions when a range is available.", routePath: "/mission-control/terminal/", iconKey: "terminal", activeContext: "range", external: false },
-      { surface: "Settings", routeName: "mission_control:settings", purpose: "Change user or platform settings.", routePath: "/mission-control/settings/", iconKey: "settings" },
     ],
   ),
   makeGroup(

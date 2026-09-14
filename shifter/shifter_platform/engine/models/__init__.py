@@ -38,6 +38,14 @@ from ._operation_io import (
     OperationResultKind,
 )
 from ._outbox import OutboxStatus, RangeEventOutbox
+from ._preparation import (
+    PreparationAdapter,
+    PreparationAttempt,
+    PreparationGrant,
+    PreparationOperation,
+    PreparationScopeLock,
+    PreparedArtifactAdmission,
+)
 from ._raes import (
     RaesArtifactSatisfactionBinding,
     RaesContentDeliveryBinding,
@@ -45,12 +53,22 @@ from ._raes import (
     RaesParticipantAccessBinding,
 )
 from ._range import Range
+from ._receipt import ReceiptVerifierRegistration
 from ._request import App, Instance, Instantiation, Request
 from ._retry_binding import PublicOperationRetryBinding, RetryBindingStatus
+from ._sharing import (
+    AllocationGroup,
+    MembershipProjection,
+    SharingBindingRecord,
+    SharingBindingRevision,
+    SharingPoolRecord,
+    SharingPoolRevision,
+)
 from ._subnet import Subnet, SubnetAllocation
 from ._warm_pool import WarmRangeGeneration
 
 __all__ = [
+    "AllocationGroup",
     "App",
     "CapacityAssessment",
     "CapacityDeclaration",
@@ -60,11 +78,18 @@ __all__ = [
     "Instance",
     "Instantiation",
     "InterruptState",
+    "MembershipProjection",
     "OperationInput",
     "OperationResultDisposition",
     "OperationResultInbox",
     "OperationResultKind",
     "OutboxStatus",
+    "PreparationAdapter",
+    "PreparationAttempt",
+    "PreparationGrant",
+    "PreparationOperation",
+    "PreparationScopeLock",
+    "PreparedArtifactAdmission",
     "ProvisionerLaunchIntent",
     "ProvisionerLaunchStatus",
     "PublicOperationRetryBinding",
@@ -75,8 +100,13 @@ __all__ = [
     "Range",
     "RangeCleanupVerification",
     "RangeEventOutbox",
+    "ReceiptVerifierRegistration",
     "Request",
     "RetryBindingStatus",
+    "SharingBindingRecord",
+    "SharingBindingRevision",
+    "SharingPoolRecord",
+    "SharingPoolRevision",
     "Subnet",
     "SubnetAllocation",
     "WarmRangeGeneration",

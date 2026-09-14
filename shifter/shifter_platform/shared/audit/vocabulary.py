@@ -58,6 +58,12 @@ class AuditAction(models.TextChoices):
     WARM_FALLBACK = "warm_fallback", "Warm Fallback"
     WARM_ACTIVATE = "warm_activate", "Warm Activate"
     WARM_RETIRE = "warm_retire", "Warm Retire"
+    # Model-access sharing (PLAT-202, #2139): binding publication, withdrawal and
+    # authoritative membership projection changes are audited with safe IDs and
+    # revisions only.
+    SHARING_PUBLISH = "sharing_publish", "Sharing Publish"
+    SHARING_DRAIN = "sharing_drain", "Sharing Drain"
+    SHARING_MEMBERSHIP = "sharing_membership", "Sharing Membership"
 
 
 class AuditEntityType(models.TextChoices):
@@ -81,6 +87,11 @@ class AuditEntityType(models.TextChoices):
     ORGANIZATION = "organization", "Organization"
     # ADR-051, #2048: scoped CTF communications (campaigns, intents, deliveries).
     COMMUNICATION = "communication", "Communication"
+    # Model-access sharing binding (PLAT-202, #2139).
+    SHARING_BINDING = "sharing_binding", "Sharing Binding"
+    PREPARATION_ADAPTER = "preparation_adapter", "Preparation Adapter"
+    PREPARATION_GRANT = "preparation_grant", "Preparation Grant"
+    ARTIFACT_PREPARATION = "artifact_preparation", "Artifact Preparation"
 
 
 class AuditActorType(models.TextChoices):

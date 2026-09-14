@@ -54,8 +54,8 @@ def _compiled_domain_plan(
         name: domain-topology-probe
         nodes:
           lan: {type: switch}
-          dc: {type: vm, os: windows}
-          member: {type: vm, os: __MEMBER_OS__}
+          dc: {type: compute, os: windows}
+          member: {type: compute, os: __MEMBER_OS__}
         accounts:
           domain-admin:
             username: Administrator
@@ -109,14 +109,13 @@ __AUTHORITY_EFFECT__
 def test_real_compiled_domain_topology_is_admitted_and_dispatched() -> None:
     port = RecordingPort()
 
-    result = ShifterProvisioner(port).apply(_compiled_domain_plan(), RuntimeSnapshot())
+    plan = _compiled_domain_plan()
+    result = ShifterProvisioner(port).enqueue(plan)
 
-    assert result.success is True
-    assert result.diagnostics == []
+    assert result.accepted is True
+    assert not result.diagnostics
     assert len(port.plans) == 1
-    placement = next(
-        entry for entry in result.snapshot.entries.values() if entry.resource_type == "domain-controller-placement"
-    )
+    placement = next(entry for entry in plan.resources.values() if entry.resource_type == "domain-controller-placement")
     payload = {
         "operation_id": "domain-topology-probe",
         "resources": [
@@ -147,7 +146,7 @@ def test_real_compiled_domain_topology_is_admitted_and_dispatched() -> None:
     [
         ({"member_os": "linux"}, "shifter-provisioner.domain-member-os-unsupported"),
         ({"controller_count": 2}, "shifter-provisioner.domain-controller-cardinality-unsupported"),
-        ({"service_auth_method": "publickey"}, "shifter-provisioner.domain-account-policy-unsupported"),
+        ({"service_auth_method": "key"}, "shifter-provisioner.domain-account-policy-unsupported"),
         ({"service_username": "Administrator"}, "shifter-provisioner.domain-account-duplicate"),
         ({"service_spn": "not-a-service-principal"}, "shifter-provisioner.account-spn-invalid"),
     ],
@@ -215,7 +214,7 @@ def test_malformed_domain_topology_fails_before_serialization() -> None:
         payload={
             "name": "dc",
             "os_family": "windows",
-            "spec": {"node": {"type": "vm", "os": "windows"}},
+            "spec": {"node": {"type": "compute", "os": "windows"}},
             "domain_topology": "active_directory",
         },
     )
@@ -256,6 +255,7 @@ def test_apply_uses_snapshot_for_incremental_domain_topology() -> None:
     )
     result = ShifterProvisioner(port).apply(incremental, snapshot)
 
-    assert result.success is True
-    assert result.diagnostics == []
-    assert len(port.plans) == 1
+    assert result.success is False
+    assert any(d.code == "shifter-provisioner.incremental-unsupported" for d in result.diagnostics)
+    assert not any(d.code == "provisioning.domain-topology.controller-unbound" for d in result.diagnostics)
+    assert len(port.plans) == 0

@@ -23,15 +23,18 @@ hand it over.
 from __future__ import annotations
 
 import logging
-from typing import Any
 from uuid import UUID
 
+from shared.raes.completion_evidence import build_completion_evidence
 from shared.warm_pool.activation_input import ActivationInput
 
 from cloud.exceptions import CloudError
+from config import GCERangeCellConfig
+from raes_gcp_activate import ActivationResult
 from raes_gcp_apply import RaesGceApplyOptions, realize_access_on_existing_cell
 from raes_plan import parse_plan
 from raes_range_ops import _realized_members, _registry_resolver
+from raes_snapshot import snapshot_resources
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +43,13 @@ class ActivationRealizationError(CloudError):
     """The claimant's fresh access could not be realized on the claimed generation."""
 
 
-def realize_claimant_access_on_cell(activation: ActivationInput, activate_generation: UUID) -> list[dict[str, Any]]:
+def realize_claimant_access_on_cell(
+    activation: ActivationInput,
+    activate_generation: UUID,
+    *,
+    config: GCERangeCellConfig | None = None,
+    allocated_network_cidr: str | None = None,
+) -> ActivationResult:
     """Rotate credentials and realize the claimant's participant access; return members.
 
     Fails closed (raising :class:`ActivationRealizationError`) on any realization
@@ -50,16 +59,32 @@ def realize_claimant_access_on_cell(activation: ActivationInput, activate_genera
     operation_input = activation.raes_input
     raes_plan = parse_plan(operation_input.plan)
     try:
-        instance_outputs = realize_access_on_existing_cell(
+        result = realize_access_on_existing_cell(
             str(activate_generation),
             activation.legacy_range_id,
             raes_plan,
             _registry_resolver(operation_input),
-            options=RaesGceApplyOptions(egress_mode=operation_input.egress_mode),
+            options=RaesGceApplyOptions(
+                config=config,
+                egress_mode=operation_input.egress_mode,
+                allocated_network_cidr=allocated_network_cidr,
+            ),
             access_bindings=operation_input.access_binding_transport(),
+            delivery_bindings=operation_input.binding_transport(),
+        )
+        verified = result["composition_verified_addresses"]
+        if not isinstance(verified, list) or any(not isinstance(address, str) for address in verified):
+            raise ActivationRealizationError("warm activation verification addresses are invalid")
+        resources = snapshot_resources(raes_plan, set(verified))
+        completion = build_completion_evidence(
+            operation_input.plan,
+            resources=resources,
+            operating_systems=result["operating_systems"],
+            compute_substrates=result["compute_substrates"],
+            generation_id=str(activate_generation),
         )
     except Exception as exc:
         raise ActivationRealizationError(
             f"warm activation could not realize claimant access: {type(exc).__name__}"
         ) from None
-    return _realized_members({"instances": instance_outputs})
+    return ActivationResult(members=_realized_members(result), completion=completion)

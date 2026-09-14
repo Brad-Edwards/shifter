@@ -100,15 +100,28 @@ def _apply_destroy_by_request(
 ) -> bool:
     """Status-branch helper for ``destroy_range_by_request`` (same shape as ``_apply_destroy_to_range``)."""
     if range_obj.status == ResourceStatus.DESTROYED.value:
+        from ._receipt import revoke_receipt_verifier
+
+        revoke_receipt_verifier(request_id)
         logger.warning("destroy_range_by_request: already destroyed request_id=%s", request_id)
         return False
     if range_obj.status == ResourceStatus.DESTROYING.value:
+        from ._receipt import revoke_receipt_verifier
+
+        revoke_receipt_verifier(request_id)
         logger.info("destroy_range_by_request: already destroying request_id=%s", request_id)
         return True
 
     previous_status = range_obj.status
     range_obj.status = ResourceStatus.DESTROYING.value
     range_obj.save(update_fields=["status"])
+    # A destroying materialization must stop authorizing receipt callbacks before
+    # provider teardown starts. Revocation is intentionally not rolled back if
+    # the external teardown launch fails: a later retry may re-register a new
+    # assignment, but stale proof must never become valid again.
+    from ._receipt import revoke_receipt_verifier
+
+    revoke_receipt_verifier(request_id)
     logger.info(
         "destroy_range_by_request: set DESTROYING request_id=%s range_id=%s",
         request_id,
@@ -148,9 +161,16 @@ def cancel_range_by_request(request_id: UUID) -> bool:
             return False
         settled = _cancellation_already_settled(range_obj, request_id)
         if settled is not None:
+            if settled:
+                from ._receipt import _revoke_receipt_verifier_for_range
+
+                _revoke_receipt_verifier_for_range(range_obj)
             return settled
         range_obj.status = Range.Status.DESTROYING
         range_obj.save(update_fields=["status"])
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(range_obj)
         request_provision_interrupt(range_obj)
         logger.info(
             "cancel_range_by_request: cancelled request_id=%s range_id=%s",
@@ -280,35 +300,47 @@ def reassign_range_owner_by_request(request_id: UUID, new_user: User) -> bool:
         True if a range was found (and reassigned or already owned by
         ``new_user``), False if no range exists for ``request_id``.
     """
+    from django.db import transaction
+
     from engine.models import Range
 
-    range_obj = Range.objects.filter(request__request_id=request_id).select_related("request").first()
-    if not range_obj:
-        logger.warning("reassign_range_owner_by_request: no range for request_id=%s", request_id)
-        return False
-
-    if range_obj.user_id == new_user.id:
-        logger.info(
-            "reassign_range_owner_by_request: already owned by user_id=%s request_id=%s",
-            new_user.id,
-            request_id,
+    with transaction.atomic():
+        range_obj = (
+            Range.objects.select_for_update().filter(request__request_id=request_id).select_related("request").first()
         )
-        return True
+        if not range_obj:
+            logger.warning("reassign_range_owner_by_request: no range for request_id=%s", request_id)
+            return False
 
-    if range_obj.vpn_access_binding is not None:
-        # The downloaded client credential is already outside platform custody.
-        # Refuse the ownership change rather than leave it valid for a former
-        # participant. Callers must destroy the generation (which removes the
-        # gateway and all secrets) and provision a replacement for the new owner.
-        raise RangeOwnershipTransferBlocked("Range ownership cannot change while participant VPN access is active")
+        if range_obj.user_id == new_user.id:
+            logger.info(
+                "reassign_range_owner_by_request: already owned by user_id=%s request_id=%s",
+                new_user.id,
+                request_id,
+            )
+            return True
 
-    range_obj.user = new_user
-    range_obj.cms_user_id = new_user.id
-    range_obj.save(update_fields=["user", "cms_user_id"])
+        if range_obj.vpn_access_binding is not None:
+            # The downloaded client credential is already outside platform custody.
+            # Refuse the ownership change rather than leave it valid for a former
+            # participant. Callers must destroy the generation (which removes the
+            # gateway and all secrets) and provision a replacement for the new owner.
+            raise RangeOwnershipTransferBlocked("Range ownership cannot change while participant VPN access is active")
 
-    if range_obj.request is not None:
-        range_obj.request.user = new_user
-        range_obj.request.save(update_fields=["user"])
+        # Receipt authorization is server-held, so it can be revoked atomically
+        # before the assignment owner changes.  The new owner must receive a new
+        # registration revision and assignment epoch.
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(range_obj)
+
+        range_obj.user = new_user
+        range_obj.cms_user_id = new_user.id
+        range_obj.save(update_fields=["user", "cms_user_id"])
+
+        if range_obj.request is not None:
+            range_obj.request.user = new_user
+            range_obj.request.save(update_fields=["user"])
 
     logger.info(
         "reassign_range_owner_by_request: reassigned range_id=%s request_id=%s to user_id=%s",

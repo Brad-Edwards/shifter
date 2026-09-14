@@ -3,11 +3,18 @@
   "docs_root": "docs",
   "features": [
     {
+      "id": "tenant-artifact-preparation",
+      "title": "In-tenant artifact preparation and private adapters",
+      "requirement": "GEN-001",
+      "user_docs": ["ops/artifact-preparation.md"],
+      "technical_docs": ["architecture/raes-in-tenant-artifact-preparation-design-1583.md"]
+    },
+    {
       "id": "range-model-access",
       "title": "Per-range model access (planned; PLAT-202 design)",
       "requirement": "PLAT-202",
       "user_docs": ["features/model-access.md"],
-      "technical_docs": ["architecture/model-access/architecture.md", "ops/model-access.md"]
+      "technical_docs": ["architecture/model-access/architecture.md", "architecture/model-access/gcp-packaging.md", "ops/model-access.md", "ops/model-access-gcp-probes.md"]
     },
     {
       "id": "agents",

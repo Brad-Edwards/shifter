@@ -39,6 +39,7 @@ from engine.services import RetryKeyConflict as RetryKeyConflict
 from engine.services import admit_range_capacity as engine_admit_range_capacity
 from engine.services import assess_declared_event_capacity as engine_assess_declared_event_capacity
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
+from engine.services import confirm_receipt_verifier_binding as engine_confirm_receipt_verifier_binding
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
 from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_by_uuid
 from engine.services import get_openvpn_profile as engine_get_openvpn_profile
@@ -46,6 +47,7 @@ from engine.services import get_range_pause_resume_capability as engine_get_rang
 from engine.services import has_openvpn_profile as engine_has_openvpn_profile
 from engine.services import pause_range as engine_pause_range
 from engine.services import project_range_cleanup_outcome as project_range_cleanup_outcome
+from engine.services import project_receipt_verifier_binding as engine_project_receipt_verifier_binding
 from engine.services import (
     range_owner_reassignment_available_by_request as engine_range_owner_reassignment_available,
 )
@@ -62,7 +64,6 @@ from shared.audit import (
     audit_log,
 )
 
-# --- Public service functions ------------------------------------------------
 from ._agents import (
     create_agent,
     delete_agent,
@@ -85,6 +86,9 @@ from ._ngfws import (
     list_ngfws,
 )
 from ._non_user_range_launch import NonUserWorkflow, create_non_user_range
+
+# --- Public service functions ------------------------------------------------
+from ._pack_conformance import validate_registered_pack_conformance
 from ._queries import (
     find_range_instance_id_by_request,
     get_range_spec_by_id,
@@ -140,6 +144,7 @@ from ._range_workspace_admin import (
     list_range_scope_bindings,
     rebind_range_workspace,
 )
+from ._receipt import ReceiptRangeBindingUnavailable, confirm_ctf_receipt_binding, project_ctf_receipt_binding
 from ._retry_safe_launch import RetrySafeLaunchOutcome, bind_first_use_launch, resolve_retry_recovery
 from ._scenarios import (
     get_scenario,
@@ -194,6 +199,7 @@ __all__ = (
     "RangeRebindResult",
     "RangeScopeAdminError",
     "RangeScopeAuditContext",
+    "ReceiptRangeBindingUnavailable",
     "RegisteredPack",
     "RetryKeyConflict",
     "RetrySafeLaunchOutcome",
@@ -208,6 +214,7 @@ __all__ = (
     "cancel_range_by_request_id",
     "cancel_upload",
     "complete_upload",
+    "confirm_ctf_receipt_binding",
     "connect_range_terminal",
     "create_agent",
     "create_credential",
@@ -224,12 +231,14 @@ __all__ = (
     "engine_admit_range_capacity",
     "engine_assess_declared_event_capacity",
     "engine_cancel_range_by_request",
+    "engine_confirm_receipt_verifier_binding",
     "engine_destroy_range_by_request",
     "engine_get_instance_ips_by_uuid",
     "engine_get_openvpn_profile",
     "engine_get_range_pause_resume_capability",
     "engine_has_openvpn_profile",
     "engine_pause_range",
+    "engine_project_receipt_verifier_binding",
     "engine_range_owner_reassignment_available",
     "engine_reassign_range_owner",
     "engine_rebind_range_workspace",
@@ -272,6 +281,7 @@ __all__ = (
     "max_agent_file_size_bytes",
     "pause_range",
     "pause_range_by_request_id",
+    "project_ctf_receipt_binding",
     "project_range_cleanup_outcome",
     "project_scenario_images",
     "range_owner_reassignment_available",
@@ -285,5 +295,6 @@ __all__ = (
     "resume_range",
     "resume_range_by_request_id",
     "transfer_user_ownership",
+    "validate_registered_pack_conformance",
     "validate_scenario_requirements",
 )

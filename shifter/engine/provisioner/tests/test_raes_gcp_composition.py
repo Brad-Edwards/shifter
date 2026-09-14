@@ -28,7 +28,7 @@ def _node(os_family: str = "linux", address: str = "node.web") -> RaesPlanNode:
 
 def _plan(node: RaesPlanNode, *, content=(), accounts=(), features=()) -> RaesPlan:
     return RaesPlan(
-        raes_version="2.0.0", nodes=(node,), networks=(), content=content, accounts=accounts, features=features
+        raes_version="3.5.0", nodes=(node,), networks=(), content=content, accounts=accounts, features=features
     )
 
 

@@ -172,6 +172,13 @@ The first slice intentionally stays small:
   contract table, registry entry, and mutation test together; do not add a new
   branch of repeated per-section validation.
 
+  The registry check keeps contract support, specialized ADR contracts, and
+  dispatch in separate modules. This preserves the closed contract surface
+  while keeping each validator independently reviewable and within the static
+  analysis limits enforced for guardrail code. Validator helpers carry concise
+  docstrings, and the documentation check remains below the enforced file-size
+  limit so SonarCloud can keep analyzing guardrail changes on every pull request.
+
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
   Every first-party Django app is classified there (ADR-001-R3, #1523) as a
@@ -843,6 +850,22 @@ The first slice intentionally stays small:
   and `check-tf-iam-ssm-scope` siblings; a commit that bypassed pre-commit
   could land the regression (#1846). The live CI invocation was added to
   close that gap.
+
+- `global-iam-drift-check`
+  ADR guard check (fast + CI, registered in `_registry.py`) pinning the
+  out-of-band `platform/terraform/global/iam` drift-check workflow
+  (`.github/workflows/iam-drift-check.yml`). global/iam owns the GitHub Actions
+  OIDC deploy role and is applied out-of-band, so a merged `github-oidc.tf`
+  change can go un-applied and the live role drifts behind committed config -
+  the recurring "new resource, then next deploy fails with HTTP 403" churn
+  (#247). The check
+  binds the workflow's contract on one designated plan job: a push-only trigger
+  (no `pull_request`/`pull_request_target`, per ADR-003-R5), a `{dev, main}`
+  branch allowlist, a `global/iam` path filter, and a real, global/iam-scoped,
+  non-swallowed `terraform plan -detailed-exitcode` so a drift plan fails the
+  build. The workflow runs `-refresh=false` (comparing committed config to the
+  last-applied state) and is read-only, so it needs no IAM introspection the
+  deploy role lacks. Enforces ADR-004-R26.
 
 ## Local Usage
 

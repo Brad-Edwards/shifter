@@ -16,9 +16,11 @@ DEPLOY_SECRETS_DOC = REPO_ROOT / "docs" / "dev" / "deploy-secrets.md"
 # Full set of GCP secrets present in a healthy CI environment.
 GCP_CI_ENV = {
     "GCP_PROJECT_ID": "prod-ksqdkj",
+    "SHIFTER_CONFIG_GCP_DEV": "backend: gcp\nsettings: {}\n",
     "GCP_PUBLIC_HOSTNAME": "gcp.example.test",
     "GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN": "example.test",
     "GCP_DEPLOY_SERVICE_ACCOUNT": "deploy@prod-ksqdkj.iam.gserviceaccount.com",
+    "GCP_RELEASE_SCAN_SERVICE_ACCOUNT": "scan@prod-ksqdkj.iam.gserviceaccount.com",
     "GCP_WORKLOAD_IDENTITY_PROVIDER": "projects/1/locations/global/workloadIdentityPools/p/providers/gh",
     "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@example.test",
     "GCP_BOOTSTRAP_ADMIN_PASSWORD": "Galvatron7!!!",
@@ -81,6 +83,13 @@ class TestRunPreflightGcpCi:
         assert not report.ok
         assert any("GCP_PROJECT_ID" in r.message and r.status is Status.FAIL for r in report.results)
 
+    def test_missing_shifter_config_fails(self):
+        env = dict(GCP_CI_ENV)
+        del env["SHIFTER_CONFIG_GCP_DEV"]
+        report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
+        assert not report.ok
+        assert any("SHIFTER_CONFIG_GCP_DEV" in r.message and r.status is Status.FAIL for r in report.results)
+
     def test_shared_gcp_service_account_does_not_satisfy_deploy_preflight(self):
         env = dict(GCP_CI_ENV)
         del env["GCP_DEPLOY_SERVICE_ACCOUNT"]
@@ -88,6 +97,13 @@ class TestRunPreflightGcpCi:
         report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
         assert not report.ok
         assert any("GCP_DEPLOY_SERVICE_ACCOUNT" in check.message for check in report.failures)
+
+    def test_missing_release_scan_identity_fails(self):
+        env = dict(GCP_CI_ENV)
+        del env["GCP_RELEASE_SCAN_SERVICE_ACCOUNT"]
+        report = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=env)
+        assert not report.ok
+        assert any("GCP_RELEASE_SCAN_SERVICE_ACCOUNT" in check.message for check in report.failures)
 
     def test_missing_operator_creds_fail_without_optout(self):
         env = dict(GCP_CI_ENV)
@@ -341,8 +357,12 @@ class TestConfigEntrypoint:
 
 class TestFacade:
     def test_deploy_reexports_run_preflight(self):
-        assert callable(deploy.run_preflight)
-        assert callable(deploy.preflight_gate)
+        expected = preflight.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=dict(GCP_CI_ENV))
+        actual = deploy.run_preflight(Cloud.GCP, Mode.CI, "gcp-dev", env=dict(GCP_CI_ENV))
+
+        assert actual == expected
+        assert deploy.run_preflight._facade_original is preflight.run_preflight
+        assert deploy.preflight_gate._facade_original is preflight.preflight_gate
 
 
 # --- Parity with docs/dev/deploy-secrets.md -----------------------------------

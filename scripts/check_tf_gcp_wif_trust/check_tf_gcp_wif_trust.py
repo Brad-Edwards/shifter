@@ -11,7 +11,7 @@ boundary, not inside dispatched workflow code (#1690). This guard pins the
 - service-account WIF bindings (`roles/iam.workloadIdentityUser`) must name exact
   `principal://.../subject/<sub>` members, never a repository-wide
   `principalSet://.../attribute.repository/...` member; and
-- build, validate, promote, deploy, and destroy subject sets must be pairwise
+- build, validate, promote, release-scan, deploy, and destroy subject sets must be pairwise
   disjoint, correctly wired to their own SAs, and keep narrow build/validate/
   promote role classes; and
 - the `CKV_GCP_125` repository-scope Checkov waiver must not survive, since the
@@ -30,16 +30,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-WIF_MODULE_GLOBS: tuple[str, ...] = (
-    "platform/terraform/gcp/modules/cicd-oidc-identity/*.tf",
-)
+WIF_MODULE_GLOBS: tuple[str, ...] = ("platform/terraform/gcp/modules/cicd-oidc-identity/*.tf",)
 
-PROVIDER_RE = re.compile(
-    r'^\s*resource\s+"google_iam_workload_identity_pool_provider"\s+"([^"]+)"\s*\{'
-)
-SA_MEMBER_RE = re.compile(
-    r'^\s*resource\s+"google_service_account_iam_member"\s+"([^"]+)"\s*\{'
-)
+PROVIDER_RE = re.compile(r'^\s*resource\s+"google_iam_workload_identity_pool_provider"\s+"([^"]+)"\s*\{')
+SA_MEMBER_RE = re.compile(r'^\s*resource\s+"google_service_account_iam_member"\s+"([^"]+)"\s*\{')
+PROJECT_IAM_MEMBER_RE = re.compile(r'^\s*resource\s+"google_project_iam_member"\s+"([^"]+)"\s*\{')
 WORKLOAD_IDENTITY_USER = "roles/iam.workloadIdentityUser"
 # A repository-wide principalSet trusts every workflow/ref/actor in the repo; the
 # exact-subject principal is the real impersonation boundary (ADR-004-R23).
@@ -75,9 +70,7 @@ _PROFILE_ARMS_PATTERN = (
     r'"(?P<prod>[^"]*)"'
 )
 PROFILED_TEMPLATE_CONDITION_RE = re.compile(
-    r'attribute_condition\s*=\s*"(?P<common>.*?)\$\{\s*'
-    + _PROFILE_ARMS_PATTERN
-    + r'\s*\}\s*"',
+    r'attribute_condition\s*=\s*"(?P<common>.*?)\$\{\s*' + _PROFILE_ARMS_PATTERN + r'\s*\}\s*"',
     re.DOTALL,
 )
 PROFILED_DIRECT_CONDITION_RE = re.compile(
@@ -85,7 +78,14 @@ PROFILED_DIRECT_CONDITION_RE = re.compile(
     re.DOTALL,
 )
 STATIC_CONDITION_RE = re.compile(r'attribute_condition\s*=\s*"([^"]*)"')
-PURPOSES: tuple[str, ...] = ("build", "validate", "promote", "deploy", "destroy")
+PURPOSES: tuple[str, ...] = (
+    "build",
+    "validate",
+    "promote",
+    "release_scan",
+    "deploy",
+    "destroy",
+)
 PURPOSE_SUBJECTS_HEADER_RE = re.compile(r"^\s*purpose_subjects\s*=\s*\{")
 VARIABLE_HEADER_RE = re.compile(r'^\s*variable\s+"([^"]+)"\s*\{')
 OUTPUT_RE = re.compile(r'^\s*output\s+"([^"]+)"\s*\{', re.MULTILINE)
@@ -95,6 +95,7 @@ REQUIRED_OUTPUTS: frozenset[str] = frozenset(
         "packer_build_service_account_email",
         "packer_validate_service_account_email",
         "packer_promote_service_account_email",
+        "release_scan_service_account_email",
         "deploy_service_account_email",
         "destroy_service_account_email",
     }
@@ -140,23 +141,15 @@ def _attribute_condition_alternatives(block: str) -> dict[str, str]:
     profiled = PROFILED_TEMPLATE_CONDITION_RE.search(block)
     if profiled:
         common = profiled.group("common")
-        return {
-            profile: common + profiled.group(profile)
-            for profile in ("gcp_dev", "proof", "prod")
-        }
+        return {profile: common + profiled.group(profile) for profile in ("gcp_dev", "proof", "prod")}
     profiled = PROFILED_DIRECT_CONDITION_RE.search(block)
     if profiled:
-        return {
-            profile: profiled.group(profile)
-            for profile in ("gcp_dev", "proof", "prod")
-        }
+        return {profile: profiled.group(profile) for profile in ("gcp_dev", "proof", "prod")}
     static = STATIC_CONDITION_RE.search(block)
     return {"static": static.group(1)} if static else {}
 
 
-def _iter_resource_blocks(
-    lines: list[str], header_re: re.Pattern[str]
-) -> list[tuple[int, list[str]]]:
+def _iter_resource_blocks(lines: list[str], header_re: re.Pattern[str]) -> list[tuple[int, list[str]]]:
     blocks: list[tuple[int, list[str]]] = []
     idx = 0
     while idx < len(lines):
@@ -169,9 +162,7 @@ def _iter_resource_blocks(
     return blocks
 
 
-def check_provider_condition(
-    path: Path, lines: list[str], text: str
-) -> list[Violation]:
+def check_provider_condition(path: Path, lines: list[str], text: str) -> list[Violation]:
     """WIF provider must pin an exact protected assertion.ref, not repo-only."""
     violations: list[Violation] = []
     # The ref gate may be factored into a `ref_condition` local (ADR-037-R7), so
@@ -203,8 +194,7 @@ def check_provider_condition(
                 Violation(
                     path,
                     line_no,
-                    "WIF provider must define static attribute_condition strings "
-                    "(ADR-004-R23, #1690)",
+                    "WIF provider must define static attribute_condition strings (ADR-004-R23, #1690)",
                 )
             )
             continue
@@ -212,7 +202,13 @@ def check_provider_condition(
         # every emitted CEL alternative independently, including its exact
         # profile subject inventory.
         expected_contexts = {
-            "gcp_dev": {"gcp-build-dev", "gcp-validate-dev", "gcp-dev", "gcp-dev-destroy"},
+            "gcp_dev": {
+                "gcp-build-dev",
+                "gcp-validate-dev",
+                "gcp-release-scan-dev",
+                "gcp-dev",
+                "gcp-dev-destroy",
+            },
             "proof": {"gcp-build-proof", "gcp-validate-proof"},
             "prod": {"gcp-promote-prod"},
         }
@@ -220,10 +216,7 @@ def check_provider_condition(
             missing_invariants: list[str] = []
             if "assertion.repository" not in condition:
                 missing_invariants.append("assertion.repository")
-            if not (
-                ("assertion.ref" in condition or "ref_condition" in condition)
-                and file_has_ref_gate
-            ):
+            if not (("assertion.ref" in condition or "ref_condition" in condition) and file_has_ref_gate):
                 missing_invariants.append("exact protected assertion.ref")
             if SUBJECT_EQ_RE.search(condition) is None:
                 missing_invariants.append("literal assertion.sub")
@@ -253,10 +246,7 @@ def check_provider_condition(
                         )
                     )
             gcp_dev_refs = GCP_DEV_REF_EQ_RE.findall(condition)
-            if gcp_dev_refs and (
-                len(gcp_dev_refs) != 1
-                or len(GCP_DEV_SUBJECT_REF_PAIR_RE.findall(condition)) != 1
-            ):
+            if gcp_dev_refs and (len(gcp_dev_refs) != 1 or len(GCP_DEV_SUBJECT_REF_PAIR_RE.findall(condition)) != 1):
                 violations.append(
                     Violation(
                         path,
@@ -335,9 +325,7 @@ def check_subject_consistency(path: Path, text: str) -> list[Violation]:
     extra_in_condition = condition_subs - purpose_subs
     detail = []
     if missing_from_condition:
-        detail.append(
-            f"missing from attribute_condition: {sorted(missing_from_condition)}"
-        )
+        detail.append(f"missing from attribute_condition: {sorted(missing_from_condition)}")
     if extra_in_condition:
         detail.append(f"not in local.federated_subjects: {sorted(extra_in_condition)}")
     return [
@@ -376,7 +364,7 @@ def _purpose_entries(block: str) -> dict[str, set[str]]:
 
 
 def check_purpose_isolation(path: Path, lines: list[str], text: str) -> list[Violation]:
-    """Require five disjoint subject sets and correctly wired SA bindings."""
+    """Require six disjoint subject sets and correctly wired SA bindings."""
     violations: list[Violation] = []
     stripped = _strip_hcl_comments(text)
     stripped_lines = stripped.splitlines()
@@ -388,7 +376,11 @@ def check_purpose_isolation(path: Path, lines: list[str], text: str) -> list[Vio
             stripped,
         ):
             violations.append(
-                Violation(path, 1, "GCP CI trust must define five purpose-specific subject sets (ADR-004-R23, #1699)")
+                Violation(
+                    path,
+                    1,
+                    "GCP CI trust must define six purpose-specific subject sets (ADR-004-R23, #1699)",
+                )
             )
         return violations
 
@@ -396,13 +388,23 @@ def check_purpose_isolation(path: Path, lines: list[str], text: str) -> list[Vio
     entries = _purpose_entries("\n".join(block_lines))
     missing = set(PURPOSES) - set(entries)
     if missing:
-        violations.append(Violation(path, line_no, f"purpose subject map is missing {sorted(missing)} (#1699)"))
+        violations.append(
+            Violation(
+                path,
+                line_no,
+                f"purpose subject map is missing {sorted(missing)} (#1699)",
+            )
+        )
     seen: dict[str, str] = {}
     for purpose, subjects in entries.items():
         for subject in subjects:
             if prior := seen.get(subject):
                 violations.append(
-                    Violation(path, line_no, f"purpose subject sets must be pairwise disjoint; {prior} and {purpose} share {subject} (#1699)")
+                    Violation(
+                        path,
+                        line_no,
+                        f"purpose subject sets must be pairwise disjoint; {prior} and {purpose} share {subject} (#1699)",
+                    )
                 )
             seen[subject] = purpose
 
@@ -418,7 +420,11 @@ def check_purpose_isolation(path: Path, lines: list[str], text: str) -> list[Vio
         expected_sa = f"google_service_account.{sa_name}"
         if not match or expected_subjects not in match.group(1) or expected_sa not in match.group(1):
             violations.append(
-                Violation(path, 1, f"{purpose} WIF binding must use only its purpose principals and service account (#1699)")
+                Violation(
+                    path,
+                    1,
+                    f"{purpose} WIF binding must use only its purpose principals and service account (#1699)",
+                )
             )
     return violations
 
@@ -428,7 +434,15 @@ def _variable_values(lines: list[str], variable_name: str) -> set[str] | None:
         header = block[0]
         match = VARIABLE_HEADER_RE.match(header)
         if match and match.group(1) == variable_name:
-            return set(DOUBLE_QUOTED_RE.findall("\n".join(block)))
+            # Compare the configured default only. Descriptions and validation
+            # messages are prose, not role assignments; including every quoted
+            # string in the variable block lets differing descriptions make two
+            # identical privilege sets appear independently derived (#2084).
+            body = "\n".join(block)
+            default = re.search(r"\bdefault\s*=\s*\[(?P<values>.*?)]", body, re.DOTALL)
+            if default is None:
+                return set()
+            return set(DOUBLE_QUOTED_RE.findall(default.group("values")))
     return None
 
 
@@ -436,6 +450,69 @@ def check_role_boundaries(path: Path, lines: list[str]) -> list[Violation]:
     """Reject role/permission classes forbidden to narrow CI identities."""
     violations: list[Violation] = []
     stripped_lines = _strip_hcl_comments("\n".join(lines)).splitlines()
+    for line_no, block in _iter_resource_blocks(stripped_lines, PROJECT_IAM_MEMBER_RE):
+        if "google_service_account.release_scan" in "\n".join(block):
+            violations.append(
+                Violation(
+                    path,
+                    line_no,
+                    "release-scan identity must have no project-wide IAM role; use repository-scoped read and create-only evidence grants (#2084)",
+                )
+            )
+    platform_roles = _variable_values(stripped_lines, "platform_roles")
+    deploy_roles = _variable_values(stripped_lines, "deploy_roles")
+    destroy_roles = _variable_values(stripped_lines, "destroy_roles")
+    module_text = "\n".join(stripped_lines)
+    has_lifecycle_identities = (
+        'resource "google_service_account" "deploy"' in module_text
+        or 'resource "google_service_account" "destroy"' in module_text
+    )
+    if has_lifecycle_identities and (platform_roles is not None or deploy_roles is None or destroy_roles is None):
+        violations.append(
+            Violation(
+                path,
+                1,
+                "platform lifecycle identities must use separate deploy_roles and destroy_roles variables (#2084)",
+            )
+        )
+    if deploy_roles is not None and destroy_roles is not None:
+        forbidden_lifecycle_roles = {
+            "roles/compute.admin",
+            "roles/compute.imageAdmin",
+            "roles/compute.instanceAdmin.v1",
+            "roles/compute.storageAdmin",
+            "roles/editor",
+            "roles/owner",
+            "roles/storage.admin",
+        }
+        for purpose, roles in (
+            ("deploy", deploy_roles),
+            ("destroy", destroy_roles),
+        ):
+            if overlap := roles & forbidden_lifecycle_roles:
+                violations.append(
+                    Violation(
+                        path,
+                        1,
+                        f"{purpose} role set contains release-evidence-bypassing broad roles {sorted(overlap)} (#2084)",
+                    )
+                )
+        if deploy_roles == destroy_roles:
+            violations.append(
+                Violation(
+                    path,
+                    1,
+                    "deploy and destroy role sets must be independently derived (#2084)",
+                )
+            )
+        if "roles/serviceusage.serviceUsageAdmin" in destroy_roles:
+            violations.append(
+                Violation(
+                    path,
+                    1,
+                    "destroy role set must not enable or disable project services (#2084)",
+                )
+            )
     validate_roles = _variable_values(stripped_lines, "validate_roles")
     if validate_roles is not None:
         forbidden = {
@@ -446,24 +523,52 @@ def check_role_boundaries(path: Path, lines: list[str]) -> list[Violation]:
             "roles/resourcemanager.projectIamAdmin",
         }
         if overlap := validate_roles & forbidden:
-            violations.append(Violation(path, 1, f"validate role set contains forbidden broad roles {sorted(overlap)} (#1699)"))
+            violations.append(
+                Violation(
+                    path,
+                    1,
+                    f"validate role set contains forbidden broad roles {sorted(overlap)} (#1699)",
+                )
+            )
 
     validate_permissions = _variable_values(stripped_lines, "validate_permissions")
     if validate_permissions is not None:
-        forbidden = {"compute.images.create", "compute.images.delete", "compute.images.deprecate"}
+        forbidden = {
+            "compute.images.create",
+            "compute.images.delete",
+            "compute.images.deprecate",
+        }
         if overlap := validate_permissions & forbidden:
-            violations.append(Violation(path, 1, f"validate permission set crosses image-build/promotion authority {sorted(overlap)} (#1699)"))
+            violations.append(
+                Violation(
+                    path,
+                    1,
+                    f"validate permission set crosses image-build/promotion authority {sorted(overlap)} (#1699)",
+                )
+            )
 
     promote_permissions = _variable_values(stripped_lines, "promote_permissions")
     if promote_permissions is not None:
         forbidden_prefixes = ("compute.instances.", "storage.", "cloudbuild.", "iam.")
         overlap = sorted(value for value in promote_permissions if value.startswith(forbidden_prefixes))
         if overlap:
-            violations.append(Violation(path, 1, f"promote permission set crosses instance/storage/build/IAM authority {overlap} (#1699)"))
+            violations.append(
+                Violation(
+                    path,
+                    1,
+                    f"promote permission set crosses instance/storage/build/IAM authority {overlap} (#1699)",
+                )
+            )
 
     build_roles = _variable_values(stripped_lines, "build_roles")
     if build_roles is not None and "roles/storage.admin" in build_roles:
-        violations.append(Violation(path, 1, "build role set must use resource-scoped GCS grants, not roles/storage.admin (#1699)"))
+        violations.append(
+            Violation(
+                path,
+                1,
+                "build role set must use resource-scoped GCS grants, not roles/storage.admin (#1699)",
+            )
+        )
     return violations
 
 
@@ -489,11 +594,21 @@ def check_file(path: Path) -> list[Violation]:
         return []
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
+    role_lines = lines
+    if path.parent.name == "cicd-oidc-identity":
+        # pre-commit passes changed Terraform files individually, while this
+        # module deliberately keeps resources in main.tf and role variables in
+        # variables.tf. Evaluate the cross-file lifecycle-role invariant over
+        # the whole module regardless of which member triggered the hook.
+        module_text = "\n".join(
+            candidate.read_text(encoding="utf-8") for candidate in sorted(path.parent.glob("*.tf"))
+        )
+        role_lines = module_text.splitlines()
     violations = check_provider_condition(path, lines, text)
     violations.extend(check_sa_wif_members(path, lines, text))
     violations.extend(check_subject_consistency(path, text))
     violations.extend(check_purpose_isolation(path, lines, text))
-    violations.extend(check_role_boundaries(path, lines))
+    violations.extend(check_role_boundaries(path, role_lines))
     violations.extend(check_output_contract(path, text))
     return violations
 

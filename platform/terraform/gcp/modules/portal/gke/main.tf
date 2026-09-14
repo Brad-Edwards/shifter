@@ -1,4 +1,7 @@
 resource "google_container_cluster" "platform" {
+  # checkov:skip=CKV_GCP_12:Reviewed false positive: ADVANCED_DATAPATH is GKE Dataplane V2 and enforces NetworkPolicy natively; the legacy network_policy block is mutually exclusive. See ADR-004-R11 exception (#2084).
+  # checkov:skip=CKV_GCP_21:resource_labels is populated from the required common_labels module contract; Checkov cannot resolve the caller-supplied map. See ADR-004-R11 exception (#2084).
+  # checkov:skip=CKV_GCP_65:Human Kubernetes RBAC groups are not used; operator and CI access is IAM-authorized through Connect Gateway and workloads use dedicated KSAs/GSAs. See ADR-004-R11 exception (#2084).
   name     = "${var.name_prefix}-gke"
   project  = var.project_id
   location = var.region
@@ -36,7 +39,8 @@ resource "google_container_cluster" "platform" {
     }
   }
 
-  networking_mode = "VPC_NATIVE"
+  networking_mode             = "VPC_NATIVE"
+  enable_intranode_visibility = true
 
   # GKE Dataplane V2 (#1295): a Standard, VPC-native cluster does NOT enforce
   # Kubernetes NetworkPolicy unless an enforcing datapath is selected. Without
@@ -88,6 +92,12 @@ resource "google_container_cluster" "platform" {
         cidr_block   = cidr_blocks.value
         display_name = "admin-${replace(replace(cidr_blocks.value, "/", "-"), ".", "-")}"
       }
+    }
+  }
+
+  master_auth {
+    client_certificate_config {
+      issue_client_certificate = false
     }
   }
 

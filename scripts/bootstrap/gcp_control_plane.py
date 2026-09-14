@@ -12,6 +12,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from urllib import error as urllib_error
@@ -140,7 +141,6 @@ def render_gcp_platform_runtime_env(
     bootstrap_env_values: dict[str, str] | None = None,
 ) -> str:
     """Render the static, project-aware runtime env contract for the GKE control plane."""
-    gdc_vm_image_secret = f"projects/{config.project_id}/secrets/{config.gdc_vm_image_gcs_secret_id}"
     bootstrap_values = load_bootstrap_env_values() if bootstrap_env_values is None else bootstrap_env_values
     bootstrap_staff_emails = _merge_csv_env_values(
         [bootstrap_values.get("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "")],
@@ -173,14 +173,12 @@ def render_gcp_platform_runtime_env(
         "ENGINE_TASK_SERVICE_ACCOUNT_NAME=provisioner",
         "ENGINE_TASK_IMAGE_PULL_POLICY=Always",
         "GDC_VM_STORAGE_CLASS=local-shared",
-        f"GDC_VM_IMAGE_GCS_SECRET_ID={gdc_vm_image_secret}",
         "# Palo Alto VM-Series on GDC VM Runtime. These are required before creating",
         "# a GCP/GDC NGFW; values are intentionally explicit because this is not a",
         "# generic firewall path.",
         "GDC_VMSERIES_IMAGE_URL=",
         "GDC_VMSERIES_BOOTSTRAP_BUCKET=",
         "GDC_VMSERIES_STORAGE_CLASS=local-shared",
-        f"GDC_VMSERIES_IMAGE_GCS_SECRET_ID={gdc_vm_image_secret}",
         "GDC_VMSERIES_NAMESPACE_PREFIX=ngfw",
         "GDC_VMSERIES_MGMT_NETWORK_NAME=pod-network",
         "GDC_VMSERIES_MGMT_IP_CIDR=",
@@ -191,7 +189,6 @@ def render_gcp_platform_runtime_env(
         "GDC_VMSERIES_MEMORY=8Gi",
         "GDC_VMSERIES_DISK_SIZE_GIB=81",
         "GDC_VMSERIES_BOOTSTRAP_DISK_SIZE_GIB=1",
-        "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID=",
         "# Guest access defaults for VM Runtime assets.",
         *_sample_guest_access_defaults(),
         "# VM Runtime boot images, exported by the packer-gcp pipeline to the GDC",
@@ -616,6 +613,20 @@ def _helm_network_policy_values(
     }
 
 
+@dataclass(frozen=True)
+class GcpRenderArtifacts:
+    """Installation-render artifacts threaded from validated root config into Helm values.
+
+    Grouped so ``render_gcp_helm_values`` stays within the parameter budget (S107): the
+    model-access catalog/env feed the model broker, and the Mission Control lease policy
+    env (#27) merges into the runtime ConfigMap.
+    """
+
+    model_access_catalog_json: str = ""
+    model_access_env: str = ""
+    mission_control_lease_env: str = ""
+
+
 def render_gcp_helm_values(
     config: GDCBootstrapConfig,
     outputs: dict[str, dict[str, object]],
@@ -623,8 +634,12 @@ def render_gcp_helm_values(
     image_tag: str,
     image_identities: dict[str, str] | None = None,
     bootstrap_operator_email: str | None = None,
+    render_artifacts: "GcpRenderArtifacts | None" = None,
 ) -> dict[str, object]:
     """Render non-secret Helm values for the Shifter release from Terraform outputs."""
+    from installation.gcp_model_broker import project_model_broker
+
+    artifacts = render_artifacts or GcpRenderArtifacts()
     pinned_image_tag = validate_image_tag(image_tag)
     service_accounts = _get_output_value(outputs, "workload_service_accounts")
     public_hostname = str(_get_output_value(outputs, "public_hostname")).strip()
@@ -635,6 +650,12 @@ def render_gcp_helm_values(
         image_tag=pinned_image_tag,
         bootstrap_operator_email=bootstrap_operator_email,
     )
+    # Mission Control lease policy (#27): derived from the validated root config and
+    # merged into the runtime env so a configured policy (including extensions_enabled:
+    # false) reaches the platform-runtime ConfigMap rather than defaulting. The value is
+    # authoritative here, independent of this render process's environment.
+    if artifacts.mission_control_lease_env:
+        runtime_env.update(parse_env_contract(artifacts.mission_control_lease_env))
     edge_policy_name = str(_get_output_value(outputs, "cloud_armor_security_policy_name")).strip()
     # The range-provisioning Jobs reach the GDC range cluster apiserver through
     # the internal TCP load balancer on the peered range VPC. Allow egress to
@@ -648,6 +669,11 @@ def render_gcp_helm_values(
 
     return {
         "releaseNamespace": "shifter-system",
+        "modelBroker": project_model_broker(
+            outputs.get("model_broker", {}).get("value"),
+            catalog_json=artifacts.model_access_catalog_json,
+            model_access_env=artifacts.model_access_env,
+        ),
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
         # Reference only: the guacamole-runtime Kubernetes Secret is synced out
@@ -1370,12 +1396,28 @@ def stage_gcp_control_plane_values(
     bootstrap_operator_email: str | None = None,
 ) -> Path:
     """Stage the generated Helm values file for the Shifter release."""
+    from installation.gcp_model_broker import validate_model_broker_readback
+    from installation.loader import load_root_config
+    from installation.render import (
+        render_mission_control_lease_env,
+        render_model_access_catalog,
+        render_model_access_env,
+    )
+
+    root_config = load_root_config(resolve_shifter_config_path(config, get_repo_root()))
+    validate_model_broker_readback(outputs.get("model_broker", {}).get("value"), root_config)
+    catalog_json = render_model_access_catalog(root_config)
     values = render_gcp_helm_values(
         config,
         outputs,
         image_tag=image_tag,
         image_identities=image_identities,
         bootstrap_operator_email=bootstrap_operator_email,
+        render_artifacts=GcpRenderArtifacts(
+            model_access_catalog_json=catalog_json,
+            model_access_env=render_model_access_env(root_config),
+            mission_control_lease_env=render_mission_control_lease_env(root_config),
+        ),
     )
     values_path = staging_root / "shifter.values.generated.json"
     values_path.write_text(json.dumps(values, indent=2, sort_keys=True))
@@ -2127,6 +2169,7 @@ _GCE_RANGE_IMAGE_VARS: tuple[str, ...] = (
 _GCE_RUNNER_WIF_VARS: tuple[str, ...] = (
     "GCP_PACKER_BUILD_SERVICE_ACCOUNT",
     "GCP_PACKER_VALIDATE_SERVICE_ACCOUNT",
+    "GCP_RELEASE_SCAN_SERVICE_ACCOUNT",
     "GCP_DEPLOY_SERVICE_ACCOUNT",
     "GCP_DESTROY_SERVICE_ACCOUNT",
     "GCP_WORKLOAD_IDENTITY_PROVIDER",

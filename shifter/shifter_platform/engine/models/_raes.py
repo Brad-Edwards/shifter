@@ -323,6 +323,9 @@ class RaesArtifactSatisfactionBinding(models.Model):
     acquisition = models.CharField(max_length=32, help_text="Acquisition transport of the selected route.")
     timing = models.CharField(max_length=32, help_text="Realization timing of the selected route.")
     image_ref = models.CharField(max_length=500, help_text="Concrete backend image the provisioner realizes.")
+    image_id = models.CharField(
+        max_length=20, blank=True, default="", help_text="Verified immutable GCE image identity."
+    )
     machine_type = models.CharField(max_length=100, blank=True, default="")
     disk_size_gb = models.PositiveIntegerField(null=True, blank=True)
     disk_type = models.CharField(max_length=100, blank=True, default="")

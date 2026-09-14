@@ -14,7 +14,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import GCERangeCellConfig, GCERangeImageProfile
+from config import (
+    GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+    GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+    GCERangeCellConfig,
+    GCERangeImageProfile,
+)
+from gcp_range_cell_types import GceEgressPolicy
 from raes_access import RealizedAccessBinding
 from raes_gcp_firewall import node_tag
 from raes_gcp_plan import RaesGcePlanError, build_raes_range_cell_plan
@@ -46,6 +52,7 @@ def _node(
     os_family: str = "linux",
     acls: tuple[RaesPlanAcl, ...] = (),
     services: tuple[RaesPlanServicePort, ...] = (),
+    network_selection_open: bool = False,
 ) -> RaesPlanNode:
     return RaesPlanNode(
         address=address,
@@ -53,6 +60,7 @@ def _node(
         os_family=os_family,
         count=count,
         network_addresses=networks,
+        network_selection_open=network_selection_open,
         image=RaesPlanImage(name="kali"),
         acls=acls,
         services=services,
@@ -60,7 +68,7 @@ def _node(
 
 
 def _plan(nodes: tuple[RaesPlanNode, ...], networks: tuple[RaesPlanNetwork, ...]) -> RaesPlan:
-    return RaesPlan(raes_version="2.0.0", nodes=nodes, networks=networks)
+    return RaesPlan(raes_version="3.5.0", nodes=nodes, networks=networks)
 
 
 def _resolver(profile: GCERangeImageProfile | None = None):
@@ -79,6 +87,72 @@ class TestNetworkMode:
         plan = build_raes_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), config)
         assert plan["manage_network"] is False
         assert plan["network"]["name"] == "shared"
+
+    def test_open_network_selection_is_materialized_by_gce_adapter(self):
+        portable = _plan((_node(networks=(), network_selection_open=True),), ())
+
+        plan = build_raes_range_cell_plan("req-1", 7, portable, _resolver(), _config())
+
+        assert portable.networks == ()
+        assert portable.nodes[0].network_addresses == ()
+        assert plan["subnets"][0]["uuid"] == "backend.gce.network.default"
+        assert plan["subnets"][0]["cidr"] == "172.16.0.0/28"
+        assert plan["instances"][0]["subnet_name"] == "backend-default"
+
+    def test_open_network_avoids_authored_and_portal_cidrs(self):
+        config = GCERangeCellConfig(
+            project_id="proj-1",
+            region="us-east1",
+            zone="us-east1-b",
+            network_mode="vpc-per-range",
+            portal_network_cidrs=("172.16.0.0/28",),
+        )
+        portable = _plan(
+            (_node(networks=(), network_selection_open=True),),
+            (_network(cidr="172.16.0.16/28"),),
+        )
+
+        plan = build_raes_range_cell_plan("req-1", 7, portable, _resolver(), config)
+
+        assert plan["subnets"][-1]["cidr"] == "172.16.0.32/28"
+
+    def test_shared_vpc_open_network_uses_tenant_allocation(self):
+        config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
+        portable = _plan((_node(networks=(), network_selection_open=True),), ())
+
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            portable,
+            _resolver(),
+            config,
+            allocated_network_cidr="10.90.0.0/28",
+        )
+
+        assert plan["subnets"][0]["cidr"] == "10.90.0.0/28"
+
+    def test_shared_vpc_open_network_requires_tenant_allocation(self):
+        config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
+        portable = _plan((_node(networks=(), network_selection_open=True),), ())
+
+        with pytest.raises(RaesGcePlanError, match="tenant-allocated"):
+            build_raes_range_cell_plan("req-1", 7, portable, _resolver(), config)
+
+    def test_shared_vpc_teardown_reconstructs_names_when_reservation_never_existed(self):
+        config = _config(network_mode="shared-vpc", network_id="projects/proj-1/global/networks/shared")
+        portable = _plan((_node(networks=(), network_selection_open=True),), ())
+
+        plan = build_raes_range_cell_plan(
+            "req-1",
+            7,
+            portable,
+            _resolver(),
+            config,
+            reconstruct_for_teardown=True,
+        )
+
+        assert plan["subnets"][0]["resource_name"] == "shifter-r-7-backend-default"
+        assert plan["instances"][0]["resource_name"]
 
 
 class TestSubnets:
@@ -164,6 +238,24 @@ class TestInstances:
         with pytest.raises(RaesGcePlanError, match="usable addresses"):
             build_raes_range_cell_plan("req-1", 7, plan_2, resolver_2, config_2)
 
+    def test_preconfigured_machine_host_is_rejected_before_raes_realization(self):
+        """RAES cannot publish READY without the participant image canary."""
+        profile = GCERangeImageProfile(
+            source_machine_image="projects/proj-1/global/machineImages/participant-v1",
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="participant",
+            participant_username="analyst",
+            participant_readiness_contract=GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+            participant_readiness_manifest_sha256="a" * 64,
+            host_ssh_username="operator",
+        )
+        plan = _plan((_node(),), (_network(),))
+        resolver = _resolver(profile)
+        config = _config()
+
+        with pytest.raises(RaesGcePlanError, match="participant readiness"):
+            build_raes_range_cell_plan("req-1", 7, plan, resolver, config)
+
 
 class TestPlacementErrors:
     def test_node_without_network_fails_loud(self):
@@ -173,6 +265,13 @@ class TestPlacementErrors:
         config_2 = _config()
         with pytest.raises(RaesGcePlanError, match="no network"):
             build_raes_range_cell_plan("req-1", 7, plan_2, resolver_2, config_2)
+
+    def test_explicit_empty_network_selection_is_not_defaulted(self):
+        node = _node(networks=(), network_selection_open=False)
+        plan_2 = _plan((node,), ())
+
+        with pytest.raises(RaesGcePlanError, match="no network"):
+            build_raes_range_cell_plan("req-1", 7, plan_2, _resolver(), _config())
 
     def test_node_referencing_undeclared_network_fails_loud(self):
         node = _node(networks=("net.missing",))
@@ -221,7 +320,7 @@ class TestFirewalls:
             _plan((_node(),), (_network(),)),
             _resolver(profile),
             _config(),
-            egress_mode="none",
+            egress_policy=GceEgressPolicy(mode="none"),
         )
         names = {fw["name"] for fw in plan["firewalls"]}
         # The default egress-deny stays; the public-web lane is suppressed.
@@ -235,7 +334,12 @@ class TestFirewalls:
             allow_public_web_egress=True,
         )
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(profile), _config(), egress_mode="deny-all"
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(profile),
+            _config(),
+            egress_policy=GceEgressPolicy(mode="deny-all"),
         )
         names = {fw["name"] for fw in plan["firewalls"]}
         assert any("egress-deny" in name for name in names)
@@ -334,7 +438,7 @@ class TestParticipantAccess:
             channel=channel,
             account_address=f"acct.{username}",
             username=username,
-            auth_method="publickey" if channel == "ssh" else "password",
+            auth_method="key" if channel == "ssh" else "password",
         )
 
     def test_no_bindings_leaves_every_instance_without_access(self):
@@ -344,7 +448,12 @@ class TestParticipantAccess:
 
     def test_channels_and_usernames_land_on_the_declared_instance(self):
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), (self._binding(),)
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(),
+            access_bindings=(self._binding(),),
         )
         instance = plan["instances"][0]
         assert instance["participant_access_channels"] == ["ssh"]
@@ -357,7 +466,10 @@ class TestParticipantAccess:
             _plan((_node(os_family="windows"),), (_network(),)),
             _resolver(),
             _config(),
-            (self._binding(channel="ssh", username="sshuser"), self._binding(channel="rdp", username="rdpuser")),
+            access_bindings=(
+                self._binding(channel="ssh", username="sshuser"),
+                self._binding(channel="rdp", username="rdpuser"),
+            ),
         )
         instance = plan["instances"][0]
         assert sorted(instance["participant_access_channels"]) == ["rdp", "ssh"]
@@ -367,7 +479,12 @@ class TestParticipantAccess:
         """Grouping is by target address: an undeclared node stays access-free."""
         nodes = (_node(address="node.a", name="web"), _node(address="node.b", name="db"))
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan(nodes, (_network(),)), _resolver(), _config(), (self._binding(target="node.a"),)
+            "req-1",
+            7,
+            _plan(nodes, (_network(),)),
+            _resolver(),
+            _config(),
+            access_bindings=(self._binding(target="node.a"),),
         )
         by_uuid = {instance["uuid"]: instance for instance in plan["instances"]}
         assert by_uuid["node.a#0"]["participant_access_channels"] == ["ssh"]
@@ -376,7 +493,12 @@ class TestParticipantAccess:
 
     def test_the_management_login_is_not_the_participant_login(self):
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), (self._binding(),)
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(),
+            access_bindings=(self._binding(),),
         )
         instance = plan["instances"][0]
         assert instance["ssh_username"] == RESERVED_MANAGEMENT_LOGIN
@@ -388,7 +510,12 @@ class TestRangeOwnedNat:
 
     def test_status_quo_range_gets_a_router_nat_scoped_to_its_subnets(self):
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), egress_mode="status-quo"
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(),
+            egress_policy=GceEgressPolicy(mode="status-quo"),
         )
         router_nat = plan.get("router_nat")
         assert router_nat is not None
@@ -399,6 +526,11 @@ class TestRangeOwnedNat:
 
     def test_none_range_has_no_router_nat(self):
         plan = build_raes_range_cell_plan(
-            "req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config(), egress_mode="none"
+            "req-1",
+            7,
+            _plan((_node(),), (_network(),)),
+            _resolver(),
+            _config(),
+            egress_policy=GceEgressPolicy(mode="none"),
         )
         assert "router_nat" not in plan

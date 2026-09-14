@@ -165,6 +165,7 @@ def _raes_artifact_bindings(target: Range) -> list[ArtifactBinding]:
             acquisition=row.acquisition,
             timing=row.timing,
             image_ref=row.image_ref,
+            image_id=row.image_id,
             machine_type=row.machine_type,
             disk_size_gb=row.disk_size_gb,
             disk_type=row.disk_type,

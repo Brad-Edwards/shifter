@@ -41,6 +41,11 @@ variable "image_bucket_location" {
   default     = "us-central1"
 }
 
+variable "access_log_bucket_name" {
+  description = "Terminal GCS bucket that receives access logs for exported guest images."
+  type        = string
+}
+
 variable "image_reader_service_accounts" {
   description = "Service accounts granted read on the GDC VM image bucket (GDC VM Runtime image-pull identity). Empty on the default GCE range backend, which never creates the GDC substrate SA."
   type        = list(string)

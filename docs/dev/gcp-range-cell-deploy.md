@@ -137,6 +137,22 @@ minimum for a live range is: `RANGE_NETWORK_ZONE`, `GCP_RANGE_LINUX_IMAGE`,
 `GCP_RANGE_DC_IMAGE`, and `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`. Polaris also
 needs `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL`.
 
+The deployment `shifter.yaml` must also set
+`settings.dynamic_secret_project_id` to the pre-existing, deployment-only
+range-secret project. This is distinct from `GCP_RANGE_CELL_PROJECT_ID` (Compute
+resources), `GCP_RANGE_VERTEX_PROJECT_ID` (Vertex API/quota), and the project in
+an optional full `GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID` reference. Equal values
+in a small deployment do not merge those ownership concepts. New guest,
+RAES/GDC, Vertex, VM-Series, and VPN secrets use canonical deployment- and
+audience-prefixed names in that project; persisted full references remain the
+authority for bootstrap and portal access.
+
+When GDC access/image inputs or a shared Vertex source are enabled, declare the
+full versionless refs under `settings.provisioner_static_secret_refs`. Do not add
+a broad Secret Manager role to compensate for a missing entry. The migration,
+permission-probe, quota, audit-cost, and revocation procedure is documented in
+[`platform/terraform/gcp/README.md`](../../platform/terraform/gcp/README.md#deployment-scoped-range-secret-project).
+
 `GCP_RANGE_CELL_PROJECT_ID` defaults to the project parsed from the range VPC
 self-link, so the range backend targets the real range project even when the
 control-plane `GCP_PROJECT_ID` is a deploy-overlay placeholder.
@@ -175,11 +191,12 @@ with an `ami_key` requires an exact entry in
 `GCP_RANGE_IMAGE_KEY_PROFILES_JSON` under its derived profile class. Each entry
 is complete. Normal image profiles declare image, machine type, disk size, disk
 type, and typed bootstrap capability. Exact machine-image profiles declare the
-machine image, machine type, host-management login, and participant
-container/account. Pre-promoted domain profiles also declare their baked DNS
-and NetBIOS identity. Unknown keys and keys placed under the wrong class fail
-before any Compute or secret client is created; they never fall back to the
-default role image. The adapter routes host access and bootstrap from this
+machine image, machine type, host-management login, participant
+container/account, participant-readiness contract, and the immutable image's
+readiness-manifest digest. Pre-promoted domain profiles also declare their baked
+DNS and NetBIOS identity. Unknown keys and keys placed under the wrong class
+fail before any Compute or secret client is created; they never fall back to
+the default role image. The adapter routes host access and bootstrap from this
 trusted profile metadata, never from a scenario or image-name literal.
 
 Profiles resolved for either legacy `RangeSpec` instances or RAES nodes that
@@ -235,6 +252,8 @@ An exact machine-image entry uses this conditional shape:
       "bootstrap_capability": "preconfigured-machine-host",
       "participant_container_name": "participant-desktop",
       "participant_username": "operator",
+      "participant_readiness_contract": "participant-readiness/v1",
+      "participant_readiness_manifest_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "host_ssh_username": "hostadmin",
       "host_ssh_port": 2222,
       "allow_public_web_egress": true
@@ -248,7 +267,31 @@ metadata, network interfaces, external-IP posture, identity, labels, tags, and
 machine type. Every attached disk is set to auto-delete after create and again
 before destroy. The image must publish its participant RDP endpoint on host port
 3389 and create `/run/shifter/preconfigured-range-host.ready` only after its
-contained workload is ready.
+contained workload is ready. That marker proves boot liveness, not participant
+readiness. After installing the participant credential, the provisioner runs
+
+`/usr/local/libexec/shifter-participant-readiness --contract participant-readiness/v1 --manifest-sha256 <digest>`
+
+inside the configured container as the configured participant user. The image
+owns that fixed executable and manifest. It must exercise the real browser
+launcher with disposable state, validate browser trust/start state/clean home
+and projected material, emit no sensitive output, and return nonzero on any
+mismatch. Shifter discards its output and exposes only bounded pass/failure
+codes. Do not qualify a fresh profile for participant use from the marker
+alone; the immutable image, participant canary, content-readback, egress, and
+shared-service evidence required by
+`docs/architecture/nested-ctf-participant-readiness-preflight-1910.md` must also
+pass before the range is handed off.
+
+The participant-qualification record must bind the exact machine-image resource,
+profile key/fingerprint, canary contract and manifest digest; content-readback
+and participant-canary reason codes; the exact opt-in web rule and regional NAT
+(plus a non-opt-in negative); and the generation-bound model grant, broker
+destination, broker-only invocation identity, and post-destroy revocation. Keep
+URLs, CA material, mission content, model bodies, receipt bytes, guest output,
+IAM policy dumps, and provider response bodies out of that evidence. The current
+boot marker alone is not a release qualification record.
+
 `prepromoted-domain-controller` profile is usable only when both domain fields
 match the scenario's `dc_config` (case-insensitively, with an optional trailing
 DNS dot).

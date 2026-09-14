@@ -827,6 +827,267 @@
         }
       }
     },
+    "/api/v1/cms/artifact-preparation/": {
+      "post": {
+        "operationId": "cms_artifact_preparation_create",
+        "description": "The CMS loads the selected private pack and the engine owns the job.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreparationRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PreparationRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PreparationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparationView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation:write"
+        ]
+      }
+    },
+    "/api/v1/cms/artifact-preparation/{operation_id}/": {
+      "get": {
+        "operationId": "cms_artifact_preparation_retrieve",
+        "description": "Status does not expose worker credentials or private manifests.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparationView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation:read"
+        ]
+      }
+    },
+    "/api/v1/cms/artifact-preparation/{operation_id}/cancel/": {
+      "post": {
+        "operationId": "cms_artifact_preparation_cancel_create",
+        "description": "Cancellation cannot supply resource names or deletion instructions.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparationView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation:write"
+        ]
+      }
+    },
+    "/api/v1/cms/artifact-preparation/{operation_id}/retry/": {
+      "post": {
+        "operationId": "cms_artifact_preparation_retry_create",
+        "description": "A retry supplies no new code, cloud grant, identities or resource names.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreparationView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation:write"
+        ]
+      }
+    },
     "/api/v1/cms/catalog/": {
       "get": {
         "operationId": "cms_catalog_list",
@@ -1013,6 +1274,214 @@
         },
         "x-required-scopes": [
           "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/preparation-adapters/": {
+      "get": {
+        "operationId": "cms_preparation_adapters_list",
+        "description": "List private registrations only for authorized administrators.",
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdapterView"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation-adapters:read"
+        ]
+      },
+      "post": {
+        "operationId": "cms_preparation_adapters_create",
+        "description": "Register another compatible private image without changing platform code.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdapterInstall"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AdapterInstall"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AdapterInstall"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdapterView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation-adapters:write"
+        ]
+      }
+    },
+    "/api/v1/cms/preparation-adapters/{adapter_id}/state/": {
+      "post": {
+        "operationId": "cms_preparation_adapters_state_create",
+        "description": "Lifecycle authority remains independent of cloud-grant administration.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adapter_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdapterState"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AdapterState"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AdapterState"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdapterView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:preparation-adapters:write"
         ]
       }
     },
@@ -12709,6 +13178,65 @@
         "type": "string",
         "description": "* `user` - User\n* `apikey` - API Key\n* `system` - System\n* `cognito` - Cognito"
       },
+      "AdapterInstall": {
+        "type": "object",
+        "description": "Only an existing grant and the closed versioned manifest enter installation.",
+        "properties": {
+          "grant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manifest": {}
+        },
+        "required": [
+          "grant_id",
+          "manifest"
+        ]
+      },
+      "AdapterState": {
+        "type": "object",
+        "description": "Lifecycle changes retain immutable registration and cleanup references.",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/StateEnum"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "AdapterView": {
+        "type": "object",
+        "description": "Private administrative detail, never a public discovery/catalog response.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "grant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scope_digest": {
+            "type": "string"
+          },
+          "manifest_digest": {
+            "type": "string"
+          },
+          "manifest": {},
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant_id",
+          "id",
+          "manifest",
+          "manifest_digest",
+          "scope_digest",
+          "state"
+        ]
+      },
       "AddWorkspaceMember": {
         "type": "object",
         "description": "Add-existing-account command.",
@@ -15874,6 +16402,12 @@
             "type": "string",
             "maxLength": 71
           },
+          "expected_package_digest": {
+            "type": "string",
+            "default": "",
+            "maxLength": 71,
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
           "lock_ref": {
             "type": "string",
             "default": "",
@@ -17267,6 +17801,65 @@
             "type": "boolean"
           }
         }
+      },
+      "PreparationRequest": {
+        "type": "object",
+        "description": "Identify authored intent, never cloud configuration or executable overrides.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[-a-zA-Z0-9_]+$"
+          },
+          "requirement_address": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "adapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "specification_id": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "adapter_id",
+          "requirement_address",
+          "scenario_id",
+          "specification_id"
+        ]
+      },
+      "PreparationView": {
+        "type": "object",
+        "description": "Bounded progress without private recipe or worker evidence payloads.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "state": {
+            "type": "string"
+          },
+          "failure_code": {
+            "type": "string"
+          },
+          "cleanup_pending": {
+            "type": "boolean"
+          },
+          "reused": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cleanup_pending",
+          "failure_code",
+          "id",
+          "reused",
+          "state"
+        ]
       },
       "Prerequisite": {
         "type": "object",
@@ -18990,6 +19583,15 @@
           "target_count"
         ]
       },
+      "StateEnum": {
+        "enum": [
+          "enabled",
+          "disabled",
+          "retired"
+        ],
+        "type": "string",
+        "description": "* `enabled` - enabled\n* `disabled` - disabled\n* `retired` - retired"
+      },
       "SubmissionListItem": {
         "type": "object",
         "description": "One of the requesting participant's own submissions.",
@@ -19063,7 +19665,8 @@
           "flag": {
             "type": "string",
             "writeOnly": true,
-            "nullable": true
+            "nullable": true,
+            "maxLength": 4096
           }
         }
       },

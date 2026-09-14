@@ -169,7 +169,13 @@ new authority model or feature flag.
 - [Retry-safe range operations](retry-safe-range-operations.md): the caller
   retry identity, immutable-intent binding and canonical digest, the PostgreSQL-
   arbitrated retry binding, reauthorized replay/status/cancel, and truthful
-  teardown/residual retention (ADR-062, #2086).
+  teardown/residual retention (ADR-063, #2086).
+
+## Artifact preparation
+
+The [artifact preparation design](../../architecture/raes-in-tenant-artifact-preparation-design-1583.md)
+defines adapter ownership, private registration, worker isolation, independent
+verification and inventory admission before ordinary range launch.
 
 ## Audit logging
 

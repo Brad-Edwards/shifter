@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 from raes.scenarios import ScenarioError, load_scenario
 from raes_env_packs.publication import authored_artifact_requirements
 
+from shared.raes.artifact_inventory import ArtifactSupply
 from shared.raes.artifact_resolution import ArtifactResolutionStatus, resolve_artifact_requirement
 from shared.raes.manifest import shifter_artifact_mechanism_capabilities, shifter_backend_apparatus
 from shared.raes.runtime_target import ShifterProvisioner, create_shifter_backend_target
@@ -43,17 +44,19 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
 
-    from raes._source import ArtifactRequirement
+    from raes.artifact_requirements import ArtifactRequirement
     from raes_contracts.apparatus import ApparatusIdentity
     from raes_contracts.contracts import ArtifactMechanismCapability, ArtifactRequirementAvailability
     from raes_contracts.diagnostics import Diagnostic
     from raes_processor.models.runtime_model import ExecutionPlan
 
+    from shared.raes.prepared_artifacts import VerifiedMaterialization
+
     #: Injected by the catalog layer to supply backend-owned inventory availability
     #: for a scenario's authored requirements (keeps the registry read out of shared).
     ArtifactAvailabilityProvider = Callable[
         [Mapping[str, ArtifactRequirement | None]],
-        Mapping[str, ArtifactRequirementAvailability],
+        Mapping[str, ArtifactRequirementAvailability] | ArtifactSupply,
     ]
 
 __all__ = [
@@ -202,7 +205,7 @@ def assess_scenario_capability(
         return _indeterminate("scenario could not be loaded", exc)
 
     try:
-        manager_plan = _plan(scenario, parameters)
+        manager_plan = _plan(scenario, parameters, artifact_availability_provider)
     # Any planner failure means "cannot assess", not a crash: the editor must
     # render INDETERMINATE rather than 500, and must never call it realizable.
     except Exception as exc:
@@ -226,6 +229,7 @@ def resolve_artifact_gaps(
     capabilities: Sequence[ArtifactMechanismCapability],
     availability_by_address: Mapping[str, ArtifactRequirementAvailability],
     backend: ApparatusIdentity,
+    prepared_materializations: Sequence[VerifiedMaterialization] = (),
 ) -> tuple[RealizabilityGap, ...]:
     """Project per-requirement artifact resolution into ordered realizability gaps.
 
@@ -254,6 +258,7 @@ def resolve_artifact_gaps(
             capabilities=capabilities,
             availability=availability_by_address.get(address),
             backend=backend,
+            prepared_materializations=prepared_materializations,
         )
         if resolution.status is ArtifactResolutionStatus.UNRESOLVABLE:
             gaps.append(
@@ -284,12 +289,19 @@ def _artifact_gaps_for_scenario(
     requirements = authored_artifact_requirements([scenario])
     if not requirements:
         return ()
-    availability = availability_provider(requirements) if availability_provider is not None else {}
+    supplied = availability_provider(requirements) if availability_provider is not None else {}
+    if isinstance(supplied, ArtifactSupply):
+        availability = supplied.availability
+        capabilities = (*shifter_artifact_mechanism_capabilities(), *supplied.capabilities)
+        materializations = supplied.materializations
+    else:
+        availability, capabilities, materializations = supplied, shifter_artifact_mechanism_capabilities(), ()
     return resolve_artifact_gaps(
         requirements,
-        capabilities=shifter_artifact_mechanism_capabilities(),
+        capabilities=capabilities,
         availability_by_address=availability,
         backend=shifter_backend_apparatus(),
+        prepared_materializations=materializations,
     )
 
 
@@ -311,12 +323,19 @@ def worst_outcome(outcomes: Iterable[RealizabilityOutcome]) -> RealizabilityOutc
     return RealizabilityOutcome.REALIZABLE
 
 
-def _plan(scenario: object, parameters: Mapping[str, object] | None) -> ExecutionPlan:
+def _plan(
+    scenario: object,
+    parameters: Mapping[str, object] | None,
+    artifact_supply_provider: ArtifactAvailabilityProvider | None = None,
+) -> ExecutionPlan:
     """Compile and plan ``scenario`` against the Shifter backend without applying."""
-    from raes_runtime import RuntimeManager
+    from shared.raes.artifact_planning import plan_with_artifact_supply
 
-    target = create_shifter_backend_target(port=_NeverDispatchPort())
-    return RuntimeManager(target).plan(scenario, parameters=dict(parameters) if parameters else None)
+    target = create_shifter_backend_target(port=_NeverDispatchPort(), scenario=scenario)
+    execution_plan, _ = plan_with_artifact_supply(
+        scenario, target, parameters=dict(parameters) if parameters else None, supply_provider=artifact_supply_provider
+    )
+    return execution_plan
 
 
 def _project_gaps(diagnostics: Iterable[Diagnostic]) -> tuple[RealizabilityGap, ...]:
@@ -350,6 +369,10 @@ def _project_image_demands(provisioning_plan: object) -> tuple[ImageDemand, ...]
         if resource.resource_type != _NODE_RESOURCE_TYPE or not isinstance(payload, dict):
             continue
         source = _authored_source(payload)
+        if source.get("artifact_requirement") is not None:
+            # The artifact resolver supplies this node's image or its blocking
+            # gap. A second alias lookup cannot override that selected binding.
+            continue
         demands.add(
             ImageDemand(
                 address=resource.address,

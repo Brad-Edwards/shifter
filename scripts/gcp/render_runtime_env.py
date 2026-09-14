@@ -95,13 +95,41 @@ _GCE_RANGE_ENV_KEYS = (
     "GCP_RANGE_VERTEX_PROJECT_ID",
     "GCP_RANGE_VERTEX_REGION",
     "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL",
-    "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
     "GCP_RANGE_PREPROVISIONED_FIREWALLS",
     "GCP_RANGE_KALI_ANTHROPIC_MODEL",
     "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL",
     "POLARIS_TESTS_BUCKET",
     "POLARIS_TESTS_KEY",
 )
+
+_PROVISIONER_STATIC_SECRET_KEYS = frozenset(
+    {
+        "GDC_ACCESS_SECRET_ID",
+        "GDC_VM_IMAGE_GCS_SECRET_ID",
+        "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+        "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
+    }
+)
+_FULL_SECRET_REF_RE = re.compile(r"^projects/[^/]+/secrets/[^/]+$")
+
+
+def _provisioner_static_secret_values(outputs: dict[str, object]) -> dict[str, str]:
+    """Validate and return the exact static references published by Terraform."""
+    raw = _value(outputs, "provisioner_static_secret_refs")
+    if not isinstance(raw, dict):
+        raise ValueError("provisioner_static_secret_refs Terraform output must be a map")
+    unexpected = set(raw) - _PROVISIONER_STATIC_SECRET_KEYS
+    if unexpected:
+        raise ValueError(f"provisioner_static_secret_refs contains unsupported keys: {', '.join(sorted(unexpected))}")
+    values = {str(key): str(value).strip() for key, value in raw.items()}
+    invalid = sorted(key for key, value in values.items() if not _FULL_SECRET_REF_RE.fullmatch(value))
+    if invalid:
+        raise ValueError(
+            "provisioner_static_secret_refs values must be full projects/<project>/secrets/<id> references: "
+            + ", ".join(invalid)
+        )
+    return values
 
 
 def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
@@ -247,6 +275,34 @@ def _model_access_runtime_values() -> dict[str, str]:
     }
 
 
+def _mission_control_lease_runtime_values() -> dict[str, str]:
+    """Pass through the validated Mission Control lease policy JSON (issue #27).
+
+    The policy is validated and rendered from ``shifter.yaml`` by
+    ``installation.render.render_mission_control_lease_env`` and exported into this
+    render process's environment by the deploy pipeline (mirroring how the model-access
+    and warm-pool env lines are injected). This producer re-serializes it to canonical
+    compact JSON without rebuilding the policy parser (the shared validator already ran).
+    An absent value is omitted so the Django runtime applies the canonical 30/30/365
+    defaults; a malformed value fails closed rather than shipping an unvalidated policy.
+    """
+    raw = os.environ.get("MISSION_CONTROL_LEASE_POLICY_JSON")
+    if raw is None:
+        # Truly unset -> omit so the Django runtime applies the canonical defaults.
+        return {}
+    stripped = raw.strip()
+    if not stripped:
+        # Present but blank is a broken deployment substitution, not an omission.
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON is present but blank")
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("MISSION_CONTROL_LEASE_POLICY_JSON must be a JSON object")
+    return {"MISSION_CONTROL_LEASE_POLICY_JSON": json.dumps(parsed, separators=(",", ":"), sort_keys=True)}
+
+
 def _validated_engine_digest(engine_image_digest: str) -> str:
     """Require an immutable ``sha256:<64 hex>`` provisioner image digest.
 
@@ -302,6 +358,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     image_roots = _value(outputs, "artifact_registry_image_roots")
     identity_platform_api_key = _value(outputs, "identity_platform_api_key")
     identity_platform_project_id = _value(outputs, "identity_platform_project_id")
+    dynamic_secret_project_id = str(_value(outputs, "dynamic_secret_project_id")).strip()
     identity_allowed_email_domain = str(_value(outputs, "identity_allowed_email_domain")).strip()
     identity_allowed_emails = _string_list(_value(outputs, "identity_allowed_emails"))
     public_hostname = _value(outputs, "public_hostname").strip()
@@ -326,6 +383,8 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         )
     if not identity_allowed_email_domain:
         raise ValueError("GCP portal runtime requires identity_allowed_email_domain to be set")
+    if not dynamic_secret_project_id:
+        raise ValueError("GCP portal runtime requires dynamic_secret_project_id to be set")
 
     site_url = f"https://{public_hostname}"
     # The public hostname is the only externally addressable host. Health-check
@@ -361,7 +420,6 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "DB_SECRET_ID": secret_ids["db"],
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],
-        "GDC_ACCESS_SECRET_ID": _derive_sibling_secret_id(secret_ids["app"], "app", "gdc-access"),
         # Prebaked Windows DC domain Administrator password (GCE + GDC range
         # backends). The entrypoint resolves DC_DOMAIN_PASSWORD from this
         # reference and ecs.py passes it into the provisioner Job; without it the
@@ -405,6 +463,7 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         # libraries bill the correct quota/consumer project.
         "GCP_PROJECT_ID": real_project,
         "GOOGLE_CLOUD_PROJECT": real_project,
+        "GCP_DYNAMIC_SECRET_PROJECT_ID": dynamic_secret_project_id,
         # CLOUD_PROJECT_ID is emitted by the provisioner-launcher (its
         # _get_gcp_provisioner_env_overrides fallback is settings.GCP_PROJECT_ID),
         # so it must be present in this ConfigMap or the restrict-provisioner-jobs
@@ -478,6 +537,11 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     values.update(_optional_gce_range_values())
     values.update(_ctf_content_runtime_values(outputs))
     values.update(_model_access_runtime_values())
+    values.update(_mission_control_lease_runtime_values())
+    # These references originate in the same validated shifter.yaml map that
+    # drives per-secret Terraform IAM. Apply them last so a process-local env
+    # override cannot decouple runtime lookup from its exact IAM grant.
+    values.update(_provisioner_static_secret_values(outputs))
 
     return "".join(f"{key}={value}\n" for key, value in values.items())
 

@@ -38,9 +38,11 @@ AWS_DEV_WAF_ACL_ARN = (
 # selector variables from the shared runtime ConfigMap.
 # Regenerated for #28 after adding the warm-pool reconciler worker Deployment.
 # Regenerated for #2098 after adding the CTF communication delivery-worker Deployment.
+# Regenerated for #2083 after admitting the deployment-scoped dynamic-secret project id.
+# Regenerated for #1583 after qualifying portal memory headroom and maintenance-worker startup capacity.
 GCP_RENDER_SHA256 = {
-    "gcp-dev": "1ece5300b3a49e803dca2d13d40319d658d0d9c0acaee137a00c44388644cd05",
-    "gcp-prod": "539a654cf0c915a656c0cbe940d6ed6d4c7c7584c4587231f095cc4cf22bc5d2",
+    "gcp-dev": "ae2aed26e7019d54a82da86df0a993044c7a41fb614b4b5652aa5ccb28dff592",
+    "gcp-prod": "418a98d66d8d4808153d28f0dcc02bbabcf0b3e7d65ed7744bc8fead2b39ae2f",
 }
 
 
@@ -101,9 +103,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
         for profile, values_file in VALUES_FILES.items():
             with self.subTest(profile=profile):
                 _, documents = _render(values_file)
-                for document in documents:
-                    if document.get("kind") != "Deployment":
-                        continue
+                deployments = [
+                    doc for doc in documents if doc.get("kind") == "Deployment"
+                ]
+                self.assertTrue(deployments, f"{profile}: no Deployments rendered")
+                for document in deployments:
                     pod_template = document["spec"]["template"]
                     containers = pod_template["spec"]["containers"]
                     for container in containers:
@@ -342,9 +346,11 @@ class BackendNeutralChartContractTests(unittest.TestCase):
                 identities = {_identity(document) for document in documents}
                 self.assertIn(("NetworkPolicy", "default-deny-platform"), identities)
                 self.assertIn(("NetworkPolicy", "default-deny-jobs"), identities)
-                for document in documents:
-                    if document.get("kind") != "Deployment":
-                        continue
+                deployments = [
+                    doc for doc in documents if doc.get("kind") == "Deployment"
+                ]
+                self.assertTrue(deployments, f"{profile}: no Deployments rendered")
+                for document in deployments:
                     pod_spec = document["spec"]["template"]["spec"]
                     self.assertEqual(
                         pod_spec["securityContext"]["seccompProfile"]["type"],

@@ -97,10 +97,11 @@ def _resolve_rdp_conn(user: User, instance_uuid: str) -> dict[str, Any]:
     try:
         return get_range_rdp_connection_info(user, instance_uuid)
     except (PermissionError, ValueError) as e:
-        logger.exception(
-            "RDP connection lookup failed: user=%s instance_uuid=%s",
-            safe_log_value(user.email),
+        logger.warning(
+            "RDP connection lookup failed: user=%s instance_uuid=%s reason=%s",
+            safe_log_fingerprint(user.email),
             safe_log_value(instance_uuid),
+            safe_log_fingerprint(e),
         )
         raise BootstrapFailure(
             classify_user_message(str(e), default="RDP connection unavailable"), status_code=400
@@ -140,7 +141,7 @@ def _generate_rdp_url(
             )
         )
     except ValueError as e:
-        logger.exception("Failed to generate Guacamole URL")
+        logger.warning("Failed to generate Guacamole RDP URL: reason=%s", safe_log_fingerprint(e))
         raise BootstrapFailure("Failed to generate RDP URL", status_code=500) from e
 
 
@@ -155,12 +156,13 @@ def _build_rdp_url(*, user: User, instance_uuid: str, guac_client: GuacamoleClie
     # logged. ``os_type`` is read from the credential-bearing dict, so CodeQL
     # taints it regardless of naming; it goes through ``safe_log_fingerprint``
     # (a true ``py/clear-text-logging-sensitive-data`` taint-break). The
-    # user/instance correlation IDs go through ``safe_log_value``.
+    # user identities are fingerprinted; the instance correlation ID goes
+    # through ``safe_log_value``.
     rdp_os = str(conn_info.get("os_type") or "unknown")
     file_transfer_available = "yes" if conn_info.get("sftp_enabled") is not False else "no"
     logger.info(
         "Guac RDP request: user=%s instance_uuid=%s os=%s file_transfer_available=%s",
-        safe_log_value(user.email),
+        safe_log_fingerprint(user.email),
         safe_log_value(instance_uuid),
         safe_log_fingerprint(rdp_os),
         file_transfer_available,
@@ -184,24 +186,30 @@ def _resolve_ngfw_ssh(user: User, app_id: str) -> _SSHConn:
     try:
         return connect_ngfw_terminal(user, app_id)
     except ValueError as e:
-        logger.exception(
-            "NGFW SSH access denied (ValueError): user=%s ngfw_uuid=%s",
-            safe_log_value(user.email),
+        logger.warning(
+            "NGFW SSH access denied: user=%s ngfw_uuid=%s reason=%s",
+            safe_log_fingerprint(user.email),
             safe_log_value(app_id),
+            safe_log_fingerprint(e),
         )
         raise BootstrapFailure(classify_user_message(str(e), default="NGFW SSH unavailable"), status_code=400) from e
     except PermissionError as e:
-        logger.exception(
-            "NGFW SSH access denied (PermissionError): user=%s ngfw_uuid=%s",
-            safe_log_value(user.email),
+        logger.warning(
+            "NGFW SSH access denied: user=%s ngfw_uuid=%s reason=%s",
+            safe_log_fingerprint(user.email),
             safe_log_value(app_id),
+            safe_log_fingerprint(e),
         )
         raise BootstrapFailure("Permission denied", status_code=400) from e
     except Exception as e:
         logger.exception(
-            "Unexpected error getting NGFW SSH connection: user=%s ngfw_uuid=%s",
-            safe_log_value(user.email),
+            "Unexpected error getting NGFW SSH connection: user=%s ngfw_uuid=%s reason=%s",
+            safe_log_fingerprint(user.email),
             safe_log_value(app_id),
+            safe_log_fingerprint(e),
+            # Never append the original exception text; upstream connection
+            # failures can carry credential-bearing values.
+            exc_info=False,
         )
         raise BootstrapFailure(_INTERNAL_SERVER_ERROR, status_code=500) from e
 
@@ -229,15 +237,18 @@ def _generate_ngfw_ssh_url(
             )
         )
     except ValueError as e:
-        logger.exception(
-            "Failed to generate NGFW SSH URL: ngfw_uuid=%s",
+        logger.warning(
+            "Failed to generate NGFW SSH URL: ngfw_uuid=%s reason=%s",
             safe_log_value(app_id),
+            safe_log_fingerprint(e),
         )
         raise BootstrapFailure("Failed to generate SSH URL", status_code=500) from e
     except Exception as e:
         logger.exception(
-            "Unexpected error generating NGFW SSH URL: ngfw_uuid=%s",
+            "Unexpected error generating NGFW SSH URL: ngfw_uuid=%s reason=%s",
             safe_log_value(app_id),
+            safe_log_fingerprint(e),
+            exc_info=False,
         )
         raise BootstrapFailure(_INTERNAL_SERVER_ERROR, status_code=500) from e
 
@@ -269,24 +280,30 @@ def _resolve_range_ssh(user: User, instance_uuid: str) -> dict[str, Any]:
     try:
         return get_range_ssh_connection_info(user, instance_uuid)
     except ValueError as e:
-        logger.exception(
-            "Range SSH access denied (ValueError): user=%s instance_uuid=%s",
-            safe_log_value(user.email),
+        logger.warning(
+            "Range SSH access denied: user=%s instance_uuid=%s reason=%s",
+            safe_log_fingerprint(user.email),
             safe_log_value(instance_uuid),
+            safe_log_fingerprint(e),
         )
         raise BootstrapFailure(classify_user_message(str(e), default="Range SSH unavailable"), status_code=400) from e
     except PermissionError as e:
-        logger.exception(
-            "Range SSH access denied (PermissionError): user=%s instance_uuid=%s",
-            safe_log_value(user.email),
+        logger.warning(
+            "Range SSH access denied: user=%s instance_uuid=%s reason=%s",
+            safe_log_fingerprint(user.email),
             safe_log_value(instance_uuid),
+            safe_log_fingerprint(e),
         )
         raise BootstrapFailure("Permission denied", status_code=400) from e
     except Exception as e:
         logger.exception(
-            "Unexpected error getting range SSH connection: user=%s instance_uuid=%s",
-            safe_log_value(user.email),
+            "Unexpected error getting range SSH connection: user=%s instance_uuid=%s reason=%s",
+            safe_log_fingerprint(user.email),
             safe_log_value(instance_uuid),
+            safe_log_fingerprint(e),
+            # Never append the original exception text; range connection data
+            # may contain private keys or passwords.
+            exc_info=False,
         )
         raise BootstrapFailure(_INTERNAL_SERVER_ERROR, status_code=500) from e
 
@@ -314,15 +331,18 @@ def _generate_range_ssh_url(
             )
         )
     except ValueError as e:
-        logger.exception(
-            "Failed to generate range SSH URL: instance_uuid=%s",
+        logger.warning(
+            "Failed to generate range SSH URL: instance_uuid=%s reason=%s",
             safe_log_value(instance_uuid),
+            safe_log_fingerprint(e),
         )
         raise BootstrapFailure("Failed to generate SSH URL", status_code=500) from e
     except Exception as e:
         logger.exception(
-            "Unexpected error generating range SSH URL: instance_uuid=%s",
+            "Unexpected error generating range SSH URL: instance_uuid=%s reason=%s",
             safe_log_value(instance_uuid),
+            safe_log_fingerprint(e),
+            exc_info=False,
         )
         raise BootstrapFailure(_INTERNAL_SERVER_ERROR, status_code=500) from e
 
@@ -338,11 +358,11 @@ def _build_range_ssh_url(*, user: User, instance_uuid: str, guac_client: Guacamo
     # logged: the host IP and cloud provider name. Both are read from the
     # credential-bearing dict, so CodeQL taints them regardless of naming; they
     # go through ``safe_log_fingerprint`` (a true taint-break) and stay
-    # correlatable across log lines within the process. The user/instance
-    # correlation IDs go through ``safe_log_value``.
+    # correlatable across log lines within the process. User identity is
+    # fingerprinted; the instance correlation ID goes through ``safe_log_value``.
     logger.info(
         "Guacamole SSH bootstrap queued for range instance: user=%s instance_uuid=%s host=%s provider=%s",
-        safe_log_value(user.email),
+        safe_log_fingerprint(user.email),
         safe_log_value(instance_uuid),
         safe_log_fingerprint(ssh_info["host"]),
         safe_log_fingerprint(ssh_info.get("cloud_provider") or "unknown"),

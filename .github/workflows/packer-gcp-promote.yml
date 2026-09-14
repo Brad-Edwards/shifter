@@ -5,8 +5,8 @@ name: Packer GCE Image Promote to Prod
 #
 # Evidence-driven promotion (#1343 gaps 3/4): the operator supplies the EXACT
 # validated candidate image name (from packer-gcp-validate.yml). Promotion
-# verifies the image label, protected validation run, revision, and downloaded
-# evidence artifact all bind to that candidate, then copies THAT exact image
+# verifies the image label, protected validation run, revision, and retained
+# private evidence objects all bind to that candidate, then copies THAT exact image
 # into the prod family (derived from the image's own family attribute, so
 # polaris-vm and purpose-scoped <purpose>-dc families work with no per-name
 # logic), verifies the new prod image is READY, and only THEN deprecates the
@@ -117,18 +117,24 @@ jobs:
             --project="${DEV_PROJECT}" --format='value(labels.validated-run)')"
           VALIDATED_RUN_ATTEMPT="$(gcloud compute images describe "${SRC_IMAGE}" \
             --project="${DEV_PROJECT}" --format='value(labels.validated-attempt)')"
-          VALIDATED_ARTIFACT_ID="$(gcloud compute images describe "${SRC_IMAGE}" \
-            --project="${DEV_PROJECT}" --format='value(labels.validated-artifact-id)')"
+          VALIDATED_VERDICT_ID="$(gcloud compute images describe "${SRC_IMAGE}" \
+            --project="${DEV_PROJECT}" --format='value(labels.validated-verdict-id)')"
+          VALIDATED_EVIDENCE_SHA="$(gcloud compute images describe "${SRC_IMAGE}" \
+            --project="${DEV_PROJECT}" --format='value(labels.validated-evidence-sha)')"
           VALIDATED_IMAGE_ID="$(gcloud compute images describe "${SRC_IMAGE}" \
             --project="${DEV_PROJECT}" --format='value(labels.validated-image-id)')"
           VALIDATED_REVISION="$(gcloud compute images describe "${SRC_IMAGE}" \
             --project="${DEV_PROJECT}" --format='value(labels.validated-revision)')"
-          for label_name in VALIDATED_RUN VALIDATED_RUN_ATTEMPT VALIDATED_ARTIFACT_ID VALIDATED_IMAGE_ID; do
+          for label_name in VALIDATED_RUN VALIDATED_RUN_ATTEMPT VALIDATED_VERDICT_ID VALIDATED_IMAGE_ID; do
             if ! printf '%s' "${!label_name}" | grep -qE '^[0-9]+$'; then
               echo "::error::Source image ${SRC_IMAGE} has no valid numeric ${label_name} evidence binding."
               exit 1
             fi
           done
+          if ! printf '%s' "${VALIDATED_EVIDENCE_SHA}" | grep -qE '^[0-9a-f]{63}$'; then
+            echo "::error::Source image ${SRC_IMAGE} has no valid private evidence digest binding."
+            exit 1
+          fi
           if ! printf '%s' "${VALIDATED_REVISION}" | grep -qE '^[0-9a-f]{40}$'; then
             echo "::error::Source image ${SRC_IMAGE} has no valid labels.validated-revision evidence binding."
             exit 1
@@ -149,12 +155,13 @@ jobs:
             echo "IMAGE_TYPE=${IMAGE_TYPE:-unknown}"
             echo "VALIDATED_RUN=${VALIDATED_RUN}"
             echo "VALIDATED_RUN_ATTEMPT=${VALIDATED_RUN_ATTEMPT}"
-            echo "VALIDATED_ARTIFACT_ID=${VALIDATED_ARTIFACT_ID}"
+            echo "VALIDATED_VERDICT_ID=${VALIDATED_VERDICT_ID}"
+            echo "VALIDATED_EVIDENCE_SHA=${VALIDATED_EVIDENCE_SHA}"
             echo "VALIDATED_IMAGE_ID=${VALIDATED_IMAGE_ID}"
             echo "VALIDATED_REVISION=${VALIDATED_REVISION}"
           } >> "$GITHUB_ENV"
 
-      - name: Verify protected validation run and evidence artifact
+      - name: Verify protected validation run, verdict, and private evidence
         env:
           GH_TOKEN: ${{ github.token }}
           SRC_PROJECT: ${{ secrets.GCP_DEV_PROJECT_ID }}
@@ -165,22 +172,40 @@ jobs:
             exit 1
           fi
           RUN_FILE="${RUNNER_TEMP}/validation-run.json"
-          ARTIFACT_FILE="${RUNNER_TEMP}/validation-artifact.json"
-          EVIDENCE_ZIP="${RUNNER_TEMP}/validation-evidence.zip"
+          ARTIFACT_FILE="${RUNNER_TEMP}/validation-verdict-artifact.json"
+          VERDICT_ZIP="${RUNNER_TEMP}/validation-verdict.zip"
           EVIDENCE_DIR="${RUNNER_TEMP}/validation-evidence"
           mkdir -p "${EVIDENCE_DIR}"
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${VALIDATED_RUN}" > "${RUN_FILE}"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${VALIDATED_ARTIFACT_ID}" > "${ARTIFACT_FILE}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${VALIDATED_VERDICT_ID}" > "${ARTIFACT_FILE}"
           gh api -H "Accept: application/vnd.github+json" \
-            "repos/${GITHUB_REPOSITORY}/actions/artifacts/${VALIDATED_ARTIFACT_ID}/zip" \
-            > "${EVIDENCE_ZIP}"
-          unzip -q "${EVIDENCE_ZIP}" -d "${EVIDENCE_DIR}"
+            "repos/${GITHUB_REPOSITORY}/actions/artifacts/${VALIDATED_VERDICT_ID}/zip" \
+            > "${VERDICT_ZIP}"
+          unzip -q "${VERDICT_ZIP}" -d "${EVIDENCE_DIR}"
+          bucket="${SRC_PROJECT}-release-evidence"
+          prefix="packer-validation/${VALIDATED_IMAGE_ID}/${VALIDATED_RUN}/${VALIDATED_RUN_ATTEMPT}"
+          if ! gcloud storage cp --quiet \
+            "gs://${bucket}/${prefix}/validation-evidence.json" \
+            "${EVIDENCE_DIR}/validation-evidence.json" >/dev/null 2>&1; then
+            echo "::error::Private validation metadata is unavailable."
+            exit 1
+          fi
+          if ! gcloud storage cp --quiet \
+            "gs://${bucket}/${prefix}/guest-sbom.spdx.json" \
+            "${EVIDENCE_DIR}/guest-sbom.spdx.json" >/dev/null 2>&1; then
+            echo "::error::Private guest SBOM is unavailable."
+            exit 1
+          fi
           EVIDENCE_FILE="${EVIDENCE_DIR}/validation-evidence.json"
+          GUEST_SBOM_FILE="${EVIDENCE_DIR}/guest-sbom.spdx.json"
+          VERDICT_FILE="${EVIDENCE_DIR}/validation-verdict.json"
           SRC_IMAGE="${SRC_IMAGE}" SRC_IMAGE_ID="${VALIDATED_IMAGE_ID}" SRC_PROJECT="${SRC_PROJECT}" \
             IMAGE_FAMILY="${IMAGE_FAMILY}" IMAGE_TYPE="${IMAGE_TYPE}" \
             VALIDATED_RUN="${VALIDATED_RUN}" VALIDATED_RUN_ATTEMPT="${VALIDATED_RUN_ATTEMPT}" \
-            VALIDATED_ARTIFACT_ID="${VALIDATED_ARTIFACT_ID}" VALIDATED_REVISION="${VALIDATED_REVISION}" \
+            VALIDATED_VERDICT_ID="${VALIDATED_VERDICT_ID}" \
+            VALIDATED_EVIDENCE_SHA="${VALIDATED_EVIDENCE_SHA}" VALIDATED_REVISION="${VALIDATED_REVISION}" \
             EXPECTED_REPOSITORY="${GITHUB_REPOSITORY}" EVIDENCE_FILE="${EVIDENCE_FILE}" \
+            GUEST_SBOM_FILE="${GUEST_SBOM_FILE}" VERDICT_FILE="${VERDICT_FILE}" \
             RUN_FILE="${RUN_FILE}" ARTIFACT_FILE="${ARTIFACT_FILE}" \
             bash shifter/packer/gcp/scripts/validate/verify-promotion-evidence.sh
 
@@ -246,3 +271,15 @@ jobs:
             echo "- **Promoted image:** \`${NEW_PROD_IMAGE}\` (family \`${IMAGE_FAMILY}\`)"
             echo "- **Source validated candidate:** \`${SRC_IMAGE}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove downloaded private validation evidence
+        if: always()
+        run: |
+          rm -f \
+            "${RUNNER_TEMP}/validation-run.json" \
+            "${RUNNER_TEMP}/validation-verdict-artifact.json" \
+            "${RUNNER_TEMP}/validation-verdict.zip" \
+            "${RUNNER_TEMP}/validation-evidence/validation-evidence.json" \
+            "${RUNNER_TEMP}/validation-evidence/guest-sbom.spdx.json" \
+            "${RUNNER_TEMP}/validation-evidence/validation-verdict.json"
+          rmdir "${RUNNER_TEMP}/validation-evidence" 2>/dev/null || true

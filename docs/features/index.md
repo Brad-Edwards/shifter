@@ -24,6 +24,7 @@ Detailed guides for each Shifter feature.
 
 ## Advanced Features
 
+- [Artifact preparation](../ops/artifact-preparation.md) - Prepare permitted images and install private packs and adapters in an existing tenant
 - [Credentials](credentials) - Manage SCM and deployment profile credentials
 - [NGFW](ngfw) - Set up persistent firewalls for traffic logging
 - [Per-range model access (planned)](model-access.md) - Proposed organizer, participant, and operator experience under #681

@@ -9,8 +9,16 @@ from uuid import uuid4
 import pytest
 from botocore.exceptions import ClientError
 
+from gcp_dynamic_secrets import DynamicSecretClass, DynamicSecretPublicationPending, canonical_secret_id
 from gcp_vpn_identity import gcp_vpn_gateway_pool_service_account_email
 from vpn_secrets import AWSVpnSecretOps, GCPVpnSecretOps, openvpn_access_enabled
+
+
+@pytest.fixture(autouse=True)
+def _explicit_dynamic_secret_project(monkeypatch):
+    """Exercise the supported same-project migration posture explicitly."""
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-project")
 
 
 def _client_error(code: str) -> ClientError:
@@ -77,6 +85,7 @@ def _mock_slot_read(monkeypatch, slot: int | None) -> None:
 
 
 def _gcp_adapter(client, *, project_id: str = "range-project") -> GCPVpnSecretOps:
+    client.get_iam_policy.return_value = {"bindings": []}
     return GCPVpnSecretOps(
         client=client,
         exceptions=SimpleNamespace(NotFound=_NotFound, AlreadyExists=_AlreadyExists, InvalidArgument=_InvalidArgument),
@@ -84,9 +93,37 @@ def _gcp_adapter(client, *, project_id: str = "range-project") -> GCPVpnSecretOp
     )
 
 
+@pytest.mark.parametrize(
+    ("kind", "credential_class", "audience"),
+    [
+        ("issuer", DynamicSecretClass.VPN_ISSUER, "workload"),
+        ("server", DynamicSecretClass.VPN_SERVER, "workload"),
+        ("profile", DynamicSecretClass.VPN_PROFILE, "participant"),
+    ],
+)
+def test_gcp_vpn_kinds_map_to_the_expected_canonical_audience(
+    monkeypatch,
+    kind: str,
+    credential_class: DynamicSecretClass,
+    audience: str,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "gcp-dev")
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    generation = uuid4()
+    locations = _gcp_adapter(MagicMock(), project_id="compute-project")._locations(42, generation, kind)
+    expected_id = canonical_secret_id(
+        credential_class=credential_class,
+        scope=f"range-42-{str(generation).replace('-', '')}",
+    )
+
+    assert locations.create_ref == f"projects/range-secrets/secrets/{expected_id}"
+    assert f"-{audience}-vpn-" in locations.create_ref
+
+
 def test_gcp_server_secret_grants_the_reserved_pool_identity(monkeypatch):
     client = MagicMock()
     client.access_secret_version.side_effect = _NotFound()
+    client.get_secret.side_effect = _NotFound()
     _mock_slot_read(monkeypatch, 7)
     adapter = _gcp_adapter(client)
 
@@ -112,6 +149,7 @@ def test_gcp_adapter_never_creates_or_binds_service_accounts(monkeypatch):
     # Secret Manager grant on the server secret (not a service-account resource).
     client = MagicMock()
     client.access_secret_version.side_effect = _NotFound()
+    client.get_secret.side_effect = _NotFound()
     _mock_slot_read(monkeypatch, 3)
     adapter = _gcp_adapter(client)
 
@@ -125,6 +163,7 @@ def test_gcp_adapter_never_creates_or_binds_service_accounts(monkeypatch):
 def test_gcp_put_server_raises_when_no_pool_slot_reserved(monkeypatch):
     client = MagicMock()
     client.access_secret_version.side_effect = _NotFound()
+    client.get_secret.side_effect = _NotFound()
     _mock_slot_read(monkeypatch, None)
     adapter = _gcp_adapter(client)
     generation = uuid4()
@@ -143,6 +182,120 @@ def test_gcp_delete_generation_removes_secrets_without_touching_identities():
     # permanent, so there is no service-account lifecycle to invoke.
     assert client.delete_secret.call_count == 3
     assert not hasattr(adapter, "_iam_client")
+
+
+def test_gcp_dedicated_project_separates_secret_storage_from_gateway_identity(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "gcp-dev")
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    client = MagicMock()
+    client.access_secret_version.side_effect = _NotFound()
+    client.get_secret.side_effect = _NotFound()
+    _mock_slot_read(monkeypatch, 7)
+    adapter = _gcp_adapter(client, project_id="compute-project")
+
+    adapter.put_server(42, uuid4(), "server-material")
+
+    assert client.create_secret.call_args.kwargs["request"]["parent"] == "projects/range-secrets"
+    gateway_email = gcp_vpn_gateway_pool_service_account_email("compute-project", 7)
+    policy = client.set_iam_policy.call_args.kwargs["request"]["policy"]
+    assert policy["bindings"][0]["members"] == [f"serviceAccount:{gateway_email}"]
+
+
+def test_gcp_concurrent_creator_reuses_winner_without_publishing_competing_profile(monkeypatch):
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    client = MagicMock()
+    winner = SimpleNamespace(payload=SimpleNamespace(data=b"winner-profile"))
+    client.access_secret_version.side_effect = [_NotFound(), _NotFound(), winner]
+    client.get_secret.side_effect = _NotFound()
+    client.create_secret.side_effect = _AlreadyExists()
+    adapter = _gcp_adapter(client)
+
+    ref = adapter.put_profile(42, uuid4(), "competing-profile")
+
+    assert ref.startswith("projects/range-secrets/secrets/")
+    client.add_secret_version.assert_not_called()
+
+
+def test_gcp_existing_profile_is_authoritative_over_repeated_payload(monkeypatch):
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    client = MagicMock()
+    client.access_secret_version.return_value = SimpleNamespace(payload=SimpleNamespace(data=b"published-profile"))
+    adapter = _gcp_adapter(client)
+
+    ref = adapter.put_profile(42, uuid4(), "competing-profile")
+
+    assert ref.startswith("projects/range-project/secrets/")
+    client.create_secret.assert_not_called()
+    client.add_secret_version.assert_not_called()
+
+
+def test_gcp_concurrent_server_creator_reuses_winner_and_grants_gateway(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "gcp-dev")
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    client = MagicMock()
+    winner = SimpleNamespace(payload=SimpleNamespace(data=b"winner-server"))
+    client.access_secret_version.side_effect = [_NotFound(), _NotFound(), winner]
+    client.get_secret.side_effect = _NotFound()
+    client.create_secret.side_effect = _AlreadyExists()
+    _mock_slot_read(monkeypatch, 7)
+    adapter = _gcp_adapter(client, project_id="compute-project")
+
+    adapter.put_server(42, uuid4(), "competing-server")
+
+    client.add_secret_version.assert_not_called()
+    gateway_email = gcp_vpn_gateway_pool_service_account_email("compute-project", 7)
+    policy_request = client.set_iam_policy.call_args.kwargs["request"]
+    assert policy_request["resource"].startswith("projects/range-secrets/secrets/")
+    assert policy_request["policy"]["bindings"][0]["members"] == [f"serviceAccount:{gateway_email}"]
+
+
+def test_gcp_existing_server_is_authoritative_and_gateway_grant_is_reconciled(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "gcp-dev")
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    client = MagicMock()
+    client.access_secret_version.return_value = SimpleNamespace(payload=SimpleNamespace(data=b"published-server"))
+    _mock_slot_read(monkeypatch, 7)
+    adapter = _gcp_adapter(client, project_id="compute-project")
+
+    adapter.put_server(42, uuid4(), "competing-server")
+
+    client.create_secret.assert_not_called()
+    client.add_secret_version.assert_not_called()
+    client.set_iam_policy.assert_called_once()
+
+
+def test_gcp_vpn_waits_for_empty_legacy_container_before_canonical_create(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "gcp-dev")
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    monkeypatch.setattr("gcp_dynamic_secrets.time.sleep", lambda _seconds: None)
+    client = MagicMock()
+    client.access_secret_version.side_effect = _NotFound()
+    client.get_secret.return_value = object()
+    adapter = _gcp_adapter(client, project_id="compute-project")
+
+    with pytest.raises(DynamicSecretPublicationPending):
+        adapter.put_profile(42, uuid4(), "competing-profile")
+
+    assert client.get_secret.call_args.kwargs["request"]["name"].startswith(
+        "projects/compute-project/secrets/shifter-range-42-vpn-"
+    )
+    client.create_secret.assert_not_called()
+    client.add_secret_version.assert_not_called()
+
+
+def test_gcp_existing_empty_container_fails_without_publishing_competing_profile(monkeypatch):
+    monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "range-secrets")
+    monkeypatch.setattr("gcp_dynamic_secrets.time.sleep", lambda _seconds: None)
+    client = MagicMock()
+    client.access_secret_version.side_effect = _NotFound()
+    client.get_secret.side_effect = _NotFound()
+    client.create_secret.side_effect = _AlreadyExists()
+    adapter = _gcp_adapter(client)
+
+    with pytest.raises(DynamicSecretPublicationPending):
+        adapter.put_profile(42, uuid4(), "competing-profile")
+
+    client.add_secret_version.assert_not_called()
 
 
 def test_capability_gate_requires_selected_provider_prerequisites(monkeypatch):

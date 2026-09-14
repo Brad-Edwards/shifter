@@ -30,7 +30,7 @@ from raes_gcp_activate_gce import GceActivationOps
 
 def _activation():
     raes_input = build_raes_operation_input(
-        plan={},
+        plan={"operation_id": "activation-plan"},
         bindings=RaesInputBindings(delivery=()),
         image_candidates={},
         range_backend="gce",
@@ -109,11 +109,17 @@ class TestRealizeClaimantAccess:
         monkeypatch.setattr(
             raes_gcp_activate_realize,
             "realize_claimant_access_on_cell",
-            lambda activation, activate_generation: seen.append(activate_generation) or members,
+            lambda activation, activate_generation, **kwargs: seen.append((activate_generation, kwargs)) or members,
         )
         gen = uuid4()
-        assert GceActivationOps.realize_claimant_access(_activation(), gen) == members
-        assert seen == [gen]
+        config = object()
+        assert (
+            GceActivationOps(config=config, allocated_network_cidr="10.90.0.0/28").realize_claimant_access(
+                _activation(), gen
+            )
+            == members
+        )
+        assert seen == [(gen, {"config": config, "allocated_network_cidr": "10.90.0.0/28"})]
 
 
 class TestPriorAccessRevoked:
@@ -142,10 +148,20 @@ class TestRealizeClaimantAccessOnCell:
         monkeypatch.setattr(
             raes_gcp_activate_realize,
             "realize_access_on_existing_cell",
-            lambda *a, **k: {"n1": {"channel": "ssh"}},
+            lambda *a, **k: {
+                "instances": [],
+                "composition_verified_addresses": [],
+                "operating_systems": [],
+                "compute_substrates": [],
+            },
         )
         monkeypatch.setattr(raes_gcp_activate_realize, "_realized_members", lambda result: members)
-        assert raes_gcp_activate_realize.realize_claimant_access_on_cell(_activation(), uuid4()) == members
+        monkeypatch.setattr(raes_gcp_activate_realize, "snapshot_resources", lambda plan, verified: [])
+        generation = uuid4()
+        result = raes_gcp_activate_realize.realize_claimant_access_on_cell(_activation(), generation)
+        assert result.members == members
+        assert result.completion["generation_id"] == str(generation)
+        assert result.completion["operation_id"] == "activation-plan"
 
     def test_realization_error_fails_closed(self, monkeypatch):
         monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
@@ -158,6 +174,21 @@ class TestRealizeClaimantAccessOnCell:
         activation = _activation()
         with pytest.raises(raes_gcp_activate_realize.ActivationRealizationError):
             raes_gcp_activate_realize.realize_claimant_access_on_cell(activation, uuid4())
+
+    @pytest.mark.parametrize("addresses", ["n1", {"n1": True}, [1], None])
+    def test_malformed_verification_addresses_fail_before_snapshot(self, monkeypatch, addresses):
+        monkeypatch.setattr(raes_gcp_activate_realize, "parse_plan", lambda plan: SimpleNamespace())
+        monkeypatch.setattr(raes_gcp_activate_realize, "_registry_resolver", lambda oi: lambda node: None)
+        monkeypatch.setattr(
+            raes_gcp_activate_realize,
+            "realize_access_on_existing_cell",
+            lambda *a, **k: {"composition_verified_addresses": addresses},
+        )
+        snapshots = []
+        monkeypatch.setattr(raes_gcp_activate_realize, "snapshot_resources", lambda *args: snapshots.append(args) or [])
+        with pytest.raises(raes_gcp_activate_realize.ActivationRealizationError):
+            raes_gcp_activate_realize.realize_claimant_access_on_cell(_activation(), uuid4())
+        assert snapshots == []
 
 
 class _FakePlan:
@@ -190,10 +221,20 @@ class TestRunRaesRangeActivate:
         activation = _activation()
         reports: list = []
         _patch_activate_orchestration(monkeypatch, reports=reports, activation=activation)
-        monkeypatch.setattr("raes_gcp_activate.default_activation_ops", lambda: object())
+        monkeypatch.setattr("raes_gcp_activate.default_activation_ops", lambda **_: object())
+        monkeypatch.setattr(
+            raes_range_ops,
+            "_allocated_open_network_for_destroy",
+            lambda *args: raes_range_ops._GceNetworkAllocation(required=False),
+        )
+        monkeypatch.setattr(raes_range_ops, "_require_gce_live_fire_binding", lambda operation_input: "gce")
+        monkeypatch.setattr(raes_range_ops, "load_gce_range_cell_config", lambda **kwargs: object())
+        monkeypatch.setattr(raes_range_ops, "_config_for_range_placement", lambda request_id, config: config)
         monkeypatch.setattr(
             "raes_gcp_activate.activate_raes_range_cell",
-            lambda **kwargs: SimpleNamespace(members=[{"target_address": "n1", "channel": "ssh"}]),
+            lambda **kwargs: SimpleNamespace(
+                members=[{"target_address": "n1", "channel": "ssh"}], completion={"resources": []}
+            ),
         )
         raes_range_ops.run_raes_range_activate("rid")
         assert reports == [
@@ -223,7 +264,15 @@ class TestRunRaesRangeActivate:
         activation = _activation()
         reports: list = []
         _patch_activate_orchestration(monkeypatch, reports=reports, activation=activation)
-        monkeypatch.setattr("raes_gcp_activate.default_activation_ops", lambda: object())
+        monkeypatch.setattr("raes_gcp_activate.default_activation_ops", lambda **_: object())
+        monkeypatch.setattr(
+            raes_range_ops,
+            "_allocated_open_network_for_destroy",
+            lambda *args: raes_range_ops._GceNetworkAllocation(required=False),
+        )
+        monkeypatch.setattr(raes_range_ops, "_require_gce_live_fire_binding", lambda operation_input: "gce")
+        monkeypatch.setattr(raes_range_ops, "load_gce_range_cell_config", lambda **kwargs: object())
+        monkeypatch.setattr(raes_range_ops, "_config_for_range_placement", lambda request_id, config: config)
 
         def _boom(**kwargs):
             raise RuntimeError("activation blew up")
@@ -234,12 +283,74 @@ class TestRunRaesRangeActivate:
         assert reports[0] == ResultStep.RAES_ACTIVATE_RUNNING
         assert reports[-1][0] == "failure"
 
+    def test_open_network_allocation_is_recovered_before_scrub(self, monkeypatch):
+        activation = _activation()
+        reports: list = []
+        _patch_activate_orchestration(monkeypatch, reports=reports, activation=activation)
+        config = SimpleNamespace(network_mode="shared-vpc")
+        monkeypatch.setattr(raes_range_ops, "_require_gce_live_fire_binding", lambda operation_input: "gce")
+        monkeypatch.setattr(raes_range_ops, "load_gce_range_cell_config", lambda **kwargs: config)
+        monkeypatch.setattr(raes_range_ops, "_config_for_range_placement", lambda request_id, value: value)
+        recovered = []
+        monkeypatch.setattr(
+            raes_range_ops,
+            "_allocated_open_network_for_destroy",
+            lambda request_id, operation_id, plan, value: (
+                recovered.append((request_id, operation_id, value))
+                or raes_range_ops._GceNetworkAllocation(required=True, cidr="10.90.0.0/28")
+            ),
+        )
+        created = []
+        monkeypatch.setattr(
+            "raes_gcp_activate.default_activation_ops",
+            lambda **kwargs: created.append(kwargs) or object(),
+        )
+        monkeypatch.setattr(
+            "raes_gcp_activate.activate_raes_range_cell",
+            lambda **kwargs: SimpleNamespace(members=[], completion={"resources": []}),
+        )
+
+        raes_range_ops.run_raes_range_activate("rid")
+
+        assert recovered == [("rid", activation.prepared_generation_fence, config)]
+        assert created == [{"config": config, "allocated_network_cidr": "10.90.0.0/28"}]
+
+    def test_missing_open_network_allocation_fails_before_scrub(self, monkeypatch):
+        activation = _activation()
+        reports: list = []
+        _patch_activate_orchestration(monkeypatch, reports=reports, activation=activation)
+        monkeypatch.setattr(raes_range_ops, "_require_gce_live_fire_binding", lambda operation_input: "gce")
+        monkeypatch.setattr(raes_range_ops, "load_gce_range_cell_config", lambda **kwargs: object())
+        monkeypatch.setattr(raes_range_ops, "_config_for_range_placement", lambda request_id, config: config)
+        monkeypatch.setattr(
+            raes_range_ops,
+            "_allocated_open_network_for_destroy",
+            lambda *args: raes_range_ops._GceNetworkAllocation(required=True),
+        )
+        monkeypatch.setattr(
+            "raes_gcp_activate.default_activation_ops",
+            lambda **kwargs: pytest.fail("missing allocation reached credential scrubbing"),
+        )
+        monkeypatch.setattr(
+            "raes_gcp_activate.activate_raes_range_cell",
+            lambda **kwargs: pytest.fail("missing allocation reached credential scrubbing"),
+        )
+
+        with pytest.raises(raes_range_ops.RaesRealizationError):
+            raes_range_ops.run_raes_range_activate("rid")
+
 
 class _NotFound(Exception):
     pass
 
 
 class TestIssuerPresent:
+    @pytest.fixture(autouse=True)
+    def _explicit_dynamic_secret_project(self, monkeypatch):
+        """Exercise the supported same-project migration posture explicitly."""
+        monkeypatch.setenv("ENVIRONMENT", "test")
+        monkeypatch.setenv("GCP_DYNAMIC_SECRET_PROJECT_ID", "proj-1")
+
     def _ops(self, *, access):
         import vpn_secrets
 
@@ -303,7 +414,7 @@ class TestGetActivationOperationInput:
 
 def _raw_raes_input():
     return build_raes_operation_input(
-        plan={},
+        plan={"operation_id": "activation-plan"},
         bindings=RaesInputBindings(delivery=()),
         image_candidates={},
         range_backend="gce",

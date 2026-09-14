@@ -116,6 +116,10 @@ def _apply_lifecycle(range_obj: Range, new_status: str, request_id: str) -> str:
     if new_status == ResourceStatus.READY.value:
         extra = {**extra, "ready_at": timezone.now()}
     previous = _save_status(range_obj, new_status, extra)
+    if new_status in {ResourceStatus.DESTROYED.value, ResourceStatus.FAILED.value}:
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(range_obj)
     _audit(AuditEntityType.RANGE, range_obj.id, new_status, request_id=request_id, previous={"status": previous})
     _enqueue_range_status_event(range_obj, new_status, "")
     return f"raes range -> {new_status}"
@@ -300,7 +304,7 @@ def _apply_uncancelled_raes_result(
     if step is ResultStep.RAES_TERMINAL_DESTROYED:
         # Record scoped provider inventory/readback evidence BEFORE the DESTROYED
         # transition so verified_terminal, pruning, and CTF capacity release gate on
-        # it, not on the logical status (#2086, ADR-062-R4/R5). Same transaction.
+        # it, not on the logical status (#2086, ADR-063-R4/R5). Same transaction.
         _record_cleanup_inventory(row, payload)
 
     return _apply_observation(row, step, payload, range_obj)
@@ -323,8 +327,41 @@ def _record_cleanup_inventory(row: OperationResultInbox, payload: dict[str, Any]
     )
 
 
+def _validate_completion(row: OperationResultInbox, payload: dict[str, Any], range_obj: Range) -> None:
+    """Admit current evidence against the exact generation's immutable input."""
+    from engine.models import OperationInput
+    from shared.raes.completion import completed_snapshot, load_serialized_plan
+
+    try:
+        record = OperationInput.objects.filter(operation_id=row.operation_id, request_id=row.request_id).first()
+        if record is None:
+            config = range_obj.range_config
+            if isinstance(config, dict) and config.get("contract_version") == "raes-provisioning-plan-v2":
+                raise ValueError("missing immutable input")
+            # Historical result tests/records without the new transport.
+            return
+        immutable = record.envelope["payload"]
+        if row.operation == "activate":
+            immutable = immutable["raes_input"]
+        if (immutable["plan"].get("contract_version"), immutable["plan"].get("raes_version")) == (
+            "raes-provisioning-plan-v1",
+            "2.0.0",
+        ):
+            # In-flight old producer results retain their historical contract.
+            return
+        completed_snapshot(
+            load_serialized_plan(immutable["plan"]),
+            payload["completion"],
+            generation_id=str(row.operation_id),
+            serialized_plan=immutable["plan"],
+        )
+    except (KeyError, TypeError, ValueError):
+        raise RaesRealizedAccessError("realization completion evidence is missing or invalid") from None
+
+
 def _apply_terminal_ready(row: OperationResultInbox, payload: dict[str, Any], range_obj: Range) -> str:
     """Apply a RAES terminal-READY result, branching warm-prepare vs cold/activation."""
+    _validate_completion(row, payload, range_obj)
     pending = _pending_warm_generation(row, range_obj)
     if pending is not None:
         # Warm-prepare terminal: the infrastructure is realized, but the range

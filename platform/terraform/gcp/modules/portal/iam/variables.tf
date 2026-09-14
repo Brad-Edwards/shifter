@@ -2,6 +2,17 @@ variable "project_id" {
   type = string
 }
 
+variable "dynamic_secret_project_id" {
+  type        = string
+  description = "Deployment-scoped project that owns provisioner-created range secrets."
+}
+
+variable "provisioner_static_secret_ids" {
+  type        = set(string)
+  default     = []
+  description = "Exact operator-created Secret Manager resources read by the provisioner outside the dynamic boundary."
+}
+
 variable "environment" {
   type = string
 }

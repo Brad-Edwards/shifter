@@ -22,6 +22,7 @@ GCP_ENV = {
     "CLOUD_REGION": "us-central1",
     "GCP_REGION": "us-central1",
     "GCP_PROJECT_ID": "shifter-gcp-dev",
+    "GCP_DYNAMIC_SECRET_PROJECT_ID": "shifter-gcp-dev-range-secrets",
     "GOOGLE_CLOUD_PROJECT": "shifter-gcp-dev",
     "DB_HOST": "10.0.0.10",
     "DB_PORT": "5432",
@@ -54,6 +55,7 @@ def _configure_gcp_task_settings(settings):
     settings.ENGINE_TASK_DEFINITION = GCP_ENV["ENGINE_TASK_IMAGE"]
     settings.ENGINE_ECS_CLUSTER_ARN = ""
     settings.ENGINE_TASK_DEFINITION_ARN = ""
+    settings.GCP_DYNAMIC_SECRET_PROJECT_ID = GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
 
 
 class _KubeModel(SimpleNamespace):
@@ -119,6 +121,7 @@ class TestGcpTaskConfig:
         from engine.ecs import _get_engine_task_config
 
         settings.CLOUD_PROVIDER = "gcp"
+        settings.GCP_DYNAMIC_SECRET_PROJECT_ID = GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
         settings.ENGINE_TASK_CLUSTER = "shifter-jobs"
         settings.ENGINE_TASK_DEFINITION = (
             "us-central1-docker.pkg.dev/shifter-gcp-dev/shifter-gcp-dev-pulumi-provisioner:latest"
@@ -156,6 +159,7 @@ class TestGcpProvisionerEnvOverrides:
         from engine.ecs import _get_gcp_provisioner_env_overrides
 
         settings.CLOUD_PROVIDER = "gcp"
+        settings.GCP_DYNAMIC_SECRET_PROJECT_ID = GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
         with patch.dict(os.environ, GCP_ENV, clear=False):
             overrides = _get_gcp_provisioner_env_overrides()
 
@@ -163,6 +167,7 @@ class TestGcpProvisionerEnvOverrides:
         assert overrides["RANGE_NETWORK_CIDR"] == GCP_ENV["RANGE_NETWORK_CIDR"]
         assert overrides["PORTAL_NETWORK_CIDRS"] == GCP_ENV["PORTAL_NETWORK_CIDRS"]
         assert overrides["GCP_RANGE_BACKEND"] == GCP_ENV["GCP_RANGE_BACKEND"]
+        assert overrides["GCP_DYNAMIC_SECRET_PROJECT_ID"] == GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
         assert overrides["GDC_ACCESS_SECRET_ID"] == GCP_ENV["GDC_ACCESS_SECRET_ID"]
         assert overrides["GDC_VM_IMAGE_GCS_SECRET_ID"] == GCP_ENV["GDC_VM_IMAGE_GCS_SECRET_ID"]
         assert overrides["GDC_KALI_IMAGE_URL"] == GCP_ENV["GDC_KALI_IMAGE_URL"]
@@ -176,6 +181,7 @@ class TestGcpProvisionerEnvOverrides:
         from engine.ecs import _get_gcp_provisioner_env_overrides
 
         settings.CLOUD_PROVIDER = "gcp"
+        settings.GCP_DYNAMIC_SECRET_PROJECT_ID = GCP_ENV["GCP_DYNAMIC_SECRET_PROJECT_ID"]
         gce_env = {
             **GCP_ENV,
             "GCP_RANGE_BACKEND": "gce",

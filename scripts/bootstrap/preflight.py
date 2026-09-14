@@ -210,6 +210,12 @@ def _gcp_secret_checks() -> list[SecretCheck]:
     """Build the GCP (gcp-dev) secret checks."""
     return [
         SecretCheck("GCP_PROJECT_ID", "GCP project", True, f"Set GCP_PROJECT_ID (see {_DOCS})."),
+        SecretCheck(
+            "SHIFTER_CONFIG_GCP_DEV",
+            "Validated gcp-dev shifter.yaml payload",
+            True,
+            f"Set SHIFTER_CONFIG_GCP_DEV (see {_DOCS}).",
+        ),
         SecretCheck("GCP_PUBLIC_HOSTNAME", "Public hostname", True, f"Set GCP_PUBLIC_HOSTNAME (see {_DOCS})."),
         SecretCheck(
             "GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN",
@@ -222,6 +228,12 @@ def _gcp_secret_checks() -> list[SecretCheck]:
             "Deploy service account",
             True,
             f"Set GCP_DEPLOY_SERVICE_ACCOUNT (see {_DOCS}).",
+        ),
+        SecretCheck(
+            "GCP_RELEASE_SCAN_SERVICE_ACCOUNT",
+            "Exact-release scan service account",
+            True,
+            f"Set GCP_RELEASE_SCAN_SERVICE_ACCOUNT (see {_DOCS}).",
         ),
         SecretCheck(
             "GCP_WORKLOAD_IDENTITY_PROVIDER",

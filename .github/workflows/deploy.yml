@@ -491,9 +491,10 @@ jobs:
   gcp-dev:
     name: GCP Dev
     needs: [changes, quality]
-    # `_gcp-dev.yml::deploy` requests `id-token: write` (GCP OIDC via
-    # workload identity federation) and `attestations: write` (SBOM +
-    # provenance attestation, ADR-037-R5/R6). `post-deploy-smoke` requests
+    # `_gcp-dev.yml::prepare`, `release_scan`, and `deploy` request
+    # `id-token: write` (purpose-scoped GCP WIF); `prepare` also requests
+    # `attestations: write` (SBOM + provenance, ADR-037-R5/R6), and deploy
+    # requests attestation readback. `post-deploy-smoke` requests
     # `issues: write` (smoke failure issues). Reusable workflows can't request
     # higher GITHUB_TOKEN scopes than the caller grants — without this
     # block the workflow fails at startup with
@@ -525,6 +526,7 @@ jobs:
       require_active_certificate: ${{ github.event_name != 'workflow_dispatch' || inputs.gcp_require_active_certificate }}
     secrets:
       GCP_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_RELEASE_SCAN_SERVICE_ACCOUNT: ${{ secrets.GCP_RELEASE_SCAN_SERVICE_ACCOUNT }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       # Deployment-owned identity/config values consumed by _gcp-dev.yml's
       # render steps. Must be forwarded here: the reusable workflow only sees

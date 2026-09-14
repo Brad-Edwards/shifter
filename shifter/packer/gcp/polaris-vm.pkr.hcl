@@ -50,9 +50,10 @@ source "googlecompute" "polaris-vm" {
   image_family      = "${var.image_prefix}-polaris-vm"
   image_description = "Polaris range host: Debian Docker host running the polaris docker-compose stack (GCE)"
   image_labels = {
-    project    = "shifter"
-    managed-by = "packer"
-    image-type = "polaris-vm"
+    project         = "shifter"
+    managed-by      = "packer"
+    image-type      = "polaris-vm"
+    source-revision = var.source_revision
   }
 }
 

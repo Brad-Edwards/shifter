@@ -84,6 +84,12 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "redis": f"projects/{project_id}/secrets/shifter-gcp-dev-redis",
             }
         },
+        "dynamic_secret_project_id": {"value": f"{project_id}-range-secrets"},
+        "provisioner_static_secret_refs": {
+            "value": {
+                "GDC_VM_IMAGE_GCS_SECRET_ID": (f"projects/{project_id}/secrets/shifter-gcp-dev-gdc-vm-image-gcs"),
+            }
+        },
         "identity_platform_api_key": {"value": "identity-platform-api-key"},
         "identity_platform_project_id": {"value": project_id},
         "identity_allowed_email_domain": {"value": "paloaltonetworks.com"},
@@ -1038,6 +1044,46 @@ class TestGdcControlPlaneHelmValues:
             "rangeAccessPorts": [22, 3389],
         }
 
+    def test_forwards_mission_control_lease_policy_from_root_config(self):
+        """A configured lease policy reaches the runtime env from root config, without
+        pre-seeding this render process's environment (issue #27)."""
+        import json
+
+        from installation.render import render_mission_control_lease_env
+        from installation.schema import RootConfig
+
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        root = RootConfig.model_validate(
+            {
+                "backend": "gcp",
+                "deployment": {"name": "shifter", "domain": "portal.example.test"},
+                "secrets": {"django_secret_key": "prompt"},
+                "settings": {
+                    "mission_control_leases": {
+                        "initial_days": 7,
+                        "extension_days": 3,
+                        "maximum_days": 90,
+                        "extensions_enabled": False,
+                    }
+                },
+            }
+        )
+        values = deploy.render_gcp_helm_values(
+            config,
+            outputs,
+            image_tag=PINNED_IMAGE_TAG,
+            render_artifacts=deploy.GcpRenderArtifacts(
+                mission_control_lease_env=render_mission_control_lease_env(root)
+            ),
+        )
+        assert json.loads(values["runtimeEnv"]["MISSION_CONTROL_LEASE_POLICY_JSON"]) == {
+            "initial_days": 7,
+            "extension_days": 3,
+            "maximum_days": 90,
+            "extensions_enabled": False,
+        }
+
     def test_range_cluster_api_cidrs_from_control_plane_endpoint(self):
         """The range-cluster egress allowlist mirrors the configured control-plane endpoint."""
         config = deploy.GDCBootstrapConfig(
@@ -1229,8 +1275,7 @@ class TestGdcControlPlaneHelmChart:
     def test_chart_renders_restricted_security_contexts_and_numeric_runtime_ids(self, tmp_path):
         """The chart must render restricted-compatible workloads with pinned runtime IDs."""
         helm = shutil.which("helm")
-        if helm is None:
-            pytest.skip("helm is required for chart render validation")
+        assert helm is not None, "helm is required for security-relevant chart render validation"
 
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
         outputs = _sample_gcp_control_plane_outputs(config.project_id)
@@ -1312,8 +1357,7 @@ class TestGdcControlPlaneHelmChart:
         out of band by the deploy bootstrap and consumed by reference only.
         """
         helm = shutil.which("helm")
-        if helm is None:
-            pytest.skip("helm is required for chart render validation")
+        assert helm is not None, "helm is required for security-relevant chart render validation"
 
         # Adversarial override: a caller tries to smuggle secrets through values.
         values = {
@@ -2183,6 +2227,16 @@ class TestGcpBootstrapIdentityPlatform:
         assert "kali:kali" not in rendered
         assert "ubuntu:ubuntu" not in rendered
 
+    def test_render_gcp_platform_runtime_env_leaves_static_secret_refs_to_terraform_outputs(self):
+        """Static secret refs come only from the Terraform IAM/runtime declaration map."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+
+        rendered = deploy.render_gcp_platform_runtime_env(config, bootstrap_env_values={})
+
+        assert "GDC_VM_IMAGE_GCS_SECRET_ID" not in rendered
+        assert "GDC_VMSERIES_IMAGE_GCS_SECRET_ID" not in rendered
+        assert "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID" not in rendered
+
     def test_render_gcp_platform_runtime_env_wires_guest_image_urls_from_bucket(self):
         """Guest boot images resolve to the packer-gcp export bucket per environment."""
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", environment="gcp-dev")
@@ -2443,6 +2497,7 @@ class TestGceRangePreconditions:
     _FULL_ENV: ClassVar[dict[str, str]] = {
         "GCP_PACKER_BUILD_SERVICE_ACCOUNT": "build@prod-x.iam.gserviceaccount.com",
         "GCP_PACKER_VALIDATE_SERVICE_ACCOUNT": "validate@prod-x.iam.gserviceaccount.com",
+        "GCP_RELEASE_SCAN_SERVICE_ACCOUNT": "scan@prod-x.iam.gserviceaccount.com",
         "GCP_DEPLOY_SERVICE_ACCOUNT": "deploy@prod-x.iam.gserviceaccount.com",
         "GCP_DESTROY_SERVICE_ACCOUNT": "destroy@prod-x.iam.gserviceaccount.com",
         "GCP_WORKLOAD_IDENTITY_PROVIDER": "projects/1/locations/global/workloadIdentityPools/p/providers/gh",
@@ -2456,10 +2511,16 @@ class TestGceRangePreconditions:
     def _config():
         return deploy.GDCBootstrapConfig(project_id="prod-x", cluster_id="cluster1", range_backend="gce")
 
-    def test_all_present_passes(self):
-        gcp_control_plane.check_gce_range_preconditions(
-            self._config(), env=dict(self._FULL_ENV), image_exists=lambda *_: True
-        )
+    def test_all_present_passes(self, capsys):
+        checked: list[tuple[str, str, str]] = []
+
+        def _exists(project: str, kind: str, name: str) -> bool:
+            checked.append((project, kind, name))
+            return True
+
+        gcp_control_plane.check_gce_range_preconditions(self._config(), env=dict(self._FULL_ENV), image_exists=_exists)
+        assert len(checked) == 2
+        assert "GCE range preconditions satisfied" in capsys.readouterr().out
 
     def test_missing_required_var_fails(self):
         config = self._config()
@@ -2476,13 +2537,17 @@ class TestGceRangePreconditions:
             gcp_control_plane.check_gce_range_preconditions(config, env=env, image_exists=lambda *_: False)
         assert exc.value.code == 1
 
-    def test_allow_flag_downgrades_failures_to_warning(self):
+    def test_allow_flag_downgrades_failures_to_warning(self, capsys):
         env = dict(self._FULL_ENV)
         del env["GCP_RANGE_DC_IMAGE"]
         # Missing var AND a missing image, but the opt-out lets a platform-first bring-up proceed.
         gcp_control_plane.check_gce_range_preconditions(
             self._config(), allow_missing_range_images=True, env=env, image_exists=lambda *_: False
         )
+        output = capsys.readouterr().out
+        assert "GCP_RANGE_DC_IMAGE" in output
+        assert "Range guest image not baked" in output
+        assert "Proceeding despite the range prerequisites" in output
 
     def test_missing_wif_is_warning_only(self, capsys):
         env = {k: v for k, v in self._FULL_ENV.items() if k not in ("GCP_PACKER_VALIDATE_SERVICE_ACCOUNT",)}
@@ -2507,3 +2572,83 @@ class TestGceRangePreconditions:
         assert parse("projects/p/global/images/my-image-v1", "d") == ("p", "image", "my-image-v1")
         assert parse("family/shifter-kali", "d") == ("d", "family", "shifter-kali")
         assert parse("shifter-dc", "d") == ("d", "family", "shifter-dc")
+
+
+def test_staging_rejects_missing_broker_readback_before_render(tmp_path):
+    """Local bootstrap must not silently deploy disabled from stale Terraform output."""
+    import yaml
+
+    root_path = tmp_path / "shifter.yaml"
+    root_path.write_text(
+        yaml.safe_dump(
+            {
+                "backend": "gcp",
+                "deployment": {"name": "shifter", "domain": "shifter.example.test"},
+                "secrets": {"django_secret_key": "prompt"},
+                "settings": {
+                    "project_id": "platform-example",
+                    "dynamic_secret_project_id": "secrets-example",
+                    "region": "us-central1",
+                    "model_broker": {
+                        "enabled": True,
+                        "hostname": "models.example.test",
+                        "vip": "10.40.0.25",
+                        "admitted_subnets": ["10.50.1.0/24"],
+                        "tls_secret_name": "broker-tls-v1",
+                        "control_tls_secret_name": "control-tls-v1",
+                        "trust_configmap_name": "model-ca-v1",
+                        "model_projects": {"models-example": "model-invoke"},
+                    },
+                },
+            }
+        )
+    )
+    config = deploy.GDCBootstrapConfig(project_id="platform-example", shifter_config_path=str(root_path))
+    with pytest.raises(ValueError, match="missing applied Terraform output"):
+        gcp_control_plane.stage_gcp_control_plane_values(
+            config, {}, tmp_path, image_tag=PINNED_IMAGE_TAG, image_identities={}
+        )
+    assert not (tmp_path / "shifter.values.generated.json").exists()
+
+
+def test_staging_writes_configured_lease_policy_into_generated_values(tmp_path):
+    """The real deploy call site wires the root lease policy into the rendered values (#27)."""
+    import json
+
+    import yaml
+
+    root_path = tmp_path / "shifter.yaml"
+    root_path.write_text(
+        yaml.safe_dump(
+            {
+                "backend": "gcp",
+                "deployment": {"name": "shifter", "domain": "portal.example.test"},
+                "secrets": {"django_secret_key": "prompt"},
+                "settings": {
+                    "project_id": "prod-rwctxzl6shxk",
+                    "dynamic_secret_project_id": "secrets-example",
+                    "region": "us-central1",
+                    "mission_control_leases": {
+                        "initial_days": 7,
+                        "extension_days": 3,
+                        "maximum_days": 90,
+                        "extensions_enabled": False,
+                    },
+                },
+            }
+        )
+    )
+    config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", shifter_config_path=str(root_path))
+    outputs = _sample_gcp_control_plane_outputs(config.project_id)
+
+    values_path = gcp_control_plane.stage_gcp_control_plane_values(
+        config, outputs, tmp_path, image_tag=PINNED_IMAGE_TAG, image_identities=None
+    )
+
+    values = json.loads(values_path.read_text())
+    assert json.loads(values["runtimeEnv"]["MISSION_CONTROL_LEASE_POLICY_JSON"]) == {
+        "initial_days": 7,
+        "extension_days": 3,
+        "maximum_days": 90,
+        "extensions_enabled": False,
+    }

@@ -182,10 +182,55 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
-    "reason": "Per-finding GCP exceptions (CKV_GCP_6 / 51 / 53 / 54 / 61 / 62 / 65 / 69 / 73 / 79 / 83 / 107 / 108 / 109 / 110 / 111 / 124, CKV2_GCP_10 / 13): apply to gcp/modules/platform-core/main.tf which composes Cloud SQL, Cloud Function, Cloud Armor, and GKE. Each rule requires per-flag review against the running Postgres major version and the workload's connectivity contract; doing that triage well needs a follow-up issue with the GCP deploy team.",
-    "expires_on": "2026-11-26",
+    "reason": "CKV_GCP_6 is a reviewed false positive on the exact Cloud SQL artifact: ssl_mode = ENCRYPTED_ONLY is the current provider control that rejects plaintext, but Checkov 3.2 still expects legacy require_ssl. CKV_GCP_79 is a time-bounded release exception: the PostgreSQL major remains an explicit tested deployment input because following Checkov's moving latest-major target can force a destructive upgrade. CKV_GCP_109 and CKV_GCP_111 are confidentiality exceptions: error-statement and all-statement logging can capture participant content and credentials embedded in queries, while connection, severity, duration, lock-wait, and pgaudit logging remain enabled. Enforced by blocking Checkov and TestGcpReleaseSecurityClosure; revisit the supported major and statement-logging posture before expiry (#2084).",
+    "expires_on": "2027-03-11",
     "paths": [
-      "platform/terraform/gcp/modules/platform-core/main.tf"
+      "platform/terraform/gcp/modules/portal/cloud-sql/main.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_12 and CKV_GCP_21 are reviewed false positives on the exact GKE cluster: ADVANCED_DATAPATH enforces NetworkPolicy and is mutually exclusive with the legacy block, while resource_labels receives the required common_labels map. CKV_GCP_65 is a release exception because no human Kubernetes RBAC groups are granted: operator/CI access is IAM-authorized through Connect Gateway and workloads use dedicated KSA/GSA bindings. Enforced by blocking Checkov, Terraform validation, and TestGcpReleaseSecurityClosure; re-review human access before expiry (#2084).",
+    "expires_on": "2027-03-11",
+    "paths": [
+      "platform/terraform/gcp/modules/portal/gke/main.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_62 applies only to the terminal audit-log bucket. Source buckets log to this bucket and depend on the Google-managed usage-log principal's narrow roles/storage.objectCreator binding; self-logging would recurse, and adding a second terminal sink merely moves the same exception. Enforced by blocking Checkov and TestGcpReleaseSecurityClosure; revisit if a provider-native audit sink replaces access-log buckets (#2084).",
+    "expires_on": "2027-03-11",
+    "paths": [
+      "platform/terraform/gcp/modules/portal/gcs/main.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_62 applies to the foundational private release-evidence bucket. It must be created before and outlive platform-core, including the platform audit-log sink, so logging to that sink creates a bootstrap/destroy dependency and self-logging would recurse. Public access prevention, uniform access, versioning, locked 90-day retention, 365-day lifecycle, object-prefix-conditioned create-only producer grants, build-record-only validation read access, digest-anchored deploy evidence, validation-record-only promotion access, blocking Checkov, and TestGcpReleaseSecurityClosure remain enforced; revisit if a provider-native independent audit sink exists (#2084).",
+    "expires_on": "2027-03-11",
+    "paths": [
+      "platform/terraform/gcp/modules/cicd-oidc-identity/main.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_107 / CKV_GCP_124 / CKV2_GCP_10 are narrow exceptions for the optional gen1 Identity Platform beforeCreate function. Identity Platform invokes it from Google-managed infrastructure and requires an unauthenticated HTTP invoker; the portal independently enforces the same domain allowlist at session creation, and org-policy deployments disable the function. Enforced by blocking Checkov, identity authentication tests, and TestGcpReleaseSecurityClosure; re-evaluate when Identity Platform supports authenticated/private blocking hooks (#2084).",
+    "expires_on": "2027-03-11",
+    "paths": [
+      "platform/terraform/gcp/modules/portal/identity-platform/main.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_83 is a release exception for the platform-events and dead-letter Pub/Sub topics, which use Google-managed AES-256 encryption. A customer-managed messaging key adds key lifecycle and service-agent IAM that must be deployed and exercised before enforcement. Enforced by blocking Checkov and TestGcpReleaseSecurityClosure; adopt a dedicated rotating CMEK or renew explicitly before expiry (#2084).",
+    "expires_on": "2026-12-11",
+    "paths": [
+      "platform/terraform/gcp/modules/portal/messaging/main.tf"
     ]
   },
   {

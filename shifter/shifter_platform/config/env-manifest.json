@@ -319,6 +319,11 @@
     },
     {
       "default": null,
+      "name": "GCP_DYNAMIC_SECRET_PROJECT_ID",
+      "source_file": "config/_cloud.py"
+    },
+    {
+      "default": null,
       "name": "GCP_PROJECT_ID",
       "source_file": "config/_cloud.py"
     },
@@ -426,6 +431,11 @@
       "default": "''",
       "name": "MAILGUN_SENDER_DOMAIN",
       "source_file": "config/_email.py"
+    },
+    {
+      "default": null,
+      "name": "MISSION_CONTROL_LEASE_POLICY_JSON",
+      "source_file": "config/_mission_control_lease_settings.py"
     },
     {
       "default": "''",
@@ -615,6 +625,11 @@
     {
       "default": "60",
       "name": "SHIFTER_CTF_COMMUNICATION_RATE_WINDOW_SECONDS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "20",
+      "name": "SHIFTER_CTF_COMMUNICATION_RELEASE_GRACE_MINUTES",
       "source_file": "config/_ctf_communication_settings.py"
     },
     {

@@ -30,6 +30,7 @@ from .contract import (
     RequiredTool,
     ValidationCheck,
 )
+from .gcp_model_broker import BROKER_RUNTIME_ENV_KEYS
 from .settings_gcp import GcpBackendSettings
 
 # The GCP generated runtime env is authored by the GCP backend runtime-env renderer and its
@@ -61,6 +62,10 @@ _GCP_SECRET_REFERENCE_RUNTIME_KEYS: frozenset[str] = frozenset(
         "REDIS_SECRET_ID",
         "GUACAMOLE_SECRET_ID",
         "GDC_ACCESS_SECRET_ID",
+        "GDC_VM_IMAGE_GCS_SECRET_ID",
+        "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
+        "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
+        "GCP_RANGE_VERTEX_SHARED_KEY_SECRET_ID",
         "DC_DOMAIN_PASSWORD_SECRET_ID",
         "EMAIL_API_KEY_SECRET_ID",
     }
@@ -81,7 +86,7 @@ def _gcp_output_roles(name: str) -> tuple[ProcessRole, ...]:
     roles: list[ProcessRole] = [ProcessRole.PORTAL, ProcessRole.WORKER]
     if name in runtime_inventory_gcp.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS:
         roles.append(ProcessRole.PROVISIONER)
-        if name.startswith("GCP_RANGE_"):
+        if name.startswith("GCP_RANGE_") and name not in _GCP_SECRET_REFERENCE_RUNTIME_KEYS:
             roles.append(ProcessRole.RANGE_TASK)
     return tuple(roles)
 
@@ -136,6 +141,19 @@ def _gcp_generated_outputs() -> tuple[GeneratedOutput, ...]:
     required = sorted(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS)
     optional = sorted(runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
     return (
+        *(
+            GeneratedOutput(
+                name=name,
+                kind=OutputKind.RUNTIME_ENV,
+                owner="canonical model broker Helm projection",
+                source="validated deployment transport and mounted catalog identity",
+                destination=OutputDestination.RUNTIME_ENV,
+                sensitivity=OutputSensitivity.PUBLIC,
+                process_roles=(ProcessRole.MODEL_BROKER,),
+                description="Broker-only configuration or mounted-file path; never a credential value.",
+            )
+            for name in sorted(BROKER_RUNTIME_ENV_KEYS)
+        ),
         *(_gcp_runtime_output(name, optional=False) for name in required),
         *(_gcp_runtime_output(name, optional=True) for name in optional),
     )

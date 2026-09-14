@@ -82,8 +82,9 @@ command below.
    dedicated, ADR-004-R20-compliant runner VPC (`create_runner_network`), applies
    `platform/terraform/global/github-runner`, mints a single-use token per runner,
    registers each over SSM, and verifies it online, with no manual `config.sh`. Pass
-   `--use-existing-network` to reuse an operator-supplied `vpc_id`/`subnet_id` or
-   the `allow_default_vpc` opt-in instead of creating a VPC. Registration tokens
+   `--use-existing-network` to place runners in an existing compliant network
+   whose `vpc_id`/`subnet_id` you keep in a gitignored `local.auto.tfvars`
+   instead of the standard managed runner VPC (ADR-004-R20, #1437). Registration tokens
    are never written to Terraform state, user data, a secret store, or logs.
 3. Confirm the fleet is online (the `runners` path already verifies this):
    `gh api repos/Brad-Edwards/shifter/actions/runners --jq '.runners[] | {name, status}'`.
@@ -144,17 +145,24 @@ Deployment section of
    cd platform/terraform/gcp/global/cicd-oidc
    terraform init -backend-config="bucket=<project-id>-terraform-state" -backend-config="prefix=cicd-oidc"
    terraform apply -var="project_id=<dev-project-id>" -var="environment=gcp-dev" \
-     -var='build_read_bucket_names=["<polaris-stack-bucket>"]'
+     -var='build_read_bucket_names=["<polaris-stack-bucket>"]' \
+     -var='platform_external_bucket_names=["<raes-package-bucket>","<ctf-content-bucket>"]'
    terraform output -raw workload_identity_provider          # GCP_WORKLOAD_IDENTITY_PROVIDER
    terraform output -raw packer_build_service_account_email     # GCP_PACKER_BUILD_SERVICE_ACCOUNT
    terraform output -raw packer_validate_service_account_email  # GCP_PACKER_VALIDATE_SERVICE_ACCOUNT
+   terraform output -raw release_scan_service_account_email     # GCP_RELEASE_SCAN_SERVICE_ACCOUNT
    terraform output -raw deploy_service_account_email           # GCP_DEPLOY_SERVICE_ACCOUNT
    terraform output -raw destroy_service_account_email          # GCP_DESTROY_SERVICE_ACCOUNT
+   terraform output -raw release_evidence_bucket_name           # private raw evidence store
 
    # In the prod project's separately initialized root/state:
    terraform apply -var="project_id=<prod-project-id>" -var="environment=prod"
    terraform output -raw packer_promote_service_account_email   # GCP_PACKER_PROMOTE_SERVICE_ACCOUNT
    ```
+   Omit empty optional bucket entries. The external bucket set must exactly
+   cover any non-empty `raes_package_bucket_name` and
+   `ctf_content_bucket_name` used by platform-core so deploy/destroy can manage
+   workload IAM on those exact resources without project-wide Storage Admin.
    Use `environment=proof` for the proof image lane and publish only its build
    and validate outputs. Existing installations follow the staged, state-address
    preserving cutover in `docs/dev/deploy-secrets.md` rather than applying the
@@ -252,7 +260,7 @@ group, EC2 key pairs, and security groups.
 ```bash
 # AWS (default): runners over SSM, into the account --profile authenticates to.
 ./scripts/bootstrap/deploy.py runners --env dev --profile <your-dev-profile>
-# --use-existing-network : reuse a configured vpc_id/subnet_id or allow_default_vpc opt-in
+# --use-existing-network : use vpc_id/subnet_id from local.auto.tfvars instead of the managed runner VPC
 # --runner-count N       : override runner_count for this apply
 # --dry-run              : show the plan without minting a token or sending SSM commands
 
@@ -302,7 +310,7 @@ repo-specific fixes from the live spike:
 - `--headless` (bootstrap/terraform/full/preflight): non-interactive; fail on missing prerequisites without prompting (auto-detected off a TTY)
 - `--yes` (bootstrap/terraform/full/account-recovery): non-interactive; assume "yes" for routine confirmation prompts so the flow runs without a TTY. Does not authorize the destructive sweep (issue #1639)
 - `--sweep` (account-recovery only): delete the owned leftovers found by detection (explicit destructive opt-in; detection is read-only without it)
-- `--use-existing-network` (runners only): Reuse a configured `vpc_id`/`subnet_id` or the `allow_default_vpc` opt-in instead of provisioning a dedicated runner VPC
+- `--use-existing-network` (runners only): Place runners in an existing compliant network (`vpc_id`/`subnet_id` from a gitignored `local.auto.tfvars`) instead of provisioning the standard dedicated runner VPC
 - `--runner-count` (runners only): Override `runner_count` for this apply
 - `--project-id` (GDC only): GCP project ID, defaults to `PANW_GCP_DEV` or repo-root `.env`
 - `--cluster-id` (GDC only): Cluster name / asset prefix, defaults to `cluster1`
