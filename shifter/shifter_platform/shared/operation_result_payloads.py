@@ -417,7 +417,7 @@ def _parse_raes_snapshot(payload: dict[str, Any], _spec_unused: StepSpec) -> dic
 def _parse_raes_ready(payload: dict[str, Any], spec: StepSpec) -> dict[str, Any]:
     """Parse an RAES terminal-ready result plus its realized access projection."""
     required = frozenset({"raes_status", "members"})
-    unexpected = sorted(frozenset(payload) - (required | {"status_reason"}))
+    unexpected = sorted(frozenset(payload) - (required | {"status_reason", "completion"}))
     if unexpected:
         raise OperationResultError(f"{_PAYLOAD_FIELD} has unexpected field(s): {', '.join(unexpected)}")
     missing = sorted(required - frozenset(payload))
@@ -425,7 +425,7 @@ def _parse_raes_ready(payload: dict[str, Any], spec: StepSpec) -> dict[str, Any]
         raise OperationResultError(f"{_PAYLOAD_FIELD} is missing field(s): {', '.join(missing)}")
 
     operation = _parse_raes_operation(
-        {key: payload[key] for key in payload if key != "members"},
+        {key: payload[key] for key in payload if key not in {"members", "completion"}},
         spec,
     )
     raw = payload["members"]
@@ -440,7 +440,15 @@ def _parse_raes_ready(payload: dict[str, Any], spec: StepSpec) -> dict[str, Any]
     identities = [member["uuid"] for member in members]
     if len(set(identities)) != len(identities):
         raise OperationResultError(f"{_PAYLOAD_FIELD} members contains a duplicate uuid")
-    return {**operation, "members": members}
+    result = {**operation, "members": members}
+    if "completion" in payload:
+        from shared.raes.completion_evidence import validate_completion_evidence
+
+        try:
+            result["completion"] = validate_completion_evidence(payload["completion"])
+        except ValueError:
+            raise OperationResultError("invalid RAES completion evidence") from None
+    return result
 
 
 PARSERS = {

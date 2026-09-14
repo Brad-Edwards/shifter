@@ -47,7 +47,7 @@ reviewed policy inventory, not credentials or raw provider responses.
 
 Use the actual deployment project and region, never infer them from an
 account name. Resolve the project from the deployment configuration (the
-`GCP_PROJECT_ID` for the target environment) and export it, e.g.
+`GCP_PROJECT_ID` for the target environment) and export it, for example
 `export GCP_PROJECT=<your-project>`; the region is `us-central1`. Read-only
 cluster inspection:
 

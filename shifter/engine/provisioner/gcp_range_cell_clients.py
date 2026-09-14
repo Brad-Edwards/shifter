@@ -71,6 +71,8 @@ class GCEClients:
     region_operations: OperationWaitClient
     zone_operations: OperationWaitClient
     google_exceptions: GoogleExceptions
+    disks: ComputeCollectionClient | None = None
+    images: ComputeCollectionClient | None = None
 
 
 def _build_clients() -> GCEClients:
@@ -88,4 +90,6 @@ def _build_clients() -> GCEClients:
         region_operations=compute.RegionOperationsClient(),
         zone_operations=compute.ZoneOperationsClient(),
         google_exceptions=google_exceptions,
+        disks=compute.DisksClient(),
+        images=compute.ImagesClient(),
     )

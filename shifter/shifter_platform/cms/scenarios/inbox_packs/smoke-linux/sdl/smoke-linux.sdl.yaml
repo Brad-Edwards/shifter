@@ -2,15 +2,16 @@ name: smoke-linux
 description: >
   Two-node switched Linux range: a Kali attacker and an Ubuntu victim on one
   LAN, both reachable over an SSH participant access channel. Authored against
-  raes 2.0.0 for the platform post-deploy smoke.
+  raes 3.5.0 for the platform post-deploy smoke.
 
 nodes:
   lan:
-    type: Switch
+    type: switch
   attacker:
-    type: VM
+    type: compute
     os: linux
-    os_version: Kali Rolling
+    os_distribution: x-shifter:kali
+    os_version: "rolling"
     # Unpinned source: resolves to the tenant's any-version RaesImageMapping for
     # the 'kali' base image (seeded at deploy from GCP_RANGE_KALI_IMAGE).
     source: {name: kali}
@@ -18,9 +19,10 @@ nodes:
     services:
       - {port: 22, name: ssh}
   victim:
-    type: VM
+    type: compute
     os: linux
-    os_version: Ubuntu 22.04
+    os_distribution: ubuntu
+    os_version: "22.04"
     # Unpinned source: resolves to the tenant's any-version RaesImageMapping for
     # the 'ubuntu' base image (seeded at deploy from GCP_RANGE_LINUX_IMAGE).
     source: {name: ubuntu}
@@ -55,11 +57,11 @@ accounts:
   attacker_login:
     username: kali
     node: attacker
-    auth_method: publickey
+    auth_method: key
   victim_login:
     username: ubuntu
     node: victim
-    auth_method: publickey
+    auth_method: key
 
 agents:
   operator:
@@ -75,3 +77,14 @@ agents:
         target_ref: victim
         channel: ssh
         account_ref: victim_login
+
+realization:
+  constraints:
+    - field_pointer: /nodes/attacker
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}
+    - field_pointer: /nodes/victim
+      concern: compute-substrate
+      posture: exact
+      domain: {kind: exact, value: virtual-machine}

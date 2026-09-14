@@ -38,6 +38,14 @@ from ._operation_io import (
     OperationResultKind,
 )
 from ._outbox import OutboxStatus, RangeEventOutbox
+from ._preparation import (
+    PreparationAdapter,
+    PreparationAttempt,
+    PreparationGrant,
+    PreparationOperation,
+    PreparationScopeLock,
+    PreparedArtifactAdmission,
+)
 from ._raes import (
     RaesArtifactSatisfactionBinding,
     RaesContentDeliveryBinding,
@@ -76,6 +84,12 @@ __all__ = [
     "OperationResultInbox",
     "OperationResultKind",
     "OutboxStatus",
+    "PreparationAdapter",
+    "PreparationAttempt",
+    "PreparationGrant",
+    "PreparationOperation",
+    "PreparationScopeLock",
+    "PreparedArtifactAdmission",
     "ProvisionerLaunchIntent",
     "ProvisionerLaunchStatus",
     "PublicOperationRetryBinding",

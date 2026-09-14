@@ -29,8 +29,8 @@ from cms.exceptions import CMSError
 from cms.models import RaesPackageSource
 from cms.services import PackRegistrationRequest, RegisteredPack, register_pack
 from shared.audit import AuditAction, AuditActorType, AuditEntityType, AuditEvent, audit_log
-from shared.raes.dispatch_port import ShifterDispatchResult
-from shared.raes.package_loader import launch_raes_package, resolve_pack_scenario_path
+from shared.raes.pack_conformance import validate_pack_contract
+from shared.raes.package_loader import resolve_pack_scenario_path
 from shared.schemas.raes_package_source import (
     PackageSourceRecord,
     RaesPackageSourceError,
@@ -52,6 +52,7 @@ _ENTRY_FIELDS = frozenset(
         "package_ref",
         "package_version",
         "package_digest",
+        "expected_package_digest",
         "lock_ref",
         "lock_digest",
         "provenance",
@@ -65,6 +66,7 @@ _TEXT_FIELD_LIMITS = {
     "package_ref": 512,
     "package_version": 128,
     "package_digest": 71,
+    "expected_package_digest": 71,
     "lock_ref": 512,
     "lock_digest": 71,
 }
@@ -133,30 +135,11 @@ def register_inbox_packs(
     return registered
 
 
-class _ReleaseConformancePort:
-    """Side-effect-free apply port used by the checked-in release gate."""
-
-    def __init__(self, request_id: str) -> None:
-        self.request_id = request_id or "inbox-release-conformance"
-
-    def realize(self, compiled_plan: dict[str, Any], participant_access: object = ()) -> ShifterDispatchResult:
-        """Accept only a non-empty plan that passed the real Shifter backend target."""
-        del participant_access
-        if not compiled_plan.get("resources"):
-            raise InboxManifestError("in-box pack compiled to an empty provisioning plan")
-        return ShifterDispatchResult(
-            request_id=self.request_id,
-            accepted=True,
-            status="accepted",
-            range_id=None,
-        )
-
-
 def _promote_release_conformance(*, request: PackRegistrationRequest, actor: User, request_id: str) -> None:
     """Compile and promote one immutable, checked-in release-manifest pack.
 
-    This boundary is intentionally unavailable to API/CLI registration callers:
-    only the exact shipped manifest reaches it. Registration has already run the
+    This release-manifest entrypoint is used only by shipped-pack bootstrap;
+    operators use the shared registered-pack conformance service. Registration has already run the
     upstream environment-pack validator and bound the canonical digest; this
     gate additionally exercises the real RAES load, plan, Shifter target, and
     apply-contract path before storing the release-owned conformance fact.
@@ -165,12 +148,10 @@ def _promote_release_conformance(*, request: PackRegistrationRequest, actor: Use
         raise InboxManifestError("shipped in-box packs must be repository-backed")
     pack_root = (Path(settings.RAES_PACKAGE_ROOT).resolve() / request.package_ref).resolve()
     scenario_path = resolve_pack_scenario_path(pack_root)
-    result = launch_raes_package(
-        scenario_path=scenario_path,
-        port=_ReleaseConformancePort(request_id),
-    )
-    if not result.accepted:
-        raise InboxManifestError("shipped in-box pack failed release conformance")
+    try:
+        validate_pack_contract(scenario_path, request_id or "inbox-release-conformance")
+    except Exception as exc:
+        raise InboxManifestError("shipped in-box pack failed release conformance") from exc
 
     source = RaesPackageSource.objects.get(scenario_id=request.scenario_id)
     source.conformance_status = RaesPackageSource.ConformanceStatus.PASSED
@@ -207,6 +188,7 @@ def _entry_to_request(entry: dict[str, Any], *, index: int) -> PackRegistrationR
         package_ref=entry.get("package_ref", ""),
         package_version=entry.get("package_version", ""),
         package_digest=entry.get("package_digest", ""),
+        expected_package_digest=entry.get("expected_package_digest", ""),
         lock_ref=entry.get("lock_ref", ""),
         lock_digest=entry.get("lock_digest", ""),
         provenance=entry.get("provenance", {}),

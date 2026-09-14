@@ -71,7 +71,7 @@ def _plan() -> RaesPlan:
         image=RaesPlanImage(name="ubuntu"),
     )
     network = RaesPlanNetwork(address="net.lan", name="lan", cidr="10.9.0.0/24")
-    return RaesPlan(raes_version="2.0.0", nodes=(node,), networks=(network,))
+    return RaesPlan(raes_version="3.5.0", nodes=(node,), networks=(network,))
 
 
 def _resolver(node):
@@ -134,12 +134,41 @@ def _apply_options(
             + [feature.address for feature in plan.features]
         ),
     )
+    overrides.setdefault(
+        "substrate_observer",
+        lambda plan, _clients: [
+            {"instance_key": instance["uuid"], "value": "virtual-machine"} for instance in plan["instances"]
+        ],
+    )
+    overrides.setdefault(
+        "operating_system_observer",
+        lambda _plan, outputs: [
+            {
+                "instance_key": output["uuid"],
+                "family": output["os"],
+                "distribution": "windows-server" if output["os"] == "windows" else "ubuntu",
+                "version": "10.0.20348" if output["os"] == "windows" else "22.04",
+            }
+            for output in outputs
+        ],
+    )
     return RaesGceApplyOptions(
         config=config,
         clients=clients,
         secret_ops=secret_ops,
         **overrides,
     )
+
+
+def test_missing_guest_os_evidence_fails_apply_and_cleans_up():
+    clients = _clients()
+    secrets, _ = _secret_ops()
+    options = _apply_options(_config(), clients, secrets, operating_system_observer=lambda _plan, _outputs: [])
+    with pytest.raises(ValueError, match="operating-system"):
+        apply_raes_range_cell("req-1", 7, _plan(), _resolver, options)
+    # This fake reports every resource absent on readback. Cleanup must still
+    # revisit both guests; absent resources need no delete call.
+    assert clients.instances.get.call_count == 4
 
 
 def _account_secret_ops() -> tuple[RaesAccountCredentialOps, SimpleNamespace]:
@@ -234,7 +263,7 @@ def _plan_with_domain(*, include_local: bool = False) -> RaesPlan:
         member_addresses=(member.address,),
     )
     return RaesPlan(
-        raes_version="2.0.0",
+        raes_version="3.5.0",
         nodes=(controller, member),
         networks=(RaesPlanNetwork(address="net.lan", name="lan", cidr="10.9.0.0/24"),),
         accounts=(authority, service, *((local_operator,) if include_local else ())),
@@ -386,7 +415,7 @@ def _plan_with_content(*content: RaesPlanContent) -> RaesPlan:
         image=RaesPlanImage(name="ubuntu"),
     )
     network = RaesPlanNetwork(address="net.lan", name="lan", cidr="10.9.0.0/24")
-    return RaesPlan(raes_version="2.0.0", nodes=(node,), networks=(network,), content=content)
+    return RaesPlan(raes_version="3.5.0", nodes=(node,), networks=(network,), content=content)
 
 
 class TestCompositionIntegration:
@@ -687,7 +716,7 @@ def test_normal_apply_path_realizes_both_account_auth_methods_without_output_exp
             auth_method="password",
             password_strength="strong",
         ),
-        RaesPlanAccount(username="bob", target_address="node.web", auth_method="publickey"),
+        RaesPlanAccount(username="bob", target_address="node.web", auth_method="key"),
     )
     clients = _clients()
     ssh_ops, _ = _secret_ops()
@@ -826,7 +855,7 @@ class TestAccountCredentialIntegration:
         assert [call.kwargs["instance_key"] for call in installer.call_args_list] == ["node.web#0", "node.web#1"]
 
     def test_credential_install_failure_cleans_up_every_account_secret(self):
-        account = RaesPlanAccount(username="alice", target_address="node.web", auth_method="publickey")
+        account = RaesPlanAccount(username="alice", target_address="node.web", auth_method="key")
         clients = _clients()
         ssh_ops, ssh_mocks = _secret_ops()
         account_ops, account_mocks = _account_secret_ops()
@@ -889,7 +918,12 @@ class TestServiceFirewallLifecycle:
 
         clients = _clients(exists=True)
         secret_ops, _ = _secret_ops()
-        destroy_raes_range_cell("req-1", 7, _plan_with_service(), _config(), clients, secret_ops)
+        destroy_raes_range_cell(
+            "req-1",
+            7,
+            _plan_with_service(),
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+        )
         deleted = {call.kwargs.get("firewall") for call in clients.firewalls.delete.call_args_list}
         assert service_names[0] in deleted
 
@@ -898,7 +932,9 @@ class TestDestroy:
     def test_deletes_instances_addresses_firewalls_subnets_network_and_secrets(self):
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()
-        destroy_raes_range_cell("req-1", 7, _plan(), _config(), clients, secret_ops)
+        destroy_raes_range_cell(
+            "req-1", 7, _plan(), RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops)
+        )
 
         assert clients.instances.delete.call_count == 2
         assert clients.addresses.delete.call_count == 2
@@ -913,11 +949,16 @@ class TestDestroy:
     def test_shared_vpc_destroy_keeps_network(self):
         clients = _clients(exists=True)
         secret_ops, _ = _secret_ops()
-        destroy_raes_range_cell("req-1", 7, _plan(), _config("shared-vpc"), clients, secret_ops)
+        destroy_raes_range_cell(
+            "req-1",
+            7,
+            _plan(),
+            RaesGceDestroyOptions(config=_config("shared-vpc"), clients=clients, secret_ops=secret_ops),
+        )
         assert not clients.networks.delete.called
 
     def test_deletes_every_per_instance_authored_account_secret(self):
-        account = RaesPlanAccount(username="alice", target_address="node.web", auth_method="publickey")
+        account = RaesPlanAccount(username="alice", target_address="node.web", auth_method="key")
         clients = _clients(exists=True)
         ssh_ops, _ = _secret_ops()
         account_ops, account_mocks = _account_secret_ops()
@@ -926,10 +967,12 @@ class TestDestroy:
             "req-1",
             7,
             _plan_with_accounts(account),
-            _config(),
-            clients,
-            ssh_ops,
-            RaesGceDestroyOptions(account_secret_ops=account_ops),
+            RaesGceDestroyOptions(
+                config=_config(),
+                clients=clients,
+                secret_ops=ssh_ops,
+                account_secret_ops=account_ops,
+            ),
         )
 
         assert account_mocks.delete.call_count == 2
@@ -947,14 +990,19 @@ class TestDestroy:
         clients = _clients(exists=True)
         secret_ops, secret_mocks = _secret_ops()
 
-        destroy_raes_range_cell("req-1", 7, _plan_with_content(content), _config(), clients, secret_ops)
+        destroy_raes_range_cell(
+            "req-1",
+            7,
+            _plan_with_content(content),
+            RaesGceDestroyOptions(config=_config(), clients=clients, secret_ops=secret_ops),
+        )
 
         assert clients.instances.delete.call_count == 1
         assert secret_mocks.delete_ssh.call_count == 1
 
 
 def _access_plan() -> RaesPlan:
-    """One single-instance node with one enabled local publickey account."""
+    """One single-instance node with one enabled local key account."""
     node = RaesPlanNode(
         address="node.web",
         name="web",
@@ -967,10 +1015,10 @@ def _access_plan() -> RaesPlan:
         username="analyst",
         target_address="node.web",
         address="acct.analyst",
-        auth_method="publickey",
+        auth_method="key",
     )
     network = RaesPlanNetwork(address="net.lan", name="lan", cidr="10.9.0.0/24")
-    return RaesPlan(raes_version="2.0.0", nodes=(node,), networks=(network,), accounts=(account,))
+    return RaesPlan(raes_version="3.5.0", nodes=(node,), networks=(network,), accounts=(account,))
 
 
 def _access_transport(channel: str = "ssh") -> dict:

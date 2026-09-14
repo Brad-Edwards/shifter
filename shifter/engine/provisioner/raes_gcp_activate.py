@@ -32,6 +32,8 @@ from uuid import UUID
 
 from shared.warm_pool.activation_input import ActivationInput
 
+from config import GCERangeCellConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +53,7 @@ class ActivationOps(Protocol):
     def scrub_pre_claim_access(self, activation: ActivationInput, prepared_generation: UUID) -> None:
         """Delete every pre-claim guest secret and the warm-prepare VPN identity."""
 
-    def realize_claimant_access(self, activation: ActivationInput, activate_generation: UUID) -> list[dict[str, Any]]:
+    def realize_claimant_access(self, activation: ActivationInput, activate_generation: UUID) -> ActivationResult:
         """Install the claimant's fresh credentials, VPN generation, and participant
         access; return the realized member/access projection."""
 
@@ -64,6 +66,7 @@ class ActivationResult:
     """The realized outcome of a successful activation."""
 
     members: list[dict[str, Any]] = field(default_factory=list)
+    completion: dict[str, Any] = field(default_factory=dict)
 
 
 def activate_raes_range_cell(
@@ -86,18 +89,20 @@ def activate_raes_range_cell(
     ops.scrub_pre_claim_access(activation, prepared_generation)
 
     # 2. Realize the claimant's fresh, generation-fenced access.
-    members = ops.realize_claimant_access(activation, activate_generation)
+    result = ops.realize_claimant_access(activation, activate_generation)
 
     # 3. Negative verification: prior access must no longer resolve. Fail closed.
     if not ops.prior_access_revoked(activation, prepared_generation):
         raise ActivationError(
             "warm activation could not prove the pre-claim access was revoked; refusing to hand over the generation"
         )
-    return ActivationResult(members=members)
+    return result
 
 
-def default_activation_ops() -> ActivationOps:
+def default_activation_ops(
+    *, config: GCERangeCellConfig | None = None, allocated_network_cidr: str | None = None
+) -> ActivationOps:
     """Return the production :class:`ActivationOps` wired to real GCE primitives."""
     from raes_gcp_activate_gce import GceActivationOps
 
-    return GceActivationOps()
+    return GceActivationOps(config=config, allocated_network_cidr=allocated_network_cidr)

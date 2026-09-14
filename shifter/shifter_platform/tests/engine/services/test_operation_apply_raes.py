@@ -93,6 +93,79 @@ class _Fixture:
         )
 
 
+@pytest.mark.parametrize("fault", [None, "missing", "os-mismatch", "stale-generation", "changed-plan"])
+def test_v2_ready_requires_observed_completion_from_this_immutable_generation(fault):
+    from pathlib import Path
+
+    from engine.models import OperationInput
+    from shared.raes.completion_evidence import build_completion_evidence
+    from shared.raes.dispatch_port import ShifterDispatchResult
+    from shared.raes.package_loader import launch_raes_package
+
+    plans = []
+
+    class Port:
+        def realize(self, plan, participant_access=()):
+            plans.append(plan)
+            return ShifterDispatchResult("fixture", True, "accepted")
+
+    scenario_path = Path(__file__).parents[2] / "shared/raes/fixtures/launchable/shifter-launch-min.sdl.yaml"
+    assert launch_raes_package(scenario_path=scenario_path, port=Port()).accepted
+    plan = plans[0]
+    fx = _Fixture(status=Range.Status.PROVISIONING.value)
+    fx.range.range_config = plan
+    fx.range.save(update_fields=["range_config"])
+    OperationInput.objects.create(
+        operation_id=fx.operation_id,
+        request_id=fx.request_id,
+        resource="raes-range",
+        operation="provision",
+        contract_version="1",
+        envelope=build_operation_envelope(
+            operation_id=fx.operation_id,
+            request_id=fx.request_id,
+            resource="raes-range",
+            operation="provision",
+            payload={"plan": plan},
+        ),
+    )
+    evidence = build_completion_evidence(
+        plan,
+        generation_id=str(fx.operation_id),
+        resources=[
+            {"address": address, "resource_type": resource["resource_type"], "status": "provisioned"}
+            for address, resource in plan["resources"].items()
+        ],
+        operating_systems=[
+            {
+                "instance_key": "provision.node.web#0",
+                "family": "linux",
+                "distribution": "x-shifter:alpine",
+                "version": "3.19",
+            }
+        ],
+        compute_substrates=[{"instance_key": "provision.node.web#0", "value": "virtual-machine"}],
+    )
+    if fault == "os-mismatch":
+        evidence["operating_systems"][0]["version"] = "3.20"
+    elif fault == "stale-generation":
+        evidence["generation_id"] = str(uuid4())
+    elif fault == "changed-plan":
+        evidence["plan_digest"] = "sha256:" + "0" * 64
+    payload = {"raes_status": RAES_STATE_SUCCEEDED, "members": []}
+    if fault != "missing":
+        payload["completion"] = evidence
+    row = fx.seed(ResultStep.RAES_TERMINAL_READY, payload)
+    apply_pending_operation_results()
+    fx.range.refresh_from_db()
+    if fault is None:
+        assert _disposition(row) == OperationResultDisposition.APPLIED
+        assert fx.range.status == Range.Status.READY
+    else:
+        assert _disposition(row) == OperationResultDisposition.REJECTED_INVALID
+        assert fx.range.status == Range.Status.PROVISIONING
+
+
 def _disposition(row: OperationResultInbox) -> str:
     row.refresh_from_db()
     return row.disposition

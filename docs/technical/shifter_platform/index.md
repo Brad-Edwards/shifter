@@ -171,6 +171,12 @@ new authority model or feature flag.
   arbitrated retry binding, reauthorized replay/status/cancel, and truthful
   teardown/residual retention (ADR-063, #2086).
 
+## Artifact preparation
+
+The [artifact preparation design](../../architecture/raes-in-tenant-artifact-preparation-design-1583.md)
+defines adapter ownership, private registration, worker isolation, independent
+verification and inventory admission before ordinary range launch.
+
 ## Audit logging
 
 The shared platform layer owns the durable audit store and writer. Audit rows

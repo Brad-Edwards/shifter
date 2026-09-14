@@ -36,10 +36,10 @@ def _node() -> PlannedResource:
         payload={
             "name": "a",
             "node_name": "a",
-            "node_type": "vm",
+            "node_type": "compute",
             "os_family": "linux",
             "count": 1,
-            "spec": {"node": {"type": "vm", "os": "linux"}, "infrastructure": {"links": [], "count": 1}},
+            "spec": {"node": {"type": "compute", "os": "linux"}, "infrastructure": {"links": [], "count": 1}},
         },
     )
 

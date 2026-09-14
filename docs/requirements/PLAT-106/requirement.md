@@ -21,6 +21,9 @@ PLAT-102 establishes the token + scope authentication foundation, but the platfo
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/cms/api/artifact_preparation.py` (Preparation lifecycle DRF endpoints with service-owned application logic)
+- IMPLEMENTS → CODE_FILE `shifter/shifter_platform/cms/api/preparation_adapters.py` (Private adapter administration through scoped DRF endpoints)
+- TESTS → TEST `shifter/shifter_platform/tests/cms/test_preparation_api.py` (Preparation authentication, scopes, CSRF and rejected executable overrides)
 - DOCUMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#1122` (PLAT-106: Migrate CMS (experiments + scenario editor) JSON API to DRF + scoped auth)
 - IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/shifter#1119` (PLAT-106: Establish platform DRF API conventions and OpenAPI schema)
 - IMPLEMENTS → CONFIG `shifter/shifter_platform/config/_drf_settings.py` (Platform DRF defaults, schema, pagination, and local docs assets)

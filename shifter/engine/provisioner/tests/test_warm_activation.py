@@ -20,7 +20,7 @@ from shared.warm_pool.activation_input import (
     parse_activation_input,
 )
 
-from raes_gcp_activate import ActivationError, activate_raes_range_cell
+from raes_gcp_activate import ActivationError, ActivationResult, activate_raes_range_cell
 
 
 def _activation():
@@ -58,7 +58,7 @@ class _FakeOps:
 
     def realize_claimant_access(self, activation, activate_generation):
         self.calls.append("realize")
-        return self._members
+        return ActivationResult(members=self._members, completion={"resources": []})
 
     def prior_access_revoked(self, activation, prepared_generation):
         self.calls.append("verify")
