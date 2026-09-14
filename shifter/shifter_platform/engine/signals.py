@@ -13,7 +13,8 @@ _PREVIOUS = "_model_access_range_authority_before"
 _FIELDS = ("user_id", "workspace_id", "status", "destroyed_at")
 
 
-def _references(range_obj: Range, previous: dict | None = None) -> tuple[OwnedReference, ...]:
+def _references(range_obj: Range, previous: dict[str, object] | None = None) -> tuple[OwnedReference, ...]:
+    """Build every authority reference affected by a range mutation."""
     previous = previous or {}
     refs = {
         ("engine", "all-ranges"),
@@ -28,7 +29,8 @@ def _references(range_obj: Range, previous: dict | None = None) -> tuple[OwnedRe
     return tuple(OwnedReference(owner=owner, reference=reference) for owner, reference in sorted(refs))
 
 
-def _invalidate(range_obj: Range, previous: dict | None = None) -> None:
+def _invalidate(range_obj: Range, previous: dict[str, object] | None = None) -> None:
+    """Invalidate current and previous range authority scopes."""
     invalidate_authority(
         AuthorityInvalidation(
             deployment_id=None,
@@ -40,7 +42,8 @@ def _invalidate(range_obj: Range, previous: dict | None = None) -> None:
 
 
 @receiver(pre_save, sender=Range, dispatch_uid="engine.model_access.range.capture")
-def capture_range_authority(sender, instance, **kwargs) -> None:
+def capture_range_authority(sender: type[Range], instance: Range, **kwargs: object) -> None:
+    """Capture persisted range authority before saving."""
     if instance._state.adding:
         setattr(instance, _PREVIOUS, None)
         return
@@ -48,12 +51,14 @@ def capture_range_authority(sender, instance, **kwargs) -> None:
 
 
 @receiver(post_save, sender=Range, dispatch_uid="engine.model_access.range.invalidate")
-def invalidate_range_authority(sender, instance, **kwargs) -> None:
+def invalidate_range_authority(sender: type[Range], instance: Range, **kwargs: object) -> None:
+    """Invalidate range authority when security-relevant fields change."""
     previous = getattr(instance, _PREVIOUS, None)
     if previous is None or any(previous[field] != getattr(instance, field) for field in _FIELDS):
         _invalidate(instance, previous)
 
 
 @receiver(pre_delete, sender=Range, dispatch_uid="engine.model_access.range.delete")
-def invalidate_deleted_range_authority(sender, instance, **kwargs) -> None:
+def invalidate_deleted_range_authority(sender: type[Range], instance: Range, **kwargs: object) -> None:
+    """Invalidate range authority before deletion."""
     _invalidate(instance)

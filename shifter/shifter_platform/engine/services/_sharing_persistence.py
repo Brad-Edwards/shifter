@@ -7,7 +7,6 @@ these; nothing here imports ``_sharing`` back.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -15,9 +14,7 @@ from django.utils import timezone
 
 from shared.model_access import (
     AuthorityState,
-    BindingMatch,
     ModelAccessCatalog,
-    ModelProfile,
     PublisherAuthorityEvidence,
     PublisherAuthorityScope,
     SelectorAuthorityEvidence,
@@ -29,7 +26,7 @@ from shared.model_access import (
     compute_digest,
     seal_sharing_binding,
 )
-from shared.model_access.core_models import MembershipMode, OwnedReference, SelectorKind, SharingFacet
+from shared.model_access.core_models import OwnedReference, SelectorKind, SharingFacet
 
 from ._common import EngineError
 
@@ -37,7 +34,6 @@ if TYPE_CHECKING:
     from engine.models import (
         MembershipProjection,
         SharingBindingRecord,
-        SharingBindingRevision,
         SharingPoolRecord,
     )
 
@@ -69,22 +65,22 @@ MembershipEvidence = SharingAuthorityEvidence
 """Compatibility export for the M19 name; the value is now the closed shared DTO."""
 
 
-def _as_binding(binding: SharingBinding | dict) -> SharingBinding:
+def _as_binding(binding: SharingBinding | dict[str, object]) -> SharingBinding:
     """Coerce a payload or DTO into a validated ``SharingBinding``."""
     return binding if isinstance(binding, SharingBinding) else SharingBinding.model_validate(binding)
 
 
-def _as_pool(pool: SharingPool | dict) -> SharingPool:
+def _as_pool(pool: SharingPool | dict[str, object]) -> SharingPool:
     """Coerce a payload or DTO into a validated ``SharingPool``."""
     return pool if isinstance(pool, SharingPool) else SharingPool.model_validate(pool)
 
 
-def _as_ref(reference: OwnedReference | dict) -> OwnedReference:
+def _as_ref(reference: OwnedReference | dict[str, str]) -> OwnedReference:
     """Coerce a payload or DTO into a validated ``OwnedReference``."""
     return reference if isinstance(reference, OwnedReference) else OwnedReference.model_validate(reference)
 
 
-def _as_evidence(evidence: SharingAuthorityEvidence | dict) -> SharingAuthorityEvidence:
+def _as_evidence(evidence: SharingAuthorityEvidence | dict[str, object]) -> SharingAuthorityEvidence:
     """Coerce a payload into the one closed shared authority projection contract."""
     if isinstance(evidence, SharingAuthorityEvidence):
         return evidence
@@ -92,6 +88,7 @@ def _as_evidence(evidence: SharingAuthorityEvidence | dict) -> SharingAuthorityE
 
 
 def _ref_payload(reference: OwnedReference) -> dict[str, str]:
+    """Serialize a qualified reference for JSON-field membership checks."""
     return reference.model_dump(mode="json")
 
 
@@ -189,7 +186,7 @@ def _require_facet_reference(facet: SharingFacet, binding: SharingBinding, pool:
         raise SharingError("sharing.facet_without_reference")
 
 
-def _resolve_catalog_profile(catalog: ModelAccessCatalog, profile_id: str | None) -> dict | None:
+def _resolve_catalog_profile(catalog: ModelAccessCatalog, profile_id: str | None) -> dict[str, object] | None:
     """Return the catalog profile as a JSON snapshot to freeze at publication."""
     if profile_id is None:
         return None
@@ -307,7 +304,9 @@ def _require_membership_evidence(
     return projection
 
 
-def _frozen_snapshot(projection: MembershipProjection, is_snapshot: bool, empty_snapshot_ack: bool) -> list[dict]:
+def _frozen_snapshot(
+    projection: MembershipProjection, is_snapshot: bool, empty_snapshot_ack: bool
+) -> list[dict[str, object]]:
     """Freeze snapshot membership at publication; an empty snapshot needs an explicit ack."""
     frozen = list(projection.member_refs) if is_snapshot else []
     if is_snapshot and not frozen and not empty_snapshot_ack:
@@ -316,18 +315,38 @@ def _frozen_snapshot(projection: MembershipProjection, is_snapshot: bool, empty_
 
 
 def _publisher_evidence(projection: MembershipProjection) -> tuple[PublisherAuthorityEvidence, ...]:
+    """Parse persisted publisher authority evidence into the closed contract."""
     return tuple(PublisherAuthorityEvidence.model_validate(item) for item in projection.publisher_authorities)
 
 
 def _spending_evidence(projection: MembershipProjection) -> tuple[SpendingEligibilityEvidence, ...]:
+    """Parse persisted spending eligibility evidence into the closed contract."""
     return tuple(SpendingEligibilityEvidence.model_validate(item) for item in projection.spending_eligibilities)
 
 
 def _required_publisher_digests(binding: SharingBinding) -> tuple[str, ...]:
+    """Return every atomic selector digest a publisher must authorize."""
     selector = binding.selector
     if selector.kind is SelectorKind.NAMED_COLLECTION:
         return tuple(sorted(compute_digest(member) for member in selector.members))
     return (compute_digest(selector),)
+
+
+def _publisher_candidate_matches(
+    candidate: PublisherAuthorityEvidence,
+    publisher: OwnedReference,
+    required_digests: tuple[str, ...],
+) -> bool:
+    """Return whether evidence can authorize this publisher and selector set."""
+    selector_matches = (
+        candidate.scope is PublisherAuthorityScope.DEPLOYMENT or candidate.selector_digest in required_digests
+    )
+    return candidate.publisher_ref == publisher and candidate.state is AuthorityState.ALLOWED and selector_matches
+
+
+def _digest_is_authorized(digest: str, matched: tuple[PublisherAuthorityEvidence, ...]) -> bool:
+    """Return whether matched evidence covers one atomic selector digest."""
+    return any(item.scope is PublisherAuthorityScope.DEPLOYMENT or item.selector_digest == digest for item in matched)
 
 
 def _require_publisher_authority(
@@ -342,16 +361,9 @@ def _require_publisher_authority(
     evidence = _publisher_evidence(projection)
     required_digests = _required_publisher_digests(binding)
     matched = tuple(
-        candidate
-        for candidate in evidence
-        if candidate.publisher_ref == publisher
-        and candidate.state is AuthorityState.ALLOWED
-        and (candidate.scope is PublisherAuthorityScope.DEPLOYMENT or candidate.selector_digest in required_digests)
+        candidate for candidate in evidence if _publisher_candidate_matches(candidate, publisher, required_digests)
     )
-    if any(
-        not any(item.scope is PublisherAuthorityScope.DEPLOYMENT or item.selector_digest == digest for item in matched)
-        for digest in required_digests
-    ):
+    if any(not _digest_is_authorized(digest, matched) for digest in required_digests):
         raise SharingError("sharing.publisher_authority_required")
     for item in sorted(matched, key=lambda value: (value.authority_ref.owner, value.authority_ref.reference)):
         if not _fence_matches(
@@ -381,6 +393,7 @@ _FUNDED_FACETS = frozenset(
 
 
 def _required_group_eligibility_refs(binding: SharingBinding) -> tuple[OwnedReference, ...]:
+    """Return every group authority that must independently fund shared facets."""
     selector = binding.selector
     group_selectors = (
         (selector,)
@@ -443,175 +456,6 @@ def _write_binding_record(
     record.state = _ACTIVE
     record.save(update_fields=["pool", "current_definition_revision", "state", "updated_at"])
     return record
-
-
-def _pinned_pool(record: SharingPoolRecord, routing_revision: int) -> SharingPool:
-    """Reconstruct a SharingPool DTO for the pinned routing revision + stable accounts."""
-    from engine.models import SharingPoolRevision
-
-    pool_revision = SharingPoolRevision.objects.filter(pool=record, routing_revision=routing_revision).first()
-    provider = pool_revision.provider_pool_ref if pool_revision is not None else record.provider_pool_ref
-    alias_affinities = pool_revision.alias_affinities if pool_revision is not None else record.alias_affinities
-    return SharingPool.model_validate(
-        {
-            "sharing_pool_id": record.sharing_pool_id,
-            "routing_revision": routing_revision,
-            "alias_affinities": alias_affinities,
-            "provider_pool_ref": provider or None,
-            "capacity_account_ref": record.capacity_account_ref or None,
-            "spend_account_refs": record.spend_account_refs,
-            "rate_account_refs": record.rate_account_refs,
-            "concurrency_account_refs": record.concurrency_account_refs,
-        }
-    )
-
-
-def _match_for_subject(
-    record: SharingBindingRecord,
-    revision: SharingBindingRevision,
-    subject_ref: OwnedReference,
-    moment: datetime,
-    catalog_digest: str,
-) -> BindingMatch | None:
-    """Build the BindingMatch for one active binding, or None when it does not apply.
-
-    Uses the profile and (for snapshot) membership frozen at publication so
-    resolution never re-reads a mutated catalog or a shifted live projection; a
-    replaced catalog (digest mismatch) or a stale/missing projection fails closed.
-    """
-    binding = SharingBinding.model_validate(revision.definition)
-    catalog_ok = revision.catalog_digest == catalog_digest
-    if binding.membership_mode is MembershipMode.SNAPSHOT:
-        resolved = _snapshot_applicability(revision, subject_ref, moment, catalog_ok)
-    else:
-        resolved = _dynamic_applicability(record, revision, binding, subject_ref, moment, catalog_ok)
-    if resolved is None:
-        return None
-    membership_revision, membership_fresh = resolved
-    return BindingMatch(
-        binding=binding,
-        pool=_pinned_pool(record.pool, revision.pool_routing_revision),
-        profile=_pinned_profile(revision, binding),
-        membership_revision=membership_revision,
-        membership_fresh=membership_fresh,
-        matched_reason=binding.selector.kind.value,
-    )
-
-
-def _snapshot_applicability(
-    revision: SharingBindingRevision,
-    subject_ref: OwnedReference,
-    moment: datetime,
-    catalog_ok: bool,
-) -> tuple[int, bool] | None:
-    """Snapshot freezes inclusion while live subject/selector authority remains checked."""
-    if _ref_payload(subject_ref) not in revision.frozen_members:
-        return None
-    from engine.models import MembershipProjection
-
-    current = MembershipProjection.objects.filter(
-        deployment_id=revision.binding.deployment_id,
-        sharing_binding_id=revision.binding.sharing_binding_id,
-        selector_digest=revision.selector_digest,
-    ).first()
-    if current is None:
-        return None
-    authorization = _subject_authorization(current, subject_ref)
-    if authorization is None or authorization.state is not AuthorityState.ALLOWED:
-        return None
-    fence_state = _subject_fence_state(
-        deployment_id=revision.binding.deployment_id,
-        authorization=authorization,
-    )
-    if fence_state == "revoked":
-        return None
-    return (
-        current.membership_revision,
-        current.is_fresh(moment) and _selector_fence_is_current(current) and fence_state == "current" and catalog_ok,
-    )
-
-
-def _dynamic_applicability(
-    record: SharingBindingRecord,
-    revision: SharingBindingRevision,
-    binding: SharingBinding,
-    subject_ref: OwnedReference,
-    moment: datetime,
-    catalog_ok: bool,
-) -> tuple[int, bool] | None:
-    """Resolve dynamic applicability + freshness against the selector-bound projection."""
-    from engine.models import MembershipProjection
-
-    projection = MembershipProjection.objects.filter(
-        deployment_id=record.deployment_id,
-        sharing_binding_id=record.sharing_binding_id,
-        selector_digest=revision.selector_digest,
-    ).first()
-    if projection is None:
-        return None
-    if _ref_payload(subject_ref) not in projection.member_refs:
-        return None
-    authorization = _subject_authorization(projection, subject_ref)
-    if authorization is None or authorization.state is not AuthorityState.ALLOWED:
-        return None
-    fence_state = _subject_fence_state(deployment_id=record.deployment_id, authorization=authorization)
-    if fence_state == "revoked":
-        return None
-    return (
-        projection.membership_revision,
-        projection.is_fresh(moment)
-        and _selector_fence_is_current(projection)
-        and fence_state == "current"
-        and catalog_ok,
-    )
-
-
-def _subject_authorization(
-    projection: MembershipProjection, subject_ref: OwnedReference
-) -> SubjectAuthorizationEvidence | None:
-    """Load exact subject authorization from a canonical persisted projection."""
-    for payload in projection.subject_authorizations:
-        evidence = SubjectAuthorizationEvidence.model_validate(payload)
-        if evidence.subject_ref == subject_ref:
-            return evidence
-    return None
-
-
-def _subject_fence_state(*, deployment_id: UUID, authorization: SubjectAuthorizationEvidence) -> str:
-    """Return current, stale, or revoked for one subject evidence fence."""
-    from engine.models import SharingAuthorityFence
-
-    current = SharingAuthorityFence.objects.filter(
-        deployment_id=deployment_id,
-        authority_owner=authorization.authority_ref.owner,
-        authority_reference=authorization.authority_ref.reference,
-    ).first()
-    if current is None:
-        return "stale"
-    if current.state == AuthorityState.REVOKED.value:
-        return "revoked"
-    if current.state != AuthorityState.ALLOWED.value or current.authority_revision != authorization.authority_revision:
-        return "stale"
-    return "current"
-
-
-def _selector_fence_is_current(projection: MembershipProjection) -> bool:
-    for payload in projection.selector_authorities:
-        authority = SelectorAuthorityEvidence.model_validate(payload)
-        if authority.state is not AuthorityState.ALLOWED or not _fence_matches(
-            deployment_id=projection.deployment_id,
-            authority_ref=authority.authority_ref,
-            revision=authority.authority_revision,
-        ):
-            return False
-    return bool(projection.selector_authorities)
-
-
-def _pinned_profile(revision: SharingBindingRevision, binding: SharingBinding) -> ModelProfile | None:
-    """Return the profile frozen at publication when the binding shares a profile."""
-    if revision.resolved_profile and SharingFacet.PROFILE in binding.facets:
-        return ModelProfile.model_validate(revision.resolved_profile)
-    return None
 
 
 def _audit(action: str, *, entity_id: int, context: str) -> None:

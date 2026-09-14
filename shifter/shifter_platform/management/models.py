@@ -110,6 +110,8 @@ class UserProfile(models.Model):
     anonymized_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        """Persist one positive eligibility revision per auth group."""
+
         db_table = "mission_control_userprofile"
         verbose_name = "User Profile"
         verbose_name_plural = "User Profiles"

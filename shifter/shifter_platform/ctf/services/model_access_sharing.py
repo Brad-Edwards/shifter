@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from uuid import UUID
 
+from django.contrib.auth.base_user import AbstractBaseUser
+from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
 from django.db.models import Model, QuerySet
 from pydantic import ValidationError
@@ -24,10 +26,6 @@ from shared.model_access import (
     compute_digest,
 )
 
-if TYPE_CHECKING:
-    from django.contrib.auth.base_user import AbstractBaseUser
-    from django.contrib.auth.models import AnonymousUser
-
 
 class ModelAccessSelectorError(CTFError):
     """Opaque CTF selector denial with no entity-enumeration detail."""
@@ -40,6 +38,8 @@ class ModelAccessSelectorError(CTFError):
 
 @dataclass(frozen=True, slots=True)
 class _SelectedSubject:
+    """A CTF-owned draw and its optional realized range correlation."""
+
     range_instance_id: int | None
     draw_ref: OwnedReference
     authority_ref: OwnedReference
@@ -61,10 +61,12 @@ def _locked_pages[ModelT: Model](queryset: QuerySet[ModelT]) -> tuple[ModelT, ..
 
 
 def _chunks(values: tuple[int, ...]) -> tuple[tuple[int, ...], ...]:
+    """Split identifiers into bounded owner-boundary requests."""
     return tuple(values[index : index + 1000] for index in range(0, len(values), 1000))
 
 
 def _uuid_ids(values: tuple[str, ...]) -> tuple[UUID, ...]:
+    """Parse canonical UUID selector identifiers without enumeration detail."""
     try:
         resolved = tuple(UUID(value) for value in values)
     except (AttributeError, TypeError, ValueError) as exc:
@@ -75,14 +77,16 @@ def _uuid_ids(values: tuple[str, ...]) -> tuple[UUID, ...]:
 
 
 def _require_event_authority(actor: object, events: tuple[CTFEvent, ...]) -> None:
+    """Require range-management authority over every selected event."""
     from ctf.services.authorization import resolve_event_authority
 
-    user = cast("AbstractBaseUser | AnonymousUser | None", actor)
+    user = cast(AbstractBaseUser | AnonymousUser | None, actor)
     if any(resolve_event_authority(user, event, capability=EventCapability.RANGES) is None for event in events):
         raise ModelAccessSelectorError()
 
 
 def _events_for_ids(ids: tuple[UUID, ...]) -> tuple[CTFEvent, ...]:
+    """Lock and return the exact requested event set."""
     events = tuple(CTFEvent.objects.select_for_update().filter(pk__in=ids).order_by("pk"))
     if len(events) != len(ids):
         raise ModelAccessSelectorError()
@@ -92,6 +96,7 @@ def _events_for_ids(ids: tuple[UUID, ...]) -> tuple[CTFEvent, ...]:
 def _selector_rows(
     selector: SharingSelector,
 ) -> tuple[tuple[CTFEvent, ...], tuple[OwnedReference, ...], dict[str, object]]:
+    """Resolve an event, team, or cohort selector to locked owner rows."""
     ids = _uuid_ids(selector.ids)
     if selector.kind is SelectorKind.CTF_EVENT:
         events = _events_for_ids(ids)
@@ -115,6 +120,7 @@ def _selector_rows(
 
 
 def _subjects_for_filter(filters: dict[str, object], *, include_spares: bool) -> tuple[_SelectedSubject, ...]:
+    """Resolve eligible participant and optional spare subjects completely."""
     from ctf.services.participant import eligible_participant_q
 
     participants = _locked_pages(CTFParticipant.objects.select_for_update().filter(eligible_participant_q(), **filters))
@@ -152,6 +158,7 @@ def _materialize_resolution(
     selector_refs: tuple[OwnedReference, ...],
     selected: tuple[_SelectedSubject, ...],
 ) -> SelectorResolution:
+    """Correlate selected CTF draws and build canonical authority evidence."""
     from ctf.bridges import cms_resolve_model_access_range_instances
 
     realized_ids = tuple(sorted(item.range_instance_id for item in selected if item.range_instance_id is not None))
@@ -225,6 +232,7 @@ def classify_model_access_selected_ranges(range_uuids: tuple[UUID, ...]) -> tupl
 
 
 def _resolve_selected_ranges(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Resolve explicit selected ranges through their exact CTF owners."""
     from ctf.bridges import cms_resolve_model_access_selected_ranges
     from ctf.services.participant import eligible_participant_q
 
@@ -305,7 +313,7 @@ def _resolve_selected_ranges(actor: object, selector: SharingSelector) -> Select
 
 def resolve_model_access_selector(
     actor: object,
-    selector: SharingSelector | dict,
+    selector: SharingSelector | dict[str, object],
 ) -> SelectorResolution:
     """Resolve a complete CTF atomic selector under owner-domain row locks."""
     try:

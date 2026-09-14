@@ -41,6 +41,19 @@ class ModelAccessSelectorError(CMSError):
         super().__init__("Model-access selector denied")
 
 
+def _normalized_range_instance_ids(range_instance_ids: tuple[int, ...]) -> tuple[int, ...]:
+    """Validate explicit CMS range-instance identifiers in canonical order."""
+    normalized = tuple(sorted(range_instance_ids))
+    invalid = (
+        len(normalized) > 1000
+        or len(normalized) != len(set(normalized))
+        or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in normalized)
+    )
+    if invalid:
+        raise ModelAccessSelectorError()
+    return normalized
+
+
 def resolve_model_access_range_views(
     *,
     range_uuids: tuple[UUID, ...] | None = None,
@@ -68,13 +81,7 @@ def resolve_model_access_range_instances(
     """Map exact active CMS range-instance PKs to canonical Engine identities."""
     from cms import services as cms_services
 
-    normalized = tuple(sorted(range_instance_ids))
-    if (
-        len(normalized) > 1000
-        or len(normalized) != len(set(normalized))
-        or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in normalized)
-    ):
-        raise ModelAccessSelectorError()
+    normalized = _normalized_range_instance_ids(range_instance_ids)
     if not normalized:
         return ()
 
@@ -147,6 +154,7 @@ def resolve_model_access_selected_ranges(
 
 
 def _integer_ids(values: tuple[str, ...]) -> tuple[int, ...]:
+    """Parse canonical positive integer selector identifiers."""
     try:
         resolved = tuple(int(value) for value in values)
     except (TypeError, ValueError) as exc:
@@ -157,6 +165,7 @@ def _integer_ids(values: tuple[str, ...]) -> tuple[int, ...]:
 
 
 def _uuid_ids(values: tuple[str, ...]) -> tuple[UUID, ...]:
+    """Parse canonical UUID selector identifiers."""
     try:
         resolved = tuple(UUID(value) for value in values)
     except (AttributeError, TypeError, ValueError) as exc:
@@ -172,6 +181,7 @@ def _publisher_requirement(
     *,
     scope: PublisherAuthorityScope = PublisherAuthorityScope.SELECTOR,
 ) -> PublisherAuthorityRequirement:
+    """Build one selector-digest-bound publisher authority requirement."""
     return PublisherAuthorityRequirement(
         selector_digest=selector_digest,
         authority_ref=authority_ref,
@@ -188,6 +198,7 @@ def _resolution(
     publisher_requirements: tuple[PublisherAuthorityRequirement, ...],
     spending: tuple[ResolvedSpendingEligibility, ...] = (),
 ) -> SelectorResolution:
+    """Build a canonical selector resolution from resolved Engine ranges."""
     range_views = tuple(ranges)
     return SelectorResolution(
         contract_version="model-access-selector-resolution/v1",
@@ -208,10 +219,12 @@ def _resolution(
 
 
 def _operator_ref(actor: object) -> OwnedReference:
+    """Build the canonical operator reference for an authenticated actor."""
     return OwnedReference(owner="management", reference=f"operator:{getattr(actor, 'pk', 0)}")
 
 
 def _resolve_selected(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Resolve explicit ordinary ranges under owner or operator authority."""
     from management.services import is_platform_operator
 
     ranges = resolve_model_access_range_views(range_uuids=_uuid_ids(selector.ids))
@@ -231,6 +244,7 @@ def _resolve_selected(actor: object, selector: SharingSelector) -> SelectorResol
 
 
 def _resolve_users(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Resolve a user selector through identity and range owner services."""
     from management.services import is_platform_operator, resolve_model_access_users
 
     user_ids = resolve_model_access_users(actor, _integer_ids(selector.ids))
@@ -249,6 +263,7 @@ def _resolve_users(actor: object, selector: SharingSelector) -> SelectorResoluti
 
 
 def _resolve_groups(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Resolve auth-group membership with explicit funded eligibility."""
     from management.services import resolve_model_access_group
 
     scopes = tuple(resolve_model_access_group(actor, group_id) for group_id in _integer_ids(selector.ids))
@@ -276,6 +291,7 @@ def _resolve_groups(actor: object, selector: SharingSelector) -> SelectorResolut
 
 
 def _resolve_workspaces(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Resolve workspace membership through workspace-owned authority."""
     from workspaces.services import resolve_model_access_workspace
 
     user = cast("User", actor)
@@ -297,6 +313,7 @@ def _resolve_workspaces(actor: object, selector: SharingSelector) -> SelectorRes
 
 
 def _resolve_organizations(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Resolve organization workspaces through organization-owned authority."""
     from workspaces.services import resolve_model_access_organization
 
     user = cast("User", actor)
@@ -326,6 +343,7 @@ def _resolve_organizations(actor: object, selector: SharingSelector) -> Selector
 
 
 def _resolve_all_ranges(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Resolve the deployment-wide selector for a platform operator."""
     from management.services import is_platform_operator
 
     if not is_platform_operator(actor):
@@ -357,7 +375,7 @@ _RESOLVERS = {
 }
 
 
-def resolve_model_access_selector(actor: object, selector: SharingSelector | dict) -> SelectorResolution:
+def resolve_model_access_selector(actor: object, selector: SharingSelector | dict[str, object]) -> SelectorResolution:
     """Resolve one non-CTF atomic selector through its owning service boundaries."""
     from management.services import ModelAccessIdentityAuthorityError
     from workspaces.services import OrganizationAuthorizationError, WorkspaceAuthorizationError

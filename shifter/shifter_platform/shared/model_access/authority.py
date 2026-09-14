@@ -48,7 +48,14 @@ class PublisherAuthorityScope(StrEnum):
 
 
 def _reference_key(reference: OwnedReference) -> tuple[str, str]:
+    """Return the stable sort and uniqueness key for a qualified reference."""
     return reference.owner, reference.reference
+
+
+def _require_unique(keys: tuple[object, ...], message: str) -> None:
+    """Reject duplicate canonical evidence keys."""
+    if len(keys) != len(set(keys)):
+        raise ValueError(message)
 
 
 class SubjectAuthorizationEvidence(ClosedModel):
@@ -301,18 +308,15 @@ class SharingAuthorityEvidence(ClosedModel):
     @model_validator(mode="after")
     def _validate_projection(self) -> SharingAuthorityEvidence:
         member_keys = tuple(_reference_key(item) for item in self.member_refs)
-        if len(member_keys) != len(set(member_keys)):
-            raise ValueError("member_refs must contain unique owner-qualified references")
+        _require_unique(member_keys, "member_refs must contain unique owner-qualified references")
         if self.assessment_count != len(member_keys):
             raise ValueError("assessment_count must equal the complete projected member count")
 
         selector_keys = tuple(_reference_key(item.authority_ref) for item in self.selector_authorities)
-        if len(selector_keys) != len(set(selector_keys)):
-            raise ValueError("selector authority references must be unique")
+        _require_unique(selector_keys, "selector authority references must be unique")
 
         subject_keys = tuple(_reference_key(item.subject_ref) for item in self.subject_authorizations)
-        if len(subject_keys) != len(set(subject_keys)):
-            raise ValueError("subject authorization references must be unique")
+        _require_unique(subject_keys, "subject authorization references must be unique")
         if set(subject_keys) != set(member_keys):
             raise ValueError("every member_ref requires exactly one subject authorization")
 
@@ -325,14 +329,12 @@ class SharingAuthorityEvidence(ClosedModel):
             )
             for item in self.publisher_authorities
         )
-        if len(publisher_keys) != len(set(publisher_keys)):
-            raise ValueError("publisher authority references and selector digests must be unique")
+        _require_unique(publisher_keys, "publisher authority references and selector digests must be unique")
 
         eligibility_keys = tuple(
             (_reference_key(item.authority_ref), item.basis.value) for item in self.spending_eligibilities
         )
-        if len(eligibility_keys) != len(set(eligibility_keys)):
-            raise ValueError("spending eligibility references and bases must be unique")
+        _require_unique(eligibility_keys, "spending eligibility references and bases must be unique")
 
         if self.observed_at.tzinfo is None or self.freshness_deadline.tzinfo is None:
             raise ValueError("authority evidence times must include timezones")

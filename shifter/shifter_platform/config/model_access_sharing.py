@@ -38,15 +38,17 @@ _CTF_KINDS = frozenset(
         SelectorKind.CTF_COHORT,
     }
 )
+_SELECTOR_DENIED = "Model-access selector denied"
 
 
 def _uuid_ids(values: tuple[str, ...]) -> tuple[UUID, ...]:
+    """Parse canonical UUID strings or fail without enumeration detail."""
     try:
         resolved = tuple(UUID(value) for value in values)
     except (AttributeError, TypeError, ValueError) as exc:
-        raise ModelAccessCompositionError("Model-access selector denied") from exc
+        raise ModelAccessCompositionError(_SELECTOR_DENIED) from exc
     if any(str(value) != supplied for value, supplied in zip(resolved, values, strict=True)):
-        raise ModelAccessCompositionError("Model-access selector denied")
+        raise ModelAccessCompositionError(_SELECTOR_DENIED)
     return resolved
 
 
@@ -56,6 +58,7 @@ def _combine(
     *,
     preserve_atomic_digests: bool,
 ) -> SelectorResolution:
+    """Combine atomic selector resolutions into one deterministic result."""
     member_by_key: dict[tuple[str, str], OwnedReference] = {}
     subject_by_key: dict[tuple[str, str], ResolvedSubjectAuthority] = {}
     selector_authority_by_key: dict[tuple[str, str], OwnedReference] = {}
@@ -108,6 +111,7 @@ def _combine(
 
 
 def _resolve_selected(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Partition selected ranges between ordinary and CTF owner services."""
     from cms.services import resolve_model_access_range_views
     from cms.services import resolve_model_access_selector as resolve_cms_selector
     from ctf.services import classify_model_access_selected_ranges
@@ -117,7 +121,7 @@ def _resolve_selected(actor: object, selector: SharingSelector) -> SelectorResol
     ranges = resolve_model_access_range_views(range_uuids=range_uuids)
     ctf_range_uuids = frozenset(classify_model_access_selected_ranges(range_uuids))
     ordinary_range_uuids = tuple(item.range_uuid for item in ranges if item.range_uuid not in ctf_range_uuids)
-    resolutions = []
+    resolutions: list[SelectorResolution] = []
 
     if ordinary_range_uuids:
         resolutions.append(
@@ -140,13 +144,14 @@ def _resolve_selected(actor: object, selector: SharingSelector) -> SelectorResol
             )
         )
     if not resolutions:
-        raise ModelAccessCompositionError("Model-access selector denied")
+        raise ModelAccessCompositionError(_SELECTOR_DENIED)
     if len(resolutions) == 1 and resolutions[0].selector_digest == compute_digest(selector):
         return resolutions[0]
     return _combine(selector, tuple(resolutions), preserve_atomic_digests=False)
 
 
 def _resolve_atom(actor: object, selector: SharingSelector) -> SelectorResolution:
+    """Route an atomic selector to its owning service."""
     if selector.kind in _CTF_KINDS:
         from ctf.services import resolve_model_access_selector as resolve_ctf_selector
 
@@ -160,7 +165,7 @@ def _resolve_atom(actor: object, selector: SharingSelector) -> SelectorResolutio
 
 def resolve_model_access_selector(
     actor: object,
-    selector: SharingSelector | dict,
+    selector: SharingSelector | dict[str, object],
 ) -> SelectorResolution:
     """Resolve an atomic selector or a bounded, non-recursive named union."""
     from cms.services import ModelAccessSelectorError as CmsModelAccessSelectorError
@@ -183,15 +188,16 @@ def resolve_model_access_selector(
         ValidationError,
         ValueError,
     ) as exc:
-        raise ModelAccessCompositionError("Model-access selector denied") from exc
+        raise ModelAccessCompositionError(_SELECTOR_DENIED) from exc
 
 
 def _publisher_identity(actor: object) -> OwnedReference:
+    """Return the canonical user or operator identity for a publisher."""
     from management.services import is_platform_operator
 
     actor_id = getattr(actor, "pk", None)
     if isinstance(actor_id, bool) or not isinstance(actor_id, int) or actor_id <= 0:
-        raise ModelAccessCompositionError("Model-access selector denied")
+        raise ModelAccessCompositionError(_SELECTOR_DENIED)
     noun = "operator" if is_platform_operator(actor) else "user"
     return OwnedReference(owner="management", reference=f"{noun}:{actor_id}")
 
@@ -199,13 +205,13 @@ def _publisher_identity(actor: object) -> OwnedReference:
 def publish_model_access_binding(
     *,
     actor: object,
-    deployment_id,
+    deployment_id: UUID,
     catalog: ModelAccessCatalog,
     binding: SharingBinding,
     pool: SharingPool,
     expected_definition_revision: int,
     empty_snapshot_ack: bool = False,
-):
+) -> object:
     """Resolve, project, and publish one binding in a single DB transaction."""
     from cms.services import (
         engine_project_selector_resolution,

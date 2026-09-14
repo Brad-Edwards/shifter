@@ -71,6 +71,7 @@ def invalidate_workspace_model_access(
 
 
 def _parse_uuid(value: str | uuid.UUID, error: type[Exception]) -> uuid.UUID:
+    """Parse a public UUID while preserving the owner service's opaque error."""
     try:
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
     except (AttributeError, TypeError, ValueError) as exc:

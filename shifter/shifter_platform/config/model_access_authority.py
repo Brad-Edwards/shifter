@@ -8,6 +8,8 @@ double-advancing the same revision.
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_save
@@ -23,6 +25,7 @@ _CLEARED_GROUPS = "_model_access_cleared_group_ids"
 
 
 def _invalidate_group_ids(group_ids: set[int]) -> None:
+    """Invalidate group authority revisions in bounded batches."""
     if not group_ids:
         return
     ordered = sorted(group_ids)
@@ -40,14 +43,16 @@ def _invalidate_group_ids(group_ids: set[int]) -> None:
         )
 
 
-def _capture_user_flags(sender, instance, **_kwargs) -> None:
+def _capture_user_flags(sender: Any, instance: Any, **_kwargs: object) -> None:
+    """Capture persisted account authority flags before saving."""
     if authority_invalidation_signals_suppressed() or instance.pk is None:
         return
     previous = sender.objects.filter(pk=instance.pk).values_list("is_active", "is_superuser").first()
     setattr(instance, _PREVIOUS_FLAGS, previous)
 
 
-def _invalidate_user_flags(sender, instance, created, **_kwargs) -> None:
+def _invalidate_user_flags(sender: Any, instance: Any, created: bool, **_kwargs: object) -> None:
+    """Invalidate user and operator authority after account flag changes."""
     if created or authority_invalidation_signals_suppressed():
         return
     previous = getattr(instance, _PREVIOUS_FLAGS, None)
@@ -67,34 +72,40 @@ def _invalidate_user_flags(sender, instance, created, **_kwargs) -> None:
     )
 
 
-def _group_ids_for_change(instance, reverse: bool, pk_set: set[int] | None) -> set[int]:
+def _group_ids_for_change(instance: Any, reverse: bool, pk_set: set[int] | None) -> set[int]:
+    """Resolve group IDs from either side of a membership mutation."""
     if reverse:
         return {instance.pk} if isinstance(instance, Group) and instance.pk is not None else set()
     return set(pk_set or ())
 
 
-def _groups_changed(sender, instance, action: str, reverse: bool, pk_set=None, **_kwargs) -> None:
-    if authority_invalidation_signals_suppressed():
-        return
-    if action == "pre_clear":
-        group_ids = {instance.pk} if reverse else set(instance.groups.values_list("pk", flat=True))
-        if not reverse:
-            setattr(instance, _CLEARED_GROUPS, group_ids)
-        tuple(Group.objects.select_for_update().filter(pk__in=group_ids).order_by("pk"))
-        return
-    if action in {"pre_add", "pre_remove"}:
-        group_ids = _group_ids_for_change(instance, reverse, pk_set)
-        tuple(Group.objects.select_for_update().filter(pk__in=group_ids).order_by("pk"))
-        return
-    if action not in {"post_add", "post_remove", "post_clear"}:
-        return
-    group_ids = _group_ids_for_change(instance, reverse, pk_set)
-    if action == "post_clear" and not reverse:
-        group_ids = set(getattr(instance, _CLEARED_GROUPS, set()))
-    _invalidate_group_ids(group_ids)
+def _groups_changed(
+    sender: object,
+    instance: Any,
+    action: str,
+    reverse: bool,
+    pk_set: set[int] | None = None,
+    **_kwargs: object,
+) -> None:
+    """Lock before, then invalidate after, direct group membership changes."""
+    if not authority_invalidation_signals_suppressed():
+        if action == "pre_clear":
+            group_ids = {instance.pk} if reverse else set(instance.groups.values_list("pk", flat=True))
+            if not reverse:
+                setattr(instance, _CLEARED_GROUPS, group_ids)
+            tuple(Group.objects.select_for_update().filter(pk__in=group_ids).order_by("pk"))
+        elif action in {"pre_add", "pre_remove"}:
+            group_ids = _group_ids_for_change(instance, reverse, pk_set)
+            tuple(Group.objects.select_for_update().filter(pk__in=group_ids).order_by("pk"))
+        elif action in {"post_add", "post_remove", "post_clear"}:
+            group_ids = _group_ids_for_change(instance, reverse, pk_set)
+            if action == "post_clear" and not reverse:
+                group_ids = set(getattr(instance, _CLEARED_GROUPS, set()))
+            _invalidate_group_ids(group_ids)
 
 
-def _group_deleted(sender, instance, **_kwargs) -> None:
+def _group_deleted(sender: type[Group], instance: Group, **_kwargs: object) -> None:
+    """Invalidate group authority before group deletion."""
     if authority_invalidation_signals_suppressed() or instance.pk is None:
         return
     _invalidate_group_ids({instance.pk})

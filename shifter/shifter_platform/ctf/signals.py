@@ -6,6 +6,7 @@ Connects to CMS signals to keep CTF data in sync with range status changes.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django.db import connection
 from django.db.models.signals import post_save, pre_delete, pre_save
@@ -18,13 +19,15 @@ from shared.model_access import OwnedReference
 logger = logging.getLogger(__name__)
 
 
-def _authority_ref(noun: str, value) -> OwnedReference | None:
+def _authority_ref(noun: str, value: object) -> OwnedReference | None:
+    """Build a qualified CTF authority reference when an identifier exists."""
     if value is None:
         return None
     return OwnedReference(owner="ctf", reference=f"{noun}:{value}")
 
 
 def _invalidate_model_access(references: list[OwnedReference | None], reason: str) -> None:
+    """Invalidate the unique non-null authority references in stable order."""
     from ctf.bridges import cms_invalidate_model_access_authority
     from shared.model_access import AuthorityInvalidation, AuthorityState
 
@@ -41,14 +44,16 @@ def _invalidate_model_access(references: list[OwnedReference | None], reason: st
     )
 
 
-def _capture_authority_fields(sender, instance, fields: tuple[str, ...]) -> None:
+def _capture_authority_fields(sender: Any, instance: Any, fields: tuple[str, ...]) -> None:
+    """Capture persisted authority fields before a model mutation."""
     if instance._state.adding:
         instance._model_access_authority_before = None
         return
     instance._model_access_authority_before = sender.all_objects.filter(pk=instance.pk).values(*fields).first()
 
 
-def _changed(instance, fields: tuple[str, ...]) -> bool:
+def _changed(instance: Any, fields: tuple[str, ...]) -> bool:
+    """Return whether any captured authority field changed."""
     before = getattr(instance, "_model_access_authority_before", None)
     return before is None or any(before[field] != getattr(instance, field) for field in fields)
 
@@ -82,12 +87,16 @@ _SPARE_AUTHORITY_FIELDS = (
 
 
 @receiver(pre_save, sender=CTFParticipant, dispatch_uid="ctf.model_access.participant.capture")
-def capture_participant_model_access(sender, instance, **kwargs) -> None:
+def capture_participant_model_access(sender: type[CTFParticipant], instance: CTFParticipant, **kwargs: object) -> None:
+    """Capture participant authority before saving."""
     _capture_authority_fields(sender, instance, _PARTICIPANT_AUTHORITY_FIELDS)
 
 
 @receiver(post_save, sender=CTFParticipant, dispatch_uid="ctf.model_access.participant.invalidate")
-def invalidate_participant_model_access(sender, instance, **kwargs) -> None:
+def invalidate_participant_model_access(
+    sender: type[CTFParticipant], instance: CTFParticipant, **kwargs: object
+) -> None:
+    """Invalidate participant selectors after an authority change."""
     if not _changed(instance, _PARTICIPANT_AUTHORITY_FIELDS):
         return
     before = getattr(instance, "_model_access_authority_before", None) or {}
@@ -106,12 +115,14 @@ def invalidate_participant_model_access(sender, instance, **kwargs) -> None:
 
 
 @receiver(pre_save, sender=CTFSpareRange, dispatch_uid="ctf.model_access.spare.capture")
-def capture_spare_model_access(sender, instance, **kwargs) -> None:
+def capture_spare_model_access(sender: type[CTFSpareRange], instance: CTFSpareRange, **kwargs: object) -> None:
+    """Capture spare-range authority before saving."""
     _capture_authority_fields(sender, instance, _SPARE_AUTHORITY_FIELDS)
 
 
 @receiver(post_save, sender=CTFSpareRange, dispatch_uid="ctf.model_access.spare.invalidate")
-def invalidate_spare_model_access(sender, instance, **kwargs) -> None:
+def invalidate_spare_model_access(sender: type[CTFSpareRange], instance: CTFSpareRange, **kwargs: object) -> None:
+    """Invalidate spare-range selectors after an authority change."""
     if not _changed(instance, _SPARE_AUTHORITY_FIELDS):
         return
     before = getattr(instance, "_model_access_authority_before", None) or {}
@@ -129,11 +140,13 @@ def invalidate_spare_model_access(sender, instance, **kwargs) -> None:
     )
 
 
-def _capture_container(sender, instance, **kwargs) -> None:
+def _capture_container(sender: Any, instance: Any, **kwargs: object) -> None:
+    """Capture team or cohort authority before saving."""
     _capture_authority_fields(sender, instance, ("event_id", "deleted_at"))
 
 
-def _invalidate_container(noun: str, instance) -> None:
+def _invalidate_container(noun: str, instance: Any) -> None:
+    """Invalidate a team or cohort and its enclosing event when changed."""
     if not _changed(instance, ("event_id", "deleted_at")):
         return
     before = getattr(instance, "_model_access_authority_before", None) or {}
@@ -149,30 +162,35 @@ def _invalidate_container(noun: str, instance) -> None:
 
 @receiver(pre_save, sender=CTFTeam, dispatch_uid="ctf.model_access.team.capture")
 @receiver(pre_save, sender=CTFCohort, dispatch_uid="ctf.model_access.cohort.capture")
-def capture_model_access_container(sender, instance, **kwargs) -> None:
+def capture_model_access_container(sender: Any, instance: Any, **kwargs: object) -> None:
+    """Capture a team or cohort authority snapshot before saving."""
     _capture_container(sender, instance)
 
 
 @receiver(post_save, sender=CTFTeam, dispatch_uid="ctf.model_access.team.invalidate")
 @receiver(pre_delete, sender=CTFTeam, dispatch_uid="ctf.model_access.team.delete")
-def invalidate_team_model_access(sender, instance, **kwargs) -> None:
+def invalidate_team_model_access(sender: type[CTFTeam], instance: CTFTeam, **kwargs: object) -> None:
+    """Invalidate team authority after update or before deletion."""
     _invalidate_container("team", instance)
 
 
 @receiver(post_save, sender=CTFCohort, dispatch_uid="ctf.model_access.cohort.invalidate")
 @receiver(pre_delete, sender=CTFCohort, dispatch_uid="ctf.model_access.cohort.delete")
-def invalidate_cohort_model_access(sender, instance, **kwargs) -> None:
+def invalidate_cohort_model_access(sender: type[CTFCohort], instance: CTFCohort, **kwargs: object) -> None:
+    """Invalidate cohort authority after update or before deletion."""
     _invalidate_container("cohort", instance)
 
 
 @receiver(pre_save, sender=CTFEvent, dispatch_uid="ctf.model_access.event.capture")
-def capture_event_model_access(sender, instance, **kwargs) -> None:
+def capture_event_model_access(sender: type[CTFEvent], instance: CTFEvent, **kwargs: object) -> None:
+    """Capture event authority before saving."""
     _capture_authority_fields(sender, instance, ("created_by_id", "status", "deleted_at"))
 
 
 @receiver(post_save, sender=CTFEvent, dispatch_uid="ctf.model_access.event.invalidate")
 @receiver(pre_delete, sender=CTFEvent, dispatch_uid="ctf.model_access.event.delete")
-def invalidate_event_model_access(sender, instance, **kwargs) -> None:
+def invalidate_event_model_access(sender: type[CTFEvent], instance: CTFEvent, **kwargs: object) -> None:
+    """Invalidate an event selector after authority changes or deletion."""
     if _changed(instance, ("created_by_id", "status", "deleted_at")):
         _invalidate_model_access(
             [_authority_ref("event", instance.pk)],
@@ -182,7 +200,8 @@ def invalidate_event_model_access(sender, instance, **kwargs) -> None:
 
 @receiver(post_save, sender=CTFEventStaff, dispatch_uid="ctf.model_access.staff.invalidate")
 @receiver(pre_delete, sender=CTFEventStaff, dispatch_uid="ctf.model_access.staff.delete")
-def invalidate_event_staff_model_access(sender, instance, **kwargs) -> None:
+def invalidate_event_staff_model_access(sender: type[CTFEventStaff], instance: CTFEventStaff, **kwargs: object) -> None:
+    """Invalidate event authority after staff membership changes."""
     if connection.in_atomic_block:
         tuple(CTFEvent.objects.select_for_update().filter(pk=instance.event_id))
     _invalidate_model_access(
@@ -192,13 +211,17 @@ def invalidate_event_staff_model_access(sender, instance, **kwargs) -> None:
 
 
 @receiver(pre_save, sender=CTFEventStaff, dispatch_uid="ctf.model_access.staff.lock")
-def lock_event_for_staff_model_access(sender, instance, **kwargs) -> None:
+def lock_event_for_staff_model_access(sender: type[CTFEventStaff], instance: CTFEventStaff, **kwargs: object) -> None:
+    """Lock the owning event before staff authority mutation."""
     if connection.in_atomic_block:
         tuple(CTFEvent.objects.select_for_update().filter(pk=instance.event_id))
 
 
 @receiver(pre_delete, sender=CTFParticipant, dispatch_uid="ctf.model_access.participant.delete")
-def invalidate_deleted_participant_model_access(sender, instance, **kwargs) -> None:
+def invalidate_deleted_participant_model_access(
+    sender: type[CTFParticipant], instance: CTFParticipant, **kwargs: object
+) -> None:
+    """Invalidate every selector affected by participant deletion."""
     _invalidate_model_access(
         [
             _authority_ref("participant", instance.pk),
@@ -211,7 +234,10 @@ def invalidate_deleted_participant_model_access(sender, instance, **kwargs) -> N
 
 
 @receiver(pre_delete, sender=CTFSpareRange, dispatch_uid="ctf.model_access.spare.delete")
-def invalidate_deleted_spare_model_access(sender, instance, **kwargs) -> None:
+def invalidate_deleted_spare_model_access(
+    sender: type[CTFSpareRange], instance: CTFSpareRange, **kwargs: object
+) -> None:
+    """Invalidate every selector affected by spare-range deletion."""
     _invalidate_model_access(
         [
             _authority_ref("spare", instance.pk),
@@ -225,11 +251,11 @@ def invalidate_deleted_spare_model_access(sender, instance, **kwargs) -> None:
 
 @receiver(range_status_changed)
 def sync_ctf_participant_range_status(
-    sender,
+    sender: object,
     range_instance_id: int,
     new_status: str,
     previous_status: str,
-    **kwargs,
+    **kwargs: object,
 ) -> None:
     """Update CTFParticipant.range_status when CMS reports a status change."""
     from ctf.models import CTFParticipant
@@ -266,7 +292,7 @@ def sync_ctf_spare_range_status(
     range_instance_id: int,
     new_status: str,
     previous_status: str,
-    **kwargs,
+    **kwargs: object,
 ) -> None:
     """Update CTFSpareRange.status when CMS reports a status change (#1018).
 

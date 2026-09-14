@@ -21,6 +21,8 @@ class CTFCohort(CTFBaseModel):
     description = models.TextField(blank=True, default="")
 
     class Meta:
+        """Persist active cohort names uniquely within an event."""
+
         db_table = "ctf_cohort"
         ordering = ["name"]
         verbose_name = "CTF Cohort"
