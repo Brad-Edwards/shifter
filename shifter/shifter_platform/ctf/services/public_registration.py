@@ -7,6 +7,7 @@ from datetime import datetime
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from ctf.enums import EventStatus, PublicRegistrationDisposition
@@ -101,6 +102,7 @@ def resolve_public_event(event_public_id: UUID, *, at: datetime | None = None) -
 
 
 def _existing_submission(event: CTFEvent, normalized_email: str) -> CTFPublicRegistrationRequest | None:
+    """Return the live intake row already associated with this event/email."""
     return event.public_registration_requests.filter(email__iexact=normalized_email).first()
 
 
@@ -141,7 +143,11 @@ def submit_public_registration_request(
         return PublicRegistrationSubmission(request_id=request_row.pk, created=True)
 
 
-def list_pending_public_registration_requests(event_id: UUID, *, actor_id: int):
+def list_pending_public_registration_requests(
+    event_id: UUID,
+    *,
+    actor_id: int,
+) -> QuerySet[CTFPublicRegistrationRequest]:
     """Return the event's pending queue after service-boundary authorization."""
     from ctf.enums import EventCapability
     from ctf.services.authorization import assert_event_capability

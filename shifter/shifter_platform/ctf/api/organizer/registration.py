@@ -101,6 +101,8 @@ class PublicRegistrationDispositionView(APIView):
             serializer = PublicRegistrationDispositionSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             action = serializer.validated_data["action"]
+            if action not in {"approve", "reject"}:
+                _raise_bad_request(_INVALID_DISPOSITION)
             try:
                 if action == "approve":
                     with admin_external_audit(
@@ -112,7 +114,7 @@ class PublicRegistrationDispositionView(APIView):
                             request_id,
                             actor_id=_actor(request).pk,
                         )
-                elif action == "reject":
+                else:
                     with transaction.atomic():
                         result = reject_public_registration_request(
                             request_id,
@@ -123,8 +125,6 @@ class PublicRegistrationDispositionView(APIView):
                             "public_registration.reject",
                             action=AuditAction.UPDATE,
                         )
-                else:  # pragma: no cover - serializer owns the closed vocabulary
-                    _raise_bad_request(_INVALID_DISPOSITION)
             except PublicRegistrationRequestNotFound:
                 _raise_not_found(_REQUEST_NOT_FOUND)
             except PublicRegistrationAlreadyDispositioned:

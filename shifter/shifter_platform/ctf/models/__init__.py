@@ -47,8 +47,9 @@ from .communication import (
     RecipientSnapshot,
 )
 from .content_hydration import CTFContentHydrationReceipt
-from .event import CTFEvent, CTFEventStaff
+from .event import CTFEvent
 from .event_page import CTFEventPage
+from .event_staff import CTFEventStaff
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
 from .notification import CTFEmailTemplate, CTFNotification, CTFWebhook

@@ -172,6 +172,7 @@ def test_public_registration_page_escapes_content_and_is_hardened(ctf_event):
     assert "&lt;script" in body
     assert "<script" not in body
     assert 'src="https://attacker.example' not in body
+    assert "images/favicon.svg" in body
     assert reverse("privacy_notice") in body
     assert "private" in response["Cache-Control"]
     assert "no-store" in response["Cache-Control"]
@@ -196,8 +197,11 @@ def test_public_registration_post_requires_csrf_and_returns_generic_success(ctf_
     )
 
     assert response.status_code == 200
-    assert "request has been received" in response.content.decode().lower()
-    assert "ada@example.com" not in response.content.decode().lower()
+    body = response.content.decode().lower()
+    assert "request has been received" in body
+    assert "<output" in body
+    assert 'role="status"' not in body
+    assert "ada@example.com" not in body
     assert CTFPublicRegistrationRequest.objects.filter(event=ctf_event).count() == 1
 
 
