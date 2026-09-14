@@ -19,6 +19,8 @@ from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
+import yaml
+
 from bootstrap_core import (
     _GDC_APISERVER_BACKEND_PORT,
     _GDC_SCENARIO_POD_KALI_IMAGE,
@@ -1211,6 +1213,32 @@ def resolve_shifter_config_path(config: GDCBootstrapConfig, repo_root: Path) -> 
     return config_path
 
 
+def _read_deployment_profile(config_path: Path) -> str:
+    """Read ``deployment.profile`` from the root installation config (default 'prod')."""
+    with config_path.open(encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    deployment = data.get("deployment", {}) if isinstance(data, dict) else {}
+    if not isinstance(deployment, dict):
+        return "prod"
+    return str(deployment.get("profile", "prod"))
+
+
+def resolve_helm_values_path(config: GDCBootstrapConfig, chart_path: Path) -> Path:
+    """Select the chart's Helm values override for this deployment.
+
+    The chart ships a closed set of ``values-<backend>-<profile>.yaml`` files (no
+    per-tenant files; enforced by platform/charts/shifter/tests/test_chart_contract.py).
+    The gcp-dev / gcp-prod environments name their backend-profile file directly, so
+    they resolve unchanged. A per-tenant environment (e.g. nazgul) has no env-named
+    file and reuses the gcp backend's profile file resolved from shifter.yaml.
+    """
+    env_named = chart_path / f"values-{config.environment}.yaml"
+    if env_named.exists():
+        return env_named
+    profile = _read_deployment_profile(resolve_shifter_config_path(config, get_repo_root()))
+    return chart_path / f"values-gcp-{profile}.yaml"
+
+
 def render_range_egress_tfvars(repo_root: Path, config_path: Path, output_path: Path, dry_run: bool = False) -> None:
     """Render the range egress bridge tfvars from ``config_path`` via ``shifter-config render``.
 
@@ -1859,7 +1887,7 @@ def deploy_gcp_control_plane_with_helm(
     cluster_name = str(_get_output_value(outputs, "gke_cluster_name"))
     cluster_location = str(_get_output_value(outputs, "gke_cluster_location"))
     chart_path = get_repo_root() / "platform" / "charts" / "shifter"
-    environment_values_path = chart_path / f"values-{config.environment}.yaml"
+    environment_values_path = resolve_helm_values_path(config, chart_path)
 
     if not environment_values_path.exists():
         error(f"Missing Helm values override for environment {config.environment}: {environment_values_path}")
