@@ -128,13 +128,12 @@ def _require_bound(name: str, value: object, minimum: int, maximum: int) -> None
 
 def _require_key_modes(value: object) -> None:
     """Require a non-empty tuple of unique closed key modes."""
-    valid = (
-        isinstance(value, tuple)
-        and bool(value)
-        and len(set(value)) == len(value)
-        and all(isinstance(mode, ReceiptKeyMode) for mode in value)
-    )
-    if not valid:
+    if not isinstance(value, tuple):
+        raise ReceiptProfileError("allowed_key_modes must be a non-empty tuple of unique key modes")
+    key_modes: tuple[object, ...] = value
+    if not key_modes or len(set(key_modes)) != len(key_modes):
+        raise ReceiptProfileError("allowed_key_modes must be a non-empty tuple of unique key modes")
+    if not all(isinstance(mode, ReceiptKeyMode) for mode in key_modes):
         raise ReceiptProfileError("allowed_key_modes must be a non-empty tuple of unique key modes")
 
 

@@ -145,7 +145,7 @@ def _verify_programmable_flag(
     sensitive_submission_collector: Callable[[], None] | None,
 ) -> bool:
     """Verify a submitted flag against a programmable validator CTFFlag."""
-    from ctf.validators import get_validator, validator_supports_server_context
+    from ctf.validators import get_validator
 
     validator_name = config.get("validator_name", "")
     validator_func = get_validator(validator_name)
@@ -158,7 +158,6 @@ def _verify_programmable_flag(
             submitted_flag,
             config,
             validator_func,
-            context_capable=validator_supports_server_context(validator_name),
             server_context=server_context,
             evidence_collector=evidence_collector,
             sensitive_submission_collector=sensitive_submission_collector,
@@ -172,12 +171,14 @@ def _invoke_programmable_validator(
     config: dict[str, Any],
     validator_func: Callable[..., object],
     *,
-    context_capable: bool,
     server_context: ReceiptSubmissionContext | None,
     evidence_collector: Callable[[VerifiedReceiptEvidence], None] | None,
     sensitive_submission_collector: Callable[[], None] | None,
 ) -> bool:
     """Invoke a registered programmable validator and fail closed."""
+    from ctf.validators import validator_supports_server_context
+
+    context_capable = validator_supports_server_context(config.get("validator_name", ""))
     is_valid = False
     try:
         if context_capable:
