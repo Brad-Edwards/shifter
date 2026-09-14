@@ -59,6 +59,7 @@ def validate_completion_evidence(value: object) -> dict[str, Any]:
 
 
 def _validate_evidence_rows(rows: object, keys: set[str], limit: int, value_limits: Mapping[str, int]) -> None:
+    """Handle validate evidence rows."""
     if not isinstance(rows, list) or len(rows) > limit:
         raise ValueError("invalid RAES completion evidence collection")
     identities = set()

@@ -119,9 +119,11 @@ def _read_contained(root: Path, relative: str) -> bytes:
 
 
 def verify_input_observations(
-    bindings: list[BoundInput], observations: list[dict], trusted_bindings: dict[str, list[str]]
+    bindings: list[BoundInput], observations: object, trusted_bindings: dict[str, list[str]]
 ) -> list[str]:
     """Require exact measured bytes and separately installed operator trust policy."""
+    if not isinstance(observations, list) or any(not isinstance(value, dict) for value in observations):
+        raise ValueError("independent input observations must be a list of objects")
     observed = [InputObservation.model_validate(value) for value in observations]
     expected = {item.lock.input_id: item for item in bindings}
     actual = {item.input_id: item for item in observed}
@@ -135,6 +137,7 @@ def verify_input_observations(
 def _verify_input_observation(
     binding: BoundInput, receipt: InputObservation, trusted_bindings: dict[str, list[str]]
 ) -> None:
+    """Handle verify input observation."""
     if (
         receipt.image_ref != binding.image_ref
         or receipt.image_id != binding.image_id

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 from .._common import (
@@ -298,29 +299,11 @@ def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violat
 def _preparation_worker_import_violations(repo_root: Path, files: list[str] | None) -> list[Violation]:
     """Keep the separately built worker behind the shared RAES facade."""
     violations: list[Violation] = []
-    if files is None:
-        packer_candidates = (repo_root / "shifter" / "packer" / "preparation").rglob("*.py")
-    else:
-        packer_candidates = (
-            repo_root / rel
-            for rel in files
-            if rel.startswith("shifter/packer/preparation/") and rel.endswith(".py")
-        )
-    for path in packer_candidates:
+    for path in _preparation_worker_candidates(repo_root, files):
         if not path.exists():
             continue
         rel = _repo_relative(path, repo_root)
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
-        except SyntaxError:
-            continue
-        imported = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                imported.add(node.module.split(".", 1)[0])
-            elif isinstance(node, ast.Import):
-                imported.update(alias.name.split(".", 1)[0] for alias in node.names)
-        for package in sorted(imported & RAES_PACKAGE_ROOTS):
+        for package in sorted(_imported_package_roots(path, rel) & RAES_PACKAGE_ROOTS):
             violations.append(
                 Violation(
                     "layer-imports",
@@ -331,6 +314,37 @@ def _preparation_worker_import_violations(repo_root: Path, files: list[str] | No
             )
 
     return violations
+
+
+def _preparation_worker_candidates(repo_root: Path, files: list[str] | None) -> Iterable[Path]:
+    """Select preparation worker Python files for a full or changed-file scan."""
+    if files is None:
+        return (repo_root / "shifter" / "packer" / "preparation").rglob("*.py")
+    return (
+        repo_root / rel
+        for rel in files
+        if rel.startswith("shifter/packer/preparation/") and rel.endswith(".py")
+    )
+
+
+def _imported_package_roots(path: Path, relative_path: str) -> set[str]:
+    """Return absolute top-level imports, or an empty set for invalid Python."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative_path)
+    except SyntaxError:
+        return set()
+    imported = {
+        node.module.split(".", 1)[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module
+    }
+    imported.update(
+        alias.name.split(".", 1)[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    )
+    return imported
 
 
 def check_cross_layer_model_imports(repo_root: Path, files: list[str] | None) -> list[Violation]:

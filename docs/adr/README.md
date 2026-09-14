@@ -23,9 +23,9 @@ new ADR or check. Runtime enforcement now includes exact-image Job admission,
 installed IAM/Kubernetes readback, separate worker identities, and fenced
 inventory admission. Their behavioral tests complement the repository guards;
 the `layer-imports` check scans the separately built preparation worker through
-its own helper while preserving the ADR-031 shared-RAES-facade restriction.
-This keeps the worker check independently maintainable without changing its
-enforced boundary.
+separate candidate-selection and import-extraction helpers while preserving the
+ADR-031 shared-RAES-facade restriction. This keeps the worker check
+independently maintainable without changing its enforced boundary.
 the [operator procedure](../ops/artifact-preparation.md) and
 [qualification record](../../shifter/packer/preparation/QUALIFICATION.md) describe
 how the deployed boundaries are exercised.

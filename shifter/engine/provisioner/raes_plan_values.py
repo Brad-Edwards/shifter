@@ -75,6 +75,7 @@ def _os_identity_term(payload: Mapping[str, Any], field: str) -> str | None:
 
 
 def _validate_optional_identity_term(value: object, field: str) -> None:
+    """Handle validate optional identity term."""
     if value is not None and (not isinstance(value, str) or not value.strip()):
         raise RaesPlanError(f"{field} must be a non-empty string")
 
@@ -133,6 +134,7 @@ def _image(payload: Mapping[str, Any]) -> RaesPlanImage | None:
 
 
 def _mapping_image(source: Mapping[str, Any]) -> RaesPlanImage:
+    """Handle mapping image."""
     name = source.get("name")
     if not isinstance(name, str) or not name.strip():
         raise RaesPlanError("source must be a named string or mapping")
@@ -185,6 +187,7 @@ def _network(address: str, payload: Mapping[str, Any]) -> RaesPlanNetwork:
 
 
 def _validate_network_term(value: object, field: str) -> None:
+    """Handle validate network term."""
     if value is not None and (not isinstance(value, str) or not value.strip()):
         raise RaesPlanError(f"network {field} must be a non-empty string")
 

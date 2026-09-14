@@ -119,19 +119,29 @@ def _validate_request(request: dict[str, Any]) -> tuple[UUID, UUID]:
     }
     if set(request) != required:
         raise ValueError("invalid contained build request")
-    if not re.fullmatch(_PROJECT, request["project_id"]) or not re.fullmatch(r"[a-z]+-[a-z]+\d-[a-z]", request["zone"]):
+    if any(
+        (
+            not re.fullmatch(_PROJECT, request["project_id"]),
+            not re.fullmatch(r"[a-z]+-[a-z]+\d-[a-z]", request["zone"]),
+        )
+    ):
         raise ValueError("invalid build scope")
     region = request["zone"].rsplit("-", 1)[0]
     network = rf"projects/{request['project_id']}/regions/{region}/subnetworks/[a-z][a-z0-9-]{{0,62}}"
-    if not re.fullmatch(network, request["subnetwork"]) or not _IMAGE.fullmatch(request["image_ref"]):
+    if any((not re.fullmatch(network, request["subnetwork"]), not _IMAGE.fullmatch(request["image_ref"]))):
         raise ValueError("invalid pinned input or network")
     if not re.fullmatch(r"[1-9]\d{0,19}", request["image_id"]):
         raise ValueError("invalid pinned image identity")
-    if type(request["max_disk_gb"]) is not int or not 1 <= request["max_disk_gb"] <= 200:
+    if not _bounded_int(request["max_disk_gb"], 1, 200):
         raise ValueError("invalid build budget")
-    if type(request["max_duration_seconds"]) is not int or not 60 <= request["max_duration_seconds"] <= 7200:
+    if not _bounded_int(request["max_duration_seconds"], 60, 7200):
         raise ValueError("invalid build duration")
     return UUID(request["operation_id"]), UUID(request["attempt_id"])
+
+
+def _bounded_int(value: object, minimum: int, maximum: int) -> bool:
+    """Accept a plain integer within the closed preparation budget."""
+    return type(value) is int and minimum <= value <= maximum
 
 
 def _guest(request: dict[str, Any], name: str, size: int, labels: dict[str, str], startup: str) -> dict[str, Any]:

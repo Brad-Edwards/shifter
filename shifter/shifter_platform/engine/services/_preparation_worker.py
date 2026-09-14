@@ -67,14 +67,15 @@ def _current_attempt(attempt: PreparationAttempt) -> None:
         for key, value in attempt.input.items()
         if key not in {"operation_id", "operation_input_digest", "phase", "evidence"}
     }
-    if (
-        canonical_payload_digest(operation.input) != operation.input_digest
-        or canonical_payload_digest(attempt.input) != attempt.input_digest
-        or inherited != operation.input
-        or attempt.input.get("operation_id") != str(operation.id)
-        or attempt.input.get("operation_input_digest") != operation.input_digest
-        or attempt.input.get("phase") != attempt.phase
-    ):
+    invalid = (
+        canonical_payload_digest(operation.input) != operation.input_digest,
+        canonical_payload_digest(attempt.input) != attempt.input_digest,
+        inherited != operation.input,
+        attempt.input.get("operation_id") != str(operation.id),
+        attempt.input.get("operation_input_digest") != operation.input_digest,
+        attempt.input.get("phase") != attempt.phase,
+    )
+    if any(invalid):
         raise ValidationError(_DENIED)
     if attempt.phase == "cleanup":
         if not operation.cleanup_pending:
@@ -84,6 +85,7 @@ def _current_attempt(attempt: PreparationAttempt) -> None:
 
 
 def _validate_active_authority(operation: PreparationOperation) -> None:
+    """Handle validate active authority."""
     if operation.state in {"cancelled", "failed", "available"} or not operation.adapter.grant.active:
         raise ValidationError(_DENIED)
     require_preparation_permission(operation.requested_by, "prepare_artifacts")

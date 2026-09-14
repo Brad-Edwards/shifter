@@ -196,6 +196,7 @@ def _existing_registration(
     request_id: str,
     idempotent: bool,
 ) -> RegisteredPack:
+    """Handle existing registration."""
     if request.expected_package_digest:
         return _replace_existing(user, request, request_id=request_id, idempotent=idempotent)
     return _reuse_existing(existing, request, idempotent=idempotent)

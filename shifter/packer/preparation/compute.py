@@ -42,7 +42,7 @@ class ProviderSession(Protocol):
 class ProviderRequestError(RuntimeError):
     """Bounded transport status, with no provider error body or private input."""
 
-    def __init__(self, status: int):
+    def __init__(self, status: int) -> None:
         self.status = status
         super().__init__(f"preparation provider request failed (HTTP {status})")
 
@@ -353,6 +353,7 @@ def _attempt_target(target: object, scope: str, stems: tuple[str, ...]) -> bool:
 
 
 def _read_receipt_lines(text: str, prefix: str, receipt: str | None) -> tuple[str | None, str]:
+    """Handle read receipt lines."""
     lines = text.split("\n")
     tail = lines.pop()
     if len(tail) > 96 * 1024:
@@ -368,6 +369,7 @@ def _read_receipt_lines(text: str, prefix: str, receipt: str | None) -> tuple[st
 
 
 def _completed_receipt(status: object, receipt: str | None, *, stopped: bool) -> str | None:
+    """Handle completed receipt."""
     if not stopped and receipt is not None and status == "RUNNING":
         return receipt
     if status != "TERMINATED":

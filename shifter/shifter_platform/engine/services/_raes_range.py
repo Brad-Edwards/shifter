@@ -123,13 +123,7 @@ def create_raes_range(
     bindings = bindings or RangeBindings()
     # Imported lazily so importing the ``engine`` app does not define models
     # before the app registry is ready.
-    from engine.models import (
-        RaesArtifactSatisfactionBinding,
-        RaesContentDeliveryBinding,
-        RaesParticipantAccessBinding,
-        Range,
-        Request,
-    )
+    from engine.models import Range, Request
 
     require_workspace_binding(workspace_id)
     request_uuid = request_id if isinstance(request_id, UUID) else UUID(str(request_id))
@@ -169,52 +163,7 @@ def create_raes_range(
             **binding_fields,
             **egress_fields,
         )
-        RaesContentDeliveryBinding.objects.bulk_create(
-            RaesContentDeliveryBinding(
-                range=range_obj,
-                content_address=binding.content_address or "",
-                resource_type=binding.resource_type or "",
-                resource_address=binding.resource_address or "",
-                payload_kind=binding.payload_kind or "",
-                install_policy=binding.install_policy or "",
-                sha256=binding.sha256,
-                storage_key=binding.storage_key,
-                byte_count=binding.byte_count,
-                binding_version=binding.binding_version,
-            )
-            for binding in bindings.delivery
-        )
-        RaesParticipantAccessBinding.objects.bulk_create(
-            RaesParticipantAccessBinding(
-                range=range_obj,
-                target_address=binding.target_address,
-                channel=binding.channel,
-                account_address=binding.account_address,
-                binding_version=binding.binding_version,
-            )
-            for binding in bindings.participant_access
-        )
-        RaesArtifactSatisfactionBinding.objects.bulk_create(
-            RaesArtifactSatisfactionBinding(
-                range=range_obj,
-                target_address=binding.target,
-                requirement_id=binding.requirement_id,
-                artifact_id=binding.artifact_id,
-                artifact_version=binding.version,
-                digest=binding.digest,
-                media_type=binding.media_type,
-                mechanism=binding.mechanism,
-                acquisition=binding.acquisition,
-                timing=binding.timing,
-                image_ref=binding.image_ref,
-                image_id=binding.image_id,
-                machine_type=binding.machine_type,
-                disk_size_gb=binding.disk_size_gb,
-                disk_type=binding.disk_type,
-                binding_version=1,
-            )
-            for binding in bindings.artifact
-        )
+        _persist_range_bindings(range_obj, bindings)
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
     try:
@@ -232,6 +181,62 @@ def create_raes_range(
 
     return RaesRangeRef(
         request_id=str(request_uuid), range_id=str(range_obj.uuid), status=range_obj.status, accepted=True
+    )
+
+
+def _persist_range_bindings(range_obj: Range, bindings: RangeBindings) -> None:
+    """Persist every byte-free RAES sidecar binding in the range transaction."""
+    from engine.models import (
+        RaesArtifactSatisfactionBinding,
+        RaesContentDeliveryBinding,
+        RaesParticipantAccessBinding,
+    )
+
+    RaesContentDeliveryBinding.objects.bulk_create(
+        RaesContentDeliveryBinding(
+            range=range_obj,
+            content_address=binding.content_address or "",
+            resource_type=binding.resource_type or "",
+            resource_address=binding.resource_address or "",
+            payload_kind=binding.payload_kind or "",
+            install_policy=binding.install_policy or "",
+            sha256=binding.sha256,
+            storage_key=binding.storage_key,
+            byte_count=binding.byte_count,
+            binding_version=binding.binding_version,
+        )
+        for binding in bindings.delivery
+    )
+    RaesParticipantAccessBinding.objects.bulk_create(
+        RaesParticipantAccessBinding(
+            range=range_obj,
+            target_address=binding.target_address,
+            channel=binding.channel,
+            account_address=binding.account_address,
+            binding_version=binding.binding_version,
+        )
+        for binding in bindings.participant_access
+    )
+    RaesArtifactSatisfactionBinding.objects.bulk_create(
+        RaesArtifactSatisfactionBinding(
+            range=range_obj,
+            target_address=binding.target,
+            requirement_id=binding.requirement_id,
+            artifact_id=binding.artifact_id,
+            artifact_version=binding.version,
+            digest=binding.digest,
+            media_type=binding.media_type,
+            mechanism=binding.mechanism,
+            acquisition=binding.acquisition,
+            timing=binding.timing,
+            image_ref=binding.image_ref,
+            image_id=binding.image_id,
+            machine_type=binding.machine_type,
+            disk_size_gb=binding.disk_size_gb,
+            disk_type=binding.disk_type,
+            binding_version=1,
+        )
+        for binding in bindings.artifact
     )
 
 

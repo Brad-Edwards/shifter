@@ -96,6 +96,7 @@ def reconcile_preparation(operation_id: UUID) -> None:
 
 
 def _lease_attempt(operation_id: UUID) -> tuple[bool, PreparationAttempt | None]:
+    """Handle lease attempt."""
     from engine.models import PreparationAttempt
 
     with _locked(operation_id) as operation:

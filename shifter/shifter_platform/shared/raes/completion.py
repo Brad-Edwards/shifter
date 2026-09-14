@@ -28,6 +28,7 @@ def _authoritative_completion_plan(
     value: Mapping[str, Any],
     generation_id: str | None,
 ) -> ProvisioningPlan:
+    """Handle authoritative completion plan."""
     if serialized_plan is None:
         raise ValueError("completion requires the immutable serialized plan")
     authoritative_plan = load_serialized_plan(serialized_plan)
@@ -41,6 +42,7 @@ def _authoritative_completion_plan(
 
 
 def _selected_carrier(plan: ProvisioningPlan, serialized_plan: Mapping[str, Any]) -> BackendRealizationEnvelopeModel:
+    """Handle selected carrier."""
     try:
         carrier = BackendRealizationEnvelopeModel.model_validate(serialized_plan.get("backend_realization_envelope"))
     except Exception as exc:
@@ -51,6 +53,7 @@ def _selected_carrier(plan: ProvisioningPlan, serialized_plan: Mapping[str, Any]
 
 
 def _verified_resources(plan: ProvisioningPlan, value: Mapping[str, Any]) -> dict[str, PlannedResource]:
+    """Handle verified resources."""
     resources = {
         address: resource
         for address, resource in plan.resources.items()
@@ -64,11 +67,24 @@ def _verified_resources(plan: ProvisioningPlan, value: Mapping[str, Any]) -> dic
     }
     if set(proved) != set(required):
         raise ValueError("completion resource coverage is incomplete")
+    _validate_verified_resource_rows(required, proved)
+    return resources
+
+
+def _validate_verified_resource_rows(
+    required: Mapping[str, PlannedResource], proved: Mapping[str, Mapping[str, Any]]
+) -> None:
+    """Validate each completion row against its planned resource and status."""
     for address, resource in required.items():
         expected_status = "provisioned" if resource.resource_type in {"node", "network"} else "verified"
-        if proved[address]["resource_type"] != resource.resource_type or proved[address]["status"] != expected_status:
+        matches_plan = all(
+            (
+                proved[address]["resource_type"] == resource.resource_type,
+                proved[address]["status"] == expected_status,
+            )
+        )
+        if not matches_plan:
             raise ValueError("completion resource verification is invalid")
-    return resources
 
 
 def load_serialized_plan(value: Mapping[str, Any]) -> ProvisioningPlan:
@@ -152,54 +168,68 @@ def _node_observations(
     os_rows, _substrates = _verified_guest_rows(value, expected)
     result: list[RealizationObservationDisclosure] = []
     for address in nodes:
-        operating_system = _observed_operating_system(address, counts[address], os_rows)
-        fields = {
-            entry.requirement_kind: entry.field_path for entry in plan.realization_authority if entry.address == address
-        }
-        constraint = next((item for item in plan.realization_constraints if item.address == address), None)
-        if (
-            constraint is not None
-            and constraint.value_domain is not None
-            and not scalar_in_domain("virtual-machine", constraint.value_domain)
-        ):
-            raise ValueError("observed substrate does not satisfy the declared constraint")
-        common = {
-            "address": address,
-            "domain": "runtime-realization",
-            "verification_scope": RealizationVerificationScope.CONFIGURATION,
-            "operation_id": plan.operation_id,
-            "envelope_digest": identity.digest,
-            "configuration_digest": identity.configuration_digest,
-            "observer_version": "shifter-gce-readback-v1",
-            "binding_verified": True,
-        }
-        result.append(
+        result.extend(_node_observation_rows(plan, address, counts[address], os_rows, identity, len(result) + 1))
+    return result
+
+
+def _node_observation_rows(
+    plan: ProvisioningPlan,
+    address: str,
+    count: int,
+    os_rows: Mapping[str, Mapping[str, Any]],
+    identity: RealizationEnvelopeIdentityModel,
+    first_sequence: int,
+) -> list[RealizationObservationDisclosure]:
+    """Build the verified OS and optional substrate observations for one node."""
+    operating_system = _observed_operating_system(address, count, os_rows)
+    fields = {
+        entry.requirement_kind: entry.field_path for entry in plan.realization_authority if entry.address == address
+    }
+    constraint = next((item for item in plan.realization_constraints if item.address == address), None)
+    if (
+        constraint is not None
+        and constraint.value_domain is not None
+        and not scalar_in_domain("virtual-machine", constraint.value_domain)
+    ):
+        raise ValueError("observed substrate does not satisfy the declared constraint")
+    common = {
+        "address": address,
+        "domain": "runtime-realization",
+        "verification_scope": RealizationVerificationScope.CONFIGURATION,
+        "operation_id": plan.operation_id,
+        "envelope_digest": identity.digest,
+        "configuration_digest": identity.configuration_digest,
+        "observer_version": "shifter-gce-readback-v1",
+        "binding_verified": True,
+    }
+    rows = [
+        RealizationObservationDisclosure(
+            **common,
+            field_path=fields.get("os-family", address),
+            requirement_kind="operating-system",
+            observation_strength=ObservationStrength.GUEST_OBSERVED,
+            operating_system=operating_system,
+            sequence=first_sequence,
+        )
+    ]
+    if constraint is not None:
+        rows.append(
             RealizationObservationDisclosure(
                 **common,
-                field_path=fields.get("os-family", address),
-                requirement_kind="operating-system",
-                observation_strength=ObservationStrength.GUEST_OBSERVED,
-                operating_system=operating_system,
-                sequence=len(result) + 1,
+                field_path=constraint.field_path,
+                requirement_kind="compute-substrate",
+                observation_strength=ObservationStrength.DAEMON_OBSERVED,
+                observed_value="virtual-machine",
+                sequence=first_sequence + 1,
             )
         )
-        if constraint is not None:
-            result.append(
-                RealizationObservationDisclosure(
-                    **common,
-                    field_path=constraint.field_path,
-                    requirement_kind="compute-substrate",
-                    observation_strength=ObservationStrength.DAEMON_OBSERVED,
-                    observed_value="virtual-machine",
-                    sequence=len(result) + 1,
-                )
-            )
-    return result
+    return rows
 
 
 def _verified_guest_rows(
     value: Mapping[str, list[dict[str, Any]]], expected: set[str]
 ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    """Handle verified guest rows."""
     os_rows = {row["instance_key"]: row for row in value["operating_systems"]}
     substrates = {row["instance_key"]: row["value"] for row in value["compute_substrates"]}
     if (
@@ -214,6 +244,7 @@ def _verified_guest_rows(
 def _observed_operating_system(
     address: str, count: int, os_rows: Mapping[str, Mapping[str, Any]]
 ) -> ObservedOperatingSystemIdentity:
+    """Handle observed operating system."""
     identities = {
         (
             os_rows[f"{address}#{index}"]["family"],

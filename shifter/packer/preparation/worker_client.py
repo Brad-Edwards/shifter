@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 from uuid import UUID
 
 import requests
@@ -38,22 +38,9 @@ class WorkerClient:
         session: HTTPSession | None = None,
     ) -> None:
         url = urlsplit(endpoint)
-        try:
-            port = url.port
-        except ValueError as exc:
-            raise ValueError("invalid preparation worker endpoint") from exc
-        if (
-            url.scheme != "https"
-            or not url.hostname
-            or port not in {None, 443}
-            or url.username is not None
-            or url.password is not None
-            or url.query
-            or url.fragment
-            or url.path != _PATH
-        ):
+        if not _valid_endpoint(url):
             raise ValueError("invalid preparation worker endpoint")
-        if not token or len(token) > 256 or any(char.isspace() for char in token):
+        if not _valid_token(token):
             raise ValueError("invalid preparation worker credential")
         self.url = endpoint + str(operation_id) + "/"
         self._token = token
@@ -90,6 +77,31 @@ class WorkerClient:
             return parse_bounded_json_object(bytes(body), max_bytes=_LIMIT)
         finally:
             response.close()
+
+
+def _valid_endpoint(url: SplitResult) -> bool:
+    """Accept only the fixed HTTPS worker path without embedded authority."""
+    try:
+        port = url.port
+    except ValueError:
+        return False
+    return not any(
+        (
+            url.scheme != "https",
+            not url.hostname,
+            port not in {None, 443},
+            url.username is not None,
+            url.password is not None,
+            bool(url.query),
+            bool(url.fragment),
+            url.path != _PATH,
+        )
+    )
+
+
+def _valid_token(token: str) -> bool:
+    """Accept one bounded bearer token without whitespace."""
+    return bool(token) and len(token) <= 256 and not any(char.isspace() for char in token)
 
 
 def main() -> None:

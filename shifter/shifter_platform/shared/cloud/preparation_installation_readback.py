@@ -62,6 +62,7 @@ def verify_kubernetes_installation(
 
 
 def _verify_rollout_status(observed: dict[str, Any], kind: str) -> None:
+    """Handle verify rollout status."""
     status = observed.get("status", {})
     if kind in {"Deployment", "ValidatingAdmissionPolicy"} and status.get("observedGeneration") != observed[
         "metadata"
@@ -116,6 +117,7 @@ def _contains(observed: object, expected: object, field: str = "") -> bool:
 
 
 def _contains_mapping(observed: object, expected: dict[str, Any], field: str) -> bool:
+    """Handle contains mapping."""
     if not isinstance(observed, dict):
         return False
     observed = _mapping_api_defaults(observed, expected, field)
@@ -143,6 +145,7 @@ def _mapping_api_defaults(observed: dict[str, Any], expected: dict[str, Any], fi
 
 
 def _contains_list(observed: object, expected: list[Any], field: str) -> bool:
+    """Handle contains list."""
     return (
         isinstance(observed, list)
         and len(observed) == len(expected)

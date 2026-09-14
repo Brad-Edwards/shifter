@@ -89,6 +89,7 @@ class PreparationGrantConfiguration(BaseModel):
 
 
 def _validate_accounts_and_network(grant: PreparationGrantConfiguration) -> None:
+    """Handle validate accounts and network."""
     accounts = (grant.builder_service_account, grant.verifier_service_account, grant.cleanup_service_account)
     if len(set(accounts)) != 3 or any(not value.startswith("preparation-") for value in accounts):
         raise ValueError("preparation worker identities must be separate dedicated service accounts")
@@ -102,6 +103,7 @@ def _validate_accounts_and_network(grant: PreparationGrantConfiguration) -> None
 
 
 def _validate_worker_endpoint(worker_endpoint: str) -> None:
+    """Handle validate worker endpoint."""
     endpoint = urlsplit(worker_endpoint)
     try:
         endpoint_port = endpoint.port
@@ -121,6 +123,7 @@ def _validate_worker_endpoint(worker_endpoint: str) -> None:
 
 
 def _validate_grant_collections(grant: PreparationGrantConfiguration) -> None:
+    """Handle validate grant collections."""
     for values in (
         grant.image_pull_secrets,
         grant.registry_prefixes,

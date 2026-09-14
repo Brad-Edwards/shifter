@@ -32,6 +32,7 @@ class GceNetworkAllocation:
 
 
 def _allocated_cidr(realized: dict[str, Any]) -> str:
+    """Handle allocated cidr."""
     subnets = realized.get("subnets")
     if not isinstance(subnets, list) or len(subnets) != 1:
         raise RaesRealizationError("GCE adapter subnet allocation is invalid")

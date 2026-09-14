@@ -53,6 +53,7 @@ def _linux_identity(output: str) -> dict[str, str]:
 
 
 def _linux_release_values(output: str) -> dict[str, str]:
+    """Handle linux release values."""
     values: dict[str, str] = {}
     for line in output.splitlines():
         key, separator, value = line.partition("=")
@@ -68,6 +69,7 @@ def _linux_release_values(output: str) -> dict[str, str]:
 
 
 def _linux_release_version(distribution: str, values: dict[str, str]) -> str:
+    """Handle linux release version."""
     version = values.get("VERSION_ID")
     # This namespaced distribution declares its rolling channel explicitly;
     # do not infer it from a downloaded image name or numeric release label.
@@ -175,24 +177,20 @@ def validate_operating_systems(plan: RaesPlan, observations: object) -> None:
 
 
 def _validate_operating_system(observation: object, expected: dict[str, Any]) -> str:
-    if not isinstance(observation, dict) or set(observation) != {
-        "instance_key",
-        "family",
-        "distribution",
-        "version",
-    }:
-        raise _fail()
-    if not all(isinstance(value, str) for value in observation.values()):
+    """Handle validate operating system."""
+    required = {"instance_key", "family", "distribution", "version"}
+    if not isinstance(observation, dict) or set(observation) != required:
         raise _fail()
     key = observation["instance_key"]
-    if key not in expected:
+    if not all(isinstance(value, str) for value in observation.values()) or key not in expected:
         raise _fail()
     node = expected[key]
-    if node.os_family and observation["family"] != node.os_family:
-        raise _fail()
-    if node.os_distribution is not None and observation["distribution"] != node.os_distribution:
-        raise _fail()
-    if node.os_version is not None and observation["version"] != node.os_version:
+    authored = (
+        (node.os_family, observation["family"]),
+        (node.os_distribution, observation["distribution"]),
+        (node.os_version, observation["version"]),
+    )
+    if any(wanted is not None and actual != wanted for wanted, actual in authored):
         raise _fail()
     _version(observation["version"])
     return key

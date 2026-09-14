@@ -103,7 +103,7 @@ class PreparationWorkerResult(BaseModel):
     phase: Phase
     status: Literal["succeeded", "failed"]
     failure_code: FailureCode
-    evidence: dict
+    evidence: dict[str, object]
 
     @model_validator(mode="after")
     def validate_evidence(self) -> PreparationWorkerResult:

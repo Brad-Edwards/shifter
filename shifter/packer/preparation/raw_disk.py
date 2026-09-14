@@ -97,6 +97,7 @@ def verify_sanitized_root(root: Path) -> None:
 
 
 def _verify_machine_identities(root: Path) -> None:
+    """Handle verify machine identities."""
     machine_id = candidate_path(root, "etc/machine-id")
     if machine_id.exists() and (not machine_id.is_file() or machine_id.stat().st_size):
         raise ValueError("candidate retains a machine identity")
@@ -109,6 +110,7 @@ def _verify_machine_identities(root: Path) -> None:
 
 
 def _verify_ssh_identities(root: Path) -> None:
+    """Handle verify ssh identities."""
     keys = _entries(candidate_path(root, "etc/ssh"))
     if any(key.name.startswith("ssh_host_") for key in keys):
         raise ValueError("candidate retains an SSH host identity")

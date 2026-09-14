@@ -95,19 +95,20 @@ def _verify_scanner(instance: dict[str, Any], network: str, boot: str, data: str
     """Handle verify scanner."""
     interfaces = instance.get("networkInterfaces", [])
     disks = instance.get("disks", [])
-    if (
-        instance.get("serviceAccounts")
-        or len(interfaces) != 1
-        or interfaces[0].get("accessConfigs")
-        or interfaces[0].get("ipv6AccessConfigs")
-        or not _same_ref(interfaces[0].get("subnetwork"), network)
-        or len(disks) != 2
-        or not _same_ref(disks[0].get("source"), boot)
-        or disks[0].get("boot") is not True
-        or not _same_ref(disks[1].get("source"), data)
-        or disks[1].get("mode") != "READ_ONLY"
-        or disks[1].get("deviceName") != "shifter-candidate"
-    ):
+    if len(interfaces) != 1 or len(disks) != 2:
+        raise ValueError("independent scanner isolation could not be verified")
+    invalid = (
+        bool(instance.get("serviceAccounts")),
+        bool(interfaces[0].get("accessConfigs")),
+        bool(interfaces[0].get("ipv6AccessConfigs")),
+        not _same_ref(interfaces[0].get("subnetwork"), network),
+        not _same_ref(disks[0].get("source"), boot),
+        disks[0].get("boot") is not True,
+        not _same_ref(disks[1].get("source"), data),
+        disks[1].get("mode") != "READ_ONLY",
+        disks[1].get("deviceName") != "shifter-candidate",
+    )
+    if any(invalid):
         raise ValueError("independent scanner isolation could not be verified")
 
 

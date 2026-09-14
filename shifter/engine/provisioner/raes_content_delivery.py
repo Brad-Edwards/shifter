@@ -89,6 +89,9 @@ class RaesContentDeliveryError(RuntimeError):
     """Value-free failure at the RAES content-delivery realization boundary."""
 
 
+_INVALID_SERVICE_FEATURE = "RAES service feature contract is invalid"
+
+
 @dataclass(frozen=True)
 class RaesContentDeliveryOps:
     """Injectable object-storage, execution, and orchestration operations."""
@@ -341,14 +344,15 @@ def _realize_service_on_instance(
 
 
 def _validated_service_feature(feature: RaesPlanFeature) -> tuple[str, str | None]:
+    """Handle validated service feature."""
     package = feature.source_name or ""
     version = feature.source_version
     if not SAFE_SERVICE_IDENTITY.fullmatch(package):
-        raise RaesContentDeliveryError("RAES service feature contract is invalid")
+        raise RaesContentDeliveryError(_INVALID_SERVICE_FEATURE)
     if version is not None and not SAFE_SERVICE_IDENTITY.fullmatch(version):
-        raise RaesContentDeliveryError("RAES service feature contract is invalid")
+        raise RaesContentDeliveryError(_INVALID_SERVICE_FEATURE)
     if feature.has_environment:
-        raise RaesContentDeliveryError("RAES service feature contract is invalid")
+        raise RaesContentDeliveryError(_INVALID_SERVICE_FEATURE)
     return package, version
 
 

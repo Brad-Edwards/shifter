@@ -42,6 +42,7 @@ _EXTRACT_DIRNAME = "pack"
 
 
 def _download_archive(storage: ObjectStorage, bucket: str, key: str, staging: Path, max_archive_bytes: int) -> Path:
+    """Handle download archive."""
     from shared.cloud.exceptions import CloudStorageError, ObjectPreconditionError
 
     try:
@@ -68,6 +69,7 @@ def _download_archive(storage: ObjectStorage, bucket: str, key: str, staging: Pa
 
 
 def _staged_pack_root(staging: Path, extract_dir: Path, expected_pack_name: str) -> Path:
+    """Handle staged pack root."""
     if not expected_pack_name or not (extract_dir / "pack.yaml").is_file():
         return _single_pack_root(extract_dir)
     named_parent = staging / "named"

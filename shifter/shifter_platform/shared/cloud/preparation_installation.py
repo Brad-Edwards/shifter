@@ -91,7 +91,7 @@ def _resource(
     return {"apiVersion": api, "kind": kind, "metadata": metadata, **fields}
 
 
-def render_preparation_installation(configuration: PreparationInstallation) -> list[dict]:
+def render_preparation_installation(configuration: PreparationInstallation) -> list[dict[str, Any]]:
     """Render a closed post-setup add-on; no platform or provisioner authority is widened."""
     from shared.cloud.preparation_policy import preparation_policy
 
@@ -231,11 +231,7 @@ def _controller(configuration: PreparationInstallation) -> dict[str, Any]:
                                 *[
                                     {
                                         "name": key,
-                                        "value": (
-                                            f"projects/{configuration.grant.project_id}/secrets/{configuration.controller_secret_ids[key]}"
-                                            if key in configuration.controller_secret_ids
-                                            else ""
-                                        ),
+                                        "value": _controller_secret_ref(configuration, key),
                                     }
                                     for key in SECRET_ENV
                                 ],
@@ -267,6 +263,13 @@ def _controller(configuration: PreparationInstallation) -> dict[str, Any]:
             },
         },
     )
+
+
+def _controller_secret_ref(configuration: PreparationInstallation, key: str) -> str:
+    """Return a fully qualified controller secret reference when configured."""
+    if key not in configuration.controller_secret_ids:
+        return ""
+    return f"projects/{configuration.grant.project_id}/secrets/{configuration.controller_secret_ids[key]}"
 
 
 def _network_policies(configuration: PreparationInstallation) -> list[dict[str, Any]]:

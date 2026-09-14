@@ -228,6 +228,7 @@ def _isolated_guest(
     subnetwork: str,
     has_data_disk: bool,
 ) -> bool:
+    """Handle isolated guest."""
     return (
         value.get("status") == status
         and not value.get("serviceAccounts")

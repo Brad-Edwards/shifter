@@ -101,6 +101,7 @@ def _project_request_spec(key: str, project: str) -> tuple[str, str, dict[str, A
 def _iam_request_spec(
     configuration: PreparationInstallation, key: str, iam: str, project: str
 ) -> tuple[str, str, dict[str, Any] | None, dict[str, Any]] | None:
+    """Handle iam request spec."""
     spec: tuple[str, str, dict[str, Any] | None, dict[str, Any]] | None = None
     if key.startswith("role:"):
         spec = ("GET", iam + role_name(configuration, key.split(":", 1)[1]), None, {})
@@ -138,6 +139,7 @@ def _secret_or_cluster_request_spec(
 def _compute_request_spec(
     key: str, compute: str, project: str, network: str, subnetwork: str, region: str
 ) -> tuple[str, str, dict[str, Any] | None, dict[str, Any]]:
+    """Handle compute request spec."""
     if key in {"network", "subnetwork", "subnetwork-policy"}:
         url = compute + (network if key == "network" else subnetwork)
         params: dict[str, Any] = {}
@@ -167,6 +169,7 @@ def verify_cloud_installation(
 
 
 def _verify_roles(read: Callable[[str], dict[str, Any] | None]) -> None:
+    """Handle verify roles."""
     for key, permissions in PERMISSIONS.items():
         observed = read("role:" + key) or {}
         if (
@@ -178,6 +181,7 @@ def _verify_roles(read: Callable[[str], dict[str, Any] | None]) -> None:
 
 
 def _verify_cluster(configuration: PreparationInstallation, cluster: Mapping[str, Any]) -> None:
+    """Handle verify cluster."""
     workload_pool = cluster.get("workloadIdentityConfig", {}).get("workloadPool")
     network_policy = cluster.get("networkConfig", {}).get("datapathProvider") == "ADVANCED_DATAPATH"
     network_policy = network_policy or cluster.get("networkPolicy", {}).get("enabled") is True
@@ -245,6 +249,7 @@ def _verify_identity(
     actor: str,
     email: str,
 ) -> None:
+    """Handle verify identity."""
     observed = read("identity:" + actor) or {}
     policy = read("identity-policy:" + actor) or {}
     expected = [{"role": "roles/iam.workloadIdentityUser", "members": [workload_member(configuration, actor)]}]
@@ -269,16 +274,17 @@ def _verify_network(
     grant = configuration.grant
     reference = f"projects/{grant.project_id}/global/networks/" + grant.subnetwork.rsplit("/", 1)[1]
     network, subnet = read("network") or {}, read("subnetwork") or {}
-    if (
-        network.get("autoCreateSubnetworks") is not False
-        or network.get("peerings")
-        or network.get("routingConfig", {}).get("routingMode") != "REGIONAL"
-        or _relative(subnet.get("network")) != reference
-        or subnet.get("ipCidrRange") != configuration.network_cidr
-        or subnet.get("privateIpGoogleAccess")
-        or subnet.get("stackType", "IPV4_ONLY") != "IPV4_ONLY"
-        or subnet.get("secondaryIpRanges")
-    ):
+    invalid = (
+        network.get("autoCreateSubnetworks") is not False,
+        bool(network.get("peerings")),
+        network.get("routingConfig", {}).get("routingMode") != "REGIONAL",
+        _relative(subnet.get("network")) != reference,
+        subnet.get("ipCidrRange") != configuration.network_cidr,
+        bool(subnet.get("privateIpGoogleAccess")),
+        subnet.get("stackType", "IPV4_ONLY") != "IPV4_ONLY",
+        bool(subnet.get("secondaryIpRanges")),
+    )
+    if any(invalid):
         raise ValueError("preparation network is not the configured isolated subnet")
     for kind in ("routes", "routers", "firewalls"):
         _verify_network_resources(configuration, read, kind, reference)
@@ -290,19 +296,40 @@ def _verify_network_resources(
     kind: str,
     reference: str,
 ) -> None:
+    """Handle verify network resources."""
     observation = read(kind)
     if not isinstance(observation, dict):
         raise ValueError("preparation network observation is unavailable")
     items = [item for item in observation.get("items", []) if _relative(item.get("network")) == reference]
-    if kind == "routers" and items:
+    if kind == "routers":
+        _verify_no_routers(items)
+    elif kind == "routes":
+        _verify_local_route(items, configuration.network_cidr, reference)
+    else:
+        _verify_probe_firewall(items)
+
+
+def _verify_no_routers(items: list[Mapping[str, Any]]) -> None:
+    """Reject every router or NAT attached to the preparation network."""
+    if items:
         raise ValueError("preparation network must not have routers or NAT")
-    if kind == "routes" and (
-        len(items) != 1
-        or items[0].get("destRange") != configuration.network_cidr
-        or _relative(items[0].get("nextHopNetwork")) != reference
-    ):
+
+
+def _verify_local_route(items: list[Mapping[str, Any]], network_cidr: str, reference: str) -> None:
+    """Require exactly the provider-created local subnet route."""
+    if len(items) != 1:
         raise ValueError("preparation network must have only its local subnet route")
-    if kind == "firewalls" and (len(items) != 1 or not _probe_firewall(items[0])):
+    invalid = (
+        items[0].get("destRange") != network_cidr,
+        _relative(items[0].get("nextHopNetwork")) != reference,
+    )
+    if any(invalid):
+        raise ValueError("preparation network must have only its local subnet route")
+
+
+def _verify_probe_firewall(items: list[Mapping[str, Any]]) -> None:
+    """Require exactly the contained boot-probe firewall."""
+    if len(items) != 1 or not _probe_firewall(items[0]):
         raise ValueError("preparation network must have only its contained boot-probe firewall")
 
 

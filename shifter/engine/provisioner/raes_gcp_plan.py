@@ -177,6 +177,7 @@ def build_raes_range_cell_plan(
 def _plan_options(
     options: GCERangeCellConfig | RaesGcePlanOptions | None, legacy: dict[str, object]
 ) -> RaesGcePlanOptions:
+    """Handle plan options."""
     resolved = options if isinstance(options, RaesGcePlanOptions) else RaesGcePlanOptions(config=options)
     allowed = {"config", "access_bindings", "egress_policy", "allocated_network_cidr", "reconstruct_for_teardown"}
     if set(legacy) - allowed:

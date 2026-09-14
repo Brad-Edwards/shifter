@@ -74,6 +74,7 @@ def _read_tree(directory: Path) -> dict[str, bytes]:
 
 
 def _read_context_file(path: Path, remaining: int) -> tuple[Path, bytes]:
+    """Handle read context file."""
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode):
         raise ContextError("installed context contains a non-regular file")

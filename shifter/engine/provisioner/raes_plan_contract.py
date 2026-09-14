@@ -34,6 +34,7 @@ def prepare_envelope(envelope: Mapping[str, Any], *, cleanup_only: bool) -> Mapp
 
 
 def _validate_collection_fields(envelope: Mapping[str, Any]) -> None:
+    """Handle validate collection fields."""
     for field in ("operations", "realization_authority", "realization_constraints"):
         value = envelope.get(field, [])
         if not isinstance(value, list) or len(value) > 65536 or any(not isinstance(item, dict) for item in value):
@@ -41,23 +42,36 @@ def _validate_collection_fields(envelope: Mapping[str, Any]) -> None:
 
 
 def _validate_operation_id(identity: object) -> None:
+    """Handle validate operation id."""
     if identity is not None and (not isinstance(identity, str) or not identity.strip() or len(identity) > 128):
         raise RaesPlanError("operation_id must be a bounded non-empty string")
 
 
 def _validate_carrier_identity(carrier: object) -> Mapping[str, Any] | None:
+    """Handle validate carrier identity."""
     if carrier is None:
         return None
     required = {"contract_id", "envelope_id", "schema_version", "digest", "configuration_digest"}
     if not isinstance(carrier, dict) or set(carrier) != required:
         raise RaesPlanError("realization_envelope has an invalid identity")
+    _validate_carrier_values(carrier)
+    return carrier
+
+
+def _validate_carrier_values(carrier: Mapping[str, Any]) -> None:
+    """Validate bounded carrier values and the supported contract version."""
     if any(not isinstance(value, str) or not value or len(value) > 256 for value in carrier.values()):
         raise RaesPlanError("realization_envelope has an invalid identity")
-    if carrier["contract_id"] != "realization-envelope-v1" or carrier["schema_version"] != "realization-envelope/v1":
+    supported_version = all(
+        (
+            carrier["contract_id"] == "realization-envelope-v1",
+            carrier["schema_version"] == "realization-envelope/v1",
+        )
+    )
+    if not supported_version:
         raise RaesPlanError("realization_envelope has an unsupported version")
     if any(re.fullmatch(r"sha256:[a-f0-9]{64}", carrier[key]) is None for key in ("digest", "configuration_digest")):
         raise RaesPlanError("realization_envelope has an invalid digest")
-    return carrier
 
 
 def _validate_selected_carrier(value: object, identity: object) -> None:
@@ -67,13 +81,31 @@ def _validate_selected_carrier(value: object, identity: object) -> None:
     required = {"schema_version", "contract_id", "id", "expression", "configuration", "concerns", "digest"}
     if set(value) != required:
         raise RaesPlanError("backend_realization_envelope has invalid fields")
-    if (
-        value.get("schema_version") != "realization-envelope/v1"
-        or value.get("contract_id") != "realization-envelope-v1"
+    _validate_selected_carrier_identity(value, identity)
+    _validate_selected_carrier_shape(value, identity)
+
+
+def _validate_selected_carrier_identity(value: Mapping[str, Any], identity: Mapping[str, Any]) -> None:
+    """Validate the selected carrier's version and immutable identity."""
+    if any(
+        (
+            value.get("schema_version") != "realization-envelope/v1",
+            value.get("contract_id") != "realization-envelope-v1",
+        )
     ):
         raise RaesPlanError("backend_realization_envelope has an unsupported version")
-    if value.get("id") != identity.get("envelope_id") or value.get("digest") != identity.get("digest"):
+    matches_identity = all(
+        (
+            value.get("id") == identity.get("envelope_id"),
+            value.get("digest") == identity.get("digest"),
+        )
+    )
+    if not matches_identity:
         raise RaesPlanError("backend_realization_envelope diverges from the plan identity")
+
+
+def _validate_selected_carrier_shape(value: Mapping[str, Any], identity: Mapping[str, Any]) -> None:
+    """Validate the selected carrier's configuration identity and shape."""
     configuration = value.get("configuration")
     if not isinstance(configuration, Mapping) or configuration.get("configuration_digest") != identity.get(
         "configuration_digest"
@@ -98,6 +130,16 @@ def _validate_authority(envelope: Mapping[str, Any]) -> None:
 def _validate_authority_row(
     row: Mapping[str, Any], resources: object, required: set[str], optional: set[str]
 ) -> tuple[str, str]:
+    """Handle validate authority row."""
+    identity = _validate_authority_identity(row, resources, required, optional)
+    _validate_authority_metadata(row, optional)
+    return identity
+
+
+def _validate_authority_identity(
+    row: Mapping[str, Any], resources: object, required: set[str], optional: set[str]
+) -> tuple[str, str]:
+    """Validate the closed authority identity and supported posture."""
     if not required <= set(row) or set(row) - required - optional:
         raise RaesPlanError("realization_authority has invalid fields")
     if any(not isinstance(row[key], str) or not row[key] or len(row[key]) > 1024 for key in required):
@@ -105,61 +147,95 @@ def _validate_authority_row(
     identity = (row["address"], row["field_path"])
     if not isinstance(resources, Mapping) or row["address"] not in resources:
         raise RaesPlanError("realization_authority has an invalid resource identity")
-    if row["mode"] not in {"closed", "open", "exact", "constrained"}:
+    _validate_authority_posture(row)
+    return identity
+
+
+def _validate_authority_posture(row: Mapping[str, Any]) -> None:
+    """Validate supported authority modes, sources, and payload pointers."""
+    supported_mode = row["mode"] in {"closed", "open", "exact", "constrained"}
+    if not supported_mode:
         raise RaesPlanError("realization_authority has an unsupported posture")
-    if row["source"] not in {
+    supported_source = row["source"] in {
         "authored-leaf",
         "authored-scope",
         "apparatus-default",
         "legacy-default",
         "processor-derived",
-    }:
+    }
+    if not supported_source:
         raise RaesPlanError("realization_authority has an unsupported source")
     if re.fullmatch(r"(?:/(?:[^~/]|~[01])*)+", row["payload_pointer"]) is None:
         raise RaesPlanError("realization_authority has an invalid payload pointer")
+
+
+def _validate_authority_metadata(row: Mapping[str, Any], optional: set[str]) -> None:
+    """Validate bounded optional authority metadata and unsupported bounds."""
     if row.get("bounds", []) != []:
         raise RaesPlanError("realization_authority bounds require unsupported constrained realization")
     for field in optional - {"bounds"}:
         value = row.get(field)
         if value is not None and (not isinstance(value, str) or not value or len(value) > 1024):
             raise RaesPlanError("realization_authority has malformed optional metadata")
-    return identity
 
 
 def _validate_constraints(envelope: Mapping[str, Any]) -> None:
     """This VM backend cannot approximate an authored substrate constraint."""
     seen: set[str] = set()
+    resources = envelope.get("resources", {})
     for constraint in envelope.get("realization_constraints", []):
-        required = {"address", "field_path", "concern", "posture", "value_domain", "governing_scope", "provenance"}
-        if set(constraint) != required or constraint.get("concern") != "compute-substrate":
-            raise RaesPlanError("realization_constraints contain an unsupported constraint")
-        address = constraint["address"]
-        resources = envelope.get("resources", {})
-        if (
-            not isinstance(address, str)
-            or address in seen
-            or not isinstance(resources, Mapping)
-            or address not in resources
-        ):
-            raise RaesPlanError("realization_constraints have an invalid resource identity")
+        address = _validate_constraint_identity(constraint, resources, seen)
         seen.add(address)
-        domain = constraint["value_domain"]
-        posture = constraint["posture"]
-        if posture == "open" and domain is None:
-            continue
-        if not isinstance(domain, dict):
-            raise RaesPlanError("realization_constraints require a supported substrate domain")
-        if posture == "exact" and domain == {"kind": "exact", "value": "virtual-machine"}:
-            continue
-        if posture == "constrained" and set(domain) == {"kind", "values"} and domain["kind"] == "enum":
-            values = domain["values"]
-            if (
-                isinstance(values, list)
-                and all(isinstance(value, str) for value in values)
-                and "virtual-machine" in values
-            ):
-                continue
-        raise RaesPlanError("realization_constraints do not permit the virtual-machine substrate")
+        _validate_constraint_domain_shape(constraint)
+        if not _constraint_permits_virtual_machine(constraint):
+            raise RaesPlanError("realization_constraints do not permit the virtual-machine substrate")
+
+
+def _validate_constraint_identity(constraint: Mapping[str, Any], resources: object, seen: set[str]) -> str:
+    """Validate a unique compute-substrate constraint identity."""
+    required = {"address", "field_path", "concern", "posture", "value_domain", "governing_scope", "provenance"}
+    if set(constraint) != required or constraint.get("concern") != "compute-substrate":
+        raise RaesPlanError("realization_constraints contain an unsupported constraint")
+    address = constraint["address"]
+    if not isinstance(address, str):
+        raise RaesPlanError("realization_constraints have an invalid resource identity")
+    invalid = any(
+        (
+            address in seen,
+            not isinstance(resources, Mapping),
+            isinstance(resources, Mapping) and address not in resources,
+        )
+    )
+    if invalid:
+        raise RaesPlanError("realization_constraints have an invalid resource identity")
+    return address
+
+
+def _validate_constraint_domain_shape(constraint: Mapping[str, Any]) -> None:
+    """Reject missing closed-domain structure before testing permitted values."""
+    if constraint["posture"] != "open" and not isinstance(constraint["value_domain"], dict):
+        raise RaesPlanError("realization_constraints require a supported substrate domain")
+
+
+def _constraint_permits_virtual_machine(constraint: Mapping[str, Any]) -> bool:
+    """Return whether the authored domain permits a virtual-machine substrate."""
+    domain = constraint["value_domain"]
+    posture = constraint["posture"]
+    if posture == "open":
+        return domain is None
+    if not isinstance(domain, dict):
+        return False
+    if posture == "exact":
+        return domain == {"kind": "exact", "value": "virtual-machine"}
+    values = domain.get("values")
+    return (
+        posture == "constrained"
+        and set(domain) == {"kind", "values"}
+        and domain.get("kind") == "enum"
+        and isinstance(values, list)
+        and all(isinstance(value, str) for value in values)
+        and "virtual-machine" in values
+    )
 
 
 def _validate_operations(envelope: Mapping[str, Any]) -> None:
@@ -174,6 +250,14 @@ def _validate_operations(envelope: Mapping[str, Any]) -> None:
 
 
 def _validate_operation(operation: Mapping[str, Any], resources: object) -> str:
+    """Handle validate operation."""
+    address, resource = _operation_resource(operation, resources)
+    _validate_operation_dependencies(operation, resource, resources)
+    return address
+
+
+def _operation_resource(operation: Mapping[str, Any], resources: object) -> tuple[str, Mapping[str, Any]]:
+    """Return the operation's matching resource after identity checks."""
     address = operation.get("address")
     if not isinstance(address, str) or not isinstance(resources, Mapping) or address not in resources:
         raise RaesPlanError("operations reference an unknown resource")
@@ -184,19 +268,33 @@ def _validate_operation(operation: Mapping[str, Any], resources: object) -> str:
         raise RaesPlanError("operations diverge from resource types")
     if operation.get("action") not in {"create", "unchanged"}:
         raise RaesPlanError("operations require unsupported incremental realization")
+    return address, resource
+
+
+def _validate_operation_dependencies(
+    operation: Mapping[str, Any], resource: Mapping[str, Any], resources: object
+) -> None:
+    """Validate fresh-create ordering and refresh dependencies."""
+    refresh, ordering, resources = _operation_dependencies(operation, resources)
+    # On a fresh create, each dependent is realized after its prerequisites.
+    # No incremental reapply is supported by this reader.
+    if not set(refresh) <= set(ordering) or list(refresh) != resource.get("refresh_dependencies", []):
+        raise RaesPlanError("operations refresh_dependencies require fresh-create ordering")
+    if list(ordering) != resource.get("ordering_dependencies", []) or any(item not in resources for item in ordering):
+        raise RaesPlanError("operations ordering_dependencies diverge from the complete plan")
+
+
+def _operation_dependencies(
+    operation: Mapping[str, Any], resources: object
+) -> tuple[tuple[str, ...], tuple[str, ...], Mapping[str, Any]]:
+    """Return bounded dependency addresses and the validated resource map."""
     refresh = operation.get("refresh_dependencies", [])
     ordering = operation.get("ordering_dependencies", [])
-    if not isinstance(refresh, list) or not isinstance(ordering, list):
+    if not isinstance(resources, Mapping) or not isinstance(refresh, list) or not isinstance(ordering, list):
         raise RaesPlanError("operations dependencies must be address lists")
     if any(not isinstance(item, str) for item in (*refresh, *ordering)):
         raise RaesPlanError("operations dependencies must be address lists")
-    # On a fresh create, each dependent is realized after its prerequisites.
-    # No incremental reapply is supported by this reader.
-    if not set(refresh) <= set(ordering) or refresh != resource.get("refresh_dependencies", []):
-        raise RaesPlanError("operations refresh_dependencies require fresh-create ordering")
-    if ordering != resource.get("ordering_dependencies", []) or any(item not in resources for item in ordering):
-        raise RaesPlanError("operations ordering_dependencies diverge from the complete plan")
-    return address
+    return tuple(refresh), tuple(ordering), resources
 
 
 def _legacy_cleanup(envelope: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -206,17 +304,23 @@ def _legacy_cleanup(envelope: Mapping[str, Any]) -> Mapping[str, Any]:
     if not isinstance(resources, dict):
         raise RaesPlanError("resources must be an object")
     for resource in resources.values():
-        if not isinstance(resource, dict) or not isinstance(resource.get("payload"), dict):
-            continue
-        payload = resource["payload"]
-        address = resource.get("address")
-        if not payload.get("name") and not payload.get("node_name") and isinstance(address, str):
-            payload["name"] = address.rsplit(".", 1)[-1]
-        spec = payload.get("spec")
-        if (
-            resource.get("resource_type") == "account-placement"
-            and isinstance(spec, dict)
-            and spec.get("auth_method") == "publickey"
-        ):
-            spec["auth_method"] = "key"
+        _normalize_legacy_resource(resource)
     return result
+
+
+def _normalize_legacy_resource(resource: object) -> None:
+    """Normalize one legacy cleanup resource without changing its identity."""
+    if not isinstance(resource, dict) or not isinstance(resource.get("payload"), dict):
+        return
+    payload = resource["payload"]
+    address = resource.get("address")
+    if not payload.get("name") and not payload.get("node_name") and isinstance(address, str):
+        payload["name"] = address.rsplit(".", 1)[-1]
+    spec = payload.get("spec")
+    is_public_key_account = (
+        resource.get("resource_type") == "account-placement"
+        and isinstance(spec, dict)
+        and spec.get("auth_method") == "publickey"
+    )
+    if is_public_key_account:
+        spec["auth_method"] = "key"

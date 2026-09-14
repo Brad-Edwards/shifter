@@ -19,6 +19,7 @@ def _compiled_requirements(
     scenario: Scenario | ExpandedScenario | InstantiatedScenario,
     parameters: Mapping[str, object] | None,
 ) -> dict[str, ArtifactRequirement]:
+    """Handle compiled requirements."""
     compiled = compile_scenario_runtime_model(scenario, parameters=parameters)
     requirements: dict[str, ArtifactRequirement] = {}
     for item in compiled.realization_requirements:
@@ -37,6 +38,7 @@ def _artifact_supply(
     ]
     | None,
 ) -> ArtifactSupply:
+    """Handle artifact supply."""
     supplied = supply_provider(requirements) if supply_provider is not None and requirements else None
     if isinstance(supplied, ArtifactSupply):
         return supplied
@@ -48,6 +50,7 @@ def _artifact_supply(
 def _availability_facts(
     requirements: Mapping[str, ArtifactRequirement], supply: ArtifactSupply, capabilities: list[str]
 ) -> list[ArtifactRequirementAvailability]:
+    """Handle availability facts."""
     facts = []
     for address, requirement in requirements.items():
         result = resolve_artifact_requirement(

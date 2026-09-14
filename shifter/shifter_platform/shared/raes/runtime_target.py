@@ -359,6 +359,7 @@ def _completed_apply_result(
     diagnostics: list[Diagnostic],
     result: ShifterDispatchResult,
 ) -> ApplyResult:
+    """Handle completed apply result."""
     from shared.raes.completion import completed_snapshot
 
     if not result.accepted or result.completion is None:

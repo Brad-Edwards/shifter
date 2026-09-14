@@ -166,6 +166,7 @@ def select_preparation(
 def _installed_specification(
     requirement: ArtifactRequirement, adapter: AdapterManifest, specification_id: str
 ) -> AdapterSpecification:
+    """Handle installed specification."""
     installed = next(
         (item for item in adapter.specifications if item.reference.specification_id == specification_id), None
     )
@@ -175,6 +176,7 @@ def _installed_specification(
 
 
 def _permitted_preparation_route(requirement: ArtifactRequirement, profile: str) -> ArtifactSatisfactionRoute:
+    """Handle permitted preparation route."""
     route = next(
         (
             item

@@ -10,11 +10,15 @@ from gcp_range_cell_types import InstancePlan, RangeCellPlan
 
 
 class _AttachedDisk(Protocol):
+    """Represent AttachedDisk."""
+
     boot: bool
     source: str
 
 
 class _GuestInstance(Protocol):
+    """Represent GuestInstance."""
+
     name: str
     id: object
     machine_type: str
@@ -22,11 +26,15 @@ class _GuestInstance(Protocol):
 
 
 class _Image(Protocol):
+    """Represent Image."""
+
     id: object
     status: str
 
 
 class _Disk(Protocol):
+    """Represent Disk."""
+
     source_image_id: object
 
 

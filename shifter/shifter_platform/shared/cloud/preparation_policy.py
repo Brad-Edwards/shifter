@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from shared.cloud.preparation_installation import PreparationInstallation
+from shared.preparation_grant import PreparationGrantConfiguration
 
 
 def preparation_policy(installation: PreparationInstallation) -> dict[str, Any]:
@@ -23,7 +24,7 @@ def preparation_policy(installation: PreparationInstallation) -> dict[str, Any]:
         if grant.image_pull_secrets
         else "!has(variables.p.imagePullSecrets) || size(variables.p.imagePullSecrets) == 0"
     )
-    checks = _identity_checks(grant, accounts, actor, uuid) + _sandbox_checks(grant, pull_check)
+    checks = _identity_checks(grant, accounts, actor, uuid) + _sandbox_checks(pull_check)
     return _resource(
         "ValidatingAdmissionPolicy",
         grant.namespace,
@@ -52,7 +53,13 @@ def preparation_policy(installation: PreparationInstallation) -> dict[str, Any]:
     )
 
 
-def _identity_checks(grant: Any, accounts: dict[str, list[str]], actor: str, uuid: str) -> list[tuple[str, str]]:
+def _identity_checks(
+    grant: PreparationGrantConfiguration,
+    accounts: dict[str, list[str]],
+    actor: str,
+    uuid: str,
+) -> list[tuple[str, str]]:
+    """Handle identity checks."""
     quote = json.dumps
     return [
         (
@@ -130,7 +137,8 @@ def _identity_checks(grant: Any, accounts: dict[str, list[str]], actor: str, uui
     ]
 
 
-def _sandbox_checks(grant: Any, pull_check: str) -> list[tuple[str, str]]:
+def _sandbox_checks(pull_check: str) -> list[tuple[str, str]]:
+    """Handle sandbox checks."""
     return [
         (
             """
