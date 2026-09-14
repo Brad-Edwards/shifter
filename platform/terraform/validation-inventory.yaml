@@ -128,6 +128,14 @@ roots:
       - registry.terraform.io/hashicorp/archive
       - registry.terraform.io/hashicorp/google
       - registry.terraform.io/hashicorp/random
+  - id: nazgul
+    path: platform/terraform/gcp/environments/nazgul
+    owner: "@Brad-Edwards"
+    toolchain: gcp-1.16.1
+    providers:
+      - registry.terraform.io/hashicorp/archive
+      - registry.terraform.io/hashicorp/google
+      - registry.terraform.io/hashicorp/random
   # GCP-native self-hosted runner (issue #1546). A dedicated execution root and
   # state prefix, separate from the gcp-dev platform root, so a platform destroy
   # never removes the runner (dev-tenant containment).

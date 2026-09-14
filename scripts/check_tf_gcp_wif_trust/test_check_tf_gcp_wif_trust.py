@@ -140,6 +140,55 @@ resource "google_service_account_iam_member" "wif" {
 """
 
 
+_REPO = "Brad-Edwards/shifter"
+
+# GOOD_MODULE's single static attribute_condition line, reused as the replace
+# target when swapping in a per-profile (multi-arm) condition.
+_STATIC_CONDITION_LINE = (
+    "  attribute_condition = \"assertion.repository == 'Brad-Edwards/shifter' && "
+    "(${local.ref_condition}) && "
+    "(assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-build-dev' || "
+    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-validate-dev' || "
+    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-promote-prod' || "
+    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-release-scan-dev' || "
+    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || "
+    "assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev-destroy')\""
+)
+
+
+def _sub(ctx: str) -> str:
+    return f"assertion.sub == 'repo:{_REPO}:environment:{ctx}'"
+
+
+def _deploy_tenant_arm(env: str, image_env: str) -> str:
+    """A deploy-tenant CEL arm mirroring the module's gcp-dev / nazgul shape."""
+    return (
+        f"assertion.repository == '{_REPO}' && "
+        f"((assertion.ref == 'refs/heads/{env}' && {_sub(env)}) || "
+        f"((${{local.ref_condition}}) && ({_sub(f'gcp-build-{image_env}')} || "
+        f"{_sub(f'gcp-validate-{image_env}')} || {_sub(f'gcp-release-scan-{image_env}')} || "
+        f"{_sub(env)} || {_sub(f'{env}-destroy')})))"
+    )
+
+
+def _four_arm_condition(nazgul_arm: str | None = None) -> str:
+    """gcp-dev + nazgul + proof + prod selector, mirroring the real module."""
+    gcp_dev_arm = _deploy_tenant_arm("gcp-dev", "dev")
+    nazgul = nazgul_arm if nazgul_arm is not None else _deploy_tenant_arm("nazgul", "nazgul")
+    proof_arm = (
+        f"assertion.repository == '{_REPO}' && (${{local.ref_condition}}) && "
+        f"({_sub('gcp-build-proof')} || {_sub('gcp-validate-proof')})"
+    )
+    prod_arm = (
+        f"assertion.repository == '{_REPO}' && (${{local.ref_condition}}) && {_sub('gcp-promote-prod')}"
+    )
+    return (
+        f'  attribute_condition = var.environment == "gcp-dev" ? "{gcp_dev_arm}" : '
+        f'var.environment == "nazgul" ? "{nazgul}" : '
+        f'var.environment == "proof" ? "{proof_arm}" : "{prod_arm}"'
+    )
+
+
 def _write(tmp_path: Path, name: str, body: str) -> Path:
     path = tmp_path / name
     path.write_text(textwrap.dedent(body).lstrip())
@@ -506,6 +555,39 @@ variable "destroy_roles" {
             )
             reasons = [violation.reason for violation in check_file(outputs)]
         self.assertTrue(any("explicit purpose outputs" in reason for reason in reasons))
+
+    # ------------------------------------------------------------------
+    # nazgul deploy-tenant peer (added the same way gcp-dev was; see #2182
+    # for the generic, non-enumerated onboarding follow-up).
+    # ------------------------------------------------------------------
+    def test_nazgul_deploy_tenant_profile_passes(self) -> None:
+        module = GOOD_MODULE.replace(_STATIC_CONDITION_LINE, _four_arm_condition())
+        self.assertNotIn(_STATIC_CONDITION_LINE, module)  # replace matched
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", module)
+            self.assertEqual(check_file(tf), [])
+
+    def test_nazgul_profile_arm_with_wrong_subjects_is_rejected(self) -> None:
+        # The nazgul arm drops its own destroy Environment subject.
+        bad_nazgul = _deploy_tenant_arm("nazgul", "nazgul").replace(
+            " || " + _sub("nazgul-destroy"), ""
+        )
+        module = GOOD_MODULE.replace(_STATIC_CONDITION_LINE, _four_arm_condition(bad_nazgul))
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("wrong exact Environment subjects" in r for r in reasons))
+
+    def test_unpaired_nazgul_ref_is_rejected(self) -> None:
+        widened_nazgul = _deploy_tenant_arm("nazgul", "nazgul").replace(
+            "(${local.ref_condition})",
+            "(assertion.ref == 'refs/heads/nazgul' || ${local.ref_condition})",
+        )
+        module = GOOD_MODULE.replace(_STATIC_CONDITION_LINE, _four_arm_condition(widened_nazgul))
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "main.tf", module)
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("paired directly" in reason for reason in reasons))
 
 
 if __name__ == "__main__":
