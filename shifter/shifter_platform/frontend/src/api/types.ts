@@ -34,6 +34,14 @@ export type TransferOwnershipRequest = components["schemas"]["TransferOwnershipR
 export type TransferOwnershipResult = components["schemas"]["TransferOwnershipResult"];
 export type TransferOwnershipResourceKind = components["schemas"]["TransferOwnershipRequest"]["resource_kinds"][number];
 
+/** Runtime Mission Control lease-policy administration contracts (#2169). */
+export type MissionControlLeasePolicy = components["schemas"]["LeasePolicy"];
+export type MissionControlLeasePolicyOverride = components["schemas"]["LeasePolicyOverride"];
+export type MissionControlLeasePolicyGroup = components["schemas"]["LeasePolicyGroupSettings"];
+export type MissionControlLeasePolicySettings = components["schemas"]["MissionControlLeasePolicySettings"];
+export type ReplaceMissionControlLeasePolicyRequest = components["schemas"]["ReplaceLeasePolicy"];
+export type ResetMissionControlLeasePolicyRequest = components["schemas"]["ResetLeasePolicy"];
+
 /**
  * Organization/workspace admin console types (#1938, PLAT-231), re-exported from
  * the generated OpenAPI schema. The `workspaces.services` projection + DRF

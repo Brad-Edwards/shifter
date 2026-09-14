@@ -158,6 +158,39 @@ def test_disabling_extensions_blocks_extend_and_flips_can_extend():
             extend_mission_control_range(user)
 
 
+def test_live_group_policy_can_disable_extensions_for_an_existing_generation():
+    from django.contrib.auth.models import Group
+
+    from cms.models import MissionControlGroupLeasePolicy
+    from cms.services._range_lease import (
+        RangeLeaseConflict,
+        extend_mission_control_range,
+        get_mission_control_range_lease,
+    )
+
+    user = User.objects.create_user(username="lease-group-switch-off@example.com")
+    group = Group.objects.create(name="Lease extension disabled")
+    user.groups.add(group)
+    now = timezone.now()
+    _range(
+        user,
+        expires_at=now + timedelta(days=5),
+        maximum_expires_at=now + timedelta(days=40),
+        extension_days=30,
+    )
+    MissionControlGroupLeasePolicy.objects.create(
+        group=group,
+        initial_days=30,
+        extension_days=30,
+        maximum_days=365,
+        extensions_enabled=False,
+    )
+
+    assert get_mission_control_range_lease(user).can_extend is False
+    with pytest.raises(RangeLeaseConflict, match="disabled"):
+        extend_mission_control_range(user)
+
+
 def test_disabling_extensions_does_not_stop_cleanup(monkeypatch):
     from django.test import override_settings
 

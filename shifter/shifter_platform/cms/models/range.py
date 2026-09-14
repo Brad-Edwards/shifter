@@ -118,6 +118,32 @@ class RangeInstance(SoftDeleteMixin, models.Model):
             "so each generation keeps the increment it launched with (issue #27)."
         ),
     )
+    lease_initial_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Initial lease duration snapshotted for this range generation.",
+    )
+    lease_maximum_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum lease duration snapshotted for this range generation.",
+    )
+    lease_policy_source = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Bounded policy source used when this generation's lease was assigned.",
+    )
+    lease_policy_tenant_revision = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Runtime tenant-policy revision used for this generation, or zero for deployment fallback.",
+    )
+    lease_policy_group_revisions = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Bounded group id/revision provenance used for this generation's lease.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)

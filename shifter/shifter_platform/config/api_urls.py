@@ -6,6 +6,13 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from config.api_administer import AdministerGrantOrganizerView, AdministerTransferOwnershipView
+from config.api_administer_leases import (
+    MissionControlGroupLeasePolicyResetView,
+    MissionControlGroupLeasePolicyView,
+    MissionControlLeasePolicySettingsView,
+    MissionControlTenantLeasePolicyResetView,
+    MissionControlTenantLeasePolicyView,
+)
 from config.api_bootstrap import BootstrapView
 from config.api_dashboard import DashboardSummaryView
 
@@ -16,6 +23,31 @@ urlpatterns = [
     path("docs/", SpectacularSwaggerView.as_view(url_name="v1:openapi-schema"), name="api-docs"),
     path("bootstrap/", BootstrapView.as_view(), name="bootstrap"),
     path("dashboard/summary/", DashboardSummaryView.as_view(), name="dashboard-summary"),
+    path(
+        "administer/mission-control/lease-policy/",
+        MissionControlLeasePolicySettingsView.as_view(),
+        name="administer-mission-control-lease-policy",
+    ),
+    path(
+        "administer/mission-control/lease-policy/tenant/",
+        MissionControlTenantLeasePolicyView.as_view(),
+        name="administer-mission-control-tenant-lease-policy",
+    ),
+    path(
+        "administer/mission-control/lease-policy/tenant/reset/",
+        MissionControlTenantLeasePolicyResetView.as_view(),
+        name="administer-mission-control-tenant-lease-policy-reset",
+    ),
+    path(
+        "administer/mission-control/lease-policy/groups/<int:group_id>/",
+        MissionControlGroupLeasePolicyView.as_view(),
+        name="administer-mission-control-group-lease-policy",
+    ),
+    path(
+        "administer/mission-control/lease-policy/groups/<int:group_id>/reset/",
+        MissionControlGroupLeasePolicyResetView.as_view(),
+        name="administer-mission-control-group-lease-policy-reset",
+    ),
     path("workspaces/", include("workspaces.api.urls")),
     path("cms/", include("cms.api.urls", namespace="cms")),
     path("ctf/", include("ctf.api.urls")),
