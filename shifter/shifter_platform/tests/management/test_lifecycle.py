@@ -112,6 +112,28 @@ class TestTransitions:
             entity_type=AuditEntityType.USER, entity_id=target.id, action=AuditAction.DELETE
         ).exists()
 
+    def test_disabling_account_revokes_model_access_authority_in_same_service(self, actor, target):
+        from engine.models import SharingAuthorityFence
+        from engine.services import publish_authority_fence
+
+        deployment_id = "11111111-1111-4111-8111-111111111111"
+        authority_ref = {"owner": "management", "reference": f"user:{target.pk}"}
+        publish_authority_fence(
+            deployment_id=deployment_id,
+            authority_ref=authority_ref,
+            authority_revision=1,
+            state="allowed",
+        )
+
+        lifecycle.transition_account(target, action=Action.DEACTIVATE, actor=actor, audit=_audit(actor))
+
+        fence = SharingAuthorityFence.objects.get(
+            deployment_id=deployment_id,
+            authority_owner="management",
+            authority_reference=f"user:{target.pk}",
+        )
+        assert (fence.authority_revision, fence.state) == (2, "revoked")
+
     def test_activate_deleted_account_rejected(self, actor, target):
         audit = _audit(actor)
         lifecycle.transition_account(target, action=Action.DELETE, actor=actor, audit=audit)

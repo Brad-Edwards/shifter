@@ -89,6 +89,20 @@ invalidate the checked membership revision, including for large collections;
 background reassessment cannot leave stale grants usable. Snapshot inclusion
 does not preserve access after authorization is lost.
 
+The M20 implementation makes the checked revision a deployment-scoped Engine
+row keyed by the complete owner-qualified authority reference. Owner mutation
+transactions advance it synchronously; effective-policy resolution checks both
+selector and exact subject fences, including for snapshots. Publisher evidence
+is server-derived and publication verifies every atomic authority in a selected
+set or named union. Every auth-group atom in a funded selector independently
+requires managed-membership or approved-spending evidence; eligibility for one
+group cannot authorize another. Real PostgreSQL tests exercise owner-lock versus
+removal ordering, bounded bulk invalidation, owner transfer and failed publish/
+retry rollback, plus projection-refresh overlap with publication and drain under
+the canonical projection-before-fence lock order. Automatic range assessment is
+keyset-paged and records the complete assessed population count, so deployment
+growth cannot silently truncate an all-ranges, user or workspace selector.
+
 Shared-only budgets deliberately allow a member to consume the remaining
 pool; show that consequence and offer individual spend/rate/concurrency caps.
 Do not claim fair allocation without such a policy. Limit roster and usage

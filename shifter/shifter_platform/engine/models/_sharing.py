@@ -34,6 +34,7 @@ from django.utils import timezone
 _ACTIVE = "active"
 _TOMBSTONED = "tombstoned"
 _BINDING_STATES = ((_ACTIVE, "active"), (_TOMBSTONED, "tombstoned"))
+_AUTHORITY_STATES = (("allowed", "allowed"), ("revoked", "revoked"), ("unknown", "unknown"))
 _DEPLOYMENT_HELP = "Owning deployment; every lookup is deployment-scoped"
 
 
@@ -201,6 +202,18 @@ class SharingBindingRevision(models.Model):
     effective_from = models.DateTimeField(help_text="Start of the binding's effective interval")
     effective_until = models.DateTimeField(help_text="End of the binding's effective interval")
     observed_membership_revision = models.PositiveIntegerField(help_text="Membership revision observed at publication")
+    observed_assessment_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Complete automatic population assessed for the published membership revision",
+    )
+    observed_authority_revisions = models.JSONField(
+        default=list,
+        help_text="Complete selector-authority fence revisions observed at publication",
+    )
+    publisher_authority_revisions = models.JSONField(
+        default=list,
+        help_text="Complete publisher-authority fence revisions checked at publication",
+    )
     publisher_owner = models.CharField(max_length=128, help_text="Server-derived publisher owner namespace")
     publisher_reference = models.CharField(
         max_length=256, help_text="Server-derived publisher reference (never trusted from the payload)"
@@ -246,9 +259,34 @@ class MembershipProjection(models.Model):
     membership_revision = models.PositiveIntegerField(
         help_text="Authoritative membership revision from the owning service"
     )
-    fence_revision = models.PositiveIntegerField(default=0, help_text="Synchronously advanced invalidation fence")
-    state = models.CharField(max_length=16, default="unknown", help_text="allowed | revoked | unknown")
-    member_refs = models.JSONField(default=list, blank=True, help_text="Bounded canonical member references")
+    assessment_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Complete automatic population assessed to produce this projection",
+    )
+    fence_revision = models.PositiveIntegerField(default=1, help_text="Synchronous binding-local invalidation fence")
+    state = models.CharField(
+        max_length=16,
+        choices=_AUTHORITY_STATES,
+        default="unknown",
+        help_text="allowed | revoked | unknown",
+    )
+    member_refs = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Bounded canonical complete owner-qualified member references",
+    )
+    selector_authorities = models.JSONField(
+        default=list,
+        help_text="Complete owner-qualified selector authority references and observed revisions",
+    )
+    evidence_digest = models.CharField(
+        max_length=71,
+        default="sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        help_text="Digest of the complete canonical authority evidence for replay conflict detection",
+    )
+    subject_authorizations = models.JSONField(default=list, blank=True)
+    publisher_authorities = models.JSONField(default=list, blank=True)
+    spending_eligibilities = models.JSONField(default=list, blank=True)
     observed_at = models.DateTimeField(help_text="When the projection was observed from the owning service")
     freshness_deadline = models.DateTimeField(help_text="Instant after which the projection is stale and denies")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -264,6 +302,18 @@ class MembershipProjection(models.Model):
                 fields=["deployment_id", "sharing_binding_id", "selector_digest"],
                 name="engine_sharing_membership_projection_identity",
             ),
+            models.CheckConstraint(
+                condition=models.Q(state__in=("allowed", "revoked", "unknown")),
+                name="engine_sharing_membership_projection_state",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(membership_revision__gt=0),
+                name="engine_sharing_membership_projection_revision",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(fence_revision__gt=0),
+                name="engine_sharing_membership_projection_fence",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -273,6 +323,50 @@ class MembershipProjection(models.Model):
         """Whether the projection is authoritative right now: allowed and unexpired."""
         moment = now or timezone.now()
         return self.state == "allowed" and self.observed_at <= moment <= self.freshness_deadline
+
+
+class SharingAuthorityFence(models.Model):
+    """Shared synchronously checked revision for one authoritative owner fact.
+
+    Owner services advance this small row inside their mutation transaction.
+    Projection refresh and admission compare the complete owner-qualified key,
+    revision, and closed state; fan-out reassessment can therefore remain
+    bounded without leaving stale authority usable.
+    """
+
+    deployment_id = models.UUIDField(db_index=True, help_text=_DEPLOYMENT_HELP)
+    authority_owner = models.CharField(max_length=128)
+    authority_reference = models.CharField(max_length=256)
+    authority_revision = models.PositiveIntegerField()
+    state = models.CharField(max_length=16, choices=_AUTHORITY_STATES, default="unknown")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Table metadata."""
+
+        db_table = "engine_sharing_authority_fence"
+        ordering = ["deployment_id", "authority_owner", "authority_reference"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["deployment_id", "authority_owner", "authority_reference"],
+                name="engine_sharing_authority_fence_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(authority_revision__gt=0),
+                name="engine_sharing_authority_fence_revision",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(state__in=("allowed", "revoked", "unknown")),
+                name="engine_sharing_authority_fence_state",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.authority_owner}:{self.authority_reference} "
+            f"{self.state}@{self.authority_revision} ({self.deployment_id})"
+        )
 
 
 class AllocationGroup(models.Model):

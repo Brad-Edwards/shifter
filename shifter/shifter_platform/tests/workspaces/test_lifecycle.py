@@ -302,6 +302,35 @@ def test_archive_and_restore_toggle_the_marker_and_are_idempotent():
     assert Workspace.objects.get(uuid=created.uuid).archived_at is None
 
 
+def test_archive_invalidates_workspace_and_organization_model_access_authority():
+    from engine.models import SharingAuthorityFence
+    from engine.services import publish_authority_fence
+
+    organization = _org("Fence Org")
+    admin = _org_admin(organization, "fence-admin")
+    created = services.create_workspace(admin, organization.uuid, "Fence Workspace", audit=_audit(admin))
+    deployment_id = "11111111-1111-4111-8111-111111111111"
+    for reference in (f"workspace:{created.uuid}", f"organization:{organization.uuid}"):
+        publish_authority_fence(
+            deployment_id=deployment_id,
+            authority_ref={"owner": "workspaces", "reference": reference},
+            authority_revision=1,
+            state="allowed",
+        )
+
+    services.archive_workspace(admin, created.uuid, audit=_audit(admin))
+
+    states = {
+        row.authority_reference: (row.authority_revision, row.state)
+        for row in SharingAuthorityFence.objects.filter(
+            deployment_id=deployment_id,
+            authority_owner="workspaces",
+        )
+    }
+    assert states[f"workspace:{created.uuid}"] == (2, "unknown")
+    assert states[f"organization:{organization.uuid}"] == (2, "unknown")
+
+
 def test_archive_workspace_does_not_delete_ranges_bound_to_it():
     organization = _org()
     admin = _org_admin(organization)
