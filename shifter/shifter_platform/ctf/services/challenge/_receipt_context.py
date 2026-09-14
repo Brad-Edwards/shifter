@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from ctf.exceptions import CTFValidationError
 from shared.receipt_validation import ReceiptSubmissionContext, ReceiptValidationContext
+
+_REGISTRATION_INACTIVE = "Receipt registration is no longer active"
+
+if TYPE_CHECKING:
+    from ctf.models import CTFFlag
 
 
 def resolve_receipt_validation_context(
@@ -88,7 +95,7 @@ def revalidate_receipt_context(context: ReceiptValidationContext) -> None:
         and context.algorithm_id in profile.allowed_algorithms
         and context.objective_id in profile.permitted_objectives
     ):
-        raise CTFValidationError("Receipt registration is no longer active")
+        raise CTFValidationError(_REGISTRATION_INACTIVE)
     _assert_unambiguous_objective_binding(
         event_id=context.event_id,
         challenge_id=context.challenge_id,
@@ -125,7 +132,7 @@ def revalidate_receipt_context(context: ReceiptValidationContext) -> None:
             expected=expected,
         )
     except Exception as exc:
-        raise CTFValidationError("Receipt registration is no longer active") from exc
+        raise CTFValidationError(_REGISTRATION_INACTIVE) from exc
 
 
 def _participant_owner_id(context: ReceiptValidationContext) -> int:
@@ -134,7 +141,7 @@ def _participant_owner_id(context: ReceiptValidationContext) -> int:
 
     participant = CTFParticipant.objects.get(pk=context.participant_id)
     if participant.user_id is None:
-        raise CTFValidationError("Receipt registration is no longer active")
+        raise CTFValidationError(_REGISTRATION_INACTIVE)
     return participant.user_id
 
 
@@ -163,11 +170,7 @@ def _assert_unambiguous_objective_binding(
     ).only("challenge_id", "flag_type", "validator_config")
     if lock:
         flags = flags.select_for_update()
-    matching_challenges = {
-        flag.challenge_id
-        for flag in flags
-        if _receipt_selection(flag.flag_type, flag.validator_config) == (profile_id, objective_id)
-    }
+    matching_challenges = _matching_receipt_challenges(flags, profile_id, objective_id)
     if matching_challenges != {challenge_id}:
         raise CTFValidationError("Receipt objective is not uniquely bound to this challenge")
 
@@ -176,24 +179,45 @@ def _receipt_selection(flag_type: str, validator_config: object) -> tuple[str, s
     """Return a context-capable flag's canonical profile/objective selection."""
     if not isinstance(validator_config, dict):
         return None
-    selection: object
     if flag_type == "http":
-        selection = validator_config
-    elif flag_type == "programmable":
-        from ctf.validators import get_validator, validator_supports_server_context
+        return _canonical_receipt_selection(validator_config)
+    if flag_type == "programmable":
+        return _programmable_receipt_selection(validator_config)
+    return _extension_receipt_selection(flag_type, validator_config)
 
-        validator_name = validator_config.get("validator_name")
-        if not isinstance(validator_name, str) or get_validator(validator_name) is None:
-            return None
-        if not validator_supports_server_context(validator_name):
-            return None
-        selection = validator_config.get("receipt")
-    else:
-        from ctf.extensions import flag_validator_supports_server_context, get_flag_validator
 
-        if get_flag_validator(flag_type) is None or not flag_validator_supports_server_context(flag_type):
-            return None
-        selection = validator_config
+def _matching_receipt_challenges(flags: Iterable[CTFFlag], profile_id: str, objective_id: str) -> set[UUID]:
+    """Return challenges selecting one exact receipt profile and objective."""
+    return {
+        flag.challenge_id
+        for flag in flags
+        if _receipt_selection(flag.flag_type, flag.validator_config) == (profile_id, objective_id)
+    }
+
+
+def _programmable_receipt_selection(config: dict[str, object]) -> tuple[str, str] | None:
+    """Return the receipt selection for one capable programmable validator."""
+    from ctf.validators import get_validator, validator_supports_server_context
+
+    validator_name = config.get("validator_name")
+    if not isinstance(validator_name, str) or get_validator(validator_name) is None:
+        return None
+    if not validator_supports_server_context(validator_name):
+        return None
+    return _canonical_receipt_selection(config.get("receipt"))
+
+
+def _extension_receipt_selection(flag_type: str, config: dict[str, object]) -> tuple[str, str] | None:
+    """Return the selection for a context-capable installed flag validator."""
+    from ctf.extensions import flag_validator_supports_server_context, get_flag_validator
+
+    if get_flag_validator(flag_type) is None or not flag_validator_supports_server_context(flag_type):
+        return None
+    return _canonical_receipt_selection(config)
+
+
+def _canonical_receipt_selection(selection: object) -> tuple[str, str] | None:
+    """Validate one stored receipt-v1 selection without resolving its profile."""
     if not isinstance(selection, dict) or selection.get("protocol") != "receipt-v1":
         return None
     profile_id = selection.get("profile_id")

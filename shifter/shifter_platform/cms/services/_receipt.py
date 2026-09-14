@@ -12,6 +12,8 @@ from cms.models import RangeInstance
 from engine.services import ReceiptBindingUnavailable
 from shared.enums import RangeSource, ResourceStatus
 
+_BINDING_UNAVAILABLE = "CTF receipt range binding is unavailable"
+
 if TYPE_CHECKING:
     from uuid import UUID
 
@@ -33,15 +35,15 @@ def project_ctf_receipt_binding(
 ) -> ReceiptVerifierBinding:
     """Project one exact live CTF assignment through CMS and Engine authority."""
     if isinstance(range_instance_pk, bool) or not isinstance(range_instance_pk, int) or range_instance_pk <= 0:
-        raise ReceiptRangeBindingUnavailable("CTF receipt range binding is unavailable")
+        raise ReceiptRangeBindingUnavailable(_BINDING_UNAVAILABLE)
 
     instance = RangeInstance.objects.select_related("request").filter(pk=range_instance_pk).first()
     if instance is None or not _cms_binding_is_usable(instance, owner_user_id):
-        raise ReceiptRangeBindingUnavailable("CTF receipt range binding is unavailable")
+        raise ReceiptRangeBindingUnavailable(_BINDING_UNAVAILABLE)
 
     request = instance.request
     if request is None:
-        raise ReceiptRangeBindingUnavailable("CTF receipt range binding is unavailable")
+        raise ReceiptRangeBindingUnavailable(_BINDING_UNAVAILABLE)
     from cms import services as cms_services
 
     try:
@@ -54,7 +56,7 @@ def project_ctf_receipt_binding(
             objective_id=objective_id,
         )
     except ReceiptBindingUnavailable as exc:
-        raise ReceiptRangeBindingUnavailable("CTF receipt range binding is unavailable") from exc
+        raise ReceiptRangeBindingUnavailable(_BINDING_UNAVAILABLE) from exc
 
 
 @transaction.atomic
@@ -66,7 +68,14 @@ def confirm_ctf_receipt_binding(
     expected: ReceiptVerifierBinding,
 ) -> None:
     """Lock CMS/Engine assignment state and confirm the callback's exact binding."""
-    instance = RangeInstance.objects.select_for_update().select_related("request").filter(pk=range_instance_pk).first()
+    # Lock only the RangeInstance row.  ``request`` is nullable, so PostgreSQL
+    # rejects a broad FOR UPDATE over the outer join introduced by select_related.
+    instance = (
+        RangeInstance.objects.select_for_update(of=("self",))
+        .select_related("request")
+        .filter(pk=range_instance_pk)
+        .first()
+    )
     if instance is None or not _cms_binding_is_usable(instance, owner_user_id) or instance.request is None:
         raise ReceiptRangeBindingUnavailable("CTF receipt range binding is no longer active")
     from cms import services as cms_services
