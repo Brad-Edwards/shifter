@@ -87,6 +87,7 @@ _EXPLICIT_BINDINGS = (
         name="SHIFTER_CTF_COMMUNICATION_MAX_OUTSTANDING_PER_WORKSPACE", default="100000", source_file=_CTF_COMM_FILE
     ),
     EnvBinding(name="SHIFTER_CTF_COMMUNICATION_MAX_OUTSTANDING_GLOBAL", default="500000", source_file=_CTF_COMM_FILE),
+    EnvBinding(name="SHIFTER_CTF_COMMUNICATION_RELEASE_GRACE_MINUTES", default="20", source_file=_CTF_COMM_FILE),
     EnvBinding(
         name="SHIFTER_CTF_COMMUNICATION_METRICS_NAMESPACE",
         default="'Shifter/CtfCommunication'",

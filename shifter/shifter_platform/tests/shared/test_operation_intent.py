@@ -1,4 +1,4 @@
-"""Contract tests for the canonical public-operation intent projection (#2086, ADR-062-R2).
+"""Contract tests for the canonical public-operation intent projection (#2086, ADR-063-R2).
 
 The retry-safe public API binds a caller retry key to the *complete* immutable
 intent of an operation. These tests pin the digest's order-independence, its

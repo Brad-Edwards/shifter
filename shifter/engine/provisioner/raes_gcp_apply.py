@@ -35,7 +35,7 @@ from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_resources import instance_resource
-from gcp_range_cell_types import InstancePlan, RangeCellPlan, ResourceDict
+from gcp_range_cell_types import GceEgressPolicy, InstancePlan, RangeCellPlan, ResourceDict
 from gcp_range_cells import (
     _ensure_address,
     _ensure_firewall,
@@ -416,7 +416,13 @@ def apply_raes_range_cell(
     # Build and size-check the complete sanitized evidence shape before cloud mutation.
     snapshot_resources(raes_plan, expected_composition)
     plan = build_raes_range_cell_plan(
-        request_uuid, range_id, raes_plan, resolve_image, runtime.config, realized_access, egress_mode
+        request_uuid,
+        range_id,
+        raes_plan,
+        resolve_image,
+        runtime.config,
+        realized_access,
+        GceEgressPolicy(mode=egress_mode),
     )
     try:
         instance_outputs = _provision_raes_resources(
@@ -465,7 +471,13 @@ def realize_access_on_existing_cell(
     runtime = _apply_runtime(resolved_options)
     realized_access = join_participant_access(access_bindings or (), raes_plan)
     plan = build_raes_range_cell_plan(
-        request_uuid, range_id, raes_plan, resolve_image, runtime.config, realized_access, resolved_options.egress_mode
+        request_uuid,
+        range_id,
+        raes_plan,
+        resolve_image,
+        runtime.config,
+        realized_access,
+        GceEgressPolicy(mode=resolved_options.egress_mode),
     )
     return _provision_raes_resources(
         plan,

@@ -1,4 +1,4 @@
-"""API-level retry-safe launch behavior (#2086, ADR-062).
+"""API-level retry-safe launch behavior (#2086, ADR-063).
 
 Drives the real launch endpoint with an ``Idempotency-Key`` header: a replay with
 the same key + selections recovers the original range without a duplicate; a

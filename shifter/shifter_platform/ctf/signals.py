@@ -31,7 +31,7 @@ def sync_ctf_participant_range_status(
     )
 
     # Scoped provider inventory/readback evidence that every owned resource is
-    # gone (#2086, ADR-062-R4/R5). A logical DESTROYED status alone is not proof
+    # gone (#2086, ADR-063-R4/R5). A logical DESTROYED status alone is not proof
     # of absence, so capacity/linkage release waits for this.
     cleanup_verified = bool(kwargs.get("cleanup_verified", False))
 
@@ -51,7 +51,7 @@ def sync_ctf_participant_range_status(
         elif participant.range_status != new_status:
             # Any non-verified status -- including DESTROYED without inventory
             # evidence -- retains the participant/range/reservation linkage and
-            # capacity until inventory confirms absence (#1919, ADR-062-R5).
+            # capacity until inventory confirms absence (#1919, ADR-063-R5).
             participant.range_status = new_status
             participant.save(update_fields=["range_status", "updated_at"])
             updated += 1

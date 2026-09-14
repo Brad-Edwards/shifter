@@ -244,21 +244,21 @@ class LaunchRangeResponseSerializer(serializers.Serializer):
 
     success = serializers.BooleanField()
     range = RangePresentationSerializer()
-    # Retry-safe launch (#2086, ADR-062): present only when an Idempotency-Key was
+    # Retry-safe launch (#2086, ADR-063): present only when an Idempotency-Key was
     # supplied. True when this response recovered a prior launch rather than
     # dispatching a new one; additive optional field (ADR-040-R3).
     recovered = serializers.BooleanField(required=False)
 
 
 class CleanupObligationSerializer(serializers.Serializer):
-    """One retained cleanup obligation (#2086, ADR-062-R4)."""
+    """One retained cleanup obligation (#2086, ADR-063-R4)."""
 
     code = serializers.CharField()
     detail = serializers.CharField()
 
 
 class RangeCleanupOutcomeResponseSerializer(serializers.Serializer):
-    """Truthful range cleanup-outcome projection (#2086, ADR-062-R4)."""
+    """Truthful range cleanup-outcome projection (#2086, ADR-063-R4)."""
 
     request_id = serializers.UUIDField()
     found = serializers.BooleanField()

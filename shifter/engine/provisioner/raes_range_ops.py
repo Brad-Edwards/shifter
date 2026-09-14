@@ -417,7 +417,7 @@ def run_raes_range_destroy(request_id: str, *, operation_id: str | None = None) 
         _report_failure(ref, operation, diagnostic, reason_code)
         raise
     # Independent inventory/readback of owned resources -- verified cleanup requires
-    # this evidence, not the delete loop completing (#2086, ADR-062-R4/R5).
+    # this evidence, not the delete loop completing (#2086, ADR-063-R4/R5).
     cleanup_inventory = _raes_cleanup_inventory(request_id, range_id, raes_plan, config)
     _report(
         ref,

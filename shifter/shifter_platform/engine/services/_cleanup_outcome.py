@@ -1,4 +1,4 @@
-"""Truthful range cleanup-outcome projection (#2086, ADR-062-R4/R5).
+"""Truthful range cleanup-outcome projection (#2086, ADR-063-R4/R5).
 
 Reports the distinct cleanup facts from durable state as one authorized
 projection. Verified terminal cleanup is gated on durable, scoped provider
@@ -105,7 +105,7 @@ def _classify_without_verification(status: str, obligations: list[CleanupObligat
         )
         return CLEANUP_PENDING
     if status == ResourceStatus.DESTROYED.value:
-        # Lifecycle terminal, but ADR-062-R4 forbids claiming verified without readback.
+        # Lifecycle terminal, but ADR-063-R4 forbids claiming verified without readback.
         obligations.append(
             CleanupObligation(
                 "provider_inventory_unconfirmed",

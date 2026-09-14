@@ -35,6 +35,14 @@ from shared.model_access.core_models import (
     SharingFacet,
 )
 from shared.model_access.digest import canonical_bytes, compute_digest, digest_matches
+from shared.model_access.effective_policy import (
+    AliasRouting,
+    BindingMatch,
+    EffectivePolicy,
+    PolicyConflict,
+    PolicyContribution,
+    compile_effective_policy,
+)
 from shared.model_access.models import AccessGrant, ModelAccessCatalog
 from shared.model_access.policy import intersect_profile
 from shared.model_access.provider import (
@@ -56,11 +64,13 @@ __all__ = [
     "AccessGrant",
     "AccessLimits",
     "AliasAffinity",
+    "AliasRouting",
     "AllocationStrategy",
     "AssignmentAffinity",
     "BillingAmount",
     "BillingBound",
     "BillingComponent",
+    "BindingMatch",
     "BrokerWorkloadIdentityReference",
     "CancellationDisposition",
     "CancellationResult",
@@ -68,6 +78,7 @@ __all__ = [
     "ContractError",
     "Currency",
     "DynamicSecretProjectReference",
+    "EffectivePolicy",
     "EffectiveProfile",
     "MembershipMode",
     "ModelAccessCatalog",
@@ -78,6 +89,8 @@ __all__ = [
     "ModelProviderAdapter",
     "ModelShard",
     "OwnedReference",
+    "PolicyConflict",
+    "PolicyContribution",
     "Price",
     "PriceSchedule",
     "ProviderAdapterRegistry",
@@ -97,6 +110,7 @@ __all__ = [
     "SharingSelector",
     "VerifiedUsage",
     "canonical_bytes",
+    "compile_effective_policy",
     "compute_digest",
     "digest_matches",
     "intersect_profile",

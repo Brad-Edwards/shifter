@@ -23,6 +23,7 @@ from ._gce_profile import (
     GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
     GCE_BOOTSTRAP_PREPROMOTED_DC,
     GCE_BOOTSTRAP_STANDARD,
+    GCE_PARTICIPANT_READINESS_CONTRACT_V1,
     GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES,
     GCERangeImageProfile,
     _load_gce_range_profile,
@@ -37,6 +38,7 @@ __all__ = [
     "GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST",
     "GCE_BOOTSTRAP_PREPROMOTED_DC",
     "GCE_BOOTSTRAP_STANDARD",
+    "GCE_PARTICIPANT_READINESS_CONTRACT_V1",
     "GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES",
     "GCERangeCellConfig",
     "GCERangeImageProfile",
@@ -59,6 +61,7 @@ class GCERangeCellConfig:
     # per-range-subnet model) so the provisioner can reach guests. Empty in
     # ``vpc-per-range`` mode, where each range mints its own VPC.
     network_id: str = ""
+    model_broker_vip: str = ""
     service_account_email: str = ""
     # OAuth scope for a range host's attached service account. Use
     # cloud-platform and let the host SA's IAM roles be the real access control
@@ -170,6 +173,8 @@ class GCERangeCellConfig:
                 domain_netbios_name=profile.domain_netbios_name,
                 participant_container_name=profile.participant_container_name,
                 participant_username=profile.participant_username,
+                participant_readiness_contract=profile.participant_readiness_contract,
+                participant_readiness_manifest_sha256=profile.participant_readiness_manifest_sha256,
                 host_ssh_username=profile.host_ssh_username,
                 host_ssh_port=profile.host_ssh_port,
                 allow_public_web_egress=profile.allow_public_web_egress,

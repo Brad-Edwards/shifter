@@ -23,7 +23,7 @@ _QUOTA_RELEASING_STATUSES = frozenset({ResourceStatus.DESTROYED.value, ResourceS
 
 
 def _cleanup_verified_for(instance: RangeInstance, new_status: str) -> bool:
-    """True when scoped provider inventory/readback confirms the range's cleanup (ADR-062-R4/R5).
+    """True when scoped provider inventory/readback confirms the range's cleanup (ADR-063-R4/R5).
 
     Only a terminal ``DESTROYED`` transition can carry verified cleanup, and only
     when durable evidence records every owned resource absent. CTF receivers gate

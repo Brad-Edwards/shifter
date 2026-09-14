@@ -1,4 +1,4 @@
-"""Truthful, evidence-gated range cleanup-outcome projection (#2086, ADR-062-R4/R5).
+"""Truthful, evidence-gated range cleanup-outcome projection (#2086, ADR-063-R4/R5).
 
 verified_terminal is gated on durable scoped provider inventory/readback evidence,
 never on a logical lifecycle status: a DESTROYED range with no evidence is

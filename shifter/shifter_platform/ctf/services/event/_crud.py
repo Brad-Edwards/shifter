@@ -366,7 +366,7 @@ def force_delete_event(
     # removes the CTF event/participant owner, but the engine-side request /
     # operation / inventory-verification records (keyed by request_id) are the
     # durable cleanup owner that survives event deletion and drives teardown to
-    # verified completion (ADR-062-R4/R5). The ``ranges_destroyed`` result key is a
+    # verified completion (ADR-063-R4/R5). The ``ranges_destroyed`` result key is a
     # pre-existing API field, so its name is kept; its value is a dispatch count.
     ranges_destroyed = 0
     ranges_failed = 0

@@ -392,7 +392,7 @@ def _assert_stored_intent_matches(payload: dict[str, object], operation_id: UUID
     alone does not prove replay equivalence: reusing the stored input for a
     re-enqueue whose compiled plan or bindings have since changed would silently
     launch stale intent. Compose the current intent and compare its canonical
-    digest to the stored one, failing closed on a mismatch (ADR-062-R2). No stored
+    digest to the stored one, failing closed on a mismatch (ADR-063-R2). No stored
     input (a legacy range) means there is nothing to compare.
     """
     stored = OperationInput.objects.filter(operation_id=operation_id).first()

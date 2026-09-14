@@ -1,4 +1,4 @@
-"""Server-owned deployment scope resolution (#2086, ADR-062-R1)."""
+"""Server-owned deployment scope resolution (#2086, ADR-063-R1)."""
 
 from __future__ import annotations
 

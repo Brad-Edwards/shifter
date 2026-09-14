@@ -1,4 +1,4 @@
-"""Bind a caller retry key to one server-owned range operation (#2086, ADR-062).
+"""Bind a caller retry key to one server-owned range operation (#2086, ADR-063).
 
 First use mints the operation and records the binding atomically; a replay with
 the same immutable intent recovers the original operation without new effects; a
@@ -6,7 +6,7 @@ replay with a *different* intent conflicts before any reservation or effect. Whe
 two callers race the same key, PostgreSQL uniqueness picks one winner and the
 loser's whole transaction -- including its reservations -- rolls back, so
 same-key contenders converge on exactly one binding and one set of effects
-(ADR-062-R3). The insertion race is resolved outside the failed savepoint before
+(ADR-063-R3). The insertion race is resolved outside the failed savepoint before
 reading the winner.
 """
 
@@ -37,13 +37,13 @@ __all__ = [
 
 # Advertised retry window. A binding (later a tombstone) is retained at least this
 # long so a delayed lost-response replay recovers the original operation rather
-# than minting a duplicate (ADR-062-R2). Retention pruning must never delete the
-# sole binding for an unresolved operation (ADR-062-R5).
+# than minting a duplicate (ADR-063-R2). Retention pruning must never delete the
+# sole binding for an unresolved operation (ADR-063-R5).
 DEFAULT_RETRY_TTL_SECONDS = 7 * 24 * 3600
 
 
 class RetryKeyConflict(ValidationError):
-    """Same retry key, different immutable intent -- fail closed before effects (ADR-062-R2)."""
+    """Same retry key, different immutable intent -- fail closed before effects (ADR-063-R2)."""
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ class MintedOperation:
     ``operation_id`` is the operation generation when it is already minted at bind
     time; it may be ``None`` when the generation is minted asynchronously after the
     request is created, in which case the current generation is resolved from the
-    request when needed (ADR-062-R1).
+    request when needed (ADR-063-R1).
     """
 
     request_id: str
@@ -149,7 +149,7 @@ def prune_expired_retry_bindings(*, batch_size: int) -> int:
 
     A binding is prunable only when its retention window has elapsed AND the bound
     operation's cleanup is verified absent by durable scoped provider
-    inventory/readback evidence (ADR-062-R4/R5). A logical ``DESTROYED`` status, a
+    inventory/readback evidence (ADR-063-R4/R5). A logical ``DESTROYED`` status, a
     missing Range, a timeout, DLQ, or ``FAILED`` is never treated as proof of
     absence, so those bindings (the recovery / residual evidence) are retained
     until inventory confirms every owned resource is gone.

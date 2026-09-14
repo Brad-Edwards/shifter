@@ -1,4 +1,4 @@
-"""Behavioral tests for the public-operation retry binding (#2086, ADR-062-R1/R2).
+"""Behavioral tests for the public-operation retry binding (#2086, ADR-063-R1/R2).
 
 First use mints and binds; a same-intent replay recovers the original operation
 without re-minting; a different-intent replay conflicts before any effect. The

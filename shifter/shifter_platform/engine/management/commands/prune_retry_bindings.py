@@ -1,4 +1,4 @@
-"""Prune expired, verified-resolved public-operation retry bindings (#2086, ADR-062-R5).
+"""Prune expired, verified-resolved public-operation retry bindings (#2086, ADR-063-R5).
 
 Single-shot, bounded pruning invoked on a schedule (e.g. a Kubernetes CronJob). It
 deletes retry bindings only when their retention window has elapsed AND the bound

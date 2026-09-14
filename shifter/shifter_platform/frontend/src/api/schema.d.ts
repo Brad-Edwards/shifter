@@ -3190,7 +3190,7 @@ export interface components {
          * @enum {string}
          */
         CleanupControlRequestActionEnum: "defer" | "cancel";
-        /** @description One retained cleanup obligation (#2086, ADR-062-R4). */
+        /** @description One retained cleanup obligation (#2086, ADR-063-R4). */
         CleanupObligation: {
             code: string;
             detail: string;
@@ -4551,7 +4551,7 @@ export interface components {
             readonly redirect: string;
             readonly message: string;
         };
-        /** @description Truthful range cleanup-outcome projection (#2086, ADR-062-R4). */
+        /** @description Truthful range cleanup-outcome projection (#2086, ADR-063-R4). */
         RangeCleanupOutcomeResponse: {
             /** Format: uuid */
             request_id: string;

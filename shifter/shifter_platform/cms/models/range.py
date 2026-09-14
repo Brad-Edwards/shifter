@@ -109,6 +109,15 @@ class RangeInstance(SoftDeleteMixin, models.Model):
         blank=True,
         help_text="Immutable generation lifetime ceiling; VPN credentials cannot outlive it.",
     )
+    extension_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Extension increment (days) snapshotted from the deployment lease policy when this "
+            "generation's user lease was first assigned. A later policy change never rewrites it, "
+            "so each generation keeps the increment it launched with (issue #27)."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)

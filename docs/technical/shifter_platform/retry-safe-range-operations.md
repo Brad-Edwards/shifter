@@ -1,7 +1,7 @@
 # Retry-safe range operations
 
 Architecture for the retry-safe public range-operation surface and truthful
-cleanup outcomes. Decision of record: **ADR-062**; design guidance:
+cleanup outcomes. Decision of record: **ADR-063**; design guidance:
 `docs/architecture/public-range-operations-preflight-2086.md` (issue #2086).
 
 ## Retry identity
@@ -10,7 +10,7 @@ The public retry identity is `(deployment_scope, actor_key, action, caller_key)`
 
 - **deployment_scope** is server-owned, resolved by
   `shared.deployment.resolve_deployment_scope()` from the deployment's cloud
-  project (else a configured deployment name) — never a hostname, `ENVIRONMENT`
+  project (else a configured deployment name)—never a hostname, `ENVIRONMENT`
   label, workspace UUID, or catalog id. One deployment is one customer boundary
   backed by one PostgreSQL database (ADR-054), so the scope is recorded on each
   binding to detect a database restored or cloned into a different deployment.
@@ -33,7 +33,7 @@ digest.
 - The **caller intent** (the caller-controlled launch selections) is digested for
   the retry key so a replay recovers without recompiling the server-derived plan
   even after package/registry/default-configuration changes.
-- The **compiled intent** (the full `OperationInput` — compiled plan plus
+- The **compiled intent** (the full `OperationInput`—compiled plan plus
   artifact/configuration/delivery/participant-access bindings) is enforced by the
   engine: `engine.launch_intents.enqueue_provisioner_launch` now compares a
   re-enqueue's composed intent against the stored immutable `OperationInput` and
@@ -52,13 +52,14 @@ concurrent first use.
 `engine.retry_binding.bind_public_operation` recovers an existing binding, else
 runs a caller-supplied `mint` inside the binding transaction and inserts the
 binding. When two callers race the same key, the unique insert fails for the
-loser with `IntegrityError`; the loser's whole transaction — including everything
-`mint` reserved — rolls back, and the committed winner is read outside the failed
+loser with `IntegrityError`; the loser's whole transaction (including everything
+`mint` reserved) rolls back, and the committed winner is read outside the failed
 savepoint and recovered (or conflicts). Same-key contenders therefore converge on
 one binding and one set of effects; the real-PostgreSQL proofs live in
 `tests/engine/test_retry_binding_postgres.py`.
 
-The launch orchestration is `cms.services.launch_range_with_retry_key`; it reaches
+The launch orchestration is `cms.services.resolve_retry_recovery` /
+`cms.services.bind_first_use_launch`; it reaches
 the retry-binding primitives only through the `engine.services` facade (ADR-001)
 and is called from `mission_control.api.ranges.LaunchRangeView` when an
 `Idempotency-Key` header is present.
@@ -73,7 +74,7 @@ another actor's operation, and a revoked actor cannot authenticate.
 ## Provider inventory/readback evidence
 
 Verified terminal cleanup requires an **independent inventory/readback** of the
-owned provider resources, not a logical lifecycle status (ADR-062-R4). After the
+owned provider resources, not a logical lifecycle status (ADR-063-R4). After the
 RAES destroy delete loop, the provisioner (`raes_gcp_inventory.inventory_raes_range_cell`)
 GETs every resource the plan owns (instances, addresses, routers, firewalls,
 subnets, network) on the same enumeration it deleted: NotFound is gone, a returned
@@ -102,7 +103,7 @@ All three cleanup consumers gate on the latest `RangeCleanupVerification` being
   participant/range/reservation linkage; capacity is released and the linkage
   cleared only when `ctf.signals.sync_ctf_participant_range_status` receives a
   DESTROYED transition carrying `cleanup_verified=True` (computed by the CMS range-
-  event handler from the inventory evidence). Revalidates #1919 (ADR-062-R5).
+  event handler from the inventory evidence). Revalidates #1919 (ADR-063-R5).
 - **Retention pruning.** `engine.retry_binding.prune_expired_retry_bindings`
   (wired via the `prune_retry_bindings` management command) deletes an expired
   binding only when its operation cleanup is verified absent, so pruning never

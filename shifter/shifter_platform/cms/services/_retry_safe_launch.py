@@ -1,6 +1,6 @@
 """Retry-safe range launch: bind a caller retry key to one launch operation.
 
-#2086, ADR-062. A public caller supplies a retry key so a lost launch response can
+#2086, ADR-063. A public caller supplies a retry key so a lost launch response can
 be recovered without a duplicate launch. Recovery is looked up and projected from
 the *bound* request/operation (never the caller's current active range) and does
 not recompile or re-validate the caller's original selections against today's
@@ -75,7 +75,7 @@ def _caller_intent(
 
     Only inputs the caller controls belong here so a replay compares against the
     stored caller intent without recompiling or re-validating against the current
-    catalog (ADR-062-R2). ``agents_selection`` is the raw normalized selection, not
+    catalog (ADR-063-R2). ``agents_selection`` is the raw normalized selection, not
     the catalog-resolved agent map, so recovery never depends on catalog lookups.
     """
     return {

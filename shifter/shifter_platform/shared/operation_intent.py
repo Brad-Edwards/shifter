@@ -1,4 +1,4 @@
-"""Canonical public-operation intent projection and digest (#2086, ADR-062-R2).
+"""Canonical public-operation intent projection and digest (#2086, ADR-063-R2).
 
 The retry-safe public API binds a caller retry key to the *complete* immutable
 intent of an operation -- the validated action and target, actor and workspace
@@ -32,7 +32,7 @@ __all__ = [
 ]
 
 # The intent-projection version is deliberately distinct from the HTTP major, the
-# RAES producer, and the worker-envelope contract versions (ADR-062-R2). Bump it
+# RAES producer, and the worker-envelope contract versions (ADR-063-R2). Bump it
 # whenever the *set of bound components* changes so a retained binding never
 # silently compares against a differently shaped projection.
 INTENT_PROJECTION_VERSION = "1"
@@ -83,7 +83,7 @@ def canonical_intent_digest(projection: ProjectionDict) -> str:
     Two callers submitting the same admitted intent -- in any key order -- get an
     equal digest and converge on one binding; any change to a bound component
     yields a different digest and conflicts before reservation or effects
-    (ADR-062-R2). Mirrors ``canonical_payload_digest`` so engine and API agree
+    (ADR-063-R2). Mirrors ``canonical_payload_digest`` so engine and API agree
     byte-for-byte.
     """
     validate_intent_projection(projection)

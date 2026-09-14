@@ -116,6 +116,10 @@ def _apply_lifecycle(range_obj: Range, new_status: str, request_id: str) -> str:
     if new_status == ResourceStatus.READY.value:
         extra = {**extra, "ready_at": timezone.now()}
     previous = _save_status(range_obj, new_status, extra)
+    if new_status in {ResourceStatus.DESTROYED.value, ResourceStatus.FAILED.value}:
+        from ._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(range_obj)
     _audit(AuditEntityType.RANGE, range_obj.id, new_status, request_id=request_id, previous={"status": previous})
     _enqueue_range_status_event(range_obj, new_status, "")
     return f"raes range -> {new_status}"
@@ -300,7 +304,7 @@ def _apply_uncancelled_raes_result(
     if step is ResultStep.RAES_TERMINAL_DESTROYED:
         # Record scoped provider inventory/readback evidence BEFORE the DESTROYED
         # transition so verified_terminal, pruning, and CTF capacity release gate on
-        # it, not on the logical status (#2086, ADR-062-R4/R5). Same transaction.
+        # it, not on the logical status (#2086, ADR-063-R4/R5). Same transaction.
         _record_cleanup_inventory(row, payload)
 
     return _apply_observation(row, step, payload, range_obj)

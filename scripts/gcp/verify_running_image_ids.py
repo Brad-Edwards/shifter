@@ -57,14 +57,20 @@ _RELEASE_DEPLOYMENTS: dict[str, str] = {
 }
 
 
-def release_deployments() -> tuple[str, ...]:
+_BROKER_CONTAINERS = {
+    "model-broker": {"model-broker": "portal"},
+    "model-access-control": {"model-access-control": "portal"},
+}
+
+
+def release_deployments(*, model_broker_enabled: bool = False) -> tuple[str, ...]:
     """Return every Deployment that must converge before evidence is sampled."""
     if set(_RELEASE_DEPLOYMENTS) != set(_RELEASE_CONTAINERS):
         raise ValueError("release deployment and container component maps disagree")
     deployments = tuple(sorted(_RELEASE_DEPLOYMENTS.values()))
     if len(deployments) != len(set(deployments)):
         raise ValueError("release deployment map contains duplicate controllers")
-    return deployments
+    return tuple(sorted((*deployments, *_BROKER_CONTAINERS))) if model_broker_enabled else deployments
 
 
 def parse_expected_images(values: list[str]) -> dict[str, dict[str, str]]:
@@ -94,6 +100,7 @@ def _runtime_reference(image_id: str) -> str:
 
 def _pod_identity(
     pod: object,
+    containers: dict[str, dict[str, str]],
 ) -> tuple[str, str, dict[str, object], dict[str, object]]:
     if not isinstance(pod, dict):
         raise ValueError("pod inventory contains a malformed item")
@@ -109,7 +116,7 @@ def _pod_identity(
     if labels.get("app.kubernetes.io/part-of") != "shifter":
         raise ValueError(f"unexpected pod outside the closed Shifter release set: {pod_name}")
     component = str(labels.get("app.kubernetes.io/component", ""))
-    if component not in _RELEASE_CONTAINERS:
+    if component not in containers:
         raise ValueError(f"unexpected Shifter workload component: {component or '<missing>'}")
     return pod_name, component, spec, status
 
@@ -155,8 +162,9 @@ def _verify_pod_containers(
     declared: list[tuple[str, dict[str, object]]],
     statuses: list[tuple[str, dict[str, object]]],
     expected: dict[str, dict[str, str]],
+    containers: dict[str, dict[str, str]],
 ) -> list[dict[str, str]]:
-    expected_containers = _RELEASE_CONTAINERS[component]
+    expected_containers = containers[component]
     expected_names = set(expected_containers)
     _require_closed_names(pod_name, "declared", declared, expected_names)
     _require_closed_names(pod_name, "status", statuses, expected_names)
@@ -204,14 +212,14 @@ def build_evidence(
     expected: dict[str, dict[str, str]],
     *,
     source_sha: str,
+    model_broker_enabled: bool = False,
 ) -> dict[str, object]:
     """Return evidence only for the exact closed release workload/image map."""
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         raise ValueError("source SHA must be 40 lowercase hexadecimal characters")
 
-    referenced_images = {
-        image_name for containers in _RELEASE_CONTAINERS.values() for image_name in containers.values()
-    }
+    containers = {**_RELEASE_CONTAINERS, **(_BROKER_CONTAINERS if model_broker_enabled else {})}
+    referenced_images = {image_name for containers in containers.values() for image_name in containers.values()}
     if set(expected) != referenced_images:
         raise ValueError("expected image set does not match the closed release workload map")
 
@@ -221,7 +229,7 @@ def build_evidence(
         raise ValueError("pod inventory must contain an items array")
     seen_components: set[str] = set()
     for pod in items:
-        pod_name, component, spec, status = _pod_identity(pod)
+        pod_name, component, spec, status = _pod_identity(pod, containers)
         seen_components.add(component)
         declared = _container_entries(
             pod_name,
@@ -235,9 +243,9 @@ def build_evidence(
             ("initContainerStatuses", "containerStatuses", "ephemeralContainerStatuses"),
             "status",
         )
-        observed.extend(_verify_pod_containers(pod_name, component, declared, statuses, expected))
+        observed.extend(_verify_pod_containers(pod_name, component, declared, statuses, expected, containers))
 
-    missing_components = sorted(set(_RELEASE_CONTAINERS) - seen_components)
+    missing_components = sorted(set(containers) - seen_components)
     if missing_components:
         raise ValueError(f"running workloads are missing release components: {missing_components}")
 
@@ -259,6 +267,7 @@ def _write_private_json(path: Path, value: dict[str, object]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list-deployments", action="store_true")
+    parser.add_argument("--model-broker-enabled", choices=("true", "false"), default="false")
     parser.add_argument("--pods-json", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--source-sha")
@@ -269,14 +278,16 @@ def main() -> int:
         if args.list_deployments:
             if args.pods_json or args.output or args.source_sha or args.expected_image:
                 parser.error("--list-deployments cannot be combined with evidence arguments")
-            for deployment in release_deployments():
+            for deployment in release_deployments(model_broker_enabled=args.model_broker_enabled == "true"):
                 print(deployment)
             return 0
         if not args.pods_json or not args.output or not args.source_sha:
             parser.error("--pods-json, --output, and --source-sha are required")
         pods = json.loads(args.pods_json.read_text(encoding="utf-8"))
         expected = parse_expected_images(args.expected_image)
-        evidence = build_evidence(pods, expected, source_sha=args.source_sha)
+        evidence = build_evidence(
+            pods, expected, source_sha=args.source_sha, model_broker_enabled=args.model_broker_enabled == "true"
+        )
         _write_private_json(args.output, evidence)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.error(str(exc))

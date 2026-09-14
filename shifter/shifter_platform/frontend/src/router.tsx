@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 
 import { RootLayout, type RouteHandle } from "@/app/RootLayout";
 import { NotFoundPage } from "@/components/not-found";
@@ -6,6 +6,7 @@ import { RaesImageRegistryPage } from "@/features/raes-image-registry/RaesImageR
 import { AuditPage } from "@/features/administer/AuditPage";
 import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
+import { platformSettingsPath } from "@/features/administer/routes";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
 import { UsersListPage } from "@/features/administer/UsersListPage";
 import { ConsoleSlotPage } from "@/features/administer/organization/ConsoleSlotPage";
@@ -128,6 +129,9 @@ export const router = createBrowserRouter(
             { path: "ngfw/setup", element: <NgfwWizardPage /> },
             { path: "ngfw/:appId", element: <NgfwDetailPage /> },
             { path: "credentials", element: <CredentialsPage /> },
+            // Preserve the stable Django route/bookmark while keeping Platform
+            // Settings owned and staff-gated by the Administer workspace.
+            { path: "settings", element: <Navigate to={platformSettingsPath()} replace /> },
           ],
         },
         {

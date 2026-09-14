@@ -21,7 +21,14 @@ pytestmark = pytest.mark.django_db
 User = get_user_model()
 
 
-def _range(user, *, source=RangeSource.MISSION_CONTROL, expires_at=None, maximum_expires_at=None):
+def _range(
+    user,
+    *,
+    source=RangeSource.MISSION_CONTROL,
+    expires_at=None,
+    maximum_expires_at=None,
+    extension_days=None,
+):
     from workspaces.services import resolve_personal_workspace
 
     workspace_id = resolve_personal_workspace(user).workspace_id
@@ -40,6 +47,7 @@ def _range(user, *, source=RangeSource.MISSION_CONTROL, expires_at=None, maximum
         range_source=source.value,
         expires_at=expires_at,
         maximum_expires_at=maximum_expires_at,
+        extension_days=extension_days,
     )
 
 
@@ -52,6 +60,129 @@ def test_mission_control_lease_has_long_initial_lifetime_and_hard_limit():
     assert lease.expires_at == now + timedelta(days=30)
     assert lease.maximum_expires_at == now + timedelta(days=365)
     assert lease.extension_days == 30
+
+
+def test_mission_control_lease_uses_the_configured_policy():
+    from cms.services._range_lease import build_range_lease
+    from shared.mission_control_lease import MissionControlLeasePolicy
+
+    now = timezone.now()
+    policy = MissionControlLeasePolicy(initial_days=7, extension_days=3, maximum_days=90, extensions_enabled=False)
+
+    lease = build_range_lease(RangeSource.MISSION_CONTROL, now=now, policy=policy)
+
+    assert lease.expires_at == now + timedelta(days=7)
+    assert lease.maximum_expires_at == now + timedelta(days=90)
+    assert lease.extension_days == 3
+
+
+def test_mission_control_lease_reads_policy_from_settings():
+    from django.test import override_settings
+
+    from cms.services._range_lease import build_range_lease
+    from shared.mission_control_lease import MissionControlLeasePolicy
+
+    now = timezone.now()
+    policy = MissionControlLeasePolicy(initial_days=14, extension_days=14, maximum_days=180)
+    with override_settings(MISSION_CONTROL_LEASE_POLICY=policy):
+        lease = build_range_lease(RangeSource.MISSION_CONTROL, now=now)
+
+    assert lease.expires_at == now + timedelta(days=14)
+    assert lease.maximum_expires_at == now + timedelta(days=180)
+    assert lease.extension_days == 14
+
+
+def test_ctf_lease_ignores_the_mission_control_policy():
+    from django.test import override_settings
+
+    from cms.services._range_lease import build_range_lease
+    from shared.mission_control_lease import MissionControlLeasePolicy
+
+    now = timezone.now()
+    cleanup_at = now + timedelta(days=5)
+    policy = MissionControlLeasePolicy(initial_days=1, extension_days=1, maximum_days=1)
+    with override_settings(MISSION_CONTROL_LEASE_POLICY=policy):
+        lease = build_range_lease(RangeSource.CTF, now=now, enforced_deadline=cleanup_at)
+
+    assert lease.expires_at == cleanup_at
+    assert lease.maximum_expires_at == cleanup_at
+    assert lease.extension_days == 0
+
+
+def test_extension_uses_the_generation_snapshot_not_the_current_policy():
+    from django.test import override_settings
+
+    from cms.services._range_lease import extend_mission_control_range
+    from shared.mission_control_lease import MissionControlLeasePolicy
+
+    user = User.objects.create_user(username="lease-snapshot@example.com")
+    now = timezone.now()
+    # The generation launched with a 7-day increment; a later policy raise to 99 must
+    # not change how much this generation extends.
+    _range(
+        user,
+        expires_at=now + timedelta(days=5),
+        maximum_expires_at=now + timedelta(days=400),
+        extension_days=7,
+    )
+    later_policy = MissionControlLeasePolicy(initial_days=99, extension_days=99, maximum_days=999)
+    with override_settings(MISSION_CONTROL_LEASE_POLICY=later_policy):
+        projection = extend_mission_control_range(user)
+
+    assert projection.extension_days == 7
+    assert projection.expires_at == pytest.approx(now + timedelta(days=12), abs=timedelta(seconds=1))
+
+
+def test_disabling_extensions_blocks_extend_and_flips_can_extend():
+    from django.test import override_settings
+
+    from cms.services._range_lease import (
+        RangeLeaseConflict,
+        extend_mission_control_range,
+        get_mission_control_range_lease,
+    )
+    from shared.mission_control_lease import MissionControlLeasePolicy
+
+    user = User.objects.create_user(username="lease-switch-off@example.com")
+    now = timezone.now()
+    _range(
+        user,
+        expires_at=now + timedelta(days=5),
+        maximum_expires_at=now + timedelta(days=40),
+        extension_days=30,
+    )
+    disabled = MissionControlLeasePolicy(extensions_enabled=False)
+    with override_settings(MISSION_CONTROL_LEASE_POLICY=disabled):
+        assert get_mission_control_range_lease(user).can_extend is False
+        with pytest.raises(RangeLeaseConflict, match="disabled"):
+            extend_mission_control_range(user)
+
+
+def test_disabling_extensions_does_not_stop_cleanup(monkeypatch):
+    from django.test import override_settings
+
+    from cms.services._range_lease import expire_due_ranges
+    from shared.mission_control_lease import MissionControlLeasePolicy
+
+    user = User.objects.create_user(username="lease-switch-cleanup@example.com")
+    now = timezone.now()
+    due = _range(
+        user,
+        expires_at=now - timedelta(minutes=1),
+        maximum_expires_at=now + timedelta(days=1),
+        extension_days=30,
+    )
+    dispatched: list[int] = []
+    monkeypatch.setattr(
+        "cms.services._range_lease._dispatch_expired_range", lambda instance: dispatched.append(instance.pk)
+    )
+    disabled = MissionControlLeasePolicy(extensions_enabled=False)
+    with override_settings(MISSION_CONTROL_LEASE_POLICY=disabled):
+        # Cleanup is policy-agnostic: turning extensions off never disables destruction.
+        counts = expire_due_ranges(now=now)
+
+    assert dispatched == [due.pk]
+    assert counts == {"expired": 1, "failed": 0}
 
 
 def test_ctf_lease_uses_the_enforced_event_cleanup_deadline():

@@ -1,4 +1,4 @@
-"""Cleanup verification evidence record/read + prune command (#2086, ADR-062-R4/R5)."""
+"""Cleanup verification evidence record/read + prune command (#2086, ADR-063-R4/R5)."""
 
 from __future__ import annotations
 

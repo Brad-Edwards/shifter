@@ -318,7 +318,7 @@ def _parse_raes_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, 
     ``running`` result be recorded under a terminal step (or the reverse).
     """
     required = frozenset({"raes_status"})
-    # ``cleanup_inventory`` (#2086, ADR-062-R4) is the optional scoped provider
+    # ``cleanup_inventory`` (#2086, ADR-063-R4) is the optional scoped provider
     # inventory/readback evidence carried by a terminal destroy result.
     unexpected = sorted(frozenset(payload) - (required | {"status_reason", "cleanup_inventory"}))
     if unexpected:
@@ -353,7 +353,7 @@ _CLEANUP_MAX_RESIDUAL_CATEGORIES = 32
 
 
 def _parse_cleanup_inventory(value: Any) -> dict[str, Any]:
-    """Validate the bounded provider inventory/readback evidence (#2086, ADR-062-R4)."""
+    """Validate the bounded provider inventory/readback evidence (#2086, ADR-063-R4)."""
     if not isinstance(value, dict):
         raise OperationResultError(f"{_PAYLOAD_FIELD} cleanup_inventory must be an object")
     _require_exact_keys(

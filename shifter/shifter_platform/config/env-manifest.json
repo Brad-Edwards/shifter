@@ -433,6 +433,11 @@
       "source_file": "config/_email.py"
     },
     {
+      "default": null,
+      "name": "MISSION_CONTROL_LEASE_POLICY_JSON",
+      "source_file": "config/_mission_control_lease_settings.py"
+    },
+    {
       "default": "''",
       "name": "MODEL_ACCESS_CATALOG_DIGEST",
       "source_file": "config/_model_access_settings.py"
@@ -620,6 +625,11 @@
     {
       "default": "60",
       "name": "SHIFTER_CTF_COMMUNICATION_RATE_WINDOW_SECONDS",
+      "source_file": "config/_ctf_communication_settings.py"
+    },
+    {
+      "default": "20",
+      "name": "SHIFTER_CTF_COMMUNICATION_RELEASE_GRACE_MINUTES",
       "source_file": "config/_ctf_communication_settings.py"
     },
     {

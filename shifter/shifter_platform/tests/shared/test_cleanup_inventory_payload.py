@@ -1,4 +1,4 @@
-"""Terminal destroy result carries bounded provider inventory/readback evidence (#2086, ADR-062-R4)."""
+"""Terminal destroy result carries bounded provider inventory/readback evidence (#2086, ADR-063-R4)."""
 
 from __future__ import annotations
 

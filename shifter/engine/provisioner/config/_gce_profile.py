@@ -22,6 +22,8 @@ GCE_BOOTSTRAP_STANDARD = "standard"
 GCE_BOOTSTRAP_POLARIS_HOST = "polaris-docker-host"
 GCE_BOOTSTRAP_PREPROMOTED_DC = "prepromoted-domain-controller"
 GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST = "preconfigured-machine-host"
+GCE_PARTICIPANT_READINESS_CONTRACT_V1 = "participant-readiness/v1"
+GCE_SUPPORTED_PARTICIPANT_READINESS_CONTRACTS = frozenset({GCE_PARTICIPANT_READINESS_CONTRACT_V1})
 GCE_SUPPORTED_BOOTSTRAP_CAPABILITIES = frozenset(
     {
         GCE_BOOTSTRAP_STANDARD,
@@ -46,6 +48,8 @@ class GCERangeImageProfile:
     domain_netbios_name: str = ""
     participant_container_name: str = ""
     participant_username: str = ""
+    participant_readiness_contract: str = ""
+    participant_readiness_manifest_sha256: str = ""
     host_ssh_username: str = ""
     host_ssh_port: int = 22
     allow_public_web_egress: bool = False
@@ -57,7 +61,14 @@ class GCERangeImageProfile:
 
 def gce_image_profile_fingerprint(profile: GCERangeImageProfile) -> str:
     """Return a bounded non-secret profile identity for labels and reconciliation."""
-    canonical = json.dumps(asdict(profile), separators=(",", ":"), sort_keys=True)
+    profile_fields = asdict(profile)
+    if not profile.participant_readiness_contract and not profile.participant_readiness_manifest_sha256:
+        # These fields did not exist before the participant-readiness contract.
+        # Omitting their empty defaults preserves labels on every existing
+        # standard, Polaris, and pre-promoted-DC guest across the rollout.
+        profile_fields.pop("participant_readiness_contract")
+        profile_fields.pop("participant_readiness_manifest_sha256")
+    canonical = json.dumps(profile_fields, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
 
 
@@ -77,6 +88,8 @@ _GCE_PROFILE_OPTIONAL_FIELDS = frozenset(
         "domain_netbios_name",
         "participant_container_name",
         "participant_username",
+        "participant_readiness_contract",
+        "participant_readiness_manifest_sha256",
         "host_ssh_username",
         "host_ssh_port",
         "allow_public_web_egress",
@@ -162,21 +175,38 @@ def _validate_machine_host_identity(prefix: str, profile: GCERangeImageProfile) 
 
 def _validate_preconfigured_machine_profile(prefix: str, profile: GCERangeImageProfile) -> None:
     """Validate the closed machine-host capability fields."""
-    machine_fields = (
+    identity_fields = (
         profile.participant_container_name,
         profile.participant_username,
         profile.host_ssh_username,
     )
+    readiness_fields = (
+        profile.participant_readiness_contract,
+        profile.participant_readiness_manifest_sha256,
+    )
+    machine_fields = identity_fields + readiness_fields
     if profile.bootstrap_capability != GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST:
         _reject_machine_host_fields(prefix, profile, machine_fields)
         return
     if not profile.source_machine_image:
         raise RuntimeError(f"{prefix} preconfigured-machine-host requires source_machine_image")
-    if not all(machine_fields):
+    if not all(identity_fields):
         raise RuntimeError(
             f"{prefix} preconfigured-machine-host requires participant_container_name, "
             "participant_username, and host_ssh_username"
         )
+    if not all(readiness_fields):
+        raise RuntimeError(
+            f"{prefix} preconfigured-machine-host requires participant_readiness_contract "
+            "and participant_readiness_manifest_sha256"
+        )
+    if profile.participant_readiness_contract not in GCE_SUPPORTED_PARTICIPANT_READINESS_CONTRACTS:
+        raise RuntimeError(
+            f"{prefix}.participant_readiness_contract is unsupported; choose one of: "
+            f"{', '.join(sorted(GCE_SUPPORTED_PARTICIPANT_READINESS_CONTRACTS))}"
+        )
+    if not re.fullmatch(r"[0-9a-f]{64}", profile.participant_readiness_manifest_sha256):
+        raise RuntimeError(f"{prefix}.participant_readiness_manifest_sha256 must be a lowercase SHA-256 digest")
     _validate_machine_host_identity(prefix, profile)
 
 

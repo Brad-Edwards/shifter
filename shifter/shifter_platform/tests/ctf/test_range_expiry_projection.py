@@ -49,7 +49,7 @@ def test_unverified_destroyed_lease_range_retains_reference(ctf_event, participa
     )
 
     # A logical DESTROYED without inventory evidence must not drop the linkage
-    # (#2086, ADR-062-R4/R5).
+    # (#2086, ADR-063-R4/R5).
     range_status_changed.send(
         sender=None,
         range_instance_id=1234,

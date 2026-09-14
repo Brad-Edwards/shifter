@@ -107,6 +107,9 @@ def _apply_dispatch_failure(payload: dict[str, object], target: Range | Instance
         update_fields.append("error_message")
     target.save(update_fields=update_fields)
     if isinstance(target, Range):
+        from engine.services._receipt import _revoke_receipt_verifier_for_range
+
+        _revoke_receipt_verifier_for_range(target)
         _publish_range_dispatch_failure(payload, target)
     else:
         App.objects.filter(instance=target).update(

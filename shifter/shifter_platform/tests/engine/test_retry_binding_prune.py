@@ -1,4 +1,4 @@
-"""Retention pruning gates on inventory evidence, never logical status (#2086, ADR-062-R4/R5).
+"""Retention pruning gates on inventory evidence, never logical status (#2086, ADR-063-R4/R5).
 
 A binding is prunable only when its retention window has elapsed AND the bound
 operation's cleanup is verified absent by scoped provider inventory/readback

@@ -1,4 +1,4 @@
-"""PostgreSQL proofs that a retry key arbitrates concurrent first use (#2086, ADR-062-R3).
+"""PostgreSQL proofs that a retry key arbitrates concurrent first use (#2086, ADR-063-R3).
 
 Two callers racing the same retry key must converge on exactly one binding and one
 operation; different-intent contenders must yield exactly one binding and a bounded

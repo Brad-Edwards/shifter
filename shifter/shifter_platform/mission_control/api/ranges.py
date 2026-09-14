@@ -174,7 +174,7 @@ class LaunchRangeView(MissionControlAPIView):
     # Backpressure (#322): per-actor + fleet admission budget, before CMS.
     throttle_classes = [RangeLaunchRateThrottle]
 
-    # Retry-safe launch (#2086, ADR-062). Caller-supplied idempotency key; bounded
+    # Retry-safe launch (#2086, ADR-063). Caller-supplied idempotency key; bounded
     # so it can never overflow the binding column or become a log/label hazard.
     _RETRY_KEY_HEADER = "Idempotency-Key"
     _MAX_CALLER_KEY_LEN = 200
@@ -212,7 +212,7 @@ class LaunchRangeView(MissionControlAPIView):
             return caller_key
 
         # Attempt recovery BEFORE catalog validation so a replay recovers even when
-        # the original scenario or agent has since been retired (#2086, ADR-062).
+        # the original scenario or agent has since been retired (#2086, ADR-063).
         if caller_key is not None:
             recovered = self._try_recover(user, data, caller_key)
             if recovered is not None:
@@ -340,7 +340,7 @@ class LaunchRangeView(MissionControlAPIView):
         caller_key: str,
         agents_selection: dict[str, Any],
     ) -> Response:
-        """First use of a retry key: dispatch, bind, and audit exactly once (#2086, ADR-062).
+        """First use of a retry key: dispatch, bind, and audit exactly once (#2086, ADR-063).
 
         A concurrent contender that wins the key rolls this dispatch back and its
         bound operation is recovered instead (or conflicts, 409). Recovery is not

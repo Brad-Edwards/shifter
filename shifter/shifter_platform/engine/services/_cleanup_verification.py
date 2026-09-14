@@ -1,4 +1,4 @@
-"""Record and read scoped provider inventory/readback evidence (#2086, ADR-062-R4/R5).
+"""Record and read scoped provider inventory/readback evidence (#2086, ADR-063-R4/R5).
 
 The provisioner inventories owned provider resources after teardown; the Engine
 applier records that evidence here. Verified terminal cleanup, retry-binding

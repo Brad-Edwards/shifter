@@ -13869,7 +13869,7 @@
       },
       "CleanupObligation": {
         "type": "object",
-        "description": "One retained cleanup obligation (#2086, ADR-062-R4).",
+        "description": "One retained cleanup obligation (#2086, ADR-063-R4).",
         "properties": {
           "code": {
             "type": "string"
@@ -17976,7 +17976,7 @@
       },
       "RangeCleanupOutcomeResponse": {
         "type": "object",
-        "description": "Truthful range cleanup-outcome projection (#2086, ADR-062-R4).",
+        "description": "Truthful range cleanup-outcome projection (#2086, ADR-063-R4).",
         "properties": {
           "request_id": {
             "type": "string",
@@ -19063,7 +19063,8 @@
           "flag": {
             "type": "string",
             "writeOnly": true,
-            "nullable": true
+            "nullable": true,
+            "maxLength": 4096
           }
         }
       },

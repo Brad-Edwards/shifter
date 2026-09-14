@@ -1,4 +1,4 @@
-"""Regression: CTF range teardown retains linkage/capacity until verified cleanup (#1919, ADR-062-R4/R5).
+"""Regression: CTF range teardown retains linkage/capacity until verified cleanup (#1919, ADR-063-R4/R5).
 
 Dispatch is not verified destruction: releasing capacity or clearing the linkage
 at dispatch, or on a logical DESTROYED status without scoped provider

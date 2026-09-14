@@ -1,4 +1,4 @@
-"""Server-owned deployment scope for the public retry identity (#2086, ADR-062-R1).
+"""Server-owned deployment scope for the public retry identity (#2086, ADR-063-R1).
 
 One BigRAE deployment is one customer security/administration boundary backed by
 one PostgreSQL database and one cloud project (ADR-054). The deployment scope is
@@ -23,7 +23,7 @@ _UNSCOPED_DEPLOYMENT = "shifter-local-deployment"
 
 
 def resolve_deployment_scope() -> str:
-    """Return the server-owned stable deployment namespace (ADR-062-R1)."""
+    """Return the server-owned stable deployment namespace (ADR-063-R1)."""
     for attr in ("GCP_PROJECT_ID", "WARM_POOL_DEPLOYMENT_NAME"):
         value = str(getattr(settings, attr, "") or "").strip()
         if value:

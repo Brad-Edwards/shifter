@@ -1,6 +1,6 @@
 """Durable, scoped provider inventory/readback evidence for a range teardown.
 
-ADR-062-R4/R5 (#2086). Verified terminal cleanup is not a logical lifecycle
+ADR-063-R4/R5 (#2086). Verified terminal cleanup is not a logical lifecycle
 status: it requires the owning lifecycle to succeed AND an independent
 inventory/readback of the owned provider resources, carrying scope and an
 observation time. This row is that evidence, produced from the provisioner's

@@ -1,4 +1,4 @@
-"""Retry-safe range launch orchestration (#2086, ADR-062-R1/R2/R3).
+"""Retry-safe range launch orchestration (#2086, ADR-063-R1/R2/R3).
 
 ``resolve_retry_recovery`` recovers a bound operation for a replay without minting
 or catalog validation; ``bind_first_use_launch`` dispatches + binds on first use. A

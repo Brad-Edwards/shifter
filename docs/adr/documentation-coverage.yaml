@@ -7,7 +7,7 @@
       "title": "Per-range model access (planned; PLAT-202 design)",
       "requirement": "PLAT-202",
       "user_docs": ["features/model-access.md"],
-      "technical_docs": ["architecture/model-access/architecture.md", "ops/model-access.md"]
+      "technical_docs": ["architecture/model-access/architecture.md", "architecture/model-access/gcp-packaging.md", "ops/model-access.md", "ops/model-access-gcp-probes.md"]
     },
     {
       "id": "agents",

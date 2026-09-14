@@ -62,6 +62,19 @@ Use four typed inputs, with schema/version and content digest:
    deployment ranges. Select independently which profile, provider identity,
    model assignment, capacity and spend/rate/concurrency resources to share.
 
+The mounted deployment catalog is the closed inventory and portable authoring
+boundary for profiles, shards, pools and binding definitions; it is not a
+second live policy database. Engine-owned published collection, pool and
+binding revisions are the sole runtime authority. A definition sourced from
+installation configuration must pass the same authorized, revision-fenced
+publication transaction as an API-authored definition before it can affect a
+range. Runtime resolution must not merge file-backed bindings with database
+bindings or let a catalog reload activate, withdraw or reinterpret a binding
+implicitly. Every published revision pins the exact catalog digest against
+which its profile, alias, provider-pool and account references were validated;
+a replacement catalog requires explicit validation and publication rather than
+same-name rebinding.
+
 Only deployment operators may add shards, provider identity references,
 regions, model/feature aliases, prices or maxima. Scenario authors and event
 organizers cannot widen that inventory. Effective sets are intersections;
@@ -544,3 +557,12 @@ conflicting retry, 413 too large, 429 local rate/budget/concurrency exhaustion,
 503 unavailable admission/provider and 504 deadline. Do not disclose whether
 an inaccessible foreign range exists. After SSE headers, emit a bounded
 protocol error and terminate instead of pretending a final success.
+
+### M06 deployment package
+
+The [GCP packaging implementation](gcp-packaging.md) defines the disabled
+infrastructure/process contract supplied by #2123. Its chart and root-config
+projection do not implement M05 authentication/streaming or M08 enrollment,
+and do not mark any grant active. Their consumers must use the exact
+broker-only inventory and the explicit admitted egress seam; setting a global
+broker VIP never enrolls a range.

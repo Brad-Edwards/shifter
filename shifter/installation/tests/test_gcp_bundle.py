@@ -119,7 +119,9 @@ class TestGcpGeneratedOutputs:
         expected = set(runtime_inventory_gcp.GCP_GENERATED_RUNTIME_ENV_KEYS) | set(
             runtime_inventory_gcp.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS
         )
-        assert names == expected
+        from installation.gcp_model_broker import BROKER_RUNTIME_ENV_KEYS
+
+        assert names == expected | BROKER_RUNTIME_ENV_KEYS
 
     def test_secret_id_outputs_are_classified_as_secret_references(self):
         outputs = self._by_name()
@@ -149,8 +151,11 @@ class TestGcpGeneratedOutputs:
         assert ProcessRole.PROVISIONER in roles
         assert ProcessRole.RANGE_TASK not in roles
 
-    def test_every_runtime_output_declares_at_least_portal_and_worker(self):
+    def test_runtime_outputs_declare_their_isolated_consumers(self):
         for output in _gcp().generated_outputs:
+            if ProcessRole.MODEL_BROKER in output.process_roles:
+                assert output.process_roles == (ProcessRole.MODEL_BROKER,)
+                continue
             assert ProcessRole.PORTAL in output.process_roles, output.name
             assert ProcessRole.WORKER in output.process_roles, output.name
 

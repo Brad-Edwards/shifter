@@ -60,6 +60,8 @@ module "packer_build_infra" {
 }
 
 module "platform_core" {
+  model_broker = var.model_broker
+
   source = "../../modules/platform-core"
 
   project_id                         = var.project_id
