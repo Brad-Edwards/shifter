@@ -3846,8 +3846,14 @@
       "https://github.com/Brad-Edwards/shifter/issues/681",
       "docs/adr/060-model-access-allocation-accounting.md",
       "docs/architecture/model-access/sharing.md",
+      "docs/architecture/model-access/sharing-authority-preflight-2140.md",
       "docs/architecture/model-access/architecture.md",
-      "docs/architecture/model-access/delivery.md"
+      "docs/architecture/model-access/delivery.md",
+      "shifter/shifter_platform/shared/model_access/authority.py",
+      "shifter/shifter_platform/engine/services/_sharing.py",
+      "shifter/shifter_platform/config/model_access_sharing.py",
+      "shifter/shifter_platform/tests/engine/services/test_model_access_authority_postgres.py",
+      "shifter/shifter_platform/tests/engine/services/test_model_access_range_pagination.py"
     ]
   },
   {
