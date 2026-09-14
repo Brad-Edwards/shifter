@@ -22,6 +22,25 @@ logger = logging.getLogger(__name__)
 _QUOTA_RELEASING_STATUSES = frozenset({ResourceStatus.DESTROYED.value, ResourceStatus.FAILED.value})
 
 
+def _cleanup_verified_for(instance: RangeInstance, new_status: str) -> bool:
+    """True when scoped provider inventory/readback confirms the range's cleanup (ADR-062-R4/R5).
+
+    Only a terminal ``DESTROYED`` transition can carry verified cleanup, and only
+    when durable evidence records every owned resource absent. CTF receivers gate
+    capacity/linkage release on this so a logical terminal status never releases a
+    reusable slot while unresolved provider resources may still exist.
+    """
+    if new_status != ResourceStatus.DESTROYED.value:
+        return False
+    from engine.services import is_cleanup_verified_absent
+
+    request = getattr(instance, "request", None)
+    request_id = getattr(request, "request_id", None)
+    if request_id is None:
+        return False
+    return is_cleanup_verified_absent(request_id)
+
+
 def _release_concurrent_range_quota(instance: RangeInstance) -> None:
     """Idempotently release the instance's concurrent-range reservation, if any.
 
@@ -107,7 +126,12 @@ def apply_range_status(
                 # Release inside the same atomic unit as the status write so a
                 # redelivered terminal event re-runs the whole convergent step.
                 _release_concurrent_range_quota(instance)
-            notify_ctf_range_status(instance.pk, new_status, previous_status)
+            notify_ctf_range_status(
+                instance.pk,
+                new_status,
+                previous_status,
+                cleanup_verified=_cleanup_verified_for(instance, new_status),
+            )
     except Exception:
         # Transient DB/broker failure on the save or a bridge effect. The
         # atomic block has rolled the status write back; restore the in-memory

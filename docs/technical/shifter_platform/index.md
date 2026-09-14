@@ -164,6 +164,13 @@ new authority model or feature flag.
   workspace scope operations, the Engine compare-and-set facade, and the
   fail-closed handling of domain-owned aggregates (ADR-046-R14).
 
+## Retry-safe range operations
+
+- [Retry-safe range operations](retry-safe-range-operations.md): the caller
+  retry identity, immutable-intent binding and canonical digest, the PostgreSQL-
+  arbitrated retry binding, reauthorized replay/status/cancel, and truthful
+  teardown/residual retention (ADR-062, #2086).
+
 ## Audit logging
 
 The shared platform layer owns the durable audit store and writer. Audit rows

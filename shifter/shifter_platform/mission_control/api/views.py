@@ -14,6 +14,7 @@ from mission_control.api.raes import (
     RaesOperationReceiptListView,
     RaesOperationStatusListView,
     RaesRuntimeSnapshotListView,
+    RangeCleanupOutcomeView,
 )
 from mission_control.api.raes_participant import (
     RaesParticipantImplementationListView,
@@ -91,6 +92,7 @@ __all__ = (
     "RaesParticipantImplementationListView",
     "RaesParticipantRuntimeListView",
     "RaesRuntimeSnapshotListView",
+    "RangeCleanupOutcomeView",
     "RangeHistoryView",
     "ResumeRangeView",
     "ScenarioListView",

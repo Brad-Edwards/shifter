@@ -362,6 +362,12 @@ def force_delete_event(
     # Destroy range instances OUTSIDE the atomic block (external HTTP calls).
     # Query participants directly via all_objects to handle soft-deleted events
     # (cleanup_event_ranges uses CTFEvent.objects which skips soft-deleted).
+    # These count teardowns *dispatched*, not verified destroyed. Force deletion
+    # removes the CTF event/participant owner, but the engine-side request /
+    # operation / inventory-verification records (keyed by request_id) are the
+    # durable cleanup owner that survives event deletion and drives teardown to
+    # verified completion (ADR-062-R4/R5). The ``ranges_destroyed`` result key is a
+    # pre-existing API field, so its name is kept; its value is a dispatch count.
     ranges_destroyed = 0
     ranges_failed = 0
     participants_with_ranges = CTFParticipant.all_objects.filter(
@@ -370,12 +376,12 @@ def force_delete_event(
     ).select_related("user")
     for participant in participants_with_ranges:
         try:
-            _destroy_single_range(participant, participant.user)
-            ranges_destroyed += 1
+            if _destroy_single_range(participant, participant.user):
+                ranges_destroyed += 1
         except Exception:
             ranges_failed += 1
             logger.exception(
-                "Failed to destroy range for participant %s during force delete",
+                "Failed to dispatch range destroy for participant %s during force delete",
                 participant.pk,
             )
 
