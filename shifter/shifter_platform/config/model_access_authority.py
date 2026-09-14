@@ -8,10 +8,9 @@ double-advancing the same revision.
 
 from __future__ import annotations
 
-from typing import Any
-
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db.models import Model
 from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_save
 
 from shared.model_access import AuthorityInvalidation, AuthorityState, OwnedReference
@@ -43,20 +42,21 @@ def _invalidate_group_ids(group_ids: set[int]) -> None:
         )
 
 
-def _capture_user_flags(sender: Any, instance: Any, **_kwargs: object) -> None:
+def _capture_user_flags(sender: type[Model], instance: Model, **_kwargs: object) -> None:
     """Capture persisted account authority flags before saving."""
     if authority_invalidation_signals_suppressed() or instance.pk is None:
         return
-    previous = sender.objects.filter(pk=instance.pk).values_list("is_active", "is_superuser").first()
+    previous = sender._default_manager.filter(pk=instance.pk).values_list("is_active", "is_superuser").first()
     setattr(instance, _PREVIOUS_FLAGS, previous)
 
 
-def _invalidate_user_flags(sender: Any, instance: Any, created: bool, **_kwargs: object) -> None:
+def _invalidate_user_flags(sender: type[Model], instance: Model, created: bool, **_kwargs: object) -> None:
     """Invalidate user and operator authority after account flag changes."""
     if created or authority_invalidation_signals_suppressed():
         return
     previous = getattr(instance, _PREVIOUS_FLAGS, None)
-    current = (instance.is_active, instance.is_superuser)
+    is_active = bool(getattr(instance, "is_active", False))
+    current = (is_active, bool(getattr(instance, "is_superuser", False)))
     if previous is None or previous == current:
         return
     invalidate_authority(
@@ -66,13 +66,13 @@ def _invalidate_user_flags(sender: Any, instance: Any, created: bool, **_kwargs:
                 OwnedReference(owner="management", reference=f"operator:{instance.pk}"),
                 OwnedReference(owner="management", reference=f"user:{instance.pk}"),
             ),
-            state=AuthorityState.UNKNOWN if instance.is_active else AuthorityState.REVOKED,
+            state=AuthorityState.UNKNOWN if is_active else AuthorityState.REVOKED,
             reason="user-authority-changed",
         )
     )
 
 
-def _group_ids_for_change(instance: Any, reverse: bool, pk_set: set[int] | None) -> set[int]:
+def _group_ids_for_change(instance: Model, reverse: bool, pk_set: set[int] | None) -> set[int]:
     """Resolve group IDs from either side of a membership mutation."""
     if reverse:
         return {instance.pk} if isinstance(instance, Group) and instance.pk is not None else set()
@@ -81,7 +81,7 @@ def _group_ids_for_change(instance: Any, reverse: bool, pk_set: set[int] | None)
 
 def _groups_changed(
     sender: object,
-    instance: Any,
+    instance: Model,
     action: str,
     reverse: bool,
     pk_set: set[int] | None = None,
@@ -90,7 +90,9 @@ def _groups_changed(
     """Lock before, then invalidate after, direct group membership changes."""
     if not authority_invalidation_signals_suppressed():
         if action == "pre_clear":
-            group_ids = {instance.pk} if reverse else set(instance.groups.values_list("pk", flat=True))
+            group_ids = (
+                {instance.pk} if reverse else set(instance.groups.values_list("pk", flat=True))  # type: ignore[attr-defined]
+            )
             if not reverse:
                 setattr(instance, _CLEARED_GROUPS, group_ids)
             tuple(Group.objects.select_for_update().filter(pk__in=group_ids).order_by("pk"))

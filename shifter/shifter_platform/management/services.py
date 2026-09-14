@@ -24,28 +24,16 @@ from shared.log_sanitize import safe_log_fingerprint, safe_log_value
 from shared.model_access import AuthorityInvalidation, AuthorityState, OwnedReference
 from shared.model_access.authority_port import invalidate_authority, suppress_authority_invalidation_signals
 
-from .model_access_authority import (
-    ModelAccessGroupEligibilityView as ModelAccessGroupEligibilityView,
-)
-from .model_access_authority import (
-    ModelAccessGroupScope as ModelAccessGroupScope,
-)
-from .model_access_authority import (
-    ModelAccessIdentityAuthorityError as ModelAccessIdentityAuthorityError,
-)
-from .model_access_authority import (
-    is_platform_operator as is_platform_operator,
-)
-from .model_access_authority import (
-    resolve_model_access_group as resolve_model_access_group,
-)
-from .model_access_authority import (
-    resolve_model_access_users as resolve_model_access_users,
-)
-from .model_access_authority import (
-    set_model_access_group_eligibility as set_model_access_group_eligibility,
-)
+from . import model_access_authority as _model_access_authority
 from .models import ActivityLog, UserProfile
+
+ModelAccessGroupEligibilityView = _model_access_authority.ModelAccessGroupEligibilityView
+ModelAccessGroupScope = _model_access_authority.ModelAccessGroupScope
+ModelAccessIdentityAuthorityError = _model_access_authority.ModelAccessIdentityAuthorityError
+is_platform_operator = _model_access_authority.is_platform_operator
+resolve_model_access_group = _model_access_authority.resolve_model_access_group
+resolve_model_access_users = _model_access_authority.resolve_model_access_users
+set_model_access_group_eligibility = _model_access_authority.set_model_access_group_eligibility
 
 # SonarCloud S1192: extracted duplicated string literals.
 USER_PK_REQUIRED_MSG = "user must have a primary key"

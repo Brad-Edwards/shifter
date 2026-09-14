@@ -6,9 +6,9 @@ Connects to CMS signals to keep CTF data in sync with range status changes.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from django.db import connection
+from django.db.models import Model
 from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
@@ -44,15 +44,16 @@ def _invalidate_model_access(references: list[OwnedReference | None], reason: st
     )
 
 
-def _capture_authority_fields(sender: Any, instance: Any, fields: tuple[str, ...]) -> None:
+def _capture_authority_fields(sender: type[Model], instance: Model, fields: tuple[str, ...]) -> None:
     """Capture persisted authority fields before a model mutation."""
     if instance._state.adding:
-        instance._model_access_authority_before = None
+        instance._model_access_authority_before = None  # type: ignore[attr-defined]
         return
-    instance._model_access_authority_before = sender.all_objects.filter(pk=instance.pk).values(*fields).first()
+    persisted = sender.all_objects.filter(pk=instance.pk).values(*fields).first()  # type: ignore[attr-defined]
+    instance._model_access_authority_before = persisted  # type: ignore[attr-defined]
 
 
-def _changed(instance: Any, fields: tuple[str, ...]) -> bool:
+def _changed(instance: Model, fields: tuple[str, ...]) -> bool:
     """Return whether any captured authority field changed."""
     before = getattr(instance, "_model_access_authority_before", None)
     return before is None or any(before[field] != getattr(instance, field) for field in fields)
@@ -140,12 +141,12 @@ def invalidate_spare_model_access(sender: type[CTFSpareRange], instance: CTFSpar
     )
 
 
-def _capture_container(sender: Any, instance: Any, **kwargs: object) -> None:
+def _capture_container(sender: type[Model], instance: Model, **kwargs: object) -> None:
     """Capture team or cohort authority before saving."""
     _capture_authority_fields(sender, instance, ("event_id", "deleted_at"))
 
 
-def _invalidate_container(noun: str, instance: Any) -> None:
+def _invalidate_container(noun: str, instance: Model) -> None:
     """Invalidate a team or cohort and its enclosing event when changed."""
     if not _changed(instance, ("event_id", "deleted_at")):
         return
@@ -154,7 +155,7 @@ def _invalidate_container(noun: str, instance: Any) -> None:
         [
             _authority_ref(noun, instance.pk),
             _authority_ref("event", before.get("event_id")),
-            _authority_ref("event", instance.event_id),
+            _authority_ref("event", getattr(instance, "event_id", None)),
         ],
         f"ctf-{noun}-changed",
     )
@@ -162,7 +163,7 @@ def _invalidate_container(noun: str, instance: Any) -> None:
 
 @receiver(pre_save, sender=CTFTeam, dispatch_uid="ctf.model_access.team.capture")
 @receiver(pre_save, sender=CTFCohort, dispatch_uid="ctf.model_access.cohort.capture")
-def capture_model_access_container(sender: Any, instance: Any, **kwargs: object) -> None:
+def capture_model_access_container(sender: type[Model], instance: Model, **kwargs: object) -> None:
     """Capture a team or cohort authority snapshot before saving."""
     _capture_container(sender, instance)
 
