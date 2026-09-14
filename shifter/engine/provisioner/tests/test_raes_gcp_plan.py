@@ -14,7 +14,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import GCERangeCellConfig, GCERangeImageProfile
+from config import (
+    GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+    GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+    GCERangeCellConfig,
+    GCERangeImageProfile,
+)
 from gcp_range_cell_types import GceEgressPolicy
 from raes_access import RealizedAccessBinding
 from raes_gcp_firewall import node_tag
@@ -164,6 +169,24 @@ class TestInstances:
         config_2 = _config()
         with pytest.raises(RaesGcePlanError, match="usable addresses"):
             build_raes_range_cell_plan("req-1", 7, plan_2, resolver_2, config_2)
+
+    def test_preconfigured_machine_host_is_rejected_before_raes_realization(self):
+        """RAES cannot publish READY without the participant image canary."""
+        profile = GCERangeImageProfile(
+            source_machine_image="projects/proj-1/global/machineImages/participant-v1",
+            bootstrap_capability=GCE_BOOTSTRAP_PRECONFIGURED_MACHINE_HOST,
+            participant_container_name="participant",
+            participant_username="analyst",
+            participant_readiness_contract=GCE_PARTICIPANT_READINESS_CONTRACT_V1,
+            participant_readiness_manifest_sha256="a" * 64,
+            host_ssh_username="operator",
+        )
+        plan = _plan((_node(),), (_network(),))
+        resolver = _resolver(profile)
+        config = _config()
+
+        with pytest.raises(RaesGcePlanError, match="participant readiness"):
+            build_raes_range_cell_plan("req-1", 7, plan, resolver, config)
 
 
 class TestPlacementErrors:

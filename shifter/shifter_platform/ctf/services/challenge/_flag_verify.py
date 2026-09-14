@@ -251,7 +251,7 @@ def _validate_programmable_config(validator_config: dict[str, Any] | None) -> No
         )
 
 
-def _validate_http_config(validator_config: dict[str, Any] | None) -> None:
+def _validate_http_config(validator_config: dict[str, Any] | None) -> dict[str, Any]:
     """Validate configuration for an HTTP flag.
 
     Args:
@@ -260,39 +260,14 @@ def _validate_http_config(validator_config: dict[str, Any] | None) -> None:
     Raises:
         CTFValidationError: If configuration is invalid.
     """
-    if validator_config is None or not isinstance(validator_config, dict):
-        raise CTFValidationError(
-            "validator_config is required for HTTP flags",
-            details={"missing_fields": ["validator_config"]},
-        )
-    url = validator_config.get("url", "")
-    if not url:
-        raise CTFValidationError(
-            "validator_config.url is required",
-            details={"missing_fields": ["validator_config.url"]},
-        )
-    if not url.startswith("https://"):
-        raise CTFValidationError(
-            "validator_config.url must use HTTPS",
-            details={"url": url},
-        )
+    from ctf.validators import HTTPValidatorConfigError, normalize_http_validator_config
 
-    from ctf.validators import is_blocked_url
-
-    if is_blocked_url(url):
-        raise CTFValidationError(
-            "validator_config.url must not target private or reserved addresses",
-            details={"url": url},
-        )
-
-    timeout = validator_config.get("timeout")
-    if timeout is not None and (not isinstance(timeout, int) or timeout < 1 or timeout > 30):
-        raise CTFValidationError(
-            "validator_config.timeout must be an integer between 1 and 30",
-            details={"timeout": timeout},
-        )
+    try:
+        return normalize_http_validator_config(validator_config)
+    except HTTPValidatorConfigError as exc:
+        raise CTFValidationError(str(exc)) from None
 
 
-def validate_http_flag_config(validator_config: dict[str, Any] | None) -> None:
-    """Public pure validation boundary shared by interactive and bundle writes."""
-    _validate_http_config(validator_config)
+def validate_http_flag_config(validator_config: dict[str, Any] | None) -> dict[str, Any]:
+    """Return canonical configuration shared by interactive and bundle writes."""
+    return _validate_http_config(validator_config)

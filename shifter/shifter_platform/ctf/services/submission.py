@@ -31,6 +31,19 @@ from ctf.services.submission_gates import (  # noqa: E402
 )
 
 
+def _validate_submitted_flag(submitted_flag: object) -> str:
+    """Reject values that cannot be persisted before any verifier can run."""
+    if not isinstance(submitted_flag, str):
+        raise CTFValidationError("Submitted flag must be a string")
+    storage_limit = CTFSubmission._meta.get_field("submitted_flag").max_length
+    if storage_limit is not None and len(submitted_flag) > storage_limit:
+        raise CTFValidationError(
+            "Submitted flag exceeds the maximum length",
+            details={"max_length": storage_limit},
+        )
+    return submitted_flag
+
+
 def _load_submission_entities(participant_id: UUID, challenge_id: UUID) -> tuple[CTFParticipant, CTFChallenge]:
     """Load the submitting participant and target challenge or raise not-found."""
     try:
@@ -221,6 +234,8 @@ def submit_flag(
         CTFRateLimitError: If max attempts exceeded.
         CTFValidationError: If submission is invalid.
     """
+    submitted_flag = _validate_submitted_flag(submitted_flag)
+
     logger.info(
         "Flag submission: participant=%s, challenge=%s",
         participant_id,
