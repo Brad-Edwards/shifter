@@ -1,0 +1,58 @@
+{% load i18n static tz %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% blocktrans with event_name=event.name %}{{ event_name }} registration{% endblocktrans %}</title>
+    <link rel="stylesheet" href="{% static 'ctf/public_registration.css' %}">
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">{% trans "Shifter CTF" %}</p>
+        <h1>{{ event.name }}</h1>
+        {% timezone event.event_timezone %}
+          <p>{% blocktrans with start=event.event_start|date:"N j, Y, P T" end=event.event_end|date:"N j, Y, P T" zone=event.event_timezone %}{{ start }} – {{ end }} ({{ zone }}){% endblocktrans %}</p>
+        {% endtimezone %}
+      </header>
+
+      {% if event.description %}<p class="description">{{ event.description }}</p>{% endif %}
+
+      {% if submitted %}
+        <section role="status" aria-labelledby="request-received">
+          <h2 id="request-received">{% trans "Request received" %}</h2>
+          <p>{% trans "Your registration request has been received. The event organizer will review it." %}</p>
+        </section>
+      {% elif event.registration_open %}
+        <section aria-labelledby="register-heading">
+          <h2 id="register-heading">{% trans "Request registration" %}</h2>
+          {% timezone event.event_timezone %}
+            <p>{% blocktrans with deadline=event.registration_deadline|date:"N j, Y, P T" zone=event.event_timezone %}Registration closes {{ deadline }} ({{ zone }}).{% endblocktrans %}</p>
+          {% endtimezone %}
+          <form method="post">
+            {% csrf_token %}
+            <div>
+              <label for="{{ form.name.id_for_label }}">{% trans "Name" %}</label>
+              {{ form.name }}
+              {% for error in form.name.errors %}<p class="error">{{ error }}</p>{% endfor %}
+            </div>
+            <div>
+              <label for="{{ form.email.id_for_label }}">{% trans "Email" %}</label>
+              {{ form.email }}
+              {% for error in form.email.errors %}<p class="error">{{ error }}</p>{% endfor %}
+            </div>
+            <button type="submit">{% trans "Request registration" %}</button>
+          </form>
+        </section>
+      {% else %}
+        <section role="status">
+          <h2>{% trans "Registration closed" %}</h2>
+          <p>{% trans "This event is no longer accepting registration requests." %}</p>
+        </section>
+      {% endif %}
+
+      <footer><a href="{% url 'privacy_notice' %}">{% trans "Privacy notice" %}</a></footer>
+    </main>
+  </body>
+</html>

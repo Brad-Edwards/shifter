@@ -52,6 +52,7 @@ from .event_page import CTFEventPage
 from .flag import CTFFlag
 from .hint import CTFHint, CTFHintUsage
 from .notification import CTFEmailTemplate, CTFNotification, CTFWebhook
+from .public_registration import CTFPublicRegistrationRequest
 from .rating import CTFChallengeRating
 from .recovery import CTFRangeRecovery
 from .scheduled_task import CTFScheduledTask
@@ -84,6 +85,7 @@ __all__ = [
     "CTFHintUsage",
     "CTFNotification",
     "CTFParticipant",
+    "CTFPublicRegistrationRequest",
     "CTFRangeRecovery",
     "CTFReceiptConsumption",
     "CTFScheduledTask",

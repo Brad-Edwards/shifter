@@ -918,6 +918,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/registration-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the bounded pending queue for one authorized event. */
+        get: operations["ctf_events_registration_requests_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/results/export/": {
         parameters: {
             query?: never;
@@ -1882,6 +1899,23 @@ export interface paths {
         put?: never;
         /** @description Return a no-store credential after role, ownership, state and rate gates. */
         post: operations["ctf_range_vpn_profile_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/registration-requests/{request_id}/disposition/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate authority and apply exactly one terminal disposition. */
+        post: operations["ctf_registration_requests_disposition_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3315,6 +3349,9 @@ export interface components {
             readonly id: string;
             readonly name: string;
             readonly description: string;
+            readonly public_registration_enabled: boolean;
+            /** Format: uri */
+            readonly public_registration_url: string | null;
             readonly status: string;
             /** Format: date-time */
             readonly event_start: string;
@@ -3450,6 +3487,7 @@ export interface components {
         EventWrite: {
             name: string;
             description?: string;
+            public_registration_enabled?: boolean;
             /** Format: date-time */
             event_start: string;
             /** Format: date-time */
@@ -4327,6 +4365,40 @@ export interface components {
             readonly is_personal: boolean;
             readonly role: components["schemas"]["WorkspaceRoleEnum"];
             readonly capabilities: string[];
+        };
+        /** @description Closed organizer decision vocabulary. */
+        PublicRegistrationDisposition: {
+            action: components["schemas"]["PublicRegistrationDispositionActionEnum"];
+        };
+        /**
+         * @description * `approve` - approve
+         *     * `reject` - reject
+         * @enum {string}
+         */
+        PublicRegistrationDispositionActionEnum: "approve" | "reject";
+        /** @description Terminal disposition result. */
+        PublicRegistrationDispositionResult: {
+            /** Format: uuid */
+            readonly request_id: string;
+            readonly disposition: string;
+            /** Format: uuid */
+            readonly participant_id: string | null;
+        };
+        /** @description One pending request visible only to an authorized event organizer. */
+        PublicRegistrationRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
+            /** Format: email */
+            readonly email: string;
+            readonly disposition: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Paginated pending-request queue. */
+        PublicRegistrationRequestListResponse: {
+            readonly requests: components["schemas"]["PublicRegistrationRequest"][];
+            readonly total: number;
         };
         /**
          * @description Public scoreboard read surface.
@@ -7873,6 +7945,45 @@ export interface operations {
             };
         };
     };
+    ctf_events_registration_requests_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRegistrationRequestListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_results_export_retrieve: {
         parameters: {
             query?: never;
@@ -10413,6 +10524,51 @@ export interface operations {
                 };
             };
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_registration_requests_disposition_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicRegistrationDisposition"];
+                "application/x-www-form-urlencoded": components["schemas"]["PublicRegistrationDisposition"];
+                "multipart/form-data": components["schemas"]["PublicRegistrationDisposition"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRegistrationDispositionResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -95,6 +95,10 @@ from ctf.api.organizer.ranges import (
     ParticipantRangeStopView,
     ParticipantVpnProfileView,
 )
+from ctf.api.organizer.registration import (
+    PublicRegistrationDispositionView,
+    PublicRegistrationRequestListView,
+)
 from ctf.api.organizer.scoreboard import (
     OrganizerScoreboardView,
     ScoreTimelineView,
@@ -168,6 +172,8 @@ __all__ = [
     "ParticipantUsernameView",
     "ParticipantVpnProfileView",
     "PrerequisiteDeleteView",
+    "PublicRegistrationDispositionView",
+    "PublicRegistrationRequestListView",
     "RateChallengeView",
     "RemoveFlagView",
     "ScenarioListView",

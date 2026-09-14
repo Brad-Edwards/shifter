@@ -107,6 +107,10 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         default="",
         help_text="Detailed event description (supports Markdown)",
     )
+    public_registration_enabled = models.BooleanField(
+        default=False,
+        help_text="Whether the event's unauthenticated registration page is explicitly published",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -259,6 +263,12 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
             models.Index(fields=["status", "event_start"]),
             models.Index(fields=["created_by", "status"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(public_registration_enabled=False) | models.Q(workspace_id__isnull=False),
+                name="ctf_event_public_registration_scoped",
+            ),
+        ]
 
     # The workspace scope is the event's tenancy boundary (ADR-051): rebinding it
     # would silently move the event, its participants, and every scoped
@@ -276,6 +286,7 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
         self._validate_registration_deadline(errors)
         self._validate_team_settings(errors)
         self._validate_scoreboard_freeze_time(errors)
+        self._validate_public_registration(errors)
         self.validate_immutable(errors)
         if errors:
             raise ValidationError(errors)
@@ -303,6 +314,13 @@ class CTFEvent(ImmutableFieldsMixin, CTFBaseModel):
             errors.setdefault("scoreboard_freeze_at", []).append("Scoreboard freeze time must be after event start.")
         if self.event_end and self.scoreboard_freeze_at >= self.event_end:
             errors.setdefault("scoreboard_freeze_at", []).append("Scoreboard freeze time must be before event end.")
+
+    def _validate_public_registration(self, errors: dict[str, list[str]]) -> None:
+        """Fail closed when publication is enabled without a tenant scope."""
+        if self.public_registration_enabled and self.workspace_id is None:
+            errors.setdefault("public_registration_enabled", []).append(
+                "Public registration requires an event workspace."
+            )
 
     @property
     def is_active(self) -> bool:

@@ -152,6 +152,8 @@ class EventDetailSerializer(_EventAccessProjectionMixin, serializers.Serializer)
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True, allow_blank=True)
+    public_registration_enabled = serializers.BooleanField(read_only=True)
+    public_registration_url = serializers.SerializerMethodField()
     status = serializers.CharField(read_only=True)
     event_start = serializers.DateTimeField(read_only=True)
     event_end = serializers.DateTimeField(read_only=True)
@@ -181,6 +183,19 @@ class EventDetailSerializer(_EventAccessProjectionMixin, serializers.Serializer)
     theme_color = serializers.CharField(read_only=True, allow_blank=True)
     managed_content = serializers.SerializerMethodField()
 
+    @extend_schema_field(serializers.URLField(allow_null=True))
+    def get_public_registration_url(self, event: CTFEvent) -> str | None:
+        """Build the share URL only from the validated installation origin."""
+        from django.urls import reverse
+
+        from shared.site_url import SiteUrlUnavailable, validated_site_url
+
+        try:
+            origin = validated_site_url()
+        except SiteUrlUnavailable:
+            return None
+        return f"{origin}{reverse('ctf:public_event_registration', args=[event.pk])}"
+
     @extend_schema_field(ManagedContentSummarySerializer(allow_null=True))
     def get_managed_content(self, event: CTFEvent) -> dict[str, object] | None:
         """Return the event's managed-content summary, or None when unmanaged."""
@@ -207,6 +222,7 @@ class EventWriteSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=200)
     description = serializers.CharField(required=False, allow_blank=True)
+    public_registration_enabled = serializers.BooleanField(required=False)
     event_start = serializers.DateTimeField()
     event_end = serializers.DateTimeField()
     registration_deadline = serializers.DateTimeField(required=False, allow_null=True)
