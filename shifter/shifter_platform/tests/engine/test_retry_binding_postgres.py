@@ -36,7 +36,6 @@ def _bind(digest, barrier):
         result = bind_public_operation(
             **KEY,
             intent_digest=digest,
-            intent_projection_version="1",
             mint=lambda: MintedOperation(request_id=str(uuid4()), operation_id=str(uuid4())),
         )
         return ("created" if result.created else "recovered", str(result.binding.operation_id))

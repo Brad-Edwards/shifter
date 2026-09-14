@@ -15,8 +15,11 @@ gone.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from ._cleanup_verification import CleanupVerificationView
 
 __all__ = [
     "CLEANUP_NOT_APPLICABLE",
@@ -62,6 +65,7 @@ class RangeCleanupOutcome:
 
 
 def _absent_outcome(rid: UUID) -> RangeCleanupOutcome:
+    """Return the unknown outcome for a request with no range record."""
     return RangeCleanupOutcome(
         request_id=str(rid),
         found=False,
@@ -75,7 +79,7 @@ def _absent_outcome(rid: UUID) -> RangeCleanupOutcome:
     )
 
 
-def _classify_with_verification(view, obligations: list[CleanupObligation]) -> str:
+def _classify_with_verification(view: CleanupVerificationView, obligations: list[CleanupObligation]) -> str:
     """Classify cleanup from inventory/readback evidence and append residual obligations."""
     from engine.models import CleanupVerificationOutcome
 
@@ -95,33 +99,61 @@ def _classify_with_verification(view, obligations: list[CleanupObligation]) -> s
     return CLEANUP_UNKNOWN
 
 
+# Lifecycle status -> (cleanup, obligation) when no inventory evidence exists yet.
+# A terminal DESTROYED status is still only `pending` (ADR-063-R4 forbids claiming
+# verified cleanup without readback); FAILED/other are `unknown` (absence unproven).
+_UNVERIFIED_BY_STATUS: dict[str, tuple[str, CleanupObligation]] = {
+    "destroying": (
+        CLEANUP_PENDING,
+        CleanupObligation("teardown_in_progress", "destroy dispatched; provider inventory not yet observed"),
+    ),
+    "destroyed": (
+        CLEANUP_PENDING,
+        CleanupObligation(
+            "provider_inventory_unconfirmed", "lifecycle terminal but no provider inventory evidence yet"
+        ),
+    ),
+    "failed": (
+        CLEANUP_UNKNOWN,
+        CleanupObligation("operation_failed", "operation failed; residual resources possible, absence not proven"),
+    ),
+}
+_UNVERIFIED_DEFAULT = (
+    CLEANUP_UNKNOWN,
+    CleanupObligation("provider_inventory_unconfirmed", "cleanup not verified by provider inventory/readback"),
+)
+
+
 def _classify_without_verification(status: str, obligations: list[CleanupObligation]) -> str:
     """Classify cleanup from lifecycle status when no inventory evidence exists yet."""
-    from shared.enums import ResourceStatus
+    cleanup, obligation = _UNVERIFIED_BY_STATUS.get(status, _UNVERIFIED_DEFAULT)
+    obligations.append(obligation)
+    return cleanup
 
-    if status == ResourceStatus.DESTROYING.value:
+
+def _classify_cleanup(
+    status: str, verification: CleanupVerificationView | None, obligations: list[CleanupObligation]
+) -> str:
+    """Dispatch cleanup classification across active / verified / unverified states."""
+    if status in _ACTIVE_STATUSES:
+        return CLEANUP_NOT_APPLICABLE
+    if verification is not None:
+        return _classify_with_verification(verification, obligations)
+    return _classify_without_verification(status, obligations)
+
+
+def _append_dispatch_obligations(cleanup: str, intent: Any, obligations: list[CleanupObligation]) -> None:
+    """Append dispatch/interrupt obligations when cleanup is neither N/A nor verified."""
+    if cleanup in (CLEANUP_NOT_APPLICABLE, CLEANUP_VERIFIED_TERMINAL) or intent is None:
+        return
+    if str(intent.status) == "DLQ":
         obligations.append(
-            CleanupObligation("teardown_in_progress", "destroy dispatched; provider inventory not yet observed")
+            CleanupObligation("dispatch_dead_lettered", "launch dispatch exhausted; outcome indeterminate")
         )
-        return CLEANUP_PENDING
-    if status == ResourceStatus.DESTROYED.value:
-        # Lifecycle terminal, but ADR-063-R4 forbids claiming verified without readback.
+    if str(intent.interrupt_state) == "EXHAUSTED":
         obligations.append(
-            CleanupObligation(
-                "provider_inventory_unconfirmed",
-                "lifecycle terminal but no provider inventory/readback evidence yet",
-            )
+            CleanupObligation("interrupt_exhausted", "cancellation deadline elapsed without confirmed terminal absence")
         )
-        return CLEANUP_PENDING
-    if status == ResourceStatus.FAILED.value:
-        obligations.append(
-            CleanupObligation("operation_failed", "operation failed; residual resources possible, absence not proven")
-        )
-        return CLEANUP_UNKNOWN
-    obligations.append(
-        CleanupObligation("provider_inventory_unconfirmed", "cleanup not verified by provider inventory/readback")
-    )
-    return CLEANUP_UNKNOWN
 
 
 def project_range_cleanup_outcome(request_id: str | UUID) -> RangeCleanupOutcome:
@@ -140,42 +172,20 @@ def project_range_cleanup_outcome(request_id: str | UUID) -> RangeCleanupOutcome
         if row.provisioner_operation_id
         else None
     )
-    dispatch_status = str(intent.status) if intent else "none"
-    cancel_state = str(intent.interrupt_state or "none") if intent else "none"
-
     obligations: list[CleanupObligation] = []
     status = str(row.status)
     verification = latest_cleanup_verification(rid)
-    verification_observed_at = verification.observed_at.isoformat() if verification else None
-    verification_scope = verification.scope if verification else None
-
-    if status in _ACTIVE_STATUSES:
-        cleanup = CLEANUP_NOT_APPLICABLE
-    elif verification is not None:
-        cleanup = _classify_with_verification(verification, obligations)
-    else:
-        cleanup = _classify_without_verification(status, obligations)
-
-    if cleanup not in (CLEANUP_NOT_APPLICABLE, CLEANUP_VERIFIED_TERMINAL) and intent is not None:
-        if str(intent.status) == "DLQ":
-            obligations.append(
-                CleanupObligation("dispatch_dead_lettered", "launch dispatch exhausted; outcome indeterminate")
-            )
-        if str(intent.interrupt_state) == "EXHAUSTED":
-            obligations.append(
-                CleanupObligation(
-                    "interrupt_exhausted", "cancellation deadline elapsed without confirmed terminal absence"
-                )
-            )
+    cleanup = _classify_cleanup(status, verification, obligations)
+    _append_dispatch_obligations(cleanup, intent, obligations)
 
     return RangeCleanupOutcome(
         request_id=str(rid),
         found=True,
         operation_status=status,
-        dispatch_status=dispatch_status,
-        cancel_state=cancel_state,
+        dispatch_status=str(intent.status) if intent else "none",
+        cancel_state=str(intent.interrupt_state or "none") if intent else "none",
         cleanup=cleanup,
         residual_obligations=obligations,
-        verification_observed_at=verification_observed_at,
-        verification_scope=verification_scope,
+        verification_observed_at=verification.observed_at.isoformat() if verification else None,
+        verification_scope=verification.scope if verification else None,
     )

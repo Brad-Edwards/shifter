@@ -62,18 +62,21 @@ def test_changed_bound_component_changes_digest():
 
 def test_non_finite_float_rejected_before_hashing():
     for bad in (float("nan"), float("inf"), float("-inf")):
+        projection = _projection(lease={"seconds": bad})
         with pytest.raises(IntentProjectionError):
-            canonical_intent_digest(_projection(lease={"seconds": bad}))
+            canonical_intent_digest(projection)
 
 
 def test_nested_non_finite_rejected():
+    projection = _projection(compiled_plan={"nodes": [{"cpu": float("inf")}]})
     with pytest.raises(IntentProjectionError):
-        canonical_intent_digest(_projection(compiled_plan={"nodes": [{"cpu": float("inf")}]}))
+        canonical_intent_digest(projection)
 
 
 def test_unsupported_type_rejected():
+    projection = _projection(actor={"roles": {"admin", "user"}})
     with pytest.raises(IntentProjectionError):
-        canonical_intent_digest(_projection(actor={"roles": {"admin", "user"}}))
+        canonical_intent_digest(projection)
 
 
 def test_non_dict_projection_rejected():

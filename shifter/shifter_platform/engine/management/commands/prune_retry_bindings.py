@@ -19,7 +19,6 @@ from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.db import close_old_connections
 
 from engine.retry_binding import prune_expired_retry_bindings
 
@@ -50,7 +49,6 @@ class Command(BaseCommand):
         for _ in range(_MAX_BATCHES):
             deleted = prune_expired_retry_bindings(batch_size=batch_size)
             total += deleted
-            close_old_connections()
             if deleted < batch_size:
                 break
         logger.info("Pruned %d expired verified-resolved retry binding(s)", total)

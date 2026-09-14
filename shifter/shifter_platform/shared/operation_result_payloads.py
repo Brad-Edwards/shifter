@@ -317,16 +317,29 @@ def _parse_raes_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, 
     is coarse and direction-free, so an unpinned body would let a late
     ``running`` result be recorded under a terminal step (or the reverse).
     """
-    required = frozenset({"raes_status"})
     # ``cleanup_inventory`` (#2086, ADR-063-R4) is the optional scoped provider
     # inventory/readback evidence carried by a terminal destroy result.
-    unexpected = sorted(frozenset(payload) - (required | {"status_reason", "cleanup_inventory"}))
+    _require_raes_keys(payload)
+    parsed: dict[str, Any] = {"raes_status": _validated_raes_state(payload, spec)}
+    reason = _parse_optional_status_reason(payload)
+    if reason is not None:
+        parsed["status_reason"] = reason
+    if "cleanup_inventory" in payload:
+        parsed["cleanup_inventory"] = _parse_cleanup_inventory(payload["cleanup_inventory"])
+    return parsed
+
+
+def _require_raes_keys(payload: dict[str, Any]) -> None:
+    """Reject unexpected keys and require ``raes_status`` on an RAES result payload."""
+    unexpected = sorted(frozenset(payload) - frozenset({"raes_status", "status_reason", "cleanup_inventory"}))
     if unexpected:
         raise OperationResultError(f"{_PAYLOAD_FIELD} has unexpected field(s): {', '.join(unexpected)}")
-    missing = sorted(required - frozenset(payload))
-    if missing:
-        raise OperationResultError(f"{_PAYLOAD_FIELD} is missing field(s): {', '.join(missing)}")
+    if "raes_status" not in payload:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} is missing field(s): raes_status")
 
+
+def _validated_raes_state(payload: dict[str, Any], spec: StepSpec) -> str:
+    """Return the ``raes_status`` value, pinned to the step's declared state."""
     state = payload["raes_status"]
     if not isinstance(state, str) or state not in RAES_OPERATION_STATES:
         raise OperationResultError(
@@ -334,25 +347,26 @@ def _parse_raes_operation(payload: dict[str, Any], spec: StepSpec) -> dict[str, 
         )
     if spec.raes_state is not None and state != spec.raes_state:
         raise OperationResultError(f"{_PAYLOAD_FIELD} raes_status must be '{spec.raes_state}' for this step")
+    return state
 
-    parsed: dict[str, Any] = {"raes_status": state}
-    if "status_reason" in payload:
-        reason = payload["status_reason"]
-        if not isinstance(reason, str):
-            raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason must be a string")
-        if len(reason) > MAX_DIAGNOSTIC_CHARS:
-            raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason exceeds {MAX_DIAGNOSTIC_CHARS} characters")
-        parsed["status_reason"] = reason
-    if "cleanup_inventory" in payload:
-        parsed["cleanup_inventory"] = _parse_cleanup_inventory(payload["cleanup_inventory"])
-    return parsed
+
+def _parse_optional_status_reason(payload: dict[str, Any]) -> str | None:
+    """Return the bounded ``status_reason`` string when present, else ``None``."""
+    if "status_reason" not in payload:
+        return None
+    reason = payload["status_reason"]
+    if not isinstance(reason, str):
+        raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason must be a string")
+    if len(reason) > MAX_DIAGNOSTIC_CHARS:
+        raise OperationResultError(f"{_PAYLOAD_FIELD} status_reason exceeds {MAX_DIAGNOSTIC_CHARS} characters")
+    return reason
 
 
 _CLEANUP_OUTCOMES = frozenset({"VERIFIED_ABSENT", "RESIDUALS_FOUND", "INCOMPLETE"})
 _CLEANUP_MAX_RESIDUAL_CATEGORIES = 32
 
 
-def _parse_cleanup_inventory(value: Any) -> dict[str, Any]:
+def _parse_cleanup_inventory(value: object) -> dict[str, Any]:
     """Validate the bounded provider inventory/readback evidence (#2086, ADR-063-R4)."""
     if not isinstance(value, dict):
         raise OperationResultError(f"{_PAYLOAD_FIELD} cleanup_inventory must be an object")

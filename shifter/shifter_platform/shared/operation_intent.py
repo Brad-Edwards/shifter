@@ -55,18 +55,21 @@ def _reject_invalid(value: object, path: str) -> None:
     if isinstance(value, float):
         if not math.isfinite(value):
             raise IntentProjectionError(f"{path} must be a finite number")
-        return
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise IntentProjectionError(f"{path} object keys must be strings")
-            _reject_invalid(item, f"{path}.{key}")
-        return
-    if isinstance(value, (list, tuple)):
+    elif isinstance(value, dict):
+        _reject_invalid_mapping(value, path)
+    elif isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
             _reject_invalid(item, f"{path}[{index}]")
-        return
-    raise IntentProjectionError(f"{path} has an unsupported type: {type(value).__name__}")
+    else:
+        raise IntentProjectionError(f"{path} has an unsupported type: {type(value).__name__}")
+
+
+def _reject_invalid_mapping(mapping: dict[object, object], path: str) -> None:
+    """Reject non-string keys and recurse into values of a mapping."""
+    for key, item in mapping.items():
+        if not isinstance(key, str):
+            raise IntentProjectionError(f"{path} object keys must be strings")
+        _reject_invalid(item, f"{path}.{key}")
 
 
 def validate_intent_projection(projection: object) -> ProjectionDict:

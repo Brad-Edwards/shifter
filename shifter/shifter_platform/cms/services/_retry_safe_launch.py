@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from django.contrib.auth.models import User
 
@@ -68,7 +69,7 @@ def _caller_intent(
     user: User,
     scenario: str,
     agents_selection: dict[str, Any],
-    workspace_uuid: Any,
+    workspace_uuid: str | UUID | None,
     deployment_scope: str,
 ) -> dict[str, Any]:
     """Normalize the caller-controlled launch selections for the retry digest.
@@ -90,8 +91,13 @@ def _caller_intent(
 
 
 def _digest(
-    user: User, scenario: str, agents_selection: dict[str, Any], workspace_uuid: Any, deployment_scope: str
+    user: User,
+    scenario: str,
+    agents_selection: dict[str, Any],
+    workspace_uuid: str | UUID | None,
+    deployment_scope: str,
 ) -> str:
+    """Return the canonical digest of the caller's normalized launch intent."""
     return canonical_intent_digest(_caller_intent(user, scenario, agents_selection, workspace_uuid, deployment_scope))
 
 
@@ -100,7 +106,7 @@ def resolve_retry_recovery(
     *,
     scenario: str,
     agents_selection: dict[str, Any],
-    workspace_uuid: Any,
+    workspace_uuid: str | UUID | None,
     caller_key: str,
 ) -> RetrySafeLaunchOutcome | None:
     """Recover a bound operation for a replay, without minting or re-validating.
@@ -135,7 +141,7 @@ def bind_first_use_launch(
     scenario: str,
     agents_selection: dict[str, Any],
     agents_by_os: dict[str, int] | None,
-    workspace_uuid: Any = None,
+    workspace_uuid: str | UUID | None = None,
     caller_key: str,
 ) -> RetrySafeLaunchOutcome:
     """Dispatch and bind on first use of a retry key (mint + bind atomically).
@@ -149,6 +155,7 @@ def bind_first_use_launch(
     digest = _digest(user, scenario, agents_selection, workspace_uuid, deployment_scope)
 
     def mint() -> MintedOperation:
+        """Dispatch the RAES create and return the minted request/operation identity."""
         ctx = create_range_dispatch(user, scenario, agents_by_os or {}, workspace_uuid=workspace_uuid)
         return MintedOperation(request_id=str(ctx.request_id), operation_id=operation_id_for_request(ctx.request_id))
 
@@ -158,7 +165,6 @@ def bind_first_use_launch(
         action=_LAUNCH_ACTION,
         caller_key=caller_key,
         intent_digest=digest,
-        intent_projection_version=INTENT_PROJECTION_VERSION,
         mint=mint,
     )
     return RetrySafeLaunchOutcome(
