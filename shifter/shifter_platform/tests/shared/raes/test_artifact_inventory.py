@@ -10,14 +10,14 @@ satisfies an exact requirement end-to-end through the seam.
 from __future__ import annotations
 
 import pytest
-from raes._source import (
+from raes.artifact_requirements import (
     ArtifactCandidate,
     ArtifactConstraint,
     ArtifactIdentity,
     ArtifactRequirement,
     ArtifactSatisfactionRoute,
-    ExplicitnessClass,
 )
+from raes.explicitness import ExplicitnessClass
 from raes_contracts.apparatus import ApparatusIdentity
 
 from shared.raes.artifact_inventory import (
@@ -135,7 +135,7 @@ def test_manifest_declares_only_exact_artifact_mechanism():
     assert len(capabilities) == 1
     capability = capabilities[0]
     assert capability.mechanism.mechanism == "exact-artifact"
-    assert capability.supported_requirement_kinds == ["exact"]
+    assert capability.supported_requirement_kinds == ["source-artifact"]
     route = capability.supported_routes[0]
     assert (route.acquisition, route.timing) == ("local-lookup", "backend-preparation")
 

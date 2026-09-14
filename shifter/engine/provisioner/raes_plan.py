@@ -33,6 +33,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, cast
 
+import raes_plan_contract
 import raes_plan_domain
 import raes_plan_resources
 from raes_acl import build_node_acls
@@ -61,6 +62,21 @@ from raes_plan_types import (
     RaesPlanNetwork,
     RaesPlanNode,
     RaesPlanServicePort,
+)
+from raes_plan_values import (
+    _identity_lookup,
+    _image,
+    _infrastructure_spec,
+    _memory_mib,
+    _network,
+    _network_refs,
+    _network_selection_open,
+    _node_count,
+    _node_spec,
+    _os_family,
+    _os_identity_term,
+    _resource_name,
+    _vcpus,
 )
 from raes_service import build_node_services
 
@@ -95,139 +111,12 @@ RAES_PROVISIONING_PLAN_KIND = "raes_provisioning_plan"
 #: stamp ``shared.raes.contracts.RAES_PROVISIONING_PLAN_CONTRACT_VERSION`` by a
 #: platform-side parity test (mirroring the ``RAES_PROVISIONING_PLAN_KIND`` pattern).
 #: A new transport envelope shape is a new ``-vN`` member of the supported set.
-RAES_PROVISIONING_PLAN_CONTRACT_VERSION = "raes-provisioning-plan-v1"
+RAES_PROVISIONING_PLAN_CONTRACT_VERSION = "raes-provisioning-plan-v2"
 SUPPORTED_CONTRACT_VERSIONS: frozenset[str] = frozenset({RAES_PROVISIONING_PLAN_CONTRACT_VERSION})
 
 #: Exact ``raes`` producer release this consumer accepts. A different producer
 #: release is a different reviewed contract and is rejected before realization.
-SUPPORTED_RAES_VERSION = "2.0.0"
-
-_MIB = 1024 * 1024
-
-
-def _mapping(value: object) -> Mapping[str, Any]:
-    """Return ``value`` if it is a mapping, else an empty mapping."""
-    return value if isinstance(value, Mapping) else {}
-
-
-def _spec(payload: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Return the payload's ``spec`` mapping, or an empty mapping."""
-    return _mapping(payload.get("spec"))
-
-
-def _node_spec(payload: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Return the payload's ``spec.node`` mapping, or an empty mapping."""
-    return _mapping(_spec(payload).get("node"))
-
-
-def _infrastructure_spec(payload: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Return the payload's ``spec.infrastructure`` mapping, or an empty mapping."""
-    return _mapping(_spec(payload).get("infrastructure"))
-
-
-def _resource_name(address: str, payload: Mapping[str, Any]) -> str:
-    """Return the authored resource name, falling back to the address leaf."""
-    name = payload.get("name") or payload.get("node_name")
-    if isinstance(name, str) and name.strip():
-        return name.strip()
-    return address.rsplit(".", 1)[-1]
-
-
-def _os_family(payload: Mapping[str, Any]) -> str:
-    """Mirror raes_backend_libvirt._os_family: os_family, else spec.node.os."""
-    family = payload.get("os_family")
-    if isinstance(family, str) and family:
-        return family
-    node_os = _node_spec(payload).get("os")
-    return node_os if isinstance(node_os, str) else ""
-
-
-def _node_count(payload: Mapping[str, Any]) -> int:
-    """Return the node instance count (>= 1); default 1 for missing/invalid values."""
-    raw = payload.get("count")
-    if isinstance(raw, bool):
-        return 1
-    if isinstance(raw, int) and raw >= 1:
-        return raw
-    return 1
-
-
-def _memory_mib(payload: Mapping[str, Any]) -> int | None:
-    """Authored RAM -> MiB (mirror raes_backend_libvirt._memory_mib); None if absent."""
-    raw = _mapping(_node_spec(payload).get("resources")).get("ram")
-    if isinstance(raw, int | float) and not isinstance(raw, bool) and raw > 0:
-        if raw >= _MIB:
-            return max(128, int((raw + _MIB - 1) // _MIB))
-        return max(128, int(raw))
-    return None
-
-
-def _vcpus(payload: Mapping[str, Any]) -> int | None:
-    """Authored CPU -> vcpus (mirror raes_backend_libvirt._vcpus); None if absent."""
-    raw = _mapping(_node_spec(payload).get("resources")).get("cpu")
-    if isinstance(raw, int | float) and not isinstance(raw, bool) and raw > 0:
-        return max(1, int(raw))
-    return None
-
-
-def _image(payload: Mapping[str, Any]) -> RaesPlanImage | None:
-    """Authored image from spec.node.source (name verbatim, mirror _image_ref)."""
-    source = _node_spec(payload).get("source")
-    if isinstance(source, str) and source.strip():
-        return RaesPlanImage(name=source.strip())
-    if isinstance(source, Mapping):
-        name = source.get("name")
-        if isinstance(name, str) and name.strip():
-            version = source.get("version")
-            return RaesPlanImage(
-                name=name.strip(),
-                version=version.strip() if isinstance(version, str) and version.strip() else None,
-            )
-    return None
-
-
-def _network_refs(payload: Mapping[str, Any]) -> tuple[str, ...]:
-    """Return the network handles a node references (``networks`` then ``links``)."""
-    infra = _infrastructure_spec(payload)
-    for field_name in ("networks", "links"):
-        raw = infra.get(field_name)
-        if isinstance(raw, list | tuple):
-            return tuple(ref for ref in raw if isinstance(ref, str) and ref.strip())
-    return ()
-
-
-def _network(address: str, payload: Mapping[str, Any]) -> RaesPlanNetwork:
-    """Build an RaesPlanNetwork from a network resource payload (cidr/gateway/internal)."""
-    props = _mapping(_infrastructure_spec(payload).get("properties"))
-    cidr = props.get("cidr")
-    gateway = props.get("gateway")
-    return RaesPlanNetwork(
-        address=address,
-        name=_resource_name(address, payload),
-        cidr=cidr.strip() if isinstance(cidr, str) and cidr.strip() else None,
-        gateway=gateway.strip() if isinstance(gateway, str) and gateway.strip() else None,
-        internal=props.get("internal") is True,
-    )
-
-
-def _identity_lookup(resources: list[tuple[str, Mapping[str, Any]]], kind: str) -> dict[str, str]:
-    """Map every handle a resource may be referenced by to its canonical address.
-
-    Handles are the canonical address, the authored name, and the address leaf.
-    Fails closed (ADR-032-R7) when two distinct resources of ``kind`` share a
-    handle, since a reference to that handle would be ambiguous.
-    """
-    lookup: dict[str, str] = {}
-    for address, payload in resources:
-        name = _resource_name(address, payload)
-        for key in (address, name, address.rsplit(".", 1)[-1]):
-            if not key:
-                continue
-            existing = lookup.get(key)
-            if existing is not None and existing != address:
-                raise RaesPlanError(f"duplicate {kind} alias {key!r} maps to {existing!r} and {address!r}")
-            lookup[key] = address
-    return lookup
+SUPPORTED_RAES_VERSION = "3.5.0"
 
 
 #: A strict dotted-numeric release: ``MAJOR[.MINOR[.PATCH...]]`` with no pre-release
@@ -343,7 +232,7 @@ def _build_composition_value[CompositionValue: (RaesPlanContent, RaesPlanAccount
     return value
 
 
-def parse_plan(range_config: dict[str, Any] | None) -> RaesPlan:
+def parse_plan(range_config: dict[str, Any] | None, *, cleanup_only: bool = False) -> RaesPlan:
     """Parse a serialized RAES plan from a range_config dict, failing closed.
 
     Self-discriminates on ``kind`` so an ``raes-range`` command run against a
@@ -359,7 +248,10 @@ def parse_plan(range_config: dict[str, Any] | None) -> RaesPlan:
     kind = envelope.get("kind")
     if kind != RAES_PROVISIONING_PLAN_KIND:
         raise RaesPlanError(f"kind must be {RAES_PROVISIONING_PLAN_KIND!r}, got {kind!r}")
-    raes_version = _validate_versions(envelope)
+    if not cleanup_only:
+        _validate_versions(envelope)
+    envelope = raes_plan_contract.prepare_envelope(envelope, cleanup_only=cleanup_only)
+    raes_version = envelope["raes_version"]
 
     resources = _require_mapping(envelope.get("resources"), where="resources")
     collected = raes_plan_resources.collect_resources(resources)
@@ -425,8 +317,11 @@ def _node(
         address=address,
         name=_resource_name(address, payload),
         os_family=_os_family(payload),
+        os_distribution=_os_identity_term(payload, "os_distribution"),
+        os_version=_os_identity_term(payload, "os_version"),
         count=_node_count(payload),
         network_addresses=resolved,
+        network_selection_open=_network_selection_open(payload),
         ram_mib=_memory_mib(payload),
         vcpus=_vcpus(payload),
         image=_image(payload),

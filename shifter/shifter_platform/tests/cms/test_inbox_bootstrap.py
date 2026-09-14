@@ -170,6 +170,38 @@ class TestRegisterInboxPacks:
 
 
 class TestBootstrapCommand:
+    def test_shipped_upgrade_replaces_only_the_declared_previous_digest(self, admin_actor, monkeypatch):
+        from django.conf import settings
+        from django.core.management import CommandError, call_command
+
+        monkeypatch.setattr(settings, "RAES_PACKAGE_ROOT", str(SHIPPED_INBOX_MANIFEST.parents[3]))
+        request = load_inbox_manifest()[0]
+        source = RaesPackageSource.objects.create(
+            scenario_id=request.scenario_id,
+            source_kind=request.source_kind,
+            contract_kind=request.contract_kind,
+            contract_profile=request.contract_profile,
+            package_ref=request.package_ref,
+            package_version="0.1.0",
+            package_digest=request.expected_package_digest,
+            provenance=request.provenance,
+            conformance_status="passed",
+            conformance_report_ref="release://previous-version",
+            registered_by=admin_actor,
+        )
+        original_id = source.id
+        call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
+        source.refresh_from_db()
+        assert source.id == original_id
+        assert source.package_digest == request.package_digest
+        assert source.package_version == "0.2.0"
+        assert source.conformance_status == "passed"
+        # A later customized tenant revision must not be overwritten by deploy.
+        source.package_digest = "sha256:" + "f" * 64
+        source.save()
+        with pytest.raises(CommandError, match="conflicts"):
+            call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
+
     def test_command_registers_and_promotes_the_shipped_smoke_linux_pack(self, admin_actor, monkeypatch):
         from django.conf import settings
         from django.core.management import call_command
@@ -182,7 +214,7 @@ class TestBootstrapCommand:
         call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
         source = RaesPackageSource.objects.get(scenario_id="smoke-linux")
         assert source.conformance_status == RaesPackageSource.ConformanceStatus.PASSED
-        assert source.conformance_report_ref == "release://cms/scenarios/inbox_packs/smoke-linux@0.1.0"
+        assert source.conformance_report_ref == "release://cms/scenarios/inbox_packs/smoke-linux@0.2.0"
         assert get_catalog_entry("smoke-linux")["launchable"] is True
 
     def test_command_errors_on_unknown_actor(self, db):

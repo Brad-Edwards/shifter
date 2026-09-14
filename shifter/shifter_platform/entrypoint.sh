@@ -240,7 +240,10 @@ if [[ $# -gt 0 ]]; then
     exec "$@"
 else
     echo "Starting gunicorn (uvicorn workers)..."
+    # Kubernetes manages this process; no local management socket is needed.
+    # Gunicorn 25 otherwise creates it beneath the read-only application home.
     exec gunicorn config.asgi:application \
+        --no-control-socket \
         --worker-class config.asgi_worker.ShifterUvicornWorker \
         --bind "${PORTAL_WEB_BIND:-0.0.0.0:8000}" \
         --workers "${PORTAL_WEB_WORKERS:-4}" \

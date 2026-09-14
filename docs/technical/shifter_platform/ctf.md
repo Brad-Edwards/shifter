@@ -40,7 +40,7 @@ inherit `CTFBaseModel` with a `SoftDeleteManager` (soft delete by default).
 | `CTFFlag` | The sole source of flag truth: one or more flags per challenge, each stored as a hash (static), pattern (regex), or sentinel (programmable/http) with type, case sensitivity, and validator config |
 | `CTFTopic`, `CTFChallengeTag`, `CTFChallengeFile`, `CTFChallengePrerequisite` | Challenge taxonomy, attachments, and unlock graph |
 | `CTFBracket`, `CTFTeam`, `CTFParticipant` | Cohorts, teams, and per-user participation |
-| `CTFSubmission`, `CTFAward` | Flag attempts (correctness, points, attempt number, source IP) and manual point awards |
+| `CTFSubmission`, `CTFReceiptConsumption`, `CTFAward` | Flag attempts, durable issuer-scoped signed-receipt replay evidence, and manual point awards |
 | `CTFChallengeRating` | Participant difficulty ratings |
 | `CTFHint`, `CTFHintUsage` | Optional, point-reducing hints and usage tracking |
 | `CTFNotification`, `CTFEmailTemplate`, `CTFScheduledTask` | Announcements, reminder templates, and scheduled work (legacy aggregate evidence; see Scoped communications) |
@@ -58,6 +58,16 @@ Plaintext is never stored after flag creation, and submission checking compares
 against the `CTFFlag` records. A single plaintext `flag` on challenge create/update
 is normalized into one static `CTFFlag`; a challenge with no flag rows is
 unverifiable (every submission is rejected).
+
+Receipt-capable validators use an immutable server-derived CTF → CMS → Engine
+binding and an installation-owned authenticated verifier profile. Verification
+runs outside locks; the exact registration and objective mapping are rechecked
+inside the scoring transaction, where a durable issuer-scoped consumption row
+enforces one-shot use. The generic platform never interprets scenario proof
+claims or receives symmetric signing bytes. Receipt attempts persist only a
+fixed redaction marker in submission history; legacy flag types preserve their
+existing history behavior. See the
+[operator and extension contract](../../dev/ctf-signed-receipt-validators.md).
 
 ## Services
 

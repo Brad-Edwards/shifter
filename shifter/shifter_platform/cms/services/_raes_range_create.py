@@ -159,6 +159,7 @@ def _dispatch_object_raes_package(
             max_archive_bytes=settings.RAES_PACKAGE_MAX_ARCHIVE_BYTES,
             max_uncompressed_bytes=settings.RAES_PACKAGE_MAX_UNCOMPRESSED_BYTES,
             max_entries=settings.RAES_PACKAGE_MAX_ENTRIES,
+            expected_pack_name=source.scenario_id,
         ) as pack_root:
             try:
                 validated_name = validate_pack(pack_root)
@@ -210,7 +211,9 @@ def _launch_pack(
         egress_mode=egress_mode,
     )
     try:
-        result = launch_raes_package(scenario_path=scenario_path, port=port)
+        result = launch_raes_package(
+            scenario_path=scenario_path, port=port, artifact_supply_provider=port.artifact_supply
+        )
     except RaesPackageError as exc:
         raise CMSError(f"RAES package could not be launched: {exc}") from exc
     if not result.accepted:

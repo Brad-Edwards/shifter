@@ -37,6 +37,14 @@ from ._operation_io import (
     OperationResultKind,
 )
 from ._outbox import OutboxStatus, RangeEventOutbox
+from ._preparation import (
+    PreparationAdapter,
+    PreparationAttempt,
+    PreparationGrant,
+    PreparationOperation,
+    PreparationScopeLock,
+    PreparedArtifactAdmission,
+)
 from ._raes import (
     RaesArtifactSatisfactionBinding,
     RaesContentDeliveryBinding,
@@ -44,6 +52,7 @@ from ._raes import (
     RaesParticipantAccessBinding,
 )
 from ._range import Range
+from ._receipt import ReceiptVerifierRegistration
 from ._request import App, Instance, Instantiation, Request
 from ._sharing import (
     AllocationGroup,
@@ -73,6 +82,12 @@ __all__ = [
     "OperationResultInbox",
     "OperationResultKind",
     "OutboxStatus",
+    "PreparationAdapter",
+    "PreparationAttempt",
+    "PreparationGrant",
+    "PreparationOperation",
+    "PreparationScopeLock",
+    "PreparedArtifactAdmission",
     "ProvisionerLaunchIntent",
     "ProvisionerLaunchStatus",
     "RaesArtifactSatisfactionBinding",
@@ -81,6 +96,7 @@ __all__ = [
     "RaesParticipantAccessBinding",
     "Range",
     "RangeEventOutbox",
+    "ReceiptVerifierRegistration",
     "Request",
     "SharingAuthorityFence",
     "SharingBindingRecord",

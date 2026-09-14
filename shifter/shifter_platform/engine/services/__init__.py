@@ -37,6 +37,22 @@ from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._operation_apply import apply_pending_operation_results, evaluate_operation_result
+from ._preparation_adapters import (
+    PreparationAdapterView,
+    install_preparation_adapter,
+    list_preparation_adapters,
+    set_preparation_adapter_state,
+)
+from ._preparation_controller import reconcile_preparations
+from ._preparation_grants import activate_preparation_grant, revoke_preparation_grant
+from ._preparation_operations import (
+    PreparationView,
+    cancel_artifact_preparation,
+    get_artifact_preparation,
+    request_artifact_preparation,
+    retry_artifact_preparation,
+)
+from ._preparation_worker import read_preparation_worker_input, record_preparation_worker_result
 from ._queries import get_authoritative_range_status, get_ranges_for_ngfw, get_user_ready_range_instances
 from ._raes_evidence import record_raes_operation_status, record_raes_runtime_snapshot
 from ._raes_image import (
@@ -68,6 +84,14 @@ from ._range_by_request import (
     rebind_range_workspace_by_request,
 )
 from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
+from ._receipt import (
+    ReceiptBindingUnavailable,
+    ReceiptRegistrationConflict,
+    confirm_receipt_verifier_binding,
+    project_receipt_verifier_binding,
+    register_receipt_verifier,
+    revoke_receipt_verifier,
+)
 from ._sharing import (
     MembershipEvidence,
     ModelAccessRangeView,
@@ -131,6 +155,8 @@ __all__ = (
     "GuestProbeRequest",
     "MembershipEvidence",
     "ModelAccessRangeView",
+    "PreparationAdapterView",
+    "PreparationView",
     "RaesImageMappingError",
     "RaesImageMappingOptions",
     "RaesImageMappingView",
@@ -140,6 +166,8 @@ __all__ = (
     "RangeOwnershipTransferBlocked",
     "RangeProjectionIntegrityError",
     "RangeWorkspaceRebindOutcome",
+    "ReceiptBindingUnavailable",
+    "ReceiptRegistrationConflict",
     "SSHConnection",
     "SecretsError",
     "SharingError",
@@ -147,6 +175,7 @@ __all__ = (
     "VpnProfileNotFound",
     "VpnProfileUnavailable",
     "WarmGenerationDraft",
+    "activate_preparation_grant",
     "active_generation_count",
     "admit_range_capacity",
     "admit_warm_generation_capacity",
@@ -154,9 +183,11 @@ __all__ = (
     "assess_declared_event_capacity",
     "assess_event_capacity",
     "bucket_state_counts",
+    "cancel_artifact_preparation",
     "cancel_range",
     "cancel_range_by_request",
     "claim_ready_generation",
+    "confirm_receipt_verifier_binding",
     "connect_ngfw_terminal",
     "connect_terminal",
     "create_ngfw",
@@ -171,6 +202,7 @@ __all__ = (
     "evaluate_operation_result",
     "finalize_retiring_generations",
     "get_active_range_provisioned_instances",
+    "get_artifact_preparation",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
     "get_openvpn_profile",
@@ -186,31 +218,39 @@ __all__ = (
     "get_ssh_key",
     "get_user_ready_range_instances",
     "has_openvpn_profile",
+    "install_preparation_adapter",
     "invalidate_sharing_authority",
     "latest_capacity_declaration",
     "list_backend_artifacts",
+    "list_preparation_adapters",
     "list_raes_image_mappings",
     "pause_range",
     "preview_effective_policy",
     "project_raes_operation_status",
+    "project_receipt_verifier_binding",
     "project_selector_resolution",
     "publish_authority_fence",
     "publish_membership_projection",
     "publish_sharing_binding",
     "range_owner_reassignment_available_by_request",
+    "read_preparation_worker_input",
     "read_subnet_reservation",
     "ready_generations",
     "reassign_range_owner_by_request",
     "rebind_range_workspace_by_request",
     "reconcile_capacity_budgets",
+    "reconcile_preparations",
     "record_capacity_declaration",
+    "record_preparation_worker_result",
     "record_raes_operation_status",
     "record_raes_runtime_snapshot",
     "recover_stalled_generations",
+    "register_receipt_verifier",
     "release_capacity_reservations",
     "release_range_capacity",
     "release_subnet_reservation",
     "release_warm_generation_capacity",
+    "request_artifact_preparation",
     "reserve_subnet_cidrs",
     "resolve_model_access_range_page",
     "resolve_model_access_range_views",
@@ -218,7 +258,11 @@ __all__ = (
     "retire_generation",
     "retire_generations_for_request",
     "retire_removed_bucket_generations",
+    "retry_artifact_preparation",
+    "revoke_preparation_grant",
+    "revoke_receipt_verifier",
     "run_guest_probe",
+    "set_preparation_adapter_state",
     "start_ngfw",
     "stop_ngfw",
     "total_active_generation_count",

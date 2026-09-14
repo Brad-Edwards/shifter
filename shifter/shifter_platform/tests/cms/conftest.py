@@ -181,9 +181,10 @@ nodes:
   lan:
     type: Switch
   web:
-    type: VM
+    type: compute
     os: linux
-    os_version: Alpine 3.19
+    os_distribution: x-shifter:alpine
+    os_version: "3.19"
     source: {name: "alpine", version: "3.19"}
     resources: {ram: 512 mib, cpu: 1}
     services:
@@ -210,7 +211,7 @@ nodes:
   lan:
     type: Switch
   host:
-    type: VM
+    type: compute
     os: linux
     resources: {ram: 512 mib, cpu: 1}
 infrastructure:
@@ -239,7 +240,7 @@ nodes:
   lan:
     type: Switch
   host:
-    type: VM
+    type: compute
     os: linux
     resources: {ram: 512 mib, cpu: 1}
 infrastructure:

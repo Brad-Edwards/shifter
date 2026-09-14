@@ -41,6 +41,43 @@ def _request_id_of(range_instance):
 
 
 class TestDestroyRange:
+    @pytest.mark.parametrize("by_request", [False, True])
+    def test_owner_can_retry_cleanup_after_failure_soft_deletes_the_projection(self, user, provision_range, by_request):
+        ri = provision_range(user, range_id=42)
+        ri.status = ResourceStatus.FAILED.value
+        ri.save(update_fields=["status"])
+        EngineRange.objects.filter(id=42).update(status=EngineRange.Status.FAILED)
+        assert not RangeInstance.objects.filter(pk=ri.pk).exists()
+        if by_request:
+            services.destroy_range_by_request_id(user, _request_id_of(ri))
+        else:
+            services.destroy_range(user, ri.pk)
+        reloaded = _reload(42)
+        assert reloaded.status == ResourceStatus.DESTROYING.value
+        assert reloaded.deleted_at is not None
+
+    @pytest.mark.parametrize("by_request", [False, True])
+    @pytest.mark.parametrize("denial", ["other-owner", "membership-removed", "destroyed"])
+    def test_failed_cleanup_keeps_authorization_and_history_boundaries(
+        self, user, django_user_model, provision_range, by_request, denial
+    ):
+        from workspaces.models import WorkspaceMembership
+
+        ri = provision_range(user, range_id=42)
+        ri.status = ResourceStatus.DESTROYED.value if denial == "destroyed" else ResourceStatus.FAILED.value
+        ri.save(update_fields=["status"])
+        actor = user
+        if denial == "other-owner":
+            actor = django_user_model.objects.create_user(username="cleanup-other")
+        elif denial == "membership-removed":
+            WorkspaceMembership.objects.filter(user=user).delete()
+        with pytest.raises(CMSError, match="not found"):
+            if by_request:
+                services.destroy_range_by_request_id(actor, _request_id_of(ri))
+            else:
+                services.destroy_range(actor, ri.pk)
+        assert _reload(42).status == ri.status
+
     def test_sets_status_to_destroying_and_soft_deletes(self, user, provision_range):
         # range_id deliberately differs from pk; destroy resolves by pk (#1139).
         ri = provision_range(user, range_id=42)

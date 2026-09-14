@@ -266,7 +266,7 @@ def test_delete_raes_account_secret_is_idempotent(monkeypatch):
     exceptions = SimpleNamespace(NotFound=not_found)
     monkeypatch.setattr(gcp_guest_secrets, "_secret_client", lambda: (client, exceptions, "project-1"))
 
-    gcp_guest_secrets.delete_raes_account_secret(7, "node.web#0", "alice", "publickey")
+    gcp_guest_secrets.delete_raes_account_secret(7, "node.web#0", "alice", "key")
 
     deleted_name = client.delete_secret.call_args.kwargs["request"]["name"]
     assert deleted_name.endswith("-account-publickey")

@@ -60,6 +60,7 @@ from log_redact import safe_log_value
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
 from plans.raes_content_delivery import RaesContentDeliveryPlan, RaesContentInstallOptions
 from plans.raes_feature_service import RaesFeatureServicePlan
+from plans.verification_only import VerificationOnlyPlan
 from raes_delivery_contract import (
     SAFE_SERVICE_IDENTITY,
     SUPPORTED_DELIVERY_CONTENT_TYPES,
@@ -88,6 +89,9 @@ class RaesContentDeliveryError(RuntimeError):
     """Value-free failure at the RAES content-delivery realization boundary."""
 
 
+_INVALID_SERVICE_FEATURE = "RAES service feature contract is invalid"
+
+
 @dataclass(frozen=True)
 class RaesContentDeliveryOps:
     """Injectable object-storage, execution, and orchestration operations."""
@@ -96,6 +100,7 @@ class RaesContentDeliveryOps:
     object_storage_factory: Callable[[], ObjectStorage] = get_object_storage
     execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context
     orchestrator_factory: Callable[[CommandExecutor], SetupOrchestrator] = SetupOrchestrator
+    verify_only: bool = False
 
 
 def default_content_delivery_ops() -> RaesContentDeliveryOps:
@@ -277,7 +282,7 @@ def _deliver_to_instance(
     try:
         if execution.wait_for_ready(timeout_seconds=_GUEST_READY_TIMEOUT_SECONDS) is False:
             raise RaesContentDeliveryError("RAES content delivery guest did not become ready")
-        plan = RaesContentDeliveryPlan(
+        plan: RaesContentDeliveryPlan | VerificationOnlyPlan = RaesContentDeliveryPlan(
             content_type=delivery.content_type,
             platform=delivery.platform,
             target=delivery.target,
@@ -289,6 +294,8 @@ def _deliver_to_instance(
                 file_mode=delivery.file_mode,
             ),
         )
+        if ops.verify_only:
+            plan = VerificationOnlyPlan(plan)
         try:
             result = ops.orchestrator_factory(execution.executor).orchestrate(
                 execution.target, plan, plan.get_context({}), execution.document_name
@@ -311,19 +318,16 @@ def _realize_service_on_instance(
     platform: str,
 ) -> None:
     """Install/locate, enable, start, and independently verify one service."""
-    package = feature.source_name or ""
-    version = feature.source_version
-    if (
-        not SAFE_SERVICE_IDENTITY.fullmatch(package)
-        or (version is not None and not SAFE_SERVICE_IDENTITY.fullmatch(version))
-        or feature.has_environment
-    ):
-        raise RaesContentDeliveryError("RAES service feature contract is invalid")
+    package, version = _validated_service_feature(feature)
     execution = ops.execution_builder(output, os_type=platform, role="raes-node")
     try:
         if execution.wait_for_ready(timeout_seconds=_GUEST_READY_TIMEOUT_SECONDS) is False:
             raise RaesContentDeliveryError("RAES feature service guest did not become ready")
-        plan = RaesFeatureServicePlan(platform=platform, package=package, version=version)
+        plan: RaesFeatureServicePlan | VerificationOnlyPlan = RaesFeatureServicePlan(
+            platform=platform, package=package, version=version
+        )
+        if ops.verify_only:
+            plan = VerificationOnlyPlan(plan)
         try:
             result = ops.orchestrator_factory(execution.executor).orchestrate(
                 execution.target, plan, plan.get_context({}), execution.document_name
@@ -337,6 +341,19 @@ def _realize_service_on_instance(
             raise RaesContentDeliveryError("RAES feature service verification failed")
     finally:
         execution.close()
+
+
+def _validated_service_feature(feature: RaesPlanFeature) -> tuple[str, str | None]:
+    """Handle validated service feature."""
+    package = feature.source_name or ""
+    version = feature.source_version
+    if not SAFE_SERVICE_IDENTITY.fullmatch(package):
+        raise RaesContentDeliveryError(_INVALID_SERVICE_FEATURE)
+    if version is not None and not SAFE_SERVICE_IDENTITY.fullmatch(version):
+        raise RaesContentDeliveryError(_INVALID_SERVICE_FEATURE)
+    if feature.has_environment:
+        raise RaesContentDeliveryError(_INVALID_SERVICE_FEATURE)
+    return package, version
 
 
 def _deliver_to_node(

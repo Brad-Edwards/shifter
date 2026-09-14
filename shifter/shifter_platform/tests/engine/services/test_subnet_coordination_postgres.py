@@ -45,7 +45,9 @@ _FIRST_SHAPE = "sha256:" + "0" * 64
 pytestmark = [pytest.mark.postgres, pytest.mark.django_db(transaction=True)]
 
 
-def _seed_range(*, current: bool = True, operation: str = "provision") -> tuple[str, str, Range]:
+def _seed_range(
+    *, current: bool = True, operation: str = "provision", resource: str = "range"
+) -> tuple[str, str, Range]:
     """Create a Request/Range/OperationInput trio for one authorized operation.
 
     The operation input is what lets the routines check *which* operation is in
@@ -54,7 +56,7 @@ def _seed_range(*, current: bool = True, operation: str = "provision") -> tuple[
     operation_id = uuid4()
     request_id = uuid4()
     user = get_user_model().objects.create_user(username=f"{request_id}@example.com")
-    request = Request.objects.create(request_id=request_id, request_type="range", user=user)
+    request = Request.objects.create(request_id=request_id, request_type=resource, user=user)
     range_row = Range.objects.create(
         workspace_id=_WORKSPACE_ID,
         request=request,
@@ -65,14 +67,14 @@ def _seed_range(*, current: bool = True, operation: str = "provision") -> tuple[
     envelope = build_operation_envelope(
         operation_id=operation_id,
         request_id=request_id,
-        resource="range",
+        resource=resource,
         operation=operation,
         payload={"range_spec": {}},
     )
     OperationInput.objects.create(
         operation_id=operation_id,
         request_id=request_id,
-        resource="range",
+        resource=resource,
         operation=operation,
         contract_version=envelope["contract_version"],
         envelope=envelope,
@@ -429,6 +431,43 @@ class TestOperationKindAuthorization:
             reserve_subnet_cidrs(candidate)
 
         assert REASON_UNKNOWN_OPERATION in str(exc.value)
+
+
+class TestRaesRangeOperationKindAuthorization:
+    """RAES open-network realization uses the same fenced coordination policy."""
+
+    def test_a_raes_provision_generation_may_reserve_read_and_compensate(self):
+        operation_id, request_id, _ = _seed_range(resource="raes-range")
+
+        reserved = reserve_subnet_cidrs(_request(operation_id, request_id, subnets=("0:backend-default",)))
+
+        assert read_subnet_reservation(operation_id=operation_id, request_id=request_id) == reserved
+        assert release_subnet_reservation(operation_id=operation_id, request_id=request_id) == 1
+
+    def test_a_raes_destroy_generation_may_read_and_release_the_provision_reservation(self):
+        provision_id, request_id, range_row = _seed_range(resource="raes-range")
+        reserved = reserve_subnet_cidrs(_request(provision_id, request_id, subnets=("0:backend-default",)))
+        destroy_id = uuid4()
+        range_row.provisioner_operation_id = destroy_id
+        range_row.save(update_fields=["provisioner_operation_id"])
+        envelope = build_operation_envelope(
+            operation_id=destroy_id,
+            request_id=request_id,
+            resource="raes-range",
+            operation="destroy",
+            payload={"range_spec": {}},
+        )
+        OperationInput.objects.create(
+            operation_id=destroy_id,
+            request_id=request_id,
+            resource="raes-range",
+            operation="destroy",
+            contract_version=envelope["contract_version"],
+            envelope=envelope,
+        )
+
+        assert read_subnet_reservation(operation_id=str(destroy_id), request_id=request_id) == reserved
+        assert release_subnet_reservation(operation_id=str(destroy_id), request_id=request_id) == 1
 
 
 class TestRetryShapeIdentity:

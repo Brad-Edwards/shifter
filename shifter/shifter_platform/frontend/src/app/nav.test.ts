@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Bootstrap } from "@/api/types";
 import { STAFF_BOOTSTRAP } from "@/test/utils";
 
-import { isNavEntryVisible, permissionAllows, visibleNavGroups, type NavEntry } from "./nav";
+import { NAV_GROUPS, isNavEntryVisible, permissionAllows, visibleNavGroups, type NavEntry } from "./nav";
 
 function bootstrap(overrides: Partial<Bootstrap> = {}): Bootstrap {
   return {
@@ -137,5 +137,16 @@ describe("visibleNavGroups", () => {
     const djangoAdmin = administer?.entries.find((e) => e.surface === "Django Admin");
     expect(djangoAdmin?.external).toBe(true);
     expect(djangoAdmin?.routePath).toBe("/admin/");
+  });
+
+  it("keeps Platform Settings as a single staff-owned Administer surface", () => {
+    const operate = NAV_GROUPS.find((group) => group.group === "Operate");
+    const administer = NAV_GROUPS.find((group) => group.group === "Administer");
+
+    expect(operate?.entries.some((entry) => entry.routeName === "mission_control:settings")).toBe(false);
+    const settingsEntries = administer?.entries.filter((entry) => entry.routeName === "administer:settings") ?? [];
+    expect(settingsEntries).toHaveLength(1);
+    expect(settingsEntries[0]).toMatchObject({ permissionPolicy: "staff", routePath: "/administer/settings" });
+    expect(settingsEntries[0].external).toBeFalsy();
   });
 });
