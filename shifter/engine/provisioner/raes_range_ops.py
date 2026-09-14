@@ -51,7 +51,7 @@ from provisioner_db_operation_input import (
 from raes_gce_image import resolve_gce_image, resolve_gce_image_from_binding
 from raes_gcp_apply import RaesGceApplyOptions, apply_raes_range_cell, destroy_raes_range_cell
 from raes_gcp_inventory import inventory_raes_range_cell
-from raes_plan import RaesPlanNode, parse_plan
+from raes_plan import RaesPlan, RaesPlanNode, parse_plan
 from raes_snapshot import snapshot_resources
 from range_placement import resolve_range_cell_placement
 
@@ -380,7 +380,7 @@ def run_raes_range_activate(request_id: str, *, operation_id: str | None = None)
 
 
 def _raes_cleanup_inventory(
-    request_id: str, range_id: int, raes_plan: Any, config: GCERangeCellConfig
+    request_id: str, range_id: int, raes_plan: RaesPlan, config: GCERangeCellConfig
 ) -> dict[str, Any]:
     """Inventory owned resources after a successful destroy; never fail the terminal report.
 

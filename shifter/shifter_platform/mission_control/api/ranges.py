@@ -12,16 +12,12 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from cms.services import (
-    RetryKeyConflict,
     WorkspaceLaunchDenied,
     WorkspaceLaunchQuotaExceeded,
-    bind_first_use_launch,
     get_active_range,
     get_mission_control_range_lease,
-    get_range_by_request_id,
     has_mission_control_openvpn_profile,
     list_mission_control_range_history,
-    resolve_retry_recovery,
 )
 from cms.services import (
     create_range_dispatch as cms_create_range,
@@ -48,6 +44,7 @@ from mission_control.api._base import (
     _raw_request,
     _validated,
 )
+from mission_control.api._retry_launch import RetrySafeLaunchMixin
 from mission_control.api.permissions import HasMissionControlActor, block_participant_lifecycle_permission
 from mission_control.api.rate_limit import RangeLaunchRateThrottle
 from mission_control.api.serializers import (
@@ -162,7 +159,7 @@ class ExtendRangeLeaseView(MissionControlAPIView):
         return response
 
 
-class LaunchRangeView(MissionControlAPIView):
+class LaunchRangeView(RetrySafeLaunchMixin, MissionControlAPIView):
     """Launch a new cyber range."""
 
     permission_classes = [
@@ -173,11 +170,6 @@ class LaunchRangeView(MissionControlAPIView):
     ]
     # Backpressure (#322): per-actor + fleet admission budget, before CMS.
     throttle_classes = [RangeLaunchRateThrottle]
-
-    # Retry-safe launch (#2086, ADR-062). Caller-supplied idempotency key; bounded
-    # so it can never overflow the binding column or become a log/label hazard.
-    _RETRY_KEY_HEADER = "Idempotency-Key"
-    _MAX_CALLER_KEY_LEN = 200
 
     @extend_schema(
         request=LaunchRangeSerializer,
@@ -205,48 +197,7 @@ class LaunchRangeView(MissionControlAPIView):
         if error is not None:
             return error
         assert data is not None
-
-        user = self.actor_user()
-        caller_key = self._retry_key(request)
-        if isinstance(caller_key, Response):
-            return caller_key
-
-        # Attempt recovery BEFORE catalog validation so a replay recovers even when
-        # the original scenario or agent has since been retired (#2086, ADR-062).
-        if caller_key is not None:
-            recovered = self._try_recover(user, data, caller_key)
-            if recovered is not None:
-                return recovered
-
-        return self._launch_range(request, user, data, caller_key)
-
-    def _agents_selection(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Normalize the raw caller agent selection for the retry digest (not catalog-resolved)."""
-        if "agents" in data:
-            agents = cast(dict[str, int], data["agents"])
-            return {"agents": {str(key): int(value) for key, value in sorted(agents.items())}}
-        return {"agent_id": data.get("agent_id")}
-
-    def _try_recover(self, user: User, data: dict[str, Any], caller_key: str) -> Response | None:
-        """Return a recovered/409 response, or ``None`` for first use (no catalog check)."""
-        try:
-            outcome = resolve_retry_recovery(
-                user,
-                scenario=str(data.get("scenario", "basic")),
-                agents_selection=self._agents_selection(data),
-                workspace_uuid=data.get("workspace_uuid"),
-                caller_key=caller_key,
-            )
-        except RetryKeyConflict:
-            logger.info("Retry key conflict: user=%s", user.pk)
-            return self.error_response(
-                code="retry_key_conflict",
-                message="This idempotency key is already bound to a different launch request.",
-                status_code=409,
-            )
-        if outcome is None:
-            return None
-        return self._bound_range_response(user, outcome, recovered=True)
+        return self._dispatch_launch(request, self.actor_user(), data)
 
     def _launch_range(
         self, request: Request, user: User, data: dict[str, Any], caller_key: str | None = None
@@ -283,18 +234,6 @@ class LaunchRangeView(MissionControlAPIView):
                 agents_by_os = {os_type: agent_id}
         return agents_by_os, agents_error
 
-    def _retry_key(self, request: Request) -> str | Response | None:
-        """Return a bounded caller retry key, ``None`` when absent, or a 400 Response when invalid."""
-        raw = request.headers.get(self._RETRY_KEY_HEADER)
-        if raw is None:
-            return None
-        key = raw.strip()
-        if not key:
-            return None
-        if len(key) > self._MAX_CALLER_KEY_LEN:
-            return self.bad_request(f"{self._RETRY_KEY_HEADER} must be at most {self._MAX_CALLER_KEY_LEN} characters.")
-        return key
-
     def _create_range(
         self,
         request: Request,
@@ -329,65 +268,6 @@ class LaunchRangeView(MissionControlAPIView):
             extra_state={"scenario": scenario, "agents": agents_by_os},
         )
         return Response({"success": True, "range": range_ctx.model_dump(mode="json")})
-
-    def _create_range_first_use(
-        self,
-        request: Request,
-        user: User,
-        scenario: str,
-        agents_by_os: dict[str, int] | None,
-        workspace_uuid: UUID | None,
-        caller_key: str,
-        agents_selection: dict[str, Any],
-    ) -> Response:
-        """First use of a retry key: dispatch, bind, and audit exactly once (#2086, ADR-062).
-
-        A concurrent contender that wins the key rolls this dispatch back and its
-        bound operation is recovered instead (or conflicts, 409). Recovery is not
-        reached here (it short-circuits in ``post`` before catalog validation).
-        """
-        try:
-            outcome = bind_first_use_launch(
-                user,
-                scenario=scenario,
-                agents_selection=agents_selection,
-                agents_by_os=agents_by_os or {},
-                workspace_uuid=workspace_uuid,
-                caller_key=caller_key,
-            )
-        except RetryKeyConflict:
-            logger.info("Retry key conflict: user=%s scenario=%s", user.pk, safe_log_value(scenario))
-            return self.error_response(
-                code="retry_key_conflict",
-                message="This idempotency key is already bound to a different launch request.",
-                status_code=409,
-            )
-        except CMSError as exc:
-            return self._launch_failure_response(exc, user, scenario)
-
-        if outcome.created:
-            logger.info(
-                "Range launched (retry-safe): user=%s request_id=%s scenario=%s",
-                safe_log_value(user.email),
-                outcome.request_id,
-                safe_log_value(scenario),
-            )
-            _audit_range_lifecycle(
-                _raw_request(request),
-                AuditAction.PROVISION,
-                range_request_id=outcome.request_id,
-                extra_state={"scenario": scenario, "agents": agents_by_os, "retry_safe": True},
-            )
-        return self._bound_range_response(user, outcome, recovered=not outcome.created)
-
-    def _bound_range_response(self, user: User, outcome: Any, *, recovered: bool) -> Response:
-        """Project the BOUND range (terminal-aware), never the caller's current active range."""
-        try:
-            range_ctx = get_range_by_request_id(user, outcome.request_id, include_terminal=True)
-            range_payload: dict[str, Any] | None = range_ctx.model_dump(mode="json")
-        except CMSError:
-            range_payload = None
-        return Response({"success": True, "recovered": recovered, "range": range_payload})
 
     def _launch_failure_response(self, exc: CMSError, user: User, scenario: str) -> Response:
         """Map a launch-time CMS failure to its bounded HTTP response.

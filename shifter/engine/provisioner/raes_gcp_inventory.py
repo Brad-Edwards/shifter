@@ -12,6 +12,7 @@ consumer reports verified cleanup, prunes retry evidence, or releases capacity.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,10 +34,12 @@ _CATEGORIES = ("instances", "addresses", "routers", "firewalls", "subnets", "net
 
 @dataclass
 class _Tally:
+    """Running count of residual resources found and whether the inventory completed."""
+
     residuals: dict[str, int] = field(default_factory=dict)
     incomplete: bool = False
 
-    def check(self, clients: GCEClients, category: str, getter: Any, **kwargs: Any) -> None:
+    def check(self, clients: GCEClients, category: str, getter: Callable[..., object], **kwargs: object) -> None:
         """Record a residual when the resource still exists; mark incomplete on a provider error."""
         try:
             if _get_or_none(getter, clients.google_exceptions, **kwargs) is not None:

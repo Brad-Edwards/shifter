@@ -42,7 +42,7 @@ def test_first_use_mints_and_binds():
         calls.append(1)
         return _mint()
 
-    result = bind_public_operation(**KEY, intent_digest=DIGEST_A, intent_projection_version="1", mint=mint)
+    result = bind_public_operation(**KEY, intent_digest=DIGEST_A, mint=mint)
 
     assert result.created is True
     assert len(calls) == 1
@@ -52,14 +52,14 @@ def test_first_use_mints_and_binds():
 
 
 def test_replay_same_intent_recovers_without_reminting():
-    first = bind_public_operation(**KEY, intent_digest=DIGEST_A, intent_projection_version="1", mint=_mint)
+    first = bind_public_operation(**KEY, intent_digest=DIGEST_A, mint=_mint)
     calls: list[int] = []
 
     def mint() -> MintedOperation:
         calls.append(1)
         return _mint()
 
-    second = bind_public_operation(**KEY, intent_digest=DIGEST_A, intent_projection_version="1", mint=mint)
+    second = bind_public_operation(**KEY, intent_digest=DIGEST_A, mint=mint)
 
     assert second.created is False
     assert calls == []
@@ -68,7 +68,7 @@ def test_replay_same_intent_recovers_without_reminting():
 
 
 def test_replay_different_intent_conflicts_without_reminting():
-    bind_public_operation(**KEY, intent_digest=DIGEST_A, intent_projection_version="1", mint=_mint)
+    bind_public_operation(**KEY, intent_digest=DIGEST_A, mint=_mint)
     calls: list[int] = []
 
     def mint() -> MintedOperation:
@@ -76,17 +76,17 @@ def test_replay_different_intent_conflicts_without_reminting():
         return _mint()
 
     with pytest.raises(RetryKeyConflict):
-        bind_public_operation(**KEY, intent_digest=DIGEST_B, intent_projection_version="1", mint=mint)
+        bind_public_operation(**KEY, intent_digest=DIGEST_B, mint=mint)
 
     assert calls == []
     assert PublicOperationRetryBinding.objects.filter(**KEY).count() == 1
 
 
 def test_different_caller_key_is_a_separate_binding():
-    bind_public_operation(**KEY, intent_digest=DIGEST_A, intent_projection_version="1", mint=_mint)
+    bind_public_operation(**KEY, intent_digest=DIGEST_A, mint=_mint)
     other = {**KEY, "caller_key": "k-2"}
 
-    result = bind_public_operation(**other, intent_digest=DIGEST_A, intent_projection_version="1", mint=_mint)
+    result = bind_public_operation(**other, intent_digest=DIGEST_A, mint=_mint)
 
     assert result.created is True
     assert PublicOperationRetryBinding.objects.count() == 2

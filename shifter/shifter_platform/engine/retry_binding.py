@@ -100,7 +100,6 @@ def bind_public_operation(
     action: str,
     caller_key: str,
     intent_digest: str,
-    intent_projection_version: str,
     mint: Callable[[], MintedOperation],
     ttl_seconds: int = DEFAULT_RETRY_TTL_SECONDS,
 ) -> RetryBindingResult:
@@ -110,9 +109,11 @@ def bind_public_operation(
     returns a :class:`MintedOperation`. If a concurrent contender wins the unique
     key, this transaction (including everything ``mint`` reserved) rolls back on
     ``IntegrityError``; the winner is then read outside the failed transaction and
-    recovered (or conflicts).
+    recovered (or conflicts). The binding records ``INTENT_PROJECTION_VERSION`` --
+    the version ``intent_digest`` was computed under.
     """
     from engine.models import PublicOperationRetryBinding, RetryBindingStatus
+    from shared.operation_intent import INTENT_PROJECTION_VERSION
 
     key = {
         "deployment_scope": deployment_scope,
@@ -131,7 +132,7 @@ def bind_public_operation(
                 request_id=minted.request_id,
                 operation_id=minted.operation_id,
                 intent_digest=intent_digest,
-                intent_projection_version=intent_projection_version,
+                intent_projection_version=INTENT_PROJECTION_VERSION,
                 status=RetryBindingStatus.ACTIVE,
                 expires_at=timezone.now() + timedelta(seconds=ttl_seconds),
             )
