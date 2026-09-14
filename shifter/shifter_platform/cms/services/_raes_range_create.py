@@ -223,9 +223,20 @@ def _launch_pack(
 
 def _audit_raes_range_provision(request_id: UUID, scenario: str, user: User, range_source: RangeSource) -> None:
     """Write the audit-log entry for a successful RAES-native launch."""
+    instance = RangeInstance.objects.filter(request__request_id=request_id).first()
+    lease_state: dict[str, object] = {}
+    if instance is not None and instance.lease_policy_source:
+        lease_state = {
+            "lease_initial_days": instance.lease_initial_days,
+            "lease_maximum_days": instance.lease_maximum_days,
+            "lease_extension_days": instance.extension_days,
+            "lease_policy_source": instance.lease_policy_source,
+            "lease_policy_tenant_revision": instance.lease_policy_tenant_revision,
+            "lease_policy_group_revisions": instance.lease_policy_group_revisions,
+        }
     _audit_log_call(
         entity_type=AuditEntityType.RANGE,
-        entity_id=0,
+        entity_id=instance.pk if instance is not None else 0,
         action=AuditAction.PROVISION,
         actor_type=AuditActorType.USER,
         actor_id=user.id,
@@ -234,6 +245,7 @@ def _audit_raes_range_provision(request_id: UUID, scenario: str, user: User, ran
             "scenario": scenario,
             "provisioning": "raes-native",
             "range_source": range_source.value,
+            **lease_state,
         },
         request_id=str(request_id),
     )
@@ -319,10 +331,6 @@ def _create_raes_native_range_impl(
     _validate_create_range_scenario(user, scenario)
     if range_source is None:
         range_source = RangeSource.MISSION_CONTROL
-    from cms.services._range_lease import build_range_lease
-
-    lease = build_range_lease(range_source, enforced_deadline=enforced_deadline)
-
     backend_admission = assert_backend_admitted(instantiation_purpose, range_source)
     _assert_raes_adapter_supports(backend_admission)
     _assert_no_active_range(user, range_source)
@@ -331,6 +339,13 @@ def _create_raes_native_range_impl(
 
     def _persist(cms_request: Request) -> RangeInstance:
         """Build the RAES RangeInstance (range_spec=None) for the reservation."""
+        from cms.services._range_lease import build_range_lease, build_resolved_mission_control_range_lease
+
+        lease = (
+            build_resolved_mission_control_range_lease(user, for_update=True)
+            if range_source is RangeSource.MISSION_CONTROL
+            else build_range_lease(range_source, enforced_deadline=enforced_deadline)
+        )
         return RangeInstance.objects.create(
             request=cms_request,
             scenario_id=scenario,
@@ -343,6 +358,13 @@ def _create_raes_native_range_impl(
             expires_at=lease.expires_at,
             maximum_expires_at=lease.maximum_expires_at,
             extension_days=lease.extension_days,
+            lease_initial_days=lease.initial_days,
+            lease_maximum_days=lease.maximum_days,
+            lease_policy_source=lease.policy_source,
+            lease_policy_tenant_revision=lease.tenant_revision,
+            lease_policy_group_revisions=[
+                {"group_id": group_id, "revision": revision} for group_id, revision in lease.group_revisions
+            ],
         )
 
     from uuid import uuid4
@@ -378,7 +400,7 @@ def _create_raes_native_range_impl(
             workspace_id=workspace_id,
             egress_mode=resolve_effective_egress_mode(workspace_id),
             request_id=request_id,
-            lease=lease,
+            enforced_deadline=enforced_deadline,
         )
     )
     if claimed_request_id is not None:

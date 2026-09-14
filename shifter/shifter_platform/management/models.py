@@ -110,6 +110,8 @@ class UserProfile(models.Model):
     anonymized_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        """Persist one positive eligibility revision per auth group."""
+
         db_table = "mission_control_userprofile"
         verbose_name = "User Profile"
         verbose_name_plural = "User Profiles"
@@ -179,3 +181,34 @@ class ActivityLog(models.Model):
     def log(cls, action: str, user=None, **metadata):
         """Convenience method to log an activity."""
         return cls.objects.create(user=user, action=action, metadata=metadata)
+
+
+class ModelAccessGroupEligibility(models.Model):
+    """Explicit funded-access policy for one canonical Django auth group.
+
+    Direct group membership remains only an applicability fact.  A funded
+    model-access binding additionally requires either administrator-managed
+    membership or an independent spending approval recorded here.
+    """
+
+    group = models.OneToOneField(
+        "auth.Group",
+        on_delete=models.CASCADE,
+        related_name="model_access_eligibility",
+    )
+    managed_membership = models.BooleanField(default=False)
+    spending_approved = models.BooleanField(default=False)
+    revision = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "management_model_access_group_eligibility"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(revision__gt=0),
+                name="management_model_access_group_revision_positive",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Model-access eligibility for {self.group.name} (revision {self.revision})"

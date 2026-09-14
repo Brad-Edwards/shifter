@@ -60,6 +60,15 @@ admission and reuse of canonical cleanup. Registry checks validate this guidance
 configuration, migration, concurrency, warm-claim and deployment behavior still
 require implementation evidence. No runtime check or exception is added here.
 
+Issue #2169's [runtime lease-policy preflight](../architecture/runtime-mission-control-lease-policy-preflight-2169.md)
+extends that rule with a CMS-owned tenant/group overlay, deterministic
+multi-group resolution, the existing per-generation owner extension, and an
+explicit separation from workspace tenancy. The CMS models and resolver,
+revision-checked and strict-audited admin API/UI, cold/warm assignment snapshots,
+generated contract, SQLite behavior tests, and PostgreSQL concurrency test are
+the executable evidence for that rule. Provider paths consume the same persisted
+deadline state and contain no lease-policy branch.
+
 Proposed ADR-059, ADR-060 and ADR-061 record the
 [#681 model-access design](https://github.com/Brad-Edwards/shifter/blob/dev/docs/architecture/model-access/index.md): a
 deployment-owned broker, Engine-owned allocation and mandatory budgets,
