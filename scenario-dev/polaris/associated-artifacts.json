@@ -2083,9 +2083,9 @@
       "uri": "raes-environment-pack:/tests/walkthroughs/flags-31-36-bunker.md",
       "checksum": {
         "algorithm": "sha256",
-        "value": "d6b85855a4dfdf42c1662c881ed93dc7784e8bfe5ad5f41c93457b70b7dc7841"
+        "value": "42cd59d51194a42c6ce315d373ab106924513e492679f7542bf88ab8539d97cd"
       },
-      "size_bytes": 10254,
+      "size_bytes": 10218,
       "created_at": "2026-07-13T00:00:00Z",
       "source": "shifter-test-fixture",
       "satisfies_refs": [],
@@ -2125,5 +2125,5 @@
       "description": null
     }
   },
-  "set_digest": "sha256:72fd38a50a2b4994fcec57f374579c811656449f7d4ccf8df3e27d75e13366a3"
+  "set_digest": "sha256:4cd44cd7704cca7a5a56fcde2c5293eece098cc90bb737500b28c13735a606b0"
 }

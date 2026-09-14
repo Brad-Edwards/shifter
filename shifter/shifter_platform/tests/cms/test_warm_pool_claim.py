@@ -14,14 +14,11 @@ claim path:
 
 from __future__ import annotations
 
-from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from django.utils import timezone
 
-from cms.services._range_lease import RangeLease
 from cms.services._warm_pool_claim import WarmClaimRequest, attempt_warm_claim
 from shared.enums import RangeSource
 from shared.range_instantiation_policy import InstantiationPurpose
@@ -34,12 +31,7 @@ _ENABLED_GCE = load_policy_json(
 )
 
 
-def _lease(*, initial_days: int = 30, maximum_days: int = 365, extension_days: int = 30) -> RangeLease:
-    now = timezone.now()
-    return RangeLease(now + timedelta(days=initial_days), now + timedelta(days=maximum_days), extension_days)
-
-
-def _request(backend: str, scenario: str, *, user=None, lease: RangeLease | None = None) -> WarmClaimRequest:
+def _request(backend: str, scenario: str, *, user=None) -> WarmClaimRequest:
     return WarmClaimRequest(
         user=user,
         scenario=scenario,
@@ -51,7 +43,6 @@ def _request(backend: str, scenario: str, *, user=None, lease: RangeLease | None
         workspace_id=1,
         egress_mode="status-quo",
         request_id=uuid4(),
-        lease=lease or _lease(),
     )
 
 
@@ -131,8 +122,20 @@ class TestClaimOrchestration:
 
     def test_hit_rehomes_enqueues_and_first_assigns_the_user_lease(self, monkeypatch):
         from django.contrib.auth import get_user_model
+        from django.contrib.auth.models import Group
+
+        from cms.models import MissionControlGroupLeasePolicy
 
         user = get_user_model().objects.create_user(username="warm-claimant@example.com")
+        group = Group.objects.create(name="Warm Claim Policy")
+        user.groups.add(group)
+        MissionControlGroupLeasePolicy.objects.create(
+            group=group,
+            initial_days=7,
+            extension_days=3,
+            maximum_days=90,
+            extensions_enabled=True,
+        )
         system_row = self._unleased_system_range(user)
         assert system_row.maximum_expires_at is None  # warm-prepared rows are unleased
         claimed_request_id = uuid4()
@@ -148,8 +151,7 @@ class TestClaimOrchestration:
             lambda pk, new_user, *, rehome=False: rehomed.append((pk, new_user, rehome)),
         )
 
-        lease = _lease(initial_days=7, maximum_days=90, extension_days=3)
-        result = attempt_warm_claim(_request("gce", "polaris", user=user, lease=lease))
+        result = attempt_warm_claim(_request("gce", "polaris", user=user))
 
         assert result == claimed_request_id
         assert rehomed == [(system_row.pk, user, True)]
@@ -157,12 +159,18 @@ class TestClaimOrchestration:
         assert self.outcomes[-1]["outcome"] == "hit"
         # The warm hit now carries automatic-expiry bounds and the generation increment.
         system_row.refresh_from_db()
-        assert system_row.expires_at == lease.expires_at
-        assert system_row.maximum_expires_at == lease.maximum_expires_at
         assert system_row.extension_days == 3
+        assert system_row.lease_initial_days == 7
+        assert system_row.lease_maximum_days == 90
+        assert system_row.lease_policy_source == "group"
+        assert system_row.lease_policy_group_revisions == [{"group_id": group.pk, "revision": 1}]
+        assert (system_row.maximum_expires_at - system_row.expires_at).days == 90 - 7
 
     def test_hit_does_not_reset_an_already_leased_generation(self, monkeypatch):
+        from datetime import timedelta
+
         from django.contrib.auth import get_user_model
+        from django.utils import timezone
 
         user = get_user_model().objects.create_user(username="warm-preleased@example.com")
         system_row = self._unleased_system_range(user)
@@ -185,7 +193,7 @@ class TestClaimOrchestration:
             lambda pk, new_user, *, rehome=False: None,
         )
 
-        attempt_warm_claim(_request("gce", "polaris", user=user, lease=_lease(maximum_days=365)))
+        attempt_warm_claim(_request("gce", "polaris", user=user))
 
         system_row.refresh_from_db()
         assert system_row.expires_at == existing_expires
